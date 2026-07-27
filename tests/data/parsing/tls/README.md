@@ -19,12 +19,12 @@ The same fixture may support more than one test layer:
 - import/protocol-path parity;
 - Qt UI projection.
 
-This document records the current contract only. It distinguishes facts already asserted by automated tests from expectations that still require manual Wireshark review.
+This document records the current contract only. It distinguishes facts already asserted by automated tests from facts manually verified in Wireshark exports and from expectations that still require more characterization.
 
 ## Verification terminology
 
 - `Automated contract`: explicitly asserted by current tests.
-- `Manual verification required`: useful fixture facts that are not yet asserted and should be checked in Wireshark before strengthening tests.
+- `Manual verification required`: useful fixture facts that are not yet asserted and still need Wireshark characterization.
 - `Planned contract`: a future contract that would be valuable but is not yet enforced.
 - `Unknown source`: the origin of the capture has not been established in-repo.
 
@@ -32,7 +32,16 @@ Rules for reading this document:
 
 - untested packet facts are not treated as established;
 - TLS version, segmentation shape, record count, or source software are not inferred solely from filenames;
+- when Wireshark and current PcapFlowLab presentation differ, Wireshark ground truth wins;
+- Protocol is treated as a temporary legacy presentation source, not as the future UI contract;
 - filename similarity is not treated as proof of redundancy.
+
+For the first four manually characterized fixtures, this document now distinguishes:
+
+- manually verified Wireshark ground truth from `tmp/tls_inspection_1/wireshark/*.txt`;
+- current PcapFlowLab presentation baseline from `tmp/tls_inspection_1/pfl/*.txt`;
+- current automated test coverage from repository tests;
+- planned presentation contracts that are not yet implemented.
 
 ## Inventory
 
@@ -44,12 +53,12 @@ Rules for reading this document:
 | `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS AppData hint coverage | Yes | Keep for now |
 | `tls_1_2_change_cipher_spec_2.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS ChangeCipherSpec hint coverage | Yes | Keep for now |
 | `tls_1_2_new_session_ticket_9.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP NewSessionTicket hint coverage | Yes | Keep for now |
-| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.2 ServerHello hint coverage | Yes | Keep for now |
+| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Small TLS 1.2 ServerHello PCAP with newly documented manual baseline | Partially complete | Keep for now |
 | `tls_1_3_app_data_7.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 AppData hint coverage | Yes | Keep for now |
 | `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 ChangeCipherSpec hint coverage | Yes | Keep for now |
-| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests` | Medium | Import/service-hint TLS ClientHello coverage | Yes | Keep for now |
-| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketProtocolDetailsTests` | Medium | Current ServerHello protocol-details fixture | Yes | Keep for now |
-| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests` | Strong | Strongest current ClientHello packet-details and UI fixture | Yes | Keep for now |
+| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests` | Medium | Import/service-hint TLS ClientHello coverage with newly documented manual baseline | Partially complete | Keep for now |
+| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketProtocolDetailsTests` | Medium | Current ServerHello protocol-details fixture; packet-local multiple-record baseline | Partially complete | Keep for now |
+| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests` | Strong | Strongest current ClientHello packet-details and UI fixture with newly documented manual baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
 | `tls_server_handshake_retransmit_6.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Retransmission/deduplication and multi-packet contribution coverage | Yes | Keep for now |
@@ -300,6 +309,84 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 **Source:** Unknown source  
 **Decision:** Keep for now
 
+#### Manually verified ground truth
+
+- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_1_2_server_hello_4_info.txt`
+- Frame `1`, direction `B->A`.
+- TCP payload length: `96` bytes.
+- TLS record count in the TCP payload: `1`.
+- Record 1:
+  - Content Type: `Handshake (22)`;
+  - Record Legacy Version: `TLS 1.2 (0x0303)`;
+  - Record Length: `91`;
+  - Handshake Type: `Server Hello (2)`;
+  - Handshake Length: `87`;
+  - Handshake Legacy Version: `TLS 1.2 (0x0303)`;
+  - Session ID Length: `32`;
+  - Cipher Suite: `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)`;
+  - Compression Method: `null (0)`;
+  - Extension Count: `3`;
+  - Known Extensions: `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
+- Several TLS records do not share this TCP payload.
+- No partial trailing record is present.
+
+#### Current PFL baseline
+
+Source: `tmp/tls_inspection_1/pfl/pfl_tls_1_2_server_hello_4_info.txt`
+
+##### Packet Details Summary
+
+Currently shown:
+
+- `Frame`;
+- `Ethernet II`;
+- `802.1Q Virtual LAN`;
+- `IPv4`;
+- `TCP`;
+- `Transport Layer Security, ServerHello`;
+- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `Selected TLS Version`.
+
+##### Packet Details Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Length`;
+- `Handshake Length`;
+- `Selected Cipher Suite`;
+- `Session ID`;
+- `Extensions`.
+
+Protocol is a temporary legacy presentation source, not the future UI contract.
+
+##### Stream items
+
+- `Item #1 | TLS ServerHello | A->B | 96 bytes | packet #1`
+
+The intended stream label is `TLS ServerHello`, not `TLS ClientHello`.
+
+##### Stream Item Summary
+
+Currently shown:
+
+- `Label`;
+- `Size`;
+- `Source packet`;
+- `Details source`.
+
+##### Stream Item Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Type`;
+- `Record Version`;
+- `Record Length`;
+- `Handshake Type`;
+- `Handshake Length`;
+- `Selected TLS Version`;
+- `Selected Cipher Suite`;
+- `Session ID`;
+- `Extensions`.
+
 #### Automated contract
 
 - `tests/unit/FlowHintsRealFixturesTests.cpp`
@@ -309,7 +396,8 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 
 #### Unique purpose
 
-- Real-PCAP TLS 1.2 ServerHello hint coverage distinct from TLS 1.3 ServerHello protocol-details coverage.
+- Small real-PCAP TLS 1.2 ServerHello artifact with manually verified packet-level baseline.
+- Current contrast case for `Selected TLS Version` equal to the handshake legacy version.
 
 #### Missing assertions
 
@@ -317,11 +405,12 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 - Packet Details Protocol is not tested.
 - Stream label is not tested.
 - No ServerHello-specific fields are asserted from the PCAP path.
+- Direction text in the PFL export should be normalized against the manually verified server-to-client packet direction before turning it into a future contract.
 
 #### Manual Wireshark verification required
 
-- exact handshake type and selected parameters;
-- whether the fixture is actually the intended TLS 1.2 ServerHello artifact.
+- None for the packet-level TLS facts recorded above.
+- Remaining work is presentation-contract work and automated coverage expansion.
 
 ### tls_1_3_app_data_7.pcap
 
@@ -387,6 +476,94 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 **Source:** Unknown source  
 **Decision:** Keep for now
 
+#### Manually verified ground truth
+
+- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_1_3_client_hello_5.pcap_info.txt`
+- Frame `1`, direction `A->B`.
+- TCP payload length: `517` bytes.
+- TLS record count in the TCP payload: `1`.
+- Record 1:
+  - Content Type: `Handshake (22)`;
+  - Record Legacy Version: `TLS 1.0 (0x0301)`;
+  - Record Length: `512`;
+  - Handshake Type: `Client Hello (1)`;
+  - Handshake Length: `508`;
+  - Handshake Legacy Version: `TLS 1.2 (0x0303)`;
+  - Session ID Length: `32`;
+  - Cipher Suites Length: `42`;
+  - Cipher Suites Count: `21`;
+  - Compression Methods Length: `1`;
+  - Compression Methods Count: `1`;
+  - Extension Count: `16`;
+  - Known Extensions: `Reserved (GREASE)`, `server_name`, `extended_master_secret`, `renegotiation_info`, `supported_groups`, `ec_point_formats`, `application_layer_protocol_negotiation`, `status_request`, `signature_algorithms`, `signed_certificate_timestamp`, `key_share`, `psk_key_exchange_modes`, `supported_versions`, `compress_certificate`, `Reserved (GREASE)`, `padding`;
+  - SNI: `p101-fmf.icloud.com`;
+  - ALPN: present in Wireshark as `application_layer_protocol_negotiation`;
+  - Supported TLS Versions: `TLS 1.3`, `TLS 1.2`, `TLS 1.1`, `TLS 1.0`.
+- Several TLS records do not share this TCP payload.
+- No partial trailing record is present.
+
+#### Current PFL baseline
+
+Source: `tmp/tls_inspection_1/pfl/pfl_tls_1_3_client_hello_5_info.txt`
+
+##### Packet Details Summary
+
+Currently shown:
+
+- `Frame`;
+- `Ethernet II`;
+- `802.1Q Virtual LAN`;
+- `IPv4`;
+- `TCP`;
+- `Transport Layer Security, ClientHello`;
+- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `SNI`.
+
+##### Packet Details Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Length`;
+- `Handshake Length`;
+- `Handshake Version`;
+- `Session ID`;
+- `Cipher Suites` with count suffix;
+- `Extensions` with count suffix;
+- `SNI`;
+- `ALPN`;
+- `Supported Versions`.
+
+Protocol is a temporary legacy presentation source, not the future UI contract.
+
+##### Stream items
+
+- `Item #1 | TLS ClientHello | A->B | 517 bytes | packet #1`
+
+##### Stream Item Summary
+
+Currently shown:
+
+- `Label`;
+- `Size`;
+- `Source packet`;
+- `Details source`.
+
+##### Stream Item Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Type`;
+- `Record Version`;
+- `Record Length`;
+- `Handshake Type`;
+- `Handshake Length`;
+- `Handshake Version`;
+- `Session ID`;
+- `Cipher Suites`;
+- `Extensions`;
+- `SNI`;
+- `ALPN`;
+- `Supported Versions`.
+
 #### Automated contract
 
 - `tests/unit/FlowHintsRealFixturesTests.cpp`
@@ -401,6 +578,7 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 #### Unique purpose
 
 - Current import/service-hint TLS ClientHello coverage.
+- Manually characterized contrast case to `tls_client_hello_1.pcap` with a larger cipher-suite set and wider supported-version list.
 
 #### Missing assertions
 
@@ -408,18 +586,114 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 - Packet Details Protocol is not tested from the PCAP path.
 - Stream label is not tested.
 - Exact ClientHello fields other than service hint are not asserted.
+- Extension count and supported-version list are not asserted.
+- ALPN presence is not asserted.
 
 #### Manual Wireshark verification required
 
-- exact ClientHello fields and SNI;
-- expected Packet Details protocol text;
-- whether this should also become a packet-details contract fixture.
+- None for the packet-level TLS facts recorded above.
+- Remaining work is presentation-contract work and automated coverage expansion.
 
 ### tls_1_3_server_hello_6.pcap
 
 **Category:** Small single-record / handshake fixture  
 **Source:** Unknown source  
 **Decision:** Keep for now
+
+#### Manually verified ground truth
+
+- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_1_3_server_hello_6_info.txt`
+- Frame `1`, direction `B->A`.
+- TCP payload length: `1400` bytes.
+- TLS record count in the TCP payload: `2 complete records + 1 partial trailing fragment`.
+- Record 1:
+  - Content Type: `Handshake (22)`;
+  - Record Legacy Version: `TLS 1.2 (0x0303)`;
+  - Record Length: `1210`;
+  - Handshake Type: `Server Hello (2)`;
+  - Handshake Length: `1206`;
+  - Handshake Legacy Version: `TLS 1.2 (0x0303)`;
+  - Session ID Length: `32`;
+  - Cipher Suite: `TLS_AES_128_GCM_SHA256 (0x1301)`;
+  - Compression Method: `null (0)`;
+  - Extension Count: `2`;
+  - Known Extensions: `key_share`, `supported_versions`;
+  - Selected TLS Version: `TLS 1.3`.
+- Record 2:
+  - Content Type: `Change Cipher Spec (20)`;
+  - Record Legacy Version: `TLS 1.2 (0x0303)`;
+  - Record Length: `1`.
+- Trailing bytes after the complete records:
+  - `179` bytes of TLS segment data remain;
+  - this is a partial trailing record, not a complete third TLS record.
+- Multiple TLS records share one TCP payload.
+
+#### Current PFL baseline
+
+Source: `tmp/tls_inspection_1/pfl/pfl_tls_1_3_server_hello_6_info.txt`
+
+##### Packet Details Summary
+
+Currently shown:
+
+- `Frame`;
+- `Ethernet II`;
+- `802.1Q Virtual LAN`;
+- `IPv4`;
+- `TCP`;
+- `Transport Layer Security, ServerHello`;
+- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `Selected TLS Version`.
+
+##### Packet Details Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Length`;
+- `Handshake Length`;
+- `Selected Cipher Suite`;
+- `Session ID`;
+- `Extensions`.
+
+Protocol is a temporary legacy presentation source, not the future UI contract.
+
+##### Stream items
+
+- `Item #1 | TLS ServerHello | A->B | 1215 bytes | packet #1`
+- `Item #2 | TLS ChangeCipherSpec | A->B | 6 bytes | packet #1`
+- `Item #3 | TLS Record Fragment (partial) | A->B | 179 bytes | packet #1`
+
+The second and third items are intentionally `6` and `179` bytes. The earlier manual transcription that repeated `1215` bytes for them was incorrect and must not become contract data.
+
+##### Stream Item Summary
+
+Currently shown:
+
+- `Label`;
+- `Size`;
+- `Source packet`;
+- `Details source`.
+
+##### Stream Item Protocol
+
+For `TLS ServerHello`, current additional TLS fields available only in Protocol:
+
+- `Record Type`;
+- `Record Version`;
+- `Record Length`;
+- `Handshake Type`;
+- `Handshake Length`;
+- `Selected TLS Version`;
+- `Selected Cipher Suite`;
+- `Session ID`;
+- `Extensions`.
+
+For `TLS ChangeCipherSpec`, current additional TLS fields available only in Protocol:
+
+- `Record Type`;
+- `Record Version`;
+- `Record Length`.
+
+For `TLS Record Fragment (partial)`, current Protocol text is a conservative partial-record message only.
 
 #### Automated contract
 
@@ -437,23 +711,113 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 #### Unique purpose
 
 - Current ServerHello protocol-details fixture.
+- Only manually characterized small fixture in this set that already demonstrates multiple complete TLS records plus a partial trailing fragment in one TCP payload.
 
 #### Missing assertions
 
 - Packet Details Summary is not tested directly.
 - Stream label is not tested.
 - Exact selected-version and cipher-suite values are not asserted.
+- Ordered multi-record packet-local Summary projection is not tested because current Packet Details Summary exposes only one TLS layer.
+- ChangeCipherSpec and partial-fragment packet-local Summary cards do not yet exist.
 
 #### Manual Wireshark verification required
 
-- exact selected TLS version and cipher suite;
-- whether other ServerHello fields should become explicit automated contracts.
+- None for the packet-level TLS facts recorded above.
+- Remaining work is summary-contract implementation and later automated coverage.
 
 ### tls_client_hello_1.pcap
 
 **Category:** Small single-record / handshake fixture  
 **Source:** Unknown source  
 **Decision:** Keep for now
+
+#### Manually verified ground truth
+
+- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_client_hello_1_info.txt`
+- Frame `1`, direction `A->B`.
+- TCP payload length: `517` bytes.
+- TLS record count in the TCP payload: `1`.
+- Record 1:
+  - Content Type: `Handshake (22)`;
+  - Record Legacy Version: `TLS 1.0 (0x0301)`;
+  - Record Length: `512`;
+  - Handshake Type: `Client Hello (1)`;
+  - Handshake Length: `508`;
+  - Handshake Legacy Version: `TLS 1.2 (0x0303)`;
+  - Session ID Length: `32`;
+  - Cipher Suites Length: `32`;
+  - Cipher Suites Count: `16`;
+  - Compression Methods Length: `1`;
+  - Compression Methods Count: `1`;
+  - Extension Count: `18`;
+  - Known Extensions: `Reserved (GREASE)`, `server_name`, `extended_master_secret`, `renegotiation_info`, `supported_groups`, `ec_point_formats`, `session_ticket`, `application_layer_protocol_negotiation`, `status_request`, `signature_algorithms`, `signed_certificate_timestamp`, `key_share`, `psk_key_exchange_modes`, `supported_versions`, `compress_certificate`, `application_settings_old`, `Reserved (GREASE)`, `padding`;
+  - SNI: `auth.split.io`;
+  - ALPN: present in Wireshark as `application_layer_protocol_negotiation`;
+  - Supported TLS Versions: `TLS 1.3`, `TLS 1.2`.
+- Several TLS records do not share this TCP payload.
+- No partial trailing record is present.
+
+#### Current PFL baseline
+
+Source: `tmp/tls_inspection_1/pfl/pfl_tls_client_hello_1_info.txt`
+
+##### Packet Details Summary
+
+Currently shown:
+
+- `Frame`;
+- `Ethernet II`;
+- `802.1Q Virtual LAN`;
+- `IPv4`;
+- `TCP`;
+- `Transport Layer Security, ClientHello`;
+- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `SNI`.
+
+##### Packet Details Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Length`;
+- `Handshake Length`;
+- `Handshake Version`;
+- `Session ID`;
+- `Cipher Suites` with count suffix;
+- `Extensions` with count suffix;
+- `SNI`;
+- `ALPN`;
+- `Supported Versions`.
+
+Protocol is a temporary legacy presentation source, not the future UI contract.
+
+##### Stream items
+
+- `Item #1 | TLS ClientHello | A->B | 517 bytes | packet #1`
+
+##### Stream Item Summary
+
+Currently shown:
+
+- `Size`;
+- `Source packet`;
+- `Details source`.
+
+##### Stream Item Protocol
+
+Current additional TLS fields available only in Protocol:
+
+- `Record Type`;
+- `Record Version`;
+- `Record Length`;
+- `Handshake Type`;
+- `Handshake Length`;
+- `Handshake Version`;
+- `Session ID`;
+- `Cipher Suites`;
+- `Extensions`;
+- `SNI`;
+- `ALPN`;
+- `Supported Versions`.
 
 #### Automated contract
 
@@ -483,18 +847,20 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 #### Unique purpose
 
 - Strongest current ClientHello packet-details and UI fixture.
+- Current best baseline for future ClientHello Summary parity work.
 
 #### Missing assertions
 
 - Stream label is not tested from the PCAP path.
 - Exact selected summary fields are not exhaustively asserted.
 - Exact ClientHello extension inventory is not asserted.
+- Supported-version and ALPN fields are not asserted.
+- The current Packet Details Summary does not expose structured cipher-suite, extension, or supported-version lists.
 
 #### Manual Wireshark verification required
 
-- exact extension set;
-- whether the Packet Details Summary field set matches Wireshark cleanly;
-- whether this should become the canonical recorded ClientHello fixture.
+- None for the packet-level TLS facts recorded above.
+- Remaining work is target Summary design and test expansion.
 
 ### tls_normal_1.pcap
 
@@ -586,6 +952,180 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 - exact retransmission relationship and source-packet contribution map;
 - whether any additional dedup expectations should become explicit.
 
+## Target TLS Summary presentation contract
+
+The global direction is to remove the Protocol tab. TLS data therefore needs a structured Summary contract first, with Protocol retained only temporarily for parity and debugging.
+
+### Packet Summary mapping rule
+
+- One complete TLS record maps to one TLS Summary layer/card.
+- One partial trailing TLS record maps to one TLS Summary layer/card representing a partial fragment.
+- If a packet contains several TLS records, Packet Details Summary must expose all of them in wire order.
+
+For `tls_1_3_server_hello_6.pcap`, the target ordered packet-local TLS layers are:
+
+1. `TLS ServerHello`, `1215` total bytes;
+2. `TLS ChangeCipherSpec`, `6` total bytes;
+3. `TLS Record Fragment`, `179` available bytes.
+
+### Target Packet Summary fields
+
+#### Generic TLS record
+
+- Label;
+- total bytes for a complete record, or available bytes for a partial fragment;
+- Record Type;
+- Record Legacy Version;
+- Record Length when available;
+- status: complete or partial trailing fragment.
+
+#### ClientHello
+
+- Handshake Type;
+- Handshake Length;
+- Handshake Legacy Version;
+- Session ID;
+- Cipher Suites count plus expandable structured list;
+- Compression Methods count plus expandable structured list;
+- Extensions count plus expandable structured list;
+- SNI when present;
+- ALPN protocols when present;
+- Supported TLS Versions when present.
+
+#### ServerHello
+
+- Handshake Type;
+- Handshake Length;
+- Handshake Legacy Version;
+- Session ID;
+- Selected TLS Version when present;
+- Selected Cipher Suite;
+- Compression Method when available;
+- Extensions count plus expandable structured list.
+
+#### ChangeCipherSpec
+
+- Record Type;
+- Record Legacy Version;
+- Record Length.
+
+#### Partial record fragment
+
+- Label indicating a partial TLS record fragment;
+- available byte count;
+- whether the record header is complete;
+- conservative explanatory status message.
+
+## Target Stream Item Summary contract
+
+Before the Protocol tab is removed, all meaningful TLS data currently shown only in Stream Item Protocol must be available in Stream Item Summary.
+
+Target Stream Item Summary should contain:
+
+- generic item metadata;
+- a structured TLS record section;
+- a structured handshake section when applicable;
+- structured ClientHello or ServerHello fields when applicable;
+- partial/contribution information when applicable.
+
+For complete stream items, Summary should contain the same meaningful TLS facts as the current Protocol text, but represented as structured fields and expandable lists rather than long comma-separated strings.
+
+For constricted or partial items, Summary should also preserve:
+
+- source-packet contributions;
+- constricted contribution notes;
+- constricted packet notes;
+- partial-record status.
+
+## Multiple-record packet behavior
+
+Packet-local TLS Summary must no longer collapse a multi-record packet into a single TLS layer. The manually characterized `tls_1_3_server_hello_6.pcap` fixture is the current anchor for this rule:
+
+- the packet contains a complete `ServerHello` record;
+- then a complete `ChangeCipherSpec` record;
+- then a partial trailing TLS fragment;
+- all three items must remain visible and ordered in both packet-local and stream-local summary views.
+
+## Structured list presentation
+
+The target Summary presentation should use structured expandable lists for:
+
+- cipher suites;
+- compression methods;
+- extensions;
+- supported versions;
+- ALPN protocols;
+- supported groups;
+- signature algorithms;
+- key shares.
+
+The current long comma-separated Protocol strings are a temporary migration format, not the target UI representation.
+
+## Proposed shared structured TLS model
+
+This is a proposal only. It is not implemented in this pass.
+
+The current code already has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and Summary extraction in `src/app/session/SessionFormatting.cpp` that reparses Protocol text. The target direction should replace that text-driven Summary dependency with one shared structured TLS model.
+
+Suggested narrow internal model:
+
+- `TlsRecordModel`
+  - record type;
+  - record legacy version;
+  - declared record length when known;
+  - total bytes for a complete item;
+  - available bytes for a partial item;
+  - completeness state: complete vs partial trailing fragment;
+  - optional handshake payload.
+- `TlsHandshakeModel`
+  - handshake type;
+  - handshake length;
+  - handshake legacy version when present;
+  - optional handshake-specific payload model.
+- `TlsClientHelloModel`
+  - session ID;
+  - cipher suite list;
+  - compression method list;
+  - extension list;
+  - derived SNI;
+  - derived ALPN protocol list;
+  - derived supported TLS version list;
+  - optional supported groups, signature algorithms, key shares.
+- `TlsServerHelloModel`
+  - session ID;
+  - selected cipher suite;
+  - compression method;
+  - extension list;
+  - derived selected TLS version;
+  - optional key-share metadata.
+- `TlsExtensionModel`
+  - extension type code;
+  - display name;
+  - raw length when known;
+  - optional decoded structured values.
+- `TlsContributionModel`
+  - contributing packet indices;
+  - per-packet contribution sizes;
+  - constricted contribution notes;
+  - constricted packet notes.
+
+The same structured model should support:
+
+- packet-local parsing;
+- bounded reassembled Stream parsing;
+- Packet Details Summary;
+- Stream Item Summary;
+- temporary Protocol text generation during migration.
+
+TLS details remain on-demand and ephemeral. This proposal does not define persistence.
+
+## Protocol-tab migration rule
+
+- Do not add new TLS information exclusively to Protocol.
+- Future TLS fields should be implemented in structured Summary data first.
+- Protocol remains a temporary parity/debugging view during migration.
+- Protocol can be removed only after Summary parity is complete for packet-local and stream-item TLS presentation.
+
 ## Planned contract coverage gaps
 
 These are useful future fixture areas, not current facts.
@@ -625,13 +1165,21 @@ Use this checklist when characterizing or strengthening a TLS fixture:
 - TCP payload length;
 - TLS record count;
 - content type;
-- record legacy version;
+- Record Legacy Version;
 - record length;
 - handshake type;
 - handshake length;
-- significant ClientHello/ServerHello fields;
+- Handshake Legacy Version;
+- Supported TLS Versions;
+- Selected TLS Version;
+- cipher suite information;
+- session ID information;
+- extension count and known extension names;
+- SNI;
+- ALPN;
 - whether the record crosses TCP packet boundaries;
 - whether several records share one TCP payload;
+- whether a partial trailing record exists;
 - expected Packet Details Summary;
 - expected Packet Details Protocol;
 - expected Stream label;
