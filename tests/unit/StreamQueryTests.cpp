@@ -1796,6 +1796,147 @@ void run_stream_query_tests() {
 
     {
         CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_2_app_data_3.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "TLS AppData");
+        PFL_EXPECT(rows[0].byte_count == 657U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[0].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Record Version: TLS 1.2 (0x0303)") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Record Length: 652") != std::string::npos);
+        PFL_EXPECT(find_protocol_detail_value(rows[0].protocol_text, "Handshake Type:").has_value() == false);
+        const auto summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Length") == "652");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Total Record Size") == "657 bytes");
+        PFL_EXPECT(find_summary_field(*tls_layer, "Handshake Type") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_app_data_7.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label == "TLS AppData");
+        PFL_EXPECT(rows[0].byte_count == 916U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[0].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Record Length: 911") != std::string::npos);
+        PFL_EXPECT(rows[1].label == "TLS AppData");
+        PFL_EXPECT(rows[1].byte_count == 62U);
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[1].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
+        PFL_EXPECT(rows[1].protocol_text.find("Record Length: 57") != std::string::npos);
+        const auto first_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto second_summary_layers = build_stream_summary_layers(rows[1], packet_rows);
+        const auto* first_tls_layer = find_top_level_summary_layer(first_summary_layers, "tls");
+        const auto* second_tls_layer = find_top_level_summary_layer(second_summary_layers, "tls");
+        PFL_REQUIRE(first_tls_layer != nullptr);
+        PFL_REQUIRE(second_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*first_tls_layer, "Record Length") == "911");
+        PFL_EXPECT(require_summary_field_value(*first_tls_layer, "Total Record Size") == "916 bytes");
+        PFL_EXPECT(require_summary_field_value(*second_tls_layer, "Record Length") == "57");
+        PFL_EXPECT(require_summary_field_value(*second_tls_layer, "Total Record Size") == "62 bytes");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_2_change_cipher_spec_2.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[0].byte_count == 6U);
+        PFL_EXPECT(rows[0].protocol_text.find("Record Type: ChangeCipherSpec") != std::string::npos);
+        PFL_EXPECT(rows[1].label == "TLS Encrypted Handshake Message");
+        PFL_EXPECT(rows[1].byte_count == 45U);
+        PFL_EXPECT(rows[1].protocol_text.find("Record Type: Handshake") != std::string::npos);
+        PFL_EXPECT(rows[1].protocol_text.find("Record Version: TLS 1.2 (0x0303)") != std::string::npos);
+        PFL_EXPECT(rows[1].protocol_text.find("Record Length: 40") != std::string::npos);
+        PFL_EXPECT(rows[1].protocol_text.find("Payload Interpretation: Encrypted/opaque handshake payload") != std::string::npos);
+        PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Handshake Type:").has_value() == false);
+        const auto encrypted_summary_layers = build_stream_summary_layers(rows[1], packet_rows);
+        const auto* encrypted_tls_layer = find_top_level_summary_layer(encrypted_summary_layers, "tls");
+        PFL_REQUIRE(encrypted_tls_layer != nullptr);
+        PFL_EXPECT(encrypted_tls_layer->title.find("Encrypted Handshake Message") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Record Length") == "40");
+        PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Total Record Size") == "45 bytes");
+        PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Payload Interpretation") == "Encrypted/opaque handshake payload");
+        PFL_EXPECT(find_summary_field(*encrypted_tls_layer, "Handshake Type") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_change_cipher_spec_8.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[0].byte_count == 6U);
+        PFL_EXPECT(rows[0].protocol_text.find("Record Type: ChangeCipherSpec") != std::string::npos);
+        PFL_EXPECT(rows[1].label == "TLS AppData");
+        PFL_EXPECT(rows[1].byte_count == 74U);
+        PFL_EXPECT(rows[1].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
+        PFL_EXPECT(rows[1].protocol_text.find("Record Length: 69") != std::string::npos);
+        const auto app_data_summary_layers = build_stream_summary_layers(rows[1], packet_rows);
+        const auto* app_data_tls_layer = find_top_level_summary_layer(app_data_summary_layers, "tls");
+        PFL_REQUIRE(app_data_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Record Length") == "69");
+        PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Total Record Size") == "74 bytes");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_2_new_session_ticket_9.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_REQUIRE(rows.size() == 3U);
+        PFL_EXPECT(rows[0].label == "TLS NewSessionTicket");
+        PFL_EXPECT(rows[0].byte_count == 191U);
+        PFL_EXPECT(rows[0].protocol_text.find("Handshake Type: NewSessionTicket") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Handshake Length: 182") != std::string::npos);
+        PFL_EXPECT(rows[1].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[1].byte_count == 6U);
+        PFL_EXPECT(rows[2].label == "TLS Encrypted Handshake Message");
+        PFL_EXPECT(rows[2].byte_count == 45U);
+        PFL_EXPECT(rows[2].protocol_text.find("Record Type: Handshake") != std::string::npos);
+        PFL_EXPECT(rows[2].protocol_text.find("Payload Interpretation: Encrypted/opaque handshake payload") != std::string::npos);
+        PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Handshake Type:").has_value() == false);
+        const auto new_ticket_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* new_ticket_tls_layer = find_top_level_summary_layer(new_ticket_summary_layers, "tls");
+        PFL_REQUIRE(new_ticket_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Record Length") == "186");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Total Record Size") == "191 bytes");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Handshake Type") == "NewSessionTicket");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Handshake Length") == "182");
+        const auto encrypted_summary_layers = build_stream_summary_layers(rows[2], packet_rows);
+        const auto* encrypted_tls_layer = find_top_level_summary_layer(encrypted_summary_layers, "tls");
+        PFL_REQUIRE(encrypted_tls_layer != nullptr);
+        PFL_EXPECT(encrypted_tls_layer->title.find("Encrypted Handshake Message") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Payload Interpretation") == "Encrypted/opaque handshake payload");
+        PFL_EXPECT(find_summary_field(*encrypted_tls_layer, "Handshake Type") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/udp/udp_generic_payload_2.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);

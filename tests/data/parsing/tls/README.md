@@ -36,7 +36,7 @@ Rules for reading this document:
 - Protocol is treated as a temporary legacy presentation source, not as the future UI contract;
 - filename similarity is not treated as proof of redundancy.
 
-For the first four manually characterized fixtures, this document now distinguishes:
+For the first five manually characterized simple fixtures, this document now distinguishes:
 
 - manually verified Wireshark ground truth from `tmp/tls_inspection_1/wireshark/*.txt`;
 - current PcapFlowLab presentation baseline from `tmp/tls_inspection_1/pfl/*.txt`;
@@ -72,12 +72,12 @@ Current structured-parser limitations and boundaries:
 | `ipv4_tls_constricted_1.pcap` | Constricted/truncated | `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests`, `DissectionImportSessionParityTests` | Strong | Exact IPv4 constricted stream and UI contract | Yes | Keep for now |
 | `ipv6_tls_constricted_1.pcap` | Constricted/truncated | `FlowHintsRealFixturesTests`, `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests` | Strong | Exact IPv6 constricted stream contract | Yes | Keep for now |
 | `ipv6_tls_strong_constrict_1.pcap` | Constricted/truncated | `FlowHintsRealFixturesTests`, `StreamQueryTests`, `MainControllerUiTests`, `ProtocolPathTests` | Strong | Exact strong-constriction contribution contract | Yes | Keep for now |
-| `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS AppData hint coverage | Yes | Keep for now |
-| `tls_1_2_change_cipher_spec_2.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS ChangeCipherSpec hint coverage | Yes | Keep for now |
-| `tls_1_2_new_session_ticket_9.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP NewSessionTicket hint coverage | Yes | Keep for now |
+| `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.2 ApplicationData record contract with no handshake interpretation | Complete | Keep for now |
+| `tls_1_2_change_cipher_spec_2.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.2 `CCS -> encrypted Handshake` contract | Complete | Keep for now |
+| `tls_1_2_new_session_ticket_9.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.2 `NewSessionTicket -> CCS -> encrypted Handshake` sequencing contract | Complete | Keep for now |
 | `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Small TLS 1.2 ServerHello PCAP with manually verified packet/stream structured Summary baseline | Partially complete | Keep for now |
-| `tls_1_3_app_data_7.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 AppData hint coverage | Yes | Keep for now |
-| `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 ChangeCipherSpec hint coverage | Yes | Keep for now |
+| `tls_1_3_app_data_7.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact multi-record TLS 1.3 ApplicationData contract | Complete | Keep for now |
+| `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.3 `CCS -> ApplicationData` sequencing contract | Complete | Keep for now |
 | `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with shared packet/stream structured Summary baseline | Partially complete | Keep for now |
 | `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
 | `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
@@ -250,23 +250,23 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - one complete TLS record;
+  - record type `ApplicationData (23)`;
+  - legacy version `TLS 1.2 (0x0303)`;
+  - record length `652`;
+  - total record size `657`;
+  - no handshake messages are modeled.
+- `tests/unit/PacketDetailsTests.cpp`
+  - Packet Details Summary exposes one TLS `ApplicationData` layer with exact record fields.
+- `tests/unit/StreamQueryTests.cpp`
+  - one stream row: `TLS AppData`, `657 bytes`, packet `#1`;
+  - Stream Item Summary exposes the same exact record fields;
+  - stream protocol text stays conservative and does not fabricate handshake fields.
 
 #### Unique purpose
 
-- Real-PCAP coverage for a minimal TLS AppData hint path.
-
-#### Missing assertions
-
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested.
-- Stream label is not tested.
-- Exact record type, record version, and record length are not asserted from the PCAP path.
-
-#### Manual Wireshark verification required
-
-- whether the fixture really contains only the intended TLS shape;
-- exact record fields and packet direction;
-- expected stream label and Packet Details text.
+- Exact minimal TLS 1.2 ApplicationData baseline with no handshake interpretation.
 
 ### tls_1_2_change_cipher_spec_2.pcap
 
@@ -280,22 +280,28 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - two complete records in one TCP payload:
+    1. `ChangeCipherSpec`, legacy version `TLS 1.2 (0x0303)`, record length `1`, total size `6`;
+    2. post-CCS `Handshake`, legacy version `TLS 1.2 (0x0303)`, record length `40`, total size `45`.
+  - the second record is classified as `encrypted_opaque`;
+  - no plaintext handshake messages are decoded from the second record.
+- `tests/unit/PacketDetailsTests.cpp`
+  - Packet Details Summary exposes two TLS layers:
+    - `ChangeCipherSpec`;
+    - `Encrypted Handshake Message`.
+  - the encrypted record exposes only outer record metadata plus
+    `Payload Interpretation: Encrypted/opaque handshake payload`.
+- `tests/unit/StreamQueryTests.cpp`
+  - stream rows are:
+    1. `TLS ChangeCipherSpec`, `6 bytes`;
+    2. `TLS Encrypted Handshake Message`, `45 bytes`.
+  - the encrypted stream item keeps `Record Type: Handshake` and `Record Length: 40`;
+  - no `Handshake Type` is shown for the encrypted record.
 
 #### Unique purpose
 
-- Real-PCAP coverage for a minimal TLS ChangeCipherSpec hint path.
-
-#### Missing assertions
-
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested.
-- Stream label is not tested.
-- Exact ChangeCipherSpec presentation is not asserted from the PCAP path.
-
-#### Manual Wireshark verification required
-
-- exact record fields, direction, and payload length;
-- expected Packet Details and stream label.
+- Minimal exact contract proving that a post-CCS `Handshake` record is not reinterpreted as plaintext handshake content.
 
 ### tls_1_2_new_session_ticket_9.pcap
 
@@ -309,23 +315,35 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - three complete records in one TCP payload:
+    1. plaintext `Handshake` / `NewSessionTicket`, record length `186`, total size `191`,
+       handshake length `182`;
+    2. `ChangeCipherSpec`, record length `1`, total size `6`;
+    3. post-CCS encrypted `Handshake`, record length `40`, total size `45`.
+  - record 1 remains plaintext and typed as `NewSessionTicket`;
+  - record 3 is classified as `encrypted_opaque`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - Packet Details Summary exposes three TLS layers in order:
+    - `NewSessionTicket`;
+    - `ChangeCipherSpec`;
+    - `Encrypted Handshake Message`.
+  - the trailing encrypted record remains conservative and does not expose a handshake type.
+- `tests/unit/StreamQueryTests.cpp`
+  - stream rows are:
+    1. `TLS NewSessionTicket`, `191 bytes`;
+    2. `TLS ChangeCipherSpec`, `6 bytes`;
+    3. `TLS Encrypted Handshake Message`, `45 bytes`.
+  - selected Stream Item Summary for row 3 mirrors the same conservative encrypted-handshake contract.
 
 #### Unique purpose
 
-- Only named real-PCAP fixture currently associated with NewSessionTicket intent.
+- Exact mixed plaintext-plus-post-CCS fixture for TLS 1.2 record sequencing.
 
-#### Missing assertions
+#### Pending detailed fields
 
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested.
-- Stream label is not tested.
-- Any NewSessionTicket-specific fields are unasserted.
-
-#### Manual Wireshark verification required
-
-- exact handshake type and record framing;
-- whether the filename accurately reflects the payload;
-- expected Packet Details text.
+- `NewSessionTicket` lifetime hint and ticket bytes remain intentionally undocumented in current structured packet/stream presentation.
+- Those fields are tracked as future work and are not inferred from encrypted records in this pass.
 
 ### tls_1_2_server_hello_4.pcap
 
@@ -503,22 +521,23 @@ Current additional TLS fields available only in Protocol:
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - two complete `ApplicationData` records in one TCP payload;
+  - both records use legacy version `TLS 1.2 (0x0303)`;
+  - record lengths are `911` and `57`;
+  - total record sizes are `916` and `62`;
+  - no handshake messages are modeled.
+- `tests/unit/PacketDetailsTests.cpp`
+  - Packet Details Summary exposes two TLS `ApplicationData` layers with exact record lengths.
+- `tests/unit/StreamQueryTests.cpp`
+  - stream rows are:
+    1. `TLS AppData`, `916 bytes`;
+    2. `TLS AppData`, `62 bytes`.
+  - both Stream Item Summary layers preserve exact record framing and remain free of fabricated handshake fields.
 
 #### Unique purpose
 
-- Real-PCAP TLS 1.3 AppData hint coverage.
-
-#### Missing assertions
-
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested.
-- Stream label is not tested.
-- No exact AppData presentation is asserted from the PCAP path.
-
-#### Manual Wireshark verification required
-
-- exact record framing and payload length;
-- expected stream label and Packet Details text.
+- Exact multi-record TLS 1.3 ApplicationData baseline with no handshake interpretation.
 
 ### tls_1_3_change_cipher_spec_8.pcap
 
@@ -532,22 +551,22 @@ Current additional TLS fields available only in Protocol:
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - two complete records in one TCP payload:
+    1. `ChangeCipherSpec`, record length `1`, total size `6`;
+    2. `ApplicationData`, record length `69`, total size `74`.
+  - the second record remains `ApplicationData`; no post-CCS handshake interpretation is attempted.
+- `tests/unit/PacketDetailsTests.cpp`
+  - Packet Details Summary exposes one `ChangeCipherSpec` layer followed by one `ApplicationData` layer with exact record lengths.
+- `tests/unit/StreamQueryTests.cpp`
+  - stream rows are:
+    1. `TLS ChangeCipherSpec`, `6 bytes`;
+    2. `TLS AppData`, `74 bytes`.
+  - Stream Item Summary for the second row preserves `Record Type: ApplicationData` and `Record Length: 69`.
 
 #### Unique purpose
 
-- Real-PCAP TLS 1.3 ChangeCipherSpec hint coverage.
-
-#### Missing assertions
-
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested.
-- Stream label is not tested.
-- No exact ChangeCipherSpec presentation is asserted from the PCAP path.
-
-#### Manual Wireshark verification required
-
-- exact record framing and payload length;
-- expected Packet Details and stream presentation.
+- Exact TLS 1.3 `ChangeCipherSpec -> ApplicationData` sequencing baseline that stays unchanged in this pass.
 
 ### tls_1_3_client_hello_5.pcap
 

@@ -23,6 +23,12 @@ enum class TlsRecordStatus : std::uint8_t {
     partial_body,
 };
 
+enum class TlsHandshakePayloadKind : std::uint8_t {
+    none,
+    plaintext,
+    encrypted_opaque,
+};
+
 enum class TlsHandshakeKind : std::uint8_t {
     client_hello,
     server_hello,
@@ -125,6 +131,7 @@ struct TlsRecordModel {
     std::optional<std::size_t> total_size {};
     std::size_t available_bytes {0U};
     TlsRecordStatus status {TlsRecordStatus::partial_header};
+    TlsHandshakePayloadKind handshake_payload_kind {TlsHandshakePayloadKind::none};
     std::vector<TlsHandshakeModel> handshake_messages {};
 };
 

@@ -1189,6 +1189,89 @@ void run_packet_details_tests() {
     }
 
     {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_2_app_data_3.pcap");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(tls_layers[0]->title.find("ApplicationData") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "652");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Total Record Size") == "657 bytes");
+        PFL_EXPECT(find_summary_field(*tls_layers[0], "Handshake Type") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_3_app_data_7.pcap");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(tls_layers.size() == 2U);
+        PFL_EXPECT(tls_layers[0]->title.find("ApplicationData") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "911");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Total Record Size") == "916 bytes");
+        PFL_EXPECT(tls_layers[1]->title.find("ApplicationData") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Length") == "57");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Total Record Size") == "62 bytes");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_2_change_cipher_spec_2.pcap");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(tls_layers.size() == 2U);
+        PFL_EXPECT(tls_layers[0]->title.find("ChangeCipherSpec") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ChangeCipherSpec");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "1");
+        PFL_EXPECT(tls_layers[1]->title.find("Encrypted Handshake Message") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Length") == "40");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Total Record Size") == "45 bytes");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Payload Interpretation") == "Encrypted/opaque handshake payload");
+        PFL_EXPECT(find_summary_field(*tls_layers[1], "Handshake Type") == nullptr);
+        PFL_EXPECT(find_summary_field(*tls_layers[1], "Handshake Length") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_3_change_cipher_spec_8.pcap");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(tls_layers.size() == 2U);
+        PFL_EXPECT(tls_layers[0]->title.find("ChangeCipherSpec") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ChangeCipherSpec");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "1");
+        PFL_EXPECT(tls_layers[1]->title.find("ApplicationData") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Length") == "69");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Total Record Size") == "74 bytes");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_2_new_session_ticket_9.pcap");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(tls_layers.size() == 3U);
+        PFL_EXPECT(tls_layers[0]->title.find("NewSessionTicket") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "186");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Total Record Size") == "191 bytes");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "NewSessionTicket");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Length") == "182");
+        PFL_EXPECT(find_summary_field(*tls_layers[0], "Payload Interpretation") == nullptr);
+        PFL_EXPECT(tls_layers[1]->title.find("ChangeCipherSpec") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "ChangeCipherSpec");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Length") == "1");
+        PFL_EXPECT(tls_layers[2]->title.find("Encrypted Handshake Message") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Record Length") == "40");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Total Record Size") == "45 bytes");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Payload Interpretation") == "Encrypted/opaque handshake payload");
+        PFL_EXPECT(find_summary_field(*tls_layers[2], "Handshake Type") == nullptr);
+    }
+
+    {
         std::vector<std::uint8_t> malformed_extensions {};
         append_extension(malformed_extensions, 0x000AU, {0x00U, 0x03U, 0x00U, 0x1DU, 0x00U});
         const auto malformed_summary_layers = session_detail::build_tls_summary_layers(

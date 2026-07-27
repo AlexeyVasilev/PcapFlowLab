@@ -1037,7 +1037,10 @@ std::string tls_handshake_stream_label(const std::uint8_t handshake_type) {
     }
 }
 
-std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
+std::string tls_stream_label(
+    std::span<const std::uint8_t> record_bytes,
+    const bool encrypted_handshake_payload = false
+) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS Payload";
     }
@@ -1049,6 +1052,9 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     case 21U:
         return "TLS Alert";
     case 22U:
+        if (encrypted_handshake_payload) {
+            return "TLS Encrypted Handshake Message";
+        }
         if (record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
             return tls_handshake_stream_label(record_bytes[kTlsRecordHeaderSize]);
         }
@@ -1060,7 +1066,10 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     }
 }
 
-std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes) {
+std::string tls_record_protocol_text(
+    std::span<const std::uint8_t> record_bytes,
+    const bool encrypted_handshake_payload = false
+) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS\n  Record details unavailable for this stream item.";
     }
@@ -1075,7 +1084,10 @@ std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes)
          << "  Record Version: " << tls_record_version_text(version) << "\n"
          << "  Record Length: " << record_length;
 
-    if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
+    if (content_type == 22U && encrypted_handshake_payload) {
+        text << "\n"
+             << "  Payload Interpretation: Encrypted/opaque handshake payload";
+    } else if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
         const auto handshake_type = record_bytes[kTlsRecordHeaderSize];
         const auto handshake_length = static_cast<std::size_t>(read_be24(record_bytes, kTlsRecordHeaderSize + 1U));
         text << "\n"
@@ -1230,6 +1242,7 @@ struct PendingTlsRecord {
     std::size_t remaining_original_bytes {0U};
     std::vector<std::uint64_t> packet_indices {};
     std::vector<std::uint8_t> captured_bytes {};
+    bool encrypted_handshake_record {false};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::string protocol_text {};
@@ -1285,6 +1298,7 @@ TlsStreamPresentationItem finalize_pending_tls_record(
         .constricted_packet_notes = std::move(record.constricted_notes),
         .payload_hex_text = hex_dump_service.format(record.captured_bytes),
         .protocol_text = std::move(record.protocol_text),
+        .encrypted_handshake_record = record.encrypted_handshake_record,
     };
 }
 
@@ -1419,6 +1433,9 @@ std::string tls_stream_label_from_protocol_text(const std::string_view protocol_
     if (contains_text(protocol_text, "Record Type: Alert")) {
         return "TLS Alert";
     }
+    if (contains_text(protocol_text, "Payload Interpretation: Encrypted/opaque handshake payload")) {
+        return "TLS Encrypted Handshake Message";
+    }
     if (contains_text(protocol_text, "Record Type: ApplicationData")) {
         return "TLS AppData";
     }
@@ -1440,6 +1457,7 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
     presentation.handled = true;
     HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
+    bool post_change_cipher_spec = false;
 
     while (offset < payload_bytes.size()) {
         if (!looks_like_tls_record_prefix(payload_bytes, offset)) {
@@ -1470,13 +1488,21 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
+        const bool encrypted_handshake_record =
+            post_change_cipher_spec &&
+            !record_bytes.empty() &&
+            record_bytes[0] == 22U;
         presentation.items.push_back(TlsStreamPresentationItem {
-            .label = tls_stream_label(record_bytes),
+            .label = tls_stream_label(record_bytes, encrypted_handshake_record),
             .byte_count = record_bytes.size(),
             .packet_indices = {packet_index},
             .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = tls_record_protocol_text(record_bytes),
+            .protocol_text = tls_record_protocol_text(record_bytes, encrypted_handshake_record),
+            .encrypted_handshake_record = encrypted_handshake_record,
         });
+        if (!record_bytes.empty() && record_bytes[0] == 20U) {
+            post_change_cipher_spec = true;
+        }
         offset += *record_size;
     }
 
@@ -1519,6 +1545,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
     std::size_t chunk_index = 0U;
     std::size_t chunk_offset = 0U;
     bool emitted_any = false;
+    bool post_change_cipher_spec = false;
 
     while (offset < payload_bytes.size()) {
         const bool has_record_prefix = looks_like_tls_record_prefix(payload_bytes, offset);
@@ -1568,8 +1595,12 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
-        const auto label = tls_stream_label(record_bytes);
-        const auto protocol_text = tls_record_protocol_text(record_bytes);
+        const bool encrypted_handshake_record =
+            post_change_cipher_spec &&
+            !record_bytes.empty() &&
+            record_bytes[0] == 22U;
+        const auto label = tls_stream_label(record_bytes, encrypted_handshake_record);
+        const auto protocol_text = tls_record_protocol_text(record_bytes, encrypted_handshake_record);
         const auto packet_indices = consume_reassembled_packet_indices(
             *chunks,
             record_bytes.size(),
@@ -1584,8 +1615,12 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
             .packet_indices = packet_indices,
             .payload_hex_text = hex_dump_service.format(record_bytes),
             .protocol_text = std::move(protocol_text),
+            .encrypted_handshake_record = encrypted_handshake_record,
         });
         emitted_any = true;
+        if (!record_bytes.empty() && record_bytes[0] == 20U) {
+            post_change_cipher_spec = true;
+        }
         offset += *record_size;
     }
 
@@ -1625,6 +1660,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
     HexDumpService hex_dump_service {};
     std::optional<PendingTlsRecord> pending_record {};
     const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, direction);
+    bool post_change_cipher_spec = false;
 
     auto emit_gap_item = [&]() {
         if (presentation.explicit_gap_item_emitted || !gap_packet_index.has_value()) {
@@ -1768,8 +1804,12 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
-            const auto label = tls_stream_label(captured_record_bytes);
-            const auto protocol_text = tls_record_protocol_text(captured_record_bytes);
+            const bool encrypted_handshake_record =
+                post_change_cipher_spec &&
+                !captured_record_bytes.empty() &&
+                captured_record_bytes[0] == 22U;
+            const auto label = tls_stream_label(captured_record_bytes, encrypted_handshake_record);
+            const auto protocol_text = tls_record_protocol_text(captured_record_bytes, encrypted_handshake_record);
 
             PendingTlsRecord record {
                 .label = std::move(label),
@@ -1777,6 +1817,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                 .remaining_original_bytes = record_size - contributed_original_bytes,
                 .packet_indices = {packet.packet_index},
                 .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
+                .encrypted_handshake_record = encrypted_handshake_record,
                 .protocol_text = std::move(protocol_text),
             };
             if (packet.captured_length < packet.original_length && captured_contribution < record_size) {
@@ -1801,9 +1842,15 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                     presentation.items.back().packet_indices.begin(),
                     presentation.items.back().packet_indices.end()
                 );
+                if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
+                    post_change_cipher_spec = true;
+                }
                 continue;
             }
 
+            if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
+                post_change_cipher_spec = true;
+            }
             pending_record = std::move(record);
             break;
         }

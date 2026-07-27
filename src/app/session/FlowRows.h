@@ -86,6 +86,7 @@ struct StreamItemRow {
     std::string summary_text {};
     std::string payload_hex_text {};
     std::string protocol_text {};
+    bool tls_encrypted_handshake_record {false};
 };
 
 struct ProtocolStats {

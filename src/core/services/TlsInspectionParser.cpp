@@ -798,6 +798,7 @@ TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> t
     };
 
     std::size_t offset = 0U;
+    bool post_change_cipher_spec = false;
     while (offset < tls_bytes.size()) {
         TlsRecordModel record {
             .source_offset = offset,
@@ -850,13 +851,21 @@ TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> t
 
         record.status = TlsRecordStatus::complete;
         if (record.content_type_kind == TlsRecordContentTypeKind::handshake) {
-            record.handshake_messages = parse_handshake_messages(
-                tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
-                offset
-            );
+            if (post_change_cipher_spec) {
+                record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
+            } else {
+                record.handshake_payload_kind = TlsHandshakePayloadKind::plaintext;
+                record.handshake_messages = parse_handshake_messages(
+                    tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
+                    offset
+                );
+            }
         }
 
         result.records.push_back(std::move(record));
+        if (result.records.back().content_type_kind == TlsRecordContentTypeKind::change_cipher_spec) {
+            post_change_cipher_spec = true;
+        }
         offset += *result.records.back().total_size;
     }
 

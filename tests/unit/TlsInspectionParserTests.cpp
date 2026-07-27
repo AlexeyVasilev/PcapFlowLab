@@ -591,6 +591,116 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_app_data_3.pcap"};
+        const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_2_app_data_3.pcap");
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 657U);
+        PFL_EXPECT(result.consumed_bytes == 657U);
+        PFL_EXPECT(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::application_data);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {652U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {657U});
+        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
+        PFL_EXPECT(result.records[0].handshake_messages.empty());
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_3_app_data_7.pcap"};
+        const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_3_app_data_7.pcap");
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 978U);
+        PFL_EXPECT(result.consumed_bytes == 978U);
+        PFL_EXPECT(result.records.size() == 2U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::application_data);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {911U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {916U});
+        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
+        PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::application_data);
+        PFL_EXPECT(result.records[1].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {57U});
+        PFL_EXPECT(result.records[1].total_size == std::optional<std::size_t> {62U});
+        PFL_EXPECT(result.records[1].handshake_payload_kind == TlsHandshakePayloadKind::none);
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_change_cipher_spec_2.pcap"};
+        const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_2_change_cipher_spec_2.pcap");
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 51U);
+        PFL_EXPECT(result.consumed_bytes == 51U);
+        PFL_EXPECT(result.records.size() == 2U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {1U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {6U});
+        PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[1].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {40U});
+        PFL_EXPECT(result.records[1].total_size == std::optional<std::size_t> {45U});
+        PFL_EXPECT(result.records[1].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[1].handshake_messages.empty());
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_3_change_cipher_spec_8.pcap"};
+        const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_3_change_cipher_spec_8.pcap");
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 80U);
+        PFL_EXPECT(result.consumed_bytes == 80U);
+        PFL_EXPECT(result.records.size() == 2U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {1U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {6U});
+        PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::application_data);
+        PFL_EXPECT(result.records[1].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {69U});
+        PFL_EXPECT(result.records[1].total_size == std::optional<std::size_t> {74U});
+        PFL_EXPECT(result.records[1].handshake_payload_kind == TlsHandshakePayloadKind::none);
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_new_session_ticket_9.pcap"};
+        const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_2_new_session_ticket_9.pcap");
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 242U);
+        PFL_EXPECT(result.consumed_bytes == 242U);
+        PFL_EXPECT(result.records.size() == 3U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {186U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {191U});
+        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(result.records[0].handshake_messages[0].type == std::optional<std::uint8_t> {4U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::new_session_ticket);
+        PFL_EXPECT(result.records[0].handshake_messages[0].declared_body_length == std::optional<std::size_t> {182U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {1U});
+        PFL_EXPECT(result.records[1].total_size == std::optional<std::size_t> {6U});
+        PFL_EXPECT(result.records[2].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[2].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[2].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[2].declared_payload_length == std::optional<std::size_t> {40U});
+        PFL_EXPECT(result.records[2].total_size == std::optional<std::size_t> {45U});
+        PFL_EXPECT(result.records[2].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[2].handshake_messages.empty());
+    }
+
+    {
         ScopedTestContext context {"synthetic=empty_input"};
         const auto result = parser.inspect({});
         PFL_EXPECT(result.total_input_bytes == 0U);

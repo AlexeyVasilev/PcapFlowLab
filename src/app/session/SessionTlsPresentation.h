@@ -26,6 +26,7 @@ struct TlsStreamPresentationItem {
     std::vector<std::string> constricted_packet_notes {};
     std::string payload_hex_text {};
     std::string protocol_text {};
+    bool encrypted_handshake_record {false};
 };
 
 struct TlsPacketStreamPresentation {
