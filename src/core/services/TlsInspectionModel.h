@@ -50,15 +50,35 @@ enum class TlsStructuredParseStatus : std::uint8_t {
     malformed,
 };
 
+struct TlsKeyShareEntryModel {
+    std::size_t order_index {0U};
+    std::uint16_t group_id {0U};
+    std::size_t key_exchange_length {0U};
+};
+
+struct TlsStatusRequestModel {
+    std::uint8_t status_type {0U};
+    std::size_t responder_id_list_length {0U};
+    std::size_t request_extensions_length {0U};
+};
+
 struct TlsExtensionModel {
     std::size_t source_offset {0U};
     std::size_t order_index {0U};
     std::uint16_t type {0U};
     std::optional<std::string> known_name {};
     std::size_t declared_length {0U};
+    TlsStructuredParseStatus structured_parse_status {TlsStructuredParseStatus::not_attempted};
     std::vector<std::string> server_names {};
     std::vector<std::string> alpn_protocols {};
     std::vector<std::uint16_t> supported_versions {};
+    std::vector<std::uint16_t> supported_group_ids {};
+    std::vector<std::uint16_t> signature_scheme_ids {};
+    std::vector<TlsKeyShareEntryModel> key_share_entries {};
+    std::vector<std::uint8_t> psk_key_exchange_mode_ids {};
+    std::optional<TlsStatusRequestModel> status_request {};
+    std::vector<std::uint16_t> certificate_compression_algorithm_ids {};
+    std::optional<std::size_t> padding_length {};
 };
 
 struct TlsClientHelloModel {

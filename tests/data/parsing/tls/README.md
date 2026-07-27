@@ -56,6 +56,11 @@ Current structured-parser limitations and boundaries:
 
 - handshake messages spanning multiple TLS records are not reconstructed across record boundaries yet;
 - the parser consumes only the supplied TLS byte span and does not inspect Ethernet/IP/TCP state itself;
+- extension-local structured parsing now covers `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`;
+- decoded extension vectors preserve exact wire order and raw numeric values, including GREASE and unknown codes;
+- a bounded but malformed known extension body marks only that extension as malformed and does not discard an otherwise valid bounded `ClientHello` or `ServerHello`;
+- `key_share` modeling records only entry order, raw group ID, and key-exchange length; raw key-exchange bytes are not retained in this pass;
+- the 2-byte ServerHello `key_share` selected-group / HelloRetryRequest form remains present as extension metadata but is left `not_attempted`;
 - packet-local Packet Details Summary and selected Stream Item Summary now use the same shared structured TLS summary mapping;
 - Packet Details Protocol remains the legacy presentation source for richer raw field dumps in this pass;
 - flow hints are not migrated to this parser in this pass.
@@ -470,7 +475,7 @@ Current additional TLS fields available only in Protocol:
 - Small real-PCAP TLS 1.2 ServerHello artifact with manually verified packet-level baseline.
 - Current contrast case for `Selected TLS Version` equal to the handshake legacy version.
 
-#### Manually verified, parser support pending
+#### Structured parser contract
 
 - No additional extension-specific structures are required beyond the ordered extension inventory already captured above.
 
@@ -716,9 +721,21 @@ Current additional TLS fields available only in Protocol:
     - known name when currently modeled;
     - declared length;
     - wire order;
+  - extension-local structured parse status distinguishes:
+    - modeled complete bodies;
+    - bounded malformed bodies;
+    - known but intentionally unmodeled bodies;
   - SNI `p101-fmf.icloud.com`;
   - ALPN `h2`, `http/1.1`;
-  - supported versions retain wire order `0x3a3a`, `0x0304`, `0x0303`, `0x0302`, `0x0301`.
+  - supported versions retain wire order `0x3a3a`, `0x0304`, `0x0303`, `0x0302`, `0x0301`;
+  - exact structured values are asserted for:
+    - `supported_groups` IDs `0x4a4a`, `0x001d`, `0x0017`, `0x0018`, `0x0019`;
+    - `signature_algorithms` IDs `0x0403`, `0x0804`, `0x0401`, `0x0503`, `0x0805`, `0x0805`, `0x0501`, `0x0806`, `0x0601`, `0x0201`;
+    - `key_share` entry metadata `(0x4a4a, 1)` then `(0x001d, 32)`;
+    - `psk_key_exchange_modes` value `1`;
+    - `status_request` fields `(status_type=1, responder_id_list_length=0, request_extensions_length=0)`;
+    - `compress_certificate` algorithm ID `0x0001`;
+    - `padding` length `189`.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary exposes a default-expanded TLS `ClientHello` layer;
   - summary title contains `Transport Layer Security` and `ClientHello`;
@@ -757,7 +774,7 @@ Current additional TLS fields available only in Protocol:
 - Current import/service-hint TLS ClientHello coverage.
 - Manually characterized contrast case to `tls_client_hello_1.pcap` with a larger cipher-suite set and wider supported-version list.
 
-#### Manually verified, parser support pending
+#### Structured parser contract
 
 - `supported_groups`, extension type `10`, length `12`:
   - `Reserved (GREASE) (0x4a4a)`;
@@ -798,7 +815,8 @@ Current additional TLS fields available only in Protocol:
 #### Summary presentation pending
 
 - Packet Details Summary and Stream Item Summary now expose ordered structured cipher-suite, compression-method, and extension collections through the shared mapping.
-- Richer nested decoding for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding` remains pending.
+- The parser/model now retain exact structured values for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`.
+- Summary projection still does not render all of those extension-local values as dedicated nested child groups in this pass.
 
 #### Manual Wireshark verification required
 
@@ -928,7 +946,7 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
   - direct structured parser asserts exact ordered records:
     - complete `Handshake` record at offset `0`, total size `1215`, payload length `1210`, Record Legacy Version `0x0303`;
     - complete `ServerHello` with handshake length `1206`, ServerHello Legacy Version `0x0303`, session ID length `32`, selected cipher suite `0x1301`, compression method `0`, ordered extensions:
-      - `key_share`, type `51`, length `1124`;
+      - `key_share`, type `51`, length `1124`, group ID `4588`, key-exchange length `1120`;
       - `supported_versions`, type `43`, length `2`, value `0x0304`;
       Selected TLS Version `0x0304`;
     - complete `ChangeCipherSpec` record at offset `1215`, total size `6`, payload length `1`, Record Legacy Version `0x0303`, no handshake messages;
@@ -979,7 +997,7 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 - Current ServerHello protocol-details fixture.
 - Only manually characterized small fixture in this set that already demonstrates multiple complete TLS records plus a partial trailing fragment in one TCP payload.
 
-#### Manually verified, parser support pending
+#### Structured parser contract
 
 - `key_share`, extension type `51`, length `1124`:
   - group `X25519MLKEM768`;
@@ -991,6 +1009,7 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 #### Summary presentation pending
 
 - Packet Details Summary and Stream Item Summary now expose the ordered extension inventory through the shared mapping.
+- The parser/model now retain the ServerHello `key_share` group ID / key-exchange length metadata and the `supported_versions` value.
 - Raw Session ID bytes remain a scalar field rather than a separate structured child group.
 - No current fixture asserts the multiple-handshakes-in-one-record child-layer behavior.
 
@@ -1164,9 +1183,22 @@ Current additional TLS fields available only in Protocol:
     - known name when currently modeled;
     - declared length;
     - wire order;
+  - extension-local structured parse status distinguishes:
+    - modeled complete bodies;
+    - bounded malformed bodies;
+    - known but intentionally unmodeled bodies;
   - SNI `auth.split.io`;
   - ALPN `h2`, `http/1.1`;
-  - supported versions retain wire order `0x5a5a`, `0x0304`, `0x0303`.
+  - supported versions retain wire order `0x5a5a`, `0x0304`, `0x0303`;
+  - exact structured values are asserted for:
+    - `supported_groups` IDs `0x5a5a`, `0x001d`, `0x0017`, `0x0018`;
+    - `signature_algorithms` IDs `0x0403`, `0x0804`, `0x0401`, `0x0503`, `0x0805`, `0x0501`, `0x0806`, `0x0601`;
+    - `key_share` entry metadata `(0x5a5a, 1)` then `(0x001d, 32)`;
+    - `psk_key_exchange_modes` value `1`;
+    - `status_request` fields `(status_type=1, responder_id_list_length=0, request_extensions_length=0)`;
+    - `compress_certificate` algorithm ID `0x0002`;
+    - `padding` length `64`;
+  - synthetic parser tests assert that malformed known extension bodies stay local to the extension and do not make an otherwise bounded `ClientHello` fail as a whole.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary layers end with `tcp` then `tls`;
   - TCP is not expanded by default;
@@ -1212,7 +1244,7 @@ Current additional TLS fields available only in Protocol:
 - Strongest current ClientHello packet-summary and UI fixture.
 - Current best baseline for packet-local structured ClientHello Summary parity.
 
-#### Manually verified, parser support pending
+#### Structured parser contract
 
 - `supported_groups`, extension type `10`, length `10`:
   - `Reserved (GREASE) (0x5a5a)`;
@@ -1250,7 +1282,8 @@ Current additional TLS fields available only in Protocol:
 #### Summary presentation pending
 
 - Packet Details Summary and Stream Item Summary now expose ordered structured cipher-suite, compression-method, and extension collections through the shared mapping.
-- Richer nested decoding for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, `application_settings_old`, and `padding` remains pending.
+- The parser/model now retain exact structured values for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`.
+- Summary projection still does not render all of those extension-local values as dedicated nested child groups in this pass.
 
 #### Manual Wireshark verification required
 

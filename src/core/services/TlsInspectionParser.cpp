@@ -112,6 +112,8 @@ std::optional<std::string> known_extension_name(const std::uint16_t extension_ty
         return std::string {"padding"};
     case 0x0017U:
         return std::string {"extended_master_secret"};
+    case 0x001BU:
+        return std::string {"compress_certificate"};
     case 0x0023U:
         return std::string {"session_ticket"};
     case 0x002BU:
@@ -249,6 +251,192 @@ bool parse_supported_versions_server_extension(
     return true;
 }
 
+bool parse_u16_vector_payload(
+    std::span<const std::uint8_t> extension_bytes,
+    std::vector<std::uint16_t>& out_values
+) {
+    const auto vector_length = read_be16(extension_bytes, 0U);
+    if (!vector_length.has_value()) {
+        return false;
+    }
+
+    if ((vector_length.value() % 2U) != 0U) {
+        return false;
+    }
+
+    if (2U + static_cast<std::size_t>(*vector_length) != extension_bytes.size()) {
+        return false;
+    }
+
+    for (std::size_t offset = 2U; offset < extension_bytes.size(); offset += 2U) {
+        const auto value = read_be16(extension_bytes, offset);
+        if (!value.has_value()) {
+            return false;
+        }
+        out_values.push_back(*value);
+    }
+
+    return true;
+}
+
+bool parse_supported_groups_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    return parse_u16_vector_payload(extension_bytes, extension.supported_group_ids);
+}
+
+bool parse_signature_algorithms_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    return parse_u16_vector_payload(extension_bytes, extension.signature_scheme_ids);
+}
+
+bool parse_client_key_share_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    const auto shares_length = read_be16(extension_bytes, 0U);
+    if (!shares_length.has_value()) {
+        return false;
+    }
+
+    if (2U + static_cast<std::size_t>(*shares_length) != extension_bytes.size()) {
+        return false;
+    }
+
+    std::size_t offset = 2U;
+    std::size_t order_index = 0U;
+    while (offset < extension_bytes.size()) {
+        const auto group_id = read_be16(extension_bytes, offset);
+        const auto key_exchange_length = read_be16(extension_bytes, offset + 2U);
+        if (!group_id.has_value() || !key_exchange_length.has_value()) {
+            return false;
+        }
+
+        offset += 4U;
+        if (offset + static_cast<std::size_t>(*key_exchange_length) > extension_bytes.size()) {
+            return false;
+        }
+
+        extension.key_share_entries.push_back(TlsKeyShareEntryModel {
+            .order_index = order_index,
+            .group_id = *group_id,
+            .key_exchange_length = *key_exchange_length,
+        });
+        offset += static_cast<std::size_t>(*key_exchange_length);
+        ++order_index;
+    }
+
+    return offset == extension_bytes.size();
+}
+
+bool parse_server_key_share_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    const auto group_id = read_be16(extension_bytes, 0U);
+    const auto key_exchange_length = read_be16(extension_bytes, 2U);
+    if (!group_id.has_value() || !key_exchange_length.has_value()) {
+        return false;
+    }
+
+    if (4U + static_cast<std::size_t>(*key_exchange_length) != extension_bytes.size()) {
+        return false;
+    }
+
+    extension.key_share_entries.push_back(TlsKeyShareEntryModel {
+        .order_index = 0U,
+        .group_id = *group_id,
+        .key_exchange_length = *key_exchange_length,
+    });
+    return true;
+}
+
+bool parse_psk_key_exchange_modes_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    if (extension_bytes.empty()) {
+        return false;
+    }
+
+    const auto modes_length = static_cast<std::size_t>(extension_bytes[0]);
+    if (1U + modes_length != extension_bytes.size()) {
+        return false;
+    }
+
+    extension.psk_key_exchange_mode_ids.assign(extension_bytes.begin() + 1, extension_bytes.end());
+    return true;
+}
+
+bool parse_status_request_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    if (extension_bytes.size() < 5U) {
+        return false;
+    }
+
+    const auto responder_id_list_length = read_be16(extension_bytes, 1U);
+    if (!responder_id_list_length.has_value()) {
+        return false;
+    }
+
+    const auto request_extensions_length_offset = 3U + static_cast<std::size_t>(*responder_id_list_length);
+    const auto request_extensions_length = read_be16(extension_bytes, request_extensions_length_offset);
+    if (!request_extensions_length.has_value()) {
+        return false;
+    }
+
+    if (request_extensions_length_offset + 2U + static_cast<std::size_t>(*request_extensions_length) != extension_bytes.size()) {
+        return false;
+    }
+
+    extension.status_request = TlsStatusRequestModel {
+        .status_type = extension_bytes[0],
+        .responder_id_list_length = *responder_id_list_length,
+        .request_extensions_length = *request_extensions_length,
+    };
+    return true;
+}
+
+bool parse_compress_certificate_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    if (extension_bytes.empty()) {
+        return false;
+    }
+
+    const auto algorithms_length = static_cast<std::size_t>(extension_bytes[0]);
+    if ((algorithms_length % 2U) != 0U) {
+        return false;
+    }
+
+    if (1U + algorithms_length != extension_bytes.size()) {
+        return false;
+    }
+
+    for (std::size_t offset = 1U; offset < extension_bytes.size(); offset += 2U) {
+        const auto algorithm_id = read_be16(extension_bytes, offset);
+        if (!algorithm_id.has_value()) {
+            return false;
+        }
+        extension.certificate_compression_algorithm_ids.push_back(*algorithm_id);
+    }
+
+    return true;
+}
+
+void parse_padding_extension(
+    std::span<const std::uint8_t> extension_bytes,
+    TlsExtensionModel& extension
+) {
+    extension.padding_length = extension_bytes.size();
+}
+
 std::optional<TlsClientHelloModel> parse_client_hello_body(std::span<const std::uint8_t> handshake_body) {
     if (handshake_body.size() < 34U) {
         return std::nullopt;
@@ -347,19 +535,62 @@ std::optional<TlsClientHelloModel> parse_client_hello_body(std::span<const std::
         const auto extension_bytes = handshake_body.subspan(offset, *extension_length);
         switch (*extension_type) {
         case 0x0000U:
-            if (!parse_server_name_extension(extension_bytes, extension, hello.sni_names)) {
-                return std::nullopt;
-            }
+            extension.structured_parse_status =
+                parse_server_name_extension(extension_bytes, extension, hello.sni_names)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
             break;
         case 0x0010U:
-            if (!parse_alpn_extension(extension_bytes, extension, hello.alpn_protocols)) {
-                return std::nullopt;
-            }
+            extension.structured_parse_status =
+                parse_alpn_extension(extension_bytes, extension, hello.alpn_protocols)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
             break;
         case 0x002BU:
-            if (!parse_supported_versions_client_extension(extension_bytes, extension, hello.supported_versions)) {
-                return std::nullopt;
-            }
+            extension.structured_parse_status =
+                parse_supported_versions_client_extension(extension_bytes, extension, hello.supported_versions)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x000AU:
+            extension.structured_parse_status =
+                parse_supported_groups_extension(extension_bytes, extension)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x000DU:
+            extension.structured_parse_status =
+                parse_signature_algorithms_extension(extension_bytes, extension)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x0033U:
+            extension.structured_parse_status =
+                parse_client_key_share_extension(extension_bytes, extension)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x002DU:
+            extension.structured_parse_status =
+                parse_psk_key_exchange_modes_extension(extension_bytes, extension)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x0005U:
+            extension.structured_parse_status =
+                parse_status_request_extension(extension_bytes, extension)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x001BU:
+            extension.structured_parse_status =
+                parse_compress_certificate_extension(extension_bytes, extension)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+            break;
+        case 0x0015U:
+            parse_padding_extension(extension_bytes, extension);
+            extension.structured_parse_status = TlsStructuredParseStatus::parsed;
             break;
         default:
             break;
@@ -458,8 +689,18 @@ std::optional<TlsServerHelloModel> parse_server_hello_body(std::span<const std::
 
         const auto extension_bytes = handshake_body.subspan(offset, *extension_length);
         if (*extension_type == 0x002BU) {
-            if (!parse_supported_versions_server_extension(extension_bytes, extension, hello.selected_tls_version)) {
-                return std::nullopt;
+            extension.structured_parse_status =
+                parse_supported_versions_server_extension(extension_bytes, extension, hello.selected_tls_version)
+                ? TlsStructuredParseStatus::parsed
+                : TlsStructuredParseStatus::malformed;
+        } else if (*extension_type == 0x0033U) {
+            if (extension_bytes.size() == 2U) {
+                extension.structured_parse_status = TlsStructuredParseStatus::not_attempted;
+            } else {
+                extension.structured_parse_status =
+                    parse_server_key_share_extension(extension_bytes, extension)
+                    ? TlsStructuredParseStatus::parsed
+                    : TlsStructuredParseStatus::malformed;
             }
         }
 

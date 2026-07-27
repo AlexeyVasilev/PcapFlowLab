@@ -76,6 +76,56 @@ std::vector<std::uint8_t> make_zero_filled(const std::size_t count) {
     return std::vector<std::uint8_t>(count, 0x00U);
 }
 
+void append_extension(
+    std::vector<std::uint8_t>& bytes,
+    const std::uint16_t extension_type,
+    const std::vector<std::uint8_t>& body
+) {
+    append_be16(bytes, extension_type);
+    append_be16(bytes, static_cast<std::uint16_t>(body.size()));
+    bytes.insert(bytes.end(), body.begin(), body.end());
+}
+
+std::vector<std::uint8_t> make_minimal_client_hello_body_with_extensions(
+    const std::vector<std::uint8_t>& extensions
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    const auto random = make_zero_filled(32U);
+    body.insert(body.end(), random.begin(), random.end());
+    body.push_back(0x00U);
+    append_be16(body, 0x0002U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x01U);
+    body.push_back(0x00U);
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_minimal_server_hello_body_with_extensions(
+    const std::vector<std::uint8_t>& extensions
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    const auto random = make_zero_filled(32U);
+    body.insert(body.end(), random.begin(), random.end());
+    body.push_back(0x00U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x00U);
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_client_hello_record_with_extensions(const std::vector<std::uint8_t>& extensions) {
+    return make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x01U, make_minimal_client_hello_body_with_extensions(extensions)));
+}
+
+std::vector<std::uint8_t> make_server_hello_record_with_extensions(const std::vector<std::uint8_t>& extensions) {
+    return make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x02U, make_minimal_server_hello_body_with_extensions(extensions)));
+}
+
 void expect_supported_versions(
     const std::vector<std::uint16_t>& actual,
     const std::vector<std::uint16_t>& expected
@@ -83,13 +133,33 @@ void expect_supported_versions(
     PFL_EXPECT(actual == expected);
 }
 
+struct ExpectedTlsKeyShareEntry {
+    std::size_t order_index {0U};
+    std::uint16_t group_id {0U};
+    std::size_t key_exchange_length {0U};
+};
+
+struct ExpectedTlsStatusRequest {
+    std::uint8_t status_type {0U};
+    std::size_t responder_id_list_length {0U};
+    std::size_t request_extensions_length {0U};
+};
+
 struct ExpectedTlsExtension {
     std::uint16_t type {0U};
     std::optional<std::string> known_name {};
     std::size_t declared_length {0U};
+    TlsStructuredParseStatus structured_parse_status {TlsStructuredParseStatus::not_attempted};
     std::vector<std::string> server_names {};
     std::vector<std::string> alpn_protocols {};
     std::vector<std::uint16_t> supported_versions {};
+    std::vector<std::uint16_t> supported_group_ids {};
+    std::vector<std::uint16_t> signature_scheme_ids {};
+    std::vector<ExpectedTlsKeyShareEntry> key_share_entries {};
+    std::vector<std::uint8_t> psk_key_exchange_mode_ids {};
+    std::optional<ExpectedTlsStatusRequest> status_request {};
+    std::vector<std::uint16_t> certificate_compression_algorithm_ids {};
+    std::optional<std::size_t> padding_length {};
 };
 
 void expect_tls_extensions(
@@ -108,10 +178,59 @@ void expect_tls_extensions(
         PFL_EXPECT(actual_extension.type == expected_extension.type);
         PFL_EXPECT(actual_extension.known_name == expected_extension.known_name);
         PFL_EXPECT(actual_extension.declared_length == expected_extension.declared_length);
+        PFL_EXPECT(actual_extension.structured_parse_status == expected_extension.structured_parse_status);
         PFL_EXPECT(actual_extension.server_names == expected_extension.server_names);
         PFL_EXPECT(actual_extension.alpn_protocols == expected_extension.alpn_protocols);
         PFL_EXPECT(actual_extension.supported_versions == expected_extension.supported_versions);
+        PFL_EXPECT(actual_extension.supported_group_ids == expected_extension.supported_group_ids);
+        PFL_EXPECT(actual_extension.signature_scheme_ids == expected_extension.signature_scheme_ids);
+        PFL_EXPECT(actual_extension.psk_key_exchange_mode_ids == expected_extension.psk_key_exchange_mode_ids);
+        PFL_EXPECT(actual_extension.certificate_compression_algorithm_ids == expected_extension.certificate_compression_algorithm_ids);
+        PFL_EXPECT(actual_extension.padding_length == expected_extension.padding_length);
+        PFL_EXPECT(actual_extension.status_request.has_value() == expected_extension.status_request.has_value());
+        if (actual_extension.status_request.has_value() && expected_extension.status_request.has_value()) {
+            PFL_EXPECT(actual_extension.status_request->status_type == expected_extension.status_request->status_type);
+            PFL_EXPECT(
+                actual_extension.status_request->responder_id_list_length ==
+                expected_extension.status_request->responder_id_list_length
+            );
+            PFL_EXPECT(
+                actual_extension.status_request->request_extensions_length ==
+                expected_extension.status_request->request_extensions_length
+            );
+        }
+
+        PFL_EXPECT(actual_extension.key_share_entries.size() == expected_extension.key_share_entries.size());
+        if (actual_extension.key_share_entries.size() == expected_extension.key_share_entries.size()) {
+            for (std::size_t key_share_index = 0U; key_share_index < expected_extension.key_share_entries.size(); ++key_share_index) {
+                const auto& actual_entry = actual_extension.key_share_entries[key_share_index];
+                const auto& expected_entry = expected_extension.key_share_entries[key_share_index];
+                PFL_EXPECT(actual_entry.order_index == expected_entry.order_index);
+                PFL_EXPECT(actual_entry.group_id == expected_entry.group_id);
+                PFL_EXPECT(actual_entry.key_exchange_length == expected_entry.key_exchange_length);
+            }
+        }
     }
+}
+
+const TlsExtensionModel& require_single_client_hello_extension(const TlsInspectionResult& result) {
+    PFL_REQUIRE(result.records.size() == 1U);
+    PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+    const auto& handshake = result.records[0].handshake_messages[0];
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.client_hello.has_value());
+    PFL_REQUIRE(handshake.client_hello->extensions.size() == 1U);
+    return handshake.client_hello->extensions[0];
+}
+
+const TlsExtensionModel& require_single_server_hello_extension(const TlsInspectionResult& result) {
+    PFL_REQUIRE(result.records.size() == 1U);
+    PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+    const auto& handshake = result.records[0].handshake_messages[0];
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.server_hello.has_value());
+    PFL_REQUIRE(handshake.server_hello->extensions.size() == 1U);
+    return handshake.server_hello->extensions[0];
 }
 
 }  // namespace
@@ -132,23 +251,93 @@ void run_tls_inspection_parser_tests() {
         const std::vector<std::uint8_t> expected_compression_methods {0x00U};
         const std::vector<ExpectedTlsExtension> expected_extensions {
             {.type = 0xFAFAU, .declared_length = 0U},
-            {.type = 0x0000U, .known_name = std::optional<std::string> {"server_name"}, .declared_length = 18U, .server_names = {"auth.split.io"}},
+            {
+                .type = 0x0000U,
+                .known_name = std::optional<std::string> {"server_name"},
+                .declared_length = 18U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .server_names = {"auth.split.io"},
+            },
             {.type = 0x0017U, .known_name = std::optional<std::string> {"extended_master_secret"}, .declared_length = 0U},
             {.type = 0xFF01U, .known_name = std::optional<std::string> {"renegotiation_info"}, .declared_length = 1U},
-            {.type = 0x000AU, .known_name = std::optional<std::string> {"supported_groups"}, .declared_length = 10U},
+            {
+                .type = 0x000AU,
+                .known_name = std::optional<std::string> {"supported_groups"},
+                .declared_length = 10U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .supported_group_ids = {0x5A5AU, 0x001DU, 0x0017U, 0x0018U},
+            },
             {.type = 0x000BU, .known_name = std::optional<std::string> {"ec_point_formats"}, .declared_length = 2U},
             {.type = 0x0023U, .known_name = std::optional<std::string> {"session_ticket"}, .declared_length = 138U},
-            {.type = 0x0010U, .known_name = std::optional<std::string> {"application_layer_protocol_negotiation"}, .declared_length = 14U, .alpn_protocols = {"h2", "http/1.1"}},
-            {.type = 0x0005U, .known_name = std::optional<std::string> {"status_request"}, .declared_length = 5U},
-            {.type = 0x000DU, .known_name = std::optional<std::string> {"signature_algorithms"}, .declared_length = 18U},
+            {
+                .type = 0x0010U,
+                .known_name = std::optional<std::string> {"application_layer_protocol_negotiation"},
+                .declared_length = 14U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .alpn_protocols = {"h2", "http/1.1"},
+            },
+            {
+                .type = 0x0005U,
+                .known_name = std::optional<std::string> {"status_request"},
+                .declared_length = 5U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .status_request = ExpectedTlsStatusRequest {
+                    .status_type = 1U,
+                    .responder_id_list_length = 0U,
+                    .request_extensions_length = 0U,
+                },
+            },
+            {
+                .type = 0x000DU,
+                .known_name = std::optional<std::string> {"signature_algorithms"},
+                .declared_length = 18U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .signature_scheme_ids = {
+                    0x0403U, 0x0804U, 0x0401U, 0x0503U,
+                    0x0805U, 0x0501U, 0x0806U, 0x0601U,
+                },
+            },
             {.type = 0x0012U, .known_name = std::optional<std::string> {"signed_certificate_timestamp"}, .declared_length = 0U},
-            {.type = 0x0033U, .known_name = std::optional<std::string> {"key_share"}, .declared_length = 43U},
-            {.type = 0x002DU, .known_name = std::optional<std::string> {"psk_key_exchange_modes"}, .declared_length = 2U},
-            {.type = 0x002BU, .known_name = std::optional<std::string> {"supported_versions"}, .declared_length = 7U, .supported_versions = {0x5A5AU, 0x0304U, 0x0303U}},
-            {.type = 0x001BU, .declared_length = 3U},
+            {
+                .type = 0x0033U,
+                .known_name = std::optional<std::string> {"key_share"},
+                .declared_length = 43U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .key_share_entries = {
+                    {.order_index = 0U, .group_id = 0x5A5AU, .key_exchange_length = 1U},
+                    {.order_index = 1U, .group_id = 0x001DU, .key_exchange_length = 32U},
+                },
+            },
+            {
+                .type = 0x002DU,
+                .known_name = std::optional<std::string> {"psk_key_exchange_modes"},
+                .declared_length = 2U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .psk_key_exchange_mode_ids = {0x01U},
+            },
+            {
+                .type = 0x002BU,
+                .known_name = std::optional<std::string> {"supported_versions"},
+                .declared_length = 7U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .supported_versions = {0x5A5AU, 0x0304U, 0x0303U},
+            },
+            {
+                .type = 0x001BU,
+                .known_name = std::optional<std::string> {"compress_certificate"},
+                .declared_length = 3U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .certificate_compression_algorithm_ids = {0x0002U},
+            },
             {.type = 0x4469U, .declared_length = 5U},
             {.type = 0x9A9AU, .declared_length = 1U},
-            {.type = 0x0015U, .known_name = std::optional<std::string> {"padding"}, .declared_length = 64U},
+            {
+                .type = 0x0015U,
+                .known_name = std::optional<std::string> {"padding"},
+                .declared_length = 64U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .padding_length = 64U,
+            },
         };
 
         PFL_EXPECT(result.total_input_bytes == 517U);
@@ -195,21 +384,91 @@ void run_tls_inspection_parser_tests() {
         const std::vector<std::uint8_t> expected_compression_methods {0x00U};
         const std::vector<ExpectedTlsExtension> expected_extensions {
             {.type = 0x9A9AU, .declared_length = 0U},
-            {.type = 0x0000U, .known_name = std::optional<std::string> {"server_name"}, .declared_length = 24U, .server_names = {"p101-fmf.icloud.com"}},
+            {
+                .type = 0x0000U,
+                .known_name = std::optional<std::string> {"server_name"},
+                .declared_length = 24U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .server_names = {"p101-fmf.icloud.com"},
+            },
             {.type = 0x0017U, .known_name = std::optional<std::string> {"extended_master_secret"}, .declared_length = 0U},
             {.type = 0xFF01U, .known_name = std::optional<std::string> {"renegotiation_info"}, .declared_length = 1U},
-            {.type = 0x000AU, .known_name = std::optional<std::string> {"supported_groups"}, .declared_length = 12U},
+            {
+                .type = 0x000AU,
+                .known_name = std::optional<std::string> {"supported_groups"},
+                .declared_length = 12U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .supported_group_ids = {0x4A4AU, 0x001DU, 0x0017U, 0x0018U, 0x0019U},
+            },
             {.type = 0x000BU, .known_name = std::optional<std::string> {"ec_point_formats"}, .declared_length = 2U},
-            {.type = 0x0010U, .known_name = std::optional<std::string> {"application_layer_protocol_negotiation"}, .declared_length = 14U, .alpn_protocols = {"h2", "http/1.1"}},
-            {.type = 0x0005U, .known_name = std::optional<std::string> {"status_request"}, .declared_length = 5U},
-            {.type = 0x000DU, .known_name = std::optional<std::string> {"signature_algorithms"}, .declared_length = 22U},
+            {
+                .type = 0x0010U,
+                .known_name = std::optional<std::string> {"application_layer_protocol_negotiation"},
+                .declared_length = 14U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .alpn_protocols = {"h2", "http/1.1"},
+            },
+            {
+                .type = 0x0005U,
+                .known_name = std::optional<std::string> {"status_request"},
+                .declared_length = 5U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .status_request = ExpectedTlsStatusRequest {
+                    .status_type = 1U,
+                    .responder_id_list_length = 0U,
+                    .request_extensions_length = 0U,
+                },
+            },
+            {
+                .type = 0x000DU,
+                .known_name = std::optional<std::string> {"signature_algorithms"},
+                .declared_length = 22U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .signature_scheme_ids = {
+                    0x0403U, 0x0804U, 0x0401U, 0x0503U, 0x0805U,
+                    0x0805U, 0x0501U, 0x0806U, 0x0601U, 0x0201U,
+                },
+            },
             {.type = 0x0012U, .known_name = std::optional<std::string> {"signed_certificate_timestamp"}, .declared_length = 0U},
-            {.type = 0x0033U, .known_name = std::optional<std::string> {"key_share"}, .declared_length = 43U},
-            {.type = 0x002DU, .known_name = std::optional<std::string> {"psk_key_exchange_modes"}, .declared_length = 2U},
-            {.type = 0x002BU, .known_name = std::optional<std::string> {"supported_versions"}, .declared_length = 11U, .supported_versions = {0x3A3AU, 0x0304U, 0x0303U, 0x0302U, 0x0301U}},
-            {.type = 0x001BU, .declared_length = 3U},
+            {
+                .type = 0x0033U,
+                .known_name = std::optional<std::string> {"key_share"},
+                .declared_length = 43U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .key_share_entries = {
+                    {.order_index = 0U, .group_id = 0x4A4AU, .key_exchange_length = 1U},
+                    {.order_index = 1U, .group_id = 0x001DU, .key_exchange_length = 32U},
+                },
+            },
+            {
+                .type = 0x002DU,
+                .known_name = std::optional<std::string> {"psk_key_exchange_modes"},
+                .declared_length = 2U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .psk_key_exchange_mode_ids = {0x01U},
+            },
+            {
+                .type = 0x002BU,
+                .known_name = std::optional<std::string> {"supported_versions"},
+                .declared_length = 11U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .supported_versions = {0x3A3AU, 0x0304U, 0x0303U, 0x0302U, 0x0301U},
+            },
+            {
+                .type = 0x001BU,
+                .known_name = std::optional<std::string> {"compress_certificate"},
+                .declared_length = 3U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .certificate_compression_algorithm_ids = {0x0001U},
+            },
             {.type = 0x0A0AU, .declared_length = 1U},
-            {.type = 0x0015U, .known_name = std::optional<std::string> {"padding"}, .declared_length = 189U},
+            {
+                .type = 0x0015U,
+                .known_name = std::optional<std::string> {"padding"},
+                .declared_length = 189U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .padding_length = 189U,
+            },
         };
 
         PFL_EXPECT(result.total_input_bytes == 517U);
@@ -274,8 +533,22 @@ void run_tls_inspection_parser_tests() {
         const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_3_server_hello_6.pcap");
         const auto result = parser.inspect(payload);
         const std::vector<ExpectedTlsExtension> expected_extensions {
-            {.type = 0x0033U, .known_name = std::optional<std::string> {"key_share"}, .declared_length = 1124U},
-            {.type = 0x002BU, .known_name = std::optional<std::string> {"supported_versions"}, .declared_length = 2U, .supported_versions = {0x0304U}},
+            {
+                .type = 0x0033U,
+                .known_name = std::optional<std::string> {"key_share"},
+                .declared_length = 1124U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .key_share_entries = {
+                    {.order_index = 0U, .group_id = 4588U, .key_exchange_length = 1120U},
+                },
+            },
+            {
+                .type = 0x002BU,
+                .known_name = std::optional<std::string> {"supported_versions"},
+                .declared_length = 2U,
+                .structured_parse_status = TlsStructuredParseStatus::parsed,
+                .supported_versions = {0x0304U},
+            },
         };
 
         PFL_EXPECT(result.total_input_bytes == 1400U);
@@ -395,6 +668,218 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[0].handshake_messages[0].type == std::optional<std::uint8_t> {0x7FU});
         PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::unknown);
         PFL_EXPECT(result.records[0].handshake_messages[0].status == TlsHandshakeStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_supported_groups_complete"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(
+            extensions,
+            0x000AU,
+            {0x00U, 0x08U, 0xFAU, 0xFAU, 0x00U, 0x1DU, 0x00U, 0x17U, 0x00U, 0x18U}
+        );
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"supported_groups"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.supported_group_ids == std::vector<std::uint16_t>({0xFAFAU, 0x001DU, 0x0017U, 0x0018U}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_supported_groups_malformed_body_preserves_handshake"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x000AU, {0x00U, 0x03U, 0x00U, 0x1DU, 0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"supported_groups"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.supported_group_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_signature_algorithms_complete"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x000DU, {0x00U, 0x06U, 0x04U, 0x03U, 0xFAU, 0xFAU, 0x08U, 0x04U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"signature_algorithms"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.signature_scheme_ids == std::vector<std::uint16_t>({0x0403U, 0xFAFAU, 0x0804U}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_signature_algorithms_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x000DU, {0x00U, 0x03U, 0x04U, 0x03U, 0x08U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.signature_scheme_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_key_share_complete"};
+        std::vector<std::uint8_t> extensions {};
+        std::vector<std::uint8_t> body {};
+        append_be16(body, 41U);
+        append_be16(body, 0xFAFAU);
+        append_be16(body, 1U);
+        body.push_back(0xABU);
+        append_be16(body, 0x001DU);
+        append_be16(body, 32U);
+        const auto key_exchange = make_zero_filled(32U);
+        body.insert(body.end(), key_exchange.begin(), key_exchange.end());
+        append_extension(extensions, 0x0033U, body);
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"key_share"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.key_share_entries.size() == 2U);
+        PFL_EXPECT(extension.key_share_entries[0].order_index == 0U);
+        PFL_EXPECT(extension.key_share_entries[0].group_id == 0xFAFAU);
+        PFL_EXPECT(extension.key_share_entries[0].key_exchange_length == 1U);
+        PFL_EXPECT(extension.key_share_entries[1].order_index == 1U);
+        PFL_EXPECT(extension.key_share_entries[1].group_id == 0x001DU);
+        PFL_EXPECT(extension.key_share_entries[1].key_exchange_length == 32U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_key_share_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        std::vector<std::uint8_t> body {};
+        append_be16(body, 5U);
+        append_be16(body, 0x001DU);
+        append_be16(body, 2U);
+        body.push_back(0xAAU);
+        append_extension(extensions, 0x0033U, body);
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.key_share_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_psk_modes_complete"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x002DU, {0x02U, 0x01U, 0xAAU});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"psk_key_exchange_modes"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.psk_key_exchange_mode_ids == std::vector<std::uint8_t>({0x01U, 0xAAU}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_psk_modes_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x002DU, {0x02U, 0x01U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.psk_key_exchange_mode_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_status_request_complete"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0005U, {0x01U, 0x00U, 0x00U, 0x00U, 0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"status_request"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(extension.status_request.has_value());
+        PFL_EXPECT(extension.status_request->status_type == 1U);
+        PFL_EXPECT(extension.status_request->responder_id_list_length == 0U);
+        PFL_EXPECT(extension.status_request->request_extensions_length == 0U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_status_request_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0005U, {0x01U, 0x00U, 0x02U, 0xAAU});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!extension.status_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_complete"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x04U, 0x00U, 0x02U, 0xFAU, 0xFAU});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"compress_certificate"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids == std::vector<std::uint16_t>({0x0002U, 0xFAFAU}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x03U, 0x00U, 0x02U, 0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_padding_zero_length"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"padding"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.padding_length == std::optional<std::size_t> {0U});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_padding_non_zero_length"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0015U, {0x00U, 0x00U, 0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.padding_length == std::optional<std::size_t> {3U});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_key_share_complete"};
+        std::vector<std::uint8_t> extensions {};
+        std::vector<std::uint8_t> body {};
+        append_be16(body, 0x11ECU);
+        append_be16(body, 4U);
+        body.insert(body.end(), {0x00U, 0x01U, 0x02U, 0x03U});
+        append_extension(extensions, 0x0033U, body);
+        const auto result = parser.inspect(make_server_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_server_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"key_share"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.key_share_entries.size() == 1U);
+        PFL_EXPECT(extension.key_share_entries[0].group_id == 0x11ECU);
+        PFL_EXPECT(extension.key_share_entries[0].key_exchange_length == 4U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_key_share_hrr_selected_group_not_attempted"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0033U, {0x00U, 0x1DU});
+        const auto result = parser.inspect(make_server_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_server_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(extension.key_share_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_key_share_malformed_body_preserves_handshake"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0033U, {0x00U, 0x1DU, 0x00U, 0x02U, 0xAAU});
+        const auto result = parser.inspect(make_server_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_server_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.key_share_entries.empty());
     }
 
     {
