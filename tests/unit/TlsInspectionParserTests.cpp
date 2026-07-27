@@ -30,6 +30,13 @@ void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
+void append_be32(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
 std::vector<std::uint8_t> require_tls_fixture_transport_payload(
     const std::filesystem::path& relative_path,
     const std::uint64_t packet_index = 0U
@@ -244,6 +251,14 @@ const TlsClientHelloModel& require_parsed_client_hello(const TlsInspectionResult
     PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
     PFL_REQUIRE(handshake.client_hello.has_value());
     return *handshake.client_hello;
+}
+
+const TlsNewSessionTicketModel& require_parsed_new_session_ticket(const TlsInspectionResult& result) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::new_session_ticket);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.new_session_ticket.has_value());
+    return *handshake.new_session_ticket;
 }
 
 }  // namespace
@@ -693,24 +708,143 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
         PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {186U});
         PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {191U});
+        PFL_EXPECT(result.records[0].source_offset == 0U);
         PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
         PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].source_offset == 5U);
         PFL_EXPECT(result.records[0].handshake_messages[0].status == TlsHandshakeStatus::complete);
         PFL_EXPECT(result.records[0].handshake_messages[0].type == std::optional<std::uint8_t> {4U});
         PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::new_session_ticket);
         PFL_EXPECT(result.records[0].handshake_messages[0].declared_body_length == std::optional<std::size_t> {182U});
-        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(result.records[0].handshake_messages[0].total_size == std::optional<std::size_t> {186U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].available_bytes == 186U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].handshake_messages[0].new_session_ticket.has_value());
+        PFL_EXPECT(result.records[0].handshake_messages[0].new_session_ticket->ticket_lifetime_hint_seconds == 7200U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].new_session_ticket->ticket_length == 176U);
         PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
         PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
         PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {1U});
         PFL_EXPECT(result.records[1].total_size == std::optional<std::size_t> {6U});
+        PFL_EXPECT(result.records[1].source_offset == 191U);
         PFL_EXPECT(result.records[2].status == TlsRecordStatus::complete);
         PFL_EXPECT(result.records[2].content_type_kind == TlsRecordContentTypeKind::handshake);
         PFL_EXPECT(result.records[2].legacy_version == std::optional<std::uint16_t> {0x0303U});
         PFL_EXPECT(result.records[2].declared_payload_length == std::optional<std::size_t> {40U});
         PFL_EXPECT(result.records[2].total_size == std::optional<std::size_t> {45U});
+        PFL_EXPECT(result.records[2].source_offset == 197U);
         PFL_EXPECT(result.records[2].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
         PFL_EXPECT(result.records[2].handshake_messages.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_zero_length_ticket"};
+        std::vector<std::uint8_t> body {};
+        append_be32(body, 0U);
+        append_be16(body, 0U);
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, body)));
+        const auto& new_session_ticket = require_parsed_new_session_ticket(result);
+        PFL_EXPECT(new_session_ticket.ticket_lifetime_hint_seconds == 0U);
+        PFL_EXPECT(new_session_ticket.ticket_length == 0U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_short_ticket"};
+        std::vector<std::uint8_t> body {};
+        append_be32(body, 42U);
+        append_be16(body, 3U);
+        body.insert(body.end(), {0xAAU, 0xBBU, 0xCCU});
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, body)));
+        const auto& new_session_ticket = require_parsed_new_session_ticket(result);
+        PFL_EXPECT(new_session_ticket.ticket_lifetime_hint_seconds == 42U);
+        PFL_EXPECT(new_session_ticket.ticket_length == 3U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_unknown_ticket_bytes_do_not_affect_parsing"};
+        std::vector<std::uint8_t> body {};
+        append_be32(body, 1234U);
+        append_be16(body, 4U);
+        body.insert(body.end(), {0x00U, 0xFFU, 0x5AU, 0xA5U});
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, body)));
+        const auto& new_session_ticket = require_parsed_new_session_ticket(result);
+        PFL_EXPECT(new_session_ticket.ticket_lifetime_hint_seconds == 1234U);
+        PFL_EXPECT(new_session_ticket.ticket_length == 4U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_fixed_header_truncated"};
+        std::vector<std::uint8_t> body {};
+        append_be32(body, 1234U);
+        body.push_back(0x00U);
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, body)));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::new_session_ticket);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.new_session_ticket.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_declared_ticket_length_exceeds_body"};
+        std::vector<std::uint8_t> body {};
+        append_be32(body, 99U);
+        append_be16(body, 4U);
+        body.insert(body.end(), {0xAAU, 0xBBU, 0xCCU});
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, body)));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::new_session_ticket);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.new_session_ticket.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_trailing_garbage_after_ticket"};
+        std::vector<std::uint8_t> body {};
+        append_be32(body, 99U);
+        append_be16(body, 2U);
+        body.insert(body.end(), {0xAAU, 0xBBU, 0xCCU});
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, body)));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::new_session_ticket);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.new_session_ticket.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_before_ccs_remains_parsed"};
+        std::vector<std::uint8_t> ticket_body {};
+        append_be32(ticket_body, 7200U);
+        append_be16(ticket_body, 1U);
+        ticket_body.push_back(0xABU);
+        auto bytes = make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, ticket_body));
+        const auto ccs = make_tls_record(0x14U, 0x0303U, {0x01U});
+        bytes.insert(bytes.end(), ccs.begin(), ccs.end());
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].handshake_messages[0].new_session_ticket.has_value());
+        PFL_EXPECT(result.records[0].handshake_messages[0].new_session_ticket->ticket_length == 1U);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=new_session_ticket_after_ccs_not_parsed_as_plaintext"};
+        const auto ccs = make_tls_record(0x14U, 0x0303U, {0x01U});
+        std::vector<std::uint8_t> ticket_body {};
+        append_be32(ticket_body, 7200U);
+        append_be16(ticket_body, 1U);
+        ticket_body.push_back(0xABU);
+        auto bytes = ccs;
+        const auto handshake_record = make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x04U, ticket_body));
+        bytes.insert(bytes.end(), handshake_record.begin(), handshake_record.end());
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_EXPECT(result.records[1].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[1].handshake_messages.empty());
     }
 
     {

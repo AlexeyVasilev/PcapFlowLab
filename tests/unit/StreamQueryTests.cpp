@@ -487,6 +487,19 @@ const session_detail::PacketSummaryLayer* find_top_level_summary_layer(
     return nullptr;
 }
 
+std::vector<const session_detail::PacketSummaryLayer*> find_top_level_summary_layers(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string_view id
+) {
+    std::vector<const session_detail::PacketSummaryLayer*> matches {};
+    for (const auto& layer : layers) {
+        if (layer.id == id) {
+            matches.push_back(&layer);
+        }
+    }
+    return matches;
+}
+
 const session_detail::PacketSummaryField* find_summary_field(
     const session_detail::PacketSummaryLayer& layer,
     const std::string_view label
@@ -1923,16 +1936,35 @@ void run_stream_query_tests() {
         const auto* new_ticket_tls_layer = find_top_level_summary_layer(new_ticket_summary_layers, "tls");
         PFL_REQUIRE(new_ticket_tls_layer != nullptr);
         PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
         PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Record Length") == "186");
         PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Total Record Size") == "191 bytes");
         PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Handshake Type") == "NewSessionTicket");
         PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Handshake Length") == "182");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Session Ticket Lifetime Hint") == "7200 seconds");
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Session Ticket Length") == "176 bytes");
+        PFL_EXPECT(find_summary_field(*new_ticket_tls_layer, "Ticket Bytes") == nullptr);
+
+        PFL_REQUIRE(!rows[0].packet_indices.empty());
+        const auto packet = session.find_packet(rows[0].packet_indices[0]);
+        PFL_REQUIRE(packet.has_value());
+        const auto packet_summary_layers = build_packet_summary_layers_for_packet(session, *packet);
+        const auto packet_tls_layers = find_top_level_summary_layers(packet_summary_layers, "tls");
+        PFL_REQUIRE(packet_tls_layers.size() == 3U);
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Handshake Type") == require_summary_field_value(*packet_tls_layers[0], "Handshake Type"));
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Handshake Length") == require_summary_field_value(*packet_tls_layers[0], "Handshake Length"));
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Session Ticket Lifetime Hint") == require_summary_field_value(*packet_tls_layers[0], "Session Ticket Lifetime Hint"));
+        PFL_EXPECT(require_summary_field_value(*new_ticket_tls_layer, "Session Ticket Length") == require_summary_field_value(*packet_tls_layers[0], "Session Ticket Length"));
+
         const auto encrypted_summary_layers = build_stream_summary_layers(rows[2], packet_rows);
         const auto* encrypted_tls_layer = find_top_level_summary_layer(encrypted_summary_layers, "tls");
         PFL_REQUIRE(encrypted_tls_layer != nullptr);
         PFL_EXPECT(encrypted_tls_layer->title.find("Encrypted Handshake Message") != std::string::npos);
         PFL_EXPECT(require_summary_field_value(*encrypted_tls_layer, "Payload Interpretation") == "Encrypted/opaque handshake payload");
         PFL_EXPECT(find_summary_field(*encrypted_tls_layer, "Handshake Type") == nullptr);
+        PFL_EXPECT(find_summary_field(*encrypted_tls_layer, "Handshake Length") == nullptr);
+        PFL_EXPECT(find_summary_field(*encrypted_tls_layer, "Session Ticket Lifetime Hint") == nullptr);
+        PFL_EXPECT(find_summary_field(*encrypted_tls_layer, "Session Ticket Length") == nullptr);
     }
 
     {

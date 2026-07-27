@@ -109,6 +109,11 @@ struct TlsServerHelloModel {
     std::uint16_t selected_tls_version {0U};
 };
 
+struct TlsNewSessionTicketModel {
+    std::uint32_t ticket_lifetime_hint_seconds {0U};
+    std::size_t ticket_length {0U};
+};
+
 struct TlsHandshakeModel {
     std::size_t source_offset {0U};
     std::optional<std::uint8_t> type {};
@@ -120,6 +125,7 @@ struct TlsHandshakeModel {
     TlsStructuredParseStatus structured_parse_status {TlsStructuredParseStatus::not_attempted};
     std::optional<TlsClientHelloModel> client_hello {};
     std::optional<TlsServerHelloModel> server_hello {};
+    std::optional<TlsNewSessionTicketModel> new_session_ticket {};
 };
 
 struct TlsRecordModel {

@@ -1258,6 +1258,9 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Total Record Size") == "191 bytes");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "NewSessionTicket");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Length") == "182");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Session Ticket Lifetime Hint") == "7200 seconds");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Session Ticket Length") == "176 bytes");
+        PFL_EXPECT(find_summary_field(*tls_layers[0], "Ticket Bytes") == nullptr);
         PFL_EXPECT(find_summary_field(*tls_layers[0], "Payload Interpretation") == nullptr);
         PFL_EXPECT(tls_layers[1]->title.find("ChangeCipherSpec") != std::string::npos);
         PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "ChangeCipherSpec");
@@ -1269,6 +1272,9 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Total Record Size") == "45 bytes");
         PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Payload Interpretation") == "Encrypted/opaque handshake payload");
         PFL_EXPECT(find_summary_field(*tls_layers[2], "Handshake Type") == nullptr);
+        PFL_EXPECT(find_summary_field(*tls_layers[2], "Handshake Length") == nullptr);
+        PFL_EXPECT(find_summary_field(*tls_layers[2], "Session Ticket Lifetime Hint") == nullptr);
+        PFL_EXPECT(find_summary_field(*tls_layers[2], "Session Ticket Length") == nullptr);
     }
 
     {

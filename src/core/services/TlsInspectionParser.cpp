@@ -37,6 +37,17 @@ std::optional<std::uint32_t> read_be24(std::span<const std::uint8_t> bytes, cons
            static_cast<std::uint32_t>(bytes[offset + 2U]);
 }
 
+std::optional<std::uint32_t> read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    if (offset + 4U > bytes.size()) {
+        return std::nullopt;
+    }
+
+    return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 3U]);
+}
+
 bool add_overflows(const std::size_t left, const std::size_t right) {
     return right > (static_cast<std::size_t>(-1) - left);
 }
@@ -467,6 +478,30 @@ bool parse_compress_certificate_extension(
 
 std::size_t parse_padding_extension(std::span<const std::uint8_t> extension_bytes) {
     return extension_bytes.size();
+}
+
+std::optional<TlsNewSessionTicketModel> parse_new_session_ticket_body(
+    std::span<const std::uint8_t> handshake_body
+) {
+    if (handshake_body.size() < 6U) {
+        return std::nullopt;
+    }
+
+    const auto ticket_lifetime_hint_seconds = read_be32(handshake_body, 0U);
+    const auto ticket_length = read_be16(handshake_body, 4U);
+    if (!ticket_lifetime_hint_seconds.has_value() || !ticket_length.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto ticket_end = checked_add(6U, static_cast<std::size_t>(*ticket_length));
+    if (!ticket_end.has_value() || *ticket_end != handshake_body.size()) {
+        return std::nullopt;
+    }
+
+    return TlsNewSessionTicketModel {
+        .ticket_lifetime_hint_seconds = *ticket_lifetime_hint_seconds,
+        .ticket_length = *ticket_length,
+    };
 }
 
 std::optional<TlsClientHelloModel> parse_client_hello_body(
@@ -901,6 +936,16 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
             const auto server_hello = parse_server_hello_body(handshake_body, handshake.source_offset);
             if (server_hello.has_value()) {
                 handshake.server_hello = std::move(*server_hello);
+                handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
+            } else {
+                handshake.structured_parse_status = TlsStructuredParseStatus::malformed;
+            }
+            break;
+        }
+        case TlsHandshakeKind::new_session_ticket: {
+            const auto new_session_ticket = parse_new_session_ticket_body(handshake_body);
+            if (new_session_ticket.has_value()) {
+                handshake.new_session_ticket = std::move(*new_session_ticket);
                 handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
             } else {
                 handshake.structured_parse_status = TlsStructuredParseStatus::malformed;

@@ -328,28 +328,46 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
     2. `ChangeCipherSpec`, record length `1`, total size `6`;
     3. post-CCS encrypted `Handshake`, record length `40`, total size `45`.
   - record 1 remains plaintext and typed as `NewSessionTicket`;
+  - record 1 structured parser contract includes:
+    - Session Ticket Lifetime Hint `7200 seconds`;
+    - Session Ticket Length `176 bytes`;
+    - opaque ticket bytes are bounds-validated but not retained in the model;
   - record 3 is classified as `encrypted_opaque`.
 - `tests/unit/PacketDetailsTests.cpp`
   - Packet Details Summary exposes three TLS layers in order:
     - `NewSessionTicket`;
     - `ChangeCipherSpec`;
     - `Encrypted Handshake Message`.
+  - `NewSessionTicket` Summary asserts:
+    - `Handshake Type: NewSessionTicket`;
+    - `Handshake Length: 182`;
+    - `Session Ticket Lifetime Hint: 7200 seconds`;
+    - `Session Ticket Length: 176 bytes`;
+    - no ticket-byte payload field.
   - the trailing encrypted record remains conservative and does not expose a handshake type.
 - `tests/unit/StreamQueryTests.cpp`
   - stream rows are:
     1. `TLS NewSessionTicket`, `191 bytes`;
     2. `TLS ChangeCipherSpec`, `6 bytes`;
     3. `TLS Encrypted Handshake Message`, `45 bytes`.
+  - selected `NewSessionTicket` Stream Item Summary asserts the same lifetime-hint and ticket-length fields as Packet Details Summary;
   - selected Stream Item Summary for row 3 mirrors the same conservative encrypted-handshake contract.
 
 #### Unique purpose
 
 - Exact mixed plaintext-plus-post-CCS fixture for TLS 1.2 record sequencing.
 
-#### Pending detailed fields
+#### Structured parser and Summary contract
 
-- `NewSessionTicket` lifetime hint and ticket bytes remain intentionally undocumented in current structured packet/stream presentation.
-- Those fields are tracked as future work and are not inferred from encrypted records in this pass.
+- This fixture now anchors bounded structured parsing for the TLS 1.2 `NewSessionTicket` body shape:
+  - `uint32 ticket_lifetime_hint`;
+  - `uint16 ticket_length`;
+  - `opaque ticket[ticket_length]`.
+- The parser validates that the declared ticket bytes fit exactly in the handshake body.
+- Opaque ticket bytes are validated for bounds but are not retained in the model and are not shown in Packet or Stream Summary.
+- The later post-CCS Handshake record remains encrypted/opaque and does not expose fabricated plaintext handshake messages or `NewSessionTicket` fields.
+- This contract is specific to the TLS 1.2 fixture shape here.
+- TLS 1.3 `NewSessionTicket` uses a different body format and remains deferred.
 
 ### tls_1_2_server_hello_4.pcap
 

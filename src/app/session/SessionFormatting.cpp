@@ -4015,6 +4015,16 @@ void append_tls_handshake_fields(
         if (const auto extensions = build_tls_extensions_group(hello.extensions); extensions.has_value()) {
             children.push_back(*extensions);
         }
+    } else if (handshake.new_session_ticket.has_value()) {
+        const auto& new_session_ticket = *handshake.new_session_ticket;
+        fields.push_back(make_summary_field(
+            "Session Ticket Lifetime Hint",
+            std::to_string(new_session_ticket.ticket_lifetime_hint_seconds) + " seconds"
+        ));
+        fields.push_back(make_summary_field(
+            "Session Ticket Length",
+            format_byte_count(new_session_ticket.ticket_length)
+        ));
     }
 }
 
