@@ -3231,6 +3231,155 @@ std::string format_tls_collection_version_value(const std::uint16_t version) {
     return format_tls_version_value(version);
 }
 
+std::optional<std::string_view> lookup_tls_supported_group_name(const std::uint16_t group_id) {
+    switch (group_id) {
+    case 0x0017U:
+        return "secp256r1";
+    case 0x0018U:
+        return "secp384r1";
+    case 0x0019U:
+        return "secp521r1";
+    case 0x001DU:
+        return "x25519";
+    case 0x001EU:
+        return "x448";
+    case 0x11ECU:
+        return "X25519MLKEM768";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_tls_supported_group_value(const std::uint16_t group_id) {
+    if (is_tls_grease_value(group_id)) {
+        return "GREASE (" + format_hex_value(group_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_supported_group_name(group_id); name.has_value()) {
+        return std::string {*name} + " (" + format_hex_value(group_id, 4) + ")";
+    }
+    return "Unknown Group (" + format_hex_value(group_id, 4) + ")";
+}
+
+std::string format_tls_supported_group_preview_value(const std::uint16_t group_id) {
+    if (is_tls_grease_value(group_id)) {
+        return "GREASE (" + format_hex_value(group_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_supported_group_name(group_id); name.has_value()) {
+        return std::string {*name};
+    }
+    return "Unknown Group (" + format_hex_value(group_id, 4) + ")";
+}
+
+std::optional<std::string_view> lookup_tls_signature_scheme_name(const std::uint16_t scheme_id) {
+    switch (scheme_id) {
+    case 0x0201U:
+        return "rsa_pkcs1_sha1";
+    case 0x0401U:
+        return "rsa_pkcs1_sha256";
+    case 0x0501U:
+        return "rsa_pkcs1_sha384";
+    case 0x0601U:
+        return "rsa_pkcs1_sha512";
+    case 0x0403U:
+        return "ecdsa_secp256r1_sha256";
+    case 0x0503U:
+        return "ecdsa_secp384r1_sha384";
+    case 0x0603U:
+        return "ecdsa_secp521r1_sha512";
+    case 0x0804U:
+        return "rsa_pss_rsae_sha256";
+    case 0x0805U:
+        return "rsa_pss_rsae_sha384";
+    case 0x0806U:
+        return "rsa_pss_rsae_sha512";
+    case 0x0807U:
+        return "ed25519";
+    case 0x0808U:
+        return "ed448";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_tls_signature_scheme_value(const std::uint16_t scheme_id) {
+    if (is_tls_grease_value(scheme_id)) {
+        return "GREASE (" + format_hex_value(scheme_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_signature_scheme_name(scheme_id); name.has_value()) {
+        return std::string {*name} + " (" + format_hex_value(scheme_id, 4) + ")";
+    }
+    return "Unknown Signature Scheme (" + format_hex_value(scheme_id, 4) + ")";
+}
+
+std::string format_tls_signature_scheme_preview_value(const std::uint16_t scheme_id) {
+    if (is_tls_grease_value(scheme_id)) {
+        return "GREASE (" + format_hex_value(scheme_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_signature_scheme_name(scheme_id); name.has_value()) {
+        return std::string {*name};
+    }
+    return "Unknown Signature Scheme (" + format_hex_value(scheme_id, 4) + ")";
+}
+
+std::string format_tls_psk_key_exchange_mode_value(const std::uint8_t mode) {
+    switch (mode) {
+    case 0U:
+        return "psk_ke (0)";
+    case 1U:
+        return "psk_dhe_ke (1)";
+    default:
+        return "Unknown Mode (" + std::to_string(static_cast<unsigned>(mode)) + ")";
+    }
+}
+
+std::string format_tls_psk_key_exchange_mode_preview_value(const std::uint8_t mode) {
+    switch (mode) {
+    case 0U:
+        return "psk_ke";
+    case 1U:
+        return "psk_dhe_ke";
+    default:
+        return "Unknown Mode (" + std::to_string(static_cast<unsigned>(mode)) + ")";
+    }
+}
+
+std::string format_tls_status_request_type_value(const std::uint8_t status_type) {
+    switch (status_type) {
+    case 1U:
+        return "OCSP (1)";
+    case 2U:
+        return "OCSP Multi (2)";
+    default:
+        return "Unknown Status Type (" + std::to_string(static_cast<unsigned>(status_type)) + ")";
+    }
+}
+
+std::string format_tls_certificate_compression_algorithm_value(const std::uint16_t algorithm_id) {
+    switch (algorithm_id) {
+    case 1U:
+        return "zlib (1)";
+    case 2U:
+        return "brotli (2)";
+    case 3U:
+        return "zstd (3)";
+    default:
+        return "Unknown Algorithm (" + std::to_string(algorithm_id) + ")";
+    }
+}
+
+std::string format_tls_certificate_compression_algorithm_preview_value(const std::uint16_t algorithm_id) {
+    switch (algorithm_id) {
+    case 1U:
+        return "zlib";
+    case 2U:
+        return "brotli";
+    case 3U:
+        return "zstd";
+    default:
+        return "Unknown Algorithm (" + std::to_string(algorithm_id) + ")";
+    }
+}
+
 std::string format_tls_record_type_value(
     const TlsRecordContentTypeKind kind,
     const std::optional<std::uint8_t> content_type
@@ -3487,6 +3636,35 @@ PacketSummaryLayer build_tls_scalar_collection_group(
     };
 }
 
+std::optional<std::size_t> select_tls_key_share_preview_entry_index(const TlsExtensionModel& extension) {
+    if (extension.key_share_entries.empty()) {
+        return std::nullopt;
+    }
+
+    for (std::size_t index = 0U; index < extension.key_share_entries.size(); ++index) {
+        if (!is_tls_grease_value(extension.key_share_entries[index].group_id)) {
+            return index;
+        }
+    }
+
+    return 0U;
+}
+
+PacketSummaryLayer build_tls_key_share_entry_layer(const TlsKeyShareEntryModel& entry) {
+    return PacketSummaryLayer {
+        .id = "tls_key_share_entry",
+        .title = make_tls_indexed_title(
+            entry.order_index,
+            format_tls_supported_group_value(entry.group_id) + ", " + format_byte_count(entry.key_exchange_length)
+        ),
+        .fields = {
+            make_summary_field("Group", format_tls_supported_group_value(entry.group_id)),
+            make_summary_field("Key Exchange Length", format_byte_count(entry.key_exchange_length)),
+        },
+        .expanded_by_default = false,
+    };
+}
+
 std::optional<PacketSummaryLayer> build_tls_cipher_suites_group(const TlsClientHelloModel& hello) {
     if (hello.cipher_suites.empty()) {
         return std::nullopt;
@@ -3524,6 +3702,9 @@ std::optional<PacketSummaryLayer> build_tls_compression_methods_group(const TlsC
 }
 
 std::optional<std::string> build_tls_extension_preview(const TlsExtensionModel& extension) {
+    if (extension.structured_parse_status != TlsStructuredParseStatus::parsed) {
+        return std::nullopt;
+    }
     if (!extension.server_names.empty()) {
         return join_tls_extension_preview_texts(extension.server_names, 2U);
     }
@@ -3542,16 +3723,132 @@ std::optional<std::string> build_tls_extension_preview(const TlsExtensionModel& 
         }
         return join_tls_extension_preview_texts(preview_values, 3U);
     }
+    if (!extension.supported_group_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.supported_group_ids.size());
+        for (const auto group_id : extension.supported_group_ids) {
+            preview_values.push_back(format_tls_supported_group_preview_value(group_id));
+        }
+        return join_tls_extension_preview_texts(preview_values, 3U);
+    }
+    if (!extension.signature_scheme_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.signature_scheme_ids.size());
+        for (const auto scheme_id : extension.signature_scheme_ids) {
+            preview_values.push_back(format_tls_signature_scheme_preview_value(scheme_id));
+        }
+        return join_tls_extension_preview_texts(preview_values, 2U);
+    }
+    if (!extension.key_share_entries.empty()) {
+        const auto preview_index = select_tls_key_share_preview_entry_index(extension);
+        if (!preview_index.has_value()) {
+            return std::nullopt;
+        }
+        const auto& entry = extension.key_share_entries[*preview_index];
+        auto preview = format_tls_supported_group_preview_value(entry.group_id) +
+            ", " + format_byte_count(entry.key_exchange_length);
+        if (extension.key_share_entries.size() > 1U) {
+            preview += ", ...";
+        }
+        return preview;
+    }
+    if (!extension.psk_key_exchange_mode_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.psk_key_exchange_mode_ids.size());
+        for (const auto mode : extension.psk_key_exchange_mode_ids) {
+            preview_values.push_back(format_tls_psk_key_exchange_mode_preview_value(mode));
+        }
+        return join_tls_extension_preview_texts(preview_values, 2U);
+    }
+    if (extension.status_request.has_value()) {
+        return format_tls_status_request_type_value(extension.status_request->status_type);
+    }
+    if (!extension.certificate_compression_algorithm_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.certificate_compression_algorithm_ids.size());
+        for (const auto algorithm_id : extension.certificate_compression_algorithm_ids) {
+            preview_values.push_back(format_tls_certificate_compression_algorithm_preview_value(algorithm_id));
+        }
+        return join_tls_extension_preview_texts(preview_values, 2U);
+    }
+    if (extension.padding_length.has_value()) {
+        return format_byte_count(*extension.padding_length);
+    }
     return std::nullopt;
 }
 
 void append_tls_extension_detail_fields(
     std::vector<PacketSummaryField>& fields,
+    std::vector<PacketSummaryLayer>& children,
     const TlsExtensionModel& extension
 ) {
+    if (extension.structured_parse_status == TlsStructuredParseStatus::malformed) {
+        fields.push_back(make_summary_field("Structured Details", "Malformed"));
+        return;
+    }
+
+    if (extension.structured_parse_status == TlsStructuredParseStatus::not_attempted) {
+        if (extension.known_name.has_value() && *extension.known_name == "key_share") {
+            fields.push_back(make_summary_field("Structured Details", "Not decoded"));
+        }
+        return;
+    }
+
     append_tls_named_value_fields(fields, "Server Name", extension.server_names);
     append_tls_named_value_fields(fields, "ALPN", extension.alpn_protocols);
     append_tls_named_value_fields(fields, "Version", format_tls_supported_version_values(extension.supported_versions));
+
+    std::vector<std::string> supported_group_values {};
+    supported_group_values.reserve(extension.supported_group_ids.size());
+    for (const auto group_id : extension.supported_group_ids) {
+        supported_group_values.push_back(format_tls_supported_group_value(group_id));
+    }
+    append_tls_named_value_fields(fields, "Group", supported_group_values);
+
+    std::vector<std::string> signature_scheme_values {};
+    signature_scheme_values.reserve(extension.signature_scheme_ids.size());
+    for (const auto scheme_id : extension.signature_scheme_ids) {
+        signature_scheme_values.push_back(format_tls_signature_scheme_value(scheme_id));
+    }
+    append_tls_named_value_fields(fields, "Signature Scheme", signature_scheme_values);
+
+    std::vector<std::string> psk_mode_values {};
+    psk_mode_values.reserve(extension.psk_key_exchange_mode_ids.size());
+    for (const auto mode : extension.psk_key_exchange_mode_ids) {
+        psk_mode_values.push_back(format_tls_psk_key_exchange_mode_value(mode));
+    }
+    append_tls_named_value_fields(fields, "Mode", psk_mode_values);
+
+    if (extension.status_request.has_value()) {
+        fields.push_back(make_summary_field(
+            "Status Type",
+            format_tls_status_request_type_value(extension.status_request->status_type)
+        ));
+        fields.push_back(make_summary_field(
+            "Responder ID List Length",
+            std::to_string(extension.status_request->responder_id_list_length)
+        ));
+        fields.push_back(make_summary_field(
+            "Request Extensions Length",
+            std::to_string(extension.status_request->request_extensions_length)
+        ));
+    }
+
+    std::vector<std::string> compression_algorithm_values {};
+    compression_algorithm_values.reserve(extension.certificate_compression_algorithm_ids.size());
+    for (const auto algorithm_id : extension.certificate_compression_algorithm_ids) {
+        compression_algorithm_values.push_back(format_tls_certificate_compression_algorithm_value(algorithm_id));
+    }
+    append_tls_named_value_fields(fields, "Algorithm", compression_algorithm_values);
+
+    if (extension.padding_length.has_value()) {
+        fields.push_back(make_summary_field("Padding Length", format_byte_count(*extension.padding_length)));
+    }
+
+    children.reserve(children.size() + extension.key_share_entries.size());
+    for (const auto& entry : extension.key_share_entries) {
+        children.push_back(build_tls_key_share_entry_layer(entry));
+    }
 }
 
 std::optional<PacketSummaryLayer> build_tls_extensions_group(const std::vector<TlsExtensionModel>& extensions) {
@@ -3567,12 +3864,14 @@ std::optional<PacketSummaryLayer> build_tls_extensions_group(const std::vector<T
             make_summary_field("Type", format_tls_extension_type_value(extension.type)),
             make_summary_field("Length", std::to_string(extension.declared_length)),
         };
-        append_tls_extension_detail_fields(fields, extension);
+        std::vector<PacketSummaryLayer> extension_children {};
+        append_tls_extension_detail_fields(fields, extension_children, extension);
 
         children.push_back(PacketSummaryLayer {
             .id = "tls_extension",
             .title = build_tls_extension_title(extension, index, build_tls_extension_preview(extension)),
             .fields = std::move(fields),
+            .children = std::move(extension_children),
             .expanded_by_default = false,
         });
     }

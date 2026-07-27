@@ -24,6 +24,87 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
 }
 
+void append_be16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+std::vector<std::uint8_t> make_zero_filled(const std::size_t count) {
+    return std::vector<std::uint8_t>(count, 0x00U);
+}
+
+void append_extension(
+    std::vector<std::uint8_t>& bytes,
+    const std::uint16_t extension_type,
+    const std::vector<std::uint8_t>& body
+) {
+    append_be16(bytes, extension_type);
+    append_be16(bytes, static_cast<std::uint16_t>(body.size()));
+    bytes.insert(bytes.end(), body.begin(), body.end());
+}
+
+std::vector<std::uint8_t> make_tls_record(
+    const std::uint8_t content_type,
+    const std::uint16_t version,
+    const std::vector<std::uint8_t>& body
+) {
+    std::vector<std::uint8_t> record {};
+    record.push_back(content_type);
+    append_be16(record, version);
+    append_be16(record, static_cast<std::uint16_t>(body.size()));
+    record.insert(record.end(), body.begin(), body.end());
+    return record;
+}
+
+std::vector<std::uint8_t> make_tls_handshake_record(
+    const std::uint8_t handshake_type,
+    const std::vector<std::uint8_t>& body
+) {
+    std::vector<std::uint8_t> handshake {};
+    handshake.push_back(handshake_type);
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+    return make_tls_record(0x16U, 0x0303U, handshake);
+}
+
+std::vector<std::uint8_t> make_minimal_client_hello_body_with_extensions(
+    const std::vector<std::uint8_t>& extensions
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    const auto random = make_zero_filled(32U);
+    body.insert(body.end(), random.begin(), random.end());
+    body.push_back(0x00U);
+    append_be16(body, 0x0002U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x01U);
+    body.push_back(0x00U);
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_minimal_server_hello_body_with_extensions(
+    const std::vector<std::uint8_t>& extensions
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    const auto random = make_zero_filled(32U);
+    body.insert(body.end(), random.begin(), random.end());
+    body.push_back(0x00U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x00U);
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+    return body;
+}
+
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
     PFL_REQUIRE(packet.has_value());
@@ -740,20 +821,20 @@ void run_packet_details_tests() {
             "[1] server_name (0x0000), 18 bytes - auth.split.io",
             "[2] extended_master_secret (0x0017), 0 bytes",
             "[3] renegotiation_info (0xff01), 1 byte",
-            "[4] supported_groups (0x000a), 10 bytes",
+            "[4] supported_groups (0x000a), 10 bytes - GREASE (0x5a5a), x25519, secp256r1, ...",
             "[5] ec_point_formats (0x000b), 2 bytes",
             "[6] session_ticket (0x0023), 138 bytes",
             "[7] application_layer_protocol_negotiation (0x0010), 14 bytes - h2, http/1.1",
-            "[8] status_request (0x0005), 5 bytes",
-            "[9] signature_algorithms (0x000d), 18 bytes",
+            "[8] status_request (0x0005), 5 bytes - OCSP (1)",
+            "[9] signature_algorithms (0x000d), 18 bytes - ecdsa_secp256r1_sha256, rsa_pss_rsae_sha256, ...",
             "[10] signed_certificate_timestamp (0x0012), 0 bytes",
-            "[11] key_share (0x0033), 43 bytes",
-            "[12] psk_key_exchange_modes (0x002d), 2 bytes",
+            "[11] key_share (0x0033), 43 bytes - x25519, 32 bytes, ...",
+            "[12] psk_key_exchange_modes (0x002d), 2 bytes - psk_dhe_ke",
             "[13] supported_versions (0x002b), 7 bytes - GREASE, TLS 1.3 (0x0304), TLS 1.2 (0x0303)",
-            "[14] Unknown Extension (0x001b), 3 bytes",
+            "[14] compress_certificate (0x001b), 3 bytes - brotli",
             "[15] Unknown Extension (0x4469), 5 bytes",
             "[16] GREASE (0x9a9a), 1 byte",
-            "[17] padding (0x0015), 64 bytes",
+            "[17] padding (0x0015), 64 bytes - 64 bytes",
         });
         PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Type") == "64250 (0xfafa)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Length") == "0");
@@ -765,11 +846,37 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Server Name [0]") == "auth.split.io");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "ALPN [0]") == "h2");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "ALPN [1]") == "http/1.1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [0]") == "GREASE (0x5a5a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [1]") == "x25519 (0x001d)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [2]") == "secp256r1 (0x0017)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [3]") == "secp384r1 (0x0018)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Status Type") == "OCSP (1)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Responder ID List Length") == "0");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Request Extensions Length") == "0");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [0]") == "ecdsa_secp256r1_sha256 (0x0403)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [1]") == "rsa_pss_rsae_sha256 (0x0804)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [2]") == "rsa_pkcs1_sha256 (0x0401)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [3]") == "ecdsa_secp384r1_sha384 (0x0503)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [4]") == "rsa_pss_rsae_sha384 (0x0805)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [5]") == "rsa_pkcs1_sha384 (0x0501)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [6]") == "rsa_pss_rsae_sha512 (0x0806)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[9], "Signature Scheme [7]") == "rsa_pkcs1_sha512 (0x0601)");
+        const auto* key_share_entry0 = require_summary_child(extensions_group->children[11], "tls_key_share_entry", 0U);
+        const auto* key_share_entry1 = require_summary_child(extensions_group->children[11], "tls_key_share_entry", 1U);
+        PFL_EXPECT(key_share_entry0->title == "[0] GREASE (0x5a5a), 1 byte");
+        PFL_EXPECT(key_share_entry1->title == "[1] x25519 (0x001d), 32 bytes");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry0, "Group") == "GREASE (0x5a5a)");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry0, "Key Exchange Length") == "1 byte");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry1, "Group") == "x25519 (0x001d)");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry1, "Key Exchange Length") == "32 bytes");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Mode [0]") == "psk_dhe_ke (1)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Version [0]") == "GREASE (0x5a5a)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Version [1]") == "TLS 1.3 (0x0304)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Version [2]") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[14], "Algorithm [0]") == "brotli (2)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[16], "Type") == "39578 (0x9a9a)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[16], "Length") == "1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[17], "Padding Length") == "64 bytes");
     }
 
     {
@@ -857,18 +964,18 @@ void run_packet_details_tests() {
             "[1] server_name (0x0000), 24 bytes - p101-fmf.icloud.com",
             "[2] extended_master_secret (0x0017), 0 bytes",
             "[3] renegotiation_info (0xff01), 1 byte",
-            "[4] supported_groups (0x000a), 12 bytes",
+            "[4] supported_groups (0x000a), 12 bytes - GREASE (0x4a4a), x25519, secp256r1, ...",
             "[5] ec_point_formats (0x000b), 2 bytes",
             "[6] application_layer_protocol_negotiation (0x0010), 14 bytes - h2, http/1.1",
-            "[7] status_request (0x0005), 5 bytes",
-            "[8] signature_algorithms (0x000d), 22 bytes",
+            "[7] status_request (0x0005), 5 bytes - OCSP (1)",
+            "[8] signature_algorithms (0x000d), 22 bytes - ecdsa_secp256r1_sha256, rsa_pss_rsae_sha256, ...",
             "[9] signed_certificate_timestamp (0x0012), 0 bytes",
-            "[10] key_share (0x0033), 43 bytes",
-            "[11] psk_key_exchange_modes (0x002d), 2 bytes",
+            "[10] key_share (0x0033), 43 bytes - x25519, 32 bytes, ...",
+            "[11] psk_key_exchange_modes (0x002d), 2 bytes - psk_dhe_ke",
             "[12] supported_versions (0x002b), 11 bytes - GREASE, TLS 1.3 (0x0304), TLS 1.2 (0x0303), ...",
-            "[13] Unknown Extension (0x001b), 3 bytes",
+            "[13] compress_certificate (0x001b), 3 bytes - zlib",
             "[14] GREASE (0x0a0a), 1 byte",
-            "[15] padding (0x0015), 189 bytes",
+            "[15] padding (0x0015), 189 bytes - 189 bytes",
         });
         PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Type") == "39578 (0x9a9a)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Length") == "0");
@@ -880,13 +987,42 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Server Name [0]") == "p101-fmf.icloud.com");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[6], "ALPN [0]") == "h2");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[6], "ALPN [1]") == "http/1.1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [0]") == "GREASE (0x4a4a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [1]") == "x25519 (0x001d)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [2]") == "secp256r1 (0x0017)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [3]") == "secp384r1 (0x0018)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[4], "Group [4]") == "secp521r1 (0x0019)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "Status Type") == "OCSP (1)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "Responder ID List Length") == "0");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "Request Extensions Length") == "0");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [0]") == "ecdsa_secp256r1_sha256 (0x0403)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [1]") == "rsa_pss_rsae_sha256 (0x0804)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [2]") == "rsa_pkcs1_sha256 (0x0401)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [3]") == "ecdsa_secp384r1_sha384 (0x0503)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [4]") == "rsa_pss_rsae_sha384 (0x0805)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [5]") == "rsa_pss_rsae_sha384 (0x0805)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [6]") == "rsa_pkcs1_sha384 (0x0501)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [7]") == "rsa_pss_rsae_sha512 (0x0806)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [8]") == "rsa_pkcs1_sha512 (0x0601)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[8], "Signature Scheme [9]") == "rsa_pkcs1_sha1 (0x0201)");
+        const auto* key_share_entry0 = require_summary_child(extensions_group->children[10], "tls_key_share_entry", 0U);
+        const auto* key_share_entry1 = require_summary_child(extensions_group->children[10], "tls_key_share_entry", 1U);
+        PFL_EXPECT(key_share_entry0->title == "[0] GREASE (0x4a4a), 1 byte");
+        PFL_EXPECT(key_share_entry1->title == "[1] x25519 (0x001d), 32 bytes");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry0, "Group") == "GREASE (0x4a4a)");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry0, "Key Exchange Length") == "1 byte");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry1, "Group") == "x25519 (0x001d)");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry1, "Key Exchange Length") == "32 bytes");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[11], "Mode [0]") == "psk_dhe_ke (1)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [0]") == "GREASE (0x3a3a)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [1]") == "TLS 1.3 (0x0304)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [2]") == "TLS 1.2 (0x0303)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [3]") == "TLS 1.1 (0x0302)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [4]") == "TLS 1.0 (0x0301)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Algorithm [0]") == "zlib (1)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[14], "Type") == "2570 (0x0a0a)");
         PFL_EXPECT(require_summary_field_value(extensions_group->children[14], "Length") == "1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[15], "Padding Length") == "189 bytes");
     }
 
     {
@@ -1012,13 +1148,17 @@ void run_packet_details_tests() {
         const auto* server_hello_extensions_group = require_summary_child(server_hello_layer, "tls_extensions");
         PFL_EXPECT(server_hello_extensions_group->title == "Extensions (2)");
         expect_summary_child_titles(*server_hello_extensions_group, {
-            "[0] key_share (0x0033), 1124 bytes",
+            "[0] key_share (0x0033), 1124 bytes - X25519MLKEM768, 1120 bytes",
             "[1] supported_versions (0x002b), 2 bytes - TLS 1.3 (0x0304)",
         });
         PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[0], "Type") == "51 (0x0033)");
         PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[0], "Length") == "1124");
         PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[1], "Type") == "43 (0x002b)");
         PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[1], "Length") == "2");
+        const auto* key_share_entry = require_summary_child(server_hello_extensions_group->children[0], "tls_key_share_entry");
+        PFL_EXPECT(key_share_entry->title == "[0] X25519MLKEM768 (0x11ec), 1120 bytes");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry, "Group") == "X25519MLKEM768 (0x11ec)");
+        PFL_EXPECT(require_summary_field_value(*key_share_entry, "Key Exchange Length") == "1120 bytes");
         PFL_EXPECT(find_summary_child(server_hello_extensions_group->children[1], "tls_supported_versions") == nullptr);
         PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[1], "Version [0]") == "TLS 1.3 (0x0304)");
 
@@ -1046,6 +1186,38 @@ void run_packet_details_tests() {
         PFL_EXPECT(partial_handshake_type == nullptr);
         PFL_EXPECT(partial_selected_tls_version == nullptr);
         PFL_EXPECT(partial_selected_cipher_suite == nullptr);
+    }
+
+    {
+        std::vector<std::uint8_t> malformed_extensions {};
+        append_extension(malformed_extensions, 0x000AU, {0x00U, 0x03U, 0x00U, 0x1DU, 0x00U});
+        const auto malformed_summary_layers = session_detail::build_tls_summary_layers(
+            make_tls_handshake_record(0x01U, make_minimal_client_hello_body_with_extensions(malformed_extensions))
+        );
+        const auto* malformed_tls_layer = find_summary_layer(malformed_summary_layers, "tls");
+        PFL_REQUIRE(malformed_tls_layer != nullptr);
+        const auto* malformed_extensions_group = require_summary_child(*malformed_tls_layer, "tls_extensions");
+        PFL_REQUIRE(malformed_extensions_group->children.size() == 1U);
+        PFL_EXPECT(malformed_extensions_group->children[0].title == "[0] supported_groups (0x000a), 5 bytes");
+        PFL_EXPECT(require_summary_field_value(malformed_extensions_group->children[0], "Type") == "10 (0x000a)");
+        PFL_EXPECT(require_summary_field_value(malformed_extensions_group->children[0], "Length") == "5");
+        PFL_EXPECT(require_summary_field_value(malformed_extensions_group->children[0], "Structured Details") == "Malformed");
+        PFL_EXPECT(find_summary_field(malformed_extensions_group->children[0], "Group [0]") == nullptr);
+        PFL_EXPECT(find_summary_child(malformed_extensions_group->children[0], "tls_key_share_entry") == nullptr);
+
+        std::vector<std::uint8_t> hrr_extensions {};
+        append_extension(hrr_extensions, 0x0033U, {0x00U, 0x1DU});
+        const auto hrr_summary_layers = session_detail::build_tls_summary_layers(
+            make_tls_handshake_record(0x02U, make_minimal_server_hello_body_with_extensions(hrr_extensions))
+        );
+        const auto* hrr_tls_layer = find_summary_layer(hrr_summary_layers, "tls");
+        PFL_REQUIRE(hrr_tls_layer != nullptr);
+        const auto* hrr_extensions_group = require_summary_child(*hrr_tls_layer, "tls_extensions");
+        PFL_REQUIRE(hrr_extensions_group->children.size() == 1U);
+        PFL_EXPECT(hrr_extensions_group->children[0].title == "[0] key_share (0x0033), 2 bytes");
+        PFL_EXPECT(require_summary_field_value(hrr_extensions_group->children[0], "Structured Details") == "Not decoded");
+        PFL_EXPECT(find_summary_child(hrr_extensions_group->children[0], "tls_key_share_entry") == nullptr);
+        PFL_EXPECT(find_summary_field(hrr_extensions_group->children[0], "Group [0]") == nullptr);
     }
 
     {

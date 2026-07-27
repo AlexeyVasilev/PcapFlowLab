@@ -479,11 +479,12 @@ Current additional TLS fields available only in Protocol:
 
 - No additional extension-specific structures are required beyond the ordered extension inventory already captured above.
 
-#### Summary presentation pending
+#### Structured Summary contract
 
-- Packet Details Summary and Stream Item Summary now expose the ordered extension inventory through the shared mapping.
+- Packet Details Summary and Stream Item Summary use one shared structured TLS Summary mapping.
+- Packet and Stream both expose the ordered extension inventory through that shared mapping with semantically identical rows.
 - Raw Session ID bytes are still carried as a scalar field, not as a separate structured child group.
-- Extension-specific nested groups beyond the currently modeled subset are still pending.
+- No extension-local scalar collections are modeled for this fixture beyond the ordered extension inventory already listed above.
 
 #### Manual Wireshark verification required
 
@@ -812,11 +813,26 @@ Current additional TLS fields available only in Protocol:
   - supported-group entry `0x4a4a`;
   - key-share group `0x4a4a`.
 
-#### Summary presentation pending
+#### Structured Summary contract
 
-- Packet Details Summary and Stream Item Summary now expose ordered structured cipher-suite, compression-method, and extension collections through the shared mapping.
-- The parser/model now retain exact structured values for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`.
-- Summary projection still does not render all of those extension-local values as dedicated nested child groups in this pass.
+- Packet Details Summary and Stream Item Summary use one shared structured TLS Summary mapping.
+- Scalar extension collections render as direct indexed fields inside their owning extension:
+  - `Group [N]`;
+  - `Signature Scheme [N]`;
+  - `Mode [N]`;
+  - `Algorithm [N]`.
+- `status_request` renders direct scalar metadata fields:
+  - `Status Type`;
+  - `Responder ID List Length`;
+  - `Request Extensions Length`.
+- `padding` renders direct scalar field `Padding Length`.
+- `key_share` renders ordered structured child rows rather than flattened parallel field lists:
+  - `[0] GREASE (0x4a4a), 1 byte`;
+  - `[1] x25519 (0x001d), 32 bytes`.
+- Key-exchange bytes are intentionally neither retained nor shown in Summary.
+- Compact extension-title previews are shared between Packet and Stream for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`.
+- Malformed known extension bodies keep the normal extension row plus generic `Type` / `Length` metadata and a conservative `Structured Details: Malformed` diagnostic with no partial structured values.
+- Intentionally undecoded known forms may show `Structured Details: Not decoded`; this remains relevant for the deferred ServerHello two-byte HRR selected-group `key_share` form rather than normal parsed key-share entries in this fixture.
 
 #### Manual Wireshark verification required
 
@@ -1006,11 +1022,18 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 - `supported_versions`, extension type `43`, length `2`:
   - selected version `TLS 1.3 (0x0304)`.
 
-#### Summary presentation pending
+#### Structured Summary contract
 
-- Packet Details Summary and Stream Item Summary now expose the ordered extension inventory through the shared mapping.
-- The parser/model now retain the ServerHello `key_share` group ID / key-exchange length metadata and the `supported_versions` value.
+- Packet Details Summary and Stream Item Summary use one shared structured TLS Summary mapping.
+- `supported_versions` renders as direct indexed scalar field `Version [0] = TLS 1.3 (0x0304)`.
+- `key_share` renders one ordered structured child row with:
+  - `Group = X25519MLKEM768 (0x11ec)`;
+  - `Key Exchange Length = 1120 bytes`.
+- The key-share child title is bounded and semantically identical in Packet and Stream Summary:
+  - `[0] X25519MLKEM768 (0x11ec), 1120 bytes`.
+- Key-exchange bytes are intentionally neither retained nor shown in Summary.
 - Raw Session ID bytes remain a scalar field rather than a separate structured child group.
+- The deferred ServerHello two-byte HRR selected-group `key_share` form is not represented as a normal key-share entry.
 - No current fixture asserts the multiple-handshakes-in-one-record child-layer behavior.
 
 #### Manual Wireshark verification required
@@ -1279,11 +1302,26 @@ Current additional TLS fields available only in Protocol:
   - supported-group entry `0x5a5a`;
   - key-share group `0x5a5a`.
 
-#### Summary presentation pending
+#### Structured Summary contract
 
-- Packet Details Summary and Stream Item Summary now expose ordered structured cipher-suite, compression-method, and extension collections through the shared mapping.
-- The parser/model now retain exact structured values for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`.
-- Summary projection still does not render all of those extension-local values as dedicated nested child groups in this pass.
+- Packet Details Summary and Stream Item Summary use one shared structured TLS Summary mapping.
+- Scalar extension collections render as direct indexed fields inside their owning extension:
+  - `Group [N]`;
+  - `Signature Scheme [N]`;
+  - `Mode [N]`;
+  - `Algorithm [N]`.
+- `status_request` renders direct scalar metadata fields:
+  - `Status Type`;
+  - `Responder ID List Length`;
+  - `Request Extensions Length`.
+- `padding` renders direct scalar field `Padding Length`.
+- `key_share` renders ordered structured child rows rather than flattened parallel field lists:
+  - `[0] GREASE (0x5a5a), 1 byte`;
+  - `[1] x25519 (0x001d), 32 bytes`.
+- Key-exchange bytes are intentionally neither retained nor shown in Summary.
+- Compact extension-title previews are shared between Packet and Stream for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`.
+- Malformed known extension bodies keep the normal extension row plus generic `Type` / `Length` metadata and a conservative `Structured Details: Malformed` diagnostic with no partial structured values.
+- Intentionally undecoded known forms may show `Structured Details: Not decoded`; this remains relevant for the deferred ServerHello two-byte HRR selected-group `key_share` form rather than normal parsed key-share entries in this fixture.
 
 #### Manual Wireshark verification required
 
