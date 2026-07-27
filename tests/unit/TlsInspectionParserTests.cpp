@@ -83,6 +83,37 @@ void expect_supported_versions(
     PFL_EXPECT(actual == expected);
 }
 
+struct ExpectedTlsExtension {
+    std::uint16_t type {0U};
+    std::optional<std::string> known_name {};
+    std::size_t declared_length {0U};
+    std::vector<std::string> server_names {};
+    std::vector<std::string> alpn_protocols {};
+    std::vector<std::uint16_t> supported_versions {};
+};
+
+void expect_tls_extensions(
+    const std::vector<TlsExtensionModel>& actual,
+    const std::vector<ExpectedTlsExtension>& expected
+) {
+    PFL_EXPECT(actual.size() == expected.size());
+    if (actual.size() != expected.size()) {
+        return;
+    }
+
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        const auto& actual_extension = actual[index];
+        const auto& expected_extension = expected[index];
+        PFL_EXPECT(actual_extension.order_index == index);
+        PFL_EXPECT(actual_extension.type == expected_extension.type);
+        PFL_EXPECT(actual_extension.known_name == expected_extension.known_name);
+        PFL_EXPECT(actual_extension.declared_length == expected_extension.declared_length);
+        PFL_EXPECT(actual_extension.server_names == expected_extension.server_names);
+        PFL_EXPECT(actual_extension.alpn_protocols == expected_extension.alpn_protocols);
+        PFL_EXPECT(actual_extension.supported_versions == expected_extension.supported_versions);
+    }
+}
+
 }  // namespace
 
 void run_tls_inspection_parser_tests() {
@@ -94,6 +125,31 @@ void run_tls_inspection_parser_tests() {
         const auto result = parser.inspect(payload);
         const std::vector<std::string> expected_sni {"auth.split.io"};
         const std::vector<std::string> expected_alpn {"h2", "http/1.1"};
+        const std::vector<std::uint16_t> expected_cipher_suites {
+            0x8A8AU, 0x1301U, 0x1302U, 0x1303U, 0xC02BU, 0xC02FU, 0xC02CU, 0xC030U,
+            0xCCA9U, 0xCCA8U, 0xC013U, 0xC014U, 0x009CU, 0x009DU, 0x002FU, 0x0035U
+        };
+        const std::vector<std::uint8_t> expected_compression_methods {0x00U};
+        const std::vector<ExpectedTlsExtension> expected_extensions {
+            {.type = 0xFAFAU, .declared_length = 0U},
+            {.type = 0x0000U, .known_name = std::optional<std::string> {"server_name"}, .declared_length = 18U, .server_names = {"auth.split.io"}},
+            {.type = 0x0017U, .known_name = std::optional<std::string> {"extended_master_secret"}, .declared_length = 0U},
+            {.type = 0xFF01U, .known_name = std::optional<std::string> {"renegotiation_info"}, .declared_length = 1U},
+            {.type = 0x000AU, .known_name = std::optional<std::string> {"supported_groups"}, .declared_length = 10U},
+            {.type = 0x000BU, .known_name = std::optional<std::string> {"ec_point_formats"}, .declared_length = 2U},
+            {.type = 0x0023U, .known_name = std::optional<std::string> {"session_ticket"}, .declared_length = 138U},
+            {.type = 0x0010U, .known_name = std::optional<std::string> {"application_layer_protocol_negotiation"}, .declared_length = 14U, .alpn_protocols = {"h2", "http/1.1"}},
+            {.type = 0x0005U, .known_name = std::optional<std::string> {"status_request"}, .declared_length = 5U},
+            {.type = 0x000DU, .known_name = std::optional<std::string> {"signature_algorithms"}, .declared_length = 18U},
+            {.type = 0x0012U, .known_name = std::optional<std::string> {"signed_certificate_timestamp"}, .declared_length = 0U},
+            {.type = 0x0033U, .known_name = std::optional<std::string> {"key_share"}, .declared_length = 43U},
+            {.type = 0x002DU, .known_name = std::optional<std::string> {"psk_key_exchange_modes"}, .declared_length = 2U},
+            {.type = 0x002BU, .known_name = std::optional<std::string> {"supported_versions"}, .declared_length = 7U, .supported_versions = {0x5A5AU, 0x0304U, 0x0303U}},
+            {.type = 0x001BU, .declared_length = 3U},
+            {.type = 0x4469U, .declared_length = 5U},
+            {.type = 0x9A9AU, .declared_length = 1U},
+            {.type = 0x0015U, .known_name = std::optional<std::string> {"padding"}, .declared_length = 64U},
+        };
 
         PFL_EXPECT(result.total_input_bytes == 517U);
         PFL_EXPECT(result.consumed_bytes == 517U);
@@ -114,9 +170,9 @@ void run_tls_inspection_parser_tests() {
         PFL_REQUIRE(handshake.client_hello.has_value());
         PFL_EXPECT(handshake.client_hello->legacy_version == 0x0303U);
         PFL_EXPECT(handshake.client_hello->session_id.size() == 32U);
-        PFL_EXPECT(handshake.client_hello->cipher_suites.size() == 16U);
-        PFL_EXPECT(handshake.client_hello->compression_methods.size() == 1U);
-        PFL_EXPECT(handshake.client_hello->extensions.size() == 18U);
+        PFL_EXPECT(handshake.client_hello->cipher_suites == expected_cipher_suites);
+        PFL_EXPECT(handshake.client_hello->compression_methods == expected_compression_methods);
+        expect_tls_extensions(handshake.client_hello->extensions, expected_extensions);
         PFL_EXPECT(handshake.client_hello->sni_names == expected_sni);
         PFL_EXPECT(handshake.client_hello->alpn_protocols == expected_alpn);
         expect_supported_versions(
@@ -131,6 +187,30 @@ void run_tls_inspection_parser_tests() {
         const auto result = parser.inspect(payload);
         const std::vector<std::string> expected_sni {"p101-fmf.icloud.com"};
         const std::vector<std::string> expected_alpn {"h2", "http/1.1"};
+        const std::vector<std::uint16_t> expected_cipher_suites {
+            0x8A8AU, 0x1301U, 0x1302U, 0x1303U, 0xC02CU, 0xC02BU, 0xCCA9U, 0xC030U,
+            0xC02FU, 0xCCA8U, 0xC00AU, 0xC009U, 0xC014U, 0xC013U, 0x009DU, 0x009CU,
+            0x0035U, 0x002FU, 0xC008U, 0xC012U, 0x000AU
+        };
+        const std::vector<std::uint8_t> expected_compression_methods {0x00U};
+        const std::vector<ExpectedTlsExtension> expected_extensions {
+            {.type = 0x9A9AU, .declared_length = 0U},
+            {.type = 0x0000U, .known_name = std::optional<std::string> {"server_name"}, .declared_length = 24U, .server_names = {"p101-fmf.icloud.com"}},
+            {.type = 0x0017U, .known_name = std::optional<std::string> {"extended_master_secret"}, .declared_length = 0U},
+            {.type = 0xFF01U, .known_name = std::optional<std::string> {"renegotiation_info"}, .declared_length = 1U},
+            {.type = 0x000AU, .known_name = std::optional<std::string> {"supported_groups"}, .declared_length = 12U},
+            {.type = 0x000BU, .known_name = std::optional<std::string> {"ec_point_formats"}, .declared_length = 2U},
+            {.type = 0x0010U, .known_name = std::optional<std::string> {"application_layer_protocol_negotiation"}, .declared_length = 14U, .alpn_protocols = {"h2", "http/1.1"}},
+            {.type = 0x0005U, .known_name = std::optional<std::string> {"status_request"}, .declared_length = 5U},
+            {.type = 0x000DU, .known_name = std::optional<std::string> {"signature_algorithms"}, .declared_length = 22U},
+            {.type = 0x0012U, .known_name = std::optional<std::string> {"signed_certificate_timestamp"}, .declared_length = 0U},
+            {.type = 0x0033U, .known_name = std::optional<std::string> {"key_share"}, .declared_length = 43U},
+            {.type = 0x002DU, .known_name = std::optional<std::string> {"psk_key_exchange_modes"}, .declared_length = 2U},
+            {.type = 0x002BU, .known_name = std::optional<std::string> {"supported_versions"}, .declared_length = 11U, .supported_versions = {0x3A3AU, 0x0304U, 0x0303U, 0x0302U, 0x0301U}},
+            {.type = 0x001BU, .declared_length = 3U},
+            {.type = 0x0A0AU, .declared_length = 1U},
+            {.type = 0x0015U, .known_name = std::optional<std::string> {"padding"}, .declared_length = 189U},
+        };
 
         PFL_EXPECT(result.total_input_bytes == 517U);
         PFL_EXPECT(result.consumed_bytes == 517U);
@@ -147,9 +227,9 @@ void run_tls_inspection_parser_tests() {
         PFL_REQUIRE(handshake.client_hello.has_value());
         PFL_EXPECT(handshake.client_hello->legacy_version == 0x0303U);
         PFL_EXPECT(handshake.client_hello->session_id.size() == 32U);
-        PFL_EXPECT(handshake.client_hello->cipher_suites.size() == 21U);
-        PFL_EXPECT(handshake.client_hello->compression_methods.size() == 1U);
-        PFL_EXPECT(handshake.client_hello->extensions.size() == 16U);
+        PFL_EXPECT(handshake.client_hello->cipher_suites == expected_cipher_suites);
+        PFL_EXPECT(handshake.client_hello->compression_methods == expected_compression_methods);
+        expect_tls_extensions(handshake.client_hello->extensions, expected_extensions);
         PFL_EXPECT(handshake.client_hello->sni_names == expected_sni);
         PFL_EXPECT(handshake.client_hello->alpn_protocols == expected_alpn);
         expect_supported_versions(
@@ -162,6 +242,11 @@ void run_tls_inspection_parser_tests() {
         ScopedTestContext context {"fixture=parsing/tls/tls_1_2_server_hello_4.pcap"};
         const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_2_server_hello_4.pcap");
         const auto result = parser.inspect(payload);
+        const std::vector<ExpectedTlsExtension> expected_extensions {
+            {.type = 0x000BU, .known_name = std::optional<std::string> {"ec_point_formats"}, .declared_length = 2U},
+            {.type = 0xFF01U, .known_name = std::optional<std::string> {"renegotiation_info"}, .declared_length = 1U},
+            {.type = 0x0017U, .known_name = std::optional<std::string> {"extended_master_secret"}, .declared_length = 0U},
+        };
 
         PFL_EXPECT(result.total_input_bytes == 96U);
         PFL_EXPECT(result.consumed_bytes == 96U);
@@ -180,10 +265,7 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(handshake.server_hello->session_id.size() == 32U);
         PFL_EXPECT(handshake.server_hello->selected_cipher_suite == 0xC02FU);
         PFL_EXPECT(handshake.server_hello->compression_method == 0U);
-        PFL_EXPECT(handshake.server_hello->extensions.size() == 3U);
-        PFL_EXPECT(handshake.server_hello->extensions[0].known_name == std::optional<std::string> {"ec_point_formats"});
-        PFL_EXPECT(handshake.server_hello->extensions[1].known_name == std::optional<std::string> {"renegotiation_info"});
-        PFL_EXPECT(handshake.server_hello->extensions[2].known_name == std::optional<std::string> {"extended_master_secret"});
+        expect_tls_extensions(handshake.server_hello->extensions, expected_extensions);
         PFL_EXPECT(handshake.server_hello->selected_tls_version == 0x0303U);
     }
 
@@ -191,6 +273,10 @@ void run_tls_inspection_parser_tests() {
         ScopedTestContext context {"fixture=parsing/tls/tls_1_3_server_hello_6.pcap"};
         const auto payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_3_server_hello_6.pcap");
         const auto result = parser.inspect(payload);
+        const std::vector<ExpectedTlsExtension> expected_extensions {
+            {.type = 0x0033U, .known_name = std::optional<std::string> {"key_share"}, .declared_length = 1124U},
+            {.type = 0x002BU, .known_name = std::optional<std::string> {"supported_versions"}, .declared_length = 2U, .supported_versions = {0x0304U}},
+        };
 
         PFL_EXPECT(result.total_input_bytes == 1400U);
         PFL_EXPECT(result.consumed_bytes == 1400U);
@@ -213,9 +299,7 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(server_hello_handshake.server_hello->session_id.size() == 32U);
         PFL_EXPECT(server_hello_handshake.server_hello->selected_cipher_suite == 0x1301U);
         PFL_EXPECT(server_hello_handshake.server_hello->compression_method == 0U);
-        PFL_EXPECT(server_hello_handshake.server_hello->extensions.size() == 2U);
-        PFL_EXPECT(server_hello_handshake.server_hello->extensions[0].known_name == std::optional<std::string> {"key_share"});
-        PFL_EXPECT(server_hello_handshake.server_hello->extensions[1].known_name == std::optional<std::string> {"supported_versions"});
+        expect_tls_extensions(server_hello_handshake.server_hello->extensions, expected_extensions);
         PFL_EXPECT(server_hello_handshake.server_hello->selected_tls_version == 0x0304U);
 
         const auto& ccs_record = result.records[1];

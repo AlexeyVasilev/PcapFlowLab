@@ -329,7 +329,7 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
 
 #### Manually verified ground truth
 
-- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_1_2_server_hello_4_info.txt`
+- Source: `tmp/tls_inspection_1/wireshark_extended/wireshark_tls_1_2_server_hello_4_info_extended.txt`
 - Frame `1`, direction `B->A`.
 - TCP payload length: `96` bytes.
 - TLS record count in the TCP payload: `1`.
@@ -343,8 +343,12 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - Session ID Length: `32`;
   - Cipher Suite: `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)`;
   - Compression Method: `null (0)`;
+  - Compression Methods (wire order): `[null (0)]`;
   - Extension Count: `3`;
-  - Known Extensions: `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
+  - Ordered Extensions:
+    1. `ec_point_formats`, type `11`, length `2`;
+    2. `renegotiation_info`, type `65281`, length `1`;
+    3. `extended_master_secret`, type `23`, length `0`.
 - Several TLS records do not share this TCP payload.
 - No partial trailing record is present.
 
@@ -420,7 +424,10 @@ Current additional TLS fields available only in Protocol:
   - one complete `ServerHello`, handshake length `87`;
   - ServerHello Legacy Version `0x0303`;
   - session ID length `32`, selected cipher suite `0xc02f`, compression method `0`;
-  - ordered extensions `ec_point_formats`, `renegotiation_info`, `extended_master_secret`;
+  - ordered extensions exactly:
+    - `ec_point_formats`, type `11`, length `2`;
+    - `renegotiation_info`, type `65281`, length `1`;
+    - `extended_master_secret`, type `23`, length `0`;
   - Selected TLS Version `0x0303`.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary exposes a default-expanded TLS `ServerHello` layer;
@@ -452,10 +459,13 @@ Current additional TLS fields available only in Protocol:
 - Small real-PCAP TLS 1.2 ServerHello artifact with manually verified packet-level baseline.
 - Current contrast case for `Selected TLS Version` equal to the handshake legacy version.
 
-#### Missing assertions
+#### Manually verified, parser support pending
 
-- Direction text in the PFL export should be normalized against the manually verified server-to-client packet direction before turning it into a future contract.
-- Packet Details Summary still does not expose the raw Session ID bytes or extension-name inventory as structured lists.
+- No additional extension-specific structures are required beyond the ordered extension inventory already captured above.
+
+#### Summary presentation pending
+
+- Packet Details Summary still does not expose the raw Session ID bytes or ordered extension inventory as structured child rows.
 - Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
 #### Manual Wireshark verification required
@@ -529,7 +539,7 @@ Current additional TLS fields available only in Protocol:
 
 #### Manually verified ground truth
 
-- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_1_3_client_hello_5.pcap_info.txt`
+- Source: `tmp/tls_inspection_1/wireshark_extended/wireshark_tls_1_3_client_hello_5.pcap_info_extended.txt`
 - Frame `1`, direction `A->B`.
 - TCP payload length: `517` bytes.
 - TLS record count in the TCP payload: `1`.
@@ -543,13 +553,52 @@ Current additional TLS fields available only in Protocol:
   - Session ID Length: `32`;
   - Cipher Suites Length: `42`;
   - Cipher Suites Count: `21`;
+  - Cipher Suites (wire order):
+    1. `Reserved (GREASE) (0x8a8a)`;
+    2. `TLS_AES_128_GCM_SHA256 (0x1301)`;
+    3. `TLS_AES_256_GCM_SHA384 (0x1302)`;
+    4. `TLS_CHACHA20_POLY1305_SHA256 (0x1303)`;
+    5. `TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)`;
+    6. `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)`;
+    7. `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)`;
+    8. `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)`;
+    9. `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)`;
+    10. `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)`;
+    11. `TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xc00a)`;
+    12. `TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)`;
+    13. `TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)`;
+    14. `TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)`;
+    15. `TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)`;
+    16. `TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)`;
+    17. `TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)`;
+    18. `TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)`;
+    19. `TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA (0xc008)`;
+    20. `TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA (0xc012)`;
+    21. `TLS_RSA_WITH_3DES_EDE_CBC_SHA (0x000a)`.
   - Compression Methods Length: `1`;
   - Compression Methods Count: `1`;
+  - Compression Methods (wire order): `[null (0)]`;
   - Extension Count: `16`;
-  - Known Extensions: `Reserved (GREASE)`, `server_name`, `extended_master_secret`, `renegotiation_info`, `supported_groups`, `ec_point_formats`, `application_layer_protocol_negotiation`, `status_request`, `signature_algorithms`, `signed_certificate_timestamp`, `key_share`, `psk_key_exchange_modes`, `supported_versions`, `compress_certificate`, `Reserved (GREASE)`, `padding`;
-  - SNI: `p101-fmf.icloud.com`;
-  - ALPN: present in Wireshark as `application_layer_protocol_negotiation`;
-  - Supported TLS Versions: `TLS 1.3`, `TLS 1.2`, `TLS 1.1`, `TLS 1.0`.
+  - Ordered Extensions:
+    1. `Reserved (GREASE)`, type `39578 (0x9a9a)`, length `0`;
+    2. `server_name`, type `0`, length `24`;
+    3. `extended_master_secret`, type `23`, length `0`;
+    4. `renegotiation_info`, type `65281`, length `1`;
+    5. `supported_groups`, type `10`, length `12`;
+    6. `ec_point_formats`, type `11`, length `2`;
+    7. `application_layer_protocol_negotiation`, type `16`, length `14`;
+    8. `status_request`, type `5`, length `5`;
+    9. `signature_algorithms`, type `13`, length `22`;
+    10. `signed_certificate_timestamp`, type `18`, length `0`;
+    11. `key_share`, type `51`, length `43`;
+    12. `psk_key_exchange_modes`, type `45`, length `2`;
+    13. `supported_versions`, type `43`, length `11`;
+    14. `compress_certificate`, type `27`, length `3`;
+    15. `Reserved (GREASE)`, type `2570 (0x0a0a)`, length `1`;
+    16. `padding`, type `21`, length `189`.
+  - SNI (wire order): `p101-fmf.icloud.com`;
+  - ALPN (wire order): `h2`, `http/1.1`;
+  - Supported TLS Versions (wire order): `Reserved (GREASE) (0x3a3a)`, `TLS 1.3 (0x0304)`, `TLS 1.2 (0x0303)`, `TLS 1.1 (0x0302)`, `TLS 1.0 (0x0301)`.
 - Several TLS records do not share this TCP payload.
 - No partial trailing record is present.
 
@@ -633,7 +682,13 @@ Current additional TLS fields available only in Protocol:
   - Record Legacy Version `0x0301`, record payload length `512`;
   - one complete `ClientHello`, handshake length `508`;
   - ClientHello Legacy Version `0x0303`;
-  - session ID length `32`, cipher-suite count `21`, compression-method count `1`, extension count `16`;
+  - exact ordered cipher-suite vector, including GREASE `0x8a8a`;
+  - exact ordered compression-method vector `[0x00]`;
+  - exact ordered extension metadata:
+    - type;
+    - known name when currently modeled;
+    - declared length;
+    - wire order;
   - SNI `p101-fmf.icloud.com`;
   - ALPN `h2`, `http/1.1`;
   - supported versions retain wire order `0x3a3a`, `0x0304`, `0x0303`, `0x0302`, `0x0301`.
@@ -671,9 +726,46 @@ Current additional TLS fields available only in Protocol:
 - Current import/service-hint TLS ClientHello coverage.
 - Manually characterized contrast case to `tls_client_hello_1.pcap` with a larger cipher-suite set and wider supported-version list.
 
-#### Missing assertions
+#### Manually verified, parser support pending
 
-- Exact extension-name inventory is not asserted yet.
+- `supported_groups`, extension type `10`, length `12`:
+  - `Reserved (GREASE) (0x4a4a)`;
+  - `x25519 (0x001d)`;
+  - `secp256r1 (0x0017)`;
+  - `secp384r1 (0x0018)`;
+  - `secp521r1 (0x0019)`.
+- `signature_algorithms`, extension type `13`, length `22`:
+  - `ecdsa_secp256r1_sha256 (0x0403)`;
+  - `rsa_pss_rsae_sha256 (0x0804)`;
+  - `rsa_pkcs1_sha256 (0x0401)`;
+  - `ecdsa_secp384r1_sha384 (0x0503)`;
+  - `rsa_pss_rsae_sha384 (0x0805)`;
+  - `rsa_pss_rsae_sha384 (0x0805)`;
+  - `rsa_pkcs1_sha384 (0x0501)`;
+  - `rsa_pss_rsae_sha512 (0x0806)`;
+  - `rsa_pkcs1_sha512 (0x0601)`;
+  - `rsa_pkcs1_sha1 (0x0201)`.
+- `key_share`, extension type `51`, length `43`:
+  - entry 0: `Reserved (GREASE)`, group `19018 (0x4a4a)`, key-exchange length `1`;
+  - entry 1: `x25519`, group `29 (0x001d)`, key-exchange length `32`.
+- `psk_key_exchange_modes`, extension type `45`, length `2`:
+  - `psk_dhe_ke (1)`.
+- `status_request`, extension type `5`, length `5`:
+  - certificate status type `OCSP (1)`;
+  - responder ID list length `0`;
+  - request extensions length `0`.
+- `compress_certificate`, extension type `27`, length `3`:
+  - algorithm `zlib (1)`.
+- `padding`, extension type `21`, length `189`.
+- Exact GREASE values and positions are part of the manual fixture contract:
+  - cipher suite `0x8a8a`;
+  - extension types `0x9a9a` and `0x0a0a`;
+  - supported-version entry `0x3a3a`;
+  - supported-group entry `0x4a4a`;
+  - key-share group `0x4a4a`.
+
+#### Summary presentation pending
+
 - Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
 - Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
@@ -690,7 +782,7 @@ Current additional TLS fields available only in Protocol:
 
 #### Manually verified ground truth
 
-- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_1_3_server_hello_6_info.txt`
+- Source: `tmp/tls_inspection_1/wireshark_extended/wireshark_tls_1_3_server_hello_6_info_extended.txt`
 - Frame `1`, direction `B->A`.
 - TCP payload length: `1400` bytes.
 - TLS record count in the TCP payload: `2 complete records + 1 partial trailing fragment`.
@@ -704,8 +796,11 @@ Current additional TLS fields available only in Protocol:
   - Session ID Length: `32`;
   - Cipher Suite: `TLS_AES_128_GCM_SHA256 (0x1301)`;
   - Compression Method: `null (0)`;
+  - Compression Methods (wire order): `[null (0)]`;
   - Extension Count: `2`;
-  - Known Extensions: `key_share`, `supported_versions`;
+  - Ordered Extensions:
+    1. `key_share`, type `51`, length `1124`;
+    2. `supported_versions`, type `43`, length `2`;
   - Selected TLS Version: `TLS 1.3`.
 - Record 2:
   - Content Type: `Change Cipher Spec (20)`;
@@ -796,7 +891,10 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 - `tests/unit/TlsInspectionParserTests.cpp`
   - direct structured parser asserts exact ordered records:
     - complete `Handshake` record at offset `0`, total size `1215`, payload length `1210`, Record Legacy Version `0x0303`;
-    - complete `ServerHello` with handshake length `1206`, ServerHello Legacy Version `0x0303`, session ID length `32`, selected cipher suite `0x1301`, compression method `0`, ordered extensions `key_share`, `supported_versions`, Selected TLS Version `0x0304`;
+    - complete `ServerHello` with handshake length `1206`, ServerHello Legacy Version `0x0303`, session ID length `32`, selected cipher suite `0x1301`, compression method `0`, ordered extensions:
+      - `key_share`, type `51`, length `1124`;
+      - `supported_versions`, type `43`, length `2`, value `0x0304`;
+      Selected TLS Version `0x0304`;
     - complete `ChangeCipherSpec` record at offset `1215`, total size `6`, payload length `1`, Record Legacy Version `0x0303`, no handshake messages;
     - partial trailing record at offset `1221` with `179` available bytes and no fabricated complete handshake.
   - total input length `1400` and consumed bytes `1400`.
@@ -842,7 +940,16 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 - Current ServerHello protocol-details fixture.
 - Only manually characterized small fixture in this set that already demonstrates multiple complete TLS records plus a partial trailing fragment in one TCP payload.
 
-#### Missing assertions
+#### Manually verified, parser support pending
+
+- `key_share`, extension type `51`, length `1124`:
+  - group `X25519MLKEM768`;
+  - group ID `4588`;
+  - key-exchange length `1120`.
+- `supported_versions`, extension type `43`, length `2`:
+  - selected version `TLS 1.3 (0x0304)`.
+
+#### Summary presentation pending
 
 - Packet Details Summary does not yet expose raw Session ID bytes or extension-name inventories as structured lists.
 - No current fixture asserts the multiple-handshakes-in-one-record child-layer behavior.
@@ -861,7 +968,7 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 
 #### Manually verified ground truth
 
-- Source: `tmp/tls_inspection_1/wireshark/wireshark_tls_client_hello_1_info.txt`
+- Source: `tmp/tls_inspection_1/wireshark_extended/wireshark_tls_client_hello_1_info_extended.txt`
 - Frame `1`, direction `A->B`.
 - TCP payload length: `517` bytes.
 - TLS record count in the TCP payload: `1`.
@@ -875,13 +982,49 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
   - Session ID Length: `32`;
   - Cipher Suites Length: `32`;
   - Cipher Suites Count: `16`;
+  - Cipher Suites (wire order):
+    1. `Reserved (GREASE) (0x8a8a)`;
+    2. `TLS_AES_128_GCM_SHA256 (0x1301)`;
+    3. `TLS_AES_256_GCM_SHA384 (0x1302)`;
+    4. `TLS_CHACHA20_POLY1305_SHA256 (0x1303)`;
+    5. `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)`;
+    6. `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)`;
+    7. `TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)`;
+    8. `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)`;
+    9. `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)`;
+    10. `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)`;
+    11. `TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)`;
+    12. `TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)`;
+    13. `TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)`;
+    14. `TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)`;
+    15. `TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)`;
+    16. `TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)`.
   - Compression Methods Length: `1`;
   - Compression Methods Count: `1`;
+  - Compression Methods (wire order): `[null (0)]`;
   - Extension Count: `18`;
-  - Known Extensions: `Reserved (GREASE)`, `server_name`, `extended_master_secret`, `renegotiation_info`, `supported_groups`, `ec_point_formats`, `session_ticket`, `application_layer_protocol_negotiation`, `status_request`, `signature_algorithms`, `signed_certificate_timestamp`, `key_share`, `psk_key_exchange_modes`, `supported_versions`, `compress_certificate`, `application_settings_old`, `Reserved (GREASE)`, `padding`;
-  - SNI: `auth.split.io`;
-  - ALPN: present in Wireshark as `application_layer_protocol_negotiation`;
-  - Supported TLS Versions: `TLS 1.3`, `TLS 1.2`.
+  - Ordered Extensions:
+    1. `Reserved (GREASE)`, type `64250 (0xfafa)`, length `0`;
+    2. `server_name`, type `0`, length `18`;
+    3. `extended_master_secret`, type `23`, length `0`;
+    4. `renegotiation_info`, type `65281`, length `1`;
+    5. `supported_groups`, type `10`, length `10`;
+    6. `ec_point_formats`, type `11`, length `2`;
+    7. `session_ticket`, type `35`, length `138`;
+    8. `application_layer_protocol_negotiation`, type `16`, length `14`;
+    9. `status_request`, type `5`, length `5`;
+    10. `signature_algorithms`, type `13`, length `18`;
+    11. `signed_certificate_timestamp`, type `18`, length `0`;
+    12. `key_share`, type `51`, length `43`;
+    13. `psk_key_exchange_modes`, type `45`, length `2`;
+    14. `supported_versions`, type `43`, length `7`;
+    15. `compress_certificate`, type `27`, length `3`;
+    16. `application_settings_old`, type `17513 (0x4469)`, length `5`;
+    17. `Reserved (GREASE)`, type `39578 (0x9a9a)`, length `1`;
+    18. `padding`, type `21`, length `64`.
+  - SNI (wire order): `auth.split.io`;
+  - ALPN (wire order): `h2`, `http/1.1`;
+  - Supported TLS Versions (wire order): `Reserved (GREASE) (0x5a5a)`, `TLS 1.3 (0x0304)`, `TLS 1.2 (0x0303)`.
 - Several TLS records do not share this TCP payload.
 - No partial trailing record is present.
 
@@ -960,7 +1103,13 @@ Current additional TLS fields available only in Protocol:
   - Record Legacy Version `0x0301`, record payload length `512`;
   - one complete `ClientHello`, handshake length `508`;
   - ClientHello Legacy Version `0x0303`;
-  - session ID length `32`, cipher-suite count `16`, compression-method count `1`, extension count `18`;
+  - exact ordered cipher-suite vector, including GREASE `0x8a8a`;
+  - exact ordered compression-method vector `[0x00]`;
+  - exact ordered extension metadata:
+    - type;
+    - known name when currently modeled;
+    - declared length;
+    - wire order;
   - SNI `auth.split.io`;
   - ALPN `h2`, `http/1.1`;
   - supported versions retain wire order `0x5a5a`, `0x0304`, `0x0303`.
@@ -1005,9 +1154,43 @@ Current additional TLS fields available only in Protocol:
 - Strongest current ClientHello packet-summary and UI fixture.
 - Current best baseline for packet-local structured ClientHello Summary parity.
 
-#### Missing assertions
+#### Manually verified, parser support pending
 
-- Exact ClientHello extension-name inventory is not asserted.
+- `supported_groups`, extension type `10`, length `10`:
+  - `Reserved (GREASE) (0x5a5a)`;
+  - `x25519 (0x001d)`;
+  - `secp256r1 (0x0017)`;
+  - `secp384r1 (0x0018)`.
+- `signature_algorithms`, extension type `13`, length `18`:
+  - `ecdsa_secp256r1_sha256 (0x0403)`;
+  - `rsa_pss_rsae_sha256 (0x0804)`;
+  - `rsa_pkcs1_sha256 (0x0401)`;
+  - `ecdsa_secp384r1_sha384 (0x0503)`;
+  - `rsa_pss_rsae_sha384 (0x0805)`;
+  - `rsa_pkcs1_sha384 (0x0501)`;
+  - `rsa_pss_rsae_sha512 (0x0806)`;
+  - `rsa_pkcs1_sha512 (0x0601)`.
+- `key_share`, extension type `51`, length `43`:
+  - entry 0: `Reserved (GREASE)`, group `23130 (0x5a5a)`, key-exchange length `1`;
+  - entry 1: `x25519`, group `29 (0x001d)`, key-exchange length `32`.
+- `psk_key_exchange_modes`, extension type `45`, length `2`:
+  - `psk_dhe_ke (1)`.
+- `status_request`, extension type `5`, length `5`:
+  - certificate status type `OCSP (1)`;
+  - responder ID list length `0`;
+  - request extensions length `0`.
+- `compress_certificate`, extension type `27`, length `3`:
+  - algorithm `brotli (2)`.
+- `padding`, extension type `21`, length `64`.
+- Exact GREASE values and positions are part of the manual fixture contract:
+  - cipher suite `0x8a8a`;
+  - extension types `0xfafa` and `0x9a9a`;
+  - supported-version entry `0x5a5a`;
+  - supported-group entry `0x5a5a`;
+  - key-share group `0x5a5a`.
+
+#### Summary presentation pending
+
 - Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
 - Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
@@ -1214,6 +1397,25 @@ The long-term Summary presentation should use structured expandable lists for:
 - supported groups;
 - signature algorithms;
 - key shares.
+
+The fixture-first target contract is ordered child rows, not long comma-separated strings. Conceptually:
+
+```text
+Cipher Suites (N)
+  [0] TLS_AES_128_GCM_SHA256 (0x1301)
+  [1] Reserved (GREASE) (0x8a8a)
+
+Compression Methods (N)
+  [0] null (0)
+
+Extensions (N)
+  [0] server_name, Type 0, Length 18
+      Server Name: auth.split.io
+  [1] supported_versions, Type 43, Length 7
+      Supported Version: TLS 1.3 (0x0304)
+```
+
+Packet Summary and Stream Item Summary must eventually use the same mapping and preserve exact wire order.
 
 In this pass, packet-local Summary uses exact scalar counts plus compact text for ALPN and supported versions. The current long comma-separated Protocol strings remain a temporary migration format, not the target UI representation.
 
