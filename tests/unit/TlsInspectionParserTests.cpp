@@ -233,6 +233,19 @@ const TlsExtensionModel& require_single_server_hello_extension(const TlsInspecti
     return handshake.server_hello->extensions[0];
 }
 
+const TlsHandshakeModel& require_single_handshake(const TlsInspectionResult& result) {
+    PFL_REQUIRE(result.records.size() == 1U);
+    PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+    return result.records[0].handshake_messages[0];
+}
+
+const TlsClientHelloModel& require_parsed_client_hello(const TlsInspectionResult& result) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.client_hello.has_value());
+    return *handshake.client_hello;
+}
+
 }  // namespace
 
 void run_tls_inspection_parser_tests() {
@@ -701,6 +714,249 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
+        ScopedTestContext context {"synthetic=input_relative_offsets_and_complete_available_bytes"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0xFAFAU, {});
+        const auto client_hello = make_tls_handshake_message(
+            0x01U,
+            make_minimal_client_hello_body_with_extensions(extensions)
+        );
+        const auto unknown_handshake = make_tls_handshake_message(0x7FU, {0xAAU, 0xBBU});
+        std::vector<std::uint8_t> record_body = client_hello;
+        record_body.insert(record_body.end(), unknown_handshake.begin(), unknown_handshake.end());
+
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, record_body));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].source_offset == 0U);
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {62U});
+        PFL_EXPECT(result.records[0].available_bytes == 62U);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 2U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].source_offset == 5U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].total_size == std::optional<std::size_t> {51U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].available_bytes == 51U);
+        PFL_EXPECT(result.records[0].handshake_messages[1].source_offset == 56U);
+        PFL_EXPECT(result.records[0].handshake_messages[1].total_size == std::optional<std::size_t> {6U});
+        PFL_EXPECT(result.records[0].handshake_messages[1].available_bytes == 6U);
+        PFL_REQUIRE(result.records[0].handshake_messages[0].client_hello.has_value());
+        PFL_REQUIRE(result.records[0].handshake_messages[0].client_hello->extensions.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].client_hello->extensions[0].source_offset == 52U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=partial_handshake_body_available_bytes"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            {0x01U, 0x00U, 0x00U, 0x08U, 0xAAU, 0xBBU}
+        ));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {11U});
+        PFL_EXPECT(result.records[0].available_bytes == 11U);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].source_offset == 5U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].status == TlsHandshakeStatus::partial_body);
+        PFL_EXPECT(result.records[0].handshake_messages[0].declared_body_length == std::optional<std::size_t> {8U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].total_size == std::optional<std::size_t> {12U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].available_bytes == 6U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=state_resets_between_invocations_after_complete_ccs"};
+        auto encrypted_bytes = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto encrypted_handshake = make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x7FU, {0xAAU, 0xBBU}));
+        encrypted_bytes.insert(encrypted_bytes.end(), encrypted_handshake.begin(), encrypted_handshake.end());
+        const auto encrypted_result = parser.inspect(encrypted_bytes);
+        PFL_REQUIRE(encrypted_result.records.size() == 2U);
+        PFL_EXPECT(encrypted_result.records[1].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(encrypted_result.records[1].handshake_messages.empty());
+
+        std::vector<std::uint8_t> plaintext_bytes = make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x7FU, {0xAAU, 0xBBU})
+        );
+        const auto plaintext_result = parser.inspect(plaintext_bytes);
+        PFL_REQUIRE(plaintext_result.records.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
+        PFL_REQUIRE(plaintext_result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].handshake_messages[0].type == std::optional<std::uint8_t> {0x7FU});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=partial_ccs_does_not_switch_later_invocation"};
+        auto partial_ccs = make_tls_record(0x14U, 0x0303U, {0x01U});
+        partial_ccs.pop_back();
+        const auto partial_result = parser.inspect(partial_ccs);
+        PFL_REQUIRE(partial_result.records.size() == 1U);
+        PFL_EXPECT(partial_result.records[0].status == TlsRecordStatus::partial_body);
+
+        const auto plaintext_result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x7FU, {0xAAU, 0xBBU})
+        ));
+        PFL_REQUIRE(plaintext_result.records.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
+        PFL_REQUIRE(plaintext_result.records[0].handshake_messages.size() == 1U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_server_name_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0000U, {0x00U, 0x04U, 0x00U, 0x00U, 0x01U, 'a', 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"server_name"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].server_names.empty());
+        PFL_EXPECT(hello.extensions[1].known_name == std::optional<std::string> {"padding"});
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(hello.extensions[1].padding_length == std::optional<std::size_t> {0U});
+        PFL_EXPECT(hello.sni_names.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_alpn_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0010U, {0x00U, 0x03U, 0x02U, 'h', '2', 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"application_layer_protocol_negotiation"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].alpn_protocols.empty());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(hello.alpn_protocols.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_supported_versions_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x002BU, {0x04U, 0x03U, 0x04U, 0x03U, 0x03U, 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"supported_versions"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].supported_versions.empty());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(hello.supported_versions.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_supported_groups_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x000AU, {0x00U, 0x04U, 0x00U, 0x1DU, 0x00U, 0x17U, 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"supported_groups"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].supported_group_ids.empty());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_key_share_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0033U, {0x00U, 0x05U, 0x00U, 0x1DU, 0x00U, 0x01U, 0xAAU, 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"key_share"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].key_share_entries.empty());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_psk_modes_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x002DU, {0x01U, 0x01U, 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"psk_key_exchange_modes"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].psk_key_exchange_mode_ids.empty());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_status_request_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x0005U, {0x01U, 0x00U, 0x00U, 0x00U, 0x00U, 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"status_request"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!hello.extensions[0].status_request.has_value());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_trailing_byte_malformed_and_sibling_preserved"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x02U, 0x00U, 0x02U, 0xFFU});
+        append_extension(extensions, 0x0015U, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& hello = require_parsed_client_hello(result);
+        PFL_REQUIRE(hello.extensions.size() == 2U);
+        PFL_EXPECT(hello.extensions[0].known_name == std::optional<std::string> {"compress_certificate"});
+        PFL_EXPECT(hello.extensions[0].structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(hello.extensions[0].certificate_compression_algorithm_ids.empty());
+        PFL_EXPECT(hello.extensions[1].structured_parse_status == TlsStructuredParseStatus::parsed);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_extension_block_trailing_bytes_malformed"};
+        std::vector<std::uint8_t> body {};
+        append_be16(body, 0x0303U);
+        const auto random = make_zero_filled(32U);
+        body.insert(body.end(), random.begin(), random.end());
+        body.push_back(0x00U);
+        append_be16(body, 0x0002U);
+        append_be16(body, 0x1301U);
+        body.push_back(0x01U);
+        body.push_back(0x00U);
+        append_be16(body, 0x0000U);
+        body.push_back(0xFFU);
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x01U, body)));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.client_hello.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_extension_block_trailing_bytes_malformed"};
+        std::vector<std::uint8_t> body {};
+        append_be16(body, 0x0303U);
+        const auto random = make_zero_filled(32U);
+        body.insert(body.end(), random.begin(), random.end());
+        body.push_back(0x00U);
+        append_be16(body, 0x1301U);
+        body.push_back(0x00U);
+        append_be16(body, 0x0000U);
+        body.push_back(0xFFU);
+        const auto result = parser.inspect(make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x02U, body)));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.server_hello.has_value());
+    }
+
+    {
         ScopedTestContext context {"synthetic=empty_input"};
         const auto result = parser.inspect({});
         PFL_EXPECT(result.total_input_bytes == 0U);
@@ -729,6 +985,7 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
         PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {5U});
         PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {0U});
+        PFL_EXPECT(result.records[0].available_bytes == 5U);
         PFL_EXPECT(result.consumed_bytes == 5U);
     }
 
@@ -740,6 +997,7 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records.size() == 1U);
         PFL_EXPECT(result.records[0].status == TlsRecordStatus::partial_body);
         PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {3U});
+        PFL_EXPECT(result.records[0].available_bytes == bytes.size());
         PFL_EXPECT(result.stopped_after_partial_record);
         PFL_EXPECT(result.consumed_bytes == bytes.size());
     }
@@ -756,6 +1014,8 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[1].source_offset == 6U);
         PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
         PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].available_bytes == 6U);
+        PFL_EXPECT(result.records[1].available_bytes == 5U);
     }
 
     {

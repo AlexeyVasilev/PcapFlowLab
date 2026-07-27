@@ -56,12 +56,18 @@ Current structured-parser limitations and boundaries:
 
 - handshake messages spanning multiple TLS records are not reconstructed across record boundaries yet;
 - the parser consumes only the supplied TLS byte span and does not inspect Ethernet/IP/TCP state itself;
+- `source_offset` is input-relative for records, handshake messages, and structured extensions; extension offsets are no longer relative to the handshake body;
+- `available_bytes` means visible bytes for partial records/handshakes, but equals `total_size` for complete records/handshakes;
+- complete bounded `ClientHello` and `ServerHello` parsing now requires exact consumption of the declared extension block; malformed trailing bytes in that block make only the structured hello parse malformed;
 - extension-local structured parsing now covers `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`;
 - decoded extension vectors preserve exact wire order and raw numeric values, including GREASE and unknown codes;
+- known extension parsers that claim support now require exact body consumption and parse transactionally; on malformed input they keep generic extension metadata but do not leak partial structured values into the model;
 - a bounded but malformed known extension body marks only that extension as malformed and does not discard an otherwise valid bounded `ClientHello` or `ServerHello`;
 - `key_share` modeling records only entry order, raw group ID, and key-exchange length; raw key-exchange bytes are not retained in this pass;
 - the 2-byte ServerHello `key_share` selected-group / HelloRetryRequest form remains present as extension metadata but is left `not_attempted`;
+- post-CCS protected-handshake classification is parser-local per `inspect(...)` call: a complete CCS affects later records in the same inspected byte span, while a partial CCS does not poison a later independent inspection;
 - packet-local Packet Details Summary and selected Stream Item Summary now use the same shared structured TLS summary mapping;
+- selected Stream Item Summary still relies on isolated typed row context such as `encrypted_handshake_record`; this is presentation-local state and not an import/persistence contract;
 - Packet Details Protocol remains the legacy presentation source for richer raw field dumps in this pass;
 - flow hints are not migrated to this parser in this pass.
 
