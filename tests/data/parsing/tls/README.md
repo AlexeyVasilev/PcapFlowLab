@@ -56,8 +56,9 @@ Current structured-parser limitations and boundaries:
 
 - handshake messages spanning multiple TLS records are not reconstructed across record boundaries yet;
 - the parser consumes only the supplied TLS byte span and does not inspect Ethernet/IP/TCP state itself;
-- packet-local Packet Details Summary now uses the structured parser through the shared selected-packet Summary DTO;
-- Packet Details Protocol, Stream presentation, and flow hints are not yet migrated to this parser in this pass.
+- packet-local Packet Details Summary and selected Stream Item Summary now use the same shared structured TLS summary mapping;
+- Packet Details Protocol remains the legacy presentation source for richer raw field dumps in this pass;
+- flow hints are not migrated to this parser in this pass.
 
 ## Inventory
 
@@ -69,12 +70,12 @@ Current structured-parser limitations and boundaries:
 | `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS AppData hint coverage | Yes | Keep for now |
 | `tls_1_2_change_cipher_spec_2.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS ChangeCipherSpec hint coverage | Yes | Keep for now |
 | `tls_1_2_new_session_ticket_9.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP NewSessionTicket hint coverage | Yes | Keep for now |
-| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `TlsInspectionParserTests` | Medium | Small TLS 1.2 ServerHello PCAP with manually verified packet-local Summary baseline | Partially complete | Keep for now |
+| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Small TLS 1.2 ServerHello PCAP with manually verified packet/stream structured Summary baseline | Partially complete | Keep for now |
 | `tls_1_3_app_data_7.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 AppData hint coverage | Yes | Keep for now |
 | `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 ChangeCipherSpec hint coverage | Yes | Keep for now |
-| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with packet-local structured Summary baseline | Partially complete | Keep for now |
-| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local multiple-record TLS Summary behavior | Partially complete | Keep for now |
-| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet-summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
+| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with shared packet/stream structured Summary baseline | Partially complete | Keep for now |
+| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
+| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
 | `tls_server_handshake_retransmit_6.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Retransmission/deduplication and multi-packet contribution coverage | Yes | Keep for now |
@@ -369,6 +370,11 @@ Now shown from the structured packet-local TLS parser:
 - TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
 - TLS fields: `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`;
 - TLS fields: `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, `Extension Count`.
+- structured child group: `Extensions (3)`;
+- ordered extension child rows:
+  - `[0] ec_point_formats`;
+  - `[1] renegotiation_info`;
+  - `[2] extended_master_secret`.
 
 ##### Packet Details Protocol
 
@@ -396,6 +402,8 @@ Now shown from structured Stream Item Summary:
 - structured `Transport Layer Security, ServerHello` layer;
 - TLS fields: `Record Length`, `Total Record Size`, `Handshake Length`, `ServerHello Legacy Version`;
 - TLS fields: `Selected TLS Version`, `Selected Cipher Suite`, `Session ID Length`, `Compression Method`, and `Extension Count`.
+- structured child group: `Extensions (3)`;
+- ordered extension child rows match Packet Details Summary through the shared mapping.
 
 ##### Stream Item Protocol
 
@@ -433,7 +441,8 @@ Current additional TLS fields available only in Protocol:
   - packet summary exposes a default-expanded TLS `ServerHello` layer;
   - summary fields assert `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
   - summary fields assert `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`;
-  - summary fields assert `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`.
+  - summary fields assert `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`;
+  - summary asserts ordered `Extensions (3)` child rows with exact type values.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - one complete record and no trailing bytes;
@@ -449,6 +458,8 @@ Current additional TLS fields available only in Protocol:
   - fast-mode stream query returns one row:
     - `TLS ServerHello | 96 bytes | packet #1`;
     - stream direction matches the packet-row direction for packet `0`.
+  - stream summary asserts ordered `Extensions (3)` child rows;
+  - the stream extension group is semantically identical to the packet-summary extension group.
   - stream protocol details stay semantically aligned with packet protocol details for:
     - `Record Type`, `Record Version`, `Record Length`;
     - `Handshake Type`, `Handshake Length`;
@@ -465,8 +476,9 @@ Current additional TLS fields available only in Protocol:
 
 #### Summary presentation pending
 
-- Packet Details Summary still does not expose the raw Session ID bytes or ordered extension inventory as structured child rows.
-- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
+- Packet Details Summary and Stream Item Summary now expose the ordered extension inventory through the shared mapping.
+- Raw Session ID bytes are still carried as a scalar field, not as a separate structured child group.
+- Extension-specific nested groups beyond the currently modeled subset are still pending.
 
 #### Manual Wireshark verification required
 
@@ -619,6 +631,14 @@ Now shown from the structured packet-local TLS parser:
 - TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
 - TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
 - TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, `Supported TLS Versions`.
+- ordered scalar collection rows:
+  - `Cipher Suites (21)` with indexed fields `[0]` ... `[20]`;
+  - `Compression Methods (1)` with indexed fields.
+- structured child group:
+  - `Extensions (16)`.
+- `server_name`, `application_layer_protocol_negotiation`, and `supported_versions`
+  extension rows expose direct indexed fields such as `Server Name [0]`,
+  `ALPN [0]`, and `Version [0]` instead of nested child groups.
 
 ##### Packet Details Protocol
 
@@ -648,7 +668,14 @@ Now shown from structured Stream Item Summary:
 - structured `Transport Layer Security, ClientHello` layer;
 - TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
 - TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
-- TLS fields: `Cipher Suite Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
+- TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
+- ordered scalar collection rows:
+  - `Cipher Suites (21)` with indexed fields;
+  - `Compression Methods (1)` with indexed fields.
+- structured child group:
+  - `Extensions (16)`.
+- extension-local `Server Name [N]`, `ALPN [N]`, and `Version [N]` fields match
+  Packet Details Summary through the shared mapping.
 
 ##### Stream Item Protocol
 
@@ -697,7 +724,9 @@ Current additional TLS fields available only in Protocol:
   - summary title contains `Transport Layer Security` and `ClientHello`;
   - summary fields assert `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
   - summary fields assert `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`;
-  - summary fields assert `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
+  - summary fields assert `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`;
+  - summary asserts ordered `Cipher Suites (21)` and `Compression Methods (1)` indexed fields plus the `Extensions (16)` child group;
+  - summary asserts exact GREASE values in cipher suites, extension types, and supported versions.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - one complete record and no trailing bytes;
@@ -716,6 +745,8 @@ Current additional TLS fields available only in Protocol:
   - fast-mode stream query returns one row:
     - `TLS ClientHello | 517 bytes | packet #1`;
     - stream direction matches the packet-row direction for packet `0`.
+  - stream summary asserts ordered `Cipher Suites (21)` and `Compression Methods (1)` indexed fields plus the `Extensions (16)` child group;
+  - stream extension rows expose direct `Server Name [N]`, `ALPN [N]`, and `Version [N]` fields matching the packet summary through the shared mapping.
   - stream protocol details stay semantically aligned with packet protocol details for:
     - `Record Type`, `Record Version`, `Record Length`;
     - `Handshake Type`, `Handshake Length`, `Handshake Version`;
@@ -766,8 +797,8 @@ Current additional TLS fields available only in Protocol:
 
 #### Summary presentation pending
 
-- Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
-- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
+- Packet Details Summary and Stream Item Summary now expose ordered structured cipher-suite, compression-method, and extension collections through the shared mapping.
+- Richer nested decoding for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding` remains pending.
 
 #### Manual Wireshark verification required
 
@@ -830,6 +861,10 @@ Now shown from the structured packet-local TLS parser:
 - complete-record fields include `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
 - handshake fields include `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`;
 - `ServerHello` additionally exposes `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`;
+- the `ServerHello` layer now also exposes structured child group `Extensions (2)` with:
+  - `[0] key_share (0x0033), 1124 bytes`;
+  - `[1] supported_versions (0x002b), 2 bytes - TLS 1.3 (0x0304)`;
+- the `supported_versions` extension now exposes direct field `Version [0] = TLS 1.3 (0x0304)`;
 - the trailing fragment exposes only conservative partial-record fields such as `Status`, `Available Bytes`, and header-derived values when present.
 
 ##### Packet Details Protocol
@@ -857,6 +892,7 @@ The second and third items are intentionally `6` and `179` bytes. The earlier ma
 Now shown from structured Stream Item Summary:
 
 - `Item #1` exposes generic item metadata plus a structured `ServerHello` Summary layer;
+- `Item #1` also exposes the same `Extensions (2)` child group and direct supported-version field as Packet Details Summary;
 - `Item #2` exposes generic item metadata plus a structured `ChangeCipherSpec` Summary layer;
 - `Item #3` exposes generic item metadata plus a conservative partial-record Summary layer with no fabricated handshake fields.
 
@@ -916,6 +952,7 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
     - `Transport Layer Security, ChangeCipherSpec`;
     - `TLS Record Fragment (partial)`;
   - the first layer asserts `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`, `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`, `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`;
+  - the first layer asserts ordered `Extensions (2)` child rows and direct `Version [0]` on `supported_versions`;
   - the second layer asserts `Record Type`, `Record Legacy Version`, `Record Length`, and `Total Record Size`, with no fabricated handshake fields;
   - the third layer asserts conservative partial-record fields only, including `Status` and `Available Bytes`.
 - `tests/unit/StreamQueryTests.cpp`
@@ -924,6 +961,8 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
     - `TLS ChangeCipherSpec | 6 bytes | packet #1`;
     - `TLS Record Fragment (partial) | 179 bytes | packet #1`.
   - all three rows keep the packet-row direction for packet `0`.
+  - `TLS ServerHello` stream summary asserts ordered `Extensions (2)` child rows and direct `Version [0]`;
+  - the `TLS ServerHello` extension group is semantically identical to the packet-summary extension group.
   - `TLS ServerHello` stream protocol details stay semantically aligned with packet protocol details for:
     - `Record Type`, `Record Version`, `Record Length`;
     - `Handshake Type`, `Handshake Length`;
@@ -951,9 +990,9 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 
 #### Summary presentation pending
 
-- Packet Details Summary does not yet expose raw Session ID bytes or extension-name inventories as structured lists.
+- Packet Details Summary and Stream Item Summary now expose the ordered extension inventory through the shared mapping.
+- Raw Session ID bytes remain a scalar field rather than a separate structured child group.
 - No current fixture asserts the multiple-handshakes-in-one-record child-layer behavior.
-- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
 #### Manual Wireshark verification required
 
@@ -1045,6 +1084,14 @@ Now shown from the structured packet-local TLS parser:
 - TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
 - TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
 - TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, `Supported TLS Versions`.
+- ordered scalar collection rows:
+  - `Cipher Suites (16)` with indexed fields `[0]` ... `[15]`;
+  - `Compression Methods (1)` with indexed fields.
+- structured child group:
+  - `Extensions (18)`.
+- `server_name`, `application_layer_protocol_negotiation`, and `supported_versions`
+  extension rows expose direct indexed fields such as `Server Name [0]`,
+  `ALPN [0]`, and `Version [0]` instead of nested child groups.
 
 ##### Packet Details Protocol
 
@@ -1075,6 +1122,13 @@ Now shown from structured Stream Item Summary:
 - TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
 - TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
 - TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
+- ordered scalar collection rows:
+  - `Cipher Suites (16)` with indexed fields;
+  - `Compression Methods (1)` with indexed fields.
+- structured child group:
+  - `Extensions (18)`.
+- extension-local `Server Name [N]`, `ALPN [N]`, and `Version [N]` fields match
+  Packet Details Summary through the shared mapping.
 
 ##### Stream Item Protocol
 
@@ -1120,7 +1174,9 @@ Current additional TLS fields available only in Protocol:
   - TLS title contains `Transport Layer Security` and `ClientHello`;
   - summary fields assert `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
   - summary fields assert `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`;
-  - summary fields assert `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
+  - summary fields assert `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`;
+  - summary asserts ordered `Cipher Suites (16)` and `Compression Methods (1)` indexed fields plus the `Extensions (18)` child group;
+  - summary asserts exact GREASE values in cipher suites, extension types, and supported versions.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - one complete record and no trailing bytes;
@@ -1139,6 +1195,8 @@ Current additional TLS fields available only in Protocol:
   - fast-mode stream query returns one row:
     - `TLS ClientHello | 517 bytes | packet #1`;
     - stream direction matches the packet-row direction for packet `0`.
+  - stream summary asserts ordered `Cipher Suites (16)` and `Compression Methods (1)` indexed fields plus the `Extensions (18)` child group;
+  - stream extension rows expose direct `Server Name [N]`, `ALPN [N]`, and `Version [N]` fields matching the packet summary through the shared mapping.
   - stream protocol details stay semantically aligned with packet protocol details for:
     - `Record Type`, `Record Version`, `Record Length`;
     - `Handshake Type`, `Handshake Length`, `Handshake Version`;
@@ -1191,8 +1249,8 @@ Current additional TLS fields available only in Protocol:
 
 #### Summary presentation pending
 
-- Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
-- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
+- Packet Details Summary and Stream Item Summary now expose ordered structured cipher-suite, compression-method, and extension collections through the shared mapping.
+- Richer nested decoding for `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, `application_settings_old`, and `padding` remains pending.
 
 #### Manual Wireshark verification required
 
@@ -1387,37 +1445,32 @@ Packet-local TLS Summary no longer collapses a multi-record packet into a single
 
 ## Structured list presentation
 
-The long-term Summary presentation should use structured expandable lists for:
+The current Summary presentation uses:
 
-- cipher suites;
-- compression methods;
-- extensions;
-- supported versions;
-- ALPN protocols;
-- supported groups;
-- signature algorithms;
-- key shares.
+- ordered indexed fields for scalar collections such as cipher suites, compression methods, server names, ALPN values, and supported versions;
+- expandable child rows only for structured extension objects.
 
-The fixture-first target contract is ordered child rows, not long comma-separated strings. Conceptually:
+The fixture-first target contract is ordered rows and fields, not long comma-separated strings. Conceptually:
 
 ```text
 Cipher Suites (N)
-  [0] TLS_AES_128_GCM_SHA256 (0x1301)
-  [1] Reserved (GREASE) (0x8a8a)
+  [0]: TLS_AES_128_GCM_SHA256 (0x1301)
+  [1]: GREASE (0x8a8a)
 
 Compression Methods (N)
-  [0] null (0)
+  [0]: null (0)
 
 Extensions (N)
-  [0] server_name, Type 0, Length 18
-      Server Name: auth.split.io
-  [1] supported_versions, Type 43, Length 7
-      Supported Version: TLS 1.3 (0x0304)
+  [0] server_name (0x0000), 18 bytes - auth.split.io
+      Server Name [0]: auth.split.io
+  [1] supported_versions (0x002b), 7 bytes - GREASE, TLS 1.3 (0x0304), TLS 1.2 (0x0303)
+      Version [0]: GREASE (0x5a5a)
+      Version [1]: TLS 1.3 (0x0304)
 ```
 
-Packet Summary and Stream Item Summary must eventually use the same mapping and preserve exact wire order.
+Packet Summary and Stream Item Summary must use the same mapping and preserve exact wire order.
 
-In this pass, packet-local Summary uses exact scalar counts plus compact text for ALPN and supported versions. The current long comma-separated Protocol strings remain a temporary migration format, not the target UI representation.
+Protocol strings remain a temporary migration format, not the target UI representation.
 
 ## Proposed shared structured TLS model
 

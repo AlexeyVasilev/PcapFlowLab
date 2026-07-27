@@ -50,6 +50,15 @@ const session_detail::PacketSummaryField* find_summary_field(
     return it != layer.fields.end() ? &(*it) : nullptr;
 }
 
+std::string require_summary_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto* field = find_summary_field(layer, label);
+    PFL_REQUIRE(field != nullptr);
+    return field->value;
+}
+
 const session_detail::PacketSummaryLayer* find_summary_child(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& id,
@@ -66,6 +75,44 @@ const session_detail::PacketSummaryLayer* find_summary_child(
         ++seen;
     }
     return nullptr;
+}
+
+const session_detail::PacketSummaryLayer* require_summary_child(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& id,
+    const std::size_t occurrence = 0U
+) {
+    const auto* child = find_summary_child(layer, id, occurrence);
+    PFL_REQUIRE(child != nullptr);
+    return child;
+}
+
+void expect_summary_child_titles(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::vector<std::string>& expected_titles
+) {
+    PFL_EXPECT(layer.children.size() == expected_titles.size());
+    if (layer.children.size() != expected_titles.size()) {
+        return;
+    }
+
+    for (std::size_t index = 0U; index < expected_titles.size(); ++index) {
+        PFL_EXPECT(layer.children[index].title == expected_titles[index]);
+    }
+}
+
+void expect_indexed_summary_field_values(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::vector<std::string>& expected_values
+) {
+    PFL_EXPECT(layer.fields.size() == expected_values.size());
+    if (layer.fields.size() != expected_values.size()) {
+        return;
+    }
+
+    for (std::size_t index = 0U; index < expected_values.size(); ++index) {
+        PFL_EXPECT(require_summary_field_value(layer, "[" + std::to_string(index) + "]") == expected_values[index]);
+    }
 }
 
 std::vector<const session_detail::PacketSummaryLayer*> find_summary_layers(
@@ -661,6 +708,68 @@ void run_packet_details_tests() {
         PFL_EXPECT(alpn->value.find("http/1.1") != std::string::npos);
         PFL_EXPECT(supported_versions->value.find("TLS 1.3 (0x0304)") != std::string::npos);
         PFL_EXPECT(supported_versions->value.find("TLS 1.2 (0x0303)") != std::string::npos);
+        const auto* cipher_suites_group = require_summary_child(*tls_layer, "tls_cipher_suites");
+        const auto* compression_methods_group = require_summary_child(*tls_layer, "tls_compression_methods");
+        const auto* extensions_group = require_summary_child(*tls_layer, "tls_extensions");
+        PFL_EXPECT(cipher_suites_group->title == "Cipher Suites (16)");
+        PFL_EXPECT(cipher_suites_group->children.empty());
+        expect_indexed_summary_field_values(*cipher_suites_group, {
+            "GREASE (0x8a8a)",
+            "TLS_AES_128_GCM_SHA256 (0x1301)",
+            "TLS_AES_256_GCM_SHA384 (0x1302)",
+            "TLS_CHACHA20_POLY1305_SHA256 (0x1303)",
+            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)",
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)",
+            "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)",
+            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)",
+            "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)",
+            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)",
+            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)",
+            "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)",
+            "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)",
+            "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)",
+            "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)",
+            "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)",
+        });
+        PFL_EXPECT(compression_methods_group->title == "Compression Methods (1)");
+        PFL_EXPECT(compression_methods_group->children.empty());
+        expect_indexed_summary_field_values(*compression_methods_group, {"null (0)"});
+        PFL_EXPECT(extensions_group->title == "Extensions (18)");
+        expect_summary_child_titles(*extensions_group, {
+            "[0] GREASE (0xfafa), 0 bytes",
+            "[1] server_name (0x0000), 18 bytes - auth.split.io",
+            "[2] extended_master_secret (0x0017), 0 bytes",
+            "[3] renegotiation_info (0xff01), 1 byte",
+            "[4] supported_groups (0x000a), 10 bytes",
+            "[5] ec_point_formats (0x000b), 2 bytes",
+            "[6] session_ticket (0x0023), 138 bytes",
+            "[7] application_layer_protocol_negotiation (0x0010), 14 bytes - h2, http/1.1",
+            "[8] status_request (0x0005), 5 bytes",
+            "[9] signature_algorithms (0x000d), 18 bytes",
+            "[10] signed_certificate_timestamp (0x0012), 0 bytes",
+            "[11] key_share (0x0033), 43 bytes",
+            "[12] psk_key_exchange_modes (0x002d), 2 bytes",
+            "[13] supported_versions (0x002b), 7 bytes - GREASE, TLS 1.3 (0x0304), TLS 1.2 (0x0303)",
+            "[14] Unknown Extension (0x001b), 3 bytes",
+            "[15] Unknown Extension (0x4469), 5 bytes",
+            "[16] GREASE (0x9a9a), 1 byte",
+            "[17] padding (0x0015), 64 bytes",
+        });
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Type") == "64250 (0xfafa)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Length") == "0");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Type") == "0 (0x0000)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Length") == "18");
+        PFL_EXPECT(find_summary_child(extensions_group->children[1], "tls_server_names") == nullptr);
+        PFL_EXPECT(find_summary_child(extensions_group->children[7], "tls_alpn_protocols") == nullptr);
+        PFL_EXPECT(find_summary_child(extensions_group->children[13], "tls_supported_versions") == nullptr);
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Server Name [0]") == "auth.split.io");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "ALPN [0]") == "h2");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[7], "ALPN [1]") == "http/1.1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Version [0]") == "GREASE (0x5a5a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Version [1]") == "TLS 1.3 (0x0304)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[13], "Version [2]") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[16], "Type") == "39578 (0x9a9a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[16], "Length") == "1");
     }
 
     {
@@ -711,6 +820,73 @@ void run_packet_details_tests() {
         PFL_EXPECT(supported_versions->value.find("TLS 1.2 (0x0303)") != std::string::npos);
         PFL_EXPECT(supported_versions->value.find("TLS 1.1 (0x0302)") != std::string::npos);
         PFL_EXPECT(supported_versions->value.find("TLS 1.0 (0x0301)") != std::string::npos);
+        const auto* cipher_suites_group = require_summary_child(*tls_layer, "tls_cipher_suites");
+        const auto* compression_methods_group = require_summary_child(*tls_layer, "tls_compression_methods");
+        const auto* extensions_group = require_summary_child(*tls_layer, "tls_extensions");
+        PFL_EXPECT(cipher_suites_group->title == "Cipher Suites (21)");
+        PFL_EXPECT(cipher_suites_group->children.empty());
+        expect_indexed_summary_field_values(*cipher_suites_group, {
+            "GREASE (0x8a8a)",
+            "TLS_AES_128_GCM_SHA256 (0x1301)",
+            "TLS_AES_256_GCM_SHA384 (0x1302)",
+            "TLS_CHACHA20_POLY1305_SHA256 (0x1303)",
+            "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)",
+            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)",
+            "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)",
+            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)",
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)",
+            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)",
+            "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xc00a)",
+            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)",
+            "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)",
+            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)",
+            "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)",
+            "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)",
+            "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)",
+            "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)",
+            "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA (0xc008)",
+            "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA (0xc012)",
+            "TLS_RSA_WITH_3DES_EDE_CBC_SHA (0x000a)",
+        });
+        PFL_EXPECT(compression_methods_group->title == "Compression Methods (1)");
+        PFL_EXPECT(compression_methods_group->children.empty());
+        expect_indexed_summary_field_values(*compression_methods_group, {"null (0)"});
+        PFL_EXPECT(extensions_group->title == "Extensions (16)");
+        expect_summary_child_titles(*extensions_group, {
+            "[0] GREASE (0x9a9a), 0 bytes",
+            "[1] server_name (0x0000), 24 bytes - p101-fmf.icloud.com",
+            "[2] extended_master_secret (0x0017), 0 bytes",
+            "[3] renegotiation_info (0xff01), 1 byte",
+            "[4] supported_groups (0x000a), 12 bytes",
+            "[5] ec_point_formats (0x000b), 2 bytes",
+            "[6] application_layer_protocol_negotiation (0x0010), 14 bytes - h2, http/1.1",
+            "[7] status_request (0x0005), 5 bytes",
+            "[8] signature_algorithms (0x000d), 22 bytes",
+            "[9] signed_certificate_timestamp (0x0012), 0 bytes",
+            "[10] key_share (0x0033), 43 bytes",
+            "[11] psk_key_exchange_modes (0x002d), 2 bytes",
+            "[12] supported_versions (0x002b), 11 bytes - GREASE, TLS 1.3 (0x0304), TLS 1.2 (0x0303), ...",
+            "[13] Unknown Extension (0x001b), 3 bytes",
+            "[14] GREASE (0x0a0a), 1 byte",
+            "[15] padding (0x0015), 189 bytes",
+        });
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Type") == "39578 (0x9a9a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Length") == "0");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Type") == "0 (0x0000)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Length") == "24");
+        PFL_EXPECT(find_summary_child(extensions_group->children[1], "tls_server_names") == nullptr);
+        PFL_EXPECT(find_summary_child(extensions_group->children[6], "tls_alpn_protocols") == nullptr);
+        PFL_EXPECT(find_summary_child(extensions_group->children[12], "tls_supported_versions") == nullptr);
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Server Name [0]") == "p101-fmf.icloud.com");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[6], "ALPN [0]") == "h2");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[6], "ALPN [1]") == "http/1.1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [0]") == "GREASE (0x3a3a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [1]") == "TLS 1.3 (0x0304)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [2]") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [3]") == "TLS 1.1 (0x0302)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[12], "Version [4]") == "TLS 1.0 (0x0301)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[14], "Type") == "2570 (0x0a0a)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[14], "Length") == "1");
     }
 
     {
@@ -760,6 +936,19 @@ void run_packet_details_tests() {
         PFL_EXPECT(session_id_length->value == "32");
         PFL_EXPECT(compression_method->value == "null (0)");
         PFL_EXPECT(extension_count->value == "3");
+        const auto* extensions_group = require_summary_child(*tls_layer, "tls_extensions");
+        PFL_EXPECT(extensions_group->title == "Extensions (3)");
+        expect_summary_child_titles(*extensions_group, {
+            "[0] ec_point_formats (0x000b), 2 bytes",
+            "[1] renegotiation_info (0xff01), 1 byte",
+            "[2] extended_master_secret (0x0017), 0 bytes",
+        });
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Type") == "11 (0x000b)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[0], "Length") == "2");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Type") == "65281 (0xff01)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[1], "Length") == "1");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[2], "Type") == "23 (0x0017)");
+        PFL_EXPECT(require_summary_field_value(extensions_group->children[2], "Length") == "0");
     }
 
     {
@@ -820,6 +1009,18 @@ void run_packet_details_tests() {
         PFL_EXPECT(server_hello_session_id_length->value == "32");
         PFL_EXPECT(server_hello_compression_method->value == "null (0)");
         PFL_EXPECT(server_hello_extension_count->value == "2");
+        const auto* server_hello_extensions_group = require_summary_child(server_hello_layer, "tls_extensions");
+        PFL_EXPECT(server_hello_extensions_group->title == "Extensions (2)");
+        expect_summary_child_titles(*server_hello_extensions_group, {
+            "[0] key_share (0x0033), 1124 bytes",
+            "[1] supported_versions (0x002b), 2 bytes - TLS 1.3 (0x0304)",
+        });
+        PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[0], "Type") == "51 (0x0033)");
+        PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[0], "Length") == "1124");
+        PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[1], "Type") == "43 (0x002b)");
+        PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[1], "Length") == "2");
+        PFL_EXPECT(find_summary_child(server_hello_extensions_group->children[1], "tls_supported_versions") == nullptr);
+        PFL_EXPECT(require_summary_field_value(server_hello_extensions_group->children[1], "Version [0]") == "TLS 1.3 (0x0304)");
 
         const auto* ccs_total_size = find_summary_field(ccs_layer, "Total Record Size");
         const auto* ccs_record_length = find_summary_field(ccs_layer, "Record Length");
