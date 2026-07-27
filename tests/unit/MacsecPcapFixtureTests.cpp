@@ -179,7 +179,7 @@ void expect_complete_macsec_fixture(
     PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Packet Number", expected_packet_number_text));
     const auto* payload_layer = find_layer(summary_layers, "macsec-payload");
     PFL_REQUIRE(payload_layer != nullptr);
-    PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "bytes"));
+    PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "byte"));
     PFL_EXPECT(layer_has_field_label(*payload_layer, "Raw"));
     PFL_EXPECT(layer_has_field_label(*payload_layer, "Plain EtherType") == expect_plain_ether_type);
     const auto* icv_layer = find_layer(summary_layers, "macsec-icv");
