@@ -90,6 +90,7 @@ Current structured-parser limitations and boundaries:
 | `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.3 `CCS -> ApplicationData` sequencing contract | Complete | Keep for now |
 | `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with shared packet/stream structured Summary baseline | Partially complete | Keep for now |
 | `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
+| `tls_1_3_split_client_hello_10.pcap` | Session and reassembly | `PacketDetailsTests` | Medium | Packet-local partial TLS record and partial ClientHello envelope coverage without reassembly claims | Partially complete | Keep for now |
 | `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
@@ -1374,6 +1375,52 @@ Current additional TLS fields available only in Protocol:
 
 - None for the packet-level TLS facts recorded above.
 - Remaining work is target Summary design and test expansion.
+
+### tls_1_3_split_client_hello_10.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied from `tmp/tls_data/tls_1_3_example_21.pcap` without byte changes  
+**Decision:** Keep for now
+
+#### Current contract
+
+- Packet 4 (one-based capture numbering, zero-based packet index `3`) has TCP payload length `1412` bytes.
+- Packet 4 starts at a TLS record header:
+  - content type `Handshake`;
+  - legacy record version `0x0301`;
+  - declared TLS record payload length `1893`;
+  - total record size `1898` bytes.
+- Packet 4 therefore exposes a valid packet-local partial TLS record envelope:
+  - `1412` record bytes available;
+  - `1407` handshake bytes available after the 5-byte TLS record header;
+  - the record remains incomplete;
+  - the `ClientHello` remains incomplete.
+- Packet 4 also exposes a valid packet-local partial handshake envelope:
+  - handshake type `ClientHello (1)`;
+  - declared handshake body length `1889`;
+  - total handshake size `1893` bytes.
+- Packet 5 (one-based capture numbering, zero-based packet index `4`) has TCP payload length `486` bytes.
+- Packet 5 begins in the middle of the same `ClientHello` body and does not begin with a TLS record header.
+- Packet 5 is therefore not independently identifiable as TLS from its packet-local TCP payload prefix alone.
+- Full stream reconstruction of the split record is already covered by stream-level work and remains outside the scope of this packet-local pass.
+
+#### Automated contract
+
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `4` summary places a warning `tls` layer immediately after the TCP layer;
+  - packet `4` summary title is `Transport Layer Security, ClientHello Fragment`;
+  - packet `4` summary asserts:
+    - `Status = Incomplete record body`;
+    - `Available Bytes = 1412`;
+    - `Record Type = Handshake`;
+    - `Record Legacy Version = TLS 1.0 (0x0301)`;
+    - `Declared Record Length = 1893`;
+    - `Handshake Type = ClientHello`;
+    - `Handshake Length = 1889`;
+    - `Handshake Status = Incomplete body`;
+    - `Available Handshake Bytes = 1407`.
+  - packet `4` summary does not fabricate structured ClientHello fields such as `SNI`, `ALPN`, `Supported TLS Versions`, `ClientHello Legacy Version`, or TLS extension child groups.
+  - packet `5` summary produces no independent `tls` layer.
 
 ### tls_normal_1.pcap
 

@@ -1017,6 +1017,18 @@ TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> t
         const auto record_end = checked_add(offset, *record.total_size);
         if (!record_end.has_value() || *record_end > tls_bytes.size()) {
             record.status = TlsRecordStatus::partial_body;
+            if (record.content_type_kind == TlsRecordContentTypeKind::handshake) {
+                if (post_change_cipher_spec) {
+                    record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
+                } else {
+                    record.handshake_payload_kind = TlsHandshakePayloadKind::plaintext;
+                    const auto available_record_body_bytes = tls_bytes.size() - (offset + kTlsRecordHeaderSize);
+                    record.handshake_messages = parse_handshake_messages(
+                        tls_bytes.subspan(offset + kTlsRecordHeaderSize, available_record_body_bytes),
+                        offset
+                    );
+                }
+            }
             result.records.push_back(std::move(record));
             result.consumed_bytes = tls_bytes.size();
             result.stopped_after_partial_record = true;

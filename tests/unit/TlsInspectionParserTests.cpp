@@ -615,6 +615,7 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(partial_record.source_offset == 1221U);
         PFL_EXPECT(partial_record.available_bytes == 179U);
         PFL_EXPECT(partial_record.status == TlsRecordStatus::partial_body);
+        PFL_EXPECT(partial_record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
         PFL_EXPECT(partial_record.handshake_messages.empty());
     }
 
@@ -874,6 +875,40 @@ void run_tls_inspection_parser_tests() {
         PFL_REQUIRE(result.records[0].handshake_messages[0].client_hello.has_value());
         PFL_REQUIRE(result.records[0].handshake_messages[0].client_hello->extensions.size() == 1U);
         PFL_EXPECT(result.records[0].handshake_messages[0].client_hello->extensions[0].source_offset == 52U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=partial_record_with_partial_client_hello_envelope"};
+        const std::array<std::uint8_t, 11> bytes {
+            0x16U, 0x03U, 0x01U, 0x00U, 0x0CU,
+            0x01U, 0x00U, 0x00U, 0x08U, 0xAAU, 0xBBU
+        };
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.total_input_bytes == 11U);
+        PFL_EXPECT(result.consumed_bytes == 11U);
+        PFL_EXPECT(result.stopped_after_partial_record);
+        PFL_EXPECT(result.records[0].source_offset == 0U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::partial_body);
+        PFL_EXPECT(result.records[0].content_type == std::optional<std::uint8_t> {22U});
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0301U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {12U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {17U});
+        PFL_EXPECT(result.records[0].available_bytes == 11U);
+        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+
+        const auto& handshake = result.records[0].handshake_messages[0];
+        PFL_EXPECT(handshake.source_offset == 5U);
+        PFL_EXPECT(handshake.type == std::optional<std::uint8_t> {1U});
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_hello);
+        PFL_EXPECT(handshake.declared_body_length == std::optional<std::size_t> {8U});
+        PFL_EXPECT(handshake.total_size == std::optional<std::size_t> {12U});
+        PFL_EXPECT(handshake.available_bytes == 6U);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::partial_body);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!handshake.client_hello.has_value());
     }
 
     {

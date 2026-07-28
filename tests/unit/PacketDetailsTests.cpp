@@ -1189,6 +1189,72 @@ void run_packet_details_tests() {
     }
 
     {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap"), CaptureImportOptions {}));
+
+        const auto packet4 = require_packet(session, 3U);
+        const auto details4 = session.read_packet_details(packet4);
+        PFL_REQUIRE(details4.has_value());
+        const auto packet4_bytes = session.read_packet_data(packet4);
+        PacketPayloadService payload_service {};
+        const auto transport_payload4 = payload_service.extract_transport_payload(packet4_bytes, packet4.data_link_type);
+        PFL_EXPECT(transport_payload4.size() == 1412U);
+        const auto summary_layers4 = session_detail::build_packet_summary_layers(*details4, packet4, {
+            .transport_payload_length = static_cast<std::uint32_t>(transport_payload4.size()),
+            .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload4.size()),
+            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload4.data(), transport_payload4.size()),
+            .protocol_details_text = session.read_packet_protocol_details_text(packet4),
+        });
+
+        std::size_t tcp_index4 = summary_layers4.size();
+        for (std::size_t index = 0U; index < summary_layers4.size(); ++index) {
+            if (summary_layers4[index].id == "tcp") {
+                tcp_index4 = index;
+                break;
+            }
+        }
+        PFL_REQUIRE(tcp_index4 < summary_layers4.size());
+        PFL_REQUIRE(tcp_index4 + 1U < summary_layers4.size());
+        PFL_EXPECT(summary_layers4[tcp_index4 + 1U].id == "tls");
+
+        const auto& tls_layer4 = summary_layers4[tcp_index4 + 1U];
+        PFL_EXPECT(tls_layer4.title == "Transport Layer Security, ClientHello Fragment");
+        PFL_EXPECT(tls_layer4.warning);
+        PFL_EXPECT(tls_layer4.marker_text == "Warning");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Status") == "Incomplete record body");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Available Bytes") == "1412");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Record Legacy Version") == "TLS 1.0 (0x0301)");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Declared Record Length") == "1893");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Handshake Length") == "1889");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Handshake Status") == "Incomplete body");
+        PFL_EXPECT(require_summary_field_value(tls_layer4, "Available Handshake Bytes") == "1407");
+        PFL_EXPECT(find_summary_field(tls_layer4, "SNI") == nullptr);
+        PFL_EXPECT(find_summary_field(tls_layer4, "ALPN") == nullptr);
+        PFL_EXPECT(find_summary_field(tls_layer4, "Extension Count") == nullptr);
+        PFL_EXPECT(find_summary_field(tls_layer4, "ClientHello Legacy Version") == nullptr);
+        PFL_EXPECT(find_summary_field(tls_layer4, "Supported TLS Versions") == nullptr);
+        PFL_EXPECT(find_summary_child(tls_layer4, "tls_cipher_suites") == nullptr);
+        PFL_EXPECT(find_summary_child(tls_layer4, "tls_compression_methods") == nullptr);
+        PFL_EXPECT(find_summary_child(tls_layer4, "tls_extensions") == nullptr);
+
+        const auto packet5 = require_packet(session, 4U);
+        const auto details5 = session.read_packet_details(packet5);
+        PFL_REQUIRE(details5.has_value());
+        const auto packet5_bytes = session.read_packet_data(packet5);
+        const auto transport_payload5 = payload_service.extract_transport_payload(packet5_bytes, packet5.data_link_type);
+        PFL_EXPECT(transport_payload5.size() == 486U);
+        const auto summary_layers5 = session_detail::build_packet_summary_layers(*details5, packet5, {
+            .transport_payload_length = static_cast<std::uint32_t>(transport_payload5.size()),
+            .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload5.size()),
+            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload5.data(), transport_payload5.size()),
+            .protocol_details_text = session.read_packet_protocol_details_text(packet5),
+        });
+        PFL_EXPECT(find_summary_layer(summary_layers5, "tls") == nullptr);
+    }
+
+    {
         const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_2_app_data_3.pcap");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(tls_layers.size() == 1U);
@@ -1375,7 +1441,21 @@ void run_packet_details_tests() {
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
-        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto* tls_layer = find_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(tls_layer->warning);
+        PFL_EXPECT(tls_layer->title == "Transport Layer Security, ClientHello Fragment");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Status") == "Incomplete record body");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Available Bytes") == "7");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Declared Record Length") == "8");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Length") == "8");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Status") == "Incomplete header");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Available Handshake Bytes") == "2");
+        PFL_EXPECT(find_summary_field(*tls_layer, "ClientHello Legacy Version") == nullptr);
+        PFL_EXPECT(find_summary_child(*tls_layer, "tls_extensions") == nullptr);
     }
 
     {

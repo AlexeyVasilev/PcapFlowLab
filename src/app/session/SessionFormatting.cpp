@@ -3183,7 +3183,7 @@ std::optional<PacketSummaryLayer> build_icmpv6_summary_layer(const PacketDetails
     };
 }
 
-bool looks_like_tls_summary_payload(std::span<const std::uint8_t> payload) {
+bool looks_like_tls_summary_payload_prefix(std::span<const std::uint8_t> payload) {
     if (payload.size() < 5U) {
         return false;
     }
@@ -3933,8 +3933,33 @@ std::string tls_partial_record_status_text(const TlsRecordStatus status) {
     return "Incomplete record";
 }
 
+std::string tls_partial_handshake_status_text(const TlsHandshakeStatus status) {
+    switch (status) {
+    case TlsHandshakeStatus::partial_header:
+        return "Incomplete header";
+    case TlsHandshakeStatus::partial_body:
+        return "Incomplete body";
+    case TlsHandshakeStatus::complete:
+        return "Complete";
+    }
+
+    return "Incomplete";
+}
+
 std::string tls_record_summary_title(const TlsRecordModel& record) {
     if (record.status != TlsRecordStatus::complete) {
+        if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+            record.handshake_payload_kind == TlsHandshakePayloadKind::plaintext &&
+            record.handshake_messages.size() == 1U) {
+            const auto handshake_type = format_tls_handshake_type_value(
+                record.handshake_messages[0].kind,
+                record.handshake_messages[0].type
+            );
+            if (!handshake_type.empty() && handshake_type != "Unknown") {
+                return "Transport Layer Security, " + handshake_type + " Fragment";
+            }
+        }
+
         return "TLS Record Fragment (partial)";
     }
 
@@ -4095,6 +4120,28 @@ std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& 
     if (record.declared_payload_length.has_value()) {
         fields.push_back(make_summary_field("Declared Record Length", std::to_string(*record.declared_payload_length)));
     }
+    if (record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque) {
+        fields.push_back(make_summary_field(
+            "Payload Interpretation",
+            "Encrypted/opaque handshake payload"
+        ));
+    } else if (record.handshake_messages.size() == 1U) {
+        const auto& handshake = record.handshake_messages.front();
+        if (handshake.type.has_value()) {
+            fields.push_back(make_summary_field(
+                "Handshake Type",
+                format_tls_handshake_type_value(handshake.kind, handshake.type)
+            ));
+        }
+        if (handshake.declared_body_length.has_value()) {
+            fields.push_back(make_summary_field("Handshake Length", std::to_string(*handshake.declared_body_length)));
+        }
+        fields.push_back(make_summary_field(
+            "Handshake Status",
+            tls_partial_handshake_status_text(handshake.status)
+        ));
+        fields.push_back(make_summary_field("Available Handshake Bytes", std::to_string(handshake.available_bytes)));
+    }
 
     return PacketSummaryLayer {
         .id = "tls",
@@ -4109,7 +4156,7 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     std::span<const std::uint8_t> transport_payload_bytes,
     const bool force_encrypted_handshake_records = false
 ) {
-    if (!looks_like_tls_summary_payload(transport_payload_bytes)) {
+    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
         return {};
     }
 
