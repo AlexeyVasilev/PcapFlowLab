@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/session/FlowRows.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketRef.h"
 
@@ -26,7 +27,7 @@ struct TlsStreamPresentationItem {
     std::vector<std::string> constricted_packet_notes {};
     std::string payload_hex_text {};
     std::string protocol_text {};
-    bool encrypted_handshake_record {false};
+    TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
 };
 
 struct TlsPacketStreamPresentation {

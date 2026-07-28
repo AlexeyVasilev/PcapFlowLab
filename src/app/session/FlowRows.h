@@ -73,6 +73,19 @@ struct UnrecognizedPacketRow {
     std::string reason_text {};
 };
 
+enum class TlsStreamItemSemanticKind : std::uint8_t {
+    none = 0,
+    change_cipher_spec,
+    plaintext_handshake,
+    encrypted_handshake,
+    application_data,
+    alert,
+    generic_record,
+    partial_record,
+    partial_payload,
+    gap,
+};
+
 struct StreamItemRow {
     std::uint64_t stream_item_index {0};
     std::string direction_text {};
@@ -86,7 +99,7 @@ struct StreamItemRow {
     std::string summary_text {};
     std::string payload_hex_text {};
     std::string protocol_text {};
-    bool tls_encrypted_handshake_record {false};
+    TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
 };
 
 struct ProtocolStats {

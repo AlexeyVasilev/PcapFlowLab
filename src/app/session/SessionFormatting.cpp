@@ -4137,20 +4137,61 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     return layers;
 }
 
+struct TlsStreamSummaryContext {
+    bool is_tls {false};
+    bool allow_structured_summary {false};
+    bool force_encrypted_handshake_records {false};
+    std::optional<std::string_view> partial_status_text {};
+};
+
+TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKind semantic_kind) {
+    switch (semantic_kind) {
+    case TlsStreamItemSemanticKind::change_cipher_spec:
+    case TlsStreamItemSemanticKind::plaintext_handshake:
+    case TlsStreamItemSemanticKind::application_data:
+    case TlsStreamItemSemanticKind::alert:
+    case TlsStreamItemSemanticKind::generic_record:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .allow_structured_summary = true,
+        };
+    case TlsStreamItemSemanticKind::encrypted_handshake:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .allow_structured_summary = true,
+            .force_encrypted_handshake_records = true,
+        };
+    case TlsStreamItemSemanticKind::partial_record:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .partial_status_text = "Incomplete record body",
+        };
+    case TlsStreamItemSemanticKind::partial_payload:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .partial_status_text = "Incomplete TLS payload",
+        };
+    case TlsStreamItemSemanticKind::gap:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+        };
+    case TlsStreamItemSemanticKind::none:
+    default:
+        return {};
+    }
+}
+
 std::optional<PacketSummaryLayer> build_tls_partial_stream_summary_layer(const StreamItemRow& row) {
-    if (row.label != "TLS Record Fragment (partial)" && row.label != "TLS Payload (partial)") {
+    const auto context = tls_stream_summary_context(row.tls_semantic_kind);
+    if (!context.partial_status_text.has_value()) {
         return std::nullopt;
     }
-
-    const auto status_text = row.label == "TLS Record Fragment (partial)"
-        ? "Incomplete record body"
-        : "Incomplete TLS payload";
 
     return PacketSummaryLayer {
         .id = "tls",
         .title = row.label,
         .fields = {
-            make_summary_field("Status", status_text),
+            make_summary_field("Status", std::string {*context.partial_status_text}),
             make_summary_field("Available Bytes", std::to_string(row.byte_count)),
         },
         .warning = true,
@@ -4752,15 +4793,15 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     std::string_view details_source_text,
     std::string_view frames_hint_text
 ) {
-    if (row.label.rfind("TLS ", 0U) != 0U) {
+    const auto context = tls_stream_summary_context(row.tls_semantic_kind);
+    if (!context.is_tls) {
         return {};
     }
 
     std::vector<PacketSummaryLayer> tls_layers {};
     const auto can_parse_structured_tls =
+        context.allow_structured_summary &&
         !row.has_constricted_contribution &&
-        row.label != "TLS Record Fragment (partial)" &&
-        row.label != "TLS Payload (partial)" &&
         !row.payload_hex_text.empty();
     if (can_parse_structured_tls) {
         // Selected stream-item Summary currently reparses the exact logical item bytes
@@ -4769,7 +4810,7 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
         const auto payload_bytes = decode_hex_dump_bytes(row.payload_hex_text);
         tls_layers = build_tls_summary_layers_impl(
             std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()),
-            row.tls_encrypted_handshake_record
+            context.force_encrypted_handshake_records
         );
     }
 

@@ -1039,7 +1039,7 @@ std::string tls_handshake_stream_label(const std::uint8_t handshake_type) {
 
 std::string tls_stream_label(
     std::span<const std::uint8_t> record_bytes,
-    const bool encrypted_handshake_payload = false
+    const TlsStreamItemSemanticKind semantic_kind = TlsStreamItemSemanticKind::none
 ) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS Payload";
@@ -1052,7 +1052,7 @@ std::string tls_stream_label(
     case 21U:
         return "TLS Alert";
     case 22U:
-        if (encrypted_handshake_payload) {
+        if (semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake) {
             return "TLS Encrypted Handshake Message";
         }
         if (record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
@@ -1068,7 +1068,7 @@ std::string tls_stream_label(
 
 std::string tls_record_protocol_text(
     std::span<const std::uint8_t> record_bytes,
-    const bool encrypted_handshake_payload = false
+    const TlsStreamItemSemanticKind semantic_kind = TlsStreamItemSemanticKind::none
 ) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS\n  Record details unavailable for this stream item.";
@@ -1084,7 +1084,7 @@ std::string tls_record_protocol_text(
          << "  Record Version: " << tls_record_version_text(version) << "\n"
          << "  Record Length: " << record_length;
 
-    if (content_type == 22U && encrypted_handshake_payload) {
+    if (content_type == 22U && semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake) {
         text << "\n"
              << "  Payload Interpretation: Encrypted/opaque handshake payload";
     } else if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
@@ -1124,6 +1124,30 @@ std::string tls_record_protocol_text(
     }
 
     return text.str();
+}
+
+TlsStreamItemSemanticKind tls_stream_semantic_kind(
+    std::span<const std::uint8_t> record_bytes,
+    const bool post_change_cipher_spec
+) {
+    if (record_bytes.size() < kTlsRecordHeaderSize) {
+        return TlsStreamItemSemanticKind::partial_payload;
+    }
+
+    switch (record_bytes[0]) {
+    case 20U:
+        return TlsStreamItemSemanticKind::change_cipher_spec;
+    case 21U:
+        return TlsStreamItemSemanticKind::alert;
+    case 22U:
+        return post_change_cipher_spec
+            ? TlsStreamItemSemanticKind::encrypted_handshake
+            : TlsStreamItemSemanticKind::plaintext_handshake;
+    case 23U:
+        return TlsStreamItemSemanticKind::application_data;
+    default:
+        return TlsStreamItemSemanticKind::generic_record;
+    }
 }
 
 std::optional<std::size_t> derive_original_tcp_payload_length_from_headers(
@@ -1242,7 +1266,7 @@ struct PendingTlsRecord {
     std::size_t remaining_original_bytes {0U};
     std::vector<std::uint64_t> packet_indices {};
     std::vector<std::uint8_t> captured_bytes {};
-    bool encrypted_handshake_record {false};
+    TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::string protocol_text {};
@@ -1298,7 +1322,7 @@ TlsStreamPresentationItem finalize_pending_tls_record(
         .constricted_packet_notes = std::move(record.constricted_notes),
         .payload_hex_text = hex_dump_service.format(record.captured_bytes),
         .protocol_text = std::move(record.protocol_text),
-        .encrypted_handshake_record = record.encrypted_handshake_record,
+        .semantic_kind = record.semantic_kind,
     };
 }
 
@@ -1469,6 +1493,7 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                     .packet_indices = {packet_index},
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = "TLS\n  Remaining bytes do not form a complete TLS record in this packet.",
+                    .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
                 });
             }
             return presentation;
@@ -1483,22 +1508,20 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                 .packet_indices = {packet_index},
                 .payload_hex_text = hex_dump_service.format(trailing),
                 .protocol_text = "TLS\n  Record header is present but the full TLS record body is not available in this packet.",
+                .semantic_kind = TlsStreamItemSemanticKind::partial_record,
             });
             return presentation;
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
-        const bool encrypted_handshake_record =
-            post_change_cipher_spec &&
-            !record_bytes.empty() &&
-            record_bytes[0] == 22U;
+        const auto semantic_kind = tls_stream_semantic_kind(record_bytes, post_change_cipher_spec);
         presentation.items.push_back(TlsStreamPresentationItem {
-            .label = tls_stream_label(record_bytes, encrypted_handshake_record),
+            .label = tls_stream_label(record_bytes, semantic_kind),
             .byte_count = record_bytes.size(),
             .packet_indices = {packet_index},
             .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = tls_record_protocol_text(record_bytes, encrypted_handshake_record),
-            .encrypted_handshake_record = encrypted_handshake_record,
+            .protocol_text = tls_record_protocol_text(record_bytes, semantic_kind),
+            .semantic_kind = semantic_kind,
         });
         if (!record_bytes.empty() && record_bytes[0] == 20U) {
             post_change_cipher_spec = true;
@@ -1566,6 +1589,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
                     .packet_indices = packet_indices,
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = limited_quality_tls_protocol_text(false),
+                    .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
                 });
             }
             presentation.used_reassembly = true;
@@ -1589,18 +1613,16 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
                 .packet_indices = packet_indices,
                 .payload_hex_text = hex_dump_service.format(trailing),
                 .protocol_text = limited_quality_tls_protocol_text(true),
+                .semantic_kind = TlsStreamItemSemanticKind::partial_record,
             });
             presentation.used_reassembly = true;
             break;
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
-        const bool encrypted_handshake_record =
-            post_change_cipher_spec &&
-            !record_bytes.empty() &&
-            record_bytes[0] == 22U;
-        const auto label = tls_stream_label(record_bytes, encrypted_handshake_record);
-        const auto protocol_text = tls_record_protocol_text(record_bytes, encrypted_handshake_record);
+        const auto semantic_kind = tls_stream_semantic_kind(record_bytes, post_change_cipher_spec);
+        const auto label = tls_stream_label(record_bytes, semantic_kind);
+        const auto protocol_text = tls_record_protocol_text(record_bytes, semantic_kind);
         const auto packet_indices = consume_reassembled_packet_indices(
             *chunks,
             record_bytes.size(),
@@ -1615,7 +1637,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
             .packet_indices = packet_indices,
             .payload_hex_text = hex_dump_service.format(record_bytes),
             .protocol_text = std::move(protocol_text),
-            .encrypted_handshake_record = encrypted_handshake_record,
+            .semantic_kind = semantic_kind,
         });
         emitted_any = true;
         if (!record_bytes.empty() && record_bytes[0] == 20U) {
@@ -1635,6 +1657,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
             .packet_indices = {result->first_gap_packet_index},
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("TLS"),
+            .semantic_kind = TlsStreamItemSemanticKind::gap,
         });
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
@@ -1673,6 +1696,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .packet_indices = {*gap_packet_index},
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("TLS"),
+            .semantic_kind = TlsStreamItemSemanticKind::gap,
         });
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
@@ -1791,6 +1815,9 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                     .packet_indices = {packet.packet_index},
                     .payload_hex_text = hex_dump_service.format(payload_span.subspan(captured_offset)),
                     .protocol_text = limited_quality_tls_protocol_text(captured_remaining >= kTlsRecordHeaderSize),
+                    .semantic_kind = captured_remaining < kTlsRecordHeaderSize
+                        ? TlsStreamItemSemanticKind::partial_payload
+                        : TlsStreamItemSemanticKind::partial_record,
                 });
                 presentation.used_reassembly = true;
                 presentation.covered_packet_indices.insert(packet.packet_index);
@@ -1804,12 +1831,9 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
-            const bool encrypted_handshake_record =
-                post_change_cipher_spec &&
-                !captured_record_bytes.empty() &&
-                captured_record_bytes[0] == 22U;
-            const auto label = tls_stream_label(captured_record_bytes, encrypted_handshake_record);
-            const auto protocol_text = tls_record_protocol_text(captured_record_bytes, encrypted_handshake_record);
+            const auto semantic_kind = tls_stream_semantic_kind(captured_record_bytes, post_change_cipher_spec);
+            const auto label = tls_stream_label(captured_record_bytes, semantic_kind);
+            const auto protocol_text = tls_record_protocol_text(captured_record_bytes, semantic_kind);
 
             PendingTlsRecord record {
                 .label = std::move(label),
@@ -1817,7 +1841,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                 .remaining_original_bytes = record_size - contributed_original_bytes,
                 .packet_indices = {packet.packet_index},
                 .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
-                .encrypted_handshake_record = encrypted_handshake_record,
+                .semantic_kind = semantic_kind,
                 .protocol_text = std::move(protocol_text),
             };
             if (packet.captured_length < packet.original_length && captured_contribution < record_size) {
@@ -1863,6 +1887,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .packet_indices = pending_record->packet_indices,
             .payload_hex_text = hex_dump_service.format(pending_record->captured_bytes),
             .protocol_text = limited_quality_tls_protocol_text(true),
+            .semantic_kind = TlsStreamItemSemanticKind::partial_record,
         });
         presentation.used_reassembly = true;
         presentation.covered_packet_indices.insert(

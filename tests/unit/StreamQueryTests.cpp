@@ -14,6 +14,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionQuicPresentation.h"
+#include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
@@ -1372,6 +1373,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].packet_count == 1U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake);
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
         PFL_EXPECT(!rows[0].protocol_text.empty());
         const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
@@ -1666,6 +1668,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].packet_count == 1U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake);
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
         PFL_EXPECT(!rows[0].protocol_text.empty());
         const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
@@ -1772,6 +1775,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[1].packet_count == 1U);
         PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[1].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[1].tls_semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec);
         const auto ccs_summary_layers = build_stream_summary_layers(rows[1], packet_rows);
         const auto* ccs_tls_layer = find_top_level_summary_layer(ccs_summary_layers, "tls");
         PFL_REQUIRE(ccs_tls_layer != nullptr);
@@ -1792,6 +1796,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[2].packet_count == 1U);
         PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[2].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[2].tls_semantic_kind == TlsStreamItemSemanticKind::partial_record);
         const auto partial_summary_layers = build_stream_summary_layers(rows[2], packet_rows);
         const auto* partial_tls_layer = find_top_level_summary_layer(partial_summary_layers, "tls");
         PFL_REQUIRE(partial_tls_layer != nullptr);
@@ -1818,6 +1823,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].byte_count == 657U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::application_data);
         PFL_EXPECT(rows[0].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Record Version: TLS 1.2 (0x0303)") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Record Length: 652") != std::string::npos);
@@ -1843,11 +1849,13 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].byte_count == 916U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::application_data);
         PFL_EXPECT(rows[0].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Record Length: 911") != std::string::npos);
         PFL_EXPECT(rows[1].label == "TLS AppData");
         PFL_EXPECT(rows[1].byte_count == 62U);
         PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[1].tls_semantic_kind == TlsStreamItemSemanticKind::application_data);
         PFL_EXPECT(rows[1].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
         PFL_EXPECT(rows[1].protocol_text.find("Record Length: 57") != std::string::npos);
         const auto first_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
@@ -1871,9 +1879,11 @@ void run_stream_query_tests() {
         PFL_REQUIRE(rows.size() == 2U);
         PFL_EXPECT(rows[0].label == "TLS ChangeCipherSpec");
         PFL_EXPECT(rows[0].byte_count == 6U);
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec);
         PFL_EXPECT(rows[0].protocol_text.find("Record Type: ChangeCipherSpec") != std::string::npos);
         PFL_EXPECT(rows[1].label == "TLS Encrypted Handshake Message");
         PFL_EXPECT(rows[1].byte_count == 45U);
+        PFL_EXPECT(rows[1].tls_semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake);
         PFL_EXPECT(rows[1].protocol_text.find("Record Type: Handshake") != std::string::npos);
         PFL_EXPECT(rows[1].protocol_text.find("Record Version: TLS 1.2 (0x0303)") != std::string::npos);
         PFL_EXPECT(rows[1].protocol_text.find("Record Length: 40") != std::string::npos);
@@ -1900,9 +1910,11 @@ void run_stream_query_tests() {
         PFL_REQUIRE(rows.size() == 2U);
         PFL_EXPECT(rows[0].label == "TLS ChangeCipherSpec");
         PFL_EXPECT(rows[0].byte_count == 6U);
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec);
         PFL_EXPECT(rows[0].protocol_text.find("Record Type: ChangeCipherSpec") != std::string::npos);
         PFL_EXPECT(rows[1].label == "TLS AppData");
         PFL_EXPECT(rows[1].byte_count == 74U);
+        PFL_EXPECT(rows[1].tls_semantic_kind == TlsStreamItemSemanticKind::application_data);
         PFL_EXPECT(rows[1].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
         PFL_EXPECT(rows[1].protocol_text.find("Record Length: 69") != std::string::npos);
         const auto app_data_summary_layers = build_stream_summary_layers(rows[1], packet_rows);
@@ -1923,12 +1935,15 @@ void run_stream_query_tests() {
         PFL_REQUIRE(rows.size() == 3U);
         PFL_EXPECT(rows[0].label == "TLS NewSessionTicket");
         PFL_EXPECT(rows[0].byte_count == 191U);
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake);
         PFL_EXPECT(rows[0].protocol_text.find("Handshake Type: NewSessionTicket") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Handshake Length: 182") != std::string::npos);
         PFL_EXPECT(rows[1].label == "TLS ChangeCipherSpec");
         PFL_EXPECT(rows[1].byte_count == 6U);
+        PFL_EXPECT(rows[1].tls_semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec);
         PFL_EXPECT(rows[2].label == "TLS Encrypted Handshake Message");
         PFL_EXPECT(rows[2].byte_count == 45U);
+        PFL_EXPECT(rows[2].tls_semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake);
         PFL_EXPECT(rows[2].protocol_text.find("Record Type: Handshake") != std::string::npos);
         PFL_EXPECT(rows[2].protocol_text.find("Payload Interpretation: Encrypted/opaque handshake payload") != std::string::npos);
         PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Handshake Type:").has_value() == false);
@@ -1977,9 +1992,37 @@ void run_stream_query_tests() {
             PFL_EXPECT(row.label == "UDP Payload");
             PFL_EXPECT(!starts_with(row.label, "DNS"));
             PFL_EXPECT(!starts_with(row.label, "QUIC"));
+            PFL_EXPECT(row.tls_semantic_kind == TlsStreamItemSemanticKind::none);
             PFL_EXPECT(row.protocol_text.empty());
             PFL_EXPECT(row.payload_hex_text.empty());
         }
+    }
+
+    {
+        HexDumpService hex_dump_service {};
+        const auto payload = make_tls_handshake_record(0x02U, {0xAAU, 0xBBU, 0xCCU});
+        const StreamItemRow row {
+            .stream_item_index = 1U,
+            .direction_text = "A -> B",
+            .label = "synthetic-not-used-for-tls-semantics",
+            .byte_count = static_cast<std::uint32_t>(payload.size()),
+            .packet_count = 1U,
+            .packet_indices = {0U},
+            .payload_hex_text = hex_dump_service.format(payload),
+            .protocol_text = "synthetic protocol text should not choose semantics",
+            .tls_semantic_kind = TlsStreamItemSemanticKind::encrypted_handshake,
+        };
+
+        const auto summary_layers = session_detail::build_stream_item_summary_layers(
+            row,
+            "packet #1",
+            "Stream item"
+        );
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Payload Interpretation") == "Encrypted/opaque handshake payload");
+        PFL_EXPECT(find_summary_field(*tls_layer, "Handshake Type") == nullptr);
+        PFL_EXPECT(find_summary_field(*tls_layer, "Handshake Length") == nullptr);
     }
 
     {

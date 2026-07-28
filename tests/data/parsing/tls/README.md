@@ -67,7 +67,11 @@ Current structured-parser limitations and boundaries:
 - the 2-byte ServerHello `key_share` selected-group / HelloRetryRequest form remains present as extension metadata but is left `not_attempted`;
 - post-CCS protected-handshake classification is parser-local per `inspect(...)` call: a complete CCS affects later records in the same inspected byte span, while a partial CCS does not poison a later independent inspection;
 - packet-local Packet Details Summary and selected Stream Item Summary now use the same shared structured TLS summary mapping;
-- selected Stream Item Summary still relies on isolated typed row context such as `encrypted_handshake_record`; this is presentation-local state and not an import/persistence contract;
+- selected Stream items now carry an internal `TlsStreamItemSemanticKind` classification in the C++ session layer;
+- labels and Protocol text remain presentation-only output and are not used as semantic inputs for selected TLS Stream inspection;
+- the TLS Stream semantic enum is recomputed during Stream item construction and is not persisted in capture indexes, packet storage, or frontend DTOs;
+- selected Stream Item Summary receives protected post-CCS Handshake context through that enum rather than through label parsing or standalone boolean flags;
+- future TLS Stream work such as Alert or Certificate-specific handling should extend the enum rather than add more semantic booleans;
 - Packet Details Protocol remains the legacy presentation source for richer raw field dumps in this pass;
 - flow hints are not migrated to this parser in this pass.
 

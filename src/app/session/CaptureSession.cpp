@@ -157,7 +157,7 @@ StreamItemRow make_stream_item_row(
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
-    const bool tls_encrypted_handshake_record = false
+    const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none
 ) {
     return StreamItemRow {
         .stream_item_index = stream_item_index,
@@ -172,7 +172,7 @@ StreamItemRow make_stream_item_row(
         .summary_text = summary_text,
         .payload_hex_text = payload_hex_text,
         .protocol_text = protocol_text,
-        .tls_encrypted_handshake_record = tls_encrypted_handshake_record,
+        .tls_semantic_kind = tls_semantic_kind,
     };
 }
 
@@ -188,7 +188,7 @@ StreamItemRow make_stream_item_row(
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
-    const bool tls_encrypted_handshake_record = false
+    const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none
 ) {
     return make_stream_item_row(
         stream_item_index,
@@ -202,7 +202,7 @@ StreamItemRow make_stream_item_row(
         has_constricted_contribution,
         constricted_contribution_notes,
         constricted_packet_notes,
-        tls_encrypted_handshake_record
+        tls_semantic_kind
     );
 }
 
@@ -229,7 +229,7 @@ bool append_tls_stream_items(
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             item.constricted_packet_notes,
-            item.encrypted_handshake_record
+            item.semantic_kind
         ));
     }
 
@@ -303,7 +303,7 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             item.constricted_packet_notes,
-            item.encrypted_handshake_record
+            item.semantic_kind
         ));
     }
 
