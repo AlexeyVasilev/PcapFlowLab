@@ -255,6 +255,7 @@ struct FrontendSelectedFlowPacketsResult {
     std::size_t offset {0};
     std::size_t limit {0};
     std::size_t total_count {0};
+    std::optional<FrontendFlowDto> updated_flow {};
     std::vector<FrontendPacketDto> packets {};
 };
 

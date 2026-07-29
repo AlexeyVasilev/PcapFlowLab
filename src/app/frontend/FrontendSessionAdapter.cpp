@@ -2,6 +2,7 @@
 
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/index/CaptureIndex.h"
@@ -1694,6 +1695,17 @@ std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const st
     return session.flow_row(flow_index);
 }
 
+FlowRow apply_service_hint_override(
+    FlowRow row,
+    const std::map<std::size_t, std::string>& overrides
+) {
+    const auto override_it = overrides.find(row.index);
+    if (override_it != overrides.end() && row.service_hint.empty()) {
+        row.service_hint = override_it->second;
+    }
+    return row;
+}
+
 std::string build_analysis_endpoint_summary(const FlowRow& row) {
     std::ostringstream out {};
     out << row.endpoint_a
@@ -1839,6 +1851,7 @@ FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availabilit
 FrontendOpenResult FrontendSessionAdapter::open_capture(const std::filesystem::path& path) {
     cancel_and_join_open_worker();
     clear_selection();
+    flow_service_hint_overrides_.clear();
     session_ = CaptureSession {};
     const auto analysis_settings = to_analysis_settings(settings_);
 
@@ -1910,6 +1923,7 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(const std::fi
     }
 
     clear_selection();
+    flow_service_hint_overrides_.clear();
     session_ = CaptureSession {};
     const auto analysis_settings = to_analysis_settings(settings_);
     const auto open_as_index = looks_like_index_file(path);
@@ -2005,6 +2019,7 @@ FrontendOpenPollResultDto FrontendSessionAdapter::poll_open_capture() {
 
     result.result = async_open_.result;
     if (async_open_.completed_session.has_value() && result.result.opened && !result.result.cancelled) {
+        flow_service_hint_overrides_.clear();
         session_ = std::move(*async_open_.completed_session);
         async_open_.completed_session.reset();
     }
@@ -2353,7 +2368,7 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
     flows.reserve(rows.size());
 
     for (const auto& row : rows) {
-        flows.push_back(to_frontend_flow(row));
+        flows.push_back(to_frontend_flow(apply_service_hint_override(row, flow_service_hint_overrides_)));
     }
 
     return flows;
@@ -2433,8 +2448,8 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
         return result;
     }
 
-    auto updated_row = *row;
-    updated_row.service_hint = *derived_service_hint;
+    flow_service_hint_overrides_[flow_index] = *derived_service_hint;
+    auto updated_row = apply_service_hint_override(*row, flow_service_hint_overrides_);
     result.updated_flow = to_frontend_flow(updated_row);
     return result;
 }
@@ -2476,6 +2491,31 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
             row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
         }
     }
+
+    if (offset == 0U && !rows.empty()) {
+        const auto flow_row = session_.flow_row(flow_index);
+        if (flow_row.has_value()) {
+            auto effective_row = apply_service_hint_override(*flow_row, flow_service_hint_overrides_);
+            const auto protocol_hint_is_tls =
+                effective_row.protocol_hint == "tls" || effective_row.protocol_hint == "TLS";
+            if (protocol_hint_is_tls && effective_row.service_hint.empty()) {
+                const auto derived_service_hint = session_detail::derive_tls_service_hint_for_loaded_flow_prefix(
+                    session_,
+                    flow_index,
+                    rows.size()
+                );
+                if (derived_service_hint.has_value() && !derived_service_hint->empty()) {
+                    flow_service_hint_overrides_[flow_index] = *derived_service_hint;
+                    effective_row = apply_service_hint_override(*flow_row, flow_service_hint_overrides_);
+                }
+            }
+
+            if (effective_row.service_hint != flow_row->service_hint) {
+                result.updated_flow = to_frontend_flow(effective_row);
+            }
+        }
+    }
+
     result.packets.reserve(rows.size());
     for (const auto& row : rows) {
         result.packets.push_back(to_frontend_packet(row));
@@ -2687,7 +2727,10 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     }
 
     const auto flow_index = *selected_flow_index_;
-    const auto row = selected_flow_row(session_, flow_index);
+    auto row = selected_flow_row(session_, flow_index);
+    if (row.has_value()) {
+        row = apply_service_hint_override(*row, flow_service_hint_overrides_);
+    }
     if (!row.has_value()) {
         result.error_text = "The selected flow is unavailable.";
         return result;

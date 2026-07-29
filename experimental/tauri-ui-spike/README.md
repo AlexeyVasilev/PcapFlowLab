@@ -33,6 +33,7 @@ Implemented slice:
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area
+- the selected-flow packet response may also carry an optional updated flow row for ephemeral bounded enrichment such as selected-flow TLS Service Hint updates
 - open mode handling
 - grouped source-availability warning behavior
 - partial/truncated capture warning banner when a capture opens partially
@@ -159,6 +160,7 @@ Implemented slice:
 - The initial selected-flow packet batch is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
 - Clicking a packet row loads packet details and full available Raw/Payload byte text for the selected packet when byte-backed inspection is available.
+- Selected Packet Details use the explicit browser Packet-list window only; opening Stream or loading more Stream items does not widen the bounded packet-details reconstruction window.
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of looking like standalone buttons.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
 - The top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button.
@@ -246,6 +248,7 @@ Implemented slice:
 - Packet details display polish still differs from Qt and remains a smaller parity task.
 - Packet details should eventually move toward a shared structured decoded-layer DTO so Qt, Tauri, and future CLI surfaces can render the same packet layer list consistently.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload tabs can be unavailable even though packet metadata is still shown.
+- Any selected-flow packet-response `updated_flow` is ephemeral frontend state only; it is not written back into the capture index.
 - After a valid source attach, byte-backed packet details and stream become available on the next explicit reload; the shell does not trigger global stream or analysis recomputation.
 - Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.
 - Raw and Payload tabs now show the full available selected-packet byte text on demand; they still do not prefetch bytes for the full packet list.

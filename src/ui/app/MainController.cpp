@@ -4757,11 +4757,22 @@ void MainController::maybeEnrichSelectedFlowServiceHint() {
     const auto modelIndex = flow_model_.index(row, 0);
     const auto protocolHint = flow_model_.data(modelIndex, FlowListModel::ProtocolHintRole).toString();
     const auto serviceHint = flow_model_.data(modelIndex, FlowListModel::ServiceHintRole).toString();
-    if (protocolHint.compare(QStringLiteral("QUIC"), Qt::CaseInsensitive) != 0 || !serviceHint.isEmpty()) {
+    if (!serviceHint.isEmpty()) {
         return;
     }
 
-    const auto derivedServiceHint = session_.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index_));
+    std::optional<std::string> derivedServiceHint {};
+    if (protocolHint.compare(QStringLiteral("QUIC"), Qt::CaseInsensitive) == 0) {
+        derivedServiceHint = session_.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index_));
+    } else if (protocolHint.compare(QStringLiteral("TLS"), Qt::CaseInsensitive) == 0 &&
+               loaded_packet_row_count_ > 0U) {
+        derivedServiceHint = session_detail::derive_tls_service_hint_for_loaded_flow_prefix(
+            session_,
+            static_cast<std::size_t>(selected_flow_index_),
+            loaded_packet_row_count_
+        );
+    }
+
     if (!derivedServiceHint.has_value() || derivedServiceHint->empty()) {
         return;
     }

@@ -298,6 +298,7 @@ pub struct SelectedFlowPacketsDto {
     pub offset: usize,
     pub limit: usize,
     pub total_count: usize,
+    pub updated_flow: Option<FlowDto>,
     pub packets: Vec<PacketDto>,
 }
 

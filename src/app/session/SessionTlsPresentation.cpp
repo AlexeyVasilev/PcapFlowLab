@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <iomanip>
 #include <initializer_list>
 #include <optional>
@@ -11,6 +12,7 @@
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/TlsInspectionParser.h"
 
 namespace pfl::session_detail {
 
@@ -1461,6 +1463,24 @@ std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
     return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
 }
 
+bool is_plausible_service_name_char(const char value) noexcept {
+    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '.' || value == '-' || value == '_';
+}
+
+bool is_plausible_service_name(const std::string_view value) noexcept {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const auto character : value) {
+        if (!is_plausible_service_name_char(character)) {
+            return false;
+        }
+    }
+
+    return value.find('.') != std::string_view::npos;
+}
+
 Direction direction_from_packet_row(const PacketRow& row) noexcept {
     return !row.direction_text.empty() && row.direction_text.front() == 'B'
         ? Direction::b_to_a
@@ -1526,6 +1546,45 @@ std::optional<TlsSelectedPacketRecordContext> finalize_selected_packet_record_co
         .constricted_contribution_notes = std::move(record.constricted_contribution_notes),
         .constricted_packet_notes = std::move(record.constricted_notes),
     };
+}
+
+struct PendingTlsHintRecord {
+    std::size_t total_byte_count {0U};
+    std::size_t remaining_original_bytes {0U};
+    std::vector<std::uint8_t> captured_bytes {};
+};
+
+std::optional<std::string> extract_service_hint_from_complete_tls_record(
+    std::span<const std::uint8_t> record_bytes
+) {
+    if (record_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    TlsInspectionParser parser {};
+    const auto inspection = parser.inspect(record_bytes);
+    for (const auto& record : inspection.records) {
+        if (record.status != TlsRecordStatus::complete) {
+            continue;
+        }
+
+        for (const auto& handshake : record.handshake_messages) {
+            if (handshake.kind != TlsHandshakeKind::client_hello ||
+                handshake.status != TlsHandshakeStatus::complete ||
+                handshake.structured_parse_status != TlsStructuredParseStatus::parsed ||
+                !handshake.client_hello.has_value()) {
+                continue;
+            }
+
+            for (const auto& server_name : handshake.client_hello->sni_names) {
+                if (is_plausible_service_name(server_name)) {
+                    return server_name;
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
 }
 
 }  // namespace
@@ -2286,6 +2345,185 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
     }
 
     return contexts;
+}
+
+std::optional<std::string> derive_tls_service_hint_for_loaded_flow_prefix(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::size_t loaded_packet_window_count
+) {
+    if (loaded_packet_window_count == 0U) {
+        return std::nullopt;
+    }
+
+    const auto bounded_window_count = std::min(loaded_packet_window_count, session.flow_packet_count(flow_index));
+    if (bounded_window_count == 0U) {
+        return std::nullopt;
+    }
+
+    session.prepare_selected_flow_packet_cache(flow_index, bounded_window_count);
+    const auto retransmission_packets = session.suspected_tcp_retransmission_packet_indices(flow_index, bounded_window_count);
+    session.set_selected_flow_tcp_payload_suppression(flow_index, retransmission_packets, bounded_window_count);
+
+    const auto prefix_rows = session.list_flow_packets(flow_index, 0U, bounded_window_count);
+    if (prefix_rows.empty()) {
+        return std::nullopt;
+    }
+
+    struct DirectionState {
+        std::optional<PendingTlsHintRecord> pending_record {};
+        std::optional<std::uint64_t> first_gap_packet_index {};
+    };
+
+    DirectionState a_to_b_state {
+        .first_gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, Direction::a_to_b),
+    };
+    DirectionState b_to_a_state {
+        .first_gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, Direction::b_to_a),
+    };
+
+    for (const auto& row : prefix_rows) {
+        const auto direction = direction_from_packet_row(row);
+        auto& state = direction == Direction::a_to_b ? a_to_b_state : b_to_a_state;
+
+        const auto packet = session.selected_flow_packet_at(flow_index, row.row_number);
+        if (!packet.has_value()) {
+            continue;
+        }
+
+        if (state.first_gap_packet_index.has_value() &&
+            packet->packet_index >= *state.first_gap_packet_index &&
+            state.pending_record.has_value()) {
+            state.pending_record.reset();
+            continue;
+        }
+
+        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+            continue;
+        }
+
+        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
+        const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, *packet);
+        if (!original_payload_length.has_value()) {
+            state.pending_record.reset();
+            continue;
+        }
+
+        const auto payload_span = std::span<const std::uint8_t>(
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload_bytes.size() - trim_prefix_bytes
+        );
+
+        std::size_t captured_offset = 0U;
+        std::size_t record_budget_remaining = *original_payload_length;
+        std::size_t unique_original_remaining = *original_payload_length > trim_prefix_bytes
+            ? *original_payload_length - trim_prefix_bytes
+            : 0U;
+
+        while (record_budget_remaining > 0U) {
+            if (state.pending_record.has_value()) {
+                const auto contributed_original_bytes = std::min(
+                    unique_original_remaining,
+                    state.pending_record->remaining_original_bytes
+                );
+                if (contributed_original_bytes == 0U) {
+                    break;
+                }
+
+                const auto captured_remaining = payload_span.size() - std::min(payload_span.size(), captured_offset);
+                const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+                if (captured_contribution > 0U) {
+                    state.pending_record->captured_bytes.insert(
+                        state.pending_record->captured_bytes.end(),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset + captured_contribution)
+                    );
+                }
+
+                state.pending_record->remaining_original_bytes -= contributed_original_bytes;
+                unique_original_remaining -= contributed_original_bytes;
+                record_budget_remaining = contributed_original_bytes > record_budget_remaining
+                    ? 0U
+                    : record_budget_remaining - contributed_original_bytes;
+                captured_offset += captured_contribution;
+
+                if (state.pending_record->remaining_original_bytes == 0U) {
+                    if (state.pending_record->captured_bytes.size() == state.pending_record->total_byte_count) {
+                        if (const auto service_hint = extract_service_hint_from_complete_tls_record(
+                                std::span<const std::uint8_t>(
+                                    state.pending_record->captured_bytes.data(),
+                                    state.pending_record->captured_bytes.size()
+                                )
+                            );
+                            service_hint.has_value()) {
+                            return service_hint;
+                        }
+                    }
+                    state.pending_record.reset();
+                    continue;
+                }
+
+                break;
+            }
+
+            if (captured_offset >= payload_span.size()) {
+                break;
+            }
+
+            const auto captured_remaining = payload_span.size() - captured_offset;
+            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize &&
+                looks_like_tls_record_prefix(payload_span, captured_offset);
+            if (captured_remaining < kTlsRecordHeaderSize || !has_record_prefix) {
+                break;
+            }
+
+            const auto record_body_length = static_cast<std::size_t>(read_be16(payload_span, captured_offset + 3U));
+            const auto record_size = kTlsRecordHeaderSize + record_body_length;
+            const auto contributed_original_bytes = std::min(record_budget_remaining, record_size);
+            const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
+            const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+            const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
+
+            PendingTlsHintRecord record {
+                .total_byte_count = record_size,
+                .remaining_original_bytes = record_size - contributed_original_bytes,
+                .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
+            };
+
+            record_budget_remaining -= contributed_original_bytes;
+            unique_original_remaining -= contributed_unique_bytes;
+            captured_offset += captured_contribution;
+
+            if (record.remaining_original_bytes == 0U) {
+                if (record.captured_bytes.size() == record.total_byte_count) {
+                    if (const auto service_hint = extract_service_hint_from_complete_tls_record(
+                            std::span<const std::uint8_t>(
+                                record.captured_bytes.data(),
+                                record.captured_bytes.size()
+                            )
+                        );
+                        service_hint.has_value()) {
+                        return service_hint;
+                    }
+                }
+                continue;
+            }
+
+            state.pending_record = std::move(record);
+            break;
+        }
+    }
+
+    return std::nullopt;
 }
 
 }  // namespace pfl::session_detail

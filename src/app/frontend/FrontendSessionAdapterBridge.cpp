@@ -599,6 +599,15 @@ std::string packet_result_json(const pfl::FrontendSelectedFlowPacketsResult& res
         << "\"offset\":" << result.offset << ','
         << "\"limit\":" << result.limit << ','
         << "\"total_count\":" << result.total_count << ','
+        << "\"updated_flow\":";
+
+    if (result.updated_flow.has_value()) {
+        out << flow_json(*result.updated_flow);
+    } else {
+        out << "null";
+    }
+
+    out << ','
         << "\"packets\":[";
 
     for (std::size_t index = 0; index < result.packets.size(); ++index) {

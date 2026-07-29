@@ -114,6 +114,7 @@ private:
 
     CaptureSession session_ {};
     std::optional<std::size_t> selected_flow_index_ {};
+    std::map<std::size_t, std::string> flow_service_hint_overrides_ {};
     FrontendSettingsDto settings_ {};
     AsyncOpenState async_open_ {};
 };

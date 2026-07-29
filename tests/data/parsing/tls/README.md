@@ -1404,6 +1404,12 @@ Current additional TLS fields available only in Protocol:
 - Packet 5 is therefore not independently identifiable as TLS from its packet-local TCP payload prefix alone.
 - The reconstructed `ClientHello` SNI is `www.youtube.com`.
 - The open-time flow list still leaves the Service column blank for this fixture by current design.
+- Selected-flow Service Hint enrichment is separate from open-time hinting:
+  - open-time capture import still leaves `Service Hint` empty for this fixture;
+  - after selecting the TLS flow with a loaded Packet-list window that includes packets `4` and `5`,
+    bounded TLS reconstruction derives `Service Hint = www.youtube.com`;
+  - this enrichment uses only the explicit loaded packet window;
+  - open-time partial ClientHello prefix extraction is still not implemented.
 - Selected-packet Packet Details Summary now supports bounded TLS reconstruction inside the explicitly loaded flow-packet window.
 - That bounded reconstruction is window-local:
   - packet `4` with loaded window `4` remains incomplete in the loaded window;
@@ -1439,10 +1445,22 @@ Current additional TLS fields available only in Protocol:
     - one complete reconstructed `tls` `ClientHello` layer;
     - structured fields including `Handshake Type = ClientHello`, `Handshake Length = 1889`, and `SNI = www.youtube.com`.
 - `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - capture-open flow rows keep `Service Hint` empty for this fixture;
+  - bounded TLS selected-flow Service Hint query:
+    - returns empty with loaded window `4`;
+    - still returns empty when packet `5` is already present in the shared cache but the explicit query bound is `4`;
+    - returns `www.youtube.com` with loaded window `5`;
+    - does not return a hint from non-ClientHello TLS record fixtures.
   - frontend adapter selected-packet details use the caller-provided loaded packet window:
     - window `4` keeps packet `4` incomplete;
     - window `5` lets packet `4` show continuation metadata and packet `5` show the completed reconstructed `ClientHello`.
+  - frontend adapter selected-flow Service Hint enrichment:
+    - keeps the split fixture hint empty after a `4`-packet selected-flow window;
+    - updates it to `www.youtube.com` after a `5`-packet selected-flow window;
+    - preserves an already non-empty TLS Service Hint.
 - `tests/ui/MainControllerUiTests.cpp`
+  - split fixture flow row starts with empty `Service Hint`;
+  - selecting the TLS flow and loading the initial Packet-list page enriches `Service Hint` to `www.youtube.com` without opening Stream;
   - Qt selected-packet Summary shows:
     - packet `4`: packet-local fragment layer plus `tls_reassembled` continuation metadata;
     - packet `5`: `tls_reassembled` completion metadata plus structured reconstructed `ClientHello` fields.

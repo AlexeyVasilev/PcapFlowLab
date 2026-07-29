@@ -4013,7 +4013,10 @@
 
     const rawLoaded = Boolean(details?.raw_preview_available);
     const payloadLoaded = Boolean(details?.payload_preview_available);
-    elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details loaded.`;
+    const selectedFlowRowNumber = Number(selectedPacket?.row_number);
+    elements.packetDetailsMeta.textContent = Number.isFinite(selectedFlowRowNumber) && selectedFlowRowNumber > 0
+      ? `Flow packet ${selectedFlowRowNumber} details loaded.`
+      : "Packet details loaded.";
     elements.packetDetailsStateText.textContent = "";
     elements.packetDetailsProtocolStateText.textContent = protocolSections.length > 0
       ? "Protocol details loaded."
@@ -4815,6 +4818,9 @@
       } else {
         state.packets = receivedPackets;
       }
+      if (packetResult?.updated_flow) {
+        applyUpdatedFlowRow(packetResult.updated_flow);
+      }
       state.packetsTotalCount = packetResult?.total_count || 0;
       state.packetOffset = packetResult?.offset ?? requestedOffset;
       state.packetCanLoadMore = state.packets.length < state.packetsTotalCount;
@@ -5105,7 +5111,7 @@
         : await invoke("get_selected_flow_packet_details", {
           packet_index: state.selectedPacketIndex,
           flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
-          loaded_packet_window_count: Number(state.loadedPacketRowCount || 0),
+          loaded_packet_window_count: Number(state.packets.length),
         });
       const sourceAvailability = packetDetailsSourceAvailability(details);
       state.sourceAvailability = sourceAvailability;
