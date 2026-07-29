@@ -323,7 +323,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->tcp.options_bytes.empty());
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
-            .flow_packet_index = 4U,
+            .flow_packet_index = 3U,
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
             .protocol_details_text = "No protocol-specific details available for this packet.",
@@ -1199,11 +1199,24 @@ void run_packet_details_tests() {
         PacketPayloadService payload_service {};
         const auto transport_payload4 = payload_service.extract_transport_payload(packet4_bytes, packet4.data_link_type);
         PFL_EXPECT(transport_payload4.size() == 1412U);
+        const auto reconstructed_tls_records4_incomplete =
+            session_detail::build_selected_packet_tls_contexts(session, 0U, 3U, 4U);
+        PFL_REQUIRE(reconstructed_tls_records4_incomplete.size() == 1U);
+        PFL_EXPECT(reconstructed_tls_records4_incomplete[0].status == session_detail::TlsSelectedPacketStatus::incomplete_window);
+
+        const auto reconstructed_tls_records4 =
+            session_detail::build_selected_packet_tls_contexts(session, 0U, 3U, 5U);
+        PFL_REQUIRE(reconstructed_tls_records4.size() == 1U);
+        PFL_EXPECT(reconstructed_tls_records4[0].status == session_detail::TlsSelectedPacketStatus::complete);
+        PFL_EXPECT(reconstructed_tls_records4[0].selected_contribution_flow_packet_index == std::optional<std::uint64_t> {3U});
+        PFL_EXPECT(reconstructed_tls_records4[0].completion_flow_packet_index == std::optional<std::uint64_t> {4U});
         const auto summary_layers4 = session_detail::build_packet_summary_layers(*details4, packet4, {
+            .flow_packet_index = 3U,
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload4.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload4.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload4.data(), transport_payload4.size()),
             .protocol_details_text = session.read_packet_protocol_details_text(packet4),
+            .reconstructed_tls_records = reconstructed_tls_records4,
         });
 
         std::size_t tcp_index4 = summary_layers4.size();
@@ -1238,6 +1251,23 @@ void run_packet_details_tests() {
         PFL_EXPECT(find_summary_child(tls_layer4, "tls_cipher_suites") == nullptr);
         PFL_EXPECT(find_summary_child(tls_layer4, "tls_compression_methods") == nullptr);
         PFL_EXPECT(find_summary_child(tls_layer4, "tls_extensions") == nullptr);
+        const auto reassembled_layers4 = find_summary_layers(summary_layers4, "tls_reassembled");
+        PFL_REQUIRE(reassembled_layers4.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers4[0], "Status") == "Continues in a later loaded packet");
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers4[0], "Contributing Flow Packets") == "4, 5");
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers4[0], "Completion Flow Packet") == "5");
+        const auto* packet4_selected_contribution = require_summary_child(*reassembled_layers4[0], "tls_reassembled_contribution", 0U);
+        const auto* packet4_completion_contribution = require_summary_child(*reassembled_layers4[0], "tls_reassembled_contribution", 1U);
+        PFL_EXPECT(packet4_selected_contribution->title == "Selected Packet Contribution");
+        PFL_EXPECT(require_summary_field_value(*packet4_selected_contribution, "Flow Packet") == "4");
+        PFL_EXPECT(require_summary_field_value(*packet4_selected_contribution, "Packet in File") == "4");
+        PFL_EXPECT(require_summary_field_value(*packet4_selected_contribution, "Record Byte Range") == "1-1412");
+        PFL_EXPECT(require_summary_field_value(*packet4_selected_contribution, "Captured Contribution") == "1412 bytes");
+        PFL_EXPECT(packet4_completion_contribution->title == "Flow Packet 5 Contribution");
+        PFL_EXPECT(require_summary_field_value(*packet4_completion_contribution, "Flow Packet") == "5");
+        PFL_EXPECT(require_summary_field_value(*packet4_completion_contribution, "Packet in File") == "5");
+        PFL_EXPECT(require_summary_field_value(*packet4_completion_contribution, "Record Byte Range") == "1413-1898");
+        PFL_EXPECT(require_summary_field_value(*packet4_completion_contribution, "Captured Contribution") == "486 bytes");
 
         const auto packet5 = require_packet(session, 4U);
         const auto details5 = session.read_packet_details(packet5);
@@ -1245,13 +1275,41 @@ void run_packet_details_tests() {
         const auto packet5_bytes = session.read_packet_data(packet5);
         const auto transport_payload5 = payload_service.extract_transport_payload(packet5_bytes, packet5.data_link_type);
         PFL_EXPECT(transport_payload5.size() == 486U);
+        const auto reconstructed_tls_records5 =
+            session_detail::build_selected_packet_tls_contexts(session, 0U, 4U, 5U);
+        PFL_REQUIRE(reconstructed_tls_records5.size() == 1U);
+        PFL_EXPECT(reconstructed_tls_records5[0].status == session_detail::TlsSelectedPacketStatus::complete);
+        PFL_EXPECT(reconstructed_tls_records5[0].selected_contribution_flow_packet_index == std::optional<std::uint64_t> {4U});
+        PFL_EXPECT(reconstructed_tls_records5[0].completion_flow_packet_index == std::optional<std::uint64_t> {4U});
         const auto summary_layers5 = session_detail::build_packet_summary_layers(*details5, packet5, {
+            .flow_packet_index = 4U,
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload5.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload5.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload5.data(), transport_payload5.size()),
             .protocol_details_text = session.read_packet_protocol_details_text(packet5),
+            .reconstructed_tls_records = reconstructed_tls_records5,
         });
-        PFL_EXPECT(find_summary_layer(summary_layers5, "tls") == nullptr);
+        const auto tls_layers5 = find_summary_layers(summary_layers5, "tls");
+        PFL_REQUIRE(tls_layers5.size() == 1U);
+        PFL_EXPECT(tls_layers5[0]->title.find("ClientHello") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers5[0], "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*tls_layers5[0], "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layers5[0], "Handshake Length") == "1889");
+        PFL_EXPECT(require_summary_field_value(*tls_layers5[0], "SNI") == "www.youtube.com");
+        PFL_EXPECT(find_summary_field(*tls_layers5[0], "Supported TLS Versions") != nullptr);
+        const auto reassembled_layers5 = find_summary_layers(summary_layers5, "tls_reassembled");
+        PFL_REQUIRE(reassembled_layers5.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers5[0], "Status") == "Reassembled in this packet");
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers5[0], "Contributing Flow Packets") == "4, 5");
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers5[0], "Completion Flow Packet") == "5");
+        const auto* packet5_initial_contribution = require_summary_child(*reassembled_layers5[0], "tls_reassembled_contribution", 0U);
+        const auto* packet5_selected_contribution = require_summary_child(*reassembled_layers5[0], "tls_reassembled_contribution", 1U);
+        PFL_EXPECT(packet5_initial_contribution->title == "Flow Packet 4 Contribution");
+        PFL_EXPECT(packet5_selected_contribution->title == "Selected Packet Contribution");
+        PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Flow Packet") == "5");
+        PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Packet in File") == "5");
+        PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Record Byte Range") == "1413-1898");
+        PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Captured Contribution") == "486 bytes");
     }
 
     {

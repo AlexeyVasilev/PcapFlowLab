@@ -2588,6 +2588,31 @@ void run_stream_query_tests() {
 
     {
         CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap"), fast_options));
+
+        const auto full_rows = session.list_flow_stream_items(0);
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 5U, 16U);
+        const auto* full_client_hello = find_stream_row_by_label(full_rows, "TLS ClientHello");
+        const auto* bounded_client_hello = find_stream_row_by_label(bounded_rows, "TLS ClientHello");
+        PFL_REQUIRE(full_client_hello != nullptr);
+        PFL_REQUIRE(bounded_client_hello != nullptr);
+        PFL_EXPECT(bounded_client_hello->label == full_client_hello->label);
+        PFL_EXPECT(bounded_client_hello->byte_count == full_client_hello->byte_count);
+        PFL_EXPECT(bounded_client_hello->packet_indices == full_client_hello->packet_indices);
+        const auto full_summary_layers = build_stream_summary_layers(*full_client_hello, session.list_flow_packets(0));
+        const auto bounded_summary_layers = build_stream_summary_layers(*bounded_client_hello, session.list_flow_packets(0, 0U, 5U));
+        const auto* full_tls_layer = find_top_level_summary_layer(full_summary_layers, "tls");
+        const auto* bounded_tls_layer = find_top_level_summary_layer(bounded_summary_layers, "tls");
+        PFL_REQUIRE(full_tls_layer != nullptr);
+        PFL_REQUIRE(bounded_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*bounded_tls_layer, "Handshake Type") ==
+            require_summary_field_value(*full_tls_layer, "Handshake Type"));
+        PFL_EXPECT(require_summary_field_value(*bounded_tls_layer, "SNI") ==
+            require_summary_field_value(*full_tls_layer, "SNI"));
+    }
+
+    {
+        CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/ipv4_tls_constricted_1.pcap"), fast_options));
         CaptureSession moved_session {std::move(session)};
         moved_session.clear_runtime_caches_after_transfer();

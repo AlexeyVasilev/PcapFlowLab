@@ -1273,7 +1273,34 @@ struct PendingTlsRecord {
     std::vector<std::string> constricted_notes {};
 };
 
+struct PendingSelectedTlsRecord {
+    std::string label {};
+    std::size_t total_byte_count {0U};
+    std::size_t remaining_original_bytes {0U};
+    std::vector<std::uint64_t> packet_indices {};
+    std::vector<std::uint8_t> captured_bytes {};
+    TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
+    bool has_constricted_contribution {false};
+    std::vector<std::string> constricted_contribution_notes {};
+    std::string protocol_text {};
+    std::vector<std::string> constricted_notes {};
+    std::vector<TlsSelectedPacketContribution> contributions {};
+    bool selected_packet_participated {false};
+};
+
 void append_constricted_packet_note(PendingTlsRecord& record, const PacketRef& packet) {
+    if (packet.captured_length >= packet.original_length) {
+        return;
+    }
+
+    std::ostringstream note {};
+    note << "  Constricted packet #" << (packet.packet_index + 1U)
+         << ": captured " << packet.captured_length
+         << " / original " << packet.original_length << " bytes.";
+    record.constricted_notes.push_back(note.str());
+}
+
+void append_constricted_packet_note(PendingSelectedTlsRecord& record, const PacketRef& packet) {
     if (packet.captured_length >= packet.original_length) {
         return;
     }
@@ -1287,6 +1314,24 @@ void append_constricted_packet_note(PendingTlsRecord& record, const PacketRef& p
 
 void append_constricted_contribution_note(
     PendingTlsRecord& record,
+    const PacketRef& packet,
+    const std::size_t captured_contribution,
+    const std::size_t original_contribution
+) {
+    if (packet.captured_length >= packet.original_length || captured_contribution >= original_contribution) {
+        return;
+    }
+
+    std::ostringstream note {};
+    note << "#" << (packet.packet_index + 1U)
+         << " contributed " << captured_contribution
+         << " / " << original_contribution << " bytes";
+    record.has_constricted_contribution = true;
+    record.constricted_contribution_notes.push_back(note.str());
+}
+
+void append_constricted_contribution_note(
+    PendingSelectedTlsRecord& record,
     const PacketRef& packet,
     const std::size_t captured_contribution,
     const std::size_t original_contribution
@@ -1414,6 +1459,73 @@ std::string limited_quality_tls_protocol_text(const bool record_fragment) {
 
 std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
     return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
+}
+
+Direction direction_from_packet_row(const PacketRow& row) noexcept {
+    return !row.direction_text.empty() && row.direction_text.front() == 'B'
+        ? Direction::b_to_a
+        : Direction::a_to_b;
+}
+
+TlsSelectedPacketStatus finalized_selected_record_status(const PendingSelectedTlsRecord& record) noexcept {
+    if (record.remaining_original_bytes != 0U) {
+        return record.has_constricted_contribution
+            ? TlsSelectedPacketStatus::capture_constricted
+            : TlsSelectedPacketStatus::incomplete_window;
+    }
+
+    if (record.has_constricted_contribution || record.captured_bytes.size() != record.total_byte_count) {
+        return TlsSelectedPacketStatus::capture_constricted;
+    }
+
+    return TlsSelectedPacketStatus::complete;
+}
+
+std::optional<TlsSelectedPacketRecordContext> finalize_selected_packet_record_context(
+    PendingSelectedTlsRecord&& record,
+    const TlsSelectedPacketStatus status,
+    const std::uint64_t selected_flow_packet_index
+) {
+    const bool definite_multi_packet_context =
+        record.contributions.size() > 1U ||
+        status != TlsSelectedPacketStatus::complete ||
+        record.captured_bytes.size() != record.total_byte_count;
+    if (!record.selected_packet_participated || !definite_multi_packet_context) {
+        return std::nullopt;
+    }
+
+    const auto selected_contribution = std::find_if(
+        record.contributions.begin(),
+        record.contributions.end(),
+        [&](const TlsSelectedPacketContribution& contribution) {
+            return contribution.flow_packet_index == selected_flow_packet_index;
+        }
+    );
+
+    std::optional<std::uint64_t> selected_contribution_flow_packet_index {};
+    if (selected_contribution != record.contributions.end()) {
+        selected_contribution_flow_packet_index = selected_contribution->flow_packet_index;
+    }
+
+    std::optional<std::uint64_t> completion_flow_packet_index {};
+    if (!record.contributions.empty()) {
+        completion_flow_packet_index = record.contributions.back().flow_packet_index;
+    }
+
+    return TlsSelectedPacketRecordContext {
+        .label = std::move(record.label),
+        .protocol_text = std::move(record.protocol_text),
+        .captured_bytes = std::move(record.captured_bytes),
+        .total_record_size = record.total_byte_count,
+        .semantic_kind = record.semantic_kind,
+        .status = status,
+        .contributions = std::move(record.contributions),
+        .selected_contribution_flow_packet_index = selected_contribution_flow_packet_index,
+        .completion_flow_packet_index = completion_flow_packet_index,
+        .has_constricted_contribution = record.has_constricted_contribution,
+        .constricted_contribution_notes = std::move(record.constricted_contribution_notes),
+        .constricted_packet_notes = std::move(record.constricted_notes),
+    };
 }
 
 }  // namespace
@@ -1915,6 +2027,265 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly(
         direction,
         direction_packets
     );
+}
+
+std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t selected_flow_packet_index,
+    const std::size_t loaded_packet_window_count
+) {
+    if (loaded_packet_window_count == 0U) {
+        return {};
+    }
+
+    const auto bounded_window_count = std::min(loaded_packet_window_count, session.flow_packet_count(flow_index));
+    if (selected_flow_packet_index >= bounded_window_count) {
+        return {};
+    }
+
+    session.prepare_selected_flow_packet_cache(flow_index, bounded_window_count);
+    const auto retransmission_packets = session.suspected_tcp_retransmission_packet_indices(flow_index, bounded_window_count);
+    session.set_selected_flow_tcp_payload_suppression(flow_index, retransmission_packets, bounded_window_count);
+
+    const auto prefix_rows = session.list_flow_packets(flow_index, 0U, bounded_window_count);
+    if (prefix_rows.empty() || selected_flow_packet_index >= prefix_rows.size()) {
+        return {};
+    }
+
+    const auto& selected_row = prefix_rows[static_cast<std::size_t>(selected_flow_packet_index)];
+    const auto selected_direction = direction_from_packet_row(selected_row);
+    const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, selected_direction);
+
+    std::vector<TlsSelectedPacketRecordContext> contexts {};
+    std::optional<PendingSelectedTlsRecord> pending_record {};
+    bool post_change_cipher_spec = false;
+
+    for (const auto& row : prefix_rows) {
+        if (direction_from_packet_row(row) != selected_direction) {
+            continue;
+        }
+
+        const auto packet = session.selected_flow_packet_at(flow_index, row.row_number);
+        if (!packet.has_value()) {
+            continue;
+        }
+
+        if (gap_packet_index.has_value() &&
+            packet->packet_index >= *gap_packet_index &&
+            pending_record.has_value()) {
+            if (const auto context = finalize_selected_packet_record_context(
+                    std::move(*pending_record),
+                    TlsSelectedPacketStatus::tcp_gap,
+                    selected_flow_packet_index
+                );
+                context.has_value()) {
+                contexts.push_back(std::move(*context));
+            }
+            break;
+        }
+
+        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+            continue;
+        }
+
+        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
+        const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, *packet);
+        if (!original_payload_length.has_value()) {
+            if (pending_record.has_value()) {
+                if (const auto context = finalize_selected_packet_record_context(
+                        std::move(*pending_record),
+                        TlsSelectedPacketStatus::malformed,
+                        selected_flow_packet_index
+                    );
+                    context.has_value()) {
+                    contexts.push_back(std::move(*context));
+                }
+                pending_record.reset();
+            }
+            break;
+        }
+
+        const auto payload_span = std::span<const std::uint8_t>(
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload_bytes.size() - trim_prefix_bytes
+        );
+
+        std::size_t captured_offset = 0U;
+        std::size_t record_budget_remaining = *original_payload_length;
+        std::size_t unique_original_remaining = *original_payload_length > trim_prefix_bytes
+            ? *original_payload_length - trim_prefix_bytes
+            : 0U;
+
+        while (record_budget_remaining > 0U) {
+            if (pending_record.has_value()) {
+                const auto contributed_original_bytes = std::min(
+                    unique_original_remaining,
+                    pending_record->remaining_original_bytes
+                );
+                if (contributed_original_bytes == 0U) {
+                    break;
+                }
+
+                const auto captured_remaining = payload_span.size() - std::min(payload_span.size(), captured_offset);
+                const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+                append_unique_packet_index(pending_record->packet_indices, packet->packet_index);
+
+                if (captured_contribution > 0U) {
+                    pending_record->contributions.push_back(TlsSelectedPacketContribution {
+                        .packet_index = packet->packet_index,
+                        .flow_packet_index = row.row_number - 1U,
+                        .record_offset = pending_record->captured_bytes.size(),
+                        .captured_byte_count = captured_contribution,
+                    });
+                    pending_record->captured_bytes.insert(
+                        pending_record->captured_bytes.end(),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset + captured_contribution)
+                    );
+                }
+
+                if ((row.row_number - 1U) == selected_flow_packet_index) {
+                    pending_record->selected_packet_participated = true;
+                }
+
+                if (packet->captured_length < packet->original_length && captured_contribution < contributed_original_bytes) {
+                    append_constricted_packet_note(*pending_record, *packet);
+                    append_constricted_contribution_note(
+                        *pending_record,
+                        *packet,
+                        captured_contribution,
+                        contributed_original_bytes
+                    );
+                }
+
+                pending_record->remaining_original_bytes -= contributed_original_bytes;
+                unique_original_remaining -= contributed_original_bytes;
+                record_budget_remaining = contributed_original_bytes > record_budget_remaining
+                    ? 0U
+                    : record_budget_remaining - contributed_original_bytes;
+                captured_offset += captured_contribution;
+
+                if (pending_record->remaining_original_bytes == 0U) {
+                    const auto status = finalized_selected_record_status(*pending_record);
+                    if (const auto context = finalize_selected_packet_record_context(
+                            std::move(*pending_record),
+                            status,
+                            selected_flow_packet_index
+                        );
+                        context.has_value()) {
+                        contexts.push_back(std::move(*context));
+                    }
+                    pending_record.reset();
+                    continue;
+                }
+
+                break;
+            }
+
+            if (captured_offset >= payload_span.size()) {
+                break;
+            }
+
+            const auto captured_remaining = payload_span.size() - captured_offset;
+            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize &&
+                looks_like_tls_record_prefix(payload_span, captured_offset);
+            if (captured_remaining < kTlsRecordHeaderSize || !has_record_prefix) {
+                break;
+            }
+
+            const auto record_body_length = static_cast<std::size_t>(read_be16(payload_span, captured_offset + 3U));
+            const auto record_size = kTlsRecordHeaderSize + record_body_length;
+            const auto contributed_original_bytes = std::min(record_budget_remaining, record_size);
+            const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
+            const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+            const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
+            const auto semantic_kind = tls_stream_semantic_kind(captured_record_bytes, post_change_cipher_spec);
+            PendingSelectedTlsRecord record {
+                .label = tls_stream_label(captured_record_bytes, semantic_kind),
+                .total_byte_count = record_size,
+                .remaining_original_bytes = record_size - contributed_original_bytes,
+                .packet_indices = {packet->packet_index},
+                .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
+                .semantic_kind = semantic_kind,
+                .protocol_text = tls_record_protocol_text(captured_record_bytes, semantic_kind),
+            };
+
+            if (captured_contribution > 0U) {
+                record.contributions.push_back(TlsSelectedPacketContribution {
+                    .packet_index = packet->packet_index,
+                    .flow_packet_index = row.row_number - 1U,
+                    .record_offset = 0U,
+                    .captured_byte_count = captured_contribution,
+                });
+            }
+
+            if ((row.row_number - 1U) == selected_flow_packet_index) {
+                record.selected_packet_participated = true;
+            }
+
+            if (packet->captured_length < packet->original_length && captured_contribution < record_size) {
+                append_constricted_packet_note(record, *packet);
+            }
+            append_constricted_contribution_note(
+                record,
+                *packet,
+                captured_contribution,
+                contributed_original_bytes
+            );
+
+            record_budget_remaining -= contributed_original_bytes;
+            unique_original_remaining -= contributed_unique_bytes;
+            captured_offset += captured_contribution;
+
+            if (record.remaining_original_bytes == 0U) {
+                const auto status = finalized_selected_record_status(record);
+                if (const auto context = finalize_selected_packet_record_context(
+                        std::move(record),
+                        status,
+                        selected_flow_packet_index
+                    );
+                    context.has_value()) {
+                    contexts.push_back(std::move(*context));
+                }
+                if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
+                    post_change_cipher_spec = true;
+                }
+                continue;
+            }
+
+            if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
+                post_change_cipher_spec = true;
+            }
+            pending_record = std::move(record);
+            break;
+        }
+    }
+
+    if (pending_record.has_value()) {
+        const auto status = pending_record->has_constricted_contribution
+            ? TlsSelectedPacketStatus::capture_constricted
+            : TlsSelectedPacketStatus::incomplete_window;
+        if (const auto context = finalize_selected_packet_record_context(
+                std::move(*pending_record),
+                status,
+                selected_flow_packet_index
+            );
+            context.has_value()) {
+            contexts.push_back(std::move(*context));
+        }
+    }
+
+    return contexts;
 }
 
 }  // namespace pfl::session_detail

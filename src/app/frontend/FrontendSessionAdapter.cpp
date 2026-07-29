@@ -2884,8 +2884,9 @@ FrontendAnalysisSequenceExportResultDto FrontendSessionAdapter::export_selected_
 
 FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_details(
     const std::uint64_t packet_index,
-    const std::uint64_t flow_packet_index
-) const {
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
+) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
@@ -2927,12 +2928,13 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     auto details = build_frontend_packet_details(
         *packet,
         selected_flow_index_,
-        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt
+        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
     );
     return details;
 }
 
-FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) const {
+FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = false,
@@ -2971,8 +2973,9 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details
 FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     const PacketRef& packet,
     const std::optional<std::size_t> flow_index,
-    const std::optional<std::uint64_t> flow_packet_index
-) const {
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count
+) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = flow_index.has_value(),
@@ -3044,6 +3047,21 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
         PacketPayloadService payload_service {};
         const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        const auto internal_flow_packet_index =
+            flow_packet_index.has_value()
+                ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
+                : std::nullopt;
+        const auto reconstructed_tls_records =
+            flow_index.has_value() &&
+            internal_flow_packet_index.has_value() &&
+            loaded_packet_window_count.has_value()
+                ? session_detail::build_selected_packet_tls_contexts(
+                    session_,
+                    *flow_index,
+                    *internal_flow_packet_index,
+                    *loaded_packet_window_count
+                )
+                : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
@@ -3052,13 +3070,14 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.transport_summary_text = format_transport_summary(*details);
         result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .source_capture_accessible = true,
-            .flow_packet_index = flow_packet_index,
+            .flow_packet_index = internal_flow_packet_index,
             .transport_payload_length = captured_transport_payload_length,
             .original_transport_payload_length = original_transport_payload_length,
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,
+            .reconstructed_tls_records = std::move(reconstructed_tls_records),
         });
     } else {
         result.unavailable_text = "Only partial packet details are available for this packet.";

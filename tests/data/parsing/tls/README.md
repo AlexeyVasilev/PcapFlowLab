@@ -90,7 +90,7 @@ Current structured-parser limitations and boundaries:
 | `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Exact TLS 1.3 `CCS -> ApplicationData` sequencing contract | Complete | Keep for now |
 | `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with shared packet/stream structured Summary baseline | Partially complete | Keep for now |
 | `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
-| `tls_1_3_split_client_hello_10.pcap` | Session and reassembly | `PacketDetailsTests` | Medium | Packet-local partial TLS record and partial ClientHello envelope coverage without reassembly claims | Partially complete | Keep for now |
+| `tls_1_3_split_client_hello_10.pcap` | Session and reassembly | `PacketDetailsTests`, `FlowHintsRealFixturesTests`, `MainControllerUiTests`, `StreamQueryTests` | Medium | Bounded selected-packet TLS reconstruction contract layered on top of packet-local partial ClientHello coverage | Partially complete | Keep for now |
 | `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
@@ -1402,7 +1402,14 @@ Current additional TLS fields available only in Protocol:
 - Packet 5 (one-based capture numbering, zero-based packet index `4`) has TCP payload length `486` bytes.
 - Packet 5 begins in the middle of the same `ClientHello` body and does not begin with a TLS record header.
 - Packet 5 is therefore not independently identifiable as TLS from its packet-local TCP payload prefix alone.
-- Full stream reconstruction of the split record is already covered by stream-level work and remains outside the scope of this packet-local pass.
+- The reconstructed `ClientHello` SNI is `www.youtube.com`.
+- The open-time flow list still leaves the Service column blank for this fixture by current design.
+- Selected-packet Packet Details Summary now supports bounded TLS reconstruction inside the explicitly loaded flow-packet window.
+- That bounded reconstruction is window-local:
+  - packet `4` with loaded window `4` remains incomplete in the loaded window;
+  - packet `4` with loaded window `5` keeps its packet-local fragment layer and adds reassembly metadata saying the record continues later;
+  - packet `5` with loaded window `5` adds reassembly metadata plus one complete reconstructed `ClientHello` Summary layer.
+- This bounded selected-packet behavior does not reuse full-stream rows as semantic input and does not depend on packet cache state beyond the explicit loaded packet window.
 
 #### Automated contract
 
@@ -1420,7 +1427,27 @@ Current additional TLS fields available only in Protocol:
     - `Handshake Status = Incomplete body`;
     - `Available Handshake Bytes = 1407`.
   - packet `4` summary does not fabricate structured ClientHello fields such as `SNI`, `ALPN`, `Supported TLS Versions`, `ClientHello Legacy Version`, or TLS extension child groups.
-  - packet `5` summary produces no independent `tls` layer.
+  - with loaded window `4`, packet `4` reassembly metadata reports `Incomplete in loaded packet window`.
+  - with loaded window `5`, packet `4` also exposes one `tls_reassembled` layer:
+    - `Status = Continues in a later loaded packet`;
+    - `Contributing Flow Packets = 4, 5`;
+    - `Completion Flow Packet = 5`;
+    - selected-packet contribution range `1-1412`;
+    - packet `5` contribution range `1413-1898`.
+  - with loaded window `5`, packet `5` exposes:
+    - one `tls_reassembled` layer with `Status = Reassembled in this packet`;
+    - one complete reconstructed `tls` `ClientHello` layer;
+    - structured fields including `Handshake Type = ClientHello`, `Handshake Length = 1889`, and `SNI = www.youtube.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - frontend adapter selected-packet details use the caller-provided loaded packet window:
+    - window `4` keeps packet `4` incomplete;
+    - window `5` lets packet `4` show continuation metadata and packet `5` show the completed reconstructed `ClientHello`.
+- `tests/ui/MainControllerUiTests.cpp`
+  - Qt selected-packet Summary shows:
+    - packet `4`: packet-local fragment layer plus `tls_reassembled` continuation metadata;
+    - packet `5`: `tls_reassembled` completion metadata plus structured reconstructed `ClientHello` fields.
+- `tests/unit/StreamQueryTests.cpp`
+  - bounded stream rows for packet prefix `5` keep the same `TLS ClientHello` item semantics as the full-session stream view.
 
 ### tls_normal_1.pcap
 

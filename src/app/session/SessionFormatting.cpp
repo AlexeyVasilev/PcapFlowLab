@@ -3201,7 +3201,11 @@ bool looks_like_tls_summary_payload_prefix(std::span<const std::uint8_t> payload
         (static_cast<std::uint16_t>(payload[3]) << 8U) |
         static_cast<std::uint16_t>(payload[4])
     );
-    return record_length > 0U && record_length <= (payload.size() - 5U);
+    // Allow partial TLS records through to the structured inspector. The
+    // inspector already distinguishes complete and incomplete record bodies,
+    // and selected-packet Packet Details rely on that for split-handshake
+    // packet-local fragment coverage.
+    return record_length > 0U;
 }
 
 std::string format_tls_version_value(const std::uint16_t version) {
@@ -4511,6 +4515,154 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     return std::nullopt;
 }
 
+std::string format_flow_packet_number(const std::uint64_t flow_packet_index) {
+    return std::to_string(flow_packet_index + 1U);
+}
+
+std::string format_tls_flow_packet_list(
+    const std::vector<TlsSelectedPacketContribution>& contributions
+) {
+    std::ostringstream builder {};
+    std::optional<std::uint64_t> previous_flow_packet_index {};
+    bool first = true;
+    for (const auto& contribution : contributions) {
+        if (previous_flow_packet_index.has_value() &&
+            contribution.flow_packet_index == *previous_flow_packet_index) {
+            continue;
+        }
+        if (!first) {
+            builder << ", ";
+        }
+        builder << format_flow_packet_number(contribution.flow_packet_index);
+        previous_flow_packet_index = contribution.flow_packet_index;
+        first = false;
+    }
+    return builder.str();
+}
+
+std::string format_tls_record_byte_range(const TlsSelectedPacketContribution& contribution) {
+    const auto start = contribution.record_offset + 1U;
+    const auto end = contribution.record_offset + contribution.captured_byte_count;
+    return std::to_string(start) + "-" + std::to_string(end);
+}
+
+bool selected_packet_completes_record(const TlsSelectedPacketRecordContext& context) {
+    return context.selected_contribution_flow_packet_index.has_value() &&
+        context.completion_flow_packet_index.has_value() &&
+        *context.selected_contribution_flow_packet_index == *context.completion_flow_packet_index;
+}
+
+std::string format_tls_selected_packet_status(
+    const TlsSelectedPacketRecordContext& context
+) {
+    switch (context.status) {
+    case TlsSelectedPacketStatus::complete:
+        return selected_packet_completes_record(context)
+            ? "Reassembled in this packet"
+            : "Continues in a later loaded packet";
+    case TlsSelectedPacketStatus::incomplete_window:
+        return "Incomplete in loaded packet window";
+    case TlsSelectedPacketStatus::tcp_gap:
+        return "Interrupted by TCP gap";
+    case TlsSelectedPacketStatus::capture_constricted:
+        return "Constricted by capture truncation";
+    case TlsSelectedPacketStatus::malformed:
+        return "Malformed TLS record";
+    }
+
+    return "Unknown";
+}
+
+PacketSummaryLayer build_tls_reassembled_metadata_layer(
+    const TlsSelectedPacketRecordContext& context
+) {
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Status", format_tls_selected_packet_status(context)),
+        make_summary_field("Record Size", format_byte_count(context.total_record_size)),
+        make_summary_field("Contributing Flow Packets", format_tls_flow_packet_list(context.contributions)),
+    };
+
+    if (context.status == TlsSelectedPacketStatus::complete && context.completion_flow_packet_index.has_value()) {
+        fields.push_back(make_summary_field(
+            "Completion Flow Packet",
+            format_flow_packet_number(*context.completion_flow_packet_index)
+        ));
+    }
+
+    std::vector<PacketSummaryLayer> children {};
+    children.reserve(
+        context.contributions.size() +
+        (context.has_constricted_contribution ? 2U : 0U)
+    );
+
+    for (const auto& contribution : context.contributions) {
+        std::vector<PacketSummaryField> contribution_fields {
+            make_summary_field("Flow Packet", format_flow_packet_number(contribution.flow_packet_index)),
+            make_summary_field("Packet in File", std::to_string(contribution.packet_index + 1U)),
+            make_summary_field("Record Byte Range", format_tls_record_byte_range(contribution)),
+            make_summary_field("Captured Contribution", format_byte_count(contribution.captured_byte_count)),
+        };
+        const bool selected_contribution = context.selected_contribution_flow_packet_index.has_value() &&
+            contribution.flow_packet_index == *context.selected_contribution_flow_packet_index;
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_reassembled_contribution",
+            .title = selected_contribution
+                ? "Selected Packet Contribution"
+                : "Flow Packet " + format_flow_packet_number(contribution.flow_packet_index) + " Contribution",
+            .fields = std::move(contribution_fields),
+            .expanded_by_default = selected_contribution,
+        });
+    }
+
+    if (!context.constricted_contribution_notes.empty()) {
+        std::vector<PacketSummaryField> note_fields {};
+        note_fields.reserve(context.constricted_contribution_notes.size());
+        for (const auto& note : context.constricted_contribution_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_reassembled_constricted_contributions",
+            .title = context.constricted_contribution_notes.size() == 1U
+                ? "Constricted Contribution Note"
+                : "Constricted Contribution Notes",
+            .fields = std::move(note_fields),
+            .expanded_by_default = false,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    if (!context.constricted_packet_notes.empty()) {
+        std::vector<PacketSummaryField> note_fields {};
+        note_fields.reserve(context.constricted_packet_notes.size());
+        for (const auto& note : context.constricted_packet_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_reassembled_constricted_packets",
+            .title = context.constricted_packet_notes.size() == 1U
+                ? "Constricted Packet Note"
+                : "Constricted Packet Notes",
+            .fields = std::move(note_fields),
+            .expanded_by_default = false,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls_reassembled",
+        .title = "Reassembled TCP Segments: " + context.label,
+        .fields = std::move(fields),
+        .children = std::move(children),
+        .expanded_by_default = true,
+        .warning = context.status != TlsSelectedPacketStatus::complete || context.has_constricted_contribution,
+        .marker_text = (context.status != TlsSelectedPacketStatus::complete || context.has_constricted_contribution)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
 }  // namespace
 
 std::string format_packet_timestamp(const PacketRef& packet) {
@@ -4944,7 +5096,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     std::vector<PacketSummaryField> frame_fields {};
     if (options.flow_packet_index.has_value()) {
-        frame_fields.push_back(make_summary_field("Packet number in flow", std::to_string(*options.flow_packet_index)));
+        frame_fields.push_back(make_summary_field(
+            "Packet number in flow",
+            format_flow_packet_number(*options.flow_packet_index)
+        ));
     }
     frame_fields.push_back(make_summary_field("Packet number in file", std::to_string(packet_number_in_file)));
     frame_fields.push_back(make_summary_field("Timestamp", format_packet_timestamp_full(packet)));
@@ -4954,7 +5109,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     append_layer_if_not_empty(layers, PacketSummaryLayer {
         .id = "frame",
         .title = options.flow_packet_index.has_value()
-            ? "Frame: Packet " + std::to_string(*options.flow_packet_index) +
+            ? "Frame: Packet " + format_flow_packet_number(*options.flow_packet_index) +
                 " in Flow, Packet " + std::to_string(packet_number_in_file) + " in file"
             : "Frame: Packet " + std::to_string(packet_number_in_file) + " in file",
         .fields = std::move(frame_fields),
@@ -6179,13 +6334,37 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *trailer_layer);
     }
 
+    bool appended_tls_summary = false;
     const auto tls_layers = build_tls_summary_layers(options.transport_payload_bytes);
     if (!tls_layers.empty()) {
         for (const auto& tls_layer : tls_layers) {
             append_layer_if_not_empty(layers, tls_layer);
         }
-    } else if (const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
-               protocol_layer.has_value()) {
+        appended_tls_summary = true;
+    }
+
+    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
+        append_layer_if_not_empty(
+            layers,
+            build_tls_reassembled_metadata_layer(reconstructed_record)
+        );
+        appended_tls_summary = true;
+
+        if (reconstructed_record.status == TlsSelectedPacketStatus::complete &&
+            selected_packet_completes_record(reconstructed_record) &&
+            reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size) {
+            const auto reconstructed_tls_layers = build_tls_summary_layers(std::span<const std::uint8_t>(
+                reconstructed_record.captured_bytes.data(),
+                reconstructed_record.captured_bytes.size()
+            ));
+            for (const auto& reconstructed_tls_layer : reconstructed_tls_layers) {
+                append_layer_if_not_empty(layers, reconstructed_tls_layer);
+            }
+        }
+    }
+
+    const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
+    if (!appended_tls_summary && protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
     }
 

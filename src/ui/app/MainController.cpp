@@ -5706,17 +5706,29 @@ void MainController::reloadSelectedPacketDetails() {
         );
         PacketPayloadService payload_service {};
         const auto transport_payload = payload_service.extract_transport_payload(packetBytes, packet->data_link_type);
+        const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+            const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+            if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+                return std::nullopt;
+            }
+            return it->second - 1U;
+        }();
+        const auto reconstructed_tls_records =
+            selected_flow_index_ >= 0 &&
+                flow_packet_index.has_value() &&
+                loaded_packet_row_count_ > 0U
+            ? session_detail::build_selected_packet_tls_contexts(
+                session_,
+                static_cast<std::size_t>(selected_flow_index_),
+                *flow_packet_index,
+                loaded_packet_row_count_
+            )
+            : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
             session_detail::build_packet_summary_layers(*details, *packet, {
                 .source_capture_accessible = true,
-                .flow_packet_index = [&]() -> std::optional<std::uint64_t> {
-                    const auto it = current_flow_packet_numbers_.find(packet->packet_index);
-                    if (it == current_flow_packet_numbers_.end()) {
-                        return std::nullopt;
-                    }
-                    return it->second;
-                }(),
+                .flow_packet_index = flow_packet_index,
                 .transport_payload_length = payload_lengths.real_payload_length,
                 .original_transport_payload_length = payload_lengths.original_payload_length,
                 .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
@@ -5737,6 +5749,7 @@ void MainController::reloadSelectedPacketDetails() {
                     }
                     return lines;
                 }(),
+                .reconstructed_tls_records = std::move(reconstructed_tls_records),
             })
         ));
         packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));

@@ -5105,6 +5105,7 @@
         : await invoke("get_selected_flow_packet_details", {
           packet_index: state.selectedPacketIndex,
           flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
+          loaded_packet_window_count: Number(state.loadedPacketRowCount || 0),
         });
       const sourceAvailability = packetDetailsSourceAvailability(details);
       state.sourceAvailability = sourceAvailability;

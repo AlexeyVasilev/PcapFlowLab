@@ -67,9 +67,10 @@ public:
     ) const;
     [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(
         std::uint64_t packet_index,
-        std::uint64_t flow_packet_index = 0U
-    ) const;
-    [[nodiscard]] FrontendPacketDetailsDto get_unrecognized_packet_details(std::uint64_t packet_index) const;
+        std::uint64_t flow_packet_index = 0U,
+        std::uint64_t loaded_packet_window_count = 0U
+    );
+    [[nodiscard]] FrontendPacketDetailsDto get_unrecognized_packet_details(std::uint64_t packet_index);
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path
@@ -99,8 +100,9 @@ private:
     [[nodiscard]] FrontendPacketDetailsDto build_frontend_packet_details(
         const PacketRef& packet,
         std::optional<std::size_t> flow_index,
-        std::optional<std::uint64_t> flow_packet_index
-    ) const;
+        std::optional<std::uint64_t> flow_packet_index,
+        std::optional<std::size_t> loaded_packet_window_count = std::nullopt
+    );
     [[nodiscard]] static AnalysisSettings to_analysis_settings(const FrontendSettingsDto& settings) noexcept;
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(
         const StreamItemRow& row,

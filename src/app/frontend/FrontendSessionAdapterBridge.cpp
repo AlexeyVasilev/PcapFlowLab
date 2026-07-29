@@ -1386,13 +1386,18 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint64_t packet_index,
-    const std::uint64_t flow_packet_index
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
 ) {
     if (handle == nullptr) {
         return make_c_string(packet_details_json(unavailable_packet_details()));
     }
 
-    return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(packet_index, flow_packet_index)));
+    return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(
+        packet_index,
+        flow_packet_index,
+        loaded_packet_window_count
+    )));
 }
 
 char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(

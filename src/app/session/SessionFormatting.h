@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app/session/FlowRows.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
@@ -37,6 +38,7 @@ struct PacketSummaryLayer {
 
 struct PacketSummaryOptions {
     bool source_capture_accessible {true};
+    // Internal flow-packet index is zero-based; human-readable formatting adds +1.
     std::optional<std::uint64_t> flow_packet_index {};
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
@@ -44,6 +46,7 @@ struct PacketSummaryOptions {
     std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
+    std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
 };
 
 std::string format_packet_timestamp(const PacketRef& packet);

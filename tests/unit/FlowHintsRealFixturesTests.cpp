@@ -62,6 +62,43 @@ std::optional<std::size_t> find_flow_index_with_protocol_hint(const std::vector<
     return std::nullopt;
 }
 
+const session_detail::PacketSummaryLayer* find_summary_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id,
+    const std::size_t occurrence = 0U
+) {
+    std::size_t current = 0U;
+    for (const auto& layer : layers) {
+        if (layer.id != id) {
+            continue;
+        }
+        if (current == occurrence) {
+            return &layer;
+        }
+        ++current;
+    }
+    return nullptr;
+}
+
+const session_detail::PacketSummaryField* find_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto it = std::find_if(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+    return it == layer.fields.end() ? nullptr : &(*it);
+}
+
+std::string require_summary_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto* field = find_summary_field(layer, label);
+    PFL_REQUIRE(field != nullptr);
+    return field->value;
+}
+
 void expect_fixture(const FixtureExpectation& expectation) {
     CaptureSession session {};
     PFL_EXPECT(session.open_capture(fixture_path(expectation.relative_path)));
@@ -204,6 +241,64 @@ void expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers(
     PFL_EXPECT(stream.items[1].source_packets_text == "packet #2");
 }
 
+void expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window(
+    const std::filesystem::path& relative_path
+) {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path(relative_path));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 5U);
+    PFL_REQUIRE(packets.packets.size() >= 5U);
+
+    const auto& packet4 = packets.packets[3];
+    const auto& packet5 = packets.packets[4];
+
+    const auto details4_incomplete = adapter.get_selected_flow_packet_details(
+        packet4.packet_index,
+        packet4.row_number,
+        4U
+    );
+    PFL_EXPECT(details4_incomplete.error_text.empty());
+    const auto* packet4_incomplete_reassembled = find_summary_layer(details4_incomplete.summary_layers, "tls_reassembled");
+    PFL_REQUIRE(packet4_incomplete_reassembled != nullptr);
+    PFL_EXPECT(require_summary_field_value(*packet4_incomplete_reassembled, "Status") == "Incomplete in loaded packet window");
+
+    const auto details4_loaded = adapter.get_selected_flow_packet_details(
+        packet4.packet_index,
+        packet4.row_number,
+        5U
+    );
+    PFL_EXPECT(details4_loaded.error_text.empty());
+    const auto* packet4_loaded_tls = find_summary_layer(details4_loaded.summary_layers, "tls");
+    const auto* packet4_loaded_reassembled = find_summary_layer(details4_loaded.summary_layers, "tls_reassembled");
+    PFL_REQUIRE(packet4_loaded_tls != nullptr);
+    PFL_REQUIRE(packet4_loaded_reassembled != nullptr);
+    PFL_EXPECT(require_summary_field_value(*packet4_loaded_reassembled, "Status") == "Continues in a later loaded packet");
+    PFL_EXPECT(require_summary_field_value(*packet4_loaded_reassembled, "Contributing Flow Packets") == "4, 5");
+
+    const auto details5_loaded = adapter.get_selected_flow_packet_details(
+        packet5.packet_index,
+        packet5.row_number,
+        5U
+    );
+    PFL_EXPECT(details5_loaded.error_text.empty());
+    const auto* packet5_loaded_tls = find_summary_layer(details5_loaded.summary_layers, "tls");
+    const auto* packet5_loaded_reassembled = find_summary_layer(details5_loaded.summary_layers, "tls_reassembled");
+    PFL_REQUIRE(packet5_loaded_tls != nullptr);
+    PFL_REQUIRE(packet5_loaded_reassembled != nullptr);
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_reassembled, "Status") == "Reassembled in this packet");
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_reassembled, "Completion Flow Packet") == "5");
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "Handshake Type") == "ClientHello");
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "SNI") == "www.youtube.com");
+}
+
 }  // namespace
 
 void run_flow_hints_real_fixtures_tests() {
@@ -251,6 +346,7 @@ void run_flow_hints_real_fixtures_tests() {
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
+    expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
     expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers("parsing/arp/03_arp_request_reply_ipv4.pcap");
     expect_flow_row_accessor_matches_list_flows("parsing/quic/quic_test_1.pcap");
 }
