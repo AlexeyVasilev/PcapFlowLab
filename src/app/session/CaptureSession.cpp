@@ -206,8 +206,13 @@ StreamItemRow make_stream_item_row(
     );
 }
 
+struct BuiltStreamRow {
+    StreamItemRow row {};
+    StreamMaterializationStability stability {StreamMaterializationStability::stable};
+};
+
 bool append_tls_stream_items(
-    std::vector<StreamItemRow>& rows,
+    std::vector<BuiltStreamRow>& rows,
     const StreamPacketCandidate& candidate,
     std::span<const std::uint8_t> payload_bytes
 ) {
@@ -217,20 +222,23 @@ bool append_tls_stream_items(
     }
 
     for (const auto& item : presentation.items) {
-        rows.push_back(make_stream_item_row(
-            static_cast<std::uint64_t>(rows.size() + 1U),
-            candidate.direction_text,
-            item.label,
-            item.byte_count,
-            item.packet_indices,
-            {},
-            item.payload_hex_text,
-            item.protocol_text,
-            item.has_constricted_contribution,
-            item.constricted_contribution_notes,
-            item.constricted_packet_notes,
-            item.semantic_kind
-        ));
+        rows.push_back(BuiltStreamRow {
+            .row = make_stream_item_row(
+                0U,
+                candidate.direction_text,
+                item.label,
+                item.byte_count,
+                item.packet_indices,
+                {},
+                item.payload_hex_text,
+                item.protocol_text,
+                item.has_constricted_contribution,
+                item.constricted_contribution_notes,
+                item.constricted_packet_notes,
+                item.semantic_kind
+            ),
+            .stability = item.stability,
+        });
     }
 
     return true;
@@ -262,12 +270,16 @@ struct ProtocolAwareStreamCursor {
     std::span<const PacketRef> direction_packets {};
     std::size_t next_skip_count {0U};
     DirectionalStreamPolicy policy {};
-    std::optional<StreamItemRow> current_row {};
+    std::optional<BuiltStreamRow> current_row {};
     bool exhausted {true};
 };
 
 std::uint64_t first_stream_packet_index(const StreamItemRow& row) {
     return row.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : row.packet_indices.front();
+}
+
+std::uint64_t first_stream_packet_index(const BuiltStreamRow& row) {
+    return first_stream_packet_index(row.row);
 }
 
 void merge_directional_policy(
@@ -312,40 +324,46 @@ void merge_directional_policy(
     );
 }
 
-StreamItemRow make_stream_item_row_from_tls_presentation(
+BuiltStreamRow make_stream_item_row_from_tls_presentation(
     const std::string_view direction_text,
     const session_detail::TlsStreamPresentationItem& item
 ) {
-    return make_stream_item_row(
-        0U,
-        direction_text,
-        item.label,
-        item.byte_count,
-        item.packet_indices,
-        {},
-        item.payload_hex_text,
-        item.protocol_text,
-        item.has_constricted_contribution,
-        item.constricted_contribution_notes,
-        item.constricted_packet_notes,
-        item.semantic_kind
-    );
+    return BuiltStreamRow {
+        .row = make_stream_item_row(
+            0U,
+            direction_text,
+            item.label,
+            item.byte_count,
+            item.packet_indices,
+            {},
+            item.payload_hex_text,
+            item.protocol_text,
+            item.has_constricted_contribution,
+            item.constricted_contribution_notes,
+            item.constricted_packet_notes,
+            item.semantic_kind
+        ),
+        .stability = item.stability,
+    };
 }
 
-StreamItemRow make_stream_item_row_from_http_presentation(
+BuiltStreamRow make_stream_item_row_from_http_presentation(
     const std::string_view direction_text,
     const session_detail::HttpStreamPresentationItem& item
 ) {
-    return make_stream_item_row(
-        0U,
-        direction_text,
-        item.label,
-        item.byte_count,
-        item.packet_indices,
-        {},
-        item.payload_hex_text,
-        item.protocol_text
-    );
+    return BuiltStreamRow {
+        .row = make_stream_item_row(
+            0U,
+            direction_text,
+            item.label,
+            item.byte_count,
+            item.packet_indices,
+            {},
+            item.payload_hex_text,
+            item.protocol_text
+        ),
+        .stability = item.stability,
+    };
 }
 
 void advance_protocol_aware_stream_cursor(
@@ -398,7 +416,7 @@ void advance_protocol_aware_stream_cursor(
 }
 
 DirectionalStreamPolicy append_http_stream_items_from_reassembly(
-    std::vector<StreamItemRow>& rows,
+    std::vector<BuiltStreamRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
     const std::string_view direction_text,
@@ -408,16 +426,7 @@ DirectionalStreamPolicy append_http_stream_items_from_reassembly(
     DirectionalStreamPolicy policy {};
     const auto presentation = build_http_stream_items_from_reassembly(session, flow_index, direction, direction_packets);
     for (const auto& item : presentation.items) {
-        rows.push_back(make_stream_item_row(
-            static_cast<std::uint64_t>(rows.size() + 1U),
-            direction_text,
-            item.label,
-            item.byte_count,
-            item.packet_indices,
-            {},
-            item.payload_hex_text,
-            item.protocol_text
-        ));
+        rows.push_back(make_stream_item_row_from_http_presentation(direction_text, item));
     }
     policy.used_reassembly = presentation.used_reassembly;
     policy.explicit_gap_item_emitted = presentation.explicit_gap_item_emitted;
@@ -429,7 +438,7 @@ DirectionalStreamPolicy append_http_stream_items_from_reassembly(
 }
 
 DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
-    std::vector<StreamItemRow>& rows,
+    std::vector<BuiltStreamRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
     const std::string_view direction_text,
@@ -439,20 +448,7 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
     DirectionalStreamPolicy policy {};
     const auto presentation = build_tls_stream_items_from_reassembly(session, flow_index, direction, direction_packets);
     for (const auto& item : presentation.items) {
-        rows.push_back(make_stream_item_row(
-            static_cast<std::uint64_t>(rows.size() + 1U),
-            direction_text,
-            item.label,
-            item.byte_count,
-            item.packet_indices,
-            {},
-            item.payload_hex_text,
-            item.protocol_text,
-            item.has_constricted_contribution,
-            item.constricted_contribution_notes,
-            item.constricted_packet_notes,
-            item.semantic_kind
-        ));
+        rows.push_back(make_stream_item_row_from_tls_presentation(direction_text, item));
     }
 
     policy.used_reassembly = presentation.used_reassembly;
@@ -577,7 +573,7 @@ std::vector<SelectedFlowWindowPacket> collect_selected_flow_packet_prefix(
 
 template <typename FlowKey, typename PacketList>
 bool append_quic_stream_items_for_packet(
-    std::vector<StreamItemRow>& rows,
+    std::vector<BuiltStreamRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
     const FlowKey& flow_key,
@@ -612,19 +608,22 @@ bool append_quic_stream_items_for_packet(
     const auto packet_hex_dump = hex_dump_service.format(payload_span);
     bool emitted_any = false;
     for (const auto& item : presentation.items) {
-        rows.push_back(make_stream_item_row(
-            static_cast<std::uint64_t>(rows.size() + 1U),
-            direction_text,
-            item.label,
-            item.byte_count,
-            packet,
-            {},
-            packet_hex_dump,
-            item.protocol_text,
-            item.has_constricted_contribution,
-            item.constricted_contribution_notes,
-            {}
-        ));
+        rows.push_back(BuiltStreamRow {
+            .row = make_stream_item_row(
+                0U,
+                direction_text,
+                item.label,
+                item.byte_count,
+                packet,
+                {},
+                packet_hex_dump,
+                item.protocol_text,
+                item.has_constricted_contribution,
+                item.constricted_contribution_notes,
+                {}
+            ),
+            .stability = StreamMaterializationStability::stable,
+        });
         emitted_any = true;
     }
 
@@ -810,7 +809,7 @@ bool is_strong_http_stream_hint(const FlowProtocolHint hint) noexcept {
 }
 
 bool append_arp_stream_item_for_packet(
-    std::vector<StreamItemRow>& rows,
+    std::vector<BuiltStreamRow>& rows,
     const CaptureSession& session,
     const PacketRef& packet,
     const std::string_view direction_text
@@ -834,22 +833,25 @@ bool append_arp_stream_item_for_packet(
     const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
     HexDumpService hex_dump_service {};
 
-    rows.push_back(make_stream_item_row(
-        static_cast<std::uint64_t>(rows.size() + 1U),
-        direction_text,
-        presentation.has_value() && !presentation->detail.empty() ? presentation->detail : std::string {"ARP"},
-        payload_bytes.size(),
-        packet,
-        join_summary_lines(summary_lines),
-        hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
-        protocol_text
-    ));
+    rows.push_back(BuiltStreamRow {
+        .row = make_stream_item_row(
+            0U,
+            direction_text,
+            presentation.has_value() && !presentation->detail.empty() ? presentation->detail : std::string {"ARP"},
+            payload_bytes.size(),
+            packet,
+            join_summary_lines(summary_lines),
+            hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
+            protocol_text
+        ),
+        .stability = StreamMaterializationStability::stable,
+    });
     return true;
 }
 
 template <typename Connection>
 void append_connection_stream_items_bounded(
-    std::vector<StreamItemRow>& rows,
+    std::vector<BuiltStreamRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
     const Connection& connection,
@@ -956,16 +958,19 @@ void append_connection_stream_items_bounded(
             const auto gap_protocol = !direction_policy.fallback_protocol_text.empty()
                 ? direction_policy.fallback_protocol_text
                 : tcp_gap_protocol_text("TCP");
-            rows.push_back(make_stream_item_row(
-                static_cast<std::uint64_t>(rows.size() + 1U),
-                direction_text,
-                gap_label,
-                0U,
-                packet,
-                {},
-                {},
-                gap_protocol
-            ));
+            rows.push_back(BuiltStreamRow {
+                .row = make_stream_item_row(
+                    0U,
+                    direction_text,
+                    gap_label,
+                    0U,
+                    packet,
+                    {},
+                    {},
+                    gap_protocol
+                ),
+                .stability = StreamMaterializationStability::stable,
+            });
             gap_item_emitted = true;
             if (rows.size() >= target_count) {
                 break;
@@ -1035,16 +1040,19 @@ void append_connection_stream_items_bounded(
                 label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol);
             }
         }
-        rows.push_back(make_stream_item_row(
-            static_cast<std::uint64_t>(rows.size() + 1U),
-            direction_text,
-            label,
-            payload_span.size(),
-            packet,
-            {},
-            {},
-            protocol_text
-        ));
+        rows.push_back(BuiltStreamRow {
+            .row = make_stream_item_row(
+                0U,
+                direction_text,
+                label,
+                payload_span.size(),
+                packet,
+                {},
+                {},
+                protocol_text
+            ),
+            .stability = StreamMaterializationStability::stable,
+        });
     }
 }
 
@@ -1255,7 +1263,7 @@ std::size_t count_flow_prefix_visible_tcp_payload(
         + count_packet_prefix_visible_tcp_payload(connection.ipv6->flow_b.packets, prefix_count_b);
 }
 
-std::vector<StreamItemRow> build_flow_stream_items_bounded(
+std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     const CaptureSession& session,
     const ListedConnectionRef& connection,
     const std::size_t flow_index,
@@ -1265,7 +1273,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const bool strict_protocol_budget = false
 ) {
     const auto flow_protocol = protocol_id(connection);
-    std::vector<StreamItemRow> rows {};
+    std::vector<BuiltStreamRow> rows {};
 
     const auto total_packets = connection.family == FlowAddressFamily::ipv4
         ? connection_packet_count(*connection.ipv4)
@@ -1477,14 +1485,12 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
         }
     }
 
-    std::stable_sort(rows.begin(), rows.end(), [](const StreamItemRow& left, const StreamItemRow& right) {
-        const auto left_packet_index = left.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : left.packet_indices.front();
-        const auto right_packet_index = right.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : right.packet_indices.front();
-        return left_packet_index < right_packet_index;
+    std::stable_sort(rows.begin(), rows.end(), [](const BuiltStreamRow& left, const BuiltStreamRow& right) {
+        return first_stream_packet_index(left) < first_stream_packet_index(right);
     });
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
-        rows[index].stream_item_index = static_cast<std::uint64_t>(index + 1U);
+        rows[index].row.stream_item_index = static_cast<std::uint64_t>(index + 1U);
     }
 
     if (rows.size() > target) {
@@ -1492,6 +1498,44 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     }
 
     return rows;
+}
+
+std::vector<StreamItemRow> project_built_stream_rows(
+    const std::vector<BuiltStreamRow>& rows,
+    const std::size_t limit
+) {
+    const auto slice_end = std::min(rows.size(), limit);
+    std::vector<StreamItemRow> projected {};
+    projected.reserve(slice_end);
+    for (std::size_t index = 0U; index < slice_end; ++index) {
+        projected.push_back(rows[index].row);
+    }
+    return projected;
+}
+
+std::uint8_t encode_stream_stability(const StreamMaterializationStability stability) noexcept {
+    return static_cast<std::uint8_t>(stability);
+}
+
+StreamMaterializationStability decode_stream_stability(const std::uint8_t stability_code) noexcept {
+    switch (static_cast<StreamMaterializationStability>(stability_code)) {
+    case StreamMaterializationStability::window_incomplete:
+        return StreamMaterializationStability::window_incomplete;
+    case StreamMaterializationStability::pagination_lookahead:
+        return StreamMaterializationStability::pagination_lookahead;
+    case StreamMaterializationStability::stable:
+    default:
+        return StreamMaterializationStability::stable;
+    }
+}
+
+std::size_t first_unstable_stream_row_index(const std::vector<BuiltStreamRow>& rows) noexcept {
+    for (std::size_t index = 0U; index < rows.size(); ++index) {
+        if (rows[index].stability != StreamMaterializationStability::stable) {
+            return index;
+        }
+    }
+    return rows.size();
 }
 
 }  // namespace
@@ -1508,9 +1552,11 @@ void CaptureSession::reset_runtime_state() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    selected_flow_stream_context_.reset();
     listed_connections_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
     selected_flow_tcp_payload_suppression_.reset();
+    selected_flow_stream_context_generation_ = 0U;
 }
 
 CaptureSession::CaptureSession(CaptureSession&& other) noexcept {
@@ -1798,6 +1844,7 @@ bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    selected_flow_stream_context_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     return true;
 }
@@ -1807,6 +1854,7 @@ void CaptureSession::clear_source_capture_attachment() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    selected_flow_stream_context_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 }
 
@@ -1969,12 +2017,18 @@ void CaptureSession::clear_runtime_caches_after_transfer() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    selected_flow_stream_context_.reset();
     listed_connections_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
     selected_flow_tcp_payload_suppression_.reset();
+    selected_flow_stream_context_generation_ = 0U;
 }
 
 void CaptureSession::set_analysis_settings(const AnalysisSettings& settings) noexcept {
+    if (analysis_settings_.http_use_path_as_service_hint != settings.http_use_path_as_service_hint ||
+        analysis_settings_.use_possible_tls_quic != settings.use_possible_tls_quic) {
+        selected_flow_stream_context_.reset();
+    }
     analysis_settings_ = settings;
 }
 
@@ -2623,6 +2677,54 @@ void CaptureSession::clear_selected_flow_packet_cache() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    clear_selected_flow_stream_context();
+}
+
+void CaptureSession::clear_selected_flow_stream_context() const noexcept {
+    selected_flow_stream_context_.reset();
+}
+
+CaptureSession::SelectedFlowStreamSettingsSignature
+CaptureSession::current_selected_flow_stream_settings_signature() const noexcept {
+    return SelectedFlowStreamSettingsSignature {
+        .http_use_path_as_service_hint = analysis_settings_.http_use_path_as_service_hint,
+        .use_possible_tls_quic = analysis_settings_.use_possible_tls_quic,
+        .source_capture_accessible = source_capture_accessible(),
+    };
+}
+
+CaptureSession::SelectedFlowStreamSuppressionSignature
+CaptureSession::current_selected_flow_stream_suppression_signature(const std::size_t flow_index) const noexcept {
+    if (!selected_flow_tcp_payload_suppression_.has_value() ||
+        selected_flow_tcp_payload_suppression_->flow_index != flow_index) {
+        return {};
+    }
+
+    constexpr std::uint64_t kFnvOffset = 1469598103934665603ULL;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+    auto fingerprint = kFnvOffset;
+    const auto mix = [&](const std::uint64_t value) {
+        fingerprint ^= value;
+        fingerprint *= kFnvPrime;
+    };
+
+    const auto& suppression = *selected_flow_tcp_payload_suppression_;
+    mix(static_cast<std::uint64_t>(suppression.packet_contributions.size()));
+    mix(suppression.gap_state_a_to_b.tainted_by_gap ? 1U : 0U);
+    mix(suppression.gap_state_a_to_b.first_gap_packet_index);
+    mix(suppression.gap_state_b_to_a.tainted_by_gap ? 1U : 0U);
+    mix(suppression.gap_state_b_to_a.first_gap_packet_index);
+    for (const auto& [packet_index, contribution] : suppression.packet_contributions) {
+        mix(packet_index);
+        mix(contribution.suppress_entire_packet ? 1U : 0U);
+        mix(static_cast<std::uint64_t>(contribution.trim_prefix_bytes));
+    }
+
+    return SelectedFlowStreamSuppressionSignature {
+        .active = true,
+        .flow_index = flow_index,
+        .fingerprint = fingerprint,
+    };
 }
 
 std::optional<SelectedFlowPacketCacheInfo> CaptureSession::selected_flow_packet_cache_info() const noexcept {
@@ -2638,6 +2740,41 @@ std::optional<SelectedFlowPacketCacheInfo> CaptureSession::selected_flow_packet_
         .total_cached_bytes = cache.bytes.size(),
         .limit_reached = cache.limit_reached,
         .window_fully_cached = cache.window_fully_cached,
+    };
+}
+
+std::optional<SelectedFlowStreamContextInfo> CaptureSession::selected_flow_stream_context_info() const noexcept {
+    if (!selected_flow_stream_context_.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& context = *selected_flow_stream_context_;
+    const auto provisional_row_count =
+        context.rows.size() > context.committed_stable_row_count
+            ? context.rows.size() - context.committed_stable_row_count
+            : 0U;
+    bool has_window_incomplete_suffix = false;
+    for (std::size_t index = context.committed_stable_row_count; index < context.stability_codes.size(); ++index) {
+        if (decode_stream_stability(context.stability_codes[index]) == StreamMaterializationStability::window_incomplete) {
+            has_window_incomplete_suffix = true;
+            break;
+        }
+    }
+    return SelectedFlowStreamContextInfo {
+        .flow_index = context.flow_index,
+        .total_flow_packet_count = context.total_flow_packet_count,
+        .materialized_packet_window_count = context.materialized_packet_window_count,
+        .materialized_cumulative_item_limit = context.materialized_cumulative_item_limit,
+        .materialized_row_count = context.rows.size(),
+        .committed_stable_row_count = context.committed_stable_row_count,
+        .provisional_row_count = provisional_row_count,
+        .provisional_suffix_begin_row_number = provisional_row_count == 0U
+            ? 0U
+            : context.committed_stable_row_count + 1U,
+        .has_window_incomplete_suffix = has_window_incomplete_suffix,
+        .has_pagination_lookahead = context.has_pagination_lookahead,
+        .valid = context.valid,
+        .generation = context.generation,
     };
 }
 
@@ -3410,7 +3547,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
     const auto max_packets_to_scan = connections[flow_index].family == FlowAddressFamily::ipv4
         ? connection_packet_count(*connections[flow_index].ipv4)
         : connection_packet_count(*connections[flow_index].ipv6);
-    auto rows = build_flow_stream_items_bounded(
+    const auto built_rows = build_flow_stream_items_bounded(
         *this,
         connections[flow_index],
         flow_index,
@@ -3418,6 +3555,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
         target,
         analysis_settings_
     );
+    auto rows = project_built_stream_rows(built_rows, built_rows.size());
 
     if (offset >= rows.size()) {
         return {};
@@ -3455,15 +3593,87 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         return {};
     }
 
-    auto rows = build_flow_stream_items_bounded(
+    const auto settings_signature = current_selected_flow_stream_settings_signature();
+    const auto suppression_signature = current_selected_flow_stream_suppression_signature(flow_index);
+    const auto can_project_cached_prefix = [&](const SelectedFlowStreamContext& context) {
+        if (!context.valid ||
+            context.flow_index != flow_index ||
+            context.total_flow_packet_count != total_packets ||
+            context.materialized_cumulative_item_limit < limit ||
+            context.materialized_packet_window_count < bounded_packet_budget ||
+            context.settings_signature.http_use_path_as_service_hint != settings_signature.http_use_path_as_service_hint ||
+            context.settings_signature.use_possible_tls_quic != settings_signature.use_possible_tls_quic ||
+            context.settings_signature.source_capture_accessible != settings_signature.source_capture_accessible ||
+            context.suppression_signature.active != suppression_signature.active ||
+            context.suppression_signature.flow_index != suppression_signature.flow_index ||
+            context.suppression_signature.fingerprint != suppression_signature.fingerprint ||
+            context.rows.size() != context.first_packet_indices.size() ||
+            context.rows.size() != context.intra_packet_ordinals.size() ||
+            context.rows.size() != context.stability_codes.size()) {
+            return false;
+        }
+
+        const auto projection_count = std::min(limit, context.rows.size());
+        for (std::size_t index = 0U; index < projection_count; ++index) {
+            for (const auto packet_index : context.rows[index].packet_indices) {
+                const auto flow_packet_number = selected_flow_cached_packet_number(flow_index, packet_index);
+                if (!flow_packet_number.has_value() || *flow_packet_number > bounded_packet_budget) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    };
+
+    if (selected_flow_stream_context_.has_value() &&
+        can_project_cached_prefix(*selected_flow_stream_context_)) {
+        return std::vector<StreamItemRow>(
+            selected_flow_stream_context_->rows.begin(),
+            selected_flow_stream_context_->rows.begin() + static_cast<std::ptrdiff_t>(std::min(limit, selected_flow_stream_context_->rows.size()))
+        );
+    }
+
+    clear_selected_flow_stream_context();
+
+    const auto built_rows = build_flow_stream_items_bounded(
         *this,
         connections[flow_index],
         flow_index,
-        max_packets_to_scan,
+        bounded_packet_budget,
         limit,
         analysis_settings_,
         true
     );
+    auto rows = project_built_stream_rows(built_rows, built_rows.size());
+
+    SelectedFlowStreamContext context {};
+    context.flow_index = flow_index;
+    context.total_flow_packet_count = total_packets;
+    context.materialized_packet_window_count = bounded_packet_budget;
+    context.materialized_cumulative_item_limit = limit;
+    context.rows = rows;
+    context.first_packet_indices.reserve(built_rows.size());
+    context.intra_packet_ordinals.reserve(built_rows.size());
+    context.stability_codes.reserve(built_rows.size());
+    std::map<std::uint64_t, std::uint32_t> ordinal_by_first_packet_index {};
+    for (const auto& built_row : built_rows) {
+        const auto first_packet_index = first_stream_packet_index(built_row);
+        auto& ordinal = ordinal_by_first_packet_index[first_packet_index];
+        context.first_packet_indices.push_back(first_packet_index);
+        context.intra_packet_ordinals.push_back(ordinal);
+        context.stability_codes.push_back(encode_stream_stability(built_row.stability));
+        ++ordinal;
+    }
+    context.provisional_suffix_begin_index = first_unstable_stream_row_index(built_rows);
+    context.committed_stable_row_count = std::min(context.provisional_suffix_begin_index, context.rows.size());
+    context.settings_signature = settings_signature;
+    context.suppression_signature = suppression_signature;
+    context.generation = ++selected_flow_stream_context_generation_;
+    context.valid = true;
+    context.has_pagination_lookahead = false;
+    selected_flow_stream_context_ = std::move(context);
+
     return rows;
 }
 std::size_t CaptureSession::flow_stream_item_count(const std::size_t flow_index) const {

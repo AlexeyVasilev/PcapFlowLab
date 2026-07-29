@@ -47,11 +47,27 @@ Stream now uses one bounded on-demand materialization pipeline.
 - A small flow may fit completely inside the initial bounds and therefore appear fully materialized immediately.
 - A larger flow yields a partial result from the same builder, not from a fallback-only path.
 
+Selected-flow Stream materialization is owned by `CaptureSession`.
+
+- `CaptureSession` keeps one ephemeral selected-flow Stream context for the currently materialized bounded prefix.
+- The context is selected-flow-only, capture-lifetime-only, and non-persistent.
+- Qt and `FrontendSessionAdapter` / Tauri reuse the same session-owned materialization; they do not carry independent Stream cursors or tokens.
+- The context records the materialized packet-window count, the cumulative item limit used for that build, the materialized rows, and internal ordering/stability metadata.
+- Repeated compatible requests reuse the current context result.
+- Bounds growth still rebuilds the bounded prefix from packet zero in the current implementation.
+
 For selected-flow UI queries, the effective budget includes one extra logical item of lookahead.
 
 - If the visible limit is `N`, bounded Stream reconstruction materializes at most `N + 1` logical items for that query shape.
 - The extra item is used only to answer whether `can_load_more` should remain true for the current packet window.
 - Visible ordering and visible prefix content must match the corresponding prefix of the larger bounded rebuild.
+
+Internally the materialized result is split into:
+
+- a committed stable prefix;
+- a provisional suffix that begins at the earliest unstable ordering position.
+
+Window-incomplete rows remain provisional because a larger packet window may replace them with a completed structured item. Genuine gap rows, malformed terminal rows, and capture-constricted terminal rows remain stable.
 
 ### Load more
 
@@ -62,6 +78,13 @@ For selected-flow UI queries, the effective budget includes one extra logical it
 - This keeps ordering, labeling, and protocol-aware reconstruction semantics consistent across initial and extended views.
 - The result remains selected-flow only, ephemeral, and non-persistent.
 - No retained continuation cursor or persisted reconstruction state is kept between Stream queries today.
+
+The retained selected-flow Stream context does not change that rule yet.
+
+- It caches the latest bounded cumulative materialization.
+- It can project a smaller compatible prefix without rebuilding.
+- It does not yet retain TLS scanner state, HTTP parser state, or producer watermarks.
+- Resumable TLS / HTTP continuation remains future work.
 
 ## Reassembly usage
 

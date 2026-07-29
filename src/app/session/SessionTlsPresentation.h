@@ -23,6 +23,7 @@ struct TlsStreamPresentationItem {
     std::string label {};
     std::size_t byte_count {0U};
     std::vector<std::uint64_t> packet_indices {};
+    StreamMaterializationStability stability {StreamMaterializationStability::stable};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};

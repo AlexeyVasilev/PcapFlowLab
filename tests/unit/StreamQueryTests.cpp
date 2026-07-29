@@ -1063,6 +1063,11 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_gap_rows[1].protocol_text.find("Semantic parsing stopped for this direction") != std::string::npos);
     PFL_EXPECT(tls_gap_rows[2].protocol_text.find("Later bytes are shown conservatively") != std::string::npos);
     PFL_EXPECT(tls_gap_rows[2].packet_indices == std::vector<std::uint64_t> {1U});
+    const auto tls_gap_info = tls_gap_session.selected_flow_stream_context_info();
+    PFL_REQUIRE(tls_gap_info.has_value());
+    PFL_EXPECT(tls_gap_info->committed_stable_row_count == tls_gap_rows.size());
+    PFL_EXPECT(tls_gap_info->provisional_row_count == 0U);
+    PFL_EXPECT(!tls_gap_info->has_window_incomplete_suffix);
 
     constexpr std::string_view http_gap_request_one =
         "GET /one HTTP/1.1\r\n"
@@ -1097,6 +1102,11 @@ void run_stream_query_tests() {
     PFL_EXPECT(http_gap_rows[1].protocol_text.find("Semantic parsing stopped for this direction") != std::string::npos);
     PFL_EXPECT(http_gap_rows[2].protocol_text.find("Later bytes are shown conservatively") != std::string::npos);
     PFL_EXPECT(http_gap_rows[2].packet_indices == std::vector<std::uint64_t> {1U});
+    const auto http_gap_info = http_gap_session.selected_flow_stream_context_info();
+    PFL_REQUIRE(http_gap_info.has_value());
+    PFL_EXPECT(http_gap_info->committed_stable_row_count == http_gap_rows.size());
+    PFL_EXPECT(http_gap_info->provisional_row_count == 0U);
+    PFL_EXPECT(!http_gap_info->has_window_incomplete_suffix);
 
     const auto multi_record_server_hello = make_tls_handshake_record(0x02U, {0x10U, 0x11U, 0x12U, 0x13U});
     const auto multi_record_ccs = make_tls_change_cipher_spec_record();
@@ -1334,6 +1344,157 @@ void run_stream_query_tests() {
             PFL_EXPECT(bounded_rows[index].direction_text == full_rows[index].direction_text);
             PFL_EXPECT(bounded_rows[index].packet_indices == full_rows[index].packet_indices);
         }
+
+        const auto repeated_rows = session.list_flow_stream_items_for_packet_prefix(0, 6U, 6U);
+        PFL_EXPECT(repeated_rows.size() == full_rows.size());
+        for (std::size_t index = 0U; index < repeated_rows.size(); ++index) {
+            PFL_EXPECT(repeated_rows[index].stream_item_index == full_rows[index].stream_item_index);
+            PFL_EXPECT(repeated_rows[index].label == full_rows[index].label);
+            PFL_EXPECT(repeated_rows[index].direction_text == full_rows[index].direction_text);
+            PFL_EXPECT(repeated_rows[index].byte_count == full_rows[index].byte_count);
+            PFL_EXPECT(repeated_rows[index].packet_indices == full_rows[index].packet_indices);
+            PFL_EXPECT(repeated_rows[index].payload_hex_text == full_rows[index].payload_hex_text);
+            PFL_EXPECT(repeated_rows[index].protocol_text == full_rows[index].protocol_text);
+        }
+
+        const auto context_info_after_first = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(context_info_after_first.has_value());
+        PFL_EXPECT(context_info_after_first->valid);
+        PFL_EXPECT(context_info_after_first->materialized_packet_window_count == 6U);
+        PFL_EXPECT(context_info_after_first->materialized_cumulative_item_limit == 6U);
+        PFL_EXPECT(context_info_after_first->materialized_row_count == 6U);
+        PFL_EXPECT(context_info_after_first->committed_stable_row_count == 6U);
+        PFL_EXPECT(context_info_after_first->provisional_row_count == 0U);
+        PFL_EXPECT(!context_info_after_first->has_window_incomplete_suffix);
+
+        const auto smaller_projection_rows = session.list_flow_stream_items_for_packet_prefix(0, 6U, 3U);
+        PFL_EXPECT(smaller_projection_rows.size() == 3U);
+        for (std::size_t index = 0U; index < smaller_projection_rows.size(); ++index) {
+            PFL_EXPECT(smaller_projection_rows[index].stream_item_index == full_rows[index].stream_item_index);
+            PFL_EXPECT(smaller_projection_rows[index].label == full_rows[index].label);
+            PFL_EXPECT(smaller_projection_rows[index].direction_text == full_rows[index].direction_text);
+            PFL_EXPECT(smaller_projection_rows[index].byte_count == full_rows[index].byte_count);
+            PFL_EXPECT(smaller_projection_rows[index].packet_indices == full_rows[index].packet_indices);
+        }
+
+        const auto context_info_after_smaller_projection = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(context_info_after_smaller_projection.has_value());
+        PFL_EXPECT(context_info_after_smaller_projection->generation == context_info_after_first->generation);
+        PFL_EXPECT(context_info_after_smaller_projection->materialized_cumulative_item_limit == 6U);
+        PFL_EXPECT(context_info_after_smaller_projection->materialized_row_count == 6U);
+
+        session.clear_selected_flow_packet_cache();
+        PFL_EXPECT(!session.selected_flow_stream_context_info().has_value());
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> tls_window_packets {};
+        tls_window_packets.reserve(31U);
+        for (std::uint32_t index = 0U; index < 29U; ++index) {
+            tls_window_packets.push_back({
+                5000U + index,
+                make_ethernet_ipv4_tcp_packet(ipv4(10, 64, 0, 1), ipv4(10, 64, 0, 2), 54040, 443)
+            });
+        }
+        const auto split_tls_record = make_tls_handshake_record(0x01U, std::vector<std::uint8_t>(96U, 0x41U));
+        const auto tls_split_offset = split_tls_record.size() / 2U;
+        tls_window_packets.push_back({
+            5029U,
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 64, 0, 1), ipv4(10, 64, 0, 2), 54040, 443,
+                std::vector<std::uint8_t>(
+                    split_tls_record.begin(),
+                    split_tls_record.begin() + static_cast<std::ptrdiff_t>(tls_split_offset)),
+                0x18)
+        });
+        tls_window_packets.push_back({
+            5030U,
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 64, 0, 1), ipv4(10, 64, 0, 2), 54040, 443,
+                std::vector<std::uint8_t>(
+                    split_tls_record.begin() + static_cast<std::ptrdiff_t>(tls_split_offset),
+                    split_tls_record.end()),
+                0x18)
+        });
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            write_temp_pcap("pfl_stream_query_tls_window_incomplete_suffix.pcap", make_classic_pcap(tls_window_packets)),
+            fast_options
+        ));
+
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 8U);
+        PFL_EXPECT(bounded_rows.size() == 1U);
+        PFL_EXPECT(bounded_rows[0].label.find("(partial)") != std::string::npos);
+        const auto bounded_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(bounded_info.has_value());
+        PFL_EXPECT(bounded_info->committed_stable_row_count == 0U);
+        PFL_EXPECT(bounded_info->provisional_row_count == 1U);
+        PFL_EXPECT(bounded_info->provisional_suffix_begin_row_number == 1U);
+        PFL_EXPECT(bounded_info->has_window_incomplete_suffix);
+
+        const auto completed_rows = session.list_flow_stream_items_for_packet_prefix(0, 31U, 8U);
+        PFL_EXPECT(completed_rows.size() == 1U);
+        PFL_EXPECT(completed_rows[0].label.find("(partial)") == std::string::npos);
+        PFL_EXPECT(completed_rows[0].packet_indices == std::vector<std::uint64_t>({29U, 30U}));
+        const auto completed_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(completed_info.has_value());
+        PFL_EXPECT(completed_info->generation > bounded_info->generation);
+        PFL_EXPECT(completed_info->committed_stable_row_count == 1U);
+        PFL_EXPECT(completed_info->provisional_row_count == 0U);
+        PFL_EXPECT(!completed_info->has_window_incomplete_suffix);
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> http_window_packets {};
+        http_window_packets.reserve(31U);
+        for (std::uint32_t index = 0U; index < 29U; ++index) {
+            http_window_packets.push_back({
+                5100U + index,
+                make_ethernet_ipv4_tcp_packet(ipv4(10, 65, 0, 1), ipv4(10, 65, 0, 2), 54050, 80)
+            });
+        }
+        const auto http_prefix_payload = concat_bytes(
+            make_text_bytes("GET /one HTTP/1.1\r\nHost: suffix.example\r\n\r\n"),
+            make_text_bytes("GET /two HTTP/1.1\r\nHost: suffix.example"));
+        http_window_packets.push_back({
+            5129U,
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 65, 0, 1), ipv4(10, 65, 0, 2), 54050, 80, http_prefix_payload, 0x18)
+        });
+        http_window_packets.push_back({
+            5130U,
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 65, 0, 1), ipv4(10, 65, 0, 2), 54050, 80, make_text_bytes("\r\n\r\n"), 0x18)
+        });
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            write_temp_pcap("pfl_stream_query_http_window_incomplete_suffix.pcap", make_classic_pcap(http_window_packets)),
+            fast_options
+        ));
+
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 8U);
+        PFL_EXPECT(bounded_rows.size() == 2U);
+        PFL_EXPECT(bounded_rows[0].label == "HTTP GET /one");
+        PFL_EXPECT(bounded_rows[1].label == "HTTP Payload (partial)");
+        const auto bounded_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(bounded_info.has_value());
+        PFL_EXPECT(bounded_info->committed_stable_row_count == 1U);
+        PFL_EXPECT(bounded_info->provisional_row_count == 1U);
+        PFL_EXPECT(bounded_info->provisional_suffix_begin_row_number == 2U);
+        PFL_EXPECT(bounded_info->has_window_incomplete_suffix);
+
+        const auto completed_rows = session.list_flow_stream_items_for_packet_prefix(0, 31U, 8U);
+        PFL_EXPECT(completed_rows.size() == 2U);
+        PFL_EXPECT(completed_rows[0].label == "HTTP GET /one");
+        PFL_EXPECT(completed_rows[1].label == "HTTP GET /two");
+        const auto completed_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(completed_info.has_value());
+        PFL_EXPECT(completed_info->generation > bounded_info->generation);
+        PFL_EXPECT(completed_info->committed_stable_row_count == 2U);
+        PFL_EXPECT(completed_info->provisional_row_count == 0U);
+        PFL_EXPECT(!completed_info->has_window_incomplete_suffix);
     }
 
     const auto bounded_stream_path = write_temp_pcap(

@@ -86,6 +86,12 @@ enum class TlsStreamItemSemanticKind : std::uint8_t {
     gap,
 };
 
+enum class StreamMaterializationStability : std::uint8_t {
+    stable = 0,
+    window_incomplete,
+    pagination_lookahead,
+};
+
 struct StreamItemRow {
     std::uint64_t stream_item_index {0};
     std::string direction_text {};

@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/session/FlowRows.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketRef.h"
 
@@ -21,6 +22,7 @@ struct HttpStreamPresentationItem {
     std::string label {};
     std::size_t byte_count {0U};
     std::vector<std::uint64_t> packet_indices {};
+    StreamMaterializationStability stability {StreamMaterializationStability::stable};
     std::string payload_hex_text {};
     std::string protocol_text {};
 };

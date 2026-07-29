@@ -1782,6 +1782,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
                     .label = "TLS Payload (partial)",
                     .byte_count = trailing.size(),
                     .packet_indices = packet_indices,
+                    .stability = StreamMaterializationStability::window_incomplete,
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = limited_quality_tls_protocol_text(false),
                     .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
@@ -1816,6 +1817,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
                 .label = "TLS Record Fragment (partial)",
                 .byte_count = trailing.size(),
                 .packet_indices = packet_indices,
+                .stability = StreamMaterializationStability::window_incomplete,
                 .payload_hex_text = hex_dump_service.format(trailing),
                 .protocol_text = limited_quality_tls_protocol_text(true),
                 .semantic_kind = TlsStreamItemSemanticKind::partial_record,
@@ -1975,6 +1977,8 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             ? *original_payload_length - trim_prefix_bytes
             : 0U;
         bool handled_this_packet = false;
+        const bool packet_is_last_in_window =
+            !direction_packets.empty() && packet.packet_index == direction_packets.back().packet_index;
 
         while (record_budget_remaining > 0U) {
             if (pending_record.has_value()) {
@@ -2063,6 +2067,9 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                     .label = captured_remaining < kTlsRecordHeaderSize ? "TLS Payload (partial)" : "TLS Record Fragment (partial)",
                     .byte_count = captured_remaining,
                     .packet_indices = {packet.packet_index},
+                    .stability = packet_is_last_in_window && packet.captured_length >= packet.original_length
+                        ? StreamMaterializationStability::window_incomplete
+                        : StreamMaterializationStability::stable,
                     .payload_hex_text = hex_dump_service.format(payload_span.subspan(captured_offset)),
                     .protocol_text = limited_quality_tls_protocol_text(captured_remaining >= kTlsRecordHeaderSize),
                     .semantic_kind = captured_remaining < kTlsRecordHeaderSize
@@ -2155,6 +2162,9 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .label = "TLS Record Fragment (partial)",
             .byte_count = pending_record->captured_bytes.size(),
             .packet_indices = pending_record->packet_indices,
+            .stability = pending_record->has_constricted_contribution
+                ? StreamMaterializationStability::stable
+                : StreamMaterializationStability::window_incomplete,
             .payload_hex_text = hex_dump_service.format(pending_record->captured_bytes),
             .protocol_text = limited_quality_tls_protocol_text(true),
             .semantic_kind = TlsStreamItemSemanticKind::partial_record,

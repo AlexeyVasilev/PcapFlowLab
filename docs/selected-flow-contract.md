@@ -71,6 +71,10 @@ Stream behavior rules:
 - Stream output should be conservative and non-duplicative.
 - Stream summarizes communication units; it is not a full transport-correct session reconstruction.
 - Current `Load more` behavior still rebuilds the bounded prefix from scratch; it does not resume from a retained stream cursor.
+- Selected-flow Stream materialization is owned by `CaptureSession`, not by Qt state or frontend bridge state.
+- The current retained session context keeps a committed stable prefix and a provisional suffix for the materialized bounded result.
+- Window-incomplete rows may be replaced when the packet window grows.
+- No frontend cursor token is used; callers continue to request cumulative packet/item bounds.
 
 ## 6. Source Ownership Contract
 
@@ -206,6 +210,12 @@ Selected-flow analysis follows reliability-first rules.
 - Do not present misleading source ownership.
 - Prefer explicit unavailable or partial states over guesswork.
 - Packet truth and stream truth are related, but not identical.
+
+Selected-flow Stream context reuse must preserve those rules.
+
+- Repeated identical compatible bounded queries may reuse the retained materialized result.
+- Smaller compatible projections may return a prefix of that retained result.
+- If bounds, cache state, or protocol-affecting settings become incompatible, the retained context must be discarded and the bounded prefix rebuilt safely.
 
 ## 11. Known Limits / Out Of Scope
 
