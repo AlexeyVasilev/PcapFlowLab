@@ -249,6 +249,154 @@ struct DirectionalStreamPolicy {
     std::set<std::uint64_t> covered_packet_indices {};
 };
 
+enum class ProtocolAwareStreamMode : std::uint8_t {
+    none = 0,
+    tls,
+    http,
+};
+
+struct ProtocolAwareStreamCursor {
+    ProtocolAwareStreamMode mode {ProtocolAwareStreamMode::none};
+    std::string_view direction_text {};
+    Direction direction {Direction::a_to_b};
+    std::span<const PacketRef> direction_packets {};
+    std::size_t next_skip_count {0U};
+    DirectionalStreamPolicy policy {};
+    std::optional<StreamItemRow> current_row {};
+    bool exhausted {true};
+};
+
+std::uint64_t first_stream_packet_index(const StreamItemRow& row) {
+    return row.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : row.packet_indices.front();
+}
+
+void merge_directional_policy(
+    DirectionalStreamPolicy& policy,
+    const session_detail::TlsDirectionalStreamPresentation& presentation
+) {
+    policy.used_reassembly = policy.used_reassembly || presentation.used_reassembly;
+    policy.explicit_gap_item_emitted = policy.explicit_gap_item_emitted || presentation.explicit_gap_item_emitted;
+    if (policy.first_gap_packet_index == 0U) {
+        policy.first_gap_packet_index = presentation.first_gap_packet_index;
+    }
+    if (policy.fallback_label.empty()) {
+        policy.fallback_label = presentation.fallback_label;
+    }
+    if (policy.fallback_protocol_text.empty()) {
+        policy.fallback_protocol_text = presentation.fallback_protocol_text;
+    }
+    policy.covered_packet_indices.insert(
+        presentation.covered_packet_indices.begin(),
+        presentation.covered_packet_indices.end()
+    );
+}
+
+void merge_directional_policy(
+    DirectionalStreamPolicy& policy,
+    const session_detail::HttpDirectionalStreamPresentation& presentation
+) {
+    policy.used_reassembly = policy.used_reassembly || presentation.used_reassembly;
+    policy.explicit_gap_item_emitted = policy.explicit_gap_item_emitted || presentation.explicit_gap_item_emitted;
+    if (policy.first_gap_packet_index == 0U) {
+        policy.first_gap_packet_index = presentation.first_gap_packet_index;
+    }
+    if (policy.fallback_label.empty()) {
+        policy.fallback_label = presentation.fallback_label;
+    }
+    if (policy.fallback_protocol_text.empty()) {
+        policy.fallback_protocol_text = presentation.fallback_protocol_text;
+    }
+    policy.covered_packet_indices.insert(
+        presentation.covered_packet_indices.begin(),
+        presentation.covered_packet_indices.end()
+    );
+}
+
+StreamItemRow make_stream_item_row_from_tls_presentation(
+    const std::string_view direction_text,
+    const session_detail::TlsStreamPresentationItem& item
+) {
+    return make_stream_item_row(
+        0U,
+        direction_text,
+        item.label,
+        item.byte_count,
+        item.packet_indices,
+        {},
+        item.payload_hex_text,
+        item.protocol_text,
+        item.has_constricted_contribution,
+        item.constricted_contribution_notes,
+        item.constricted_packet_notes,
+        item.semantic_kind
+    );
+}
+
+StreamItemRow make_stream_item_row_from_http_presentation(
+    const std::string_view direction_text,
+    const session_detail::HttpStreamPresentationItem& item
+) {
+    return make_stream_item_row(
+        0U,
+        direction_text,
+        item.label,
+        item.byte_count,
+        item.packet_indices,
+        {},
+        item.payload_hex_text,
+        item.protocol_text
+    );
+}
+
+void advance_protocol_aware_stream_cursor(
+    ProtocolAwareStreamCursor& cursor,
+    const CaptureSession& session,
+    const std::size_t flow_index
+) {
+    cursor.current_row.reset();
+    if (cursor.exhausted || cursor.mode == ProtocolAwareStreamMode::none) {
+        cursor.exhausted = true;
+        return;
+    }
+
+    if (cursor.mode == ProtocolAwareStreamMode::tls) {
+        auto presentation = session_detail::build_tls_stream_items_from_reassembly_bounded(
+            session,
+            flow_index,
+            cursor.direction,
+            cursor.direction_packets,
+            cursor.next_skip_count,
+            1U
+        );
+        merge_directional_policy(cursor.policy, presentation);
+        if (presentation.items.empty()) {
+            cursor.exhausted = true;
+            return;
+        }
+        cursor.current_row = make_stream_item_row_from_tls_presentation(cursor.direction_text, presentation.items.front());
+        ++cursor.next_skip_count;
+        cursor.exhausted = false;
+        return;
+    }
+
+    auto presentation = session_detail::build_http_stream_items_from_reassembly_bounded(
+        session,
+        flow_index,
+        cursor.direction,
+        cursor.direction_packets,
+        cursor.next_skip_count,
+        1U
+    );
+    merge_directional_policy(cursor.policy, presentation);
+    if (presentation.items.empty()) {
+        cursor.exhausted = true;
+        return;
+    }
+    cursor.current_row = make_stream_item_row_from_http_presentation(cursor.direction_text, presentation.items.front());
+    ++cursor.next_skip_count;
+    cursor.exhausted = false;
+}
+
 DirectionalStreamPolicy append_http_stream_items_from_reassembly(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
@@ -1113,7 +1261,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan,
     const std::size_t target,
-    const AnalysisSettings& analysis_settings
+    const AnalysisSettings& analysis_settings,
+    const bool strict_protocol_budget = false
 ) {
     const auto flow_protocol = protocol_id(connection);
     std::vector<StreamItemRow> rows {};
@@ -1181,30 +1330,75 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             return true;
         };
 
-        if (should_run_tls(tls_result_a)) {
-            direction_policy_a = append_tls_stream_items_from_reassembly(
-                rows,
-                session,
-                flow_index,
+        if (strict_protocol_budget) {
+            auto start_cursor = [&](const std::string_view direction_text,
+                                    const Direction direction,
+                                    const std::span<const PacketRef> direction_packets,
+                                    const StreamPrefixPrecheckResult tls_result,
+                                    const StreamPrefixPrecheckResult http_result) {
+                ProtocolAwareStreamCursor cursor {
+                    .mode = ProtocolAwareStreamMode::none,
+                    .direction_text = direction_text,
+                    .direction = direction,
+                    .direction_packets = direction_packets,
+                    .next_skip_count = 0U,
+                    .policy = {},
+                    .current_row = std::nullopt,
+                    .exhausted = true,
+                };
+
+                if (should_run_tls(tls_result)) {
+                    cursor.mode = ProtocolAwareStreamMode::tls;
+                    cursor.exhausted = false;
+                    advance_protocol_aware_stream_cursor(cursor, session, flow_index);
+                }
+
+                if (!cursor.current_row.has_value() && !cursor.policy.used_reassembly && should_run_http(http_result)) {
+                    cursor = ProtocolAwareStreamCursor {
+                        .mode = ProtocolAwareStreamMode::http,
+                        .direction_text = direction_text,
+                        .direction = direction,
+                        .direction_packets = direction_packets,
+                        .next_skip_count = 0U,
+                        .policy = {},
+                        .current_row = std::nullopt,
+                        .exhausted = false,
+                    };
+                    advance_protocol_aware_stream_cursor(cursor, session, flow_index);
+                }
+
+                return cursor;
+            };
+
+            auto cursor_a = start_cursor(
                 kDirectionAToB,
                 Direction::a_to_b,
-                direction_packets_a
+                direction_packets_a,
+                tls_result_a,
+                http_result_a
             );
-        }
-
-        if (should_run_tls(tls_result_b)) {
-            direction_policy_b = append_tls_stream_items_from_reassembly(
-                rows,
-                session,
-                flow_index,
+            auto cursor_b = start_cursor(
                 kDirectionBToA,
                 Direction::b_to_a,
-                direction_packets_b
+                direction_packets_b,
+                tls_result_b,
+                http_result_b
             );
-        }
-        if (!direction_policy_a.used_reassembly) {
-            if (should_run_http(http_result_a)) {
-                direction_policy_a = append_http_stream_items_from_reassembly(
+
+            while (rows.size() < target && (cursor_a.current_row.has_value() || cursor_b.current_row.has_value())) {
+                const bool use_a = !cursor_b.current_row.has_value() ||
+                    (cursor_a.current_row.has_value() &&
+                        first_stream_packet_index(*cursor_a.current_row) <= first_stream_packet_index(*cursor_b.current_row));
+                auto& cursor = use_a ? cursor_a : cursor_b;
+                rows.push_back(std::move(*cursor.current_row));
+                advance_protocol_aware_stream_cursor(cursor, session, flow_index);
+            }
+
+            direction_policy_a = std::move(cursor_a.policy);
+            direction_policy_b = std::move(cursor_b.policy);
+        } else {
+            if (should_run_tls(tls_result_a)) {
+                direction_policy_a = append_tls_stream_items_from_reassembly(
                     rows,
                     session,
                     flow_index,
@@ -1213,10 +1407,9 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                     direction_packets_a
                 );
             }
-        }
-        if (!direction_policy_b.used_reassembly) {
-            if (should_run_http(http_result_b)) {
-                direction_policy_b = append_http_stream_items_from_reassembly(
+
+            if (should_run_tls(tls_result_b)) {
+                direction_policy_b = append_tls_stream_items_from_reassembly(
                     rows,
                     session,
                     flow_index,
@@ -1224,6 +1417,30 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                     Direction::b_to_a,
                     direction_packets_b
                 );
+            }
+            if (!direction_policy_a.used_reassembly) {
+                if (should_run_http(http_result_a)) {
+                    direction_policy_a = append_http_stream_items_from_reassembly(
+                        rows,
+                        session,
+                        flow_index,
+                        kDirectionAToB,
+                        Direction::a_to_b,
+                        direction_packets_a
+                    );
+                }
+            }
+            if (!direction_policy_b.used_reassembly) {
+                if (should_run_http(http_result_b)) {
+                    direction_policy_b = append_http_stream_items_from_reassembly(
+                        rows,
+                        session,
+                        flow_index,
+                        kDirectionBToA,
+                        Direction::b_to_a,
+                        direction_packets_b
+                    );
+                }
             }
         }
     }
@@ -3227,9 +3444,6 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     } else {
         prepare_selected_flow_packet_cache(flow_index, bounded_packet_budget);
     }
-    if (total_packets <= max_packets_to_scan) {
-        return list_flow_stream_items(flow_index, 0U, limit);
-    }
 
     const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
@@ -3247,7 +3461,8 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         flow_index,
         max_packets_to_scan,
         limit,
-        analysis_settings_
+        analysis_settings_,
+        true
     );
     return rows;
 }

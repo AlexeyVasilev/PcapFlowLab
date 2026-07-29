@@ -65,8 +65,12 @@ Stream behavior rules:
 
 - Stream is built on-demand for the selected flow only.
 - `Load more` expands the packet window and can extend or improve stream output.
+- The packet window is always a bounded prefix of the selected flow's packets, not an arbitrary sparse selection.
+- The logical-item budget applies inside protocol-aware reconstruction as a cumulative bound for that query shape.
+- Selected-flow UI queries may request one extra logical item of lookahead so the frontend can distinguish a complete visible result from `can_load_more`.
 - Stream output should be conservative and non-duplicative.
 - Stream summarizes communication units; it is not a full transport-correct session reconstruction.
+- Current `Load more` behavior still rebuilds the bounded prefix from scratch; it does not resume from a retained stream cursor.
 
 ## 6. Source Ownership Contract
 

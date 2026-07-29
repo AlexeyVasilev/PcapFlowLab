@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <filesystem>
@@ -1292,6 +1293,49 @@ void run_stream_query_tests() {
         }
     }
 
+    {
+        constexpr std::array<std::string_view, 6> kHttpPrefixMessages {
+            "GET /prefix-1 HTTP/1.1\r\nHost: prefix.example\r\n\r\n",
+            "GET /prefix-2 HTTP/1.1\r\nHost: prefix.example\r\n\r\n",
+            "GET /prefix-3 HTTP/1.1\r\nHost: prefix.example\r\n\r\n",
+            "GET /prefix-4 HTTP/1.1\r\nHost: prefix.example\r\n\r\n",
+            "GET /prefix-5 HTTP/1.1\r\nHost: prefix.example\r\n\r\n",
+            "GET /prefix-6 HTTP/1.1\r\nHost: prefix.example\r\n\r\n",
+        };
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> http_prefix_packets {};
+        http_prefix_packets.reserve(kHttpPrefixMessages.size());
+        for (std::size_t index = 0U; index < kHttpPrefixMessages.size(); ++index) {
+            http_prefix_packets.push_back({
+                static_cast<std::uint32_t>(4000U + index),
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 63, 0, 1),
+                    ipv4(10, 63, 0, 2),
+                    54030,
+                    80,
+                    make_text_bytes(kHttpPrefixMessages[index]),
+                    0x18
+                )
+            });
+        }
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            write_temp_pcap("pfl_stream_query_http_visible_prefix_budget.pcap", make_classic_pcap(http_prefix_packets)),
+            fast_options
+        ));
+
+        const auto full_rows = session.list_flow_stream_items(0);
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 6U, 3U);
+        PFL_EXPECT(full_rows.size() == 6U);
+        PFL_EXPECT(bounded_rows.size() == 3U);
+        for (std::size_t index = 0U; index < bounded_rows.size(); ++index) {
+            PFL_EXPECT(bounded_rows[index].label == full_rows[index].label);
+            PFL_EXPECT(bounded_rows[index].byte_count == full_rows[index].byte_count);
+            PFL_EXPECT(bounded_rows[index].direction_text == full_rows[index].direction_text);
+            PFL_EXPECT(bounded_rows[index].packet_indices == full_rows[index].packet_indices);
+        }
+    }
+
     const auto bounded_stream_path = write_temp_pcap(
         "pfl_stream_query_bounded_rows.pcap",
         make_classic_pcap(bounded_stream_packets)
@@ -1321,9 +1365,16 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_normal_1.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
-        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 32U);
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 4U);
         PFL_EXPECT(!rows.empty());
         PFL_EXPECT(!bounded_rows.empty());
+        PFL_EXPECT(bounded_rows.size() == 4U);
+        for (std::size_t index = 0U; index < bounded_rows.size(); ++index) {
+            PFL_EXPECT(bounded_rows[index].label == rows[index].label);
+            PFL_EXPECT(bounded_rows[index].byte_count == rows[index].byte_count);
+            PFL_EXPECT(bounded_rows[index].direction_text == rows[index].direction_text);
+            PFL_EXPECT(bounded_rows[index].packet_indices == rows[index].packet_indices);
+        }
 
         const auto* client_hello = find_stream_row_by_label(rows, "TLS ClientHello");
         const auto* server_hello = find_stream_row_by_label(rows, "TLS ServerHello");

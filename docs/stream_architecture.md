@@ -42,8 +42,16 @@ Stream now uses one bounded on-demand materialization pipeline.
 
 - The same protocol-aware builder is used for the initial selected-flow result and every later `Load more` refresh.
 - Initial and extended views differ only by bounds, primarily the packet window and item budget supplied to the builder.
+- The packet window always remains a bounded prefix of the selected flow's packets: `[0, packet_window_count)`.
+- The logical-item budget is cumulative across protocol-aware reconstruction, not a late UI-only slice after building every TLS or HTTP item in that packet window.
 - A small flow may fit completely inside the initial bounds and therefore appear fully materialized immediately.
 - A larger flow yields a partial result from the same builder, not from a fallback-only path.
+
+For selected-flow UI queries, the effective budget includes one extra logical item of lookahead.
+
+- If the visible limit is `N`, bounded Stream reconstruction materializes at most `N + 1` logical items for that query shape.
+- The extra item is used only to answer whether `can_load_more` should remain true for the current packet window.
+- Visible ordering and visible prefix content must match the corresponding prefix of the larger bounded rebuild.
 
 ### Load more
 
@@ -53,6 +61,7 @@ Stream now uses one bounded on-demand materialization pipeline.
 - Stream is then rebuilt from scratch for that flow with the larger bounds.
 - This keeps ordering, labeling, and protocol-aware reconstruction semantics consistent across initial and extended views.
 - The result remains selected-flow only, ephemeral, and non-persistent.
+- No retained continuation cursor or persisted reconstruction state is kept between Stream queries today.
 
 ## Reassembly usage
 

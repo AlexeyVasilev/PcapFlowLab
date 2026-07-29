@@ -89,6 +89,15 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly(
     std::span<const PacketRef> direction_packets
 );
 
+TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly_bounded(
+    const CaptureSession& session,
+    std::size_t flow_index,
+    Direction direction,
+    std::span<const PacketRef> direction_packets,
+    std::size_t skip_item_count,
+    std::size_t max_item_count
+);
+
 std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
     CaptureSession& session,
     std::size_t flow_index,

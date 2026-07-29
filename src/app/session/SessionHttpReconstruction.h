@@ -42,6 +42,15 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     std::span<const PacketRef> direction_packets
 );
 
+HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounded(
+    const CaptureSession& session,
+    std::size_t flow_index,
+    Direction direction,
+    std::span<const PacketRef> direction_packets,
+    std::size_t skip_item_count,
+    std::size_t max_item_count
+);
+
 std::string http_stream_label_from_protocol_text(std::string_view protocol_text);
 
 }  // namespace session_detail
