@@ -32,6 +32,67 @@ struct TlsStreamPresentationItem {
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
 };
 
+struct TlsStreamScannerContribution {
+    std::uint64_t packet_index {0};
+    std::uint64_t flow_packet_index {0};
+    std::vector<std::uint8_t> captured_bytes {};
+    std::size_t original_byte_count {0U};
+    std::uint32_t packet_captured_length {0U};
+    std::uint32_t packet_original_length {0U};
+};
+
+struct TlsScannedStreamRow {
+    TlsStreamPresentationItem item {};
+    std::uint64_t first_packet_index {0};
+    std::uint64_t first_flow_packet_index {0};
+    std::uint32_t intra_packet_ordinal {0U};
+};
+
+enum class TlsStreamScannerFinishMode : std::uint8_t {
+    none = 0,
+    window_end,
+    flow_end,
+    tcp_gap,
+};
+
+struct TlsStreamScannerPendingRecordState {
+    std::string label {};
+    std::size_t total_byte_count {0U};
+    TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
+    std::string protocol_text {};
+    std::uint64_t first_packet_index {0};
+    std::uint64_t first_flow_packet_index {0};
+    std::uint32_t intra_packet_ordinal {0U};
+};
+
+struct TlsStreamScannerBufferedContribution {
+    std::uint64_t packet_index {0};
+    std::uint64_t flow_packet_index {0};
+    std::vector<std::uint8_t> captured_bytes {};
+    std::size_t original_byte_count {0U};
+    std::uint32_t packet_captured_length {0U};
+    std::uint32_t packet_original_length {0U};
+};
+
+struct TlsStreamScannerState {
+    Direction direction {Direction::a_to_b};
+    std::vector<TlsStreamScannerBufferedContribution> buffered_contributions {};
+    std::optional<TlsStreamScannerPendingRecordState> pending_record {};
+    bool post_change_cipher_spec {false};
+    bool saw_tls_context {false};
+    bool prefer_payload_partial_for_unrecognized_trailing_bytes {false};
+    std::uint64_t ordinal_packet_index {0};
+    std::uint32_t next_intra_packet_ordinal {0U};
+};
+
+struct TlsStreamScannerOutput {
+    std::vector<TlsScannedStreamRow> stable_rows {};
+    std::optional<TlsScannedStreamRow> provisional_row {};
+    bool provisional_depends_on_more_input {false};
+    bool budget_exhausted {false};
+    bool malformed_boundary {false};
+};
+
 struct TlsPacketStreamPresentation {
     bool handled {false};
     std::vector<TlsStreamPresentationItem> items {};
@@ -46,6 +107,18 @@ struct TlsDirectionalStreamPresentation {
     std::set<std::uint64_t> covered_packet_indices {};
     std::vector<TlsStreamPresentationItem> items {};
 };
+
+[[nodiscard]] TlsStreamScannerState make_tls_stream_scanner_state(
+    Direction direction,
+    bool prefer_payload_partial_for_unrecognized_trailing_bytes = false
+);
+
+TlsStreamScannerOutput consume_tls_stream_scanner(
+    TlsStreamScannerState& state,
+    std::span<const TlsStreamScannerContribution> contributions,
+    std::size_t max_finalized_items,
+    TlsStreamScannerFinishMode finish_mode
+);
 
 struct TlsSelectedPacketContribution {
     std::uint64_t packet_index {0};

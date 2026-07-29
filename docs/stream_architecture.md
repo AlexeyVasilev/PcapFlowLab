@@ -108,6 +108,11 @@ TLS Stream parsing is record-oriented and may use bounded directional reassembly
 
 - Multiple TLS records inside one TCP payload are split into separate Stream items.
 - A TLS record spanning multiple TCP packets may become one logical item if the bounded reassembly buffer contains the full record.
+- TLS Stream reconstruction now runs through an explicit resumable scanner state in the session layer.
+- Current production requests still instantiate that scanner fresh for each bounded rebuild.
+- The scanner retains only unresolved tail state for the current directional scan, not finalized rows.
+- A window-incomplete TLS row is a projection of pending scanner state at the current packet-window boundary.
+- CaptureSession does not yet retain that TLS scanner state across `Load more`; packet-window growth still rebuilds from packet zero.
 - Handshake records are labeled by known handshake type when identifiable.
 - `ClientHello`, `ServerHello`, and `Certificate` items can expose a richer Protocol text block when the bounded Stream bytes contain enough complete handshake data.
 - Incomplete trailing TLS data falls back conservatively to partial TLS labels.
@@ -127,6 +132,7 @@ HTTP Stream parsing is header-oriented and may use bounded directional reassembl
 
 - Complete request and response header blocks are recognized in byte order.
 - A request or response spanning multiple TCP packets may become one logical item if enough bytes are present in the bounded reassembly buffer.
+- HTTP remains rebuild-based for now and does not yet use a retained continuation scanner.
 - Message labels are derived from request line or response status when available.
 - HTTP body reconstruction is intentionally incomplete as a general model.
 - Stream currently recognizes enough body framing to continue across some complete messages, but it is not a general HTTP body-reconstruction subsystem.

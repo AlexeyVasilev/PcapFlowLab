@@ -15,6 +15,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionQuicPresentation.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
 
@@ -1495,6 +1496,260 @@ void run_stream_query_tests() {
         PFL_EXPECT(completed_info->committed_stable_row_count == 2U);
         PFL_EXPECT(completed_info->provisional_row_count == 0U);
         PFL_EXPECT(!completed_info->has_window_incomplete_suffix);
+    }
+
+    {
+        const auto client_hello_record = make_tls_handshake_record(0x01U, std::vector<std::uint8_t>(96U, 0x31U));
+        const auto split_offsets = std::array<std::size_t, 4U> {
+            5U,
+            9U,
+            40U,
+            client_hello_record.size() - 1U,
+        };
+
+        for (const auto split_offset : split_offsets) {
+            const auto first_chunk = std::vector<std::uint8_t>(
+                client_hello_record.begin(),
+                client_hello_record.begin() + static_cast<std::ptrdiff_t>(split_offset)
+            );
+            const auto second_chunk = std::vector<std::uint8_t>(
+                client_hello_record.begin() + static_cast<std::ptrdiff_t>(split_offset),
+                client_hello_record.end()
+            );
+
+            auto one_shot_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+            const auto one_shot = session_detail::consume_tls_stream_scanner(
+                one_shot_state,
+                std::array<session_detail::TlsStreamScannerContribution, 2U> {{
+                    {
+                        .packet_index = 100U,
+                        .flow_packet_index = 1U,
+                        .captured_bytes = first_chunk,
+                        .original_byte_count = first_chunk.size(),
+                        .packet_captured_length = static_cast<std::uint32_t>(first_chunk.size()),
+                        .packet_original_length = static_cast<std::uint32_t>(first_chunk.size()),
+                    },
+                    {
+                        .packet_index = 101U,
+                        .flow_packet_index = 2U,
+                        .captured_bytes = second_chunk,
+                        .original_byte_count = second_chunk.size(),
+                        .packet_captured_length = static_cast<std::uint32_t>(second_chunk.size()),
+                        .packet_original_length = static_cast<std::uint32_t>(second_chunk.size()),
+                    },
+                }},
+                8U,
+                session_detail::TlsStreamScannerFinishMode::flow_end
+            );
+            PFL_REQUIRE(one_shot.stable_rows.size() == 1U);
+            PFL_EXPECT(!one_shot.provisional_row.has_value());
+
+            auto split_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+            const auto first_pass = session_detail::consume_tls_stream_scanner(
+                split_state,
+                std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                    {
+                        .packet_index = 100U,
+                        .flow_packet_index = 1U,
+                        .captured_bytes = first_chunk,
+                        .original_byte_count = first_chunk.size(),
+                        .packet_captured_length = static_cast<std::uint32_t>(first_chunk.size()),
+                        .packet_original_length = static_cast<std::uint32_t>(first_chunk.size()),
+                    },
+                }},
+                8U,
+                session_detail::TlsStreamScannerFinishMode::window_end
+            );
+            PFL_EXPECT(first_pass.stable_rows.empty());
+            PFL_REQUIRE(first_pass.provisional_row.has_value());
+            PFL_EXPECT(first_pass.provisional_row->item.label.find("(partial)") != std::string::npos);
+            PFL_EXPECT(first_pass.provisional_row->item.stability == StreamMaterializationStability::window_incomplete);
+
+            const auto second_pass = session_detail::consume_tls_stream_scanner(
+                split_state,
+                std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                    {
+                        .packet_index = 101U,
+                        .flow_packet_index = 2U,
+                        .captured_bytes = second_chunk,
+                        .original_byte_count = second_chunk.size(),
+                        .packet_captured_length = static_cast<std::uint32_t>(second_chunk.size()),
+                        .packet_original_length = static_cast<std::uint32_t>(second_chunk.size()),
+                    },
+                }},
+                8U,
+                session_detail::TlsStreamScannerFinishMode::flow_end
+            );
+            PFL_REQUIRE(second_pass.stable_rows.size() == 1U);
+            PFL_EXPECT(!second_pass.provisional_row.has_value());
+            PFL_EXPECT(second_pass.stable_rows[0].item.label == one_shot.stable_rows[0].item.label);
+            PFL_EXPECT(second_pass.stable_rows[0].item.byte_count == one_shot.stable_rows[0].item.byte_count);
+            PFL_EXPECT(second_pass.stable_rows[0].item.packet_indices == one_shot.stable_rows[0].item.packet_indices);
+            PFL_EXPECT(second_pass.stable_rows[0].item.payload_hex_text == one_shot.stable_rows[0].item.payload_hex_text);
+            PFL_EXPECT(second_pass.stable_rows[0].item.protocol_text == one_shot.stable_rows[0].item.protocol_text);
+            PFL_EXPECT(second_pass.stable_rows[0].item.semantic_kind == one_shot.stable_rows[0].item.semantic_kind);
+        }
+    }
+
+    {
+        const auto server_hello_record = make_tls_handshake_record(0x02U, {0x10U, 0x11U, 0x12U, 0x13U});
+        const auto change_cipher_spec_record = make_tls_change_cipher_spec_record();
+        const auto app_data_record = make_tls_record(0x17U, 0x0303U, {0x21U, 0x22U, 0x23U, 0x24U});
+        const auto packet_payload = concat_bytes(concat_bytes(server_hello_record, change_cipher_spec_record), app_data_record);
+
+        auto scanner_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+        const auto first_pass = session_detail::consume_tls_stream_scanner(
+            scanner_state,
+            std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                {
+                    .packet_index = 200U,
+                    .flow_packet_index = 1U,
+                    .captured_bytes = packet_payload,
+                    .original_byte_count = packet_payload.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(packet_payload.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(packet_payload.size()),
+                },
+            }},
+            2U,
+            session_detail::TlsStreamScannerFinishMode::none
+        );
+        PFL_REQUIRE(first_pass.stable_rows.size() == 2U);
+        PFL_EXPECT(first_pass.budget_exhausted);
+        PFL_EXPECT(first_pass.stable_rows[0].item.label == "TLS ServerHello");
+        PFL_EXPECT(first_pass.stable_rows[1].item.label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(first_pass.stable_rows[0].intra_packet_ordinal == 0U);
+        PFL_EXPECT(first_pass.stable_rows[1].intra_packet_ordinal == 1U);
+        PFL_EXPECT(!first_pass.provisional_row.has_value());
+
+        const auto second_pass = session_detail::consume_tls_stream_scanner(
+            scanner_state,
+            std::span<const session_detail::TlsStreamScannerContribution> {},
+            4U,
+            session_detail::TlsStreamScannerFinishMode::flow_end
+        );
+        PFL_REQUIRE(second_pass.stable_rows.size() == 1U);
+        PFL_EXPECT(second_pass.stable_rows[0].item.label == "TLS AppData");
+        PFL_EXPECT(second_pass.stable_rows[0].intra_packet_ordinal == 2U);
+        PFL_EXPECT(!second_pass.provisional_row.has_value());
+    }
+
+    {
+        const auto change_cipher_spec_record = make_tls_change_cipher_spec_record();
+        const auto encrypted_handshake_record = make_tls_handshake_record(0x14U, {0xAAU, 0xBBU, 0xCCU});
+
+        auto one_shot_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+        const auto one_shot = session_detail::consume_tls_stream_scanner(
+            one_shot_state,
+            std::array<session_detail::TlsStreamScannerContribution, 2U> {{
+                {
+                    .packet_index = 300U,
+                    .flow_packet_index = 1U,
+                    .captured_bytes = change_cipher_spec_record,
+                    .original_byte_count = change_cipher_spec_record.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(change_cipher_spec_record.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(change_cipher_spec_record.size()),
+                },
+                {
+                    .packet_index = 301U,
+                    .flow_packet_index = 2U,
+                    .captured_bytes = encrypted_handshake_record,
+                    .original_byte_count = encrypted_handshake_record.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(encrypted_handshake_record.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(encrypted_handshake_record.size()),
+                },
+            }},
+            8U,
+            session_detail::TlsStreamScannerFinishMode::flow_end
+        );
+        PFL_REQUIRE(one_shot.stable_rows.size() == 2U);
+
+        auto split_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+        const auto ccs_pass = session_detail::consume_tls_stream_scanner(
+            split_state,
+            std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                {
+                    .packet_index = 300U,
+                    .flow_packet_index = 1U,
+                    .captured_bytes = change_cipher_spec_record,
+                    .original_byte_count = change_cipher_spec_record.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(change_cipher_spec_record.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(change_cipher_spec_record.size()),
+                },
+            }},
+            8U,
+            session_detail::TlsStreamScannerFinishMode::window_end
+        );
+        PFL_REQUIRE(ccs_pass.stable_rows.size() == 1U);
+        PFL_EXPECT(ccs_pass.stable_rows[0].item.label == "TLS ChangeCipherSpec");
+
+        const auto encrypted_pass = session_detail::consume_tls_stream_scanner(
+            split_state,
+            std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                {
+                    .packet_index = 301U,
+                    .flow_packet_index = 2U,
+                    .captured_bytes = encrypted_handshake_record,
+                    .original_byte_count = encrypted_handshake_record.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(encrypted_handshake_record.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(encrypted_handshake_record.size()),
+                },
+            }},
+            8U,
+            session_detail::TlsStreamScannerFinishMode::flow_end
+        );
+        PFL_REQUIRE(encrypted_pass.stable_rows.size() == 1U);
+        PFL_EXPECT(encrypted_pass.stable_rows[0].item.label == one_shot.stable_rows[1].item.label);
+        PFL_EXPECT(encrypted_pass.stable_rows[0].item.protocol_text == one_shot.stable_rows[1].item.protocol_text);
+        PFL_EXPECT(encrypted_pass.stable_rows[0].item.protocol_text.find("Encrypted/opaque handshake payload") != std::string::npos);
+    }
+
+    {
+        const auto partial_record = make_tls_handshake_record(0x01U, std::vector<std::uint8_t>(48U, 0x44U));
+        const auto split_offset = partial_record.size() / 2U;
+        const auto partial_prefix = std::vector<std::uint8_t>(
+            partial_record.begin(),
+            partial_record.begin() + static_cast<std::ptrdiff_t>(split_offset)
+        );
+
+        auto window_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+        const auto window_result = session_detail::consume_tls_stream_scanner(
+            window_state,
+            std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                {
+                    .packet_index = 400U,
+                    .flow_packet_index = 1U,
+                    .captured_bytes = partial_prefix,
+                    .original_byte_count = partial_prefix.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(partial_prefix.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(partial_prefix.size()),
+                },
+            }},
+            8U,
+            session_detail::TlsStreamScannerFinishMode::window_end
+        );
+        PFL_EXPECT(window_result.stable_rows.empty());
+        PFL_REQUIRE(window_result.provisional_row.has_value());
+        PFL_EXPECT(window_result.provisional_row->item.stability == StreamMaterializationStability::window_incomplete);
+
+        auto end_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true);
+        const auto end_result = session_detail::consume_tls_stream_scanner(
+            end_state,
+            std::array<session_detail::TlsStreamScannerContribution, 1U> {{
+                {
+                    .packet_index = 400U,
+                    .flow_packet_index = 1U,
+                    .captured_bytes = partial_prefix,
+                    .original_byte_count = partial_prefix.size(),
+                    .packet_captured_length = static_cast<std::uint32_t>(partial_prefix.size()),
+                    .packet_original_length = static_cast<std::uint32_t>(partial_prefix.size()),
+                },
+            }},
+            8U,
+            session_detail::TlsStreamScannerFinishMode::flow_end
+        );
+        PFL_REQUIRE(end_result.stable_rows.size() == 1U);
+        PFL_EXPECT(!end_result.provisional_row.has_value());
+        PFL_EXPECT(end_result.stable_rows[0].item.label.find("(partial)") != std::string::npos);
     }
 
     const auto bounded_stream_path = write_temp_pcap(
