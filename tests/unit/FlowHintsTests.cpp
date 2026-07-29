@@ -1,11 +1,15 @@
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "core/domain/Connection.h"
+#include "core/domain/FlowKey.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/services/ChunkedCaptureImporter.h"
+#include "core/services/FlowHintService.h"
+#include "core/services/PacketPayloadService.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
@@ -90,6 +94,126 @@ std::vector<std::uint8_t> make_tls_client_hello_payload() {
     payload.push_back(static_cast<std::uint8_t>(body.size() & 0xFFU));
     payload.insert(payload.end(), body.begin(), body.end());
     return payload;
+}
+
+void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+std::vector<std::uint8_t> make_tls_record(
+    const std::uint8_t content_type,
+    const std::uint16_t legacy_version,
+    const std::vector<std::uint8_t>& body
+) {
+    std::vector<std::uint8_t> record {};
+    record.reserve(5U + body.size());
+    record.push_back(content_type);
+    append_be16(record, legacy_version);
+    append_be16(record, static_cast<std::uint16_t>(body.size()));
+    record.insert(record.end(), body.begin(), body.end());
+    return record;
+}
+
+std::vector<std::uint8_t> make_tls_handshake_message(
+    const std::uint8_t handshake_type,
+    const std::vector<std::uint8_t>& body
+) {
+    std::vector<std::uint8_t> handshake {};
+    handshake.reserve(4U + body.size());
+    handshake.push_back(handshake_type);
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+    return handshake;
+}
+
+void append_tls_extension(
+    std::vector<std::uint8_t>& bytes,
+    const std::uint16_t extension_type,
+    const std::vector<std::uint8_t>& body
+) {
+    append_be16(bytes, extension_type);
+    append_be16(bytes, static_cast<std::uint16_t>(body.size()));
+    bytes.insert(bytes.end(), body.begin(), body.end());
+}
+
+std::vector<std::uint8_t> make_tls_server_name_extension_body(const std::string_view server_name) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, static_cast<std::uint16_t>(server_name.size() + 3U));
+    body.push_back(0x00U);
+    append_be16(body, static_cast<std::uint16_t>(server_name.size()));
+    body.insert(body.end(), server_name.begin(), server_name.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_minimal_client_hello_payload_with_extensions(
+    const std::vector<std::uint8_t>& extensions,
+    const std::vector<std::uint8_t>& session_id = {},
+    const std::vector<std::uint8_t>& cipher_suites = {0x13U, 0x01U},
+    const std::vector<std::uint8_t>& compression_methods = {0x00U}
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    for (std::uint8_t index = 0U; index < 32U; ++index) {
+        body.push_back(index);
+    }
+    body.push_back(static_cast<std::uint8_t>(session_id.size()));
+    body.insert(body.end(), session_id.begin(), session_id.end());
+    append_be16(body, static_cast<std::uint16_t>(cipher_suites.size()));
+    body.insert(body.end(), cipher_suites.begin(), cipher_suites.end());
+    body.push_back(static_cast<std::uint8_t>(compression_methods.size()));
+    body.insert(body.end(), compression_methods.begin(), compression_methods.end());
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+    return make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x01U, body));
+}
+
+FlowHintUpdate detect_tcp_flow_hint(
+    const std::vector<std::uint8_t>& payload,
+    const std::uint16_t src_port = 50123U,
+    const std::uint16_t dst_port = 443U
+) {
+    FlowHintService service {};
+    const auto packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 0, 0, 1),
+        ipv4(10, 0, 0, 2),
+        src_port,
+        dst_port,
+        payload,
+        0x18
+    );
+    return service.detect(packet, FlowKeyV4 {
+        .src_addr = ipv4(10, 0, 0, 1),
+        .dst_addr = ipv4(10, 0, 0, 2),
+        .src_port = src_port,
+        .dst_port = dst_port,
+        .protocol = ProtocolId::tcp,
+    });
+}
+
+std::vector<std::uint8_t> require_tls_fixture_transport_payload(
+    const std::filesystem::path& relative_path,
+    const std::uint64_t packet_index
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path));
+    const auto packet = session.find_packet(packet_index);
+    PFL_REQUIRE(packet.has_value());
+
+    const auto packet_bytes = session.read_packet_data(*packet);
+    PacketPayloadService payload_service {};
+    const auto payload = payload_service.extract_transport_payload(packet_bytes, packet->data_link_type);
+    PFL_REQUIRE(!payload.empty());
+    return payload;
+}
+
+std::vector<std::uint8_t> take_prefix(const std::vector<std::uint8_t>& bytes, const std::size_t count) {
+    PFL_REQUIRE(count <= bytes.size());
+    return std::vector<std::uint8_t>(
+        bytes.begin(),
+        bytes.begin() + static_cast<std::vector<std::uint8_t>::difference_type>(count)
+    );
 }
 
 std::vector<std::uint8_t> make_ssh_banner_payload() {
@@ -220,6 +344,126 @@ void run_flow_hints_tests() {
         PFL_EXPECT(rows.size() == 1);
         PFL_EXPECT(rows[0].protocol_hint == "tls");
         PFL_EXPECT(rows[0].service_hint == "example.org");
+    }
+
+    {
+        std::vector<std::uint8_t> extensions {};
+        append_tls_extension(extensions, 0x0000U, make_tls_server_name_extension_body("www.youtube.com"));
+        append_tls_extension(extensions, 0x0010U, {0x00U, 0x02U, 0x68U, 0x32U});
+        auto payload = make_minimal_client_hello_payload_with_extensions(extensions);
+        payload.resize(payload.size() - 2U);
+
+        const auto hint = detect_tcp_flow_hint(payload);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(hint.service_hint == "www.youtube.com");
+    }
+
+    {
+        std::vector<std::uint8_t> extensions {};
+        append_tls_extension(extensions, 0x0000U, make_tls_server_name_extension_body("www.youtube.com"));
+        const auto payload = make_minimal_client_hello_payload_with_extensions(extensions);
+        const auto extension_start = payload.size() - extensions.size();
+
+        const auto truncated_header = detect_tcp_flow_hint(take_prefix(payload, extension_start + 2U));
+        PFL_EXPECT(truncated_header.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(truncated_header.service_hint.empty());
+
+        const auto truncated_body = detect_tcp_flow_hint(take_prefix(payload, extension_start + 5U));
+        PFL_EXPECT(truncated_body.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(truncated_body.service_hint.empty());
+
+        const auto truncated_hostname = detect_tcp_flow_hint(take_prefix(payload, extension_start + 10U));
+        PFL_EXPECT(truncated_hostname.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(truncated_hostname.service_hint.empty());
+    }
+
+    {
+        std::vector<std::uint8_t> extensions {};
+        append_tls_extension(extensions, 0x0000U, make_tls_server_name_extension_body("www.youtube.com"));
+
+        const auto session_id_payload = make_minimal_client_hello_payload_with_extensions(
+            extensions,
+            {0xAAU, 0xBBU, 0xCCU, 0xDDU}
+        );
+        const auto cipher_suites_payload = make_minimal_client_hello_payload_with_extensions(
+            extensions,
+            {},
+            {0x13U, 0x01U, 0x13U, 0x02U},
+            {0x00U}
+        );
+        const auto compression_methods_payload = make_minimal_client_hello_payload_with_extensions(
+            extensions,
+            {},
+            {0x13U, 0x01U},
+            {0x00U, 0x01U}
+        );
+
+        const std::vector<std::vector<std::uint8_t>> truncated_cases {
+            take_prefix(session_id_payload, 44U),
+            take_prefix(cipher_suites_payload, 46U),
+            take_prefix(
+                compression_methods_payload,
+                compression_methods_payload.size() - (extensions.size() + 3U)
+            ),
+        };
+
+        for (const auto& truncated_payload : truncated_cases) {
+            const auto hint = detect_tcp_flow_hint(truncated_payload);
+            PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::tls);
+            PFL_EXPECT(hint.service_hint.empty());
+        }
+    }
+
+    {
+        std::vector<std::uint8_t> extensions {};
+        append_tls_extension(extensions, 0x000BU, {0x01U, 0x00U});
+        append_tls_extension(extensions, 0x0000U, make_tls_server_name_extension_body("www.youtube.com"));
+        const auto payload = make_minimal_client_hello_payload_with_extensions(extensions);
+        const auto sni_extension_size = static_cast<std::size_t>(4U + make_tls_server_name_extension_body("www.youtube.com").size());
+        const auto truncated_before_sni = take_prefix(payload, payload.size() - (sni_extension_size - 2U));
+
+        const auto hint = detect_tcp_flow_hint(truncated_before_sni);
+        PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto packet4_payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_3_split_client_hello_10.pcap", 3U);
+        const auto packet5_payload = require_tls_fixture_transport_payload("parsing/tls/tls_1_3_split_client_hello_10.pcap", 4U);
+
+        const auto packet4_hint = detect_tcp_flow_hint(packet4_payload);
+        PFL_EXPECT(packet4_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(packet4_hint.service_hint == "www.youtube.com");
+
+        const auto packet5_hint = detect_tcp_flow_hint(packet5_payload);
+        PFL_EXPECT(packet5_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(packet5_hint.service_hint.empty());
+    }
+
+    {
+        const auto server_hello_hint = detect_tcp_flow_hint(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x02U, {0x00U, 0x01U, 0x02U, 0x03U})
+        ));
+        PFL_EXPECT(server_hello_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(server_hello_hint.service_hint.empty());
+
+        const auto change_cipher_spec_hint = detect_tcp_flow_hint(make_tls_record(0x14U, 0x0303U, {0x01U}));
+        PFL_EXPECT(change_cipher_spec_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(change_cipher_spec_hint.service_hint.empty());
+
+        const auto encrypted_handshake_hint = detect_tcp_flow_hint(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x7FU, {0xAAU, 0xBBU, 0xCCU})
+        ));
+        PFL_EXPECT(encrypted_handshake_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(encrypted_handshake_hint.service_hint.empty());
+
+        const auto app_data_hint = detect_tcp_flow_hint(make_tls_record(0x17U, 0x0303U, {0xAAU, 0xBBU, 0xCCU}));
+        PFL_EXPECT(app_data_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(app_data_hint.service_hint.empty());
     }
 
     {

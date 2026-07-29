@@ -3130,18 +3130,16 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(split_tls_flow_model->data(
         split_tls_flow_model->index(split_tls_flow_row, 0),
         FlowListModel::ServiceHintRole
-    ).toString().isEmpty());
+    ).toString() == QStringLiteral("www.youtube.com"));
     split_tls_packet_controller.setSelectedFlowIndex(split_tls_flow_index);
     UI_EXPECT(wait_until(app, [&]() {
         return !split_tls_packet_controller.packetsLoading() &&
             split_tls_packet_model->rowCount() >= 5;
     }));
-    UI_EXPECT(wait_until(app, [&]() {
-        return split_tls_flow_model->data(
-            split_tls_flow_model->index(split_tls_flow_row, 0),
-            FlowListModel::ServiceHintRole
-        ).toString() == QStringLiteral("www.youtube.com");
-    }));
+    UI_EXPECT(split_tls_flow_model->data(
+        split_tls_flow_model->index(split_tls_flow_row, 0),
+        FlowListModel::ServiceHintRole
+    ).toString() == QStringLiteral("www.youtube.com"));
     const int split_tls_packet4_row = find_packet_row_by_flow_row_number(split_tls_packet_model, 4U);
     const int split_tls_packet5_row = find_packet_row_by_flow_row_number(split_tls_packet_model, 5U);
     UI_EXPECT(split_tls_packet4_row >= 0);

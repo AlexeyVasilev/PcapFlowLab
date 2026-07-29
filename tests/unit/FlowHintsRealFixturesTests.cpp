@@ -307,7 +307,7 @@ void expect_bounded_tls_selected_flow_service_hint_query() {
     const auto rows = session.list_flows();
     PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].protocol_hint == "tls");
-    PFL_EXPECT(rows[0].service_hint.empty());
+    PFL_EXPECT(rows[0].service_hint == "www.youtube.com");
 
     PFL_EXPECT(!session_detail::derive_tls_service_hint_for_loaded_flow_prefix(session, 0U, 4U).has_value());
 
@@ -348,7 +348,7 @@ void expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_expl
     auto flows = adapter.get_flows();
     PFL_REQUIRE(flows.size() == 1U);
     PFL_EXPECT(flows[0].protocol_hint == "tls");
-    PFL_EXPECT(flows[0].service_hint.empty());
+    PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
 
     const auto selection = adapter.select_flow(flows[0].flow_index);
     PFL_EXPECT(selection.selected);
@@ -359,12 +359,11 @@ void expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_expl
     PFL_EXPECT(!first_window.updated_flow.has_value());
     flows = adapter.get_flows();
     PFL_REQUIRE(flows.size() == 1U);
-    PFL_EXPECT(flows[0].service_hint.empty());
+    PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
 
     const auto second_window = adapter.get_selected_flow_packets(0U, 5U);
     PFL_REQUIRE(second_window.packets.size() == 5U);
-    PFL_REQUIRE(second_window.updated_flow.has_value());
-    PFL_EXPECT(second_window.updated_flow->service_hint == "www.youtube.com");
+    PFL_EXPECT(!second_window.updated_flow.has_value());
     flows = adapter.get_flows();
     PFL_REQUIRE(flows.size() == 1U);
     PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
@@ -447,6 +446,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/tls/tls_1_3_server_hello_6.pcap", .expected_protocol_hint = "tls"},
         {.relative_path = "parsing/tls/tls_1_3_app_data_7.pcap", .expected_protocol_hint = "tls"},
         {.relative_path = "parsing/tls/tls_1_3_change_cipher_spec_8.pcap", .expected_protocol_hint = "tls"},
+        {.relative_path = "parsing/tls/tls_1_3_split_client_hello_10.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/tls/ipv6_tls_constricted_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/tls/ipv6_tls_strong_constrict_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/quic/quic_initial_ch_1.pcap", .expected_protocol_hint = "quic"},
