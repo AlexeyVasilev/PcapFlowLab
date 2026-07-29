@@ -91,6 +91,7 @@ Current structured-parser limitations and boundaries:
 | `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with shared packet/stream structured Summary baseline | Partially complete | Keep for now |
 | `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
 | `tls_1_3_split_client_hello_10.pcap` | Session and reassembly | `PacketDetailsTests`, `FlowHintsRealFixturesTests`, `MainControllerUiTests`, `StreamQueryTests` | Medium | Bounded selected-packet TLS reconstruction contract layered on top of packet-local partial ClientHello coverage | Partially complete | Keep for now |
+| `tls_1_3_many_records_continuation_11.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Real multi-record cumulative `Load more` parity fixture for bounded selected-flow TLS Stream rebuilds | Manual verification required | Keep for now |
 | `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
@@ -1471,6 +1472,35 @@ Current additional TLS fields available only in Protocol:
     - packet `5`: `tls_reassembled` completion metadata plus structured reconstructed `ClientHello` fields.
 - `tests/unit/StreamQueryTests.cpp`
   - bounded stream rows for packet prefix `5` keep the same `TLS ClientHello` item semantics as the full-session stream view.
+
+### tls_1_3_many_records_continuation_11.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied from `tmp/tls_data/tls_1_3_example_22.pcap` without byte changes  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/StreamQueryTests.cpp`
+  - the fixture anchors cumulative selected-flow TLS Stream regression coverage for a long real capture with many bounded rows;
+  - cumulative bounded requests at packet/item budgets `30/15`, `60/30`, `90/45`, `120/60`, and `150/75` must exactly match a fresh-oracle bounded rebuild for the same request shape;
+  - exact parity includes row count, `stream_item_index`, direction, label, byte count, packet ownership, payload/protocol text, constricted notes, and `tls_semantic_kind`;
+  - the first visible rows remain `TLS ClientHello` and `TLS ServerHello` across those cumulative requests;
+  - repeating the same bounded request reuses the retained materialized result without changing the visible rows;
+  - requesting a smaller compatible projection after a larger materialization returns the same exact visible prefix without changing the retained larger materialization boundary;
+  - prewarming the selected-flow packet cache with larger packet windows does not change the bounded result.
+
+#### Unique purpose
+
+- Real-capture regression anchor for the historical split-TLS cumulative `Load more` bug.
+- Proves that packet-window or item-budget growth now preserves exact cumulative visible output by rebuilding against the same bounded request contract.
+
+#### Current selected-flow Stream interpretation
+
+- The selected-flow Stream contract for this fixture is cumulative and conservative.
+- Repeated identical requests and smaller compatible projections may reuse the retained materialized result.
+- Bounds growth currently uses a fresh bounded rebuild rather than a retained continuation frontier.
+- The diagnostic or retained session context must not cause suffix-only visible output or renumber `stream_item_index` from `1` during `Load more`.
 
 ### tls_normal_1.pcap
 

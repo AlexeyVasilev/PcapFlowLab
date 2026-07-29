@@ -12,6 +12,7 @@
 
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
@@ -387,6 +388,7 @@ private:
         std::size_t provisional_suffix_begin_index {0};
         SelectedFlowStreamSettingsSignature settings_signature {};
         SelectedFlowStreamSuppressionSignature suppression_signature {};
+        session_detail::TlsStreamRetainedFrontier tls_frontier {};
         std::uint64_t generation {0};
         bool valid {false};
         bool has_pagination_lookahead {false};

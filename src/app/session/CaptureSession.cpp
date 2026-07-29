@@ -274,6 +274,81 @@ struct ProtocolAwareStreamCursor {
     bool exhausted {true};
 };
 
+struct RetainedTlsDirectionPacket {
+    PacketRef packet {};
+    std::uint64_t flow_packet_number {0U};
+};
+
+struct RetainedTlsDirectionCursor {
+    std::string_view direction_text {};
+    Direction direction {Direction::a_to_b};
+    std::span<const RetainedTlsDirectionPacket> packets {};
+    session_detail::TlsStreamScannerState scanner_state {};
+    std::size_t next_packet_offset {0U};
+    std::size_t supplied_packet_count {0U};
+    std::optional<session_detail::TlsStreamRetainedDirectionCandidate> current_candidate {};
+    bool terminal {false};
+};
+
+struct RetainedTlsBuildResult {
+    std::vector<BuiltStreamRow> rows {};
+    session_detail::TlsStreamRetainedFrontier frontier {};
+    std::size_t committed_stable_row_count {0U};
+    std::size_t provisional_suffix_begin_index {0U};
+};
+
+BuiltStreamRow make_stream_item_row_from_tls_scanned_row(
+    const std::string_view direction_text,
+    const session_detail::TlsScannedStreamRow& row,
+    const StreamMaterializationStability stability
+) {
+    return BuiltStreamRow {
+        .row = make_stream_item_row(
+            0U,
+            direction_text,
+            row.item.label,
+            row.item.byte_count,
+            row.item.packet_indices,
+            {},
+            row.item.payload_hex_text,
+            row.item.protocol_text,
+            row.item.has_constricted_contribution,
+            row.item.constricted_contribution_notes,
+            row.item.constricted_packet_notes,
+            row.item.semantic_kind
+        ),
+        .stability = stability,
+    };
+}
+
+session_detail::TlsStreamRetainedDirectionFrontier make_tls_direction_frontier(
+    const RetainedTlsDirectionCursor& cursor
+) {
+    return session_detail::TlsStreamRetainedDirectionFrontier {
+        .direction = cursor.direction,
+        .scanner_state = cursor.scanner_state,
+        .next_packet_offset = cursor.next_packet_offset,
+        .supplied_packet_count = cursor.supplied_packet_count,
+        .current_candidate =
+            cursor.current_candidate.has_value() &&
+                cursor.current_candidate->stability == StreamMaterializationStability::stable
+            ? cursor.current_candidate
+            : std::optional<session_detail::TlsStreamRetainedDirectionCandidate> {},
+        .terminal = cursor.terminal,
+    };
+}
+
+session_detail::TlsStreamRetainedFrontier make_tls_retained_frontier(
+    const RetainedTlsDirectionCursor& cursor_a,
+    const RetainedTlsDirectionCursor& cursor_b
+) {
+    return session_detail::TlsStreamRetainedFrontier {
+        .eligible = true,
+        .direction_a = make_tls_direction_frontier(cursor_a),
+        .direction_b = make_tls_direction_frontier(cursor_b),
+    };
+}
+
 std::uint64_t first_stream_packet_index(const StreamItemRow& row) {
     return row.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : row.packet_indices.front();
 }
@@ -806,6 +881,330 @@ bool is_strong_tls_stream_hint(const FlowProtocolHint hint) noexcept {
 
 bool is_strong_http_stream_hint(const FlowProtocolHint hint) noexcept {
     return hint == FlowProtocolHint::http;
+}
+
+template <typename Connection>
+std::size_t connection_packet_count(const Connection& connection) noexcept;
+
+template <typename Connection>
+std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
+    const Connection& connection,
+    const std::size_t max_packets_to_scan
+);
+
+std::optional<session_detail::TlsStreamScannerContribution> make_retained_tls_contribution(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const RetainedTlsDirectionPacket& packet_entry,
+    bool& invalid
+) {
+    invalid = false;
+    const auto& packet = packet_entry.packet;
+    if (packet.payload_length == 0U) {
+        return std::nullopt;
+    }
+
+    if (session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index) ||
+        session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index) != 0U ||
+        packet.captured_length != packet.original_length) {
+        invalid = true;
+        return std::nullopt;
+    }
+
+    auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, packet);
+    if (payload_bytes.empty()) {
+        invalid = true;
+        return std::nullopt;
+    }
+
+    return session_detail::TlsStreamScannerContribution {
+        .packet_index = packet.packet_index,
+        .flow_packet_index = packet_entry.flow_packet_number,
+        .captured_bytes = std::move(payload_bytes),
+        .original_byte_count = packet.payload_length,
+        .packet_captured_length = packet.captured_length,
+        .packet_original_length = packet.original_length,
+    };
+}
+
+bool advance_retained_tls_direction_cursor(
+    RetainedTlsDirectionCursor& cursor,
+    const CaptureSession& session,
+    const std::size_t flow_index
+) {
+    cursor.current_candidate.reset();
+    while (!cursor.current_candidate.has_value() && !cursor.terminal) {
+        if (cursor.next_packet_offset >= cursor.packets.size()) {
+            const auto output = session_detail::consume_tls_stream_scanner(
+                cursor.scanner_state,
+                std::span<const session_detail::TlsStreamScannerContribution> {},
+                1U,
+                session_detail::TlsStreamScannerFinishMode::window_end
+            );
+            if (!output.stable_rows.empty()) {
+                cursor.current_candidate = session_detail::TlsStreamRetainedDirectionCandidate {
+                    .row = output.stable_rows.front(),
+                    .stability = output.stable_rows.front().item.stability,
+                };
+            } else if (output.provisional_row.has_value()) {
+                cursor.current_candidate = session_detail::TlsStreamRetainedDirectionCandidate {
+                    .row = *output.provisional_row,
+                    .stability = output.provisional_row->item.stability,
+                };
+            } else {
+                cursor.terminal = true;
+            }
+            if (!cursor.current_candidate.has_value()) {
+                cursor.terminal = true;
+            }
+            return true;
+        }
+
+        const auto& packet_entry = cursor.packets[cursor.next_packet_offset];
+        ++cursor.next_packet_offset;
+        cursor.supplied_packet_count = cursor.next_packet_offset;
+
+        bool invalid_contribution = false;
+        const auto contribution = make_retained_tls_contribution(session, flow_index, packet_entry, invalid_contribution);
+        if (invalid_contribution) {
+            return false;
+        }
+        if (!contribution.has_value()) {
+            continue;
+        }
+
+        const auto output = session_detail::consume_tls_stream_scanner(
+            cursor.scanner_state,
+            std::array<session_detail::TlsStreamScannerContribution, 1U> {*contribution},
+            1U,
+            session_detail::TlsStreamScannerFinishMode::none
+        );
+        if (!output.stable_rows.empty()) {
+            cursor.current_candidate = session_detail::TlsStreamRetainedDirectionCandidate {
+                .row = output.stable_rows.front(),
+                .stability = output.stable_rows.front().item.stability,
+            };
+        }
+    }
+
+    return true;
+}
+
+bool retained_tls_cursor_has_visible_payload(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::span<const PacketRef> direction_packets
+) {
+    for (const auto& packet : direction_packets) {
+        if (packet.payload_length == 0U) {
+            continue;
+        }
+        if (session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index) ||
+            session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index) != 0U) {
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool retained_tls_cursor_eligible_for_direction(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const Direction direction,
+    const std::span<const PacketRef> direction_packets,
+    const FlowProtocolHint effective_hint
+) {
+    if (direction_packets.empty()) {
+        return true;
+    }
+
+    if (session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, direction).has_value()) {
+        return false;
+    }
+
+    const auto probe = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets);
+    if (probe.payload_packets_considered == 0U) {
+        return false;
+    }
+
+    const auto tls_result = sniff_tls_prefix(probe.bytes);
+    const auto http_result = sniff_http_prefix(probe.bytes);
+    const auto should_run_http = [&](const StreamPrefixPrecheckResult result) {
+        if (is_strong_tls_stream_hint(effective_hint)) {
+            return result == StreamPrefixPrecheckResult::positive;
+        }
+        if (result == StreamPrefixPrecheckResult::negative) {
+            return false;
+        }
+        return true;
+    };
+
+    const bool tls_owned = is_strong_tls_stream_hint(effective_hint) ||
+        tls_result == StreamPrefixPrecheckResult::positive;
+    if (!tls_owned || should_run_http(http_result)) {
+        return false;
+    }
+
+    return retained_tls_cursor_has_visible_payload(session, flow_index, direction_packets);
+}
+
+std::optional<RetainedTlsBuildResult> build_retained_tls_stream_items_bounded(
+    const CaptureSession& session,
+    const ListedConnectionRef& connection,
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t target,
+    const AnalysisSettings& analysis_settings,
+    const session_detail::TlsStreamRetainedFrontier* retained_frontier = nullptr
+) {
+    if (protocol_id(connection) != ProtocolId::tcp || target == 0U) {
+        return std::nullopt;
+    }
+
+    const auto total_packets = connection.family == FlowAddressFamily::ipv4
+        ? connection_packet_count(*connection.ipv4)
+        : connection_packet_count(*connection.ipv6);
+    const auto bounded_packet_budget = std::min(total_packets, max_packets_to_scan);
+    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
+        ? flow_packet_prefix_direction_counts(*connection.ipv4, bounded_packet_budget)
+        : flow_packet_prefix_direction_counts(*connection.ipv6, bounded_packet_budget);
+    const auto direction_packets_a = connection.family == FlowAddressFamily::ipv4
+        ? std::span<const PacketRef>(
+            connection.ipv4->flow_a.packets.data(),
+            std::min(prefix_count_a, connection.ipv4->flow_a.packets.size()))
+        : std::span<const PacketRef>(
+            connection.ipv6->flow_a.packets.data(),
+            std::min(prefix_count_a, connection.ipv6->flow_a.packets.size()));
+    const auto direction_packets_b = connection.family == FlowAddressFamily::ipv4
+        ? std::span<const PacketRef>(
+            connection.ipv4->flow_b.packets.data(),
+            std::min(prefix_count_b, connection.ipv4->flow_b.packets.size()))
+        : std::span<const PacketRef>(
+            connection.ipv6->flow_b.packets.data(),
+            std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
+    const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
+
+    if (!retained_tls_cursor_eligible_for_direction(
+            session, flow_index, Direction::a_to_b, direction_packets_a, effective_hint) ||
+        !retained_tls_cursor_eligible_for_direction(
+            session, flow_index, Direction::b_to_a, direction_packets_b, effective_hint)) {
+        return std::nullopt;
+    }
+
+    std::vector<RetainedTlsDirectionPacket> retained_packets_a {};
+    retained_packets_a.reserve(direction_packets_a.size());
+    for (std::size_t index = 0U; index < direction_packets_a.size(); ++index) {
+        retained_packets_a.push_back(RetainedTlsDirectionPacket {
+            .packet = direction_packets_a[index],
+            .flow_packet_number = static_cast<std::uint64_t>(index + 1U),
+        });
+    }
+    std::vector<RetainedTlsDirectionPacket> retained_packets_b {};
+    retained_packets_b.reserve(direction_packets_b.size());
+    for (std::size_t index = 0U; index < direction_packets_b.size(); ++index) {
+        retained_packets_b.push_back(RetainedTlsDirectionPacket {
+            .packet = direction_packets_b[index],
+            .flow_packet_number = static_cast<std::uint64_t>(index + 1U),
+        });
+    }
+    const auto retained_span_a = std::span<const RetainedTlsDirectionPacket>(
+        retained_packets_a.data(), retained_packets_a.size());
+    const auto retained_span_b = std::span<const RetainedTlsDirectionPacket>(
+        retained_packets_b.data(), retained_packets_b.size());
+
+    RetainedTlsDirectionCursor cursor_a {
+        .direction_text = kDirectionAToB,
+        .direction = Direction::a_to_b,
+        .packets = retained_span_a,
+        .scanner_state = session_detail::make_tls_stream_scanner_state(Direction::a_to_b, true),
+        .next_packet_offset = 0U,
+        .supplied_packet_count = 0U,
+        .current_candidate = std::nullopt,
+        .terminal = false,
+    };
+    RetainedTlsDirectionCursor cursor_b {
+        .direction_text = kDirectionBToA,
+        .direction = Direction::b_to_a,
+        .packets = retained_span_b,
+        .scanner_state = session_detail::make_tls_stream_scanner_state(Direction::b_to_a, true),
+        .next_packet_offset = 0U,
+        .supplied_packet_count = 0U,
+        .current_candidate = std::nullopt,
+        .terminal = false,
+    };
+
+    if (retained_frontier != nullptr && retained_frontier->eligible) {
+        cursor_a.scanner_state = retained_frontier->direction_a.scanner_state;
+        cursor_a.next_packet_offset = retained_frontier->direction_a.next_packet_offset;
+        cursor_a.supplied_packet_count = retained_frontier->direction_a.supplied_packet_count;
+        cursor_a.current_candidate = retained_frontier->direction_a.current_candidate;
+        cursor_a.terminal = retained_frontier->direction_a.terminal;
+        cursor_b.scanner_state = retained_frontier->direction_b.scanner_state;
+        cursor_b.next_packet_offset = retained_frontier->direction_b.next_packet_offset;
+        cursor_b.supplied_packet_count = retained_frontier->direction_b.supplied_packet_count;
+        cursor_b.current_candidate = retained_frontier->direction_b.current_candidate;
+        cursor_b.terminal = retained_frontier->direction_b.terminal;
+
+        if (cursor_a.next_packet_offset > cursor_a.packets.size() ||
+            cursor_b.next_packet_offset > cursor_b.packets.size()) {
+            return std::nullopt;
+        }
+    }
+
+    if (!cursor_a.current_candidate.has_value() && !cursor_a.terminal &&
+        !advance_retained_tls_direction_cursor(cursor_a, session, flow_index)) {
+        return std::nullopt;
+    }
+    if (!cursor_b.current_candidate.has_value() && !cursor_b.terminal &&
+        !advance_retained_tls_direction_cursor(cursor_b, session, flow_index)) {
+        return std::nullopt;
+    }
+
+    if (!cursor_a.scanner_state.saw_tls_context && !cursor_b.scanner_state.saw_tls_context &&
+        !cursor_a.current_candidate.has_value() && !cursor_b.current_candidate.has_value()) {
+        return std::nullopt;
+    }
+
+    RetainedTlsBuildResult result {};
+    result.rows.reserve(std::min(target, bounded_packet_budget));
+    result.frontier = make_tls_retained_frontier(cursor_a, cursor_b);
+
+    while (result.rows.size() < target &&
+           (cursor_a.current_candidate.has_value() || cursor_b.current_candidate.has_value())) {
+        const bool use_a = !cursor_b.current_candidate.has_value() ||
+            (cursor_a.current_candidate.has_value() &&
+                cursor_a.current_candidate->row.first_packet_index <=
+                    cursor_b.current_candidate->row.first_packet_index);
+        auto& cursor = use_a ? cursor_a : cursor_b;
+        const auto candidate = *cursor.current_candidate;
+        result.rows.push_back(make_stream_item_row_from_tls_scanned_row(
+            cursor.direction_text,
+            candidate.row,
+            candidate.stability
+        ));
+        cursor.current_candidate.reset();
+        if (candidate.stability == StreamMaterializationStability::stable) {
+            if (!advance_retained_tls_direction_cursor(cursor, session, flow_index)) {
+                return std::nullopt;
+            }
+        } else {
+            cursor.terminal = true;
+        }
+
+        if (candidate.stability == StreamMaterializationStability::stable &&
+            result.committed_stable_row_count + 1U == result.rows.size()) {
+            result.committed_stable_row_count = result.rows.size();
+            result.frontier = make_tls_retained_frontier(cursor_a, cursor_b);
+        }
+    }
+
+    result.provisional_suffix_begin_index = result.committed_stable_row_count;
+    for (std::size_t index = 0U; index < result.rows.size(); ++index) {
+        result.rows[index].row.stream_item_index = static_cast<std::uint64_t>(index + 1U);
+    }
+
+    return result;
 }
 
 bool append_arp_stream_item_for_packet(
@@ -3595,12 +3994,10 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
 
     const auto settings_signature = current_selected_flow_stream_settings_signature();
     const auto suppression_signature = current_selected_flow_stream_suppression_signature(flow_index);
-    const auto can_project_cached_prefix = [&](const SelectedFlowStreamContext& context) {
+    const auto has_compatible_context = [&](const SelectedFlowStreamContext& context) {
         if (!context.valid ||
             context.flow_index != flow_index ||
             context.total_flow_packet_count != total_packets ||
-            context.materialized_cumulative_item_limit < limit ||
-            context.materialized_packet_window_count < bounded_packet_budget ||
             context.settings_signature.http_use_path_as_service_hint != settings_signature.http_use_path_as_service_hint ||
             context.settings_signature.use_possible_tls_quic != settings_signature.use_possible_tls_quic ||
             context.settings_signature.source_capture_accessible != settings_signature.source_capture_accessible ||
@@ -3610,6 +4007,16 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
             context.rows.size() != context.first_packet_indices.size() ||
             context.rows.size() != context.intra_packet_ordinals.size() ||
             context.rows.size() != context.stability_codes.size()) {
+            return false;
+        }
+
+        return true;
+    };
+
+    const auto can_project_cached_prefix = [&](const SelectedFlowStreamContext& context) {
+        if (!has_compatible_context(context) ||
+            context.materialized_cumulative_item_limit < limit ||
+            context.materialized_packet_window_count < bounded_packet_budget) {
             return false;
         }
 
@@ -3636,15 +4043,27 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
 
     clear_selected_flow_stream_context();
 
-    const auto built_rows = build_flow_stream_items_bounded(
-        *this,
-        connections[flow_index],
-        flow_index,
-        bounded_packet_budget,
-        limit,
-        analysis_settings_,
-        true
-    );
+    std::vector<BuiltStreamRow> built_rows {};
+    if (const auto fresh_tls_rows = build_retained_tls_stream_items_bounded(
+            *this,
+            connections[flow_index],
+            flow_index,
+            bounded_packet_budget,
+            limit,
+            analysis_settings_);
+        fresh_tls_rows.has_value()) {
+        built_rows = std::move(fresh_tls_rows->rows);
+    } else {
+        built_rows = build_flow_stream_items_bounded(
+            *this,
+            connections[flow_index],
+            flow_index,
+            bounded_packet_budget,
+            limit,
+            analysis_settings_,
+            true
+        );
+    }
     auto rows = project_built_stream_rows(built_rows, built_rows.size());
 
     SelectedFlowStreamContext context {};
@@ -3667,6 +4086,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     }
     context.provisional_suffix_begin_index = first_unstable_stream_row_index(built_rows);
     context.committed_stable_row_count = std::min(context.provisional_suffix_begin_index, context.rows.size());
+    context.tls_frontier = {};
     context.settings_signature = settings_signature;
     context.suppression_signature = suppression_signature;
     context.generation = ++selected_flow_stream_context_generation_;

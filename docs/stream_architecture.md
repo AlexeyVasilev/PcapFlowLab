@@ -54,7 +54,9 @@ Selected-flow Stream materialization is owned by `CaptureSession`.
 - Qt and `FrontendSessionAdapter` / Tauri reuse the same session-owned materialization; they do not carry independent Stream cursors or tokens.
 - The context records the materialized packet-window count, the cumulative item limit used for that build, the materialized rows, and internal ordering/stability metadata.
 - Repeated compatible requests reuse the current context result.
-- Bounds growth still rebuilds the bounded prefix from packet zero in the current implementation.
+- Smaller compatible projections reuse the retained materialized prefix without rewinding protocol-aware state.
+- Packet-window or item-budget growth currently uses a fresh bounded rebuild from packet zero.
+- This conservative growth behavior avoids carrying forward a continuation frontier whose committed boundary is not represented exactly in the visible cumulative result.
 
 For selected-flow UI queries, the effective budget includes one extra logical item of lookahead.
 
@@ -71,20 +73,14 @@ Window-incomplete rows remain provisional because a larger packet window may rep
 
 ### Load more
 
-`Load more` does not append from a separate continuation mode.
+`Load more` remains a cumulative bounded query, not a frontend append protocol.
 
 - The controller increases the selected flow's packet and item budgets.
-- Stream is then rebuilt from scratch for that flow with the larger bounds.
-- This keeps ordering, labeling, and protocol-aware reconstruction semantics consistent across initial and extended views.
+- `CaptureSession` reevaluates that larger cumulative Stream shape.
+- Packet-window or item-budget growth currently rebuilds the bounded prefix from scratch.
+- Repeated identical requests and smaller compatible projections may still reuse the retained materialized result.
 - The result remains selected-flow only, ephemeral, and non-persistent.
-- No retained continuation cursor or persisted reconstruction state is kept between Stream queries today.
-
-The retained selected-flow Stream context does not change that rule yet.
-
-- It caches the latest bounded cumulative materialization.
-- It can project a smaller compatible prefix without rebuilding.
-- It does not yet retain TLS scanner state, HTTP parser state, or producer watermarks.
-- Resumable TLS / HTTP continuation remains future work.
+- No frontend cursor token or persisted continuation checkpoint is introduced.
 
 ## Reassembly usage
 
@@ -109,10 +105,11 @@ TLS Stream parsing is record-oriented and may use bounded directional reassembly
 - Multiple TLS records inside one TCP payload are split into separate Stream items.
 - A TLS record spanning multiple TCP packets may become one logical item if the bounded reassembly buffer contains the full record.
 - TLS Stream reconstruction now runs through an explicit resumable scanner state in the session layer.
-- Current production requests still instantiate that scanner fresh for each bounded rebuild.
-- The scanner retains only unresolved tail state for the current directional scan, not finalized rows.
+- Selected-flow Stream context retains the materialized bounded result plus stability metadata for compatible projection reuse.
+- Bounds growth currently prefers a fresh bounded rebuild over retained continuation.
+- Packet-window growth may replace an earlier window-incomplete TLS projection with one completed row when newly authorized packets finish the record.
 - A window-incomplete TLS row is a projection of pending scanner state at the current packet-window boundary.
-- CaptureSession does not yet retain that TLS scanner state across `Load more`; packet-window growth still rebuilds from packet zero.
+- HTTP remains rebuild-based.
 - Handshake records are labeled by known handshake type when identifiable.
 - `ClientHello`, `ServerHello`, and `Certificate` items can expose a richer Protocol text block when the bounded Stream bytes contain enough complete handshake data.
 - Incomplete trailing TLS data falls back conservatively to partial TLS labels.

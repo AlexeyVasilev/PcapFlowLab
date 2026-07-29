@@ -1785,8 +1785,15 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
         }
 
         auto consumed = consume_tls_scanner_original_prefix(state, state.pending_record->total_byte_count);
+        const auto finalized_record_span = std::span<const std::uint8_t>(
+            consumed.captured_bytes.data(),
+            consumed.captured_bytes.size());
+        const auto finalized_semantic_kind = tls_stream_semantic_kind(
+            finalized_record_span,
+            state.post_change_cipher_spec
+        );
         auto item = TlsStreamPresentationItem {
-            .label = state.pending_record->label,
+            .label = tls_stream_label(finalized_record_span, finalized_semantic_kind),
             .byte_count = state.pending_record->total_byte_count,
             .packet_indices = std::move(consumed.packet_indices),
             .stability = StreamMaterializationStability::stable,
@@ -1794,8 +1801,8 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
             .constricted_contribution_notes = std::move(consumed.constricted_contribution_notes),
             .constricted_packet_notes = std::move(consumed.constricted_packet_notes),
             .payload_hex_text = hex_dump_service.format(consumed.captured_bytes),
-            .protocol_text = state.pending_record->protocol_text,
-            .semantic_kind = state.pending_record->semantic_kind,
+            .protocol_text = tls_record_protocol_text(finalized_record_span, finalized_semantic_kind),
+            .semantic_kind = finalized_semantic_kind,
         };
         output.stable_rows.push_back(make_tls_scanned_stream_row(
             item,

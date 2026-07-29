@@ -93,6 +93,26 @@ struct TlsStreamScannerOutput {
     bool malformed_boundary {false};
 };
 
+struct TlsStreamRetainedDirectionCandidate {
+    TlsScannedStreamRow row {};
+    StreamMaterializationStability stability {StreamMaterializationStability::stable};
+};
+
+struct TlsStreamRetainedDirectionFrontier {
+    Direction direction {Direction::a_to_b};
+    TlsStreamScannerState scanner_state {};
+    std::size_t next_packet_offset {0U};
+    std::size_t supplied_packet_count {0U};
+    std::optional<TlsStreamRetainedDirectionCandidate> current_candidate {};
+    bool terminal {false};
+};
+
+struct TlsStreamRetainedFrontier {
+    bool eligible {false};
+    TlsStreamRetainedDirectionFrontier direction_a {};
+    TlsStreamRetainedDirectionFrontier direction_b {};
+};
+
 struct TlsPacketStreamPresentation {
     bool handled {false};
     std::vector<TlsStreamPresentationItem> items {};

@@ -315,6 +315,50 @@ const StreamItemRow* find_stream_row_by_label(const std::vector<StreamItemRow>& 
     return it == rows.end() ? nullptr : &(*it);
 }
 
+void expect_matching_stream_row_prefix(
+    const std::vector<StreamItemRow>& actual,
+    const std::vector<StreamItemRow>& expected,
+    const std::size_t count
+) {
+    PFL_EXPECT(actual.size() == count);
+    PFL_EXPECT(expected.size() >= count);
+    for (std::size_t index = 0U; index < count; ++index) {
+        PFL_EXPECT(actual[index].stream_item_index == expected[index].stream_item_index);
+        PFL_EXPECT(actual[index].direction_text == expected[index].direction_text);
+        PFL_EXPECT(actual[index].label == expected[index].label);
+        PFL_EXPECT(actual[index].byte_count == expected[index].byte_count);
+        PFL_EXPECT(actual[index].packet_count == expected[index].packet_count);
+        PFL_EXPECT(actual[index].packet_indices == expected[index].packet_indices);
+        PFL_EXPECT(actual[index].has_constricted_contribution == expected[index].has_constricted_contribution);
+        PFL_EXPECT(actual[index].constricted_contribution_notes == expected[index].constricted_contribution_notes);
+        PFL_EXPECT(actual[index].constricted_packet_notes == expected[index].constricted_packet_notes);
+        PFL_EXPECT(actual[index].summary_text == expected[index].summary_text);
+        PFL_EXPECT(actual[index].payload_hex_text == expected[index].payload_hex_text);
+        PFL_EXPECT(actual[index].protocol_text == expected[index].protocol_text);
+        PFL_EXPECT(actual[index].tls_semantic_kind == expected[index].tls_semantic_kind);
+    }
+}
+
+void expect_exact_stream_rows(
+    const std::vector<StreamItemRow>& actual,
+    const std::vector<StreamItemRow>& expected
+) {
+    PFL_EXPECT(actual.size() == expected.size());
+    expect_matching_stream_row_prefix(actual, expected, expected.size());
+}
+
+std::vector<StreamItemRow> query_bounded_stream_rows_fresh(
+    const std::filesystem::path& capture_path,
+    const CaptureImportOptions& options,
+    const std::size_t flow_index,
+    const std::size_t packet_budget,
+    const std::size_t item_limit
+) {
+    CaptureSession fresh_session {};
+    PFL_EXPECT(fresh_session.open_capture(capture_path, options));
+    return fresh_session.list_flow_stream_items_for_packet_prefix(flow_index, packet_budget, item_limit);
+}
+
 std::size_t count_stream_rows_by_label(const std::vector<StreamItemRow>& rows, const std::string_view label) {
     return static_cast<std::size_t>(std::count_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
         return row.label == label;
@@ -1389,6 +1433,154 @@ void run_stream_query_tests() {
     }
 
     {
+        std::vector<std::uint8_t> many_tls_records_payload {};
+        for (std::size_t index = 0U; index < 45U; ++index) {
+            const auto record = make_tls_alert_record(0x01U, static_cast<std::uint8_t>(0x20U + index));
+            many_tls_records_payload.insert(many_tls_records_payload.end(), record.begin(), record.end());
+        }
+        const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> many_tls_record_packets {
+            {
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 63, 1, 1),
+                    ipv4(10, 63, 1, 2),
+                    54443,
+                    443,
+                    many_tls_records_payload,
+                    0x18)
+            }
+        };
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            write_temp_pcap(
+                "pfl_stream_query_tls_item_budget_continuation.pcap",
+                make_classic_pcap(many_tls_record_packets)),
+            fast_options
+        ));
+
+        const auto full_rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(full_rows.size() == 45U);
+
+        const auto first_page_rows = session.list_flow_stream_items_for_packet_prefix(0, 1U, 15U);
+        expect_matching_stream_row_prefix(first_page_rows, full_rows, 15U);
+        const auto first_page_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(first_page_info.has_value());
+        PFL_EXPECT(first_page_info->generation != 0U);
+        PFL_EXPECT(first_page_info->committed_stable_row_count == 15U);
+
+        const auto repeated_first_page_rows = session.list_flow_stream_items_for_packet_prefix(0, 1U, 15U);
+        expect_matching_stream_row_prefix(repeated_first_page_rows, full_rows, 15U);
+        const auto repeated_first_page_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(repeated_first_page_info.has_value());
+        PFL_EXPECT(repeated_first_page_info->generation == first_page_info->generation);
+
+        const auto second_page_rows = session.list_flow_stream_items_for_packet_prefix(0, 1U, 30U);
+        expect_matching_stream_row_prefix(second_page_rows, full_rows, 30U);
+        const auto second_page_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(second_page_info.has_value());
+        PFL_EXPECT(second_page_info->generation > first_page_info->generation);
+        PFL_EXPECT(second_page_info->committed_stable_row_count == 30U);
+
+        const auto third_page_rows = session.list_flow_stream_items_for_packet_prefix(0, 1U, 45U);
+        expect_matching_stream_row_prefix(third_page_rows, full_rows, 45U);
+        const auto third_page_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(third_page_info.has_value());
+        PFL_EXPECT(third_page_info->generation > second_page_info->generation);
+        PFL_EXPECT(third_page_info->committed_stable_row_count == 45U);
+        PFL_EXPECT(third_page_info->provisional_row_count == 0U);
+
+        const auto smaller_projection_rows = session.list_flow_stream_items_for_packet_prefix(0, 1U, 15U);
+        expect_matching_stream_row_prefix(smaller_projection_rows, full_rows, 15U);
+        const auto smaller_projection_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(smaller_projection_info.has_value());
+        PFL_EXPECT(smaller_projection_info->generation == third_page_info->generation);
+    }
+
+    {
+        const auto continuation_fixture_path = fixture_path("parsing/tls/tls_1_3_many_records_continuation_11.pcap");
+        const std::array<std::pair<std::size_t, std::size_t>, 5> cumulative_requests {{
+            {30U, 15U},
+            {60U, 30U},
+            {90U, 45U},
+            {120U, 60U},
+            {150U, 75U},
+        }};
+
+        const auto run_cumulative_oracle_sequence = [&](const std::optional<std::size_t> warmed_packet_cache) {
+            CaptureSession session {};
+            PFL_EXPECT(session.open_capture(continuation_fixture_path, fast_options));
+            if (warmed_packet_cache.has_value()) {
+                session.prepare_selected_flow_packet_cache(0U, *warmed_packet_cache);
+            }
+
+            std::optional<std::uint64_t> last_generation {};
+            for (const auto& [packet_budget, item_limit] : cumulative_requests) {
+                const auto actual_rows = session.list_flow_stream_items_for_packet_prefix(0U, packet_budget, item_limit);
+                const auto expected_rows = query_bounded_stream_rows_fresh(
+                    continuation_fixture_path,
+                    fast_options,
+                    0U,
+                    packet_budget,
+                    item_limit
+                );
+                expect_exact_stream_rows(actual_rows, expected_rows);
+                PFL_EXPECT(actual_rows.size() <= item_limit);
+                PFL_REQUIRE(actual_rows.size() >= 2U);
+                PFL_EXPECT(actual_rows[0].label == "TLS ClientHello");
+                PFL_EXPECT(actual_rows[1].label == "TLS ServerHello");
+
+                const auto context_info = session.selected_flow_stream_context_info();
+                PFL_REQUIRE(context_info.has_value());
+                PFL_EXPECT(context_info->materialized_packet_window_count == packet_budget);
+                PFL_EXPECT(context_info->materialized_cumulative_item_limit == item_limit);
+                if (last_generation.has_value()) {
+                    PFL_EXPECT(context_info->generation > *last_generation);
+                }
+                last_generation = context_info->generation;
+            }
+
+            const auto repeated_rows = session.list_flow_stream_items_for_packet_prefix(
+                0U,
+                cumulative_requests.back().first,
+                cumulative_requests.back().second
+            );
+            const auto repeated_expected_rows = query_bounded_stream_rows_fresh(
+                continuation_fixture_path,
+                fast_options,
+                0U,
+                cumulative_requests.back().first,
+                cumulative_requests.back().second
+            );
+            expect_exact_stream_rows(repeated_rows, repeated_expected_rows);
+            const auto repeated_info = session.selected_flow_stream_context_info();
+            PFL_REQUIRE(repeated_info.has_value());
+            PFL_EXPECT(repeated_info->generation == *last_generation);
+
+            const auto smaller_projection_rows = session.list_flow_stream_items_for_packet_prefix(0U, 60U, 30U);
+            const auto smaller_projection_expected_rows = query_bounded_stream_rows_fresh(
+                continuation_fixture_path,
+                fast_options,
+                0U,
+                60U,
+                30U
+            );
+            expect_exact_stream_rows(smaller_projection_rows, smaller_projection_expected_rows);
+            const auto smaller_projection_info = session.selected_flow_stream_context_info();
+            PFL_REQUIRE(smaller_projection_info.has_value());
+            PFL_EXPECT(smaller_projection_info->generation == repeated_info->generation);
+            PFL_EXPECT(smaller_projection_info->materialized_packet_window_count ==
+                cumulative_requests.back().first);
+            PFL_EXPECT(smaller_projection_info->materialized_cumulative_item_limit ==
+                cumulative_requests.back().second);
+        };
+
+        run_cumulative_oracle_sequence(std::nullopt);
+        run_cumulative_oracle_sequence(60U);
+        run_cumulative_oracle_sequence(120U);
+    }
+
+    {
         std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> tls_window_packets {};
         tls_window_packets.reserve(31U);
         for (std::uint32_t index = 0U; index < 29U; ++index) {
@@ -1424,6 +1616,9 @@ void run_stream_query_tests() {
             fast_options
         ));
 
+        const auto full_rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(full_rows.size() == 1U);
+
         const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 8U);
         PFL_EXPECT(bounded_rows.size() == 1U);
         PFL_EXPECT(bounded_rows[0].label.find("(partial)") != std::string::npos);
@@ -1438,12 +1633,19 @@ void run_stream_query_tests() {
         PFL_EXPECT(completed_rows.size() == 1U);
         PFL_EXPECT(completed_rows[0].label.find("(partial)") == std::string::npos);
         PFL_EXPECT(completed_rows[0].packet_indices == std::vector<std::uint64_t>({29U, 30U}));
+        expect_matching_stream_row_prefix(completed_rows, full_rows, 1U);
         const auto completed_info = session.selected_flow_stream_context_info();
         PFL_REQUIRE(completed_info.has_value());
         PFL_EXPECT(completed_info->generation > bounded_info->generation);
         PFL_EXPECT(completed_info->committed_stable_row_count == 1U);
         PFL_EXPECT(completed_info->provisional_row_count == 0U);
         PFL_EXPECT(!completed_info->has_window_incomplete_suffix);
+
+        const auto repeated_completed_rows = session.list_flow_stream_items_for_packet_prefix(0, 31U, 8U);
+        expect_matching_stream_row_prefix(repeated_completed_rows, full_rows, 1U);
+        const auto repeated_completed_info = session.selected_flow_stream_context_info();
+        PFL_REQUIRE(repeated_completed_info.has_value());
+        PFL_EXPECT(repeated_completed_info->generation == completed_info->generation);
     }
 
     {
@@ -3648,6 +3850,39 @@ void run_stream_query_tests() {
             PFL_EXPECT(!starts_with(row.label, "HTTP"));
             PFL_EXPECT(!starts_with(row.label, "TLS"));
         }
+    }
+
+    {
+        const auto retransmit_capture_path = write_temp_pcap(
+            "pfl_stream_query_retransmit_budget_parity.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                    ipv4(10, 22, 0, 1), ipv4(10, 22, 0, 2), 44000, 80, make_text_bytes("alpha"), 1000U, 2000U, 0x18)},
+                {200U, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                    ipv4(10, 22, 0, 1), ipv4(10, 22, 0, 2), 44000, 80, make_text_bytes("alpha"), 1000U, 2000U, 0x18)},
+                {300U, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                    ipv4(10, 22, 1, 1), ipv4(10, 22, 1, 2), 44001, 80, make_text_bytes("clean"), 3000U, 4000U, 0x18)},
+                {400U, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                    ipv4(10, 22, 1, 1), ipv4(10, 22, 1, 2), 44001, 80, make_text_bytes("other"), 3000U, 4000U, 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(retransmit_capture_path, fast_options));
+
+        const auto duplicated_full_rows = session.list_flow_stream_items(0U);
+        const auto duplicated_bounded_rows = session.list_flow_stream_items_for_packet_prefix(0U, 2U, 2U);
+        PFL_EXPECT(duplicated_full_rows.size() == 1U);
+        expect_exact_stream_rows(duplicated_bounded_rows, duplicated_full_rows);
+
+        const auto clean_full_rows = session.list_flow_stream_items(1U);
+        const auto clean_bounded_rows = session.list_flow_stream_items_for_packet_prefix(1U, 2U, 3U);
+        PFL_EXPECT(clean_full_rows.size() == 2U);
+        expect_exact_stream_rows(clean_bounded_rows, clean_full_rows);
+        PFL_EXPECT(clean_bounded_rows[0].label == "TCP Payload");
+        PFL_EXPECT(clean_bounded_rows[1].label == "TCP Payload");
+        PFL_EXPECT(clean_bounded_rows[0].packet_indices == std::vector<std::uint64_t>({2U}));
+        PFL_EXPECT(clean_bounded_rows[1].packet_indices == std::vector<std::uint64_t>({3U}));
     }
 
     {

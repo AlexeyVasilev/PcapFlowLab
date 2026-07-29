@@ -70,7 +70,7 @@ Stream behavior rules:
 - Selected-flow UI queries may request one extra logical item of lookahead so the frontend can distinguish a complete visible result from `can_load_more`.
 - Stream output should be conservative and non-duplicative.
 - Stream summarizes communication units; it is not a full transport-correct session reconstruction.
-- Current `Load more` behavior still rebuilds the bounded prefix from scratch; it does not resume from a retained stream cursor.
+- Bounds growth currently rebuilds the bounded prefix from scratch inside `CaptureSession`.
 - Selected-flow Stream materialization is owned by `CaptureSession`, not by Qt state or frontend bridge state.
 - The current retained session context keeps a committed stable prefix and a provisional suffix for the materialized bounded result.
 - Window-incomplete rows may be replaced when the packet window grows.
@@ -215,6 +215,7 @@ Selected-flow Stream context reuse must preserve those rules.
 
 - Repeated identical compatible bounded queries may reuse the retained materialized result.
 - Smaller compatible projections may return a prefix of that retained result.
+- Bounds growth currently rebuilds the bounded prefix rather than resuming from retained scanner state.
 - If bounds, cache state, or protocol-affecting settings become incompatible, the retained context must be discarded and the bounded prefix rebuilt safely.
 
 ## 11. Known Limits / Out Of Scope
