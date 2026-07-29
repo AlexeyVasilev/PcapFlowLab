@@ -454,12 +454,14 @@ bool parse_compress_certificate_extension(
         return false;
     }
 
-    const auto algorithms_length = static_cast<std::size_t>(extension_bytes[0]);
-    if ((algorithms_length % 2U) != 0U) {
+    // RFC 8879 algorithms<2..2^8-2> uses a one-byte vector-length
+    // prefix; each following algorithm identifier is uint16.
+    const auto algorithms_byte_length = static_cast<std::size_t>(extension_bytes[0]);
+    if (algorithms_byte_length < 2U || (algorithms_byte_length % 2U) != 0U) {
         return false;
     }
 
-    if (1U + algorithms_length != extension_bytes.size()) {
+    if (1U + algorithms_byte_length != extension_bytes.size()) {
         return false;
     }
 

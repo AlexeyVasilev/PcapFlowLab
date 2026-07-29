@@ -36,6 +36,7 @@ constexpr std::uint16_t kImapPort = 143;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kTlsHandshakeHeaderSize = 4;
 constexpr std::uint16_t kTlsClientHelloFixedFieldsSize = 34;
+constexpr std::size_t kTlsMaxRecordPayloadSize = (1U << 14U) + 2048U;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
 constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -477,7 +478,8 @@ bool looks_like_tls_record_prefix(std::span<const std::uint8_t> payload) {
         return false;
     }
 
-    return read_be16(payload, 3U) != 0U;
+    const auto declared_record_length = static_cast<std::size_t>(read_be16(payload, 3U));
+    return declared_record_length != 0U && declared_record_length <= kTlsMaxRecordPayloadSize;
 }
 
 bool has_available_range(std::span<const std::uint8_t> bytes, const std::size_t offset, const std::size_t length) {

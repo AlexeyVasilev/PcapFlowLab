@@ -16,6 +16,8 @@ namespace pfl::tests {
 
 namespace {
 
+constexpr std::size_t kTlsMaxRecordPayloadSize = (1U << 14U) + 2048U;
+
 std::vector<std::uint8_t> make_http_request_payload() {
     constexpr char request[] =
         "GET / HTTP/1.1\r\n"
@@ -425,6 +427,45 @@ void run_flow_hints_tests() {
         const auto hint = detect_tcp_flow_hint(truncated_before_sni);
         PFL_EXPECT(hint.protocol_hint == FlowProtocolHint::tls);
         PFL_EXPECT(hint.service_hint.empty());
+    }
+
+    {
+        const auto split_record_prefix_hint = detect_tcp_flow_hint({
+            0x16U, 0x03U, 0x03U, 0x00U, 0x20U,
+            0x01U, 0x00U, 0x00U, 0x40U,
+        });
+        PFL_EXPECT(split_record_prefix_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(split_record_prefix_hint.service_hint.empty());
+
+        const auto zero_length_hint = detect_tcp_flow_hint({0x16U, 0x03U, 0x03U, 0x00U, 0x00U});
+        PFL_EXPECT(zero_length_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(zero_length_hint.service_hint.empty());
+
+        const auto max_length = static_cast<std::uint16_t>(kTlsMaxRecordPayloadSize);
+        const auto max_length_hint = detect_tcp_flow_hint({
+            0x16U,
+            0x03U,
+            0x03U,
+            static_cast<std::uint8_t>((max_length >> 8U) & 0xFFU),
+            static_cast<std::uint8_t>(max_length & 0xFFU),
+        });
+        PFL_EXPECT(max_length_hint.protocol_hint == FlowProtocolHint::tls);
+        PFL_EXPECT(max_length_hint.service_hint.empty());
+
+        const auto over_max_length = static_cast<std::uint16_t>(kTlsMaxRecordPayloadSize + 1U);
+        const auto over_max_length_hint = detect_tcp_flow_hint({
+            0x16U,
+            0x03U,
+            0x03U,
+            static_cast<std::uint8_t>((over_max_length >> 8U) & 0xFFU),
+            static_cast<std::uint8_t>(over_max_length & 0xFFU),
+        });
+        PFL_EXPECT(over_max_length_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(over_max_length_hint.service_hint.empty());
+
+        const auto max_ffff_hint = detect_tcp_flow_hint({0x16U, 0x03U, 0x03U, 0xFFU, 0xFFU});
+        PFL_EXPECT(max_ffff_hint.protocol_hint == FlowProtocolHint::unknown);
+        PFL_EXPECT(max_ffff_hint.service_hint.empty());
     }
 
     {

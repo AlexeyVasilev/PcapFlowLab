@@ -1354,9 +1354,81 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
-        ScopedTestContext context {"synthetic=client_hello_compress_certificate_malformed"};
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_single_algorithm"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x02U, 0x00U, 0x01U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"compress_certificate"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids == std::vector<std::uint16_t>({0x0001U}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_two_algorithms_wire_order"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x04U, 0x00U, 0x01U, 0x00U, 0x02U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.known_name == std::optional<std::string> {"compress_certificate"});
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids == std::vector<std::uint16_t>({0x0001U, 0x0002U}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_empty_body_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_zero_declared_length_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_odd_declared_length_malformed"};
         std::vector<std::uint8_t> extensions {};
         append_extension(extensions, 0x001BU, {0x03U, 0x00U, 0x02U, 0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_declared_length_mismatch_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x04U, 0x00U, 0x01U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_truncated_uint16_malformed"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x02U, 0x00U});
+        const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
+        const auto& extension = require_single_client_hello_extension(result);
+        PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(extension.certificate_compression_algorithm_ids.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=client_hello_compress_certificate_transactional_no_partial_ids"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0x001BU, {0x04U, 0x00U, 0x01U, 0x00U});
         const auto result = parser.inspect(make_client_hello_record_with_extensions(extensions));
         const auto& extension = require_single_client_hello_extension(result);
         PFL_EXPECT(extension.structured_parse_status == TlsStructuredParseStatus::malformed);
