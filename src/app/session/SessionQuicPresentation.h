@@ -87,6 +87,12 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     std::optional<std::size_t> flow_index = std::nullopt
 );
 
+bool has_confirming_quic_long_header_for_packets(
+    const CaptureSession& session,
+    std::span<const PacketRef> packets,
+    std::optional<std::size_t> flow_index = std::nullopt
+);
+
 std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(
     const CaptureSession& session,
     const FlowKeyV4& flow_key,

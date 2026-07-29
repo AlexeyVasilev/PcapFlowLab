@@ -7,6 +7,7 @@
 #include "TestSupport.h"
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionTlsPresentation.h"
 
 namespace pfl::tests {
 
@@ -60,6 +61,43 @@ std::optional<std::size_t> find_flow_index_with_protocol_hint(const std::vector<
     }
 
     return std::nullopt;
+}
+
+const session_detail::PacketSummaryLayer* find_summary_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id,
+    const std::size_t occurrence = 0U
+) {
+    std::size_t current = 0U;
+    for (const auto& layer : layers) {
+        if (layer.id != id) {
+            continue;
+        }
+        if (current == occurrence) {
+            return &layer;
+        }
+        ++current;
+    }
+    return nullptr;
+}
+
+const session_detail::PacketSummaryField* find_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto it = std::find_if(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+    return it == layer.fields.end() ? nullptr : &(*it);
+}
+
+std::string require_summary_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto* field = find_summary_field(layer, label);
+    PFL_REQUIRE(field != nullptr);
+    return field->value;
 }
 
 void expect_fixture(const FixtureExpectation& expectation) {
@@ -204,6 +242,193 @@ void expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers(
     PFL_EXPECT(stream.items[1].source_packets_text == "packet #2");
 }
 
+void expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window(
+    const std::filesystem::path& relative_path
+) {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path(relative_path));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 5U);
+    PFL_REQUIRE(packets.packets.size() >= 5U);
+
+    const auto& packet4 = packets.packets[3];
+    const auto& packet5 = packets.packets[4];
+
+    const auto details4_incomplete = adapter.get_selected_flow_packet_details(
+        packet4.packet_index,
+        packet4.row_number,
+        4U
+    );
+    PFL_EXPECT(details4_incomplete.error_text.empty());
+    const auto* packet4_incomplete_reassembled = find_summary_layer(details4_incomplete.summary_layers, "tls_reassembled");
+    PFL_REQUIRE(packet4_incomplete_reassembled != nullptr);
+    PFL_EXPECT(require_summary_field_value(*packet4_incomplete_reassembled, "Status") == "Incomplete in loaded packet window");
+
+    const auto details4_loaded = adapter.get_selected_flow_packet_details(
+        packet4.packet_index,
+        packet4.row_number,
+        5U
+    );
+    PFL_EXPECT(details4_loaded.error_text.empty());
+    const auto* packet4_loaded_tls = find_summary_layer(details4_loaded.summary_layers, "tls");
+    const auto* packet4_loaded_reassembled = find_summary_layer(details4_loaded.summary_layers, "tls_reassembled");
+    PFL_REQUIRE(packet4_loaded_tls != nullptr);
+    PFL_REQUIRE(packet4_loaded_reassembled != nullptr);
+    PFL_EXPECT(require_summary_field_value(*packet4_loaded_reassembled, "Status") == "Continues in a later loaded packet");
+    PFL_EXPECT(require_summary_field_value(*packet4_loaded_reassembled, "Contributing Flow Packets") == "4, 5");
+
+    const auto details5_loaded = adapter.get_selected_flow_packet_details(
+        packet5.packet_index,
+        packet5.row_number,
+        5U
+    );
+    PFL_EXPECT(details5_loaded.error_text.empty());
+    const auto* packet5_loaded_tls = find_summary_layer(details5_loaded.summary_layers, "tls");
+    const auto* packet5_loaded_reassembled = find_summary_layer(details5_loaded.summary_layers, "tls_reassembled");
+    PFL_REQUIRE(packet5_loaded_tls != nullptr);
+    PFL_REQUIRE(packet5_loaded_reassembled != nullptr);
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_reassembled, "Status") == "Reassembled in this packet");
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_reassembled, "Completion Flow Packet") == "5");
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "Handshake Type") == "ClientHello");
+    PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "SNI") == "www.youtube.com");
+}
+
+void expect_bounded_tls_selected_flow_service_hint_query() {
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap")));
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(rows[0].protocol_hint == "tls");
+    PFL_EXPECT(rows[0].service_hint == "www.youtube.com");
+
+    PFL_EXPECT(!session_detail::derive_tls_service_hint_for_loaded_flow_prefix(session, 0U, 4U).has_value());
+
+    session.prepare_selected_flow_packet_cache(0U, 5U);
+    PFL_EXPECT(!session_detail::derive_tls_service_hint_for_loaded_flow_prefix(session, 0U, 4U).has_value());
+
+    const auto loaded_hint = session_detail::derive_tls_service_hint_for_loaded_flow_prefix(session, 0U, 5U);
+    PFL_REQUIRE(loaded_hint.has_value());
+    PFL_EXPECT(*loaded_hint == "www.youtube.com");
+}
+
+void expect_non_client_hello_tls_selected_flow_service_hint_queries_return_empty() {
+    constexpr const char* fixtures[] {
+        "parsing/tls/tls_1_3_server_hello_6.pcap",
+        "parsing/tls/tls_1_3_change_cipher_spec_8.pcap",
+        "parsing/tls/tls_1_3_app_data_7.pcap",
+    };
+
+    for (const auto* fixture : fixtures) {
+        ScopedTestContext context {std::string {"fixture="} + fixture};
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path(fixture)));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(!session_detail::derive_tls_service_hint_for_loaded_flow_prefix(
+            session,
+            0U,
+            session.flow_packet_count(0U)
+        ).has_value());
+    }
+}
+
+void expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_explicit_window() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(flows[0].protocol_hint == "tls");
+    PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+    PFL_EXPECT(!selection.updated_flow.has_value());
+
+    const auto first_window = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(first_window.packets.size() == 4U);
+    PFL_EXPECT(!first_window.updated_flow.has_value());
+    flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
+
+    const auto second_window = adapter.get_selected_flow_packets(0U, 5U);
+    PFL_REQUIRE(second_window.packets.size() == 5U);
+    PFL_EXPECT(!second_window.updated_flow.has_value());
+    flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
+
+    const auto analysis = adapter.get_selected_flow_analysis();
+    PFL_EXPECT(analysis.analysis_available);
+    PFL_EXPECT(analysis.service_hint_text == "www.youtube.com");
+}
+
+void expect_frontend_adapter_selected_flow_tls_service_hint_preserves_existing_value() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(flows[0].service_hint == "auth.split.io");
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 1U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    PFL_EXPECT(!packets.updated_flow.has_value());
+
+    flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(flows[0].service_hint == "auth.split.io");
+}
+
+void expect_frontend_adapter_selected_flow_packet_details_require_explicit_tls_window() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 5U);
+    PFL_REQUIRE(packets.packets.size() >= 5U);
+
+    const auto& packet4 = packets.packets[3];
+    const auto& packet5 = packets.packets[4];
+
+    const auto details4_zero_window = adapter.get_selected_flow_packet_details(
+        packet4.packet_index,
+        packet4.row_number,
+        0U
+    );
+    PFL_EXPECT(details4_zero_window.error_text.empty());
+    PFL_EXPECT(find_summary_layer(details4_zero_window.summary_layers, "tls") != nullptr);
+    PFL_EXPECT(find_summary_layer(details4_zero_window.summary_layers, "tls_reassembled") == nullptr);
+
+    const auto details5_zero_window = adapter.get_selected_flow_packet_details(
+        packet5.packet_index,
+        packet5.row_number,
+        0U
+    );
+    PFL_EXPECT(details5_zero_window.error_text.empty());
+    PFL_EXPECT(find_summary_layer(details5_zero_window.summary_layers, "tls") == nullptr);
+    PFL_EXPECT(find_summary_layer(details5_zero_window.summary_layers, "tls_reassembled") == nullptr);
+}
+
 }  // namespace
 
 void run_flow_hints_real_fixtures_tests() {
@@ -221,6 +446,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/tls/tls_1_3_server_hello_6.pcap", .expected_protocol_hint = "tls"},
         {.relative_path = "parsing/tls/tls_1_3_app_data_7.pcap", .expected_protocol_hint = "tls"},
         {.relative_path = "parsing/tls/tls_1_3_change_cipher_spec_8.pcap", .expected_protocol_hint = "tls"},
+        {.relative_path = "parsing/tls/tls_1_3_split_client_hello_10.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/tls/ipv6_tls_constricted_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/tls/ipv6_tls_strong_constrict_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/quic/quic_initial_ch_1.pcap", .expected_protocol_hint = "quic"},
@@ -251,6 +477,12 @@ void run_flow_hints_real_fixtures_tests() {
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
+    expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
+    expect_bounded_tls_selected_flow_service_hint_query();
+    expect_non_client_hello_tls_selected_flow_service_hint_queries_return_empty();
+    expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_explicit_window();
+    expect_frontend_adapter_selected_flow_tls_service_hint_preserves_existing_value();
+    expect_frontend_adapter_selected_flow_packet_details_require_explicit_tls_window();
     expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers("parsing/arp/03_arp_request_reply_ipv4.pcap");
     expect_flow_row_accessor_matches_list_flows("parsing/quic/quic_test_1.pcap");
 }

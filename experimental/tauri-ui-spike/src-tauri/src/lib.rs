@@ -714,11 +714,14 @@ fn get_selected_flow_packet_details(
     state: State<'_, Mutex<AdapterState>>,
     packet_index: u64,
     flow_packet_index: u64,
+    loaded_packet_window_count: u64,
 ) -> Result<PacketDetailsDto, String> {
     let state = state
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
-    state.adapter.get_selected_flow_packet_details(packet_index, flow_packet_index)
+    state
+        .adapter
+        .get_selected_flow_packet_details(packet_index, flow_packet_index, loaded_packet_window_count)
 }
 
 #[tauri::command(rename_all = "snake_case")]

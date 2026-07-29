@@ -750,6 +750,19 @@ std::optional<std::vector<std::uint8_t>> decrypt_quic_initial_plaintext_for_dire
     );
 }
 
+bool is_confirming_quic_long_header_type(const QuicPresentationShellType shell_type) noexcept {
+    switch (shell_type) {
+    case QuicPresentationShellType::initial:
+    case QuicPresentationShellType::zero_rtt:
+    case QuicPresentationShellType::handshake:
+    case QuicPresentationShellType::retry:
+    case QuicPresentationShellType::version_negotiation:
+        return true;
+    default:
+        return false;
+    }
+}
+
 template <typename PacketList>
 std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_impl(
     const CaptureSession& session,
@@ -792,6 +805,49 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     }
 
     return std::nullopt;
+}
+
+template <typename PacketList>
+bool has_confirming_quic_long_header_for_packets_impl(
+    const CaptureSession& session,
+    const PacketList& packets,
+    const std::optional<std::size_t> flow_index = std::nullopt
+) {
+    PacketPayloadService payload_service {};
+    for (const auto& packet : packets) {
+        if (packet.is_ip_fragmented) {
+            continue;
+        }
+
+        const auto udp_payload = flow_index.has_value()
+            ? session.read_selected_flow_transport_payload(*flow_index, packet)
+            : [&]() {
+                const auto packet_bytes = session.read_packet_data(packet);
+                if (packet_bytes.empty()) {
+                    return std::vector<std::uint8_t> {};
+                }
+                return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+            }();
+        if (udp_payload.empty()) {
+            continue;
+        }
+
+        const auto datagram_packets = parse_quic_presentation_datagram(
+            std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
+        );
+        if (datagram_packets.empty()) {
+            continue;
+        }
+
+        if (std::any_of(datagram_packets.begin(), datagram_packets.end(), [](const ParsedQuicPresentationPacket& parsed_packet) {
+                return parsed_packet.shell.header_form == "Long" &&
+                       is_confirming_quic_long_header_type(parsed_packet.shell_type);
+            })) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 template <typename Connection>
@@ -1292,6 +1348,14 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     const std::optional<std::size_t> flow_index
 ) {
     return find_quic_client_initial_connection_id_impl(session, packets, flow_index);
+}
+
+bool has_confirming_quic_long_header_for_packets(
+    const CaptureSession& session,
+    std::span<const PacketRef> packets,
+    const std::optional<std::size_t> flow_index
+) {
+    return has_confirming_quic_long_header_for_packets_impl(session, packets, flow_index);
 }
 
 std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(

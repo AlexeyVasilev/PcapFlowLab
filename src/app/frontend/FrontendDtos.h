@@ -255,6 +255,7 @@ struct FrontendSelectedFlowPacketsResult {
     std::size_t offset {0};
     std::size_t limit {0};
     std::size_t total_count {0};
+    std::optional<FrontendFlowDto> updated_flow {};
     std::vector<FrontendPacketDto> packets {};
 };
 
@@ -280,6 +281,7 @@ struct FrontendStreamItemDto {
     std::string header_secondary_text {};
     std::string badge_text {};
     std::string summary_text {};
+    std::vector<session_detail::PacketSummaryLayer> summary_layers {};
     std::string payload_tab_title {};
     std::string payload_preview_text {};
     std::string payload_preview_unavailable_text {};

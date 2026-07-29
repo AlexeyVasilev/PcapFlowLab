@@ -49,6 +49,7 @@ void run_packet_access_tests();
 void run_packet_details_tests();
 void run_packet_payload_tests();
 void run_packet_protocol_details_tests();
+void run_tls_inspection_parser_tests();
 void run_arp_pcap_fixture_tests();
 void run_igmp_pcap_fixture_tests();
 void run_ipv4_options_pcap_fixture_tests();
@@ -191,6 +192,7 @@ int main() {
         {"packet_details", pfl::tests::run_packet_details_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},
         {"packet_protocol_details", pfl::tests::run_packet_protocol_details_tests},
+        {"tls_inspection_parser", pfl::tests::run_tls_inspection_parser_tests},
         {"arp_pcap_fixtures", pfl::tests::run_arp_pcap_fixture_tests},
         {"igmp_pcap_fixtures", pfl::tests::run_igmp_pcap_fixture_tests},
         {"ipv4_options_pcap_fixtures", pfl::tests::run_ipv4_options_pcap_fixture_tests},

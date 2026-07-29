@@ -12,6 +12,7 @@
 
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
@@ -90,6 +91,21 @@ struct SelectedFlowPacketCacheInfo {
     std::size_t total_cached_bytes {0};
     bool limit_reached {false};
     bool window_fully_cached {false};
+};
+
+struct SelectedFlowStreamContextInfo {
+    std::size_t flow_index {0};
+    std::size_t total_flow_packet_count {0};
+    std::size_t materialized_packet_window_count {0};
+    std::size_t materialized_cumulative_item_limit {0};
+    std::size_t materialized_row_count {0};
+    std::size_t committed_stable_row_count {0};
+    std::size_t provisional_row_count {0};
+    std::size_t provisional_suffix_begin_row_number {0};
+    bool has_window_incomplete_suffix {false};
+    bool has_pagination_lookahead {false};
+    bool valid {false};
+    std::uint64_t generation {0};
 };
 
 struct CaptureStorageSummary {
@@ -196,6 +212,7 @@ public:
     void prepare_selected_flow_packet_cache(std::size_t flow_index, std::size_t max_packets_to_scan) const;
     void clear_selected_flow_packet_cache() noexcept;
     [[nodiscard]] std::optional<SelectedFlowPacketCacheInfo> selected_flow_packet_cache_info() const noexcept;
+    [[nodiscard]] std::optional<SelectedFlowStreamContextInfo> selected_flow_stream_context_info() const noexcept;
     [[nodiscard]] bool selected_flow_packet_cache_limit_reached() const noexcept;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_cached_packet_number(
         std::size_t flow_index,
@@ -346,6 +363,37 @@ private:
         bool limit_reached {false};
     };
 
+    struct SelectedFlowStreamSettingsSignature {
+        bool http_use_path_as_service_hint {false};
+        bool use_possible_tls_quic {false};
+        bool source_capture_accessible {false};
+    };
+
+    struct SelectedFlowStreamSuppressionSignature {
+        bool active {false};
+        std::size_t flow_index {0};
+        std::uint64_t fingerprint {0};
+    };
+
+    struct SelectedFlowStreamContext {
+        std::size_t flow_index {0};
+        std::size_t total_flow_packet_count {0};
+        std::size_t materialized_packet_window_count {0};
+        std::size_t materialized_cumulative_item_limit {0};
+        std::vector<StreamItemRow> rows {};
+        std::vector<std::uint64_t> first_packet_indices {};
+        std::vector<std::uint32_t> intra_packet_ordinals {};
+        std::vector<std::uint8_t> stability_codes {};
+        std::size_t committed_stable_row_count {0};
+        std::size_t provisional_suffix_begin_index {0};
+        SelectedFlowStreamSettingsSignature settings_signature {};
+        SelectedFlowStreamSuppressionSignature suppression_signature {};
+        session_detail::TlsStreamRetainedFrontier tls_frontier {};
+        std::uint64_t generation {0};
+        bool valid {false};
+        bool has_pagination_lookahead {false};
+    };
+
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
     [[nodiscard]] SelectedFlowTcpPrefixResolution prepare_selected_flow_tcp_prefix_context(
@@ -362,6 +410,11 @@ private:
     [[nodiscard]] std::optional<PacketRef> selected_flow_cached_packet_at(
         std::size_t flow_index,
         std::uint64_t flow_packet_index
+    ) const noexcept;
+    void clear_selected_flow_stream_context() const noexcept;
+    [[nodiscard]] SelectedFlowStreamSettingsSignature current_selected_flow_stream_settings_signature() const noexcept;
+    [[nodiscard]] SelectedFlowStreamSuppressionSignature current_selected_flow_stream_suppression_signature(
+        std::size_t flow_index
     ) const noexcept;
 
     void swap(CaptureSession& other) noexcept;
@@ -380,9 +433,11 @@ private:
     mutable std::optional<SelectedFlowFullPacketCache> selected_flow_full_packet_cache_ {};
     mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
+    mutable std::optional<SelectedFlowStreamContext> selected_flow_stream_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
     mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
+    mutable std::uint64_t selected_flow_stream_context_generation_ {0};
 };
 
 }  // namespace pfl

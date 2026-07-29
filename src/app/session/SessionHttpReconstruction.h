@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/session/FlowRows.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketRef.h"
 
@@ -21,6 +22,7 @@ struct HttpStreamPresentationItem {
     std::string label {};
     std::size_t byte_count {0U};
     std::vector<std::uint64_t> packet_indices {};
+    StreamMaterializationStability stability {StreamMaterializationStability::stable};
     std::string payload_hex_text {};
     std::string protocol_text {};
 };
@@ -40,6 +42,15 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     std::size_t flow_index,
     Direction direction,
     std::span<const PacketRef> direction_packets
+);
+
+HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounded(
+    const CaptureSession& session,
+    std::size_t flow_index,
+    Direction direction,
+    std::span<const PacketRef> direction_packets,
+    std::size_t skip_item_count,
+    std::size_t max_item_count
 );
 
 std::string http_stream_label_from_protocol_text(std::string_view protocol_text);

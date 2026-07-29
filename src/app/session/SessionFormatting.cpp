@@ -1,4 +1,5 @@
 #include "app/session/SessionFormatting.h"
+#include "core/services/TlsInspectionParser.h"
 
 #include <algorithm>
 #include <ctime>
@@ -3182,6 +3183,1234 @@ std::optional<PacketSummaryLayer> build_icmpv6_summary_layer(const PacketDetails
     };
 }
 
+bool looks_like_tls_summary_payload_prefix(std::span<const std::uint8_t> payload) {
+    if (payload.size() < 5U) {
+        return false;
+    }
+
+    const auto content_type = payload[0];
+    if (content_type < 20U || content_type > 23U) {
+        return false;
+    }
+
+    if (payload[1] != 0x03U || payload[2] > 0x04U) {
+        return false;
+    }
+
+    const auto record_length = static_cast<std::size_t>(
+        (static_cast<std::uint16_t>(payload[3]) << 8U) |
+        static_cast<std::uint16_t>(payload[4])
+    );
+    // Allow partial TLS records through to the structured inspector. The
+    // inspector already distinguishes complete and incomplete record bodies,
+    // and selected-packet Packet Details rely on that for split-handshake
+    // packet-local fragment coverage.
+    return record_length > 0U;
+}
+
+std::string format_tls_version_value(const std::uint16_t version) {
+    switch (version) {
+    case 0x0301U:
+        return "TLS 1.0 (0x0301)";
+    case 0x0302U:
+        return "TLS 1.1 (0x0302)";
+    case 0x0303U:
+        return "TLS 1.2 (0x0303)";
+    case 0x0304U:
+        return "TLS 1.3 (0x0304)";
+    default:
+        return format_hex_value(version, 4);
+    }
+}
+
+bool is_tls_grease_value(const std::uint16_t value) noexcept {
+    return (value & 0x0F0FU) == 0x0A0AU &&
+        static_cast<std::uint8_t>((value >> 8U) & 0xFFU) == static_cast<std::uint8_t>(value & 0xFFU);
+}
+
+std::string format_tls_collection_version_value(const std::uint16_t version) {
+    if (is_tls_grease_value(version)) {
+        return "GREASE (" + format_hex_value(version, 4) + ")";
+    }
+    return format_tls_version_value(version);
+}
+
+std::optional<std::string_view> lookup_tls_supported_group_name(const std::uint16_t group_id) {
+    switch (group_id) {
+    case 0x0017U:
+        return "secp256r1";
+    case 0x0018U:
+        return "secp384r1";
+    case 0x0019U:
+        return "secp521r1";
+    case 0x001DU:
+        return "x25519";
+    case 0x001EU:
+        return "x448";
+    case 0x11ECU:
+        return "X25519MLKEM768";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_tls_supported_group_value(const std::uint16_t group_id) {
+    if (is_tls_grease_value(group_id)) {
+        return "GREASE (" + format_hex_value(group_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_supported_group_name(group_id); name.has_value()) {
+        return std::string {*name} + " (" + format_hex_value(group_id, 4) + ")";
+    }
+    return "Unknown Group (" + format_hex_value(group_id, 4) + ")";
+}
+
+std::string format_tls_supported_group_preview_value(const std::uint16_t group_id) {
+    if (is_tls_grease_value(group_id)) {
+        return "GREASE (" + format_hex_value(group_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_supported_group_name(group_id); name.has_value()) {
+        return std::string {*name};
+    }
+    return "Unknown Group (" + format_hex_value(group_id, 4) + ")";
+}
+
+std::optional<std::string_view> lookup_tls_signature_scheme_name(const std::uint16_t scheme_id) {
+    switch (scheme_id) {
+    case 0x0201U:
+        return "rsa_pkcs1_sha1";
+    case 0x0401U:
+        return "rsa_pkcs1_sha256";
+    case 0x0501U:
+        return "rsa_pkcs1_sha384";
+    case 0x0601U:
+        return "rsa_pkcs1_sha512";
+    case 0x0403U:
+        return "ecdsa_secp256r1_sha256";
+    case 0x0503U:
+        return "ecdsa_secp384r1_sha384";
+    case 0x0603U:
+        return "ecdsa_secp521r1_sha512";
+    case 0x0804U:
+        return "rsa_pss_rsae_sha256";
+    case 0x0805U:
+        return "rsa_pss_rsae_sha384";
+    case 0x0806U:
+        return "rsa_pss_rsae_sha512";
+    case 0x0807U:
+        return "ed25519";
+    case 0x0808U:
+        return "ed448";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_tls_signature_scheme_value(const std::uint16_t scheme_id) {
+    if (is_tls_grease_value(scheme_id)) {
+        return "GREASE (" + format_hex_value(scheme_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_signature_scheme_name(scheme_id); name.has_value()) {
+        return std::string {*name} + " (" + format_hex_value(scheme_id, 4) + ")";
+    }
+    return "Unknown Signature Scheme (" + format_hex_value(scheme_id, 4) + ")";
+}
+
+std::string format_tls_signature_scheme_preview_value(const std::uint16_t scheme_id) {
+    if (is_tls_grease_value(scheme_id)) {
+        return "GREASE (" + format_hex_value(scheme_id, 4) + ")";
+    }
+    if (const auto name = lookup_tls_signature_scheme_name(scheme_id); name.has_value()) {
+        return std::string {*name};
+    }
+    return "Unknown Signature Scheme (" + format_hex_value(scheme_id, 4) + ")";
+}
+
+std::string format_tls_psk_key_exchange_mode_value(const std::uint8_t mode) {
+    switch (mode) {
+    case 0U:
+        return "psk_ke (0)";
+    case 1U:
+        return "psk_dhe_ke (1)";
+    default:
+        return "Unknown Mode (" + std::to_string(static_cast<unsigned>(mode)) + ")";
+    }
+}
+
+std::string format_tls_psk_key_exchange_mode_preview_value(const std::uint8_t mode) {
+    switch (mode) {
+    case 0U:
+        return "psk_ke";
+    case 1U:
+        return "psk_dhe_ke";
+    default:
+        return "Unknown Mode (" + std::to_string(static_cast<unsigned>(mode)) + ")";
+    }
+}
+
+std::string format_tls_status_request_type_value(const std::uint8_t status_type) {
+    switch (status_type) {
+    case 1U:
+        return "OCSP (1)";
+    case 2U:
+        return "OCSP Multi (2)";
+    default:
+        return "Unknown Status Type (" + std::to_string(static_cast<unsigned>(status_type)) + ")";
+    }
+}
+
+std::string format_tls_certificate_compression_algorithm_value(const std::uint16_t algorithm_id) {
+    switch (algorithm_id) {
+    case 1U:
+        return "zlib (1)";
+    case 2U:
+        return "brotli (2)";
+    case 3U:
+        return "zstd (3)";
+    default:
+        return "Unknown Algorithm (" + std::to_string(algorithm_id) + ")";
+    }
+}
+
+std::string format_tls_certificate_compression_algorithm_preview_value(const std::uint16_t algorithm_id) {
+    switch (algorithm_id) {
+    case 1U:
+        return "zlib";
+    case 2U:
+        return "brotli";
+    case 3U:
+        return "zstd";
+    default:
+        return "Unknown Algorithm (" + std::to_string(algorithm_id) + ")";
+    }
+}
+
+std::string format_tls_record_type_value(
+    const TlsRecordContentTypeKind kind,
+    const std::optional<std::uint8_t> content_type
+) {
+    switch (kind) {
+    case TlsRecordContentTypeKind::change_cipher_spec:
+        return "ChangeCipherSpec";
+    case TlsRecordContentTypeKind::alert:
+        return "Alert";
+    case TlsRecordContentTypeKind::handshake:
+        return "Handshake";
+    case TlsRecordContentTypeKind::application_data:
+        return "ApplicationData";
+    case TlsRecordContentTypeKind::unknown:
+        return content_type.has_value() ? format_hex_value(*content_type, 2) : "Unknown";
+    }
+
+    return "Unknown";
+}
+
+std::string format_tls_handshake_type_value(
+    const TlsHandshakeKind kind,
+    const std::optional<std::uint8_t> handshake_type
+) {
+    switch (kind) {
+    case TlsHandshakeKind::client_hello:
+        return "ClientHello";
+    case TlsHandshakeKind::server_hello:
+        return "ServerHello";
+    case TlsHandshakeKind::new_session_ticket:
+        return "NewSessionTicket";
+    case TlsHandshakeKind::encrypted_extensions:
+        return "EncryptedExtensions";
+    case TlsHandshakeKind::certificate:
+        return "Certificate";
+    case TlsHandshakeKind::server_key_exchange:
+        return "ServerKeyExchange";
+    case TlsHandshakeKind::certificate_request:
+        return "CertificateRequest";
+    case TlsHandshakeKind::server_hello_done:
+        return "ServerHelloDone";
+    case TlsHandshakeKind::certificate_verify:
+        return "CertificateVerify";
+    case TlsHandshakeKind::client_key_exchange:
+        return "ClientKeyExchange";
+    case TlsHandshakeKind::finished:
+        return "Finished";
+    case TlsHandshakeKind::unknown:
+        return handshake_type.has_value() ? format_hex_value(*handshake_type, 2) : "Unknown";
+    }
+
+    return "Unknown";
+}
+
+std::string format_tls_cipher_suite_value(const std::uint16_t cipher_suite) {
+    switch (cipher_suite) {
+    case 0x002FU:
+        return "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)";
+    case 0x0035U:
+        return "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)";
+    case 0x009CU:
+        return "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)";
+    case 0x009DU:
+        return "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)";
+    case 0x1301U:
+        return "TLS_AES_128_GCM_SHA256 (0x1301)";
+    case 0x1302U:
+        return "TLS_AES_256_GCM_SHA384 (0x1302)";
+    case 0x1303U:
+        return "TLS_CHACHA20_POLY1305_SHA256 (0x1303)";
+    case 0xC02BU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)";
+    case 0xC02CU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)";
+    case 0xC02FU:
+        return "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)";
+    case 0xC030U:
+        return "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)";
+    case 0xC013U:
+        return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)";
+    case 0xC014U:
+        return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)";
+    case 0xCCA8U:
+        return "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)";
+    case 0xCCA9U:
+        return "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)";
+    default:
+        return format_hex_value(cipher_suite, 4);
+    }
+}
+
+std::string format_tls_collection_cipher_suite_value(const std::uint16_t cipher_suite) {
+    if (is_tls_grease_value(cipher_suite)) {
+        return "GREASE (" + format_hex_value(cipher_suite, 4) + ")";
+    }
+
+    switch (cipher_suite) {
+    case 0x000AU:
+        return "TLS_RSA_WITH_3DES_EDE_CBC_SHA (0x000a)";
+    case 0x002FU:
+        return "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)";
+    case 0x0035U:
+        return "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)";
+    case 0x009CU:
+        return "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)";
+    case 0x009DU:
+        return "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)";
+    case 0x1301U:
+        return "TLS_AES_128_GCM_SHA256 (0x1301)";
+    case 0x1302U:
+        return "TLS_AES_256_GCM_SHA384 (0x1302)";
+    case 0x1303U:
+        return "TLS_CHACHA20_POLY1305_SHA256 (0x1303)";
+    case 0xC008U:
+        return "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA (0xc008)";
+    case 0xC009U:
+        return "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)";
+    case 0xC00AU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xc00a)";
+    case 0xC013U:
+        return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)";
+    case 0xC014U:
+        return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)";
+    case 0xC02BU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)";
+    case 0xC02CU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)";
+    case 0xC02FU:
+        return "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)";
+    case 0xC030U:
+        return "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)";
+    case 0xC012U:
+        return "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA (0xc012)";
+    case 0xCCA8U:
+        return "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)";
+    case 0xCCA9U:
+        return "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)";
+    default:
+        return "Unknown Cipher Suite (" + format_hex_value(cipher_suite, 4) + ")";
+    }
+}
+
+std::string format_tls_compression_method_value(const std::uint8_t compression_method) {
+    return compression_method == 0U ? "null (0)" : std::to_string(static_cast<unsigned>(compression_method));
+}
+
+std::string format_tls_extension_type_value(const std::uint16_t extension_type) {
+    return std::to_string(extension_type) + " (" + format_hex_value(extension_type, 4) + ")";
+}
+
+std::string format_tls_extension_display_name(const TlsExtensionModel& extension) {
+    if (is_tls_grease_value(extension.type)) {
+        return "GREASE";
+    }
+    if (extension.known_name.has_value()) {
+        return *extension.known_name;
+    }
+    return "Unknown Extension";
+}
+
+std::string make_tls_indexed_title(const std::size_t index, const std::string& value) {
+    return "[" + std::to_string(index) + "] " + value;
+}
+
+PacketSummaryField build_tls_indexed_field(
+    const std::size_t index,
+    const std::string& value
+) {
+    return make_summary_field("[" + std::to_string(index) + "]", value);
+}
+
+void append_tls_indexed_value_fields(
+    std::vector<PacketSummaryField>& fields,
+    const std::vector<std::string>& values
+) {
+    fields.reserve(fields.size() + values.size());
+    for (std::size_t index = 0U; index < values.size(); ++index) {
+        fields.push_back(build_tls_indexed_field(index, values[index]));
+    }
+}
+
+void append_tls_named_value_fields(
+    std::vector<PacketSummaryField>& fields,
+    const std::string& label_prefix,
+    const std::vector<std::string>& values
+) {
+    fields.reserve(fields.size() + values.size());
+    for (std::size_t index = 0U; index < values.size(); ++index) {
+        fields.push_back(make_summary_field(label_prefix + " [" + std::to_string(index) + "]", values[index]));
+    }
+}
+
+std::vector<std::string> format_tls_supported_version_values(const std::vector<std::uint16_t>& versions) {
+    std::vector<std::string> formatted_versions {};
+    formatted_versions.reserve(versions.size());
+    for (const auto version : versions) {
+        formatted_versions.push_back(format_tls_collection_version_value(version));
+    }
+    return formatted_versions;
+}
+
+std::string join_tls_extension_preview_texts(
+    const std::vector<std::string>& values,
+    const std::size_t limit = 3U
+) {
+    if (values.empty()) {
+        return {};
+    }
+
+    std::ostringstream builder {};
+    const auto emit_count = std::min(values.size(), limit);
+    for (std::size_t index = 0U; index < emit_count; ++index) {
+        if (index != 0U) {
+            builder << ", ";
+        }
+        builder << values[index];
+    }
+    if (values.size() > emit_count) {
+        builder << ", ...";
+    }
+    return builder.str();
+}
+
+std::string build_tls_extension_title(
+    const TlsExtensionModel& extension,
+    const std::size_t index,
+    const std::optional<std::string>& preview = std::nullopt
+) {
+    std::string title = make_tls_indexed_title(
+        index,
+        format_tls_extension_display_name(extension) +
+            " (" + format_hex_value(extension.type, 4) + "), " +
+            format_byte_count(extension.declared_length)
+    );
+    if (preview.has_value() && !preview->empty()) {
+        title += " - " + *preview;
+    }
+    return title;
+}
+
+PacketSummaryLayer build_tls_scalar_collection_group(
+    const std::string& id,
+    const std::string& title,
+    const std::vector<std::string>& values
+) {
+    std::vector<PacketSummaryField> fields {};
+    append_tls_indexed_value_fields(fields, values);
+
+    return PacketSummaryLayer {
+        .id = id,
+        .title = title,
+        .fields = std::move(fields),
+        .expanded_by_default = false,
+    };
+}
+
+std::optional<std::size_t> select_tls_key_share_preview_entry_index(const TlsExtensionModel& extension) {
+    if (extension.key_share_entries.empty()) {
+        return std::nullopt;
+    }
+
+    for (std::size_t index = 0U; index < extension.key_share_entries.size(); ++index) {
+        if (!is_tls_grease_value(extension.key_share_entries[index].group_id)) {
+            return index;
+        }
+    }
+
+    return 0U;
+}
+
+PacketSummaryLayer build_tls_key_share_entry_layer(const TlsKeyShareEntryModel& entry) {
+    return PacketSummaryLayer {
+        .id = "tls_key_share_entry",
+        .title = make_tls_indexed_title(
+            entry.order_index,
+            format_tls_supported_group_value(entry.group_id) + ", " + format_byte_count(entry.key_exchange_length)
+        ),
+        .fields = {
+            make_summary_field("Group", format_tls_supported_group_value(entry.group_id)),
+            make_summary_field("Key Exchange Length", format_byte_count(entry.key_exchange_length)),
+        },
+        .expanded_by_default = false,
+    };
+}
+
+std::optional<PacketSummaryLayer> build_tls_cipher_suites_group(const TlsClientHelloModel& hello) {
+    if (hello.cipher_suites.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> values {};
+    values.reserve(hello.cipher_suites.size());
+    for (const auto cipher_suite : hello.cipher_suites) {
+        values.push_back(format_tls_collection_cipher_suite_value(cipher_suite));
+    }
+
+    return build_tls_scalar_collection_group(
+        "tls_cipher_suites",
+        "Cipher Suites (" + std::to_string(hello.cipher_suites.size()) + ")",
+        values
+    );
+}
+
+std::optional<PacketSummaryLayer> build_tls_compression_methods_group(const TlsClientHelloModel& hello) {
+    if (hello.compression_methods.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> values {};
+    values.reserve(hello.compression_methods.size());
+    for (const auto compression_method : hello.compression_methods) {
+        values.push_back(format_tls_compression_method_value(compression_method));
+    }
+
+    return build_tls_scalar_collection_group(
+        "tls_compression_methods",
+        "Compression Methods (" + std::to_string(hello.compression_methods.size()) + ")",
+        values
+    );
+}
+
+std::optional<std::string> build_tls_extension_preview(const TlsExtensionModel& extension) {
+    if (extension.structured_parse_status != TlsStructuredParseStatus::parsed) {
+        return std::nullopt;
+    }
+    if (!extension.server_names.empty()) {
+        return join_tls_extension_preview_texts(extension.server_names, 2U);
+    }
+    if (!extension.alpn_protocols.empty()) {
+        return join_tls_extension_preview_texts(extension.alpn_protocols, 3U);
+    }
+    if (!extension.supported_versions.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.supported_versions.size());
+        for (const auto version : extension.supported_versions) {
+            if (is_tls_grease_value(version)) {
+                preview_values.push_back("GREASE");
+            } else {
+                preview_values.push_back(format_tls_version_value(version));
+            }
+        }
+        return join_tls_extension_preview_texts(preview_values, 3U);
+    }
+    if (!extension.supported_group_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.supported_group_ids.size());
+        for (const auto group_id : extension.supported_group_ids) {
+            preview_values.push_back(format_tls_supported_group_preview_value(group_id));
+        }
+        return join_tls_extension_preview_texts(preview_values, 3U);
+    }
+    if (!extension.signature_scheme_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.signature_scheme_ids.size());
+        for (const auto scheme_id : extension.signature_scheme_ids) {
+            preview_values.push_back(format_tls_signature_scheme_preview_value(scheme_id));
+        }
+        return join_tls_extension_preview_texts(preview_values, 2U);
+    }
+    if (!extension.key_share_entries.empty()) {
+        const auto preview_index = select_tls_key_share_preview_entry_index(extension);
+        if (!preview_index.has_value()) {
+            return std::nullopt;
+        }
+        const auto& entry = extension.key_share_entries[*preview_index];
+        auto preview = format_tls_supported_group_preview_value(entry.group_id) +
+            ", " + format_byte_count(entry.key_exchange_length);
+        if (extension.key_share_entries.size() > 1U) {
+            preview += ", ...";
+        }
+        return preview;
+    }
+    if (!extension.psk_key_exchange_mode_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.psk_key_exchange_mode_ids.size());
+        for (const auto mode : extension.psk_key_exchange_mode_ids) {
+            preview_values.push_back(format_tls_psk_key_exchange_mode_preview_value(mode));
+        }
+        return join_tls_extension_preview_texts(preview_values, 2U);
+    }
+    if (extension.status_request.has_value()) {
+        return format_tls_status_request_type_value(extension.status_request->status_type);
+    }
+    if (!extension.certificate_compression_algorithm_ids.empty()) {
+        std::vector<std::string> preview_values {};
+        preview_values.reserve(extension.certificate_compression_algorithm_ids.size());
+        for (const auto algorithm_id : extension.certificate_compression_algorithm_ids) {
+            preview_values.push_back(format_tls_certificate_compression_algorithm_preview_value(algorithm_id));
+        }
+        return join_tls_extension_preview_texts(preview_values, 2U);
+    }
+    if (extension.padding_length.has_value()) {
+        return format_byte_count(*extension.padding_length);
+    }
+    return std::nullopt;
+}
+
+void append_tls_extension_detail_fields(
+    std::vector<PacketSummaryField>& fields,
+    std::vector<PacketSummaryLayer>& children,
+    const TlsExtensionModel& extension
+) {
+    if (extension.structured_parse_status == TlsStructuredParseStatus::malformed) {
+        fields.push_back(make_summary_field("Structured Details", "Malformed"));
+        return;
+    }
+
+    if (extension.structured_parse_status == TlsStructuredParseStatus::not_attempted) {
+        if (extension.known_name.has_value() && *extension.known_name == "key_share") {
+            fields.push_back(make_summary_field("Structured Details", "Not decoded"));
+        }
+        return;
+    }
+
+    append_tls_named_value_fields(fields, "Server Name", extension.server_names);
+    append_tls_named_value_fields(fields, "ALPN", extension.alpn_protocols);
+    append_tls_named_value_fields(fields, "Version", format_tls_supported_version_values(extension.supported_versions));
+
+    std::vector<std::string> supported_group_values {};
+    supported_group_values.reserve(extension.supported_group_ids.size());
+    for (const auto group_id : extension.supported_group_ids) {
+        supported_group_values.push_back(format_tls_supported_group_value(group_id));
+    }
+    append_tls_named_value_fields(fields, "Group", supported_group_values);
+
+    std::vector<std::string> signature_scheme_values {};
+    signature_scheme_values.reserve(extension.signature_scheme_ids.size());
+    for (const auto scheme_id : extension.signature_scheme_ids) {
+        signature_scheme_values.push_back(format_tls_signature_scheme_value(scheme_id));
+    }
+    append_tls_named_value_fields(fields, "Signature Scheme", signature_scheme_values);
+
+    std::vector<std::string> psk_mode_values {};
+    psk_mode_values.reserve(extension.psk_key_exchange_mode_ids.size());
+    for (const auto mode : extension.psk_key_exchange_mode_ids) {
+        psk_mode_values.push_back(format_tls_psk_key_exchange_mode_value(mode));
+    }
+    append_tls_named_value_fields(fields, "Mode", psk_mode_values);
+
+    if (extension.status_request.has_value()) {
+        fields.push_back(make_summary_field(
+            "Status Type",
+            format_tls_status_request_type_value(extension.status_request->status_type)
+        ));
+        fields.push_back(make_summary_field(
+            "Responder ID List Length",
+            std::to_string(extension.status_request->responder_id_list_length)
+        ));
+        fields.push_back(make_summary_field(
+            "Request Extensions Length",
+            std::to_string(extension.status_request->request_extensions_length)
+        ));
+    }
+
+    std::vector<std::string> compression_algorithm_values {};
+    compression_algorithm_values.reserve(extension.certificate_compression_algorithm_ids.size());
+    for (const auto algorithm_id : extension.certificate_compression_algorithm_ids) {
+        compression_algorithm_values.push_back(format_tls_certificate_compression_algorithm_value(algorithm_id));
+    }
+    append_tls_named_value_fields(fields, "Algorithm", compression_algorithm_values);
+
+    if (extension.padding_length.has_value()) {
+        fields.push_back(make_summary_field("Padding Length", format_byte_count(*extension.padding_length)));
+    }
+
+    children.reserve(children.size() + extension.key_share_entries.size());
+    for (const auto& entry : extension.key_share_entries) {
+        children.push_back(build_tls_key_share_entry_layer(entry));
+    }
+}
+
+std::optional<PacketSummaryLayer> build_tls_extensions_group(const std::vector<TlsExtensionModel>& extensions) {
+    if (extensions.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryLayer> children {};
+    children.reserve(extensions.size());
+    for (std::size_t index = 0U; index < extensions.size(); ++index) {
+        const auto& extension = extensions[index];
+        std::vector<PacketSummaryField> fields {
+            make_summary_field("Type", format_tls_extension_type_value(extension.type)),
+            make_summary_field("Length", std::to_string(extension.declared_length)),
+        };
+        std::vector<PacketSummaryLayer> extension_children {};
+        append_tls_extension_detail_fields(fields, extension_children, extension);
+
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_extension",
+            .title = build_tls_extension_title(extension, index, build_tls_extension_preview(extension)),
+            .fields = std::move(fields),
+            .children = std::move(extension_children),
+            .expanded_by_default = false,
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls_extensions",
+        .title = "Extensions (" + std::to_string(extensions.size()) + ")",
+        .children = std::move(children),
+        .expanded_by_default = false,
+    };
+}
+
+std::string join_tls_texts(const std::vector<std::string>& values, const std::size_t limit = 8U) {
+    if (values.empty()) {
+        return {};
+    }
+
+    std::ostringstream builder {};
+    const auto emit_count = std::min(values.size(), limit);
+    for (std::size_t index = 0U; index < emit_count; ++index) {
+        if (index != 0U) {
+            builder << ", ";
+        }
+        builder << values[index];
+    }
+    if (values.size() > emit_count) {
+        builder << " (" << values.size() << " total)";
+    }
+    return builder.str();
+}
+
+std::string join_tls_version_values(const std::vector<std::uint16_t>& versions, const std::size_t limit = 8U) {
+    if (versions.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> formatted_versions {};
+    formatted_versions.reserve(versions.size());
+    for (const auto version : versions) {
+        formatted_versions.push_back(format_tls_version_value(version));
+    }
+    return join_tls_texts(formatted_versions, limit);
+}
+
+std::string format_tls_session_id_value(std::span<const std::uint8_t> bytes) {
+    return bytes.empty() ? "<empty>" : format_hex_byte_sequence(bytes, ' ');
+}
+
+std::string tls_partial_record_status_text(const TlsRecordStatus status) {
+    switch (status) {
+    case TlsRecordStatus::partial_header:
+        return "Incomplete record header";
+    case TlsRecordStatus::partial_body:
+        return "Incomplete record body";
+    case TlsRecordStatus::complete:
+        return "Complete";
+    }
+
+    return "Incomplete record";
+}
+
+std::string tls_partial_handshake_status_text(const TlsHandshakeStatus status) {
+    switch (status) {
+    case TlsHandshakeStatus::partial_header:
+        return "Incomplete header";
+    case TlsHandshakeStatus::partial_body:
+        return "Incomplete body";
+    case TlsHandshakeStatus::complete:
+        return "Complete";
+    }
+
+    return "Incomplete";
+}
+
+std::string tls_record_summary_title(const TlsRecordModel& record) {
+    if (record.status != TlsRecordStatus::complete) {
+        if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+            record.handshake_payload_kind == TlsHandshakePayloadKind::plaintext &&
+            record.handshake_messages.size() == 1U) {
+            const auto handshake_type = format_tls_handshake_type_value(
+                record.handshake_messages[0].kind,
+                record.handshake_messages[0].type
+            );
+            if (!handshake_type.empty() && handshake_type != "Unknown") {
+                return "Transport Layer Security, " + handshake_type + " Fragment";
+            }
+        }
+
+        return "TLS Record Fragment (partial)";
+    }
+
+    if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+        record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque) {
+        return "Transport Layer Security, Encrypted Handshake Message";
+    }
+
+    if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+        record.handshake_messages.size() == 1U &&
+        record.handshake_messages[0].status == TlsHandshakeStatus::complete) {
+        const auto handshake_type = format_tls_handshake_type_value(
+            record.handshake_messages[0].kind,
+            record.handshake_messages[0].type
+        );
+        if (!handshake_type.empty() && handshake_type != "Unknown") {
+            return "Transport Layer Security, " + handshake_type;
+        }
+    }
+
+    return "Transport Layer Security, " +
+        format_tls_record_type_value(record.content_type_kind, record.content_type);
+}
+
+void append_tls_handshake_fields(
+    std::vector<PacketSummaryField>& fields,
+    std::vector<PacketSummaryLayer>& children,
+    const TlsHandshakeModel& handshake
+) {
+    if (handshake.type.has_value()) {
+        fields.push_back(make_summary_field(
+            "Handshake Type",
+            format_tls_handshake_type_value(handshake.kind, handshake.type)
+        ));
+    }
+    if (handshake.declared_body_length.has_value()) {
+        fields.push_back(make_summary_field("Handshake Length", std::to_string(*handshake.declared_body_length)));
+    }
+
+    if (handshake.client_hello.has_value()) {
+        const auto& hello = *handshake.client_hello;
+        fields.push_back(make_summary_field("ClientHello Legacy Version", format_tls_version_value(hello.legacy_version)));
+        fields.push_back(make_summary_field("Session ID Length", std::to_string(hello.session_id.size())));
+        fields.push_back(make_summary_field("Session ID", format_tls_session_id_value(hello.session_id)));
+        fields.push_back(make_summary_field("Cipher Suite Count", std::to_string(hello.cipher_suites.size())));
+        fields.push_back(make_summary_field("Compression Method Count", std::to_string(hello.compression_methods.size())));
+        fields.push_back(make_summary_field("Extension Count", std::to_string(hello.extensions.size())));
+        if (!hello.sni_names.empty()) {
+            fields.push_back(make_summary_field("SNI", join_tls_texts(hello.sni_names)));
+        }
+        if (!hello.alpn_protocols.empty()) {
+            fields.push_back(make_summary_field("ALPN", join_tls_texts(hello.alpn_protocols, 4U)));
+        }
+        if (!hello.supported_versions.empty()) {
+            fields.push_back(make_summary_field(
+                "Supported TLS Versions",
+                join_tls_version_values(hello.supported_versions, 8U)
+            ));
+        }
+        if (const auto cipher_suites = build_tls_cipher_suites_group(hello); cipher_suites.has_value()) {
+            children.push_back(*cipher_suites);
+        }
+        if (const auto compression_methods = build_tls_compression_methods_group(hello); compression_methods.has_value()) {
+            children.push_back(*compression_methods);
+        }
+        if (const auto extensions = build_tls_extensions_group(hello.extensions); extensions.has_value()) {
+            children.push_back(*extensions);
+        }
+    } else if (handshake.server_hello.has_value()) {
+        const auto& hello = *handshake.server_hello;
+        fields.push_back(make_summary_field("ServerHello Legacy Version", format_tls_version_value(hello.legacy_version)));
+        fields.push_back(make_summary_field("Session ID Length", std::to_string(hello.session_id.size())));
+        fields.push_back(make_summary_field("Session ID", format_tls_session_id_value(hello.session_id)));
+        fields.push_back(make_summary_field("Selected TLS Version", format_tls_version_value(hello.selected_tls_version)));
+        fields.push_back(make_summary_field("Selected Cipher Suite", format_tls_cipher_suite_value(hello.selected_cipher_suite)));
+        fields.push_back(make_summary_field("Compression Method", format_tls_compression_method_value(hello.compression_method)));
+        fields.push_back(make_summary_field("Extension Count", std::to_string(hello.extensions.size())));
+        if (const auto extensions = build_tls_extensions_group(hello.extensions); extensions.has_value()) {
+            children.push_back(*extensions);
+        }
+    } else if (handshake.new_session_ticket.has_value()) {
+        const auto& new_session_ticket = *handshake.new_session_ticket;
+        fields.push_back(make_summary_field(
+            "Session Ticket Lifetime Hint",
+            std::to_string(new_session_ticket.ticket_lifetime_hint_seconds) + " seconds"
+        ));
+        fields.push_back(make_summary_field(
+            "Session Ticket Length",
+            format_byte_count(new_session_ticket.ticket_length)
+        ));
+    }
+}
+
+std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& record) {
+    std::vector<PacketSummaryField> fields {};
+    std::vector<PacketSummaryLayer> children {};
+
+    if (record.status == TlsRecordStatus::complete) {
+        fields.push_back(make_summary_field(
+            "Record Type",
+            format_tls_record_type_value(record.content_type_kind, record.content_type)
+        ));
+        if (record.legacy_version.has_value()) {
+            fields.push_back(make_summary_field("Record Legacy Version", format_tls_version_value(*record.legacy_version)));
+        }
+        if (record.declared_payload_length.has_value()) {
+            fields.push_back(make_summary_field("Record Length", std::to_string(*record.declared_payload_length)));
+        }
+        if (record.total_size.has_value()) {
+            fields.push_back(make_summary_field("Total Record Size", format_byte_count(*record.total_size)));
+        }
+
+        if (record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque) {
+            fields.push_back(make_summary_field(
+                "Payload Interpretation",
+                "Encrypted/opaque handshake payload"
+            ));
+        } else if (record.handshake_messages.size() == 1U) {
+            append_tls_handshake_fields(fields, children, record.handshake_messages.front());
+        } else if (!record.handshake_messages.empty()) {
+            fields.push_back(make_summary_field("Handshake Count", std::to_string(record.handshake_messages.size())));
+            for (std::size_t index = 0U; index < record.handshake_messages.size(); ++index) {
+                const auto& handshake = record.handshake_messages[index];
+                auto handshake_fields = std::vector<PacketSummaryField> {};
+                auto handshake_children = std::vector<PacketSummaryLayer> {};
+                append_tls_handshake_fields(handshake_fields, handshake_children, handshake);
+                if (!handshake_fields.empty() || !handshake_children.empty()) {
+                    children.push_back(PacketSummaryLayer {
+                        .id = "tls_handshake",
+                        .title = "TLS Handshake #" + std::to_string(index + 1U) + ", " +
+                            format_tls_handshake_type_value(handshake.kind, handshake.type),
+                        .fields = std::move(handshake_fields),
+                        .children = std::move(handshake_children),
+                    });
+                }
+            }
+        }
+
+        return PacketSummaryLayer {
+            .id = "tls",
+            .title = tls_record_summary_title(record),
+            .fields = std::move(fields),
+            .children = std::move(children),
+        };
+    }
+
+    fields.push_back(make_summary_field("Status", tls_partial_record_status_text(record.status)));
+    fields.push_back(make_summary_field("Available Bytes", std::to_string(record.available_bytes)));
+    if (record.content_type.has_value()) {
+        fields.push_back(make_summary_field(
+            "Record Type",
+            format_tls_record_type_value(record.content_type_kind, record.content_type)
+        ));
+    }
+    if (record.legacy_version.has_value()) {
+        fields.push_back(make_summary_field("Record Legacy Version", format_tls_version_value(*record.legacy_version)));
+    }
+    if (record.declared_payload_length.has_value()) {
+        fields.push_back(make_summary_field("Declared Record Length", std::to_string(*record.declared_payload_length)));
+    }
+    if (record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque) {
+        fields.push_back(make_summary_field(
+            "Payload Interpretation",
+            "Encrypted/opaque handshake payload"
+        ));
+    } else if (record.handshake_messages.size() == 1U) {
+        const auto& handshake = record.handshake_messages.front();
+        if (handshake.type.has_value()) {
+            fields.push_back(make_summary_field(
+                "Handshake Type",
+                format_tls_handshake_type_value(handshake.kind, handshake.type)
+            ));
+        }
+        if (handshake.declared_body_length.has_value()) {
+            fields.push_back(make_summary_field("Handshake Length", std::to_string(*handshake.declared_body_length)));
+        }
+        fields.push_back(make_summary_field(
+            "Handshake Status",
+            tls_partial_handshake_status_text(handshake.status)
+        ));
+        fields.push_back(make_summary_field("Available Handshake Bytes", std::to_string(handshake.available_bytes)));
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = tls_record_summary_title(record),
+        .fields = std::move(fields),
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
+std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    const bool force_encrypted_handshake_records = false
+) {
+    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
+        return {};
+    }
+
+    TlsInspectionParser parser {};
+    auto inspection = parser.inspect(transport_payload_bytes);
+    if (force_encrypted_handshake_records) {
+        for (auto& record : inspection.records) {
+            if (record.status != TlsRecordStatus::complete ||
+                record.content_type_kind != TlsRecordContentTypeKind::handshake) {
+                continue;
+            }
+
+            record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
+            record.handshake_messages.clear();
+        }
+    }
+
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(inspection.records.size());
+    for (const auto& record : inspection.records) {
+        if (const auto layer = build_tls_summary_layer(record); layer.has_value()) {
+            layers.push_back(*layer);
+        }
+    }
+    return layers;
+}
+
+struct TlsStreamSummaryContext {
+    bool is_tls {false};
+    bool allow_structured_summary {false};
+    bool force_encrypted_handshake_records {false};
+    std::optional<std::string_view> partial_status_text {};
+};
+
+TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKind semantic_kind) {
+    switch (semantic_kind) {
+    case TlsStreamItemSemanticKind::change_cipher_spec:
+    case TlsStreamItemSemanticKind::plaintext_handshake:
+    case TlsStreamItemSemanticKind::application_data:
+    case TlsStreamItemSemanticKind::alert:
+    case TlsStreamItemSemanticKind::generic_record:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .allow_structured_summary = true,
+        };
+    case TlsStreamItemSemanticKind::encrypted_handshake:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .allow_structured_summary = true,
+            .force_encrypted_handshake_records = true,
+        };
+    case TlsStreamItemSemanticKind::partial_record:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .partial_status_text = "Incomplete record body",
+        };
+    case TlsStreamItemSemanticKind::partial_payload:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .partial_status_text = "Incomplete TLS payload",
+        };
+    case TlsStreamItemSemanticKind::gap:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+        };
+    case TlsStreamItemSemanticKind::none:
+    default:
+        return {};
+    }
+}
+
+std::optional<PacketSummaryLayer> build_tls_partial_stream_summary_layer(const StreamItemRow& row) {
+    const auto context = tls_stream_summary_context(row.tls_semantic_kind);
+    if (!context.partial_status_text.has_value()) {
+        return std::nullopt;
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = row.label,
+        .fields = {
+            make_summary_field("Status", std::string {*context.partial_status_text}),
+            make_summary_field("Available Bytes", std::to_string(row.byte_count)),
+        },
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
+std::optional<PacketSummaryLayer> build_conservative_tls_stream_summary_layer(const StreamItemRow& row) {
+    if (const auto partial_layer = build_tls_partial_stream_summary_layer(row); partial_layer.has_value()) {
+        return partial_layer;
+    }
+
+    if (!row.has_constricted_contribution) {
+        return std::nullopt;
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = row.label,
+        .fields = {
+            make_summary_field("Status", "Constricted item"),
+            make_summary_field("Available Bytes", std::to_string(row.byte_count)),
+        },
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
+std::optional<std::uint8_t> hex_nibble(const char ch) noexcept {
+    if (ch >= '0' && ch <= '9') {
+        return static_cast<std::uint8_t>(ch - '0');
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return static_cast<std::uint8_t>(10 + (ch - 'a'));
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return static_cast<std::uint8_t>(10 + (ch - 'A'));
+    }
+    return std::nullopt;
+}
+
+std::vector<std::uint8_t> decode_hex_dump_bytes(std::string_view hex_dump_text) {
+    std::vector<std::uint8_t> bytes {};
+    std::size_t line_start = 0U;
+    while (line_start <= hex_dump_text.size()) {
+        const auto line_end = hex_dump_text.find('\n', line_start);
+        const auto line = hex_dump_text.substr(
+            line_start,
+            line_end == std::string_view::npos ? std::string_view::npos : (line_end - line_start)
+        );
+        if (line.size() >= 10U) {
+            constexpr std::size_t bytes_offset = 10U;
+            for (std::size_t index = 0U; index < 16U; ++index) {
+                const auto group_offset = bytes_offset + (index * 3U);
+                if (group_offset + 1U >= line.size()) {
+                    break;
+                }
+
+                const auto high = hex_nibble(line[group_offset]);
+                const auto low = hex_nibble(line[group_offset + 1U]);
+                if (!high.has_value() || !low.has_value()) {
+                    continue;
+                }
+
+                bytes.push_back(static_cast<std::uint8_t>((*high << 4U) | *low));
+            }
+        }
+
+        if (line_end == std::string_view::npos) {
+            break;
+        }
+        line_start = line_end + 1U;
+    }
+    return bytes;
+}
+
+std::pair<std::string, std::string> stream_source_packets_field(std::string_view source_packets_text) {
+    if (source_packets_text.rfind("packet ", 0U) == 0U) {
+        return {"Source packet", std::string {source_packets_text.substr(7U)}};
+    }
+    if (source_packets_text.rfind("packets ", 0U) == 0U) {
+        return {"Source packets", std::string {source_packets_text.substr(8U)}};
+    }
+    return {"Source packets", std::string {source_packets_text}};
+}
+
+PacketSummaryLayer build_stream_item_metadata_layer(
+    const StreamItemRow& row,
+    std::string_view source_packets_text,
+    std::string_view details_source_text,
+    std::string_view frames_hint_text,
+    const std::size_t structured_tls_record_count
+) {
+    auto fields = std::vector<PacketSummaryField> {
+        make_summary_field("Label", row.label),
+        make_summary_field("Size", format_byte_count(row.byte_count)),
+    };
+
+    if (!frames_hint_text.empty()) {
+        fields.push_back(make_summary_field("Frames", std::string {frames_hint_text}));
+    }
+
+    const auto [source_label, source_value] = stream_source_packets_field(source_packets_text);
+    fields.push_back(make_summary_field(source_label, source_value));
+    fields.push_back(make_summary_field("Details source", std::string {details_source_text}));
+
+    if (structured_tls_record_count > 1U) {
+        fields.push_back(make_summary_field("Structured TLS Records", std::to_string(structured_tls_record_count)));
+    }
+
+    auto children = std::vector<PacketSummaryLayer> {};
+    if (structured_tls_record_count > 1U) {
+        children.push_back(PacketSummaryLayer {
+            .id = "stream_item_note",
+            .title = "Inspection Note",
+            .fields = {
+                make_summary_field(
+                    "Reason",
+                    "Selected stream item contains multiple TLS records within one logical item."
+                ),
+            },
+            .warning = true,
+            .marker_text = "Note",
+        });
+    }
+
+    if (!row.constricted_contribution_notes.empty()) {
+        auto note_fields = std::vector<PacketSummaryField> {};
+        note_fields.reserve(row.constricted_contribution_notes.size());
+        for (const auto& note : row.constricted_contribution_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "stream_item_constricted_contributions",
+            .title = row.constricted_contribution_notes.size() == 1U
+                ? "Constricted Contribution"
+                : "Constricted Contributions",
+            .fields = std::move(note_fields),
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    if (!row.constricted_packet_notes.empty()) {
+        auto note_fields = std::vector<PacketSummaryField> {};
+        note_fields.reserve(row.constricted_packet_notes.size());
+        for (const auto& note : row.constricted_packet_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "stream_item_constricted_packets",
+            .title = row.constricted_packet_notes.size() == 1U
+                ? "Constricted Packet Note"
+                : "Constricted Packet Notes",
+            .fields = std::move(note_fields),
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "stream_item",
+        .title = "Stream Item",
+        .fields = std::move(fields),
+        .children = std::move(children),
+    };
+}
+
 std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     const PacketDetails& details,
     std::string_view protocol_details_text
@@ -3206,31 +4435,6 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     const auto first_line = first_non_empty_line(protocol_details_text);
     if (!first_line.has_value()) {
         return std::nullopt;
-    }
-
-    if (*first_line == "TLS") {
-        std::vector<PacketSummaryField> fields {};
-        const auto handshake_type = find_protocol_detail_value(protocol_details_text, "Handshake Type:");
-        const auto record_type = find_protocol_detail_value(protocol_details_text, "Record Type:");
-        const auto sni = find_protocol_detail_value(protocol_details_text, "SNI:");
-        append_protocol_field_if_present(fields, "Handshake Type", handshake_type);
-        append_protocol_field_if_present(fields, "Record Type", record_type);
-        append_protocol_field_if_present(fields, "Record Version", find_protocol_detail_value(protocol_details_text, "Record Version:"));
-        append_protocol_field_if_present(fields, "SNI", sni);
-        append_protocol_field_if_present(fields, "Selected TLS Version", find_protocol_detail_value(protocol_details_text, "Selected TLS Version:"));
-
-        std::string title = "Transport Layer Security";
-        if (handshake_type.has_value()) {
-            title += ", " + *handshake_type;
-        } else if (record_type.has_value()) {
-            title += ", " + *record_type;
-        }
-
-        return PacketSummaryLayer {
-            .id = "tls",
-            .title = std::move(title),
-            .fields = std::move(fields),
-        };
     }
 
     if (*first_line == "QUIC") {
@@ -3309,6 +4513,154 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     }
 
     return std::nullopt;
+}
+
+std::string format_flow_packet_number(const std::uint64_t flow_packet_index) {
+    return std::to_string(flow_packet_index + 1U);
+}
+
+std::string format_tls_flow_packet_list(
+    const std::vector<TlsSelectedPacketContribution>& contributions
+) {
+    std::ostringstream builder {};
+    std::optional<std::uint64_t> previous_flow_packet_index {};
+    bool first = true;
+    for (const auto& contribution : contributions) {
+        if (previous_flow_packet_index.has_value() &&
+            contribution.flow_packet_index == *previous_flow_packet_index) {
+            continue;
+        }
+        if (!first) {
+            builder << ", ";
+        }
+        builder << format_flow_packet_number(contribution.flow_packet_index);
+        previous_flow_packet_index = contribution.flow_packet_index;
+        first = false;
+    }
+    return builder.str();
+}
+
+std::string format_tls_record_byte_range(const TlsSelectedPacketContribution& contribution) {
+    const auto start = contribution.record_offset + 1U;
+    const auto end = contribution.record_offset + contribution.captured_byte_count;
+    return std::to_string(start) + "-" + std::to_string(end);
+}
+
+bool selected_packet_completes_record(const TlsSelectedPacketRecordContext& context) {
+    return context.selected_contribution_flow_packet_index.has_value() &&
+        context.completion_flow_packet_index.has_value() &&
+        *context.selected_contribution_flow_packet_index == *context.completion_flow_packet_index;
+}
+
+std::string format_tls_selected_packet_status(
+    const TlsSelectedPacketRecordContext& context
+) {
+    switch (context.status) {
+    case TlsSelectedPacketStatus::complete:
+        return selected_packet_completes_record(context)
+            ? "Reassembled in this packet"
+            : "Continues in a later loaded packet";
+    case TlsSelectedPacketStatus::incomplete_window:
+        return "Incomplete in loaded packet window";
+    case TlsSelectedPacketStatus::tcp_gap:
+        return "Interrupted by TCP gap";
+    case TlsSelectedPacketStatus::capture_constricted:
+        return "Constricted by capture truncation";
+    case TlsSelectedPacketStatus::malformed:
+        return "Malformed TLS record";
+    }
+
+    return "Unknown";
+}
+
+PacketSummaryLayer build_tls_reassembled_metadata_layer(
+    const TlsSelectedPacketRecordContext& context
+) {
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Status", format_tls_selected_packet_status(context)),
+        make_summary_field("Record Size", format_byte_count(context.total_record_size)),
+        make_summary_field("Contributing Flow Packets", format_tls_flow_packet_list(context.contributions)),
+    };
+
+    if (context.status == TlsSelectedPacketStatus::complete && context.completion_flow_packet_index.has_value()) {
+        fields.push_back(make_summary_field(
+            "Completion Flow Packet",
+            format_flow_packet_number(*context.completion_flow_packet_index)
+        ));
+    }
+
+    std::vector<PacketSummaryLayer> children {};
+    children.reserve(
+        context.contributions.size() +
+        (context.has_constricted_contribution ? 2U : 0U)
+    );
+
+    for (const auto& contribution : context.contributions) {
+        std::vector<PacketSummaryField> contribution_fields {
+            make_summary_field("Flow Packet", format_flow_packet_number(contribution.flow_packet_index)),
+            make_summary_field("Packet in File", std::to_string(contribution.packet_index + 1U)),
+            make_summary_field("Record Byte Range", format_tls_record_byte_range(contribution)),
+            make_summary_field("Captured Contribution", format_byte_count(contribution.captured_byte_count)),
+        };
+        const bool selected_contribution = context.selected_contribution_flow_packet_index.has_value() &&
+            contribution.flow_packet_index == *context.selected_contribution_flow_packet_index;
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_reassembled_contribution",
+            .title = selected_contribution
+                ? "Selected Packet Contribution"
+                : "Flow Packet " + format_flow_packet_number(contribution.flow_packet_index) + " Contribution",
+            .fields = std::move(contribution_fields),
+            .expanded_by_default = selected_contribution,
+        });
+    }
+
+    if (!context.constricted_contribution_notes.empty()) {
+        std::vector<PacketSummaryField> note_fields {};
+        note_fields.reserve(context.constricted_contribution_notes.size());
+        for (const auto& note : context.constricted_contribution_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_reassembled_constricted_contributions",
+            .title = context.constricted_contribution_notes.size() == 1U
+                ? "Constricted Contribution Note"
+                : "Constricted Contribution Notes",
+            .fields = std::move(note_fields),
+            .expanded_by_default = false,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    if (!context.constricted_packet_notes.empty()) {
+        std::vector<PacketSummaryField> note_fields {};
+        note_fields.reserve(context.constricted_packet_notes.size());
+        for (const auto& note : context.constricted_packet_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "tls_reassembled_constricted_packets",
+            .title = context.constricted_packet_notes.size() == 1U
+                ? "Constricted Packet Note"
+                : "Constricted Packet Notes",
+            .fields = std::move(note_fields),
+            .expanded_by_default = false,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls_reassembled",
+        .title = "Reassembled TCP Segments: " + context.label,
+        .fields = std::move(fields),
+        .children = std::move(children),
+        .expanded_by_default = true,
+        .warning = context.status != TlsSelectedPacketStatus::complete || context.has_constricted_contribution,
+        .marker_text = (context.status != TlsSelectedPacketStatus::complete || context.has_constricted_contribution)
+            ? "Warning"
+            : std::string {},
+    };
 }
 
 }  // namespace
@@ -3634,6 +4986,61 @@ std::vector<std::string> build_basic_summary_lines(const PacketDetails& details)
     return lines;
 }
 
+std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
+    const StreamItemRow& row,
+    std::string_view source_packets_text,
+    std::string_view details_source_text,
+    std::string_view frames_hint_text
+) {
+    const auto context = tls_stream_summary_context(row.tls_semantic_kind);
+    if (!context.is_tls) {
+        return {};
+    }
+
+    std::vector<PacketSummaryLayer> tls_layers {};
+    const auto can_parse_structured_tls =
+        context.allow_structured_summary &&
+        !row.has_constricted_contribution &&
+        !row.payload_hex_text.empty();
+    if (can_parse_structured_tls) {
+        // Selected stream-item Summary currently reparses the exact logical item bytes
+        // from the existing hex payload preview on demand. Stream rows do not yet expose
+        // direct logical byte spans separately from the legacy presentation path.
+        const auto payload_bytes = decode_hex_dump_bytes(row.payload_hex_text);
+        tls_layers = build_tls_summary_layers_impl(
+            std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()),
+            context.force_encrypted_handshake_records
+        );
+    }
+
+    if (tls_layers.empty()) {
+        if (const auto conservative_tls_layer = build_conservative_tls_stream_summary_layer(row);
+            conservative_tls_layer.has_value()) {
+            tls_layers.push_back(*conservative_tls_layer);
+        }
+    }
+
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(1U + tls_layers.size());
+    layers.push_back(build_stream_item_metadata_layer(
+        row,
+        source_packets_text,
+        details_source_text,
+        frames_hint_text,
+        tls_layers.size()
+    ));
+    for (auto& tls_layer : tls_layers) {
+        layers.push_back(std::move(tls_layer));
+    }
+
+    apply_default_summary_layer_expansion(layers);
+    return layers;
+}
+
+std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
+    return build_tls_summary_layers_impl(transport_payload_bytes);
+}
+
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
     const PacketDetails& details,
     const PacketRef& packet,
@@ -3689,7 +5096,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     std::vector<PacketSummaryField> frame_fields {};
     if (options.flow_packet_index.has_value()) {
-        frame_fields.push_back(make_summary_field("Packet number in flow", std::to_string(*options.flow_packet_index)));
+        frame_fields.push_back(make_summary_field(
+            "Packet number in flow",
+            format_flow_packet_number(*options.flow_packet_index)
+        ));
     }
     frame_fields.push_back(make_summary_field("Packet number in file", std::to_string(packet_number_in_file)));
     frame_fields.push_back(make_summary_field("Timestamp", format_packet_timestamp_full(packet)));
@@ -3699,7 +5109,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     append_layer_if_not_empty(layers, PacketSummaryLayer {
         .id = "frame",
         .title = options.flow_packet_index.has_value()
-            ? "Frame: Packet " + std::to_string(*options.flow_packet_index) +
+            ? "Frame: Packet " + format_flow_packet_number(*options.flow_packet_index) +
                 " in Flow, Packet " + std::to_string(packet_number_in_file) + " in file"
             : "Frame: Packet " + std::to_string(packet_number_in_file) + " in file",
         .fields = std::move(frame_fields),
@@ -4924,8 +6334,37 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *trailer_layer);
     }
 
-    if (const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
-        protocol_layer.has_value()) {
+    bool appended_tls_summary = false;
+    const auto tls_layers = build_tls_summary_layers(options.transport_payload_bytes);
+    if (!tls_layers.empty()) {
+        for (const auto& tls_layer : tls_layers) {
+            append_layer_if_not_empty(layers, tls_layer);
+        }
+        appended_tls_summary = true;
+    }
+
+    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
+        append_layer_if_not_empty(
+            layers,
+            build_tls_reassembled_metadata_layer(reconstructed_record)
+        );
+        appended_tls_summary = true;
+
+        if (reconstructed_record.status == TlsSelectedPacketStatus::complete &&
+            selected_packet_completes_record(reconstructed_record) &&
+            reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size) {
+            const auto reconstructed_tls_layers = build_tls_summary_layers(std::span<const std::uint8_t>(
+                reconstructed_record.captured_bytes.data(),
+                reconstructed_record.captured_bytes.size()
+            ));
+            for (const auto& reconstructed_tls_layer : reconstructed_tls_layers) {
+                append_layer_if_not_empty(layers, reconstructed_tls_layer);
+            }
+        }
+    }
+
+    const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
+    if (!appended_tls_summary && protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
     }
 

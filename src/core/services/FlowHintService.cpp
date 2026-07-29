@@ -34,6 +34,9 @@ constexpr std::uint16_t kSubmissionPort = 587;
 constexpr std::uint16_t kPop3Port = 110;
 constexpr std::uint16_t kImapPort = 143;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
+constexpr std::uint16_t kTlsHandshakeHeaderSize = 4;
+constexpr std::uint16_t kTlsClientHelloFixedFieldsSize = 34;
+constexpr std::size_t kTlsMaxRecordPayloadSize = (1U << 14U) + 2048U;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
 constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -461,7 +464,7 @@ std::optional<std::string> extract_http_request_path(std::span<const std::uint8_
     return std::string(path);
 }
 
-bool looks_like_tls_record(std::span<const std::uint8_t> payload) {
+bool looks_like_tls_record_prefix(std::span<const std::uint8_t> payload) {
     if (payload.size() < kTlsRecordHeaderSize) {
         return false;
     }
@@ -475,101 +478,140 @@ bool looks_like_tls_record(std::span<const std::uint8_t> payload) {
         return false;
     }
 
-    const auto record_length = static_cast<std::size_t>(read_be16(payload, 3U));
-    return record_length > 0U && record_length <= (payload.size() - kTlsRecordHeaderSize);
+    const auto declared_record_length = static_cast<std::size_t>(read_be16(payload, 3U));
+    return declared_record_length != 0U && declared_record_length <= kTlsMaxRecordPayloadSize;
 }
 
-std::optional<std::string> extract_tls_sni(std::span<const std::uint8_t> payload) {
-    if (!looks_like_tls_record(payload) || payload[0] != 0x16U) {
+bool has_available_range(std::span<const std::uint8_t> bytes, const std::size_t offset, const std::size_t length) {
+    return offset <= bytes.size() && length <= (bytes.size() - offset);
+}
+
+std::optional<std::string> extract_server_name_from_tls_extension_body(std::span<const std::uint8_t> extension_body) {
+    if (!has_available_range(extension_body, 0U, 2U)) {
+        return std::nullopt;
+    }
+
+    const auto server_name_list_length = static_cast<std::size_t>(read_be16(extension_body, 0U));
+    if (!has_available_range(extension_body, 2U, server_name_list_length)) {
+        return std::nullopt;
+    }
+
+    const auto server_name_list_end = 2U + server_name_list_length;
+    std::size_t name_offset = 2U;
+    while (name_offset < server_name_list_end) {
+        if (name_offset + 3U > server_name_list_end) {
+            return std::nullopt;
+        }
+
+        const auto name_type = extension_body[name_offset];
+        const auto name_length = static_cast<std::size_t>(read_be16(extension_body, name_offset + 1U));
+        name_offset += 3U;
+        if (name_length > (server_name_list_end - name_offset)) {
+            return std::nullopt;
+        }
+
+        if (name_type == 0U) {
+            const auto server_name = payload_as_text(extension_body.subspan(name_offset, name_length));
+            if (is_plausible_service_name(server_name)) {
+                return std::string(server_name);
+            }
+            return std::nullopt;
+        }
+
+        name_offset += name_length;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> extract_tls_sni_from_client_hello_prefix(std::span<const std::uint8_t> payload) {
+    if (!looks_like_tls_record_prefix(payload) || payload[0] != 0x16U) {
         return std::nullopt;
     }
 
     const auto record_length = static_cast<std::size_t>(read_be16(payload, 3U));
-    const auto record = payload.subspan(kTlsRecordHeaderSize, record_length);
-    if (record.size() < 4U || record[0] != 0x01U) {
+    if (!has_available_range(payload, kTlsRecordHeaderSize, kTlsHandshakeHeaderSize)) {
         return std::nullopt;
     }
 
-    const auto handshake_length = static_cast<std::size_t>(read_be24(record, 1U));
-    if (record.size() < 4U + handshake_length) {
+    auto record_prefix = payload.subspan(kTlsRecordHeaderSize);
+    if (record_prefix.size() > record_length) {
+        record_prefix = record_prefix.first(record_length);
+    }
+    if (!has_available_range(record_prefix, 0U, kTlsHandshakeHeaderSize)) {
+        return std::nullopt;
+    }
+    if (record_prefix[0] != 0x01U) {
         return std::nullopt;
     }
 
-    auto body = record.subspan(4U, handshake_length);
+    const auto handshake_length = static_cast<std::size_t>(read_be24(record_prefix, 1U));
+    if (handshake_length == 0U) {
+        return std::nullopt;
+    }
+
+    auto body = record_prefix.subspan(kTlsHandshakeHeaderSize);
+    if (body.size() > handshake_length) {
+        body = body.first(handshake_length);
+    }
     std::size_t offset = 0U;
-    if (body.size() < 34U) {
+    if (!has_available_range(body, offset, kTlsClientHelloFixedFieldsSize + 1U)) {
         return std::nullopt;
     }
 
-    offset += 2U;
-    offset += 32U;
+    offset += kTlsClientHelloFixedFieldsSize;
 
     const auto session_id_length = static_cast<std::size_t>(body[offset]);
     ++offset;
-    if (body.size() < offset + session_id_length + 2U) {
+    if (!has_available_range(body, offset, session_id_length)) {
         return std::nullopt;
     }
     offset += session_id_length;
 
+    if (!has_available_range(body, offset, 2U)) {
+        return std::nullopt;
+    }
     const auto cipher_suites_length = static_cast<std::size_t>(read_be16(body, offset));
     offset += 2U;
-    if (cipher_suites_length == 0U || body.size() < offset + cipher_suites_length + 1U) {
+    if (cipher_suites_length == 0U || !has_available_range(body, offset, cipher_suites_length)) {
         return std::nullopt;
     }
     offset += cipher_suites_length;
 
+    if (!has_available_range(body, offset, 1U)) {
+        return std::nullopt;
+    }
     const auto compression_methods_length = static_cast<std::size_t>(body[offset]);
     ++offset;
-    if (body.size() < offset + compression_methods_length + 2U) {
+    if (!has_available_range(body, offset, compression_methods_length)) {
         return std::nullopt;
     }
     offset += compression_methods_length;
 
+    if (!has_available_range(body, offset, 2U)) {
+        return std::nullopt;
+    }
     const auto extensions_length = static_cast<std::size_t>(read_be16(body, offset));
     offset += 2U;
-    if (body.size() < offset + extensions_length) {
+    const auto declared_extensions_end = offset + extensions_length;
+    if (declared_extensions_end < offset) {
         return std::nullopt;
     }
 
-    const auto extensions_end = offset + extensions_length;
-    while (offset + 4U <= extensions_end) {
+    while (offset < declared_extensions_end) {
+        if (!has_available_range(body, offset, 4U)) {
+            return std::nullopt;
+        }
+
         const auto extension_type = read_be16(body, offset);
         const auto extension_length = static_cast<std::size_t>(read_be16(body, offset + 2U));
         offset += 4U;
-        if (offset + extension_length > extensions_end) {
+        if (extension_length > (declared_extensions_end - offset) || !has_available_range(body, offset, extension_length)) {
             return std::nullopt;
         }
 
         if (extension_type == 0x0000U) {
-            auto server_name_extension = body.subspan(offset, extension_length);
-            if (server_name_extension.size() < 2U) {
-                return std::nullopt;
-            }
-
-            const auto server_name_list_length = static_cast<std::size_t>(read_be16(server_name_extension, 0U));
-            if (server_name_extension.size() < 2U + server_name_list_length) {
-                return std::nullopt;
-            }
-
-            std::size_t name_offset = 2U;
-            while (name_offset + 3U <= 2U + server_name_list_length) {
-                const auto name_type = server_name_extension[name_offset];
-                const auto name_length = static_cast<std::size_t>(read_be16(server_name_extension, name_offset + 1U));
-                name_offset += 3U;
-                if (name_offset + name_length > 2U + server_name_list_length) {
-                    return std::nullopt;
-                }
-
-                if (name_type == 0U) {
-                    const auto server_name = payload_as_text(server_name_extension.subspan(name_offset, name_length));
-                    if (is_plausible_service_name(server_name)) {
-                        return std::string(server_name);
-                    }
-                    return std::nullopt;
-                }
-
-                name_offset += name_length;
-            }
+            return extract_server_name_from_tls_extension_body(body.subspan(offset, extension_length));
         }
 
         offset += extension_length;
@@ -808,7 +850,7 @@ FlowHintUpdate detect_imap_hint(std::span<const std::uint8_t> payload,
 }
 
 FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
-    if (!looks_like_tls_record(payload)) {
+    if (!looks_like_tls_record_prefix(payload)) {
         return {};
     }
 
@@ -817,7 +859,7 @@ FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
         .tls_version = classify_tls_version(read_be16(payload, 1U)),
     };
 
-    const auto sni = extract_tls_sni(payload);
+    const auto sni = extract_tls_sni_from_client_hello_prefix(payload);
     if (sni.has_value()) {
         hint.service_hint = *sni;
     }

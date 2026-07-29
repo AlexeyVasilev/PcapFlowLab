@@ -102,7 +102,8 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint64_t packet_index,
-    std::uint64_t flow_packet_index
+    std::uint64_t flow_packet_index,
+    std::uint64_t loaded_packet_window_count
 );
 char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,

@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -8,6 +12,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/SessionFormatting.h"
 #include "core/services/PacketDetailsService.h"
+#include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
 
@@ -35,6 +40,326 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
     const auto packet = session.find_packet(packet_index);
     PFL_EXPECT(packet.has_value());
     return *packet;
+}
+
+std::string_view trim_ascii(std::string_view text) {
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r')) {
+        text.remove_prefix(1U);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r')) {
+        text.remove_suffix(1U);
+    }
+    return text;
+}
+
+std::optional<std::string_view> find_protocol_detail_value(
+    const std::string_view protocol_text,
+    const std::string_view label_with_colon
+) {
+    std::size_t line_start = 0U;
+    while (line_start <= protocol_text.size()) {
+        const auto line_end = protocol_text.find('\n', line_start);
+        const auto raw_line = protocol_text.substr(
+            line_start,
+            line_end == std::string_view::npos ? protocol_text.size() - line_start : line_end - line_start
+        );
+        const auto line = trim_ascii(raw_line);
+        if (line.starts_with(label_with_colon)) {
+            return trim_ascii(line.substr(label_with_colon.size()));
+        }
+        if (line_end == std::string_view::npos) {
+            break;
+        }
+        line_start = line_end + 1U;
+    }
+    return std::nullopt;
+}
+
+std::size_t count_hex_byte_tokens(const std::string_view value) {
+    std::size_t count = 0U;
+    std::size_t offset = 0U;
+    while (offset < value.size()) {
+        while (offset < value.size() && value[offset] == ' ') {
+            ++offset;
+        }
+        if (offset >= value.size()) {
+            break;
+        }
+        const auto next_space = value.find(' ', offset);
+        ++count;
+        if (next_space == std::string_view::npos) {
+            break;
+        }
+        offset = next_space + 1U;
+    }
+    return count;
+}
+
+std::optional<std::size_t> parse_total_count_suffix(const std::string_view value) {
+    const auto total_pos = value.rfind(" total)");
+    if (total_pos == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto open_pos = value.rfind('(', total_pos);
+    if (open_pos == std::string_view::npos || open_pos + 1U >= total_pos) {
+        return std::nullopt;
+    }
+
+    std::size_t parsed = 0U;
+    for (std::size_t index = open_pos + 1U; index < total_pos; ++index) {
+        const auto character = value[index];
+        if (character < '0' || character > '9') {
+            return std::nullopt;
+        }
+        parsed = (parsed * 10U) + static_cast<std::size_t>(character - '0');
+    }
+    return parsed;
+}
+
+std::uint16_t read_be16_at(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
+                                      static_cast<std::uint16_t>(bytes[offset + 1U]));
+}
+
+std::uint32_t read_be24_at(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return (static_cast<std::uint32_t>(bytes[offset]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 2U]);
+}
+
+struct ParsedTlsRecord {
+    std::uint8_t content_type {0U};
+    std::uint16_t legacy_version {0U};
+    std::size_t record_length {0U};
+    std::size_t total_bytes {0U};
+    std::span<const std::uint8_t> body {};
+};
+
+struct ParsedTlsPayload {
+    std::vector<ParsedTlsRecord> records {};
+    std::size_t trailing_bytes {0U};
+};
+
+ParsedTlsPayload parse_tls_payload(std::span<const std::uint8_t> payload) {
+    ParsedTlsPayload parsed {};
+    std::size_t offset = 0U;
+    while (offset + 5U <= payload.size()) {
+        const auto record_length = static_cast<std::size_t>(read_be16_at(payload, offset + 3U));
+        const auto total_bytes = 5U + record_length;
+        if (offset + total_bytes > payload.size()) {
+            break;
+        }
+
+        parsed.records.push_back(ParsedTlsRecord {
+            .content_type = payload[offset],
+            .legacy_version = read_be16_at(payload, offset + 1U),
+            .record_length = record_length,
+            .total_bytes = total_bytes,
+            .body = payload.subspan(offset + 5U, record_length),
+        });
+        offset += total_bytes;
+    }
+    parsed.trailing_bytes = payload.size() - offset;
+    return parsed;
+}
+
+struct ParsedTlsClientHelloFacts {
+    std::uint8_t handshake_type {0U};
+    std::size_t handshake_length {0U};
+    std::uint16_t handshake_legacy_version {0U};
+    std::size_t session_id_length {0U};
+    std::size_t cipher_suite_count {0U};
+    std::size_t compression_method_count {0U};
+    std::size_t extension_count {0U};
+    std::optional<std::string> sni {};
+    std::vector<std::string> alpn_protocols {};
+    std::vector<std::uint16_t> supported_versions {};
+};
+
+std::optional<ParsedTlsClientHelloFacts> parse_tls_client_hello_facts(std::span<const std::uint8_t> record_body) {
+    if (record_body.size() < 4U + 34U) {
+        return std::nullopt;
+    }
+
+    ParsedTlsClientHelloFacts facts {};
+    facts.handshake_type = record_body[0];
+    facts.handshake_length = read_be24_at(record_body, 1U);
+    if (record_body.size() < 4U + facts.handshake_length) {
+        return std::nullopt;
+    }
+
+    const auto handshake_body = record_body.subspan(4U, facts.handshake_length);
+    facts.handshake_legacy_version = read_be16_at(handshake_body, 0U);
+
+    std::size_t offset = 2U + 32U;
+    facts.session_id_length = static_cast<std::size_t>(handshake_body[offset]);
+    ++offset;
+    if (offset + facts.session_id_length + 2U > handshake_body.size()) {
+        return std::nullopt;
+    }
+    offset += facts.session_id_length;
+
+    const auto cipher_suites_length = static_cast<std::size_t>(read_be16_at(handshake_body, offset));
+    offset += 2U;
+    if ((cipher_suites_length % 2U) != 0U || offset + cipher_suites_length + 1U > handshake_body.size()) {
+        return std::nullopt;
+    }
+    facts.cipher_suite_count = cipher_suites_length / 2U;
+    offset += cipher_suites_length;
+
+    facts.compression_method_count = static_cast<std::size_t>(handshake_body[offset]);
+    ++offset;
+    if (offset + facts.compression_method_count > handshake_body.size()) {
+        return std::nullopt;
+    }
+    offset += facts.compression_method_count;
+
+    if (offset == handshake_body.size()) {
+        return facts;
+    }
+    if (offset + 2U > handshake_body.size()) {
+        return std::nullopt;
+    }
+
+    const auto extensions_length = static_cast<std::size_t>(read_be16_at(handshake_body, offset));
+    offset += 2U;
+    if (offset + extensions_length > handshake_body.size()) {
+        return std::nullopt;
+    }
+
+    const auto extensions_end = offset + extensions_length;
+    while (offset + 4U <= extensions_end) {
+        const auto extension_type = read_be16_at(handshake_body, offset);
+        const auto extension_length = static_cast<std::size_t>(read_be16_at(handshake_body, offset + 2U));
+        offset += 4U;
+        if (offset + extension_length > extensions_end) {
+            return std::nullopt;
+        }
+
+        ++facts.extension_count;
+        const auto extension_bytes = handshake_body.subspan(offset, extension_length);
+
+        if (extension_type == 0x0000U && extension_bytes.size() >= 2U) {
+            const auto server_name_list_length = static_cast<std::size_t>(read_be16_at(extension_bytes, 0U));
+            if (extension_bytes.size() >= 2U + server_name_list_length) {
+                std::size_t name_offset = 2U;
+                while (name_offset + 3U <= 2U + server_name_list_length) {
+                    const auto name_type = extension_bytes[name_offset];
+                    const auto name_length = static_cast<std::size_t>(read_be16_at(extension_bytes, name_offset + 1U));
+                    name_offset += 3U;
+                    if (name_offset + name_length > 2U + server_name_list_length) {
+                        break;
+                    }
+                    if (name_type == 0U) {
+                        facts.sni = std::string(
+                            reinterpret_cast<const char*>(extension_bytes.data() + static_cast<std::ptrdiff_t>(name_offset)),
+                            name_length
+                        );
+                        break;
+                    }
+                    name_offset += name_length;
+                }
+            }
+        } else if (extension_type == 0x0010U && extension_bytes.size() >= 2U) {
+            const auto alpn_length = static_cast<std::size_t>(read_be16_at(extension_bytes, 0U));
+            if (extension_bytes.size() >= 2U + alpn_length) {
+                std::size_t protocol_offset = 2U;
+                while (protocol_offset < 2U + alpn_length) {
+                    const auto protocol_length = static_cast<std::size_t>(extension_bytes[protocol_offset]);
+                    ++protocol_offset;
+                    if (protocol_offset + protocol_length > 2U + alpn_length) {
+                        break;
+                    }
+                    facts.alpn_protocols.emplace_back(
+                        reinterpret_cast<const char*>(extension_bytes.data() + static_cast<std::ptrdiff_t>(protocol_offset)),
+                        protocol_length
+                    );
+                    protocol_offset += protocol_length;
+                }
+            }
+        } else if (extension_type == 0x002BU && !extension_bytes.empty()) {
+            const auto versions_length = static_cast<std::size_t>(extension_bytes[0]);
+            if (extension_bytes.size() >= 1U + versions_length) {
+                for (std::size_t cursor = 1U; cursor + 1U < 1U + versions_length; cursor += 2U) {
+                    facts.supported_versions.push_back(read_be16_at(extension_bytes, cursor));
+                }
+            }
+        }
+
+        offset += extension_length;
+    }
+
+    return facts;
+}
+
+struct ParsedTlsServerHelloFacts {
+    std::uint8_t handshake_type {0U};
+    std::size_t handshake_length {0U};
+    std::uint16_t handshake_legacy_version {0U};
+    std::size_t session_id_length {0U};
+    std::uint16_t cipher_suite {0U};
+    std::uint8_t compression_method {0U};
+    std::size_t extension_count {0U};
+    std::vector<std::uint16_t> extension_types {};
+    std::uint16_t selected_tls_version {0U};
+};
+
+std::optional<ParsedTlsServerHelloFacts> parse_tls_server_hello_facts(std::span<const std::uint8_t> record_body) {
+    if (record_body.size() < 4U + 38U) {
+        return std::nullopt;
+    }
+
+    ParsedTlsServerHelloFacts facts {};
+    facts.handshake_type = record_body[0];
+    facts.handshake_length = read_be24_at(record_body, 1U);
+    if (record_body.size() < 4U + facts.handshake_length) {
+        return std::nullopt;
+    }
+
+    const auto handshake_body = record_body.subspan(4U, facts.handshake_length);
+    facts.handshake_legacy_version = read_be16_at(handshake_body, 0U);
+    facts.selected_tls_version = facts.handshake_legacy_version;
+
+    std::size_t offset = 2U + 32U;
+    facts.session_id_length = static_cast<std::size_t>(handshake_body[offset]);
+    ++offset;
+    if (offset + facts.session_id_length + 3U > handshake_body.size()) {
+        return std::nullopt;
+    }
+    offset += facts.session_id_length;
+
+    facts.cipher_suite = read_be16_at(handshake_body, offset);
+    offset += 2U;
+    facts.compression_method = handshake_body[offset];
+    ++offset;
+
+    if (offset + 2U > handshake_body.size()) {
+        return facts;
+    }
+
+    const auto extensions_length = static_cast<std::size_t>(read_be16_at(handshake_body, offset));
+    offset += 2U;
+    if (offset + extensions_length > handshake_body.size()) {
+        return std::nullopt;
+    }
+
+    const auto extensions_end = offset + extensions_length;
+    while (offset + 4U <= extensions_end) {
+        const auto extension_type = read_be16_at(handshake_body, offset);
+        const auto extension_length = static_cast<std::size_t>(read_be16_at(handshake_body, offset + 2U));
+        offset += 4U;
+        if (offset + extension_length > extensions_end) {
+            return std::nullopt;
+        }
+        ++facts.extension_count;
+        facts.extension_types.push_back(extension_type);
+        if (extension_type == 0x002BU && extension_length >= 2U) {
+            facts.selected_tls_version = read_be16_at(handshake_body, offset);
+        }
+        offset += extension_length;
+    }
+
+    return facts;
 }
 
 std::vector<std::uint8_t> make_tls_client_hello_payload() {
@@ -230,38 +555,282 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
+        PFL_EXPECT(packet.payload_length == 517U);
+        const auto packet_bytes = session.read_packet_data(packet);
+        PacketPayloadService payload_service {};
+        const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        PFL_EXPECT(payload.size() == 517U);
+        const auto parsed_payload = parse_tls_payload(payload);
+        PFL_EXPECT(parsed_payload.records.size() == 1U);
+        PFL_EXPECT(parsed_payload.trailing_bytes == 0U);
+        PFL_EXPECT(parsed_payload.records[0].content_type == 22U);
+        PFL_EXPECT(parsed_payload.records[0].legacy_version == 0x0301U);
+        PFL_EXPECT(parsed_payload.records[0].record_length == 512U);
+        PFL_EXPECT(parsed_payload.records[0].total_bytes == 517U);
+        const auto parsed_client_hello = parse_tls_client_hello_facts(parsed_payload.records[0].body);
+        PFL_REQUIRE(parsed_client_hello.has_value());
+        PFL_EXPECT(parsed_client_hello->handshake_type == 1U);
+        PFL_EXPECT(parsed_client_hello->handshake_length == 508U);
+        PFL_EXPECT(parsed_client_hello->handshake_legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_client_hello->session_id_length == 32U);
+        PFL_EXPECT(parsed_client_hello->cipher_suite_count == 16U);
+        PFL_EXPECT(parsed_client_hello->compression_method_count == 1U);
+        PFL_EXPECT(parsed_client_hello->extension_count == 18U);
+        PFL_REQUIRE(parsed_client_hello->sni.has_value());
+        PFL_EXPECT(*parsed_client_hello->sni == "auth.split.io");
+        PFL_EXPECT(std::find(parsed_client_hello->alpn_protocols.begin(), parsed_client_hello->alpn_protocols.end(), "h2") != parsed_client_hello->alpn_protocols.end());
+        PFL_EXPECT(std::find(parsed_client_hello->alpn_protocols.begin(), parsed_client_hello->alpn_protocols.end(), "http/1.1") != parsed_client_hello->alpn_protocols.end());
+        PFL_EXPECT(std::find(parsed_client_hello->supported_versions.begin(), parsed_client_hello->supported_versions.end(), 0x0304U) != parsed_client_hello->supported_versions.end());
+        PFL_EXPECT(std::find(parsed_client_hello->supported_versions.begin(), parsed_client_hello->supported_versions.end(), 0x0303U) != parsed_client_hello->supported_versions.end());
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("TLS") != std::string::npos);
-        PFL_EXPECT(text.find("Handshake Type: ClientHello") != std::string::npos);
-        PFL_EXPECT(text.find("Cipher Suites:") != std::string::npos);
-        PFL_EXPECT(text.find("SNI: auth.split.io") != std::string::npos);
+        const auto record_type = find_protocol_detail_value(text, "Record Type:");
+        const auto record_version = find_protocol_detail_value(text, "Record Version:");
+        const auto record_length = find_protocol_detail_value(text, "Record Length:");
+        const auto handshake_type = find_protocol_detail_value(text, "Handshake Type:");
+        const auto handshake_length = find_protocol_detail_value(text, "Handshake Length:");
+        const auto handshake_version = find_protocol_detail_value(text, "Handshake Version:");
+        const auto session_id = find_protocol_detail_value(text, "Session ID:");
+        const auto cipher_suites = find_protocol_detail_value(text, "Cipher Suites:");
+        const auto extensions = find_protocol_detail_value(text, "Extensions:");
+        const auto sni = find_protocol_detail_value(text, "SNI:");
+        const auto alpn = find_protocol_detail_value(text, "ALPN:");
+        const auto supported_versions = find_protocol_detail_value(text, "Supported Versions:");
+        PFL_REQUIRE(record_type.has_value());
+        PFL_REQUIRE(record_version.has_value());
+        PFL_REQUIRE(record_length.has_value());
+        PFL_REQUIRE(handshake_type.has_value());
+        PFL_REQUIRE(handshake_length.has_value());
+        PFL_REQUIRE(handshake_version.has_value());
+        PFL_REQUIRE(session_id.has_value());
+        PFL_REQUIRE(cipher_suites.has_value());
+        PFL_REQUIRE(extensions.has_value());
+        PFL_REQUIRE(sni.has_value());
+        PFL_REQUIRE(alpn.has_value());
+        PFL_REQUIRE(supported_versions.has_value());
+        PFL_EXPECT(*record_type == "Handshake");
+        PFL_EXPECT(*record_version == "TLS 1.0 (0x0301)");
+        PFL_EXPECT(*record_length == "512");
+        PFL_EXPECT(*handshake_type == "ClientHello");
+        PFL_EXPECT(*handshake_length == "508");
+        PFL_EXPECT(*handshake_version == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(count_hex_byte_tokens(*session_id) == 32U);
+        const auto cipher_suite_total = parse_total_count_suffix(*cipher_suites);
+        const auto extension_total = parse_total_count_suffix(*extensions);
+        PFL_REQUIRE(cipher_suite_total.has_value());
+        PFL_REQUIRE(extension_total.has_value());
+        PFL_EXPECT(*cipher_suite_total == 16U);
+        PFL_EXPECT(*extension_total == 18U);
+        PFL_EXPECT(*sni == "auth.split.io");
+        PFL_EXPECT(alpn->find("h2") != std::string_view::npos);
+        PFL_EXPECT(alpn->find("http/1.1") != std::string_view::npos);
+        PFL_EXPECT(supported_versions->find("TLS 1.3 (0x0304)") != std::string_view::npos);
+        PFL_EXPECT(supported_versions->find("TLS 1.2 (0x0303)") != std::string_view::npos);
     }
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_client_hello_5.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
+        PFL_EXPECT(packet.payload_length == 517U);
+        const auto packet_bytes = session.read_packet_data(packet);
+        PacketPayloadService payload_service {};
+        const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        PFL_EXPECT(payload.size() == 517U);
+        const auto parsed_payload = parse_tls_payload(payload);
+        PFL_EXPECT(parsed_payload.records.size() == 1U);
+        PFL_EXPECT(parsed_payload.trailing_bytes == 0U);
+        PFL_EXPECT(parsed_payload.records[0].content_type == 22U);
+        PFL_EXPECT(parsed_payload.records[0].legacy_version == 0x0301U);
+        PFL_EXPECT(parsed_payload.records[0].record_length == 512U);
+        PFL_EXPECT(parsed_payload.records[0].total_bytes == 517U);
+        const auto parsed_client_hello = parse_tls_client_hello_facts(parsed_payload.records[0].body);
+        PFL_REQUIRE(parsed_client_hello.has_value());
+        PFL_EXPECT(parsed_client_hello->handshake_type == 1U);
+        PFL_EXPECT(parsed_client_hello->handshake_length == 508U);
+        PFL_EXPECT(parsed_client_hello->handshake_legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_client_hello->session_id_length == 32U);
+        PFL_EXPECT(parsed_client_hello->cipher_suite_count == 21U);
+        PFL_EXPECT(parsed_client_hello->compression_method_count == 1U);
+        PFL_EXPECT(parsed_client_hello->extension_count == 16U);
+        PFL_REQUIRE(parsed_client_hello->sni.has_value());
+        PFL_EXPECT(*parsed_client_hello->sni == "p101-fmf.icloud.com");
+        PFL_EXPECT(std::find(parsed_client_hello->alpn_protocols.begin(), parsed_client_hello->alpn_protocols.end(), "h2") != parsed_client_hello->alpn_protocols.end());
+        PFL_EXPECT(std::find(parsed_client_hello->alpn_protocols.begin(), parsed_client_hello->alpn_protocols.end(), "http/1.1") != parsed_client_hello->alpn_protocols.end());
+        PFL_EXPECT(std::find(parsed_client_hello->supported_versions.begin(), parsed_client_hello->supported_versions.end(), 0x0304U) != parsed_client_hello->supported_versions.end());
+        PFL_EXPECT(std::find(parsed_client_hello->supported_versions.begin(), parsed_client_hello->supported_versions.end(), 0x0303U) != parsed_client_hello->supported_versions.end());
+        PFL_EXPECT(std::find(parsed_client_hello->supported_versions.begin(), parsed_client_hello->supported_versions.end(), 0x0302U) != parsed_client_hello->supported_versions.end());
+        PFL_EXPECT(std::find(parsed_client_hello->supported_versions.begin(), parsed_client_hello->supported_versions.end(), 0x0301U) != parsed_client_hello->supported_versions.end());
         const auto text = session.read_packet_protocol_details_text(packet);
-        PFL_EXPECT(text.find("TLS") != std::string::npos);
-        PFL_EXPECT(text.find("Record Type: Handshake") != std::string::npos);
-        PFL_EXPECT(text.find("Record Version:") != std::string::npos);
-        PFL_EXPECT(text.find("Handshake Type: ClientHello") != std::string::npos);
-        PFL_EXPECT(text.find("Handshake Version:") != std::string::npos);
-        PFL_EXPECT(text.find("Cipher Suites:") != std::string::npos);
-        PFL_EXPECT(text.find("Extensions:") != std::string::npos);
-        PFL_EXPECT(text.find("SNI: auth.split.io") != std::string::npos);
+        const auto record_type = find_protocol_detail_value(text, "Record Type:");
+        const auto record_version = find_protocol_detail_value(text, "Record Version:");
+        const auto record_length = find_protocol_detail_value(text, "Record Length:");
+        const auto handshake_type = find_protocol_detail_value(text, "Handshake Type:");
+        const auto handshake_length = find_protocol_detail_value(text, "Handshake Length:");
+        const auto handshake_version = find_protocol_detail_value(text, "Handshake Version:");
+        const auto session_id = find_protocol_detail_value(text, "Session ID:");
+        const auto cipher_suites = find_protocol_detail_value(text, "Cipher Suites:");
+        const auto extensions = find_protocol_detail_value(text, "Extensions:");
+        const auto sni = find_protocol_detail_value(text, "SNI:");
+        const auto alpn = find_protocol_detail_value(text, "ALPN:");
+        const auto supported_versions = find_protocol_detail_value(text, "Supported Versions:");
+        PFL_REQUIRE(record_type.has_value());
+        PFL_REQUIRE(record_version.has_value());
+        PFL_REQUIRE(record_length.has_value());
+        PFL_REQUIRE(handshake_type.has_value());
+        PFL_REQUIRE(handshake_length.has_value());
+        PFL_REQUIRE(handshake_version.has_value());
+        PFL_REQUIRE(session_id.has_value());
+        PFL_REQUIRE(cipher_suites.has_value());
+        PFL_REQUIRE(extensions.has_value());
+        PFL_REQUIRE(sni.has_value());
+        PFL_REQUIRE(alpn.has_value());
+        PFL_REQUIRE(supported_versions.has_value());
+        PFL_EXPECT(*record_type == "Handshake");
+        PFL_EXPECT(*record_version == "TLS 1.0 (0x0301)");
+        PFL_EXPECT(*record_length == "512");
+        PFL_EXPECT(*handshake_type == "ClientHello");
+        PFL_EXPECT(*handshake_length == "508");
+        PFL_EXPECT(*handshake_version == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(count_hex_byte_tokens(*session_id) == 32U);
+        const auto cipher_suite_total = parse_total_count_suffix(*cipher_suites);
+        const auto extension_total = parse_total_count_suffix(*extensions);
+        PFL_REQUIRE(cipher_suite_total.has_value());
+        PFL_REQUIRE(extension_total.has_value());
+        PFL_EXPECT(*cipher_suite_total == 21U);
+        PFL_EXPECT(*extension_total == 16U);
+        PFL_EXPECT(*sni == "p101-fmf.icloud.com");
+        PFL_EXPECT(alpn->find("h2") != std::string_view::npos);
+        PFL_EXPECT(alpn->find("http/1.1") != std::string_view::npos);
+        PFL_EXPECT(supported_versions->find("TLS 1.3 (0x0304)") != std::string_view::npos);
+        PFL_EXPECT(supported_versions->find("TLS 1.2 (0x0303)") != std::string_view::npos);
+        PFL_EXPECT(supported_versions->find("TLS 1.1 (0x0302)") != std::string_view::npos);
+        PFL_EXPECT(supported_versions->find("TLS 1.0 (0x0301)") != std::string_view::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_2_server_hello_4.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0);
+        PFL_EXPECT(packet.payload_length == 96U);
+        const auto packet_bytes = session.read_packet_data(packet);
+        PacketPayloadService payload_service {};
+        const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        PFL_EXPECT(payload.size() == 96U);
+        const auto parsed_payload = parse_tls_payload(payload);
+        PFL_EXPECT(parsed_payload.records.size() == 1U);
+        PFL_EXPECT(parsed_payload.trailing_bytes == 0U);
+        PFL_EXPECT(parsed_payload.records[0].content_type == 22U);
+        PFL_EXPECT(parsed_payload.records[0].legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_payload.records[0].record_length == 91U);
+        PFL_EXPECT(parsed_payload.records[0].total_bytes == 96U);
+        const auto parsed_server_hello = parse_tls_server_hello_facts(parsed_payload.records[0].body);
+        PFL_REQUIRE(parsed_server_hello.has_value());
+        PFL_EXPECT(parsed_server_hello->handshake_type == 2U);
+        PFL_EXPECT(parsed_server_hello->handshake_length == 87U);
+        PFL_EXPECT(parsed_server_hello->handshake_legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_server_hello->selected_tls_version == 0x0303U);
+        PFL_EXPECT(parsed_server_hello->session_id_length == 32U);
+        PFL_EXPECT(parsed_server_hello->cipher_suite == 0xC02FU);
+        PFL_EXPECT(parsed_server_hello->compression_method == 0U);
+        PFL_EXPECT(parsed_server_hello->extension_count == 3U);
+        PFL_EXPECT(std::find(parsed_server_hello->extension_types.begin(), parsed_server_hello->extension_types.end(), 0x000BU) != parsed_server_hello->extension_types.end());
+        PFL_EXPECT(std::find(parsed_server_hello->extension_types.begin(), parsed_server_hello->extension_types.end(), 0xFF01U) != parsed_server_hello->extension_types.end());
+        PFL_EXPECT(std::find(parsed_server_hello->extension_types.begin(), parsed_server_hello->extension_types.end(), 0x0017U) != parsed_server_hello->extension_types.end());
+        const auto text = session.read_packet_protocol_details_text(packet);
+        const auto record_type = find_protocol_detail_value(text, "Record Type:");
+        const auto record_version = find_protocol_detail_value(text, "Record Version:");
+        const auto record_length = find_protocol_detail_value(text, "Record Length:");
+        const auto handshake_type = find_protocol_detail_value(text, "Handshake Type:");
+        const auto handshake_length = find_protocol_detail_value(text, "Handshake Length:");
+        const auto selected_tls_version = find_protocol_detail_value(text, "Selected TLS Version:");
+        const auto selected_cipher_suite = find_protocol_detail_value(text, "Selected Cipher Suite:");
+        const auto session_id = find_protocol_detail_value(text, "Session ID:");
+        const auto extensions = find_protocol_detail_value(text, "Extensions:");
+        PFL_REQUIRE(record_type.has_value());
+        PFL_REQUIRE(record_version.has_value());
+        PFL_REQUIRE(record_length.has_value());
+        PFL_REQUIRE(handshake_type.has_value());
+        PFL_REQUIRE(handshake_length.has_value());
+        PFL_REQUIRE(selected_tls_version.has_value());
+        PFL_REQUIRE(selected_cipher_suite.has_value());
+        PFL_REQUIRE(session_id.has_value());
+        PFL_REQUIRE(extensions.has_value());
+        PFL_EXPECT(*record_type == "Handshake");
+        PFL_EXPECT(*record_version == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(*record_length == "91");
+        PFL_EXPECT(*handshake_type == "ServerHello");
+        PFL_EXPECT(*handshake_length == "87");
+        PFL_EXPECT(*selected_tls_version == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(*selected_cipher_suite == "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)");
+        PFL_EXPECT(count_hex_byte_tokens(*session_id) == 32U);
+        PFL_EXPECT(extensions->find("ec_point_formats") != std::string_view::npos);
+        PFL_EXPECT(extensions->find("renegotiation_info") != std::string_view::npos);
+        PFL_EXPECT(extensions->find("extended_master_secret") != std::string_view::npos);
     }
 
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_server_hello_6.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
+        PFL_EXPECT(packet.payload_length == 1400U);
+        const auto packet_bytes = session.read_packet_data(packet);
+        PacketPayloadService payload_service {};
+        const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        PFL_EXPECT(payload.size() == 1400U);
+        const auto parsed_payload = parse_tls_payload(payload);
+        PFL_EXPECT(parsed_payload.records.size() == 2U);
+        PFL_EXPECT(parsed_payload.trailing_bytes == 179U);
+        PFL_EXPECT(parsed_payload.records[0].content_type == 22U);
+        PFL_EXPECT(parsed_payload.records[0].legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_payload.records[0].record_length == 1210U);
+        PFL_EXPECT(parsed_payload.records[0].total_bytes == 1215U);
+        PFL_EXPECT(parsed_payload.records[1].content_type == 20U);
+        PFL_EXPECT(parsed_payload.records[1].legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_payload.records[1].record_length == 1U);
+        PFL_EXPECT(parsed_payload.records[1].total_bytes == 6U);
+        const auto parsed_server_hello = parse_tls_server_hello_facts(parsed_payload.records[0].body);
+        PFL_REQUIRE(parsed_server_hello.has_value());
+        PFL_EXPECT(parsed_server_hello->handshake_type == 2U);
+        PFL_EXPECT(parsed_server_hello->handshake_length == 1206U);
+        PFL_EXPECT(parsed_server_hello->handshake_legacy_version == 0x0303U);
+        PFL_EXPECT(parsed_server_hello->selected_tls_version == 0x0304U);
+        PFL_EXPECT(parsed_server_hello->session_id_length == 32U);
+        PFL_EXPECT(parsed_server_hello->cipher_suite == 0x1301U);
+        PFL_EXPECT(parsed_server_hello->compression_method == 0U);
+        PFL_EXPECT(parsed_server_hello->extension_count == 2U);
+        PFL_EXPECT(std::find(parsed_server_hello->extension_types.begin(), parsed_server_hello->extension_types.end(), 0x0033U) != parsed_server_hello->extension_types.end());
+        PFL_EXPECT(std::find(parsed_server_hello->extension_types.begin(), parsed_server_hello->extension_types.end(), 0x002BU) != parsed_server_hello->extension_types.end());
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("TLS") != std::string::npos);
-        PFL_EXPECT(text.find("Handshake Type: ServerHello") != std::string::npos);
-        PFL_EXPECT(text.find("Selected TLS Version:") != std::string::npos);
-        PFL_EXPECT(text.find("Selected Cipher Suite:") != std::string::npos);
-        PFL_EXPECT(text.find("Session ID:") != std::string::npos);
+        const auto record_type = find_protocol_detail_value(text, "Record Type:");
+        const auto record_version = find_protocol_detail_value(text, "Record Version:");
+        const auto record_length = find_protocol_detail_value(text, "Record Length:");
+        const auto handshake_type = find_protocol_detail_value(text, "Handshake Type:");
+        const auto handshake_length = find_protocol_detail_value(text, "Handshake Length:");
+        const auto selected_tls_version = find_protocol_detail_value(text, "Selected TLS Version:");
+        const auto selected_cipher_suite = find_protocol_detail_value(text, "Selected Cipher Suite:");
+        const auto session_id = find_protocol_detail_value(text, "Session ID:");
+        const auto extensions = find_protocol_detail_value(text, "Extensions:");
+        PFL_REQUIRE(record_type.has_value());
+        PFL_REQUIRE(record_version.has_value());
+        PFL_REQUIRE(record_length.has_value());
+        PFL_REQUIRE(handshake_type.has_value());
+        PFL_REQUIRE(handshake_length.has_value());
+        PFL_REQUIRE(selected_tls_version.has_value());
+        PFL_REQUIRE(selected_cipher_suite.has_value());
+        PFL_REQUIRE(session_id.has_value());
+        PFL_REQUIRE(extensions.has_value());
+        PFL_EXPECT(*record_type == "Handshake");
+        PFL_EXPECT(*record_version == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(*record_length == "1210");
+        PFL_EXPECT(*handshake_type == "ServerHello");
+        PFL_EXPECT(*handshake_length == "1206");
+        PFL_EXPECT(*selected_tls_version == "TLS 1.3 (0x0304)");
+        PFL_EXPECT(*selected_cipher_suite == "TLS_AES_128_GCM_SHA256 (0x1301)");
+        PFL_EXPECT(count_hex_byte_tokens(*session_id) == 32U);
+        PFL_EXPECT(extensions->find("key_share") != std::string_view::npos);
+        PFL_EXPECT(extensions->find("supported_versions") != std::string_view::npos);
     }
 
     {

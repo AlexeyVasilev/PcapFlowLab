@@ -557,6 +557,20 @@ std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
     return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
 }
 
+bool append_bounded_http_item(
+    HttpDirectionalStreamPresentation& presentation,
+    HttpStreamPresentationItem item,
+    std::size_t& logical_item_count,
+    const std::size_t skip_item_count,
+    const std::size_t max_item_count
+) {
+    if (logical_item_count >= skip_item_count && presentation.items.size() < max_item_count) {
+        presentation.items.push_back(std::move(item));
+    }
+    ++logical_item_count;
+    return presentation.items.size() < max_item_count;
+}
+
 }  // namespace
 
 std::string http_stream_label_from_protocol_text(const std::string_view protocol_text) {
@@ -590,7 +604,29 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     const Direction direction,
     const std::span<const PacketRef> direction_packets
 ) {
+    return build_http_stream_items_from_reassembly_bounded(
+        session,
+        flow_index,
+        direction,
+        direction_packets,
+        0U,
+        std::numeric_limits<std::size_t>::max()
+    );
+}
+
+HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounded(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const Direction direction,
+    const std::span<const PacketRef> direction_packets,
+    const std::size_t skip_item_count,
+    const std::size_t max_item_count
+) {
     HttpDirectionalStreamPresentation presentation {};
+    if (max_item_count == 0U) {
+        return presentation;
+    }
+
     constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
 
     const auto result = session.reassemble_flow_direction(
@@ -617,6 +653,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     std::size_t offset = 0U;
     std::size_t chunk_index = 0U;
     std::size_t chunk_offset = 0U;
+    std::size_t logical_item_count = 0U;
     bool emitted_any = false;
 
     while (offset < payload_bytes.size()) {
@@ -628,28 +665,48 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
 
             const auto trailing = payload_bytes.subspan(offset);
             if (!trailing.empty()) {
-                presentation.items.push_back(HttpStreamPresentationItem {
+                const auto should_continue = append_bounded_http_item(
+                    presentation,
+                    HttpStreamPresentationItem {
                     .label = "HTTP Payload (partial)",
                     .byte_count = trailing.size(),
                     .packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset),
+                    .stability = StreamMaterializationStability::window_incomplete,
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = limited_quality_http_protocol_text(),
-                });
+                    },
+                    logical_item_count,
+                    skip_item_count,
+                    max_item_count
+                );
+                if (!should_continue) {
+                    presentation.used_reassembly = true;
+                    break;
+                }
             }
             presentation.used_reassembly = true;
             break;
         }
 
         const auto block_bytes = payload_bytes.subspan(offset, parsed->size);
-        presentation.items.push_back(HttpStreamPresentationItem {
+        const auto should_continue = append_bounded_http_item(
+            presentation,
+            HttpStreamPresentationItem {
             .label = parsed->label,
             .byte_count = block_bytes.size(),
             .packet_indices = consume_reassembled_packet_indices(*chunks, block_bytes.size(), chunk_index, chunk_offset),
             .payload_hex_text = hex_dump_service.format(block_bytes),
             .protocol_text = parsed->protocol_text,
-        });
+            },
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
         emitted_any = true;
         offset += parsed->size;
+        if (!should_continue) {
+            break;
+        }
 
         if (offset < payload_text.size()) {
             const auto next_line_end = http_line_end(payload_text, offset);
@@ -657,13 +714,24 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
             if (!looks_like_http_request_line(next_line) && !looks_like_http_response_line(next_line)) {
                 const auto trailing = payload_bytes.subspan(offset);
                 if (!trailing.empty()) {
-                    presentation.items.push_back(HttpStreamPresentationItem {
+                    const auto should_continue_after_trailing = append_bounded_http_item(
+                        presentation,
+                        HttpStreamPresentationItem {
                         .label = "HTTP Payload (partial)",
                         .byte_count = trailing.size(),
                         .packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset),
+                        .stability = StreamMaterializationStability::window_incomplete,
                         .payload_hex_text = hex_dump_service.format(trailing),
                         .protocol_text = limited_quality_http_protocol_text(),
-                    });
+                        },
+                        logical_item_count,
+                        skip_item_count,
+                        max_item_count
+                    );
+                    if (!should_continue_after_trailing) {
+                        presentation.used_reassembly = true;
+                        break;
+                    }
                 }
                 presentation.used_reassembly = true;
                 break;
@@ -676,13 +744,19 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
         presentation.covered_packet_indices.insert(result->packet_indices.begin(), result->packet_indices.end());
     }
     if (result->stopped_at_gap && result->first_gap_packet_index != 0U) {
-        presentation.items.push_back(HttpStreamPresentationItem {
+        append_bounded_http_item(
+            presentation,
+            HttpStreamPresentationItem {
             .label = "HTTP Gap",
             .byte_count = 0U,
             .packet_indices = std::vector<std::uint64_t> {result->first_gap_packet_index},
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("HTTP"),
-        });
+            },
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = result->first_gap_packet_index;

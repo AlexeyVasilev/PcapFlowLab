@@ -298,6 +298,7 @@ pub struct SelectedFlowPacketsDto {
     pub offset: usize,
     pub limit: usize,
     pub total_count: usize,
+    pub updated_flow: Option<FlowDto>,
     pub packets: Vec<PacketDto>,
 }
 
@@ -333,6 +334,7 @@ pub struct StreamItemDto {
     pub header_secondary_text: String,
     pub badge_text: String,
     pub summary_text: String,
+    pub summary_layers: Vec<PacketSummaryLayerDto>,
     pub payload_tab_title: String,
     pub payload_preview_text: String,
     pub payload_preview_unavailable_text: String,

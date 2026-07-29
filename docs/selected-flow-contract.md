@@ -65,8 +65,16 @@ Stream behavior rules:
 
 - Stream is built on-demand for the selected flow only.
 - `Load more` expands the packet window and can extend or improve stream output.
+- The packet window is always a bounded prefix of the selected flow's packets, not an arbitrary sparse selection.
+- The logical-item budget applies inside protocol-aware reconstruction as a cumulative bound for that query shape.
+- Selected-flow UI queries may request one extra logical item of lookahead so the frontend can distinguish a complete visible result from `can_load_more`.
 - Stream output should be conservative and non-duplicative.
 - Stream summarizes communication units; it is not a full transport-correct session reconstruction.
+- Bounds growth currently rebuilds the bounded prefix from scratch inside `CaptureSession`.
+- Selected-flow Stream materialization is owned by `CaptureSession`, not by Qt state or frontend bridge state.
+- The current retained session context keeps a committed stable prefix and a provisional suffix for the materialized bounded result.
+- Window-incomplete rows may be replaced when the packet window grows.
+- No frontend cursor token is used; callers continue to request cumulative packet/item bounds.
 
 ## 6. Source Ownership Contract
 
@@ -202,6 +210,13 @@ Selected-flow analysis follows reliability-first rules.
 - Do not present misleading source ownership.
 - Prefer explicit unavailable or partial states over guesswork.
 - Packet truth and stream truth are related, but not identical.
+
+Selected-flow Stream context reuse must preserve those rules.
+
+- Repeated identical compatible bounded queries may reuse the retained materialized result.
+- Smaller compatible projections may return a prefix of that retained result.
+- Bounds growth currently rebuilds the bounded prefix rather than resuming from retained scanner state.
+- If bounds, cache state, or protocol-affecting settings become incompatible, the retained context must be discarded and the bounded prefix rebuilt safely.
 
 ## 11. Known Limits / Out Of Scope
 

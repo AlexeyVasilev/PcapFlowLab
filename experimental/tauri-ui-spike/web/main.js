@@ -3594,7 +3594,7 @@
     elements.streamDetailsHeaderBadge.classList.toggle("is-hidden", String(item.badge_text || "").trim().length === 0);
     elements.streamDetailsHeaderBadge.classList.toggle("is-warning", String(item.badge_text || "").trim() === "Constricted");
     elements.streamDetailsPayloadTabButton.textContent = item.payload_tab_title || "Payload";
-    elements.streamDetailsSummaryText.textContent = item.summary_text || "No summary details are available for this stream item.";
+    renderStreamItemSummary(elements.streamDetailsSummaryText, item);
 
     if (state.streamDetailsState === "loading") {
       elements.streamDetailsPayloadStateText.textContent = "Loading payload details...";
@@ -3894,6 +3894,18 @@
     container.innerHTML = `<pre class="details-pre packet-summary-pre">${escapeHtml(summaryText)}</pre>`;
   }
 
+  function renderStreamItemSummary(container, item) {
+    renderPacketSummary(
+      container,
+      {
+        summary_layers: Array.isArray(item?.summary_layers) ? item.summary_layers : [],
+        summary_text: item?.summary_text || "",
+      },
+      null,
+      null
+    );
+  }
+
   function renderPacketDetails() {
     const details = state.packetDetails;
     const packetDetailsTitle = String(details?.details_title || "Selected Packet Details");
@@ -4001,7 +4013,10 @@
 
     const rawLoaded = Boolean(details?.raw_preview_available);
     const payloadLoaded = Boolean(details?.payload_preview_available);
-    elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details loaded.`;
+    const selectedFlowRowNumber = Number(selectedPacket?.row_number);
+    elements.packetDetailsMeta.textContent = Number.isFinite(selectedFlowRowNumber) && selectedFlowRowNumber > 0
+      ? `Flow packet ${selectedFlowRowNumber} details loaded.`
+      : "Packet details loaded.";
     elements.packetDetailsStateText.textContent = "";
     elements.packetDetailsProtocolStateText.textContent = protocolSections.length > 0
       ? "Protocol details loaded."
@@ -4803,6 +4818,9 @@
       } else {
         state.packets = receivedPackets;
       }
+      if (packetResult?.updated_flow) {
+        applyUpdatedFlowRow(packetResult.updated_flow);
+      }
       state.packetsTotalCount = packetResult?.total_count || 0;
       state.packetOffset = packetResult?.offset ?? requestedOffset;
       state.packetCanLoadMore = state.packets.length < state.packetsTotalCount;
@@ -5093,6 +5111,7 @@
         : await invoke("get_selected_flow_packet_details", {
           packet_index: state.selectedPacketIndex,
           flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
+          loaded_packet_window_count: Number(state.packets.length),
         });
       const sourceAvailability = packetDetailsSourceAvailability(details);
       state.sourceAvailability = sourceAvailability;

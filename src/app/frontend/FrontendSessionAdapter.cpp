@@ -2,6 +2,7 @@
 
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/index/CaptureIndex.h"
@@ -941,6 +942,18 @@ std::string build_stream_item_summary_text(
     return out.str();
 }
 
+std::vector<session_detail::PacketSummaryLayer> build_stream_item_summary_layers(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) {
+    return session_detail::build_stream_item_summary_layers(
+        row,
+        format_stream_source_packets_text(row, flow_packet_numbers),
+        stream_item_details_source_text(row),
+        stream_item_frames_hint_text(row)
+    );
+}
+
 std::string frontend_stream_payload_text(const CaptureSession& session, const StreamItemRow& row) {
     if (!row.payload_hex_text.empty()) {
         return row.payload_hex_text;
@@ -1682,6 +1695,17 @@ std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const st
     return session.flow_row(flow_index);
 }
 
+FlowRow apply_service_hint_override(
+    FlowRow row,
+    const std::map<std::size_t, std::string>& overrides
+) {
+    const auto override_it = overrides.find(row.index);
+    if (override_it != overrides.end() && row.service_hint.empty()) {
+        row.service_hint = override_it->second;
+    }
+    return row;
+}
+
 std::string build_analysis_endpoint_summary(const FlowRow& row) {
     std::ostringstream out {};
     out << row.endpoint_a
@@ -1827,6 +1851,7 @@ FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availabilit
 FrontendOpenResult FrontendSessionAdapter::open_capture(const std::filesystem::path& path) {
     cancel_and_join_open_worker();
     clear_selection();
+    flow_service_hint_overrides_.clear();
     session_ = CaptureSession {};
     const auto analysis_settings = to_analysis_settings(settings_);
 
@@ -1898,6 +1923,7 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(const std::fi
     }
 
     clear_selection();
+    flow_service_hint_overrides_.clear();
     session_ = CaptureSession {};
     const auto analysis_settings = to_analysis_settings(settings_);
     const auto open_as_index = looks_like_index_file(path);
@@ -1993,6 +2019,7 @@ FrontendOpenPollResultDto FrontendSessionAdapter::poll_open_capture() {
 
     result.result = async_open_.result;
     if (async_open_.completed_session.has_value() && result.result.opened && !result.result.cancelled) {
+        flow_service_hint_overrides_.clear();
         session_ = std::move(*async_open_.completed_session);
         async_open_.completed_session.reset();
     }
@@ -2341,7 +2368,7 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
     flows.reserve(rows.size());
 
     for (const auto& row : rows) {
-        flows.push_back(to_frontend_flow(row));
+        flows.push_back(to_frontend_flow(apply_service_hint_override(row, flow_service_hint_overrides_)));
     }
 
     return flows;
@@ -2421,8 +2448,8 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
         return result;
     }
 
-    auto updated_row = *row;
-    updated_row.service_hint = *derived_service_hint;
+    flow_service_hint_overrides_[flow_index] = *derived_service_hint;
+    auto updated_row = apply_service_hint_override(*row, flow_service_hint_overrides_);
     result.updated_flow = to_frontend_flow(updated_row);
     return result;
 }
@@ -2464,6 +2491,31 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
             row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
         }
     }
+
+    if (offset == 0U && !rows.empty()) {
+        const auto flow_row = session_.flow_row(flow_index);
+        if (flow_row.has_value()) {
+            auto effective_row = apply_service_hint_override(*flow_row, flow_service_hint_overrides_);
+            const auto protocol_hint_is_tls =
+                effective_row.protocol_hint == "tls" || effective_row.protocol_hint == "TLS";
+            if (protocol_hint_is_tls && effective_row.service_hint.empty()) {
+                const auto derived_service_hint = session_detail::derive_tls_service_hint_for_loaded_flow_prefix(
+                    session_,
+                    flow_index,
+                    rows.size()
+                );
+                if (derived_service_hint.has_value() && !derived_service_hint->empty()) {
+                    flow_service_hint_overrides_[flow_index] = *derived_service_hint;
+                    effective_row = apply_service_hint_override(*flow_row, flow_service_hint_overrides_);
+                }
+            }
+
+            if (effective_row.service_hint != flow_row->service_hint) {
+                result.updated_flow = to_frontend_flow(effective_row);
+            }
+        }
+    }
+
     result.packets.reserve(rows.size());
     for (const auto& row : rows) {
         result.packets.push_back(to_frontend_packet(row));
@@ -2675,7 +2727,10 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     }
 
     const auto flow_index = *selected_flow_index_;
-    const auto row = selected_flow_row(session_, flow_index);
+    auto row = selected_flow_row(session_, flow_index);
+    if (row.has_value()) {
+        row = apply_service_hint_override(*row, flow_service_hint_overrides_);
+    }
     if (!row.has_value()) {
         result.error_text = "The selected flow is unavailable.";
         return result;
@@ -2872,8 +2927,9 @@ FrontendAnalysisSequenceExportResultDto FrontendSessionAdapter::export_selected_
 
 FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_details(
     const std::uint64_t packet_index,
-    const std::uint64_t flow_packet_index
-) const {
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
+) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
@@ -2915,12 +2971,13 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     auto details = build_frontend_packet_details(
         *packet,
         selected_flow_index_,
-        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt
+        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
     );
     return details;
 }
 
-FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) const {
+FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = false,
@@ -2959,8 +3016,9 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details
 FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     const PacketRef& packet,
     const std::optional<std::size_t> flow_index,
-    const std::optional<std::uint64_t> flow_packet_index
-) const {
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count
+) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = flow_index.has_value(),
@@ -3030,6 +3088,23 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         const auto original_transport_payload_length =
             session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
         const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
+        PacketPayloadService payload_service {};
+        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        const auto internal_flow_packet_index =
+            flow_packet_index.has_value()
+                ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
+                : std::nullopt;
+        const auto reconstructed_tls_records =
+            flow_index.has_value() &&
+            internal_flow_packet_index.has_value() &&
+            loaded_packet_window_count.has_value()
+                ? session_detail::build_selected_packet_tls_contexts(
+                    session_,
+                    *flow_index,
+                    *internal_flow_packet_index,
+                    *loaded_packet_window_count
+                )
+                : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
@@ -3038,12 +3113,14 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.transport_summary_text = format_transport_summary(*details);
         result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .source_capture_accessible = true,
-            .flow_packet_index = flow_packet_index,
+            .flow_packet_index = internal_flow_packet_index,
             .transport_payload_length = captured_transport_payload_length,
             .original_transport_payload_length = original_transport_payload_length,
+            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,
+            .reconstructed_tls_records = std::move(reconstructed_tls_records),
         });
     } else {
         result.unavailable_text = "Only partial packet details are available for this packet.";
@@ -3182,6 +3259,7 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers),
         .badge_text = stream_item_header_badge_text(row),
         .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
+        .summary_layers = include_details ? build_stream_item_summary_layers(row, flow_packet_numbers) : std::vector<session_detail::PacketSummaryLayer> {},
         .payload_tab_title = stream_item_payload_tab_title(row),
         .payload_preview_text = payload_preview_text,
         .payload_preview_unavailable_text = include_details && payload_preview_text.empty()

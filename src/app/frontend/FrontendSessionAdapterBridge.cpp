@@ -599,6 +599,15 @@ std::string packet_result_json(const pfl::FrontendSelectedFlowPacketsResult& res
         << "\"offset\":" << result.offset << ','
         << "\"limit\":" << result.limit << ','
         << "\"total_count\":" << result.total_count << ','
+        << "\"updated_flow\":";
+
+    if (result.updated_flow.has_value()) {
+        out << flow_json(*result.updated_flow);
+    } else {
+        out << "null";
+    }
+
+    out << ','
         << "\"packets\":[";
 
     for (std::size_t index = 0; index < result.packets.size(); ++index) {
@@ -944,6 +953,16 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
         << "\"header_secondary_text\":" << json_string(item.header_secondary_text) << ','
         << "\"badge_text\":" << json_string(item.badge_text) << ','
         << "\"summary_text\":" << json_string(item.summary_text) << ','
+        << "\"summary_layers\":[";
+
+    for (std::size_t index = 0; index < item.summary_layers.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_summary_layer_json(item.summary_layers[index]);
+    }
+
+    out << "],"
         << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
         << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
         << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
@@ -1376,13 +1395,18 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint64_t packet_index,
-    const std::uint64_t flow_packet_index
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
 ) {
     if (handle == nullptr) {
         return make_c_string(packet_details_json(unavailable_packet_details()));
     }
 
-    return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(packet_index, flow_packet_index)));
+    return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(
+        packet_index,
+        flow_packet_index,
+        loaded_packet_window_count
+    )));
 }
 
 char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(

@@ -5,8 +5,11 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "app/session/FlowRows.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
@@ -35,12 +38,15 @@ struct PacketSummaryLayer {
 
 struct PacketSummaryOptions {
     bool source_capture_accessible {true};
+    // Internal flow-packet index is zero-based; human-readable formatting adds +1.
     std::optional<std::uint64_t> flow_packet_index {};
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
+    std::span<const std::uint8_t> transport_payload_bytes {};
     std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
+    std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
 };
 
 std::string format_packet_timestamp(const PacketRef& packet);
@@ -58,6 +64,13 @@ std::string format_arp_protocol_type(std::uint16_t protocol_type);
 std::string format_arp_opcode(std::uint16_t opcode);
 std::optional<ArpPresentation> describe_arp_packet(const PacketDetails& details);
 std::vector<std::string> build_basic_summary_lines(const PacketDetails& details);
+std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes);
+std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
+    const StreamItemRow& row,
+    std::string_view source_packets_text,
+    std::string_view details_source_text,
+    std::string_view frames_hint_text = {}
+);
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
     const PacketDetails& details,
     const PacketRef& packet,

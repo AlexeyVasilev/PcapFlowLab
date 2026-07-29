@@ -4,6 +4,7 @@
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
 #include <array>
@@ -4756,11 +4757,22 @@ void MainController::maybeEnrichSelectedFlowServiceHint() {
     const auto modelIndex = flow_model_.index(row, 0);
     const auto protocolHint = flow_model_.data(modelIndex, FlowListModel::ProtocolHintRole).toString();
     const auto serviceHint = flow_model_.data(modelIndex, FlowListModel::ServiceHintRole).toString();
-    if (protocolHint.compare(QStringLiteral("QUIC"), Qt::CaseInsensitive) != 0 || !serviceHint.isEmpty()) {
+    if (!serviceHint.isEmpty()) {
         return;
     }
 
-    const auto derivedServiceHint = session_.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index_));
+    std::optional<std::string> derivedServiceHint {};
+    if (protocolHint.compare(QStringLiteral("QUIC"), Qt::CaseInsensitive) == 0) {
+        derivedServiceHint = session_.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index_));
+    } else if (protocolHint.compare(QStringLiteral("TLS"), Qt::CaseInsensitive) == 0 &&
+               loaded_packet_row_count_ > 0U) {
+        derivedServiceHint = session_detail::derive_tls_service_hint_for_loaded_flow_prefix(
+            session_,
+            static_cast<std::size_t>(selected_flow_index_),
+            loaded_packet_row_count_
+        );
+    }
+
     if (!derivedServiceHint.has_value() || derivedServiceHint->empty()) {
         return;
     }
@@ -5703,19 +5715,34 @@ void MainController::reloadSelectedPacketDetails() {
             std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
             *packet
         );
+        PacketPayloadService payload_service {};
+        const auto transport_payload = payload_service.extract_transport_payload(packetBytes, packet->data_link_type);
+        const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+            const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+            if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+                return std::nullopt;
+            }
+            return it->second - 1U;
+        }();
+        const auto reconstructed_tls_records =
+            selected_flow_index_ >= 0 &&
+                flow_packet_index.has_value() &&
+                loaded_packet_row_count_ > 0U
+            ? session_detail::build_selected_packet_tls_contexts(
+                session_,
+                static_cast<std::size_t>(selected_flow_index_),
+                *flow_packet_index,
+                loaded_packet_row_count_
+            )
+            : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
             session_detail::build_packet_summary_layers(*details, *packet, {
                 .source_capture_accessible = true,
-                .flow_packet_index = [&]() -> std::optional<std::uint64_t> {
-                    const auto it = current_flow_packet_numbers_.find(packet->packet_index);
-                    if (it == current_flow_packet_numbers_.end()) {
-                        return std::nullopt;
-                    }
-                    return it->second;
-                }(),
+                .flow_packet_index = flow_packet_index,
                 .transport_payload_length = payload_lengths.real_payload_length,
                 .original_transport_payload_length = payload_lengths.original_payload_length,
+                .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
                 .protocol_details_text = protocolText.toStdString(),
                 .checksum_summary_lines = [&]() {
                     std::vector<std::string> lines {};
@@ -5733,6 +5760,7 @@ void MainController::reloadSelectedPacketDetails() {
                     }
                     return lines;
                 }(),
+                .reconstructed_tls_records = std::move(reconstructed_tls_records),
             })
         ));
         packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
@@ -5776,7 +5804,14 @@ void MainController::reloadSelectedStreamDetails() {
         stream_item_header_badge_text(*itemIt)
     );
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
-    packet_details_model_.setSummaryLayers({});
+    packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+        session_detail::build_stream_item_summary_layers(
+            *itemIt,
+            format_stream_source_packets(*itemIt, current_flow_packet_numbers_).toStdString(),
+            stream_item_details_source(*itemIt).toStdString(),
+            stream_item_frames_hint_text(*itemIt).toStdString()
+        )
+    ));
     packet_details_model_.setPayloadTabTitle(stream_item_payload_tab_title(*itemIt));
 
     if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {

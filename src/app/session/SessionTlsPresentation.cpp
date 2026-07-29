@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <iomanip>
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -11,6 +13,7 @@
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/TlsInspectionParser.h"
 
 namespace pfl::session_detail {
 
@@ -1037,7 +1040,10 @@ std::string tls_handshake_stream_label(const std::uint8_t handshake_type) {
     }
 }
 
-std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
+std::string tls_stream_label(
+    std::span<const std::uint8_t> record_bytes,
+    const TlsStreamItemSemanticKind semantic_kind = TlsStreamItemSemanticKind::none
+) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS Payload";
     }
@@ -1049,6 +1055,9 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     case 21U:
         return "TLS Alert";
     case 22U:
+        if (semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake) {
+            return "TLS Encrypted Handshake Message";
+        }
         if (record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
             return tls_handshake_stream_label(record_bytes[kTlsRecordHeaderSize]);
         }
@@ -1060,7 +1069,10 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     }
 }
 
-std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes) {
+std::string tls_record_protocol_text(
+    std::span<const std::uint8_t> record_bytes,
+    const TlsStreamItemSemanticKind semantic_kind = TlsStreamItemSemanticKind::none
+) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS\n  Record details unavailable for this stream item.";
     }
@@ -1075,7 +1087,10 @@ std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes)
          << "  Record Version: " << tls_record_version_text(version) << "\n"
          << "  Record Length: " << record_length;
 
-    if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
+    if (content_type == 22U && semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake) {
+        text << "\n"
+             << "  Payload Interpretation: Encrypted/opaque handshake payload";
+    } else if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
         const auto handshake_type = record_bytes[kTlsRecordHeaderSize];
         const auto handshake_length = static_cast<std::size_t>(read_be24(record_bytes, kTlsRecordHeaderSize + 1U));
         text << "\n"
@@ -1112,6 +1127,30 @@ std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes)
     }
 
     return text.str();
+}
+
+TlsStreamItemSemanticKind tls_stream_semantic_kind(
+    std::span<const std::uint8_t> record_bytes,
+    const bool post_change_cipher_spec
+) {
+    if (record_bytes.size() < kTlsRecordHeaderSize) {
+        return TlsStreamItemSemanticKind::partial_payload;
+    }
+
+    switch (record_bytes[0]) {
+    case 20U:
+        return TlsStreamItemSemanticKind::change_cipher_spec;
+    case 21U:
+        return TlsStreamItemSemanticKind::alert;
+    case 22U:
+        return post_change_cipher_spec
+            ? TlsStreamItemSemanticKind::encrypted_handshake
+            : TlsStreamItemSemanticKind::plaintext_handshake;
+    case 23U:
+        return TlsStreamItemSemanticKind::application_data;
+    default:
+        return TlsStreamItemSemanticKind::generic_record;
+    }
 }
 
 std::optional<std::size_t> derive_original_tcp_payload_length_from_headers(
@@ -1224,19 +1263,22 @@ bool direction_contains_truncated_packet(std::span<const PacketRef> packets) noe
     });
 }
 
-struct PendingTlsRecord {
+struct PendingSelectedTlsRecord {
     std::string label {};
     std::size_t total_byte_count {0U};
     std::size_t remaining_original_bytes {0U};
     std::vector<std::uint64_t> packet_indices {};
     std::vector<std::uint8_t> captured_bytes {};
+    TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::string protocol_text {};
     std::vector<std::string> constricted_notes {};
+    std::vector<TlsSelectedPacketContribution> contributions {};
+    bool selected_packet_participated {false};
 };
 
-void append_constricted_packet_note(PendingTlsRecord& record, const PacketRef& packet) {
+void append_constricted_packet_note(PendingSelectedTlsRecord& record, const PacketRef& packet) {
     if (packet.captured_length >= packet.original_length) {
         return;
     }
@@ -1249,7 +1291,7 @@ void append_constricted_packet_note(PendingTlsRecord& record, const PacketRef& p
 }
 
 void append_constricted_contribution_note(
-    PendingTlsRecord& record,
+    PendingSelectedTlsRecord& record,
     const PacketRef& packet,
     const std::size_t captured_contribution,
     const std::size_t original_contribution
@@ -1270,22 +1312,6 @@ void append_unique_packet_index(std::vector<std::uint64_t>& packet_indices, cons
     if (packet_indices.empty() || packet_indices.back() != packet_index) {
         packet_indices.push_back(packet_index);
     }
-}
-
-TlsStreamPresentationItem finalize_pending_tls_record(
-    PendingTlsRecord&& record,
-    HexDumpService& hex_dump_service
-) {
-    return TlsStreamPresentationItem {
-        .label = std::move(record.label),
-        .byte_count = record.total_byte_count,
-        .packet_indices = std::move(record.packet_indices),
-        .has_constricted_contribution = record.has_constricted_contribution,
-        .constricted_contribution_notes = std::move(record.constricted_contribution_notes),
-        .constricted_packet_notes = std::move(record.constricted_notes),
-        .payload_hex_text = hex_dump_service.format(record.captured_bytes),
-        .protocol_text = std::move(record.protocol_text),
-    };
 }
 
 struct ReassembledPayloadChunk {
@@ -1329,43 +1355,6 @@ std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_ch
     return chunks;
 }
 
-std::vector<std::uint64_t> consume_reassembled_packet_indices(
-    const std::vector<ReassembledPayloadChunk>& chunks,
-    const std::size_t byte_count,
-    std::size_t& chunk_index,
-    std::size_t& chunk_offset,
-    std::size_t* lookup_calls = nullptr,
-    std::size_t* lookup_bytes = nullptr
-) {
-    std::vector<std::uint64_t> packet_indices {};
-    std::size_t remaining_bytes = byte_count;
-    if (lookup_calls != nullptr) {
-        ++(*lookup_calls);
-    }
-    if (lookup_bytes != nullptr) {
-        *lookup_bytes += byte_count;
-    }
-
-    while (remaining_bytes > 0U && chunk_index < chunks.size()) {
-        const auto& chunk = chunks[chunk_index];
-        if (packet_indices.empty() || packet_indices.back() != chunk.packet_index) {
-            packet_indices.push_back(chunk.packet_index);
-        }
-
-        const auto chunk_remaining = chunk.byte_count - chunk_offset;
-        const auto consumed_here = std::min(remaining_bytes, chunk_remaining);
-        remaining_bytes -= consumed_here;
-        chunk_offset += consumed_here;
-
-        if (chunk_offset >= chunk.byte_count) {
-            ++chunk_index;
-            chunk_offset = 0U;
-        }
-    }
-
-    return packet_indices;
-}
-
 std::string limited_quality_tls_protocol_text(const bool record_fragment) {
     if (record_fragment) {
         return "TLS\n  Reassembled bytes do not contain a complete TLS record in this direction.";
@@ -1378,7 +1367,522 @@ std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
     return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
 }
 
+bool is_plausible_service_name_char(const char value) noexcept {
+    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '.' || value == '-' || value == '_';
+}
+
+bool is_plausible_service_name(const std::string_view value) noexcept {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const auto character : value) {
+        if (!is_plausible_service_name_char(character)) {
+            return false;
+        }
+    }
+
+    return value.find('.') != std::string_view::npos;
+}
+
+Direction direction_from_packet_row(const PacketRow& row) noexcept {
+    return !row.direction_text.empty() && row.direction_text.front() == 'B'
+        ? Direction::b_to_a
+        : Direction::a_to_b;
+}
+
+TlsSelectedPacketStatus finalized_selected_record_status(const PendingSelectedTlsRecord& record) noexcept {
+    if (record.remaining_original_bytes != 0U) {
+        return record.has_constricted_contribution
+            ? TlsSelectedPacketStatus::capture_constricted
+            : TlsSelectedPacketStatus::incomplete_window;
+    }
+
+    if (record.has_constricted_contribution || record.captured_bytes.size() != record.total_byte_count) {
+        return TlsSelectedPacketStatus::capture_constricted;
+    }
+
+    return TlsSelectedPacketStatus::complete;
+}
+
+std::optional<TlsSelectedPacketRecordContext> finalize_selected_packet_record_context(
+    PendingSelectedTlsRecord&& record,
+    const TlsSelectedPacketStatus status,
+    const std::uint64_t selected_flow_packet_index
+) {
+    const bool definite_multi_packet_context =
+        record.contributions.size() > 1U ||
+        status != TlsSelectedPacketStatus::complete ||
+        record.captured_bytes.size() != record.total_byte_count;
+    if (!record.selected_packet_participated || !definite_multi_packet_context) {
+        return std::nullopt;
+    }
+
+    const auto selected_contribution = std::find_if(
+        record.contributions.begin(),
+        record.contributions.end(),
+        [&](const TlsSelectedPacketContribution& contribution) {
+            return contribution.flow_packet_index == selected_flow_packet_index;
+        }
+    );
+
+    std::optional<std::uint64_t> selected_contribution_flow_packet_index {};
+    if (selected_contribution != record.contributions.end()) {
+        selected_contribution_flow_packet_index = selected_contribution->flow_packet_index;
+    }
+
+    std::optional<std::uint64_t> completion_flow_packet_index {};
+    if (!record.contributions.empty()) {
+        completion_flow_packet_index = record.contributions.back().flow_packet_index;
+    }
+
+    return TlsSelectedPacketRecordContext {
+        .label = std::move(record.label),
+        .protocol_text = std::move(record.protocol_text),
+        .captured_bytes = std::move(record.captured_bytes),
+        .total_record_size = record.total_byte_count,
+        .semantic_kind = record.semantic_kind,
+        .status = status,
+        .contributions = std::move(record.contributions),
+        .selected_contribution_flow_packet_index = selected_contribution_flow_packet_index,
+        .completion_flow_packet_index = completion_flow_packet_index,
+        .has_constricted_contribution = record.has_constricted_contribution,
+        .constricted_contribution_notes = std::move(record.constricted_contribution_notes),
+        .constricted_packet_notes = std::move(record.constricted_notes),
+    };
+}
+
+struct PendingTlsHintRecord {
+    std::size_t total_byte_count {0U};
+    std::size_t remaining_original_bytes {0U};
+    std::vector<std::uint8_t> captured_bytes {};
+};
+
+std::optional<std::string> extract_service_hint_from_complete_tls_record(
+    std::span<const std::uint8_t> record_bytes
+) {
+    if (record_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    TlsInspectionParser parser {};
+    const auto inspection = parser.inspect(record_bytes);
+    for (const auto& record : inspection.records) {
+        if (record.status != TlsRecordStatus::complete) {
+            continue;
+        }
+
+        for (const auto& handshake : record.handshake_messages) {
+            if (handshake.kind != TlsHandshakeKind::client_hello ||
+                handshake.status != TlsHandshakeStatus::complete ||
+                handshake.structured_parse_status != TlsStructuredParseStatus::parsed ||
+                !handshake.client_hello.has_value()) {
+                continue;
+            }
+
+            for (const auto& server_name : handshake.client_hello->sni_names) {
+                if (is_plausible_service_name(server_name)) {
+                    return server_name;
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+struct TlsScannerConsumedPrefix {
+    std::vector<std::uint64_t> packet_indices {};
+    std::vector<std::uint8_t> captured_bytes {};
+    std::uint64_t first_packet_index {0};
+    std::uint64_t first_flow_packet_index {0};
+    bool has_constricted_contribution {false};
+    std::vector<std::string> constricted_contribution_notes {};
+    std::vector<std::string> constricted_packet_notes {};
+};
+
+std::uint32_t allocate_tls_scanner_intra_packet_ordinal(
+    TlsStreamScannerState& state,
+    const std::uint64_t packet_index
+) noexcept {
+    if (state.ordinal_packet_index != packet_index) {
+        state.ordinal_packet_index = packet_index;
+        state.next_intra_packet_ordinal = 0U;
+    }
+
+    return state.next_intra_packet_ordinal++;
+}
+
+void append_tls_stream_scanner_contributions(
+    TlsStreamScannerState& state,
+    std::span<const TlsStreamScannerContribution> contributions
+) {
+    for (const auto& contribution : contributions) {
+        if (contribution.original_byte_count == 0U) {
+            continue;
+        }
+
+        state.buffered_contributions.push_back(TlsStreamScannerBufferedContribution {
+            .packet_index = contribution.packet_index,
+            .flow_packet_index = contribution.flow_packet_index,
+            .captured_bytes = contribution.captured_bytes,
+            .original_byte_count = contribution.original_byte_count,
+            .packet_captured_length = contribution.packet_captured_length,
+            .packet_original_length = contribution.packet_original_length,
+        });
+    }
+}
+
+std::size_t tls_stream_scanner_total_original_bytes(const TlsStreamScannerState& state) noexcept {
+    std::size_t total = 0U;
+    for (const auto& contribution : state.buffered_contributions) {
+        total += contribution.original_byte_count;
+    }
+    return total;
+}
+
+std::vector<std::uint8_t> flatten_tls_stream_scanner_captured_bytes(
+    const TlsStreamScannerState& state,
+    const std::size_t max_bytes = std::numeric_limits<std::size_t>::max()
+) {
+    std::vector<std::uint8_t> bytes {};
+    std::size_t remaining = max_bytes;
+    for (const auto& contribution : state.buffered_contributions) {
+        if (remaining == 0U) {
+            break;
+        }
+
+        const auto copy_count = std::min(remaining, contribution.captured_bytes.size());
+        bytes.insert(
+            bytes.end(),
+            contribution.captured_bytes.begin(),
+            contribution.captured_bytes.begin() + static_cast<std::ptrdiff_t>(copy_count)
+        );
+        remaining -= copy_count;
+    }
+    return bytes;
+}
+
+void maybe_initialize_tls_scanner_pending_record(TlsStreamScannerState& state) {
+    if (state.pending_record.has_value() || state.buffered_contributions.empty()) {
+        return;
+    }
+
+    const auto captured_bytes = flatten_tls_stream_scanner_captured_bytes(state);
+    if (captured_bytes.size() < kTlsRecordHeaderSize) {
+        return;
+    }
+    const auto captured_span = std::span<const std::uint8_t>(captured_bytes.data(), captured_bytes.size());
+    if (!looks_like_tls_record_prefix(captured_span)) {
+        return;
+    }
+
+    const auto total_byte_count = kTlsRecordHeaderSize + static_cast<std::size_t>(read_be16(captured_span, 3U));
+    const auto semantic_kind = tls_stream_semantic_kind(captured_span.first(std::min(captured_span.size(), total_byte_count)), state.post_change_cipher_spec);
+    const auto& first_contribution = state.buffered_contributions.front();
+    state.pending_record = TlsStreamScannerPendingRecordState {
+        .label = tls_stream_label(captured_span.first(std::min(captured_span.size(), total_byte_count)), semantic_kind),
+        .total_byte_count = total_byte_count,
+        .semantic_kind = semantic_kind,
+        .protocol_text = tls_record_protocol_text(
+            captured_span.first(std::min(captured_span.size(), total_byte_count)),
+            semantic_kind
+        ),
+        .first_packet_index = first_contribution.packet_index,
+        .first_flow_packet_index = first_contribution.flow_packet_index,
+        .intra_packet_ordinal = allocate_tls_scanner_intra_packet_ordinal(state, first_contribution.packet_index),
+    };
+    state.saw_tls_context = true;
+}
+
+TlsScannerConsumedPrefix consume_tls_scanner_original_prefix(
+    TlsStreamScannerState& state,
+    const std::size_t original_byte_count
+) {
+    TlsScannerConsumedPrefix consumed {};
+    std::size_t remaining_original_bytes = original_byte_count;
+    bool first = true;
+
+    while (remaining_original_bytes > 0U && !state.buffered_contributions.empty()) {
+        auto& contribution = state.buffered_contributions.front();
+        if (first) {
+            consumed.first_packet_index = contribution.packet_index;
+            consumed.first_flow_packet_index = contribution.flow_packet_index;
+            first = false;
+        }
+
+        append_unique_packet_index(consumed.packet_indices, contribution.packet_index);
+
+        const auto original_contribution = std::min(remaining_original_bytes, contribution.original_byte_count);
+        const auto captured_contribution = std::min(original_contribution, contribution.captured_bytes.size());
+        consumed.captured_bytes.insert(
+            consumed.captured_bytes.end(),
+            contribution.captured_bytes.begin(),
+            contribution.captured_bytes.begin() + static_cast<std::ptrdiff_t>(captured_contribution)
+        );
+
+        if (contribution.packet_captured_length < contribution.packet_original_length &&
+            captured_contribution < original_contribution) {
+            std::ostringstream contribution_note {};
+            contribution_note << "#" << (contribution.packet_index + 1U)
+                              << " contributed " << captured_contribution
+                              << " / " << original_contribution << " bytes";
+            consumed.has_constricted_contribution = true;
+            consumed.constricted_contribution_notes.push_back(contribution_note.str());
+
+            std::ostringstream packet_note {};
+            packet_note << "  Constricted packet #" << (contribution.packet_index + 1U)
+                        << ": captured " << contribution.packet_captured_length
+                        << " / original " << contribution.packet_original_length << " bytes.";
+            consumed.constricted_packet_notes.push_back(packet_note.str());
+        }
+
+        remaining_original_bytes -= original_contribution;
+        contribution.original_byte_count -= original_contribution;
+        contribution.captured_bytes.erase(
+            contribution.captured_bytes.begin(),
+            contribution.captured_bytes.begin() + static_cast<std::ptrdiff_t>(captured_contribution)
+        );
+
+        if (contribution.original_byte_count == 0U) {
+            state.buffered_contributions.erase(state.buffered_contributions.begin());
+        }
+    }
+
+    return consumed;
+}
+
+TlsScannedStreamRow make_tls_scanned_stream_row(
+    const TlsStreamPresentationItem& item,
+    const std::uint64_t first_packet_index,
+    const std::uint64_t first_flow_packet_index,
+    const std::uint32_t intra_packet_ordinal
+) {
+    return TlsScannedStreamRow {
+        .item = item,
+        .first_packet_index = first_packet_index,
+        .first_flow_packet_index = first_flow_packet_index,
+        .intra_packet_ordinal = intra_packet_ordinal,
+    };
+}
+
+std::optional<TlsScannedStreamRow> make_tls_stream_scanner_partial_row(
+    const TlsStreamScannerState& state,
+    const StreamMaterializationStability stability,
+    HexDumpService& hex_dump_service
+) {
+    if (state.buffered_contributions.empty()) {
+        return std::nullopt;
+    }
+
+    const auto captured_bytes = flatten_tls_stream_scanner_captured_bytes(state);
+    if (captured_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint64_t> packet_indices {};
+    bool has_constricted_contribution = false;
+    std::vector<std::string> constricted_contribution_notes {};
+    std::vector<std::string> constricted_packet_notes {};
+    for (const auto& contribution : state.buffered_contributions) {
+        append_unique_packet_index(packet_indices, contribution.packet_index);
+        const auto captured_contribution = std::min(contribution.captured_bytes.size(), contribution.original_byte_count);
+        if (contribution.packet_captured_length < contribution.packet_original_length &&
+            captured_contribution < contribution.original_byte_count) {
+            std::ostringstream contribution_note {};
+            contribution_note << "#" << (contribution.packet_index + 1U)
+                              << " contributed " << captured_contribution
+                              << " / " << contribution.original_byte_count << " bytes";
+            constricted_contribution_notes.push_back(contribution_note.str());
+            std::ostringstream packet_note {};
+            packet_note << "  Constricted packet #" << (contribution.packet_index + 1U)
+                        << ": captured " << contribution.packet_captured_length
+                        << " / original " << contribution.packet_original_length << " bytes.";
+            constricted_packet_notes.push_back(packet_note.str());
+            has_constricted_contribution = true;
+        }
+    }
+
+    const bool has_record_prefix = captured_bytes.size() >= kTlsRecordHeaderSize &&
+        looks_like_tls_record_prefix(std::span<const std::uint8_t>(captured_bytes.data(), captured_bytes.size()));
+    const bool record_fragment = has_record_prefix || !state.prefer_payload_partial_for_unrecognized_trailing_bytes
+        ? captured_bytes.size() >= kTlsRecordHeaderSize
+        : false;
+
+    const auto& first_contribution = state.buffered_contributions.front();
+    const auto intra_packet_ordinal = state.pending_record.has_value()
+        ? state.pending_record->intra_packet_ordinal
+        : 0U;
+
+    return make_tls_scanned_stream_row(
+        TlsStreamPresentationItem {
+            .label = record_fragment ? "TLS Record Fragment (partial)" : "TLS Payload (partial)",
+            .byte_count = captured_bytes.size(),
+            .packet_indices = std::move(packet_indices),
+            .stability = stability,
+            .has_constricted_contribution = has_constricted_contribution,
+            .constricted_contribution_notes = std::move(constricted_contribution_notes),
+            .constricted_packet_notes = std::move(constricted_packet_notes),
+            .payload_hex_text = hex_dump_service.format(captured_bytes),
+            .protocol_text = limited_quality_tls_protocol_text(record_fragment),
+            .semantic_kind = record_fragment
+                ? TlsStreamItemSemanticKind::partial_record
+                : TlsStreamItemSemanticKind::partial_payload,
+        },
+        first_contribution.packet_index,
+        first_contribution.flow_packet_index,
+        intra_packet_ordinal
+    );
+}
+
 }  // namespace
+
+TlsStreamScannerState make_tls_stream_scanner_state(
+    const Direction direction,
+    const bool prefer_payload_partial_for_unrecognized_trailing_bytes
+) {
+    return TlsStreamScannerState {
+        .direction = direction,
+        .buffered_contributions = {},
+        .pending_record = std::nullopt,
+        .post_change_cipher_spec = false,
+        .saw_tls_context = false,
+        .prefer_payload_partial_for_unrecognized_trailing_bytes =
+            prefer_payload_partial_for_unrecognized_trailing_bytes,
+        .ordinal_packet_index = 0U,
+        .next_intra_packet_ordinal = 0U,
+    };
+}
+
+TlsStreamScannerOutput consume_tls_stream_scanner(
+    TlsStreamScannerState& state,
+    const std::span<const TlsStreamScannerContribution> contributions,
+    const std::size_t max_finalized_items,
+    const TlsStreamScannerFinishMode finish_mode
+) {
+    TlsStreamScannerOutput output {};
+    append_tls_stream_scanner_contributions(state, contributions);
+
+    if (max_finalized_items == 0U) {
+        output.budget_exhausted = !state.buffered_contributions.empty();
+        return output;
+    }
+
+    HexDumpService hex_dump_service {};
+    while (output.stable_rows.size() < max_finalized_items) {
+        if (state.buffered_contributions.empty()) {
+            state.pending_record.reset();
+            break;
+        }
+
+        maybe_initialize_tls_scanner_pending_record(state);
+        if (!state.pending_record.has_value()) {
+            break;
+        }
+
+        if (tls_stream_scanner_total_original_bytes(state) < state.pending_record->total_byte_count) {
+            break;
+        }
+
+        auto consumed = consume_tls_scanner_original_prefix(state, state.pending_record->total_byte_count);
+        const auto finalized_record_span = std::span<const std::uint8_t>(
+            consumed.captured_bytes.data(),
+            consumed.captured_bytes.size());
+        const auto finalized_semantic_kind = tls_stream_semantic_kind(
+            finalized_record_span,
+            state.post_change_cipher_spec
+        );
+        auto item = TlsStreamPresentationItem {
+            .label = tls_stream_label(finalized_record_span, finalized_semantic_kind),
+            .byte_count = state.pending_record->total_byte_count,
+            .packet_indices = std::move(consumed.packet_indices),
+            .stability = StreamMaterializationStability::stable,
+            .has_constricted_contribution = consumed.has_constricted_contribution,
+            .constricted_contribution_notes = std::move(consumed.constricted_contribution_notes),
+            .constricted_packet_notes = std::move(consumed.constricted_packet_notes),
+            .payload_hex_text = hex_dump_service.format(consumed.captured_bytes),
+            .protocol_text = tls_record_protocol_text(finalized_record_span, finalized_semantic_kind),
+            .semantic_kind = finalized_semantic_kind,
+        };
+        output.stable_rows.push_back(make_tls_scanned_stream_row(
+            item,
+            state.pending_record->first_packet_index,
+            state.pending_record->first_flow_packet_index,
+            state.pending_record->intra_packet_ordinal
+        ));
+        if (!consumed.captured_bytes.empty() && consumed.captured_bytes.front() == 20U) {
+            state.post_change_cipher_spec = true;
+        }
+        state.pending_record.reset();
+    }
+
+    if (output.stable_rows.size() >= max_finalized_items && !state.buffered_contributions.empty()) {
+        output.budget_exhausted = true;
+        return output;
+    }
+
+    if (state.buffered_contributions.empty()) {
+        state.pending_record.reset();
+        return output;
+    }
+
+    maybe_initialize_tls_scanner_pending_record(state);
+
+    if (finish_mode == TlsStreamScannerFinishMode::flow_end) {
+        const bool stable_constricted = std::any_of(
+            state.buffered_contributions.begin(),
+            state.buffered_contributions.end(),
+            [](const TlsStreamScannerBufferedContribution& contribution) {
+                return contribution.packet_captured_length < contribution.packet_original_length;
+            }
+        );
+        const auto partial_row = make_tls_stream_scanner_partial_row(
+            state,
+            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::stable,
+            hex_dump_service
+        );
+        if (partial_row.has_value() && output.stable_rows.size() < max_finalized_items) {
+            output.stable_rows.push_back(*partial_row);
+            state.buffered_contributions.clear();
+            state.pending_record.reset();
+        } else if (partial_row.has_value()) {
+            output.budget_exhausted = true;
+        }
+        return output;
+    }
+
+    if (finish_mode == TlsStreamScannerFinishMode::window_end ||
+        finish_mode == TlsStreamScannerFinishMode::tcp_gap) {
+        const bool stable_constricted = std::any_of(
+            state.buffered_contributions.begin(),
+            state.buffered_contributions.end(),
+            [](const TlsStreamScannerBufferedContribution& contribution) {
+                return contribution.packet_captured_length < contribution.packet_original_length;
+            }
+        );
+        const auto partial_row = make_tls_stream_scanner_partial_row(
+            state,
+            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::window_incomplete,
+            hex_dump_service
+        );
+        if (partial_row.has_value()) {
+            if (stable_constricted) {
+                if (output.stable_rows.size() < max_finalized_items) {
+                    output.stable_rows.push_back(*partial_row);
+                    state.buffered_contributions.clear();
+                    state.pending_record.reset();
+                } else {
+                    output.budget_exhausted = true;
+                }
+            } else {
+                output.provisional_row = partial_row;
+                output.provisional_depends_on_more_input = true;
+            }
+        }
+    }
+
+    return output;
+}
 
 std::string tls_stream_label_from_protocol_text(const std::string_view protocol_text) {
     constexpr std::array<std::pair<std::string_view, std::string_view>, 17> handshake_labels {{
@@ -1419,6 +1923,9 @@ std::string tls_stream_label_from_protocol_text(const std::string_view protocol_
     if (contains_text(protocol_text, "Record Type: Alert")) {
         return "TLS Alert";
     }
+    if (contains_text(protocol_text, "Payload Interpretation: Encrypted/opaque handshake payload")) {
+        return "TLS Encrypted Handshake Message";
+    }
     if (contains_text(protocol_text, "Record Type: ApplicationData")) {
         return "TLS AppData";
     }
@@ -1440,6 +1947,7 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
     presentation.handled = true;
     HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
+    bool post_change_cipher_spec = false;
 
     while (offset < payload_bytes.size()) {
         if (!looks_like_tls_record_prefix(payload_bytes, offset)) {
@@ -1451,6 +1959,7 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                     .packet_indices = {packet_index},
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = "TLS\n  Remaining bytes do not form a complete TLS record in this packet.",
+                    .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
                 });
             }
             return presentation;
@@ -1465,31 +1974,58 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                 .packet_indices = {packet_index},
                 .payload_hex_text = hex_dump_service.format(trailing),
                 .protocol_text = "TLS\n  Record header is present but the full TLS record body is not available in this packet.",
+                .semantic_kind = TlsStreamItemSemanticKind::partial_record,
             });
             return presentation;
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
+        const auto semantic_kind = tls_stream_semantic_kind(record_bytes, post_change_cipher_spec);
         presentation.items.push_back(TlsStreamPresentationItem {
-            .label = tls_stream_label(record_bytes),
+            .label = tls_stream_label(record_bytes, semantic_kind),
             .byte_count = record_bytes.size(),
             .packet_indices = {packet_index},
             .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = tls_record_protocol_text(record_bytes),
+            .protocol_text = tls_record_protocol_text(record_bytes, semantic_kind),
+            .semantic_kind = semantic_kind,
         });
+        if (!record_bytes.empty() && record_bytes[0] == 20U) {
+            post_change_cipher_spec = true;
+        }
         offset += *record_size;
     }
 
     return presentation;
 }
 
+bool append_bounded_tls_item(
+    TlsDirectionalStreamPresentation& presentation,
+    TlsStreamPresentationItem item,
+    std::size_t& logical_item_count,
+    const std::size_t skip_item_count,
+    const std::size_t max_item_count
+) {
+    if (logical_item_count >= skip_item_count && presentation.items.size() < max_item_count) {
+        presentation.items.push_back(std::move(item));
+    }
+    ++logical_item_count;
+    return presentation.items.size() < max_item_count;
+}
+
 TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassembly(
     const CaptureSession& session,
     const std::size_t flow_index,
     const Direction direction,
-    const std::span<const PacketRef> direction_packets
+    const std::span<const PacketRef> direction_packets,
+    const std::size_t skip_item_count,
+    const std::size_t max_item_count,
+    const bool actual_end_of_flow_known
 ) {
     TlsDirectionalStreamPresentation presentation {};
+    if (max_item_count == 0U) {
+        return presentation;
+    }
+
     const auto result = session.reassemble_flow_direction(
         ReassemblyRequest {
             .flow_index = flow_index,
@@ -1514,93 +2050,84 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         return presentation;
     }
 
-    HexDumpService hex_dump_service {};
-    std::size_t offset = 0U;
-    std::size_t chunk_index = 0U;
-    std::size_t chunk_offset = 0U;
-    bool emitted_any = false;
-
-    while (offset < payload_bytes.size()) {
-        const bool has_record_prefix = looks_like_tls_record_prefix(payload_bytes, offset);
-        if (!has_record_prefix) {
-            const auto trailing = payload_bytes.subspan(offset);
-            if (!trailing.empty()) {
-                const auto packet_indices = consume_reassembled_packet_indices(
-                    *chunks,
-                    trailing.size(),
-                    chunk_index,
-                    chunk_offset,
-                    nullptr,
-                    nullptr
-                );
-                presentation.items.push_back(TlsStreamPresentationItem {
-                    .label = "TLS Payload (partial)",
-                    .byte_count = trailing.size(),
-                    .packet_indices = packet_indices,
-                    .payload_hex_text = hex_dump_service.format(trailing),
-                    .protocol_text = limited_quality_tls_protocol_text(false),
-                });
-            }
-            presentation.used_reassembly = true;
-            break;
-        }
-
-        const auto record_size = tls_record_size(payload_bytes, offset);
-        if (!record_size.has_value()) {
-            const auto trailing = payload_bytes.subspan(offset);
-            const auto packet_indices = consume_reassembled_packet_indices(
-                *chunks,
-                trailing.size(),
-                chunk_index,
-                chunk_offset,
-                nullptr,
-                nullptr
-            );
-            presentation.items.push_back(TlsStreamPresentationItem {
-                .label = "TLS Record Fragment (partial)",
-                .byte_count = trailing.size(),
-                .packet_indices = packet_indices,
-                .payload_hex_text = hex_dump_service.format(trailing),
-                .protocol_text = limited_quality_tls_protocol_text(true),
-            });
-            presentation.used_reassembly = true;
-            break;
-        }
-
-        const auto record_bytes = payload_bytes.subspan(offset, *record_size);
-        const auto label = tls_stream_label(record_bytes);
-        const auto protocol_text = tls_record_protocol_text(record_bytes);
-        const auto packet_indices = consume_reassembled_packet_indices(
-            *chunks,
-            record_bytes.size(),
-            chunk_index,
-            chunk_offset,
-            nullptr,
-            nullptr
-        );
-        presentation.items.push_back(TlsStreamPresentationItem {
-            .label = std::move(label),
-            .byte_count = record_bytes.size(),
-            .packet_indices = packet_indices,
-            .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = std::move(protocol_text),
-        });
-        emitted_any = true;
-        offset += *record_size;
+    std::map<std::uint64_t, std::uint64_t> flow_packet_index_by_packet_index {};
+    for (std::size_t index = 0U; index < direction_packets.size(); ++index) {
+        flow_packet_index_by_packet_index.emplace(direction_packets[index].packet_index, static_cast<std::uint64_t>(index + 1U));
     }
 
-    presentation.used_reassembly = presentation.used_reassembly || emitted_any;
+    std::vector<TlsStreamScannerContribution> contributions {};
+    contributions.reserve(chunks->size());
+    std::size_t payload_offset = 0U;
+    for (const auto& chunk : *chunks) {
+        const auto flow_packet_index_it = flow_packet_index_by_packet_index.find(chunk.packet_index);
+        contributions.push_back(TlsStreamScannerContribution {
+            .packet_index = chunk.packet_index,
+            .flow_packet_index = flow_packet_index_it != flow_packet_index_by_packet_index.end()
+                ? flow_packet_index_it->second
+                : 0U,
+            .captured_bytes = std::vector<std::uint8_t>(
+                payload_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset),
+                payload_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset + chunk.byte_count)
+            ),
+            .original_byte_count = chunk.byte_count,
+            .packet_captured_length = static_cast<std::uint32_t>(chunk.byte_count),
+            .packet_original_length = static_cast<std::uint32_t>(chunk.byte_count),
+        });
+        payload_offset += chunk.byte_count;
+    }
+
+    std::size_t logical_item_count = 0U;
+    auto scanner_state = make_tls_stream_scanner_state(direction, true);
+    const auto scanner_output = consume_tls_stream_scanner(
+        scanner_state,
+        contributions,
+        skip_item_count + max_item_count,
+        actual_end_of_flow_known
+            ? TlsStreamScannerFinishMode::flow_end
+            : TlsStreamScannerFinishMode::window_end
+    );
+
+    for (const auto& row : scanner_output.stable_rows) {
+        append_bounded_tls_item(
+            presentation,
+            row.item,
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
+    }
+    if (scanner_output.provisional_row.has_value()) {
+        append_bounded_tls_item(
+            presentation,
+            scanner_output.provisional_row->item,
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
+    }
+
+    presentation.used_reassembly =
+        scanner_state.saw_tls_context
+        || !scanner_output.stable_rows.empty()
+        || scanner_output.provisional_row.has_value();
     if (presentation.used_reassembly) {
         presentation.covered_packet_indices.insert(result->packet_indices.begin(), result->packet_indices.end());
     }
     if (result->stopped_at_gap && result->first_gap_packet_index != 0U) {
-        presentation.items.push_back(TlsStreamPresentationItem {
+        append_bounded_tls_item(
+            presentation,
+            TlsStreamPresentationItem {
             .label = "TLS Gap",
             .byte_count = 0U,
             .packet_indices = {result->first_gap_packet_index},
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("TLS"),
-        });
+            .semantic_kind = TlsStreamItemSemanticKind::gap,
+            },
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = result->first_gap_packet_index;
@@ -1615,29 +2142,42 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
     const CaptureSession& session,
     const std::size_t flow_index,
     const Direction direction,
-    std::span<const PacketRef> direction_packets
+    std::span<const PacketRef> direction_packets,
+    const std::size_t skip_item_count,
+    const std::size_t max_item_count,
+    const bool actual_end_of_flow_known
 ) {
     TlsDirectionalStreamPresentation presentation {};
-    if (direction_packets.empty()) {
+    if (direction_packets.empty() || max_item_count == 0U) {
         return presentation;
     }
 
-    HexDumpService hex_dump_service {};
-    std::optional<PendingTlsRecord> pending_record {};
     const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, direction);
+    const auto gap_included_in_window = gap_packet_index.has_value()
+        && std::any_of(direction_packets.begin(), direction_packets.end(), [&](const PacketRef& packet) {
+            return packet.packet_index >= *gap_packet_index;
+        });
+    std::size_t logical_item_count = 0U;
 
     auto emit_gap_item = [&]() {
         if (presentation.explicit_gap_item_emitted || !gap_packet_index.has_value()) {
             return;
         }
 
-        presentation.items.push_back(TlsStreamPresentationItem {
+        append_bounded_tls_item(
+            presentation,
+            TlsStreamPresentationItem {
             .label = "TLS Gap",
             .byte_count = 0U,
             .packet_indices = {*gap_packet_index},
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("TLS"),
-        });
+            .semantic_kind = TlsStreamItemSemanticKind::gap,
+            },
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = *gap_packet_index;
@@ -1645,7 +2185,13 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
         presentation.fallback_protocol_text = tcp_gap_protocol_text("TLS");
     };
 
+    std::vector<TlsStreamScannerContribution> contributions {};
+    contributions.reserve(direction_packets.size());
     for (const auto& packet : direction_packets) {
+        if (gap_packet_index.has_value() && packet.packet_index >= *gap_packet_index) {
+            break;
+        }
+
         if (packet.payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
             continue;
         }
@@ -1662,22 +2208,236 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
 
         const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, packet);
         if (!original_payload_length.has_value()) {
-            if (pending_record.has_value()) {
-                emit_gap_item();
-            }
             continue;
+        }
+
+        auto payload_vector = std::vector<std::uint8_t>(
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(payload_bytes.size())
+        );
+        const auto original_byte_count = *original_payload_length > trim_prefix_bytes
+            ? *original_payload_length - trim_prefix_bytes
+            : 0U;
+        if (original_byte_count == 0U) {
+            continue;
+        }
+        contributions.push_back(TlsStreamScannerContribution {
+            .packet_index = packet.packet_index,
+            .flow_packet_index = packet.packet_index + 1U,
+            .captured_bytes = std::move(payload_vector),
+            .original_byte_count = original_byte_count,
+            .packet_captured_length = packet.captured_length,
+            .packet_original_length = packet.original_length,
+        });
+    }
+
+    auto scanner_state = make_tls_stream_scanner_state(direction, false);
+    const auto scanner_output = consume_tls_stream_scanner(
+        scanner_state,
+        contributions,
+        skip_item_count + max_item_count,
+        actual_end_of_flow_known
+            ? TlsStreamScannerFinishMode::flow_end
+            : TlsStreamScannerFinishMode::window_end
+    );
+
+    for (const auto& row : scanner_output.stable_rows) {
+        append_bounded_tls_item(
+            presentation,
+            row.item,
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
+        presentation.covered_packet_indices.insert(
+            row.item.packet_indices.begin(),
+            row.item.packet_indices.end()
+        );
+    }
+    if (!gap_included_in_window && scanner_output.provisional_row.has_value()) {
+        append_bounded_tls_item(
+            presentation,
+            scanner_output.provisional_row->item,
+            logical_item_count,
+            skip_item_count,
+            max_item_count
+        );
+        presentation.covered_packet_indices.insert(
+            scanner_output.provisional_row->item.packet_indices.begin(),
+            scanner_output.provisional_row->item.packet_indices.end()
+        );
+    }
+
+    const bool have_tls_context =
+        scanner_state.saw_tls_context
+        || !scanner_output.stable_rows.empty()
+        || scanner_output.provisional_row.has_value();
+    if (!have_tls_context) {
+        return {};
+    }
+    presentation.used_reassembly = true;
+    if (gap_included_in_window) {
+        emit_gap_item();
+    }
+    return presentation;
+}
+
+TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const Direction direction,
+    const std::span<const PacketRef> direction_packets
+) {
+    if (direction_contains_truncated_packet(direction_packets)) {
+        return build_tls_stream_items_from_constricted_packets(
+            session,
+            flow_index,
+            direction,
+            direction_packets,
+            0U,
+            std::numeric_limits<std::size_t>::max(),
+            true
+        );
+    }
+
+    return build_tls_stream_items_from_contiguous_reassembly(
+        session,
+        flow_index,
+        direction,
+        direction_packets,
+        0U,
+        std::numeric_limits<std::size_t>::max(),
+        true
+    );
+}
+
+TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly_bounded(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const Direction direction,
+    const std::span<const PacketRef> direction_packets,
+    const std::size_t skip_item_count,
+    const std::size_t max_item_count
+) {
+    if (direction_contains_truncated_packet(direction_packets)) {
+        return build_tls_stream_items_from_constricted_packets(
+            session,
+            flow_index,
+            direction,
+            direction_packets,
+            skip_item_count,
+            max_item_count,
+            false
+        );
+    }
+
+    return build_tls_stream_items_from_contiguous_reassembly(
+        session,
+        flow_index,
+        direction,
+        direction_packets,
+        skip_item_count,
+        max_item_count,
+        false
+    );
+}
+
+std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t selected_flow_packet_index,
+    const std::size_t loaded_packet_window_count
+) {
+    if (loaded_packet_window_count == 0U) {
+        return {};
+    }
+
+    const auto bounded_window_count = std::min(loaded_packet_window_count, session.flow_packet_count(flow_index));
+    if (selected_flow_packet_index >= bounded_window_count) {
+        return {};
+    }
+
+    session.prepare_selected_flow_packet_cache(flow_index, bounded_window_count);
+    const auto retransmission_packets = session.suspected_tcp_retransmission_packet_indices(flow_index, bounded_window_count);
+    session.set_selected_flow_tcp_payload_suppression(flow_index, retransmission_packets, bounded_window_count);
+
+    const auto prefix_rows = session.list_flow_packets(flow_index, 0U, bounded_window_count);
+    if (prefix_rows.empty() || selected_flow_packet_index >= prefix_rows.size()) {
+        return {};
+    }
+
+    const auto& selected_row = prefix_rows[static_cast<std::size_t>(selected_flow_packet_index)];
+    const auto selected_direction = direction_from_packet_row(selected_row);
+    const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, selected_direction);
+
+    std::vector<TlsSelectedPacketRecordContext> contexts {};
+    std::optional<PendingSelectedTlsRecord> pending_record {};
+    bool post_change_cipher_spec = false;
+
+    for (const auto& row : prefix_rows) {
+        if (direction_from_packet_row(row) != selected_direction) {
+            continue;
+        }
+
+        const auto packet = session.selected_flow_packet_at(flow_index, row.row_number);
+        if (!packet.has_value()) {
+            continue;
+        }
+
+        if (gap_packet_index.has_value() &&
+            packet->packet_index >= *gap_packet_index &&
+            pending_record.has_value()) {
+            if (const auto context = finalize_selected_packet_record_context(
+                    std::move(*pending_record),
+                    TlsSelectedPacketStatus::tcp_gap,
+                    selected_flow_packet_index
+                );
+                context.has_value()) {
+                contexts.push_back(std::move(*context));
+            }
+            break;
+        }
+
+        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+            continue;
+        }
+
+        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
+        const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, *packet);
+        if (!original_payload_length.has_value()) {
+            if (pending_record.has_value()) {
+                if (const auto context = finalize_selected_packet_record_context(
+                        std::move(*pending_record),
+                        TlsSelectedPacketStatus::malformed,
+                        selected_flow_packet_index
+                    );
+                    context.has_value()) {
+                    contexts.push_back(std::move(*context));
+                }
+                pending_record.reset();
+            }
+            break;
         }
 
         const auto payload_span = std::span<const std::uint8_t>(
             payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
             payload_bytes.size() - trim_prefix_bytes
         );
+
         std::size_t captured_offset = 0U;
         std::size_t record_budget_remaining = *original_payload_length;
         std::size_t unique_original_remaining = *original_payload_length > trim_prefix_bytes
             ? *original_payload_length - trim_prefix_bytes
             : 0U;
-        bool handled_this_packet = false;
 
         while (record_budget_remaining > 0U) {
             if (pending_record.has_value()) {
@@ -1688,38 +2448,56 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                 if (contributed_original_bytes == 0U) {
                     break;
                 }
+
                 const auto captured_remaining = payload_span.size() - std::min(payload_span.size(), captured_offset);
                 const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
-                append_unique_packet_index(pending_record->packet_indices, packet.packet_index);
-                pending_record->captured_bytes.insert(
-                    pending_record->captured_bytes.end(),
-                    payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset),
-                    payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset + captured_contribution)
-                );
-                if (packet.captured_length < packet.original_length && captured_contribution < contributed_original_bytes) {
-                    append_constricted_packet_note(*pending_record, packet);
+                append_unique_packet_index(pending_record->packet_indices, packet->packet_index);
+
+                if (captured_contribution > 0U) {
+                    pending_record->contributions.push_back(TlsSelectedPacketContribution {
+                        .packet_index = packet->packet_index,
+                        .flow_packet_index = row.row_number - 1U,
+                        .record_offset = pending_record->captured_bytes.size(),
+                        .captured_byte_count = captured_contribution,
+                    });
+                    pending_record->captured_bytes.insert(
+                        pending_record->captured_bytes.end(),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset + captured_contribution)
+                    );
+                }
+
+                if ((row.row_number - 1U) == selected_flow_packet_index) {
+                    pending_record->selected_packet_participated = true;
+                }
+
+                if (packet->captured_length < packet->original_length && captured_contribution < contributed_original_bytes) {
+                    append_constricted_packet_note(*pending_record, *packet);
                     append_constricted_contribution_note(
                         *pending_record,
-                        packet,
+                        *packet,
                         captured_contribution,
                         contributed_original_bytes
                     );
                 }
+
                 pending_record->remaining_original_bytes -= contributed_original_bytes;
                 unique_original_remaining -= contributed_original_bytes;
                 record_budget_remaining = contributed_original_bytes > record_budget_remaining
                     ? 0U
                     : record_budget_remaining - contributed_original_bytes;
                 captured_offset += captured_contribution;
-                handled_this_packet = true;
 
                 if (pending_record->remaining_original_bytes == 0U) {
-                    presentation.items.push_back(finalize_pending_tls_record(std::move(*pending_record), hex_dump_service));
-                    presentation.used_reassembly = true;
-                    presentation.covered_packet_indices.insert(
-                        presentation.items.back().packet_indices.begin(),
-                        presentation.items.back().packet_indices.end()
-                    );
+                    const auto status = finalized_selected_record_status(*pending_record);
+                    if (const auto context = finalize_selected_packet_record_context(
+                            std::move(*pending_record),
+                            status,
+                            selected_flow_packet_index
+                        );
+                        context.has_value()) {
+                        contexts.push_back(std::move(*context));
+                    }
                     pending_record.reset();
                     continue;
                 }
@@ -1732,33 +2510,9 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             }
 
             const auto captured_remaining = payload_span.size() - captured_offset;
-            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize
-                && looks_like_tls_record_prefix(payload_span, captured_offset);
+            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize &&
+                looks_like_tls_record_prefix(payload_span, captured_offset);
             if (captured_remaining < kTlsRecordHeaderSize || !has_record_prefix) {
-                const bool have_tls_context = pending_record.has_value() || !presentation.items.empty() || presentation.used_reassembly;
-                if (!have_tls_context) {
-                    return {};
-                }
-
-                if (handled_this_packet) {
-                    break;
-                }
-
-                if (gap_packet_index.has_value() && packet.packet_index >= *gap_packet_index && packet.captured_length >= packet.original_length) {
-                    emit_gap_item();
-                    return presentation;
-                }
-
-                presentation.items.push_back(TlsStreamPresentationItem {
-                    .label = captured_remaining < kTlsRecordHeaderSize ? "TLS Payload (partial)" : "TLS Record Fragment (partial)",
-                    .byte_count = captured_remaining,
-                    .packet_indices = {packet.packet_index},
-                    .payload_hex_text = hex_dump_service.format(payload_span.subspan(captured_offset)),
-                    .protocol_text = limited_quality_tls_protocol_text(captured_remaining >= kTlsRecordHeaderSize),
-                });
-                presentation.used_reassembly = true;
-                presentation.covered_packet_indices.insert(packet.packet_index);
-                handled_this_packet = true;
                 break;
             }
 
@@ -1768,23 +2522,36 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
-            const auto label = tls_stream_label(captured_record_bytes);
-            const auto protocol_text = tls_record_protocol_text(captured_record_bytes);
-
-            PendingTlsRecord record {
-                .label = std::move(label),
+            const auto semantic_kind = tls_stream_semantic_kind(captured_record_bytes, post_change_cipher_spec);
+            PendingSelectedTlsRecord record {
+                .label = tls_stream_label(captured_record_bytes, semantic_kind),
                 .total_byte_count = record_size,
                 .remaining_original_bytes = record_size - contributed_original_bytes,
-                .packet_indices = {packet.packet_index},
+                .packet_indices = {packet->packet_index},
                 .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
-                .protocol_text = std::move(protocol_text),
+                .semantic_kind = semantic_kind,
+                .protocol_text = tls_record_protocol_text(captured_record_bytes, semantic_kind),
             };
-            if (packet.captured_length < packet.original_length && captured_contribution < record_size) {
-                append_constricted_packet_note(record, packet);
+
+            if (captured_contribution > 0U) {
+                record.contributions.push_back(TlsSelectedPacketContribution {
+                    .packet_index = packet->packet_index,
+                    .flow_packet_index = row.row_number - 1U,
+                    .record_offset = 0U,
+                    .captured_byte_count = captured_contribution,
+                });
+            }
+
+            if ((row.row_number - 1U) == selected_flow_packet_index) {
+                record.selected_packet_participated = true;
+            }
+
+            if (packet->captured_length < packet->original_length && captured_contribution < record_size) {
+                append_constricted_packet_note(record, *packet);
             }
             append_constricted_contribution_note(
                 record,
-                packet,
+                *packet,
                 captured_contribution,
                 contributed_original_bytes
             );
@@ -1792,57 +2559,225 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             record_budget_remaining -= contributed_original_bytes;
             unique_original_remaining -= contributed_unique_bytes;
             captured_offset += captured_contribution;
-            handled_this_packet = true;
 
             if (record.remaining_original_bytes == 0U) {
-                presentation.items.push_back(finalize_pending_tls_record(std::move(record), hex_dump_service));
-                presentation.used_reassembly = true;
-                presentation.covered_packet_indices.insert(
-                    presentation.items.back().packet_indices.begin(),
-                    presentation.items.back().packet_indices.end()
-                );
+                const auto status = finalized_selected_record_status(record);
+                if (const auto context = finalize_selected_packet_record_context(
+                        std::move(record),
+                        status,
+                        selected_flow_packet_index
+                    );
+                    context.has_value()) {
+                    contexts.push_back(std::move(*context));
+                }
+                if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
+                    post_change_cipher_spec = true;
+                }
                 continue;
             }
 
+            if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
+                post_change_cipher_spec = true;
+            }
             pending_record = std::move(record);
             break;
         }
     }
 
     if (pending_record.has_value()) {
-        presentation.items.push_back(TlsStreamPresentationItem {
-            .label = "TLS Record Fragment (partial)",
-            .byte_count = pending_record->captured_bytes.size(),
-            .packet_indices = pending_record->packet_indices,
-            .payload_hex_text = hex_dump_service.format(pending_record->captured_bytes),
-            .protocol_text = limited_quality_tls_protocol_text(true),
-        });
-        presentation.used_reassembly = true;
-        presentation.covered_packet_indices.insert(
-            pending_record->packet_indices.begin(),
-            pending_record->packet_indices.end()
-        );
+        const auto status = pending_record->has_constricted_contribution
+            ? TlsSelectedPacketStatus::capture_constricted
+            : TlsSelectedPacketStatus::incomplete_window;
+        if (const auto context = finalize_selected_packet_record_context(
+                std::move(*pending_record),
+                status,
+                selected_flow_packet_index
+            );
+            context.has_value()) {
+            contexts.push_back(std::move(*context));
+        }
     }
 
-    return presentation;
+    return contexts;
 }
 
-TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly(
-    const CaptureSession& session,
+std::optional<std::string> derive_tls_service_hint_for_loaded_flow_prefix(
+    CaptureSession& session,
     const std::size_t flow_index,
-    const Direction direction,
-    const std::span<const PacketRef> direction_packets
+    const std::size_t loaded_packet_window_count
 ) {
-    if (direction_contains_truncated_packet(direction_packets)) {
-        return build_tls_stream_items_from_constricted_packets(session, flow_index, direction, direction_packets);
+    if (loaded_packet_window_count == 0U) {
+        return std::nullopt;
     }
 
-    return build_tls_stream_items_from_contiguous_reassembly(
-        session,
-        flow_index,
-        direction,
-        direction_packets
-    );
+    const auto bounded_window_count = std::min(loaded_packet_window_count, session.flow_packet_count(flow_index));
+    if (bounded_window_count == 0U) {
+        return std::nullopt;
+    }
+
+    session.prepare_selected_flow_packet_cache(flow_index, bounded_window_count);
+    const auto retransmission_packets = session.suspected_tcp_retransmission_packet_indices(flow_index, bounded_window_count);
+    session.set_selected_flow_tcp_payload_suppression(flow_index, retransmission_packets, bounded_window_count);
+
+    const auto prefix_rows = session.list_flow_packets(flow_index, 0U, bounded_window_count);
+    if (prefix_rows.empty()) {
+        return std::nullopt;
+    }
+
+    struct DirectionState {
+        std::optional<PendingTlsHintRecord> pending_record {};
+        std::optional<std::uint64_t> first_gap_packet_index {};
+    };
+
+    DirectionState a_to_b_state {
+        .first_gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, Direction::a_to_b),
+    };
+    DirectionState b_to_a_state {
+        .first_gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, Direction::b_to_a),
+    };
+
+    for (const auto& row : prefix_rows) {
+        const auto direction = direction_from_packet_row(row);
+        auto& state = direction == Direction::a_to_b ? a_to_b_state : b_to_a_state;
+
+        const auto packet = session.selected_flow_packet_at(flow_index, row.row_number);
+        if (!packet.has_value()) {
+            continue;
+        }
+
+        if (state.first_gap_packet_index.has_value() &&
+            packet->packet_index >= *state.first_gap_packet_index &&
+            state.pending_record.has_value()) {
+            state.pending_record.reset();
+            continue;
+        }
+
+        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+            continue;
+        }
+
+        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
+        const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, *packet);
+        if (!original_payload_length.has_value()) {
+            state.pending_record.reset();
+            continue;
+        }
+
+        const auto payload_span = std::span<const std::uint8_t>(
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload_bytes.size() - trim_prefix_bytes
+        );
+
+        std::size_t captured_offset = 0U;
+        std::size_t record_budget_remaining = *original_payload_length;
+        std::size_t unique_original_remaining = *original_payload_length > trim_prefix_bytes
+            ? *original_payload_length - trim_prefix_bytes
+            : 0U;
+
+        while (record_budget_remaining > 0U) {
+            if (state.pending_record.has_value()) {
+                const auto contributed_original_bytes = std::min(
+                    unique_original_remaining,
+                    state.pending_record->remaining_original_bytes
+                );
+                if (contributed_original_bytes == 0U) {
+                    break;
+                }
+
+                const auto captured_remaining = payload_span.size() - std::min(payload_span.size(), captured_offset);
+                const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+                if (captured_contribution > 0U) {
+                    state.pending_record->captured_bytes.insert(
+                        state.pending_record->captured_bytes.end(),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset + captured_contribution)
+                    );
+                }
+
+                state.pending_record->remaining_original_bytes -= contributed_original_bytes;
+                unique_original_remaining -= contributed_original_bytes;
+                record_budget_remaining = contributed_original_bytes > record_budget_remaining
+                    ? 0U
+                    : record_budget_remaining - contributed_original_bytes;
+                captured_offset += captured_contribution;
+
+                if (state.pending_record->remaining_original_bytes == 0U) {
+                    if (state.pending_record->captured_bytes.size() == state.pending_record->total_byte_count) {
+                        if (const auto service_hint = extract_service_hint_from_complete_tls_record(
+                                std::span<const std::uint8_t>(
+                                    state.pending_record->captured_bytes.data(),
+                                    state.pending_record->captured_bytes.size()
+                                )
+                            );
+                            service_hint.has_value()) {
+                            return service_hint;
+                        }
+                    }
+                    state.pending_record.reset();
+                    continue;
+                }
+
+                break;
+            }
+
+            if (captured_offset >= payload_span.size()) {
+                break;
+            }
+
+            const auto captured_remaining = payload_span.size() - captured_offset;
+            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize &&
+                looks_like_tls_record_prefix(payload_span, captured_offset);
+            if (captured_remaining < kTlsRecordHeaderSize || !has_record_prefix) {
+                break;
+            }
+
+            const auto record_body_length = static_cast<std::size_t>(read_be16(payload_span, captured_offset + 3U));
+            const auto record_size = kTlsRecordHeaderSize + record_body_length;
+            const auto contributed_original_bytes = std::min(record_budget_remaining, record_size);
+            const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
+            const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+            const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
+
+            PendingTlsHintRecord record {
+                .total_byte_count = record_size,
+                .remaining_original_bytes = record_size - contributed_original_bytes,
+                .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
+            };
+
+            record_budget_remaining -= contributed_original_bytes;
+            unique_original_remaining -= contributed_unique_bytes;
+            captured_offset += captured_contribution;
+
+            if (record.remaining_original_bytes == 0U) {
+                if (record.captured_bytes.size() == record.total_byte_count) {
+                    if (const auto service_hint = extract_service_hint_from_complete_tls_record(
+                            std::span<const std::uint8_t>(
+                                record.captured_bytes.data(),
+                                record.captured_bytes.size()
+                            )
+                        );
+                        service_hint.has_value()) {
+                        return service_hint;
+                    }
+                }
+                continue;
+            }
+
+            state.pending_record = std::move(record);
+            break;
+        }
+    }
+
+    return std::nullopt;
 }
 
 }  // namespace pfl::session_detail

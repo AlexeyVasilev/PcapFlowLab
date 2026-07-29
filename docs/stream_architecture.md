@@ -42,17 +42,45 @@ Stream now uses one bounded on-demand materialization pipeline.
 
 - The same protocol-aware builder is used for the initial selected-flow result and every later `Load more` refresh.
 - Initial and extended views differ only by bounds, primarily the packet window and item budget supplied to the builder.
+- The packet window always remains a bounded prefix of the selected flow's packets: `[0, packet_window_count)`.
+- The logical-item budget is cumulative across protocol-aware reconstruction, not a late UI-only slice after building every TLS or HTTP item in that packet window.
 - A small flow may fit completely inside the initial bounds and therefore appear fully materialized immediately.
 - A larger flow yields a partial result from the same builder, not from a fallback-only path.
 
+Selected-flow Stream materialization is owned by `CaptureSession`.
+
+- `CaptureSession` keeps one ephemeral selected-flow Stream context for the currently materialized bounded prefix.
+- The context is selected-flow-only, capture-lifetime-only, and non-persistent.
+- Qt and `FrontendSessionAdapter` / Tauri reuse the same session-owned materialization; they do not carry independent Stream cursors or tokens.
+- The context records the materialized packet-window count, the cumulative item limit used for that build, the materialized rows, and internal ordering/stability metadata.
+- Repeated compatible requests reuse the current context result.
+- Smaller compatible projections reuse the retained materialized prefix without rewinding protocol-aware state.
+- Packet-window or item-budget growth currently uses a fresh bounded rebuild from packet zero.
+- This conservative growth behavior avoids carrying forward a continuation frontier whose committed boundary is not represented exactly in the visible cumulative result.
+
+For selected-flow UI queries, the effective budget includes one extra logical item of lookahead.
+
+- If the visible limit is `N`, bounded Stream reconstruction materializes at most `N + 1` logical items for that query shape.
+- The extra item is used only to answer whether `can_load_more` should remain true for the current packet window.
+- Visible ordering and visible prefix content must match the corresponding prefix of the larger bounded rebuild.
+
+Internally the materialized result is split into:
+
+- a committed stable prefix;
+- a provisional suffix that begins at the earliest unstable ordering position.
+
+Window-incomplete rows remain provisional because a larger packet window may replace them with a completed structured item. Genuine gap rows, malformed terminal rows, and capture-constricted terminal rows remain stable.
+
 ### Load more
 
-`Load more` does not append from a separate continuation mode.
+`Load more` remains a cumulative bounded query, not a frontend append protocol.
 
 - The controller increases the selected flow's packet and item budgets.
-- Stream is then rebuilt from scratch for that flow with the larger bounds.
-- This keeps ordering, labeling, and protocol-aware reconstruction semantics consistent across initial and extended views.
+- `CaptureSession` reevaluates that larger cumulative Stream shape.
+- Packet-window or item-budget growth currently rebuilds the bounded prefix from scratch.
+- Repeated identical requests and smaller compatible projections may still reuse the retained materialized result.
 - The result remains selected-flow only, ephemeral, and non-persistent.
+- No frontend cursor token or persisted continuation checkpoint is introduced.
 
 ## Reassembly usage
 
@@ -76,6 +104,12 @@ TLS Stream parsing is record-oriented and may use bounded directional reassembly
 
 - Multiple TLS records inside one TCP payload are split into separate Stream items.
 - A TLS record spanning multiple TCP packets may become one logical item if the bounded reassembly buffer contains the full record.
+- TLS Stream reconstruction now runs through an explicit resumable scanner state in the session layer.
+- Selected-flow Stream context retains the materialized bounded result plus stability metadata for compatible projection reuse.
+- Bounds growth currently prefers a fresh bounded rebuild over retained continuation.
+- Packet-window growth may replace an earlier window-incomplete TLS projection with one completed row when newly authorized packets finish the record.
+- A window-incomplete TLS row is a projection of pending scanner state at the current packet-window boundary.
+- HTTP remains rebuild-based.
 - Handshake records are labeled by known handshake type when identifiable.
 - `ClientHello`, `ServerHello`, and `Certificate` items can expose a richer Protocol text block when the bounded Stream bytes contain enough complete handshake data.
 - Incomplete trailing TLS data falls back conservatively to partial TLS labels.
@@ -95,6 +129,7 @@ HTTP Stream parsing is header-oriented and may use bounded directional reassembl
 
 - Complete request and response header blocks are recognized in byte order.
 - A request or response spanning multiple TCP packets may become one logical item if enough bytes are present in the bounded reassembly buffer.
+- HTTP remains rebuild-based for now and does not yet use a retained continuation scanner.
 - Message labels are derived from request line or response status when available.
 - HTTP body reconstruction is intentionally incomplete as a general model.
 - Stream currently recognizes enough body framing to continue across some complete messages, but it is not a general HTTP body-reconstruction subsystem.
