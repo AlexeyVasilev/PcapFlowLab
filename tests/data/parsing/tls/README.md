@@ -92,6 +92,14 @@ Current structured-parser limitations and boundaries:
 | `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
 | `tls_1_3_split_client_hello_10.pcap` | Session and reassembly | `PacketDetailsTests`, `FlowHintsRealFixturesTests`, `MainControllerUiTests`, `StreamQueryTests` | Medium | Bounded selected-packet TLS reconstruction contract layered on top of packet-local partial ClientHello coverage | Partially complete | Keep for now |
 | `tls_1_3_many_records_continuation_11.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Real multi-record cumulative `Load more` parity fixture for bounded selected-flow TLS Stream rebuilds | Manual verification required | Keep for now |
+| `tls_1_0_badssl_baseline_12.pcap` | Small single-record / handshake | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.0 ClientHello baseline with packet-local SNI extraction and no modern extension-only fields | Partially complete | Keep for now |
+| `tls_1_1_badssl_baseline_13.pcap` | Small single-record / handshake | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.1 ClientHello baseline proving record-layer `0x0301` and ClientHello `0x0302` remain distinct | Partially complete | Keep for now |
+| `tls_1_2_badssl_baseline_14.pcap` | Small single-record / handshake | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.2 ClientHello baseline with `signature_algorithms` and packet-local SNI extraction | Partially complete | Keep for now |
+| `tls_1_2_client_to_tls_1_0_protocol_version_15.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | Version-mismatch handshake ending in a plaintext fatal `protocol_version` Alert before CCS | Partially complete | Keep for now |
+| `tls_1_2_expired_certificate_alert_16.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `StreamQueryTests` | Medium | TLS 1.2 certificate-validation failure ending in a plaintext fatal `certificate_expired` Alert | Partially complete | Keep for now |
+| `tls_1_2_self_signed_unknown_ca_17.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `StreamQueryTests` | Medium | Complete single-packet server handshake flight followed by a plaintext fatal `unknown_ca` Alert | Partially complete | Keep for now |
+| `tls_1_2_client_certificate_missing_18.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests` | Medium | CertificateRequest session with a valid empty client Certificate response and successful continuation | Partially complete | Keep for now |
+| `tls_1_2_status_request_alpn_19.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.2 ClientHello carrying OCSP `status_request` plus ALPN `http/1.1` without a fabricated CertificateStatus item | Partially complete | Keep for now |
 | `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
@@ -1501,6 +1509,174 @@ Current additional TLS fields available only in Protocol:
 - Repeated identical requests and smaller compatible projections may reuse the retained materialized result.
 - Bounds growth currently uses a fresh bounded rebuild rather than a retained continuation frontier.
 - The diagnostic or retained session context must not cause suffix-only visible output or renumber `stream_item_index` from `1` during `Load more`.
+
+### tls_1_0_badssl_baseline_12.pcap
+
+**Category:** Small single-record / handshake fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/baseline/tls10_baseline_mtu1500/tls10_baseline_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-0.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-0.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` is one complete TLS Handshake record with record version `TLS 1.0 (0x0301)`;
+  - ClientHello version also remains `TLS 1.0 (0x0301)`;
+  - SNI is `tls-v1-0.badssl.com`;
+  - no `signature_algorithms` extension is expected.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
+    `ClientHello Legacy Version = TLS 1.0 (0x0301)`, and SNI;
+  - `ALPN` and `Supported TLS Versions` are absent.
+
+### tls_1_1_badssl_baseline_13.pcap
+
+**Category:** Small single-record / handshake fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/baseline/tls11_baseline_mtu1500/tls11_baseline_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-1.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-1.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` is one complete TLS Handshake record with record version `TLS 1.0 (0x0301)`;
+  - ClientHello version remains distinct as `TLS 1.1 (0x0302)`;
+  - SNI is `tls-v1-1.badssl.com`;
+  - no `signature_algorithms` extension is expected.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
+    `ClientHello Legacy Version = TLS 1.1 (0x0302)`, and SNI;
+  - `ALPN` and `Supported TLS Versions` are absent.
+
+### tls_1_2_badssl_baseline_14.pcap
+
+**Category:** Small single-record / handshake fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/baseline/tls12_baseline_mtu1500/tls12_baseline_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` is one complete TLS Handshake record with record version `TLS 1.0 (0x0301)`;
+  - ClientHello version remains distinct as `TLS 1.2 (0x0303)`;
+  - SNI is `tls-v1-2.badssl.com`;
+  - a parsed `signature_algorithms` extension is present.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
+    `ClientHello Legacy Version = TLS 1.2 (0x0303)`, and SNI;
+  - `ALPN` and `Supported TLS Versions` are absent.
+
+### tls_1_2_client_to_tls_1_0_protocol_version_15.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/errors/tls12_client_to_tls10_server_mtu1500/tls12_client_to_tls10_server_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-0.badssl.com`;
+  - packet `14` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-0.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `14` is a complete plaintext TLS `Alert` record with length `2` and version `TLS 1.2 (0x0303)`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the Stream contains exactly one `TLS Alert` row;
+  - the Alert remains plaintext and reports fatal `Protocol Version`;
+  - Stream Summary stays conservative and records only alert record metadata.
+
+### tls_1_2_expired_certificate_alert_16.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/errors/tls12_expired_certificate_mtu1500/tls12_expired_certificate_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `expired.badssl.com`;
+  - packet `14` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `expired.badssl.com`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the Stream contains exactly one `TLS Alert` row;
+  - the Alert remains plaintext and reports fatal `Certificate Expired`;
+  - no encrypted Alert interpretation is invented before CCS.
+
+### tls_1_2_self_signed_unknown_ca_17.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/errors/tls12_self_signed_certificate_mtu1500/tls12_self_signed_certificate_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `self-signed.badssl.com`;
+  - packet `8` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `self-signed.badssl.com`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the Stream contains exactly one `TLS Alert` row;
+  - the Alert remains plaintext and reports fatal `Unknown CA`;
+  - no encrypted Alert interpretation is invented before CCS.
+
+### tls_1_2_client_certificate_missing_18.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/extras/tls12_client_certificate_missing_mtu1500/tls12_client_certificate_missing_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `client-cert-missing.badssl.com`;
+  - packet `13` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `client-cert-missing.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `13` parses as four ordered records:
+    - empty client `Certificate`;
+    - `ClientKeyExchange`;
+    - `ChangeCipherSpec`;
+    - encrypted Handshake;
+  - the empty client Certificate remains a complete handshake with declared body length `3`.
+
+### tls_1_2_status_request_alpn_19.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/extras/tls12_ocsp_alpn_mtu1500/tls12_ocsp_alpn_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` parses as a complete TLS 1.2 ClientHello;
+  - the parsed ClientHello exposes ALPN `http/1.1`;
+  - the parsed `status_request` extension exposes `OCSP (1)` with zero responder IDs and zero request-extension bytes.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Stream Summary exposes SNI, ALPN `http/1.1`, and structured `status_request` metadata;
+  - no `Supported TLS Versions` field is invented for this TLS 1.2 ClientHello;
+  - no `TLS CertificateStatus` Stream row is invented when the server omits stapled OCSP data.
 
 ### tls_normal_1.pcap
 

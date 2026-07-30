@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -479,6 +480,104 @@ void run_flow_hints_tests() {
         const auto packet5_hint = detect_tcp_flow_hint(packet5_payload);
         PFL_EXPECT(packet5_hint.protocol_hint == FlowProtocolHint::unknown);
         PFL_EXPECT(packet5_hint.service_hint.empty());
+    }
+
+    {
+        struct FixtureHintExpectation {
+            const char* relative_path {""};
+            std::uint64_t packet_index {0U};
+            FlowProtocolHint expected_protocol_hint {FlowProtocolHint::unknown};
+            const char* expected_service_hint {""};
+        };
+
+        const std::vector<FixtureHintExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "tls-v1-0.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "tls-v1-1.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "tls-v1-2.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "tls-v1-0.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_expired_certificate_alert_16.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "expired.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "self-signed.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "client-cert-missing.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
+                .packet_index = 3U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+                .expected_service_hint = "tls-v1-2.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap",
+                .packet_index = 13U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_expired_certificate_alert_16.pcap",
+                .packet_index = 13U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap",
+                .packet_index = 7U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+                .packet_index = 12U,
+                .expected_protocol_hint = FlowProtocolHint::tls,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                "fixture=" + std::string {expectation.relative_path} +
+                " | packet=" + std::to_string(expectation.packet_index + 1U)
+            };
+            const auto payload = require_tls_fixture_transport_payload(
+                expectation.relative_path,
+                expectation.packet_index
+            );
+            const auto hint = detect_tcp_flow_hint(payload);
+            PFL_EXPECT(hint.protocol_hint == expectation.expected_protocol_hint);
+            if (std::string_view {expectation.expected_service_hint}.empty()) {
+                PFL_EXPECT(hint.service_hint.empty());
+            } else {
+                PFL_EXPECT(hint.service_hint == expectation.expected_service_hint);
+            }
+        }
     }
 
     {

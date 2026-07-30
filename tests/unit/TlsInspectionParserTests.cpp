@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
@@ -259,6 +261,16 @@ const TlsNewSessionTicketModel& require_parsed_new_session_ticket(const TlsInspe
     PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
     PFL_REQUIRE(handshake.new_session_ticket.has_value());
     return *handshake.new_session_ticket;
+}
+
+const TlsExtensionModel* find_extension_by_type(
+    const std::vector<TlsExtensionModel>& extensions,
+    const std::uint16_t type
+) {
+    const auto it = std::find_if(extensions.begin(), extensions.end(), [&](const TlsExtensionModel& extension) {
+        return extension.type == type;
+    });
+    return it == extensions.end() ? nullptr : &(*it);
 }
 
 }  // namespace
@@ -736,6 +748,201 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[2].source_offset == 197U);
         PFL_EXPECT(result.records[2].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
         PFL_EXPECT(result.records[2].handshake_messages.empty());
+    }
+
+    {
+        struct ClientHelloFixtureExpectation {
+            const char* relative_path;
+            std::uint64_t packet_index;
+            std::size_t expected_total_input_bytes;
+            std::size_t expected_record_length;
+            std::size_t expected_handshake_length;
+            std::uint16_t expected_record_version;
+            std::uint16_t expected_client_hello_version;
+            const char* expected_sni;
+            std::size_t expected_cipher_suite_count;
+            std::size_t expected_extension_count;
+            bool expect_signature_algorithms;
+        };
+
+        const std::vector<ClientHelloFixtureExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 132U,
+                .expected_record_length = 127U,
+                .expected_handshake_length = 123U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0301U,
+                .expected_sni = "tls-v1-0.badssl.com",
+                .expected_cipher_suite_count = 9U,
+                .expected_extension_count = 6U,
+                .expect_signature_algorithms = false,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 132U,
+                .expected_record_length = 127U,
+                .expected_handshake_length = 123U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0302U,
+                .expected_sni = "tls-v1-1.badssl.com",
+                .expected_cipher_suite_count = 9U,
+                .expected_extension_count = 6U,
+                .expect_signature_algorithms = false,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 222U,
+                .expected_record_length = 217U,
+                .expected_handshake_length = 213U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0303U,
+                .expected_sni = "tls-v1-2.badssl.com",
+                .expected_cipher_suite_count = 28U,
+                .expected_extension_count = 7U,
+                .expect_signature_algorithms = true,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 246U,
+                .expected_record_length = 241U,
+                .expected_handshake_length = 237U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0303U,
+                .expected_sni = "tls-v1-2.badssl.com",
+                .expected_cipher_suite_count = 28U,
+                .expected_extension_count = 9U,
+                .expect_signature_algorithms = true,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=" + std::to_string(expectation.packet_index + 1U)
+            };
+            const auto payload = require_tls_fixture_transport_payload(expectation.relative_path, expectation.packet_index);
+            const auto result = parser.inspect(payload);
+
+            PFL_EXPECT(result.total_input_bytes == expectation.expected_total_input_bytes);
+            PFL_EXPECT(result.consumed_bytes == expectation.expected_total_input_bytes);
+            PFL_REQUIRE(result.records.size() == 1U);
+            PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+            PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+            PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {expectation.expected_record_version});
+            PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {expectation.expected_record_length});
+            PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+
+            const auto& handshake = result.records[0].handshake_messages[0];
+            PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+            PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_hello);
+            PFL_EXPECT(handshake.declared_body_length == std::optional<std::size_t> {expectation.expected_handshake_length});
+            PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+            PFL_REQUIRE(handshake.client_hello.has_value());
+
+            const auto& hello = *handshake.client_hello;
+            PFL_EXPECT(hello.legacy_version == expectation.expected_client_hello_version);
+            PFL_EXPECT(hello.session_id.empty());
+            PFL_EXPECT(hello.cipher_suites.size() == expectation.expected_cipher_suite_count);
+            PFL_EXPECT(hello.extensions.size() == expectation.expected_extension_count);
+            PFL_EXPECT(hello.sni_names == std::vector<std::string> {expectation.expected_sni});
+            PFL_EXPECT(hello.alpn_protocols == (expectation.expected_extension_count == 9U
+                ? std::vector<std::string> {"http/1.1"}
+                : std::vector<std::string> {}));
+            PFL_EXPECT(hello.supported_versions.empty());
+
+            const auto* server_name = find_extension_by_type(hello.extensions, 0x0000U);
+            PFL_REQUIRE(server_name != nullptr);
+            PFL_EXPECT(server_name->server_names == std::vector<std::string> {expectation.expected_sni});
+
+            const auto* supported_groups = find_extension_by_type(hello.extensions, 0x000AU);
+            PFL_REQUIRE(supported_groups != nullptr);
+            PFL_EXPECT(supported_groups->structured_parse_status == TlsStructuredParseStatus::parsed);
+            PFL_EXPECT(!supported_groups->supported_group_ids.empty());
+
+            const auto* signature_algorithms = find_extension_by_type(hello.extensions, 0x000DU);
+            if (expectation.expect_signature_algorithms) {
+                PFL_REQUIRE(signature_algorithms != nullptr);
+                PFL_EXPECT(signature_algorithms->structured_parse_status == TlsStructuredParseStatus::parsed);
+                PFL_EXPECT(!signature_algorithms->signature_scheme_ids.empty());
+            } else {
+                PFL_EXPECT(signature_algorithms == nullptr);
+            }
+
+            const auto* status_request = find_extension_by_type(hello.extensions, 0x0005U);
+            if (std::string_view {expectation.relative_path} == "parsing/tls/tls_1_2_status_request_alpn_19.pcap") {
+                PFL_REQUIRE(status_request != nullptr);
+                PFL_REQUIRE(status_request->status_request.has_value());
+                PFL_EXPECT(status_request->status_request->status_type == 1U);
+                PFL_EXPECT(status_request->status_request->responder_id_list_length == 0U);
+                PFL_EXPECT(status_request->status_request->request_extensions_length == 0U);
+                const auto* alpn = find_extension_by_type(hello.extensions, 0x0010U);
+                PFL_REQUIRE(alpn != nullptr);
+                PFL_EXPECT(alpn->alpn_protocols == std::vector<std::string> {"http/1.1"});
+            } else {
+                PFL_EXPECT(status_request == nullptr);
+            }
+        }
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap | packet=14"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap",
+            13U
+        );
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 7U);
+        PFL_EXPECT(result.consumed_bytes == 7U);
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {2U});
+        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {7U});
+        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
+        PFL_EXPECT(result.records[0].handshake_messages.empty());
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_certificate_missing_18.pcap | packet=13"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+            12U
+        );
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 138U);
+        PFL_EXPECT(result.consumed_bytes == 138U);
+        PFL_REQUIRE(result.records.size() == 4U);
+
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {7U});
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::certificate);
+        PFL_EXPECT(result.records[0].handshake_messages[0].declared_body_length == std::optional<std::size_t> {3U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::not_attempted);
+
+        PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {70U});
+        PFL_REQUIRE(result.records[1].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[1].handshake_messages[0].kind == TlsHandshakeKind::client_key_exchange);
+        PFL_EXPECT(result.records[1].handshake_messages[0].declared_body_length == std::optional<std::size_t> {66U});
+
+        PFL_EXPECT(result.records[2].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[2].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[2].declared_payload_length == std::optional<std::size_t> {1U});
+
+        PFL_EXPECT(result.records[3].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[3].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[3].declared_payload_length == std::optional<std::size_t> {40U});
+        PFL_EXPECT(result.records[3].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[3].handshake_messages.empty());
     }
 
     {
