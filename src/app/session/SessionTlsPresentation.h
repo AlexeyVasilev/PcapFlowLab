@@ -12,6 +12,7 @@
 #include "app/session/FlowRows.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketRef.h"
+#include "core/services/TlsInspectionModel.h"
 
 namespace pfl {
 
@@ -196,6 +197,13 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
     CaptureSession& session,
     std::size_t flow_index,
     // Zero-based selected flow-packet index within the loaded flow packet window.
+    std::uint64_t selected_flow_packet_index,
+    std::size_t loaded_packet_window_count
+);
+
+[[nodiscard]] TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
+    CaptureSession& session,
+    std::size_t flow_index,
     std::uint64_t selected_flow_packet_index,
     std::size_t loaded_packet_window_count
 );

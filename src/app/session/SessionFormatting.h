@@ -13,6 +13,7 @@
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
+#include "core/services/TlsInspectionModel.h"
 
 namespace pfl::session_detail {
 
@@ -46,6 +47,7 @@ struct PacketSummaryOptions {
     std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
+    TlsInspectionSemanticState tls_initial_semantic_state {TlsInspectionSemanticState::plaintext};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
 };
 

@@ -880,76 +880,6 @@ const char* tls_record_type_text(const std::uint8_t content_type) noexcept {
     }
 }
 
-const char* tls_alert_level_text(const std::uint8_t level) noexcept {
-    switch (level) {
-    case 1U:
-        return "Warning";
-    case 2U:
-        return "Fatal";
-    default:
-        return nullptr;
-    }
-}
-
-const char* tls_alert_description_text(const std::uint8_t description) noexcept {
-    switch (description) {
-    case 0U:
-        return "Close Notify";
-    case 10U:
-        return "Unexpected Message";
-    case 20U:
-        return "Bad Record MAC";
-    case 21U:
-        return "Decryption Failed";
-    case 22U:
-        return "Record Overflow";
-    case 40U:
-        return "Handshake Failure";
-    case 42U:
-        return "Bad Certificate";
-    case 43U:
-        return "Unsupported Certificate";
-    case 44U:
-        return "Certificate Revoked";
-    case 45U:
-        return "Certificate Expired";
-    case 46U:
-        return "Certificate Unknown";
-    case 47U:
-        return "Illegal Parameter";
-    case 48U:
-        return "Unknown CA";
-    case 49U:
-        return "Access Denied";
-    case 50U:
-        return "Decode Error";
-    case 51U:
-        return "Decrypt Error";
-    case 70U:
-        return "Protocol Version";
-    case 71U:
-        return "Insufficient Security";
-    case 80U:
-        return "Internal Error";
-    case 86U:
-        return "Inappropriate Fallback";
-    case 90U:
-        return "User Canceled";
-    case 109U:
-        return "Missing Extension";
-    case 110U:
-        return "Unsupported Extension";
-    case 112U:
-        return "Unrecognized Name";
-    case 116U:
-        return "Certificate Required";
-    case 120U:
-        return "No Application Protocol";
-    default:
-        return nullptr;
-    }
-}
-
 const char* tls_handshake_type_text(const std::uint8_t handshake_type) noexcept {
     switch (handshake_type) {
     case 0U:
@@ -1090,6 +1020,9 @@ std::string tls_record_protocol_text(
     if (content_type == 22U && semantic_kind == TlsStreamItemSemanticKind::encrypted_handshake) {
         text << "\n"
              << "  Payload Interpretation: Encrypted/opaque handshake payload";
+    } else if (content_type == 21U && semantic_kind == TlsStreamItemSemanticKind::encrypted_alert) {
+        text << "\n"
+             << "  Payload Interpretation: Encrypted/opaque alert payload";
     } else if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
         const auto handshake_type = record_bytes[kTlsRecordHeaderSize];
         const auto handshake_length = static_cast<std::size_t>(read_be24(record_bytes, kTlsRecordHeaderSize + 1U));
@@ -1106,20 +1039,24 @@ std::string tls_record_protocol_text(
         }
     }
 
-    if (content_type == 21U && record_length >= 2U && record_bytes.size() >= kTlsRecordHeaderSize + 2U) {
+    if (content_type == 21U &&
+        semantic_kind != TlsStreamItemSemanticKind::encrypted_alert &&
+        record_length >= 2U &&
+        record_bytes.size() >= kTlsRecordHeaderSize + 2U) {
         const auto alert_level = record_bytes[kTlsRecordHeaderSize];
         const auto alert_description = record_bytes[kTlsRecordHeaderSize + 1U];
-        if (const auto* level_text = tls_alert_level_text(alert_level); level_text != nullptr) {
+        if (const auto level_text = tls_alert_level_name(alert_level); level_text.has_value()) {
             text << "\n"
-                 << "  Alert Level: " << level_text;
+                 << "  Alert Level: " << *level_text;
         } else {
             text << "\n"
                  << "  Alert Level: " << static_cast<unsigned int>(alert_level);
         }
 
-        if (const auto* description_text = tls_alert_description_text(alert_description); description_text != nullptr) {
+        if (const auto description_text = tls_alert_description_name(alert_description);
+            description_text.has_value()) {
             text << "\n"
-                 << "  Alert Description: " << description_text;
+                 << "  Alert Description: " << *description_text;
         } else {
             text << "\n"
                  << "  Alert Description: " << static_cast<unsigned int>(alert_description);
@@ -1141,7 +1078,9 @@ TlsStreamItemSemanticKind tls_stream_semantic_kind(
     case 20U:
         return TlsStreamItemSemanticKind::change_cipher_spec;
     case 21U:
-        return TlsStreamItemSemanticKind::alert;
+        return post_change_cipher_spec
+            ? TlsStreamItemSemanticKind::encrypted_alert
+            : TlsStreamItemSemanticKind::alert;
     case 22U:
         return post_change_cipher_spec
             ? TlsStreamItemSemanticKind::encrypted_handshake
@@ -1456,6 +1395,11 @@ struct PendingTlsHintRecord {
     std::size_t total_byte_count {0U};
     std::size_t remaining_original_bytes {0U};
     std::vector<std::uint8_t> captured_bytes {};
+};
+
+struct PendingTlsSemanticRecord {
+    std::size_t remaining_original_bytes {0U};
+    bool is_change_cipher_spec {false};
 };
 
 std::optional<std::string> extract_service_hint_from_complete_tls_record(
@@ -2340,6 +2284,167 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly_bounded(
         max_item_count,
         false
     );
+}
+
+TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t selected_flow_packet_index,
+    const std::size_t loaded_packet_window_count
+) {
+    if (loaded_packet_window_count == 0U) {
+        return TlsInspectionSemanticState::unknown;
+    }
+
+    const auto bounded_window_count = std::min(loaded_packet_window_count, session.flow_packet_count(flow_index));
+    if (selected_flow_packet_index >= bounded_window_count) {
+        return TlsInspectionSemanticState::unknown;
+    }
+
+    session.prepare_selected_flow_packet_cache(flow_index, bounded_window_count);
+    const auto retransmission_packets = session.suspected_tcp_retransmission_packet_indices(flow_index, bounded_window_count);
+    session.set_selected_flow_tcp_payload_suppression(flow_index, retransmission_packets, bounded_window_count);
+
+    const auto prefix_rows = session.list_flow_packets(flow_index, 0U, bounded_window_count);
+    if (prefix_rows.empty() || selected_flow_packet_index >= prefix_rows.size()) {
+        return TlsInspectionSemanticState::unknown;
+    }
+
+    const auto& selected_row = prefix_rows[static_cast<std::size_t>(selected_flow_packet_index)];
+    const auto selected_direction = direction_from_packet_row(selected_row);
+    const auto selected_packet = session.selected_flow_packet_at(flow_index, selected_row.row_number);
+    if (!selected_packet.has_value()) {
+        return TlsInspectionSemanticState::unknown;
+    }
+
+    const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, selected_direction);
+    if (gap_packet_index.has_value() && selected_packet->packet_index >= *gap_packet_index) {
+        return TlsInspectionSemanticState::unknown;
+    }
+
+    auto state = TlsInspectionSemanticState::plaintext;
+    std::optional<PendingTlsSemanticRecord> pending_record {};
+
+    for (const auto& row : prefix_rows) {
+        const auto flow_packet_row_index = row.row_number - 1U;
+        if (flow_packet_row_index >= selected_flow_packet_index) {
+            break;
+        }
+        if (direction_from_packet_row(row) != selected_direction) {
+            continue;
+        }
+
+        const auto packet = session.selected_flow_packet_at(flow_index, row.row_number);
+        if (!packet.has_value()) {
+            continue;
+        }
+        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+            continue;
+        }
+
+        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
+        const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, *packet);
+        if (!original_payload_length.has_value()) {
+            return TlsInspectionSemanticState::unknown;
+        }
+
+        const auto payload_span = std::span<const std::uint8_t>(
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload_bytes.size() - trim_prefix_bytes
+        );
+
+        std::size_t captured_offset = 0U;
+        std::size_t record_budget_remaining = *original_payload_length;
+        std::size_t unique_original_remaining = *original_payload_length > trim_prefix_bytes
+            ? *original_payload_length - trim_prefix_bytes
+            : 0U;
+
+        while (record_budget_remaining > 0U) {
+            if (pending_record.has_value()) {
+                const auto contributed_original_bytes = std::min(
+                    unique_original_remaining,
+                    pending_record->remaining_original_bytes
+                );
+                if (contributed_original_bytes == 0U) {
+                    break;
+                }
+
+                const auto captured_remaining = payload_span.size() - std::min(payload_span.size(), captured_offset);
+                const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+                if (packet->captured_length < packet->original_length &&
+                    captured_contribution < contributed_original_bytes) {
+                    return TlsInspectionSemanticState::unknown;
+                }
+
+                pending_record->remaining_original_bytes -= contributed_original_bytes;
+                unique_original_remaining -= contributed_original_bytes;
+                record_budget_remaining = contributed_original_bytes > record_budget_remaining
+                    ? 0U
+                    : record_budget_remaining - contributed_original_bytes;
+                captured_offset += captured_contribution;
+
+                if (pending_record->remaining_original_bytes == 0U) {
+                    if (pending_record->is_change_cipher_spec) {
+                        state = TlsInspectionSemanticState::post_change_cipher_spec;
+                    }
+                    pending_record.reset();
+                    continue;
+                }
+
+                break;
+            }
+
+            if (captured_offset >= payload_span.size()) {
+                break;
+            }
+
+            const auto captured_remaining = payload_span.size() - captured_offset;
+            if (captured_remaining < kTlsRecordHeaderSize ||
+                !looks_like_tls_record_prefix(payload_span, captured_offset)) {
+                return TlsInspectionSemanticState::unknown;
+            }
+
+            const auto record_start = captured_offset;
+            const auto record_body_length = static_cast<std::size_t>(read_be16(payload_span, captured_offset + 3U));
+            const auto record_size = kTlsRecordHeaderSize + record_body_length;
+            const auto contributed_original_bytes = std::min(record_budget_remaining, record_size);
+            const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
+            const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
+            if (packet->captured_length < packet->original_length &&
+                captured_contribution < contributed_original_bytes) {
+                return TlsInspectionSemanticState::unknown;
+            }
+
+            record_budget_remaining -= contributed_original_bytes;
+            unique_original_remaining -= contributed_unique_bytes;
+            captured_offset += captured_contribution;
+
+            const bool is_change_cipher_spec = payload_span[record_start] == 20U;
+            if (record_size == contributed_original_bytes) {
+                if (is_change_cipher_spec) {
+                    state = TlsInspectionSemanticState::post_change_cipher_spec;
+                }
+                continue;
+            }
+
+            pending_record = PendingTlsSemanticRecord {
+                .remaining_original_bytes = record_size - contributed_original_bytes,
+                .is_change_cipher_spec = is_change_cipher_spec,
+            };
+            break;
+        }
+    }
+
+    return state;
 }
 
 std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(

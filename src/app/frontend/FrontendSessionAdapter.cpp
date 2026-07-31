@@ -3105,6 +3105,17 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
                     *loaded_packet_window_count
                 )
                 : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
+        const auto tls_initial_semantic_state =
+            flow_index.has_value() &&
+                internal_flow_packet_index.has_value() &&
+                loaded_packet_window_count.has_value()
+            ? session_detail::determine_selected_packet_tls_initial_state(
+                session_,
+                *flow_index,
+                *internal_flow_packet_index,
+                *loaded_packet_window_count
+            )
+            : TlsInspectionSemanticState::plaintext;
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
@@ -3120,6 +3131,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,
+            .tls_initial_semantic_state = tls_initial_semantic_state,
             .reconstructed_tls_records = std::move(reconstructed_tls_records),
         });
     } else {

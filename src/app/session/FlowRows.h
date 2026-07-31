@@ -80,6 +80,7 @@ enum class TlsStreamItemSemanticKind : std::uint8_t {
     encrypted_handshake,
     application_data,
     alert,
+    encrypted_alert,
     generic_record,
     partial_record,
     partial_payload,

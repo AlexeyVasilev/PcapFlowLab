@@ -3424,6 +3424,22 @@ std::string format_tls_record_type_value(
     return "Unknown";
 }
 
+std::string format_tls_alert_level_value(const std::uint8_t level) {
+    if (const auto known_name = tls_alert_level_name(level); known_name.has_value()) {
+        return std::string {*known_name} + " (" + std::to_string(level) + ")";
+    }
+
+    return "Unknown Alert Level (" + std::to_string(level) + ")";
+}
+
+std::string format_tls_alert_description_value(const std::uint8_t description) {
+    if (const auto known_name = tls_alert_description_name(description); known_name.has_value()) {
+        return std::string {*known_name} + " (" + std::to_string(description) + ")";
+    }
+
+    return "Unknown Alert Description (" + std::to_string(description) + ")";
+}
+
 std::string format_tls_handshake_type_value(
     const TlsHandshakeKind kind,
     const std::optional<std::uint8_t> handshake_type
@@ -4111,7 +4127,7 @@ void append_tls_handshake_fields(
             fields.push_back(make_summary_field("SNI", join_tls_texts(hello.sni_names)));
         }
         if (!hello.alpn_protocols.empty()) {
-            fields.push_back(make_summary_field("ALPN", join_tls_texts(hello.alpn_protocols, 4U)));
+            fields.push_back(make_summary_field("Offered Protocols", join_tls_texts(hello.alpn_protocols, 4U)));
         }
         if (!hello.supported_versions.empty()) {
             fields.push_back(make_summary_field(
@@ -4137,6 +4153,9 @@ void append_tls_handshake_fields(
         fields.push_back(make_summary_field("Selected Cipher Suite", format_tls_cipher_suite_value(hello.selected_cipher_suite)));
         fields.push_back(make_summary_field("Compression Method", format_tls_compression_method_value(hello.compression_method)));
         fields.push_back(make_summary_field("Extension Count", std::to_string(hello.extensions.size())));
+        if (hello.selected_alpn_protocol.has_value()) {
+            fields.push_back(make_summary_field("Selected Protocol", *hello.selected_alpn_protocol));
+        }
         if (const auto extensions = build_tls_extensions_group(hello.extensions); extensions.has_value()) {
             children.push_back(*extensions);
         }
@@ -4241,6 +4260,41 @@ std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& 
                 "Payload Interpretation",
                 "Encrypted/opaque handshake payload"
             ));
+        } else if (record.alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque) {
+            fields.push_back(make_summary_field(
+                "Payload Interpretation",
+                "Encrypted/opaque alert payload"
+            ));
+        } else if (record.content_type_kind == TlsRecordContentTypeKind::alert &&
+                   record.alert_payload_kind == TlsAlertPayloadKind::plaintext) {
+            switch (record.alert_parse_status) {
+            case TlsAlertParseStatus::parsed: {
+                fields.push_back(make_summary_field("Status", "Plaintext alert payload parsed"));
+                fields.push_back(make_summary_field("Alert Count", std::to_string(record.alert_entries.size())));
+
+                std::vector<std::string> alert_level_values {};
+                std::vector<std::string> alert_description_values {};
+                alert_level_values.reserve(record.alert_entries.size());
+                alert_description_values.reserve(record.alert_entries.size());
+                for (const auto& entry : record.alert_entries) {
+                    alert_level_values.push_back(format_tls_alert_level_value(entry.level));
+                    alert_description_values.push_back(format_tls_alert_description_value(entry.description));
+                }
+
+                append_tls_named_value_fields(fields, "Alert Level", alert_level_values);
+                append_tls_named_value_fields(fields, "Alert Description", alert_description_values);
+                break;
+            }
+            case TlsAlertParseStatus::incomplete:
+                fields.push_back(make_summary_field("Status", "Incomplete plaintext alert payload"));
+                break;
+            case TlsAlertParseStatus::malformed:
+                fields.push_back(make_summary_field("Status", "Malformed plaintext alert payload"));
+                break;
+            case TlsAlertParseStatus::not_attempted:
+            default:
+                break;
+            }
         } else if (record.handshake_messages.size() == 1U) {
             append_tls_handshake_fields(fields, children, record.handshake_messages.front());
         } else if (!record.handshake_messages.empty()) {
@@ -4289,6 +4343,11 @@ std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& 
             "Payload Interpretation",
             "Encrypted/opaque handshake payload"
         ));
+    } else if (record.alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque) {
+        fields.push_back(make_summary_field(
+            "Payload Interpretation",
+            "Encrypted/opaque alert payload"
+        ));
     } else if (record.handshake_messages.size() == 1U) {
         const auto& handshake = record.handshake_messages.front();
         if (handshake.type.has_value()) {
@@ -4318,14 +4377,16 @@ std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& 
 
 std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     std::span<const std::uint8_t> transport_payload_bytes,
-    const bool force_encrypted_handshake_records = false
+    const TlsInspectionSemanticState initial_semantic_state,
+    const bool force_encrypted_handshake_records = false,
+    const bool force_encrypted_alert_records = false
 ) {
     if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
         return {};
     }
 
     TlsInspectionParser parser {};
-    auto inspection = parser.inspect(transport_payload_bytes);
+    auto inspection = parser.inspect(transport_payload_bytes, initial_semantic_state);
     if (force_encrypted_handshake_records) {
         for (auto& record : inspection.records) {
             if (record.status != TlsRecordStatus::complete ||
@@ -4335,6 +4396,18 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
 
             record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
             record.handshake_messages.clear();
+        }
+    }
+    if (force_encrypted_alert_records) {
+        for (auto& record : inspection.records) {
+            if (record.status != TlsRecordStatus::complete ||
+                record.content_type_kind != TlsRecordContentTypeKind::alert) {
+                continue;
+            }
+
+            record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
+            record.alert_parse_status = TlsAlertParseStatus::not_attempted;
+            record.alert_entries.clear();
         }
     }
 
@@ -4348,10 +4421,32 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     return layers;
 }
 
+TlsInspectionSemanticState advance_tls_summary_semantic_state(
+    const TlsInspectionSemanticState current_state,
+    const TlsSelectedPacketRecordContext& reconstructed_record
+) noexcept {
+    if (current_state == TlsInspectionSemanticState::post_change_cipher_spec) {
+        return current_state;
+    }
+    const bool selected_packet_completes_reconstructed_record =
+        reconstructed_record.selected_contribution_flow_packet_index.has_value() &&
+        reconstructed_record.completion_flow_packet_index.has_value() &&
+        *reconstructed_record.selected_contribution_flow_packet_index ==
+            *reconstructed_record.completion_flow_packet_index;
+    if (reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec &&
+        reconstructed_record.status == TlsSelectedPacketStatus::complete &&
+        reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size &&
+        selected_packet_completes_reconstructed_record) {
+        return TlsInspectionSemanticState::post_change_cipher_spec;
+    }
+    return current_state;
+}
+
 struct TlsStreamSummaryContext {
     bool is_tls {false};
     bool allow_structured_summary {false};
     bool force_encrypted_handshake_records {false};
+    bool force_encrypted_alert_records {false};
     std::optional<std::string_view> partial_status_text {};
 };
 
@@ -4365,6 +4460,12 @@ TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKi
         return TlsStreamSummaryContext {
             .is_tls = true,
             .allow_structured_summary = true,
+        };
+    case TlsStreamItemSemanticKind::encrypted_alert:
+        return TlsStreamSummaryContext {
+            .is_tls = true,
+            .allow_structured_summary = true,
+            .force_encrypted_alert_records = true,
         };
     case TlsStreamItemSemanticKind::encrypted_handshake:
         return TlsStreamSummaryContext {
@@ -5213,7 +5314,9 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
         const auto payload_bytes = decode_hex_dump_bytes(row.payload_hex_text);
         tls_layers = build_tls_summary_layers_impl(
             std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()),
-            context.force_encrypted_handshake_records
+            TlsInspectionSemanticState::plaintext,
+            context.force_encrypted_handshake_records,
+            context.force_encrypted_alert_records
         );
     }
 
@@ -5242,7 +5345,7 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
 }
 
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
-    return build_tls_summary_layers_impl(transport_payload_bytes);
+    return build_tls_summary_layers_impl(transport_payload_bytes, TlsInspectionSemanticState::plaintext);
 }
 
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
@@ -6562,7 +6665,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     bool appended_tls_summary = false;
     const auto reassembled_prefix_bytes = selected_packet_reassembled_tls_prefix_bytes(options);
     if (reassembled_prefix_bytes == 0U) {
-        const auto tls_layers = build_tls_summary_layers(options.transport_payload_bytes);
+        const auto tls_layers = build_tls_summary_layers_impl(
+            options.transport_payload_bytes,
+            options.tls_initial_semantic_state
+        );
         if (!tls_layers.empty()) {
             for (const auto& tls_layer : tls_layers) {
                 append_layer_if_not_empty(layers, tls_layer);
@@ -6575,6 +6681,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     } else {
         const auto flow_packet_index = *options.flow_packet_index;
+        auto tls_initial_semantic_state = options.tls_initial_semantic_state;
         for (const auto& reconstructed_record : options.reconstructed_tls_records) {
             const auto* selected_contribution =
                 find_selected_packet_contribution(reconstructed_record, flow_packet_index);
@@ -6582,13 +6689,20 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 continue;
             }
             append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
+            tls_initial_semantic_state = advance_tls_summary_semantic_state(
+                tls_initial_semantic_state,
+                reconstructed_record
+            );
         }
 
         const auto remaining_tls_payload =
             reassembled_prefix_bytes < options.transport_payload_bytes.size()
                 ? options.transport_payload_bytes.subspan(reassembled_prefix_bytes)
                 : std::span<const std::uint8_t> {};
-        const auto tls_layers = build_tls_summary_layers(remaining_tls_payload);
+        const auto tls_layers = build_tls_summary_layers_impl(
+            remaining_tls_payload,
+            tls_initial_semantic_state
+        );
         if (!tls_layers.empty()) {
             for (const auto& tls_layer : tls_layers) {
                 append_layer_if_not_empty(layers, tls_layer);

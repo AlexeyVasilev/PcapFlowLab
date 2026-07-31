@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pfl {
@@ -24,6 +25,12 @@ enum class TlsRecordStatus : std::uint8_t {
 };
 
 enum class TlsHandshakePayloadKind : std::uint8_t {
+    none,
+    plaintext,
+    encrypted_opaque,
+};
+
+enum class TlsAlertPayloadKind : std::uint8_t {
     none,
     plaintext,
     encrypted_opaque,
@@ -54,6 +61,97 @@ enum class TlsStructuredParseStatus : std::uint8_t {
     not_attempted,
     parsed,
     malformed,
+};
+
+enum class TlsAlertParseStatus : std::uint8_t {
+    not_attempted,
+    parsed,
+    incomplete,
+    malformed,
+};
+
+enum class TlsInspectionSemanticState : std::uint8_t {
+    unknown,
+    plaintext,
+    post_change_cipher_spec,
+};
+
+[[nodiscard]] inline std::optional<std::string_view> tls_alert_level_name(const std::uint8_t level) noexcept {
+    switch (level) {
+    case 1U:
+        return std::string_view {"Warning"};
+    case 2U:
+        return std::string_view {"Fatal"};
+    default:
+        return std::nullopt;
+    }
+}
+
+[[nodiscard]] inline std::optional<std::string_view> tls_alert_description_name(
+    const std::uint8_t description
+) noexcept {
+    switch (description) {
+    case 0U:
+        return std::string_view {"Close Notify"};
+    case 10U:
+        return std::string_view {"Unexpected Message"};
+    case 20U:
+        return std::string_view {"Bad Record MAC"};
+    case 21U:
+        return std::string_view {"Decryption Failed"};
+    case 22U:
+        return std::string_view {"Record Overflow"};
+    case 40U:
+        return std::string_view {"Handshake Failure"};
+    case 42U:
+        return std::string_view {"Bad Certificate"};
+    case 43U:
+        return std::string_view {"Unsupported Certificate"};
+    case 44U:
+        return std::string_view {"Certificate Revoked"};
+    case 45U:
+        return std::string_view {"Certificate Expired"};
+    case 46U:
+        return std::string_view {"Certificate Unknown"};
+    case 47U:
+        return std::string_view {"Illegal Parameter"};
+    case 48U:
+        return std::string_view {"Unknown CA"};
+    case 49U:
+        return std::string_view {"Access Denied"};
+    case 50U:
+        return std::string_view {"Decode Error"};
+    case 51U:
+        return std::string_view {"Decrypt Error"};
+    case 70U:
+        return std::string_view {"Protocol Version"};
+    case 71U:
+        return std::string_view {"Insufficient Security"};
+    case 80U:
+        return std::string_view {"Internal Error"};
+    case 86U:
+        return std::string_view {"Inappropriate Fallback"};
+    case 90U:
+        return std::string_view {"User Canceled"};
+    case 109U:
+        return std::string_view {"Missing Extension"};
+    case 110U:
+        return std::string_view {"Unsupported Extension"};
+    case 112U:
+        return std::string_view {"Unrecognized Name"};
+    case 116U:
+        return std::string_view {"Certificate Required"};
+    case 120U:
+        return std::string_view {"No Application Protocol"};
+    default:
+        return std::nullopt;
+    }
+}
+
+struct TlsAlertEntryModel {
+    std::size_t order_index {0U};
+    std::uint8_t level {0U};
+    std::uint8_t description {0U};
 };
 
 struct TlsKeyShareEntryModel {
@@ -107,6 +205,7 @@ struct TlsServerHelloModel {
     std::uint8_t compression_method {0U};
     std::vector<TlsExtensionModel> extensions {};
     std::uint16_t selected_tls_version {0U};
+    std::optional<std::string> selected_alpn_protocol {};
 };
 
 struct TlsNewSessionTicketModel {
@@ -167,6 +266,9 @@ struct TlsRecordModel {
     std::size_t available_bytes {0U};
     TlsRecordStatus status {TlsRecordStatus::partial_header};
     TlsHandshakePayloadKind handshake_payload_kind {TlsHandshakePayloadKind::none};
+    TlsAlertPayloadKind alert_payload_kind {TlsAlertPayloadKind::none};
+    TlsAlertParseStatus alert_parse_status {TlsAlertParseStatus::not_attempted};
+    std::vector<TlsAlertEntryModel> alert_entries {};
     std::vector<TlsHandshakeModel> handshake_messages {};
 };
 

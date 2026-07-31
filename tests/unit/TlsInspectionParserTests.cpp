@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -317,6 +318,53 @@ const TlsCertificateRequestModel& require_parsed_certificate_request(const TlsIn
     PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
     PFL_REQUIRE(handshake.certificate_request.has_value());
     return *handshake.certificate_request;
+}
+
+const TlsServerHelloModel& require_parsed_server_hello(const TlsInspectionResult& result) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::server_hello);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.server_hello.has_value());
+    return *handshake.server_hello;
+}
+
+void expect_tls_alert_entry(
+    const TlsAlertEntryModel& entry,
+    const std::uint8_t expected_level,
+    const std::uint8_t expected_description
+) {
+    PFL_EXPECT(entry.level == expected_level);
+    PFL_EXPECT(entry.description == expected_description);
+}
+
+std::vector<std::uint8_t> require_tls_fixture_transport_payload_matching_record(
+    const std::filesystem::path& relative_path,
+    const std::function<bool(const TlsInspectionResult&)>& predicate
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path), CaptureImportOptions {}));
+    const auto packet_count = session.summary().packet_count;
+
+    PacketPayloadService payload_service {};
+    TlsInspectionParser parser {};
+    for (std::uint64_t packet_index = 0U; packet_index < packet_count; ++packet_index) {
+        const auto packet = session.find_packet(packet_index);
+        PFL_REQUIRE(packet.has_value());
+
+        const auto packet_bytes = session.read_packet_data(*packet);
+        const auto payload = payload_service.extract_transport_payload(packet_bytes, packet->data_link_type);
+        if (payload.empty()) {
+            continue;
+        }
+
+        const auto result = parser.inspect(payload);
+        if (predicate(result)) {
+            return payload;
+        }
+    }
+
+    PFL_REQUIRE(false);
+    return {};
 }
 
 const TlsExtensionModel* find_extension_by_type(
@@ -965,22 +1013,157 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
-        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap | packet=14"};
-        const auto payload = require_tls_fixture_transport_payload(
-            "parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap",
-            13U
+        struct AlertFixtureExpectation {
+            const char* relative_path;
+            std::uint64_t packet_index;
+            std::uint8_t expected_level;
+            std::uint8_t expected_description;
+        };
+
+        const std::vector<AlertFixtureExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap",
+                .packet_index = 13U,
+                .expected_level = 2U,
+                .expected_description = 70U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_expired_certificate_alert_16.pcap",
+                .packet_index = 13U,
+                .expected_level = 2U,
+                .expected_description = 45U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap",
+                .packet_index = 7U,
+                .expected_level = 2U,
+                .expected_description = 48U,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=" + std::to_string(expectation.packet_index + 1U)
+            };
+            const auto payload = require_tls_fixture_transport_payload(expectation.relative_path, expectation.packet_index);
+            const auto result = parser.inspect(payload);
+            PFL_EXPECT(result.total_input_bytes == 7U);
+            PFL_EXPECT(result.consumed_bytes == 7U);
+            PFL_REQUIRE(result.records.size() == 1U);
+            PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+            PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+            PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+            PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {2U});
+            PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {7U});
+            PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
+            PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+            PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+            PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+            expect_tls_alert_entry(
+                result.records[0].alert_entries[0],
+                expectation.expected_level,
+                expectation.expected_description
+            );
+            PFL_EXPECT(result.records[0].handshake_messages.empty());
+        }
+    }
+
+    {
+        const auto payload = require_tls_fixture_transport_payload_matching_record(
+            "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
+            [](const TlsInspectionResult& result) {
+                return result.records.size() == 1U &&
+                    result.records[0].status == TlsRecordStatus::complete &&
+                    result.records[0].handshake_messages.size() == 1U &&
+                    result.records[0].handshake_messages[0].kind == TlsHandshakeKind::server_hello;
+            }
         );
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_status_request_alpn_19.pcap | server_hello"};
         const auto result = parser.inspect(payload);
-        PFL_EXPECT(result.total_input_bytes == 7U);
-        PFL_EXPECT(result.consumed_bytes == 7U);
-        PFL_REQUIRE(result.records.size() == 1U);
-        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
-        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
-        PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
-        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {2U});
-        PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {7U});
-        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
-        PFL_EXPECT(result.records[0].handshake_messages.empty());
+        const auto& hello = require_parsed_server_hello(result);
+        PFL_EXPECT(hello.selected_tls_version == 0x0303U);
+        PFL_EXPECT(hello.selected_cipher_suite == 0xC02FU);
+        PFL_EXPECT(hello.selected_alpn_protocol == std::optional<std::string> {"http/1.1"});
+        const auto* alpn_extension = find_extension_by_type(hello.extensions, 0x0010U);
+        PFL_REQUIRE(alpn_extension != nullptr);
+        PFL_EXPECT(alpn_extension->structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(alpn_extension->alpn_protocols == std::vector<std::string> {"http/1.1"});
+    }
+
+    {
+        const std::vector<const char*> baseline_alert_fixtures {
+            "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+            "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+            "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+        };
+
+        for (const auto* relative_path : baseline_alert_fixtures) {
+            ScopedTestContext context {std::string {"fixture="} + relative_path + " | encrypted_alert"};
+            const auto payload = require_tls_fixture_transport_payload_matching_record(
+                relative_path,
+                [](const TlsInspectionResult& result) {
+                    return result.records.size() == 1U &&
+                        result.records[0].status == TlsRecordStatus::complete &&
+                        result.records[0].content_type_kind == TlsRecordContentTypeKind::alert;
+                }
+            );
+            const auto result = parser.inspect(payload);
+            PFL_REQUIRE(result.records.size() == 1U);
+            PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+            PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+            PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::not_attempted);
+            PFL_EXPECT(result.records[0].alert_entries.empty());
+        }
+    }
+
+    {
+        ScopedTestContext context {"synthetic | alert_initial_semantic_state"};
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x30U});
+
+        const auto plaintext_result = parser.inspect(alert_record, TlsInspectionSemanticState::plaintext);
+        PFL_REQUIRE(plaintext_result.records.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(plaintext_result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(plaintext_result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(plaintext_result.records[0].alert_entries[0], 2U, 48U);
+
+        const auto encrypted_result = parser.inspect(
+            alert_record,
+            TlsInspectionSemanticState::post_change_cipher_spec
+        );
+        PFL_REQUIRE(encrypted_result.records.size() == 1U);
+        PFL_EXPECT(encrypted_result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(encrypted_result.records[0].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(encrypted_result.records[0].alert_entries.empty());
+
+        const auto unknown_result = parser.inspect(alert_record, TlsInspectionSemanticState::unknown);
+        PFL_REQUIRE(unknown_result.records.size() == 1U);
+        PFL_EXPECT(unknown_result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(unknown_result.records[0].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(unknown_result.records[0].alert_entries.empty());
+
+        const auto plaintext_repeat = parser.inspect(alert_record, TlsInspectionSemanticState::plaintext);
+        PFL_REQUIRE(plaintext_repeat.records.size() == 1U);
+        PFL_EXPECT(plaintext_repeat.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(plaintext_repeat.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(plaintext_repeat.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(plaintext_repeat.records[0].alert_entries[0], 2U, 48U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic | same_packet_ccs_then_alert"};
+        std::vector<std::uint8_t> payload = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x30U});
+        payload.insert(payload.end(), alert_record.begin(), alert_record.end());
+
+        const auto result = parser.inspect(payload, TlsInspectionSemanticState::plaintext);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[1].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[1].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(result.records[1].alert_entries.empty());
     }
 
     {
@@ -1555,6 +1738,114 @@ void run_tls_inspection_parser_tests() {
         PFL_REQUIRE(plaintext_result.records.size() == 1U);
         PFL_EXPECT(plaintext_result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
         PFL_REQUIRE(plaintext_result.records[0].handshake_messages.size() == 1U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_warning_complete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x01U, 0x00U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 1U, 0U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_fatal_complete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x02U, 0x46U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 2U, 70U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_multiple_entries_complete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x01U, 0x00U, 0x02U, 0x30U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 2U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 1U, 0U);
+        expect_tls_alert_entry(result.records[0].alert_entries[1], 2U, 48U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_unknown_level_and_description_preserved"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x07U, 0xF0U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 7U, 240U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_empty_body_malformed"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::malformed);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_single_byte_incomplete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x02U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::incomplete);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_odd_trailing_byte_incomplete_without_partial_commit"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x01U, 0x00U, 0x02U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::incomplete);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_entry_count_bound_malformed"};
+        std::vector<std::uint8_t> alert_body {};
+        alert_body.resize((1024U * 2U) + 2U, 0x00U);
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, alert_body));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::malformed);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=post_ccs_alert_is_encrypted_opaque"};
+        auto bytes = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x30U});
+        bytes.insert(bytes.end(), alert_record.begin(), alert_record.end());
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[1].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[1].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(result.records[1].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ccs_state_is_direction_local_for_alerts"};
+        auto encrypted_direction = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x2DU});
+        encrypted_direction.insert(encrypted_direction.end(), alert_record.begin(), alert_record.end());
+        const auto encrypted_result = parser.inspect(encrypted_direction);
+        PFL_REQUIRE(encrypted_result.records.size() == 2U);
+        PFL_EXPECT(encrypted_result.records[1].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(encrypted_result.records[1].alert_entries.empty());
+
+        const auto plaintext_result = parser.inspect(alert_record);
+        PFL_REQUIRE(plaintext_result.records.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(plaintext_result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(plaintext_result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(plaintext_result.records[0].alert_entries[0], 2U, 45U);
     }
 
     {

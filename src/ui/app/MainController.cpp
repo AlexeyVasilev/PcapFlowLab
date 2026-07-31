@@ -5735,6 +5735,17 @@ void MainController::reloadSelectedPacketDetails() {
                 loaded_packet_row_count_
             )
             : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
+        const auto tls_initial_semantic_state =
+            selected_flow_index_ >= 0 &&
+                flow_packet_index.has_value() &&
+                loaded_packet_row_count_ > 0U
+            ? session_detail::determine_selected_packet_tls_initial_state(
+                session_,
+                static_cast<std::size_t>(selected_flow_index_),
+                *flow_packet_index,
+                loaded_packet_row_count_
+            )
+            : TlsInspectionSemanticState::plaintext;
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
             session_detail::build_packet_summary_layers(*details, *packet, {
@@ -5760,6 +5771,7 @@ void MainController::reloadSelectedPacketDetails() {
                     }
                     return lines;
                 }(),
+                .tls_initial_semantic_state = tls_initial_semantic_state,
                 .reconstructed_tls_records = std::move(reconstructed_tls_records),
             })
         ));

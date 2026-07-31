@@ -15,6 +15,8 @@ namespace {
 
 constexpr std::size_t kTlsRecordHeaderSize = 5U;
 constexpr std::size_t kTlsHandshakeHeaderSize = 4U;
+constexpr std::size_t kTlsAlertEntrySize = 2U;
+constexpr std::size_t kTlsAlertEntryLimit = 1024U;
 constexpr std::size_t kTlsCertificateEntryLimit = 1024U;
 constexpr std::size_t kTlsCertificateTypeLimit = 255U;
 constexpr std::size_t kTlsSignatureSchemeLimit = 1024U;
@@ -242,6 +244,41 @@ bool parse_alpn_extension(
 
     out_alpn_protocols = std::move(parsed_alpn_protocols);
     return true;
+}
+
+TlsAlertParseStatus parse_alert_entries(
+    std::span<const std::uint8_t> alert_bytes,
+    std::vector<TlsAlertEntryModel>& out_alert_entries
+) {
+    if (alert_bytes.empty()) {
+        return TlsAlertParseStatus::malformed;
+    }
+
+    if (alert_bytes.size() < kTlsAlertEntrySize) {
+        return TlsAlertParseStatus::incomplete;
+    }
+
+    if ((alert_bytes.size() % kTlsAlertEntrySize) != 0U) {
+        return TlsAlertParseStatus::incomplete;
+    }
+
+    const auto alert_entry_count = alert_bytes.size() / kTlsAlertEntrySize;
+    if (alert_entry_count > kTlsAlertEntryLimit) {
+        return TlsAlertParseStatus::malformed;
+    }
+
+    std::vector<TlsAlertEntryModel> parsed_alert_entries {};
+    parsed_alert_entries.reserve(alert_entry_count);
+    for (std::size_t offset = 0U; offset < alert_bytes.size(); offset += kTlsAlertEntrySize) {
+        parsed_alert_entries.push_back(TlsAlertEntryModel {
+            .order_index = parsed_alert_entries.size(),
+            .level = alert_bytes[offset],
+            .description = alert_bytes[offset + 1U],
+        });
+    }
+
+    out_alert_entries = std::move(parsed_alert_entries);
+    return TlsAlertParseStatus::parsed;
 }
 
 bool parse_supported_versions_client_extension(
@@ -998,6 +1035,15 @@ std::optional<TlsServerHelloModel> parse_server_hello_body(
             } else {
                 extension.structured_parse_status = TlsStructuredParseStatus::malformed;
             }
+        } else if (*extension_type == 0x0010U) {
+            std::vector<std::string> alpn_protocols {};
+            if (parse_alpn_extension(extension_bytes, alpn_protocols) && alpn_protocols.size() == 1U) {
+                extension.alpn_protocols = alpn_protocols;
+                hello.selected_alpn_protocol = alpn_protocols.front();
+                extension.structured_parse_status = TlsStructuredParseStatus::parsed;
+            } else {
+                extension.structured_parse_status = TlsStructuredParseStatus::malformed;
+            }
         } else if (*extension_type == 0x0033U) {
             if (extension_bytes.size() == 2U) {
                 extension.structured_parse_status = TlsStructuredParseStatus::not_attempted;
@@ -1146,13 +1192,17 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
 
 }  // namespace
 
-TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> tls_bytes) const {
+TlsInspectionResult TlsInspectionParser::inspect(
+    std::span<const std::uint8_t> tls_bytes,
+    const TlsInspectionSemanticState initial_state
+) const {
     TlsInspectionResult result {
         .total_input_bytes = tls_bytes.size(),
     };
 
     std::size_t offset = 0U;
-    bool post_change_cipher_spec = false;
+    bool post_change_cipher_spec = initial_state == TlsInspectionSemanticState::post_change_cipher_spec;
+    bool semantic_state_known = initial_state != TlsInspectionSemanticState::unknown;
     while (offset < tls_bytes.size()) {
         TlsRecordModel record {
             .source_offset = offset,
@@ -1200,7 +1250,7 @@ TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> t
             if (record.content_type_kind == TlsRecordContentTypeKind::handshake) {
                 if (post_change_cipher_spec) {
                     record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
-                } else {
+                } else if (semantic_state_known) {
                     record.handshake_payload_kind = TlsHandshakePayloadKind::plaintext;
                     const auto available_record_body_bytes = tls_bytes.size() - (offset + kTlsRecordHeaderSize);
                     record.handshake_messages = parse_handshake_messages(
@@ -1208,6 +1258,21 @@ TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> t
                         offset,
                         record.legacy_version
                     );
+                } else {
+                    record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
+                }
+            } else if (record.content_type_kind == TlsRecordContentTypeKind::alert) {
+                if (post_change_cipher_spec) {
+                    record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
+                } else if (semantic_state_known) {
+                    record.alert_payload_kind = TlsAlertPayloadKind::plaintext;
+                    const auto available_record_body_bytes = tls_bytes.size() - (offset + kTlsRecordHeaderSize);
+                    record.alert_parse_status = parse_alert_entries(
+                        tls_bytes.subspan(offset + kTlsRecordHeaderSize, available_record_body_bytes),
+                        record.alert_entries
+                    );
+                } else {
+                    record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
                 }
             }
             result.records.push_back(std::move(record));
@@ -1221,19 +1286,34 @@ TlsInspectionResult TlsInspectionParser::inspect(std::span<const std::uint8_t> t
         if (record.content_type_kind == TlsRecordContentTypeKind::handshake) {
             if (post_change_cipher_spec) {
                 record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
-            } else {
+            } else if (semantic_state_known) {
                 record.handshake_payload_kind = TlsHandshakePayloadKind::plaintext;
                 record.handshake_messages = parse_handshake_messages(
                     tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
                     offset,
                     record.legacy_version
                 );
+            } else {
+                record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
+            }
+        } else if (record.content_type_kind == TlsRecordContentTypeKind::alert) {
+            if (post_change_cipher_spec) {
+                record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
+            } else if (semantic_state_known) {
+                record.alert_payload_kind = TlsAlertPayloadKind::plaintext;
+                record.alert_parse_status = parse_alert_entries(
+                    tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
+                    record.alert_entries
+                );
+            } else {
+                record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
             }
         }
 
         result.records.push_back(std::move(record));
         if (result.records.back().content_type_kind == TlsRecordContentTypeKind::change_cipher_spec) {
             post_change_cipher_spec = true;
+            semantic_state_known = true;
         }
         offset += *result.records.back().total_size;
     }
