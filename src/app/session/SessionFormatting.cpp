@@ -4649,54 +4649,6 @@ std::optional<PacketSummaryLayer> build_conservative_tls_stream_summary_layer(co
     };
 }
 
-std::optional<std::uint8_t> hex_nibble(const char ch) noexcept {
-    if (ch >= '0' && ch <= '9') {
-        return static_cast<std::uint8_t>(ch - '0');
-    }
-    if (ch >= 'a' && ch <= 'f') {
-        return static_cast<std::uint8_t>(10 + (ch - 'a'));
-    }
-    if (ch >= 'A' && ch <= 'F') {
-        return static_cast<std::uint8_t>(10 + (ch - 'A'));
-    }
-    return std::nullopt;
-}
-
-std::vector<std::uint8_t> decode_hex_dump_bytes(std::string_view hex_dump_text) {
-    std::vector<std::uint8_t> bytes {};
-    std::size_t line_start = 0U;
-    while (line_start <= hex_dump_text.size()) {
-        const auto line_end = hex_dump_text.find('\n', line_start);
-        const auto line = hex_dump_text.substr(
-            line_start,
-            line_end == std::string_view::npos ? std::string_view::npos : (line_end - line_start)
-        );
-        if (line.size() >= 10U) {
-            constexpr std::size_t bytes_offset = 10U;
-            for (std::size_t index = 0U; index < 16U; ++index) {
-                const auto group_offset = bytes_offset + (index * 3U);
-                if (group_offset + 1U >= line.size()) {
-                    break;
-                }
-
-                const auto high = hex_nibble(line[group_offset]);
-                const auto low = hex_nibble(line[group_offset + 1U]);
-                if (!high.has_value() || !low.has_value()) {
-                    continue;
-                }
-
-                bytes.push_back(static_cast<std::uint8_t>((*high << 4U) | *low));
-            }
-        }
-
-        if (line_end == std::string_view::npos) {
-            break;
-        }
-        line_start = line_end + 1U;
-    }
-    return bytes;
-}
-
 std::pair<std::string, std::string> stream_source_packets_field(std::string_view source_packets_text) {
     if (source_packets_text.rfind("packet ", 0U) == 0U) {
         return {"Source packet", std::string {source_packets_text.substr(7U)}};
@@ -4950,6 +4902,27 @@ bool selected_packet_starts_record(
 ) {
     return !context.contributions.empty() &&
         context.contributions.front().flow_packet_index == flow_packet_index;
+}
+
+TlsInspectionParserContext selected_packet_starting_tls_initial_context(
+    const PacketSummaryOptions& options
+) {
+    if (!options.flow_packet_index.has_value()) {
+        return options.tls_initial_parser_context;
+    }
+
+    if (options.tls_initial_parser_context.semantic_state != TlsInspectionSemanticState::unknown) {
+        return options.tls_initial_parser_context;
+    }
+
+    const auto flow_packet_index = *options.flow_packet_index;
+    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
+        if (selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
+            return reconstructed_record.initial_parser_context;
+        }
+    }
+
+    return options.tls_initial_parser_context;
 }
 
 std::size_t selected_packet_reassembled_tls_prefix_bytes(const PacketSummaryOptions& options) {
@@ -5415,22 +5388,15 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     std::string_view frames_hint_text
 ) {
     const auto context = tls_stream_summary_context(row.tls_semantic_kind);
-    if (!context.is_tls) {
-        return {};
-    }
-
     std::vector<PacketSummaryLayer> tls_layers {};
     const auto can_parse_structured_tls =
+        context.is_tls &&
         context.allow_structured_summary &&
         !row.has_constricted_contribution &&
-        !row.payload_hex_text.empty();
+        !row.summary_payload_bytes.empty();
     if (can_parse_structured_tls) {
-        // Selected stream-item Summary currently reparses the exact logical item bytes
-        // from the existing hex payload preview on demand. Stream rows do not yet expose
-        // direct logical byte spans separately from the legacy presentation path.
-        const auto payload_bytes = decode_hex_dump_bytes(row.payload_hex_text);
         tls_layers = build_tls_summary_layers_impl(
-            std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()),
+            std::span<const std::uint8_t>(row.summary_payload_bytes.data(), row.summary_payload_bytes.size()),
             row.tls_initial_parser_context,
             context.force_encrypted_handshake_records,
             context.force_encrypted_alert_records
@@ -6790,9 +6756,11 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     bool appended_tls_summary = false;
     const auto reassembled_prefix_bytes = selected_packet_reassembled_tls_prefix_bytes(options);
     if (reassembled_prefix_bytes == 0U) {
+        const auto tls_initial_parser_context =
+            selected_packet_starting_tls_initial_context(options);
         const auto tls_layers = build_tls_summary_layers_impl(
             options.transport_payload_bytes,
-            options.tls_initial_parser_context
+            tls_initial_parser_context
         );
         if (!tls_layers.empty()) {
             for (const auto& tls_layer : tls_layers) {

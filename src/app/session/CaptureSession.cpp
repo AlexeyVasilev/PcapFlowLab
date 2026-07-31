@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cctype>
 #include <chrono>
 #include <array>
 #include <fstream>
@@ -42,7 +41,6 @@
 #include "core/services/PacketPayloadService.h"
 #include "core/services/PerfOpenLogger.h"
 #include "core/services/QuicPacketProtocolAnalyzer.h"
-#include "core/services/TlsInspectionParser.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -154,13 +152,15 @@ StreamItemRow make_stream_item_row(
     const std::size_t byte_count,
     const std::vector<std::uint64_t>& packet_indices,
     const std::string& summary_text = {},
+    const std::vector<std::uint8_t>& summary_payload_bytes = {},
     const std::string& payload_hex_text = {},
     const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
     const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
-    const TlsInspectionParserContext tls_initial_parser_context = {}
+    const TlsInspectionParserContext tls_initial_parser_context = {},
+    const TlsInspectionParserContext tls_final_parser_context = {}
 ) {
     return StreamItemRow {
         .stream_item_index = stream_item_index,
@@ -173,10 +173,12 @@ StreamItemRow make_stream_item_row(
         .constricted_contribution_notes = constricted_contribution_notes,
         .constricted_packet_notes = constricted_packet_notes,
         .summary_text = summary_text,
+        .summary_payload_bytes = summary_payload_bytes,
         .payload_hex_text = payload_hex_text,
         .protocol_text = protocol_text,
         .tls_semantic_kind = tls_semantic_kind,
         .tls_initial_parser_context = tls_initial_parser_context,
+        .tls_final_parser_context = tls_final_parser_context,
     };
 }
 
@@ -187,13 +189,15 @@ StreamItemRow make_stream_item_row(
     const std::size_t byte_count,
     const PacketRef& packet,
     const std::string& summary_text = {},
+    const std::vector<std::uint8_t>& summary_payload_bytes = {},
     const std::string& payload_hex_text = {},
     const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
     const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
-    const TlsInspectionParserContext tls_initial_parser_context = {}
+    const TlsInspectionParserContext tls_initial_parser_context = {},
+    const TlsInspectionParserContext tls_final_parser_context = {}
 ) {
     return make_stream_item_row(
         stream_item_index,
@@ -202,13 +206,15 @@ StreamItemRow make_stream_item_row(
         byte_count,
         std::vector<std::uint64_t> {packet.packet_index},
         summary_text,
+        summary_payload_bytes,
         payload_hex_text,
         protocol_text,
         has_constricted_contribution,
         constricted_contribution_notes,
         constricted_packet_notes,
         tls_semantic_kind,
-        tls_initial_parser_context
+        tls_initial_parser_context,
+        tls_final_parser_context
     );
 }
 
@@ -236,13 +242,15 @@ bool append_tls_stream_items(
                 item.byte_count,
                 item.packet_indices,
                 {},
+                item.summary_payload_bytes,
                 item.payload_hex_text,
                 item.protocol_text,
                 item.has_constricted_contribution,
                 item.constricted_contribution_notes,
                 item.constricted_packet_notes,
                 item.semantic_kind,
-                item.initial_parser_context
+                item.initial_parser_context,
+                item.final_parser_context
             ),
             .stability = item.stability,
         });
@@ -317,13 +325,15 @@ BuiltStreamRow make_stream_item_row_from_tls_scanned_row(
             row.item.byte_count,
             row.item.packet_indices,
             {},
+            row.item.summary_payload_bytes,
             row.item.payload_hex_text,
             row.item.protocol_text,
             row.item.has_constricted_contribution,
             row.item.constricted_contribution_notes,
             row.item.constricted_packet_notes,
             row.item.semantic_kind,
-            row.item.initial_parser_context
+            row.item.initial_parser_context,
+            row.item.final_parser_context
         ),
         .stability = stability,
     };
@@ -365,84 +375,6 @@ std::uint64_t first_stream_packet_index(const BuiltStreamRow& row) {
     return first_stream_packet_index(row.row);
 }
 
-std::optional<std::uint8_t> hex_nibble_for_tls_context(const char ch) noexcept {
-    if (ch >= '0' && ch <= '9') {
-        return static_cast<std::uint8_t>(ch - '0');
-    }
-    if (ch >= 'a' && ch <= 'f') {
-        return static_cast<std::uint8_t>(10 + (ch - 'a'));
-    }
-    if (ch >= 'A' && ch <= 'F') {
-        return static_cast<std::uint8_t>(10 + (ch - 'A'));
-    }
-    return std::nullopt;
-}
-
-std::vector<std::uint8_t> decode_hex_dump_bytes_for_tls_context(std::string_view hex_dump_text) {
-    std::vector<std::uint8_t> bytes {};
-    std::size_t line_start = 0U;
-    while (line_start <= hex_dump_text.size()) {
-        const auto line_end = hex_dump_text.find('\n', line_start);
-        const auto line = hex_dump_text.substr(
-            line_start,
-            line_end == std::string_view::npos ? std::string_view::npos : (line_end - line_start)
-        );
-        if (line.size() >= 10U) {
-            constexpr std::size_t bytes_offset = 10U;
-            for (std::size_t index = 0U; index < 16U; ++index) {
-                const auto group_offset = bytes_offset + (index * 3U);
-                if (group_offset + 1U >= line.size()) {
-                    break;
-                }
-
-                const auto high = hex_nibble_for_tls_context(line[group_offset]);
-                const auto low = hex_nibble_for_tls_context(line[group_offset + 1U]);
-                if (!high.has_value() || !low.has_value()) {
-                    continue;
-                }
-
-                bytes.push_back(static_cast<std::uint8_t>((*high << 4U) | *low));
-            }
-        }
-
-        if (line_end == std::string_view::npos) {
-            break;
-        }
-        line_start = line_end + 1U;
-    }
-    return bytes;
-}
-
-void propagate_tls_negotiated_cipher_context(std::vector<BuiltStreamRow>& rows) {
-    TlsInspectionParser parser {};
-    std::optional<std::uint16_t> negotiated_cipher_suite {};
-
-    for (auto& built_row : rows) {
-        auto& row = built_row.row;
-        if (row.tls_semantic_kind == TlsStreamItemSemanticKind::none) {
-            continue;
-        }
-
-        row.tls_initial_parser_context.negotiated_cipher_suite = negotiated_cipher_suite;
-        if (row.payload_hex_text.empty()) {
-            continue;
-        }
-
-        const auto payload_bytes = decode_hex_dump_bytes_for_tls_context(row.payload_hex_text);
-        if (payload_bytes.empty()) {
-            continue;
-        }
-
-        const auto final_context = parser.inspect(
-            std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()),
-            row.tls_initial_parser_context
-        ).final_context;
-        if (final_context.negotiated_cipher_suite.has_value()) {
-            negotiated_cipher_suite = final_context.negotiated_cipher_suite;
-        }
-    }
-}
-
 void merge_directional_policy(
     DirectionalStreamPolicy& policy,
     const session_detail::TlsDirectionalStreamPresentation& presentation
@@ -462,6 +394,30 @@ void merge_directional_policy(
         presentation.covered_packet_indices.begin(),
         presentation.covered_packet_indices.end()
     );
+}
+
+void propagate_tls_negotiated_cipher_context(std::vector<BuiltStreamRow>& rows) {
+    std::optional<std::uint16_t> negotiated_cipher_suite {};
+
+    for (auto& built_row : rows) {
+        auto& row = built_row.row;
+        if (row.tls_semantic_kind == TlsStreamItemSemanticKind::none) {
+            continue;
+        }
+
+        if (!row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
+            row.tls_initial_parser_context.negotiated_cipher_suite = negotiated_cipher_suite;
+        }
+        if (!row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
+            row.tls_final_parser_context.negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
+        }
+
+        if (row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
+            negotiated_cipher_suite = row.tls_final_parser_context.negotiated_cipher_suite;
+        } else if (row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
+            negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
+        }
+    }
 }
 
 void merge_directional_policy(
@@ -497,13 +453,15 @@ BuiltStreamRow make_stream_item_row_from_tls_presentation(
             item.byte_count,
             item.packet_indices,
             {},
+            item.summary_payload_bytes,
             item.payload_hex_text,
             item.protocol_text,
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             item.constricted_packet_notes,
             item.semantic_kind,
-            item.initial_parser_context
+            item.initial_parser_context,
+            item.final_parser_context
         ),
         .stability = item.stability,
     };
@@ -520,6 +478,7 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
             item.label,
             item.byte_count,
             item.packet_indices,
+            {},
             {},
             item.payload_hex_text,
             item.protocol_text
@@ -777,6 +736,7 @@ bool append_quic_stream_items_for_packet(
                 item.label,
                 item.byte_count,
                 packet,
+                {},
                 {},
                 packet_hex_dump,
                 item.protocol_text,
@@ -1327,6 +1287,7 @@ bool append_arp_stream_item_for_packet(
             payload_bytes.size(),
             packet,
             join_summary_lines(summary_lines),
+            {},
             hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
             protocol_text
         ),
@@ -1453,6 +1414,7 @@ void append_connection_stream_items_bounded(
                     packet,
                     {},
                     {},
+                    {},
                     gap_protocol
                 ),
                 .stability = StreamMaterializationStability::stable,
@@ -1533,6 +1495,7 @@ void append_connection_stream_items_bounded(
                 label,
                 payload_span.size(),
                 packet,
+                {},
                 {},
                 {},
                 protocol_text

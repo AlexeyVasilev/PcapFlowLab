@@ -28,10 +28,12 @@ struct TlsStreamPresentationItem {
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
+    std::vector<std::uint8_t> summary_payload_bytes {};
     std::string payload_hex_text {};
     std::string protocol_text {};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     TlsInspectionParserContext initial_parser_context {};
+    TlsInspectionParserContext final_parser_context {};
 };
 
 struct TlsStreamScannerContribution {
@@ -176,6 +178,13 @@ struct TlsSelectedPacketRecordContext {
     std::vector<std::string> constricted_packet_notes {};
 };
 
+struct TlsSelectedPacketAnalysis {
+    TlsInspectionParserContext initial_parser_context {
+        .semantic_state = TlsInspectionSemanticState::unknown,
+    };
+    std::vector<TlsSelectedPacketRecordContext> reconstructed_records {};
+};
+
 TlsPacketStreamPresentation build_tls_stream_items_for_packet(
     std::uint64_t packet_index,
     std::span<const std::uint8_t> payload_bytes
@@ -197,7 +206,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly_bounded(
     std::size_t max_item_count
 );
 
-std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
+TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
     CaptureSession& session,
     std::size_t flow_index,
     // Zero-based selected flow-packet index within the loaded flow packet window.
@@ -205,16 +214,10 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
     std::size_t loaded_packet_window_count
 );
 
-[[nodiscard]] TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
+std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
     CaptureSession& session,
     std::size_t flow_index,
-    std::uint64_t selected_flow_packet_index,
-    std::size_t loaded_packet_window_count
-);
-
-[[nodiscard]] TlsInspectionParserContext determine_selected_packet_tls_initial_context(
-    CaptureSession& session,
-    std::size_t flow_index,
+    // Zero-based selected flow-packet index within the loaded flow packet window.
     std::uint64_t selected_flow_packet_index,
     std::size_t loaded_packet_window_count
 );

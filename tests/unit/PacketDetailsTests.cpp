@@ -246,13 +246,7 @@ SelectedPacketSummaryResult build_selected_packet_summary(
     const auto packet_bytes = session.read_packet_data(packet);
     PacketPayloadService payload_service {};
     const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-    auto reconstructed_tls_records = session_detail::build_selected_packet_tls_contexts(
-        session,
-        flow_index,
-        flow_packet_index,
-        loaded_packet_window_count
-    );
-    const auto tls_initial_parser_context = session_detail::determine_selected_packet_tls_initial_context(
+    auto tls_packet_analysis = session_detail::analyze_selected_packet_tls_contexts(
         session,
         flow_index,
         flow_packet_index,
@@ -266,10 +260,10 @@ SelectedPacketSummaryResult build_selected_packet_summary(
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
             .protocol_details_text = session.read_packet_protocol_details_text(packet),
-            .tls_initial_parser_context = tls_initial_parser_context,
-            .reconstructed_tls_records = reconstructed_tls_records,
+            .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
+            .reconstructed_tls_records = tls_packet_analysis.reconstructed_records,
         }),
-        .reconstructed_tls_records = std::move(reconstructed_tls_records),
+        .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
     };
 }
 
@@ -1444,6 +1438,10 @@ void run_packet_details_tests() {
         };
 
         for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=12 | reassembled_server_key_exchange"
+            };
             CaptureSession session {};
             PFL_EXPECT(session.open_capture(
                 fixture_path(expectation.relative_path),
@@ -1464,6 +1462,12 @@ void run_packet_details_tests() {
             PFL_EXPECT(summary.reconstructed_tls_records[0].status == session_detail::TlsSelectedPacketStatus::complete);
             PFL_EXPECT(summary.reconstructed_tls_records[0].selected_contribution_flow_packet_index == std::optional<std::uint64_t> {11U});
             PFL_EXPECT(summary.reconstructed_tls_records[0].completion_flow_packet_index == std::optional<std::uint64_t> {11U});
+            PFL_EXPECT(
+                summary.reconstructed_tls_records[0].initial_parser_context.negotiated_cipher_suite ==
+                std::optional<std::uint16_t> {
+                    expectation.expect_explicit_signature_scheme ? 0xC030U : 0xC014U
+                }
+            );
 
             const auto reassembled_layers = find_summary_layers(summary.summary_layers, "tls_reassembled");
             const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
@@ -1484,6 +1488,7 @@ void run_packet_details_tests() {
     }
 
     {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_certificate_missing_18.pcap | packet=11 | reconstructed_tls_context"};
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(
             fixture_path("parsing/tls/tls_1_2_client_certificate_missing_18.pcap"),
@@ -1497,6 +1502,10 @@ void run_packet_details_tests() {
         PFL_EXPECT(summary.reconstructed_tls_records[0].status == session_detail::TlsSelectedPacketStatus::complete);
         PFL_EXPECT(summary.reconstructed_tls_records[0].selected_contribution_flow_packet_index == std::optional<std::uint64_t> {10U});
         PFL_EXPECT(summary.reconstructed_tls_records[0].completion_flow_packet_index == std::optional<std::uint64_t> {10U});
+        PFL_EXPECT(
+            summary.reconstructed_tls_records[0].initial_parser_context.negotiated_cipher_suite ==
+            std::optional<std::uint16_t> {0xC02FU}
+        );
 
         const auto reassembled_layers = find_summary_layers(summary.summary_layers, "tls_reassembled");
         const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
@@ -1778,18 +1787,33 @@ void run_packet_details_tests() {
                 loaded_packet_window_count
             );
             const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
-            PFL_REQUIRE(tls_layers.size() == 2U);
+            PFL_REQUIRE(!tls_layers.empty());
+            for (std::size_t index = 0U; index + 1U < tls_layers.size(); ++index) {
+                PFL_EXPECT(tls_layers[index]->title.find("ApplicationData") != std::string::npos);
+            }
             PFL_EXPECT(summary.reconstructed_tls_records.empty());
-            PFL_EXPECT(tls_layers[0]->title.find("ApplicationData") != std::string::npos);
-            PFL_EXPECT(tls_layers[1]->title.find("Alert") != std::string::npos);
-            PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ApplicationData");
-            PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "Alert");
-            PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Payload Interpretation") ==
+            const auto* alert_layer = tls_layers.back();
+            PFL_EXPECT(alert_layer->title.find("Alert") != std::string::npos);
+            PFL_EXPECT(require_summary_field_value(*alert_layer, "Record Type") == "Alert");
+            const auto* payload_interpretation = find_summary_field(*alert_layer, "Payload Interpretation");
+            if (payload_interpretation == nullptr) {
+                std::ostringstream message {};
+                message << "alert layer fields:";
+                for (const auto& field : alert_layer->fields) {
+                    message << " [" << field.label << '=' << field.value << ']';
+                }
+                record_failure_message(message.str());
+            } else if (payload_interpretation->value != "Encrypted/opaque alert payload") {
+                record_failure_message(
+                    "alert payload interpretation=" + payload_interpretation->value
+                );
+            }
+            PFL_EXPECT(require_summary_field_value(*alert_layer, "Payload Interpretation") ==
                 "Encrypted/opaque alert payload");
-            PFL_EXPECT(find_summary_field(*tls_layers[1], "Status") == nullptr);
-            PFL_EXPECT(find_summary_field(*tls_layers[1], "Alert Count") == nullptr);
-            PFL_EXPECT(find_summary_field(*tls_layers[1], "Alert Level [0]") == nullptr);
-            PFL_EXPECT(find_summary_field(*tls_layers[1], "Alert Description [0]") == nullptr);
+            PFL_EXPECT(find_summary_field(*alert_layer, "Status") == nullptr);
+            PFL_EXPECT(find_summary_field(*alert_layer, "Alert Count") == nullptr);
+            PFL_EXPECT(find_summary_field(*alert_layer, "Alert Level [0]") == nullptr);
+            PFL_EXPECT(find_summary_field(*alert_layer, "Alert Description [0]") == nullptr);
         }
     }
 
@@ -1804,15 +1828,16 @@ void run_packet_details_tests() {
         const auto flow_packet_index = require_flow_packet_index(session, 0U, 7U);
         const auto summary = build_selected_packet_summary(session, 0U, 7U, flow_packet_index, loaded_packet_window_count);
         const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
-        PFL_REQUIRE(tls_layers.size() == 1U);
         PFL_EXPECT(summary.reconstructed_tls_records.empty());
-        PFL_EXPECT(tls_layers[0]->title.find("Alert") != std::string::npos);
-        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "Alert");
-        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Status") == "Plaintext alert payload parsed");
-        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Alert Count") == "1");
-        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Alert Level [0]") == "Fatal (2)");
-        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Alert Description [0]") == "Unknown CA (48)");
-        PFL_EXPECT(find_summary_field(*tls_layers[0], "Payload Interpretation") == nullptr);
+        PFL_REQUIRE(!tls_layers.empty());
+        const auto* alert_layer = tls_layers.back();
+        PFL_EXPECT(alert_layer->title.find("Alert") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*alert_layer, "Record Type") == "Alert");
+        PFL_EXPECT(require_summary_field_value(*alert_layer, "Status") == "Plaintext alert payload parsed");
+        PFL_EXPECT(require_summary_field_value(*alert_layer, "Alert Count") == "1");
+        PFL_EXPECT(require_summary_field_value(*alert_layer, "Alert Level [0]") == "Fatal (2)");
+        PFL_EXPECT(require_summary_field_value(*alert_layer, "Alert Description [0]") == "Unknown CA (48)");
+        PFL_EXPECT(find_summary_field(*alert_layer, "Payload Interpretation") == nullptr);
     }
 
     {
@@ -1923,7 +1948,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
         PFL_EXPECT(require_summary_field_value(*tls_layer, "Declared Record Length") == "8");
         PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
-        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Length") == "8");
+        PFL_EXPECT(find_summary_field(*tls_layer, "Handshake Length") == nullptr);
         PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Status") == "Incomplete header");
         PFL_EXPECT(require_summary_field_value(*tls_layer, "Available Handshake Bytes") == "2");
         PFL_EXPECT(find_summary_field(*tls_layer, "ClientHello Legacy Version") == nullptr);

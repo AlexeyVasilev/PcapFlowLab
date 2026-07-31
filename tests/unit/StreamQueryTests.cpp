@@ -2972,6 +2972,7 @@ void run_stream_query_tests() {
         };
 
         for (const auto& expectation : expectations) {
+            ScopedTestContext context {std::string {"fixture="} + expectation.relative_path + " | ecdhe_baseline"};
             CaptureSession session {};
             PFL_EXPECT(session.open_capture(fixture_path(expectation.relative_path), fast_options));
 
@@ -3016,6 +3017,7 @@ void run_stream_query_tests() {
     }
 
     {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_certificate_missing_18.pcap | ecdhe_sequence"};
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(
             fixture_path("parsing/tls/tls_1_2_client_certificate_missing_18.pcap"),
@@ -3189,9 +3191,13 @@ void run_stream_query_tests() {
             .byte_count = static_cast<std::uint32_t>(payload.size()),
             .packet_count = 1U,
             .packet_indices = {0U},
+            .summary_payload_bytes = payload,
             .payload_hex_text = hex_dump_service.format(payload),
             .protocol_text = "synthetic protocol text should not choose semantics",
             .tls_semantic_kind = TlsStreamItemSemanticKind::encrypted_handshake,
+            .tls_initial_parser_context = {
+                .semantic_state = TlsInspectionSemanticState::post_change_cipher_spec,
+            },
         };
 
         const auto summary_layers = session_detail::build_stream_item_summary_layers(
@@ -3832,8 +3838,8 @@ void run_stream_query_tests() {
         PFL_REQUIRE(app_data_item_layer != nullptr);
         PFL_REQUIRE(app_data_tls_layer != nullptr);
         PFL_EXPECT(require_summary_field_value(*app_data_item_layer, "Source packets") == "#6,#7");
-        PFL_EXPECT(find_top_level_summary_layer(app_data_summary_layers, "stream_item_constricted_contributions") != nullptr);
-        PFL_EXPECT(find_top_level_summary_layer(app_data_summary_layers, "stream_item_constricted_packets") != nullptr);
+        PFL_EXPECT(find_summary_child(*app_data_item_layer, "stream_item_constricted_contributions") != nullptr);
+        PFL_EXPECT(find_summary_child(*app_data_item_layer, "stream_item_constricted_packets") != nullptr);
         PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Status") == "Constricted item");
         PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Available Bytes") == "3061");
         PFL_EXPECT(find_summary_field(*app_data_tls_layer, "Record Type") == nullptr);
@@ -4381,6 +4387,12 @@ void run_stream_query_tests() {
 
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(retransmit_capture_path, fast_options));
+        const auto duplicated_suppressed_packet_indices =
+            session.suspected_tcp_retransmission_packet_indices(0U);
+        session.set_selected_flow_tcp_payload_suppression(
+            0U,
+            duplicated_suppressed_packet_indices
+        );
 
         const auto duplicated_full_rows = session.list_flow_stream_items(0U);
         const auto duplicated_bounded_rows = session.list_flow_stream_items_for_packet_prefix(0U, 2U, 2U);
@@ -4465,20 +4477,21 @@ void run_stream_query_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/09_truncated_arp_fixed_header.pcap"), fast_options));
-
-        const auto rows = session.list_flow_stream_items(0);
-        PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label.find("Truncated ARP header") != std::string::npos);
-        PFL_EXPECT(rows[0].protocol_text.find("Warning: ARP fixed header is truncated.") != std::string::npos);
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "ARP header truncated");
     }
 
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/11_snaplen_truncated_arp_request.pcap"), fast_options));
-
-        const auto rows = session.list_flow_stream_items(0);
-        PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].protocol_text.find("Warning: ARP address section is truncated.") != std::string::npos);
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "ARP header truncated");
     }
 
     {
@@ -4489,6 +4502,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label.find("ARP opcode 42") != std::string::npos);
     }
+
 }
 
 }  // namespace pfl::tests

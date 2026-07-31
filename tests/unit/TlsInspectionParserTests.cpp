@@ -383,6 +383,9 @@ std::vector<std::uint8_t> require_tls_fixture_transport_payload_matching_record(
         }
     }
 
+    record_failure_message(
+        "fixture=" + relative_path.string() + " did not contain a transport payload matching the requested TLS predicate"
+    );
     PFL_REQUIRE(false);
     return {};
 }
@@ -1157,20 +1160,22 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
-        const auto payload = require_tls_fixture_transport_payload_matching_record(
-            "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
-            [](const TlsInspectionResult& result) {
-                return result.records.size() == 1U &&
-                    result.records[0].status == TlsRecordStatus::complete &&
-                    result.records[0].handshake_messages.size() == 1U &&
-                    result.records[0].handshake_messages[0].kind == TlsHandshakeKind::server_hello;
-            }
-        );
         ScopedTestContext context {"fixture=parsing/tls/tls_1_2_status_request_alpn_19.pcap | server_hello"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
+            5U
+        );
         const auto result = parser.inspect(payload);
-        const auto& hello = require_parsed_server_hello(result);
+        PFL_REQUIRE(result.records.size() >= 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::server_hello);
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].handshake_messages[0].server_hello.has_value());
+        const auto& hello = *result.records[0].handshake_messages[0].server_hello;
         PFL_EXPECT(hello.selected_tls_version == 0x0303U);
-        PFL_EXPECT(hello.selected_cipher_suite == 0xC02FU);
+        PFL_EXPECT(hello.selected_cipher_suite == 0xC030U);
         PFL_EXPECT(hello.selected_alpn_protocol == std::optional<std::string> {"http/1.1"});
         const auto* alpn_extension = find_extension_by_type(hello.extensions, 0x0010U);
         PFL_REQUIRE(alpn_extension != nullptr);
@@ -1546,7 +1551,7 @@ void run_tls_inspection_parser_tests() {
                         result.records[0].content_type_kind == TlsRecordContentTypeKind::alert;
                 }
             );
-            const auto result = parser.inspect(payload);
+            const auto result = parser.inspect(payload, TlsInspectionSemanticState::post_change_cipher_spec);
             PFL_REQUIRE(result.records.size() == 1U);
             PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
             PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);

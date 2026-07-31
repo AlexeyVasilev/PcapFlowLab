@@ -105,10 +105,12 @@ struct StreamItemRow {
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
     std::string summary_text {};
+    std::vector<std::uint8_t> summary_payload_bytes {};
     std::string payload_hex_text {};
     std::string protocol_text {};
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
     TlsInspectionParserContext tls_initial_parser_context {};
+    TlsInspectionParserContext tls_final_parser_context {};
 };
 
 struct ProtocolStats {
