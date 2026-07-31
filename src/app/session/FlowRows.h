@@ -9,6 +9,7 @@
 
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/TlsInspectionModel.h"
 
 namespace pfl {
 
@@ -107,6 +108,7 @@ struct StreamItemRow {
     std::string payload_hex_text {};
     std::string protocol_text {};
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
+    TlsInspectionParserContext tls_initial_parser_context {};
 };
 
 struct ProtocolStats {

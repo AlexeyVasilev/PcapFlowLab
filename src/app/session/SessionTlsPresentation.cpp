@@ -1215,6 +1215,7 @@ struct PendingSelectedTlsRecord {
     std::vector<std::string> constricted_notes {};
     std::vector<TlsSelectedPacketContribution> contributions {};
     bool selected_packet_participated {false};
+    TlsInspectionParserContext initial_parser_context {};
 };
 
 void append_constricted_packet_note(PendingSelectedTlsRecord& record, const PacketRef& packet) {
@@ -1381,6 +1382,7 @@ std::optional<TlsSelectedPacketRecordContext> finalize_selected_packet_record_co
         .captured_bytes = std::move(record.captured_bytes),
         .total_record_size = record.total_byte_count,
         .semantic_kind = record.semantic_kind,
+        .initial_parser_context = record.initial_parser_context,
         .status = status,
         .contributions = std::move(record.contributions),
         .selected_contribution_flow_packet_index = selected_contribution_flow_packet_index,
@@ -1399,8 +1401,35 @@ struct PendingTlsHintRecord {
 
 struct PendingTlsSemanticRecord {
     std::size_t remaining_original_bytes {0U};
-    bool is_change_cipher_spec {false};
+    TlsInspectionParserContext initial_parser_context {};
+    std::vector<std::uint8_t> captured_bytes {};
 };
+
+TlsInspectionParserContext advance_tls_parser_context_with_exact_record(
+    const TlsInspectionParserContext& initial_context,
+    std::span<const std::uint8_t> record_bytes
+) {
+    if (!looks_like_tls_record_prefix(record_bytes)) {
+        return initial_context;
+    }
+
+    const auto record_size = tls_record_size(record_bytes);
+    if (!record_size.has_value() || *record_size != record_bytes.size()) {
+        return initial_context;
+    }
+
+    TlsInspectionParser parser {};
+    return parser.inspect(record_bytes, initial_context).final_context;
+}
+
+void sync_tls_parser_context_flags(
+    const TlsInspectionParserContext& context,
+    bool& post_change_cipher_spec,
+    bool& saw_tls_context
+) noexcept {
+    post_change_cipher_spec = context.semantic_state == TlsInspectionSemanticState::post_change_cipher_spec;
+    saw_tls_context = saw_tls_context || context.semantic_state != TlsInspectionSemanticState::unknown;
+}
 
 std::optional<std::string> extract_service_hint_from_complete_tls_record(
     std::span<const std::uint8_t> record_bytes
@@ -1532,6 +1561,7 @@ void maybe_initialize_tls_scanner_pending_record(TlsStreamScannerState& state) {
             captured_span.first(std::min(captured_span.size(), total_byte_count)),
             semantic_kind
         ),
+        .initial_parser_context = state.parser_context,
         .first_packet_index = first_contribution.packet_index,
         .first_flow_packet_index = first_contribution.flow_packet_index,
         .intra_packet_ordinal = allocate_tls_scanner_intra_packet_ordinal(state, first_contribution.packet_index),
@@ -1672,6 +1702,9 @@ std::optional<TlsScannedStreamRow> make_tls_stream_scanner_partial_row(
             .semantic_kind = record_fragment
                 ? TlsStreamItemSemanticKind::partial_record
                 : TlsStreamItemSemanticKind::partial_payload,
+            .initial_parser_context = state.pending_record.has_value()
+                ? state.pending_record->initial_parser_context
+                : state.parser_context,
         },
         first_contribution.packet_index,
         first_contribution.flow_packet_index,
@@ -1691,6 +1724,9 @@ TlsStreamScannerState make_tls_stream_scanner_state(
         .pending_record = std::nullopt,
         .post_change_cipher_spec = false,
         .saw_tls_context = false,
+        .parser_context = TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::plaintext,
+        },
         .prefer_payload_partial_for_unrecognized_trailing_bytes =
             prefer_payload_partial_for_unrecognized_trailing_bytes,
         .ordinal_packet_index = 0U,
@@ -1747,6 +1783,7 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
             .payload_hex_text = hex_dump_service.format(consumed.captured_bytes),
             .protocol_text = tls_record_protocol_text(finalized_record_span, finalized_semantic_kind),
             .semantic_kind = finalized_semantic_kind,
+            .initial_parser_context = state.pending_record->initial_parser_context,
         };
         output.stable_rows.push_back(make_tls_scanned_stream_row(
             item,
@@ -1754,9 +1791,11 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
             state.pending_record->first_flow_packet_index,
             state.pending_record->intra_packet_ordinal
         ));
-        if (!consumed.captured_bytes.empty() && consumed.captured_bytes.front() == 20U) {
-            state.post_change_cipher_spec = true;
-        }
+        state.parser_context = advance_tls_parser_context_with_exact_record(
+            state.pending_record->initial_parser_context,
+            finalized_record_span
+        );
+        sync_tls_parser_context_flags(state.parser_context, state.post_change_cipher_spec, state.saw_tls_context);
         state.pending_record.reset();
     }
 
@@ -1892,6 +1931,9 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
     HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
     bool post_change_cipher_spec = false;
+    TlsInspectionParserContext parser_context {
+        .semantic_state = TlsInspectionSemanticState::plaintext,
+    };
 
     while (offset < payload_bytes.size()) {
         if (!looks_like_tls_record_prefix(payload_bytes, offset)) {
@@ -1904,6 +1946,7 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = "TLS\n  Remaining bytes do not form a complete TLS record in this packet.",
                     .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
+                    .initial_parser_context = parser_context,
                 });
             }
             return presentation;
@@ -1919,6 +1962,7 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                 .payload_hex_text = hex_dump_service.format(trailing),
                 .protocol_text = "TLS\n  Record header is present but the full TLS record body is not available in this packet.",
                 .semantic_kind = TlsStreamItemSemanticKind::partial_record,
+                .initial_parser_context = parser_context,
             });
             return presentation;
         }
@@ -1932,10 +1976,10 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
             .payload_hex_text = hex_dump_service.format(record_bytes),
             .protocol_text = tls_record_protocol_text(record_bytes, semantic_kind),
             .semantic_kind = semantic_kind,
+            .initial_parser_context = parser_context,
         });
-        if (!record_bytes.empty() && record_bytes[0] == 20U) {
-            post_change_cipher_spec = true;
-        }
+        parser_context = advance_tls_parser_context_with_exact_record(parser_context, record_bytes);
+        sync_tls_parser_context_flags(parser_context, post_change_cipher_spec, presentation.handled);
         offset += *record_size;
     }
 
@@ -2286,19 +2330,23 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly_bounded(
     );
 }
 
-TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
+TlsInspectionParserContext determine_selected_packet_tls_initial_context(
     CaptureSession& session,
     const std::size_t flow_index,
     const std::uint64_t selected_flow_packet_index,
     const std::size_t loaded_packet_window_count
 ) {
     if (loaded_packet_window_count == 0U) {
-        return TlsInspectionSemanticState::unknown;
+        return TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::unknown,
+        };
     }
 
     const auto bounded_window_count = std::min(loaded_packet_window_count, session.flow_packet_count(flow_index));
     if (selected_flow_packet_index >= bounded_window_count) {
-        return TlsInspectionSemanticState::unknown;
+        return TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::unknown,
+        };
     }
 
     session.prepare_selected_flow_packet_cache(flow_index, bounded_window_count);
@@ -2307,22 +2355,32 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
 
     const auto prefix_rows = session.list_flow_packets(flow_index, 0U, bounded_window_count);
     if (prefix_rows.empty() || selected_flow_packet_index >= prefix_rows.size()) {
-        return TlsInspectionSemanticState::unknown;
+        return TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::unknown,
+        };
     }
 
     const auto& selected_row = prefix_rows[static_cast<std::size_t>(selected_flow_packet_index)];
     const auto selected_direction = direction_from_packet_row(selected_row);
     const auto selected_packet = session.selected_flow_packet_at(flow_index, selected_row.row_number);
     if (!selected_packet.has_value()) {
-        return TlsInspectionSemanticState::unknown;
+        return TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::unknown,
+        };
     }
 
     const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, selected_direction);
     if (gap_packet_index.has_value() && selected_packet->packet_index >= *gap_packet_index) {
-        return TlsInspectionSemanticState::unknown;
+        return TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::unknown,
+        };
     }
 
-    auto state = TlsInspectionSemanticState::plaintext;
+    auto context = TlsInspectionParserContext {
+        .semantic_state = TlsInspectionSemanticState::plaintext,
+    };
+    std::optional<std::uint16_t> negotiated_cipher_suite {};
+    TlsInspectionParser parser {};
     std::optional<PendingTlsSemanticRecord> pending_record {};
 
     for (const auto& row : prefix_rows) {
@@ -2330,10 +2388,6 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
         if (flow_packet_row_index >= selected_flow_packet_index) {
             break;
         }
-        if (direction_from_packet_row(row) != selected_direction) {
-            continue;
-        }
-
         const auto packet = session.selected_flow_packet_at(flow_index, row.row_number);
         if (!packet.has_value()) {
             continue;
@@ -2354,13 +2408,28 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
 
         const auto original_payload_length = derive_original_tcp_payload_length_from_headers(session, *packet);
         if (!original_payload_length.has_value()) {
-            return TlsInspectionSemanticState::unknown;
+            return TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::unknown,
+            };
         }
 
         const auto payload_span = std::span<const std::uint8_t>(
             payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
             payload_bytes.size() - trim_prefix_bytes
         );
+        const auto row_direction = direction_from_packet_row(row);
+        if (row_direction != selected_direction) {
+            const auto inspected = parser.inspect(payload_span, TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = negotiated_cipher_suite,
+            });
+            if (inspected.final_context.negotiated_cipher_suite.has_value()) {
+                negotiated_cipher_suite = inspected.final_context.negotiated_cipher_suite;
+            }
+            continue;
+        }
+
+        context.negotiated_cipher_suite = negotiated_cipher_suite;
 
         std::size_t captured_offset = 0U;
         std::size_t record_budget_remaining = *original_payload_length;
@@ -2382,7 +2451,17 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
                 const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
                 if (packet->captured_length < packet->original_length &&
                     captured_contribution < contributed_original_bytes) {
-                    return TlsInspectionSemanticState::unknown;
+                    return TlsInspectionParserContext {
+                        .semantic_state = TlsInspectionSemanticState::unknown,
+                    };
+                }
+
+                if (captured_contribution > 0U) {
+                    pending_record->captured_bytes.insert(
+                        pending_record->captured_bytes.end(),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset),
+                        payload_span.begin() + static_cast<std::ptrdiff_t>(captured_offset + captured_contribution)
+                    );
                 }
 
                 pending_record->remaining_original_bytes -= contributed_original_bytes;
@@ -2393,9 +2472,19 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
                 captured_offset += captured_contribution;
 
                 if (pending_record->remaining_original_bytes == 0U) {
-                    if (pending_record->is_change_cipher_spec) {
-                        state = TlsInspectionSemanticState::post_change_cipher_spec;
+                    if (pending_record->captured_bytes.empty()) {
+                        return TlsInspectionParserContext {
+                            .semantic_state = TlsInspectionSemanticState::unknown,
+                        };
                     }
+                    context = advance_tls_parser_context_with_exact_record(
+                        pending_record->initial_parser_context,
+                        std::span<const std::uint8_t>(
+                            pending_record->captured_bytes.data(),
+                            pending_record->captured_bytes.size()
+                        )
+                    );
+                    negotiated_cipher_suite = context.negotiated_cipher_suite;
                     pending_record.reset();
                     continue;
                 }
@@ -2410,7 +2499,9 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
             const auto captured_remaining = payload_span.size() - captured_offset;
             if (captured_remaining < kTlsRecordHeaderSize ||
                 !looks_like_tls_record_prefix(payload_span, captured_offset)) {
-                return TlsInspectionSemanticState::unknown;
+                return TlsInspectionParserContext {
+                    .semantic_state = TlsInspectionSemanticState::unknown,
+                };
             }
 
             const auto record_start = captured_offset;
@@ -2421,30 +2512,47 @@ TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             if (packet->captured_length < packet->original_length &&
                 captured_contribution < contributed_original_bytes) {
-                return TlsInspectionSemanticState::unknown;
+                return TlsInspectionParserContext {
+                    .semantic_state = TlsInspectionSemanticState::unknown,
+                };
             }
 
+            const auto captured_record_bytes = payload_span.subspan(record_start, captured_contribution);
             record_budget_remaining -= contributed_original_bytes;
             unique_original_remaining -= contributed_unique_bytes;
             captured_offset += captured_contribution;
 
-            const bool is_change_cipher_spec = payload_span[record_start] == 20U;
             if (record_size == contributed_original_bytes) {
-                if (is_change_cipher_spec) {
-                    state = TlsInspectionSemanticState::post_change_cipher_spec;
-                }
+                context = advance_tls_parser_context_with_exact_record(context, captured_record_bytes);
+                negotiated_cipher_suite = context.negotiated_cipher_suite;
                 continue;
             }
 
             pending_record = PendingTlsSemanticRecord {
                 .remaining_original_bytes = record_size - contributed_original_bytes,
-                .is_change_cipher_spec = is_change_cipher_spec,
+                .initial_parser_context = context,
+                .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
             };
             break;
         }
     }
 
-    return state;
+    context.negotiated_cipher_suite = negotiated_cipher_suite;
+    return context;
+}
+
+TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t selected_flow_packet_index,
+    const std::size_t loaded_packet_window_count
+) {
+    return determine_selected_packet_tls_initial_context(
+        session,
+        flow_index,
+        selected_flow_packet_index,
+        loaded_packet_window_count
+    ).semantic_state;
 }
 
 std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
@@ -2477,7 +2585,9 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
 
     std::vector<TlsSelectedPacketRecordContext> contexts {};
     std::optional<PendingSelectedTlsRecord> pending_record {};
-    bool post_change_cipher_spec = false;
+    auto current_context = TlsInspectionParserContext {
+        .semantic_state = TlsInspectionSemanticState::plaintext,
+    };
 
     for (const auto& row : prefix_rows) {
         if (direction_from_packet_row(row) != selected_direction) {
@@ -2595,6 +2705,16 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
 
                 if (pending_record->remaining_original_bytes == 0U) {
                     const auto status = finalized_selected_record_status(*pending_record);
+                    if (status == TlsSelectedPacketStatus::complete &&
+                        pending_record->captured_bytes.size() == pending_record->total_byte_count) {
+                        current_context = advance_tls_parser_context_with_exact_record(
+                            pending_record->initial_parser_context,
+                            std::span<const std::uint8_t>(
+                                pending_record->captured_bytes.data(),
+                                pending_record->captured_bytes.size()
+                            )
+                        );
+                    }
                     if (const auto context = finalize_selected_packet_record_context(
                             std::move(*pending_record),
                             status,
@@ -2627,7 +2747,10 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
             const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
-            const auto semantic_kind = tls_stream_semantic_kind(captured_record_bytes, post_change_cipher_spec);
+            const auto semantic_kind = tls_stream_semantic_kind(
+                captured_record_bytes,
+                current_context.semantic_state == TlsInspectionSemanticState::post_change_cipher_spec
+            );
             PendingSelectedTlsRecord record {
                 .label = tls_stream_label(captured_record_bytes, semantic_kind),
                 .total_byte_count = record_size,
@@ -2636,6 +2759,7 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
                 .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
                 .semantic_kind = semantic_kind,
                 .protocol_text = tls_record_protocol_text(captured_record_bytes, semantic_kind),
+                .initial_parser_context = current_context,
             };
 
             if (captured_contribution > 0U) {
@@ -2667,6 +2791,16 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
 
             if (record.remaining_original_bytes == 0U) {
                 const auto status = finalized_selected_record_status(record);
+                if (status == TlsSelectedPacketStatus::complete &&
+                    record.captured_bytes.size() == record.total_byte_count) {
+                    current_context = advance_tls_parser_context_with_exact_record(
+                        record.initial_parser_context,
+                        std::span<const std::uint8_t>(
+                            record.captured_bytes.data(),
+                            record.captured_bytes.size()
+                        )
+                    );
+                }
                 if (const auto context = finalize_selected_packet_record_context(
                         std::move(record),
                         status,
@@ -2675,15 +2809,9 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
                     context.has_value()) {
                     contexts.push_back(std::move(*context));
                 }
-                if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
-                    post_change_cipher_spec = true;
-                }
                 continue;
             }
 
-            if (!captured_record_bytes.empty() && captured_record_bytes[0] == 20U) {
-                post_change_cipher_spec = true;
-            }
             pending_record = std::move(record);
             break;
         }

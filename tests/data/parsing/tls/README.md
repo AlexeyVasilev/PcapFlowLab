@@ -1514,6 +1514,15 @@ Current additional TLS fields available only in Protocol:
 - Bounds growth currently uses a fresh bounded rebuild rather than a retained continuation frontier.
 - The diagnostic or retained session context must not cause suffix-only visible output or renumber `stream_item_index` from `1` during `Load more`.
 
+### Structured ECDHE handshake note
+
+Fixtures `12`, `13`, `14`, and `18` now expose bounded structured ECDHE `ServerKeyExchange` and `ClientKeyExchange` metadata through the automated Packet and Stream Summary contracts.
+
+- Public-key bytes and signature bytes are not retained.
+- Signatures are not validated.
+- TLS 1.0 and TLS 1.1 ECDHE `ServerKeyExchange` do not carry an explicit signature-scheme field.
+- Unsupported key-exchange families still remain generic rather than being guessed from unrelated context.
+
 ### tls_1_0_badssl_baseline_12.pcap
 
 **Category:** Small single-record / handshake fixture  
@@ -1531,6 +1540,9 @@ Current additional TLS fields available only in Protocol:
   - ClientHello version also remains `TLS 1.0 (0x0301)`;
   - SNI is `tls-v1-0.badssl.com`;
   - no `signature_algorithms` extension is expected.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `12` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` exposes a bounded ECDHE `ClientKeyExchange` summary with public-point length `65` / available length `65`.
 - `tests/unit/StreamQueryTests.cpp`
   - the first Stream row is `TLS ClientHello`;
   - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
@@ -1538,6 +1550,8 @@ Current additional TLS fields available only in Protocol:
   - `Offered Protocols` and `Supported TLS Versions` are absent;
   - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, and `10`;
   - that row exposes handshake length `4070`, certificate-list length `4067`, and three certificate entries with declared sizes `1284`, `1246`, and `1528`;
+  - one reassembled `TLS ServerKeyExchange` row spans packets `10` and `12` and now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` `TLS ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`;
   - the terminal `TLS Alert` row remains encrypted/opaque after CCS, so no alert level/description fields are invented.
 
 ### tls_1_1_badssl_baseline_13.pcap
@@ -1557,6 +1571,9 @@ Current additional TLS fields available only in Protocol:
   - ClientHello version remains distinct as `TLS 1.1 (0x0302)`;
   - SNI is `tls-v1-1.badssl.com`;
   - no `signature_algorithms` extension is expected.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `12` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` exposes a bounded ECDHE `ClientKeyExchange` summary with public-point length `65` / available length `65`.
 - `tests/unit/StreamQueryTests.cpp`
   - the first Stream row is `TLS ClientHello`;
   - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
@@ -1564,6 +1581,8 @@ Current additional TLS fields available only in Protocol:
   - `Offered Protocols` and `Supported TLS Versions` are absent;
   - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, and `10`;
   - that row exposes handshake length `4070`, certificate-list length `4067`, and three certificate entries with declared sizes `1284`, `1246`, and `1528`;
+  - one reassembled `TLS ServerKeyExchange` row spans packets `10` and `12` and now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` `TLS ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`;
   - the terminal `TLS Alert` row remains encrypted/opaque after CCS, so no alert level/description fields are invented.
 
 ### tls_1_2_badssl_baseline_14.pcap
@@ -1583,6 +1602,9 @@ Current additional TLS fields available only in Protocol:
   - ClientHello version remains distinct as `TLS 1.2 (0x0303)`;
   - SNI is `tls-v1-2.badssl.com`;
   - a parsed `signature_algorithms` extension is present.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `12` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - packet `14` exposes a bounded ECDHE `ClientKeyExchange` summary with public-point length `65` / available length `65`.
 - `tests/unit/StreamQueryTests.cpp`
   - the first Stream row is `TLS ClientHello`;
   - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
@@ -1590,6 +1612,8 @@ Current additional TLS fields available only in Protocol:
   - `Offered Protocols` and `Supported TLS Versions` are absent;
   - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, and `10`;
   - that row exposes handshake length `4070`, certificate-list length `4067`, and three certificate entries with declared sizes `1284`, `1246`, and `1528`;
+  - one reassembled `TLS ServerKeyExchange` row spans packets `10` and `12` and now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - packet `14` `TLS ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`;
   - the terminal `TLS Alert` row remains encrypted/opaque after CCS, so no alert level/description fields are invented.
 
 ### tls_1_2_client_to_tls_1_0_protocol_version_15.pcap
@@ -1677,11 +1701,17 @@ Current additional TLS fields available only in Protocol:
     - `ClientKeyExchange`;
     - `ChangeCipherSpec`;
     - encrypted Handshake;
-  - the empty client Certificate remains a complete handshake with declared body length `3` and certificate-list length `0`.
+  - the empty client Certificate remains a complete handshake with declared body length `3` and certificate-list length `0`;
+  - with explicit negotiated ECDHE context, the packet `13` `ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `11` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - packet `13` keeps the empty client `Certificate`, bounded ECDHE `ClientKeyExchange`, `ChangeCipherSpec`, and encrypted Handshake in exact wire order.
 - `tests/unit/StreamQueryTests.cpp`
-  - packet `11` contributes one `TLS CertificateRequest` Stream row and one `TLS ServerHelloDone` Stream row;
+  - packet `11` contributes one reassembled `TLS ServerKeyExchange` row plus one `TLS CertificateRequest` Stream row and one `TLS ServerHelloDone` Stream row;
+  - the reassembled `TLS ServerKeyExchange` row now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
   - the `TLS CertificateRequest` row exposes the same certificate-type, signature-scheme, and certificate-authority counts as the parser contract;
   - packet `13` contributes a packet-local empty `TLS Certificate` Stream row plus `TLS ClientKeyExchange`, `TLS ChangeCipherSpec`, and `TLS Encrypted Handshake Message`;
+  - the packet-local `TLS ClientKeyExchange` row exposes bounded ECDHE public-point length `65` / available length `65`;
   - the empty `TLS Certificate` row exposes handshake length `3`, certificate-list length `0`, and no fabricated certificate-entry children.
 
 ### tls_1_2_status_request_alpn_19.pcap

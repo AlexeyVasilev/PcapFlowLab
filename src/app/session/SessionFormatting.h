@@ -47,7 +47,7 @@ struct PacketSummaryOptions {
     std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
-    TlsInspectionSemanticState tls_initial_semantic_state {TlsInspectionSemanticState::plaintext};
+    TlsInspectionParserContext tls_initial_parser_context {};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
 };
 

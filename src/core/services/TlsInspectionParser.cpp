@@ -21,6 +21,7 @@ constexpr std::size_t kTlsCertificateEntryLimit = 1024U;
 constexpr std::size_t kTlsCertificateTypeLimit = 255U;
 constexpr std::size_t kTlsSignatureSchemeLimit = 1024U;
 constexpr std::size_t kTlsCertificateAuthorityEntryLimit = 1024U;
+constexpr std::size_t kTlsRecordPayloadLengthLimit = 16384U;
 
 std::optional<std::uint16_t> read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     if (offset + 2U > bytes.size()) {
@@ -70,6 +71,12 @@ std::optional<std::size_t> make_input_relative_offset(
     const std::size_t relative_offset
 ) {
     return checked_add(base_offset, relative_offset);
+}
+
+TlsInspectionParserContext make_tls_parser_context(const TlsInspectionSemanticState initial_state) {
+    return TlsInspectionParserContext {
+        .semantic_state = initial_state,
+    };
 }
 
 TlsRecordContentTypeKind classify_record_content_type(const std::uint8_t content_type) noexcept {
@@ -1070,10 +1077,131 @@ std::optional<TlsServerHelloModel> parse_server_hello_body(
     return hello;
 }
 
+TlsEcdheServerKeyExchangeModel parse_ecdhe_server_key_exchange_body(
+    std::span<const std::uint8_t> handshake_body,
+    const std::optional<std::uint16_t> record_legacy_version,
+    const TlsCipherSuiteAuthenticationKind signature_authentication_kind
+) {
+    TlsEcdheServerKeyExchangeModel model {
+        .signature_authentication_kind = signature_authentication_kind,
+        .status = TlsStructuredBodyStatus::incomplete,
+    };
+
+    std::size_t offset = 0U;
+    if (handshake_body.size() < 1U) {
+        return model;
+    }
+
+    model.curve_type = handshake_body[offset];
+    ++offset;
+    if (*model.curve_type != 3U) {
+        model.status = TlsStructuredBodyStatus::malformed;
+        return model;
+    }
+
+    const auto named_group_id = read_be16(handshake_body, offset);
+    if (!named_group_id.has_value()) {
+        return model;
+    }
+    model.named_group_id = *named_group_id;
+    offset += 2U;
+
+    if (offset >= handshake_body.size()) {
+        return model;
+    }
+
+    const auto declared_public_key_length = static_cast<std::size_t>(handshake_body[offset]);
+    model.declared_public_key_length = declared_public_key_length;
+    ++offset;
+    if (declared_public_key_length == 0U || declared_public_key_length > kTlsRecordPayloadLengthLimit) {
+        model.status = TlsStructuredBodyStatus::malformed;
+        return model;
+    }
+
+    model.available_public_key_length = std::min(declared_public_key_length, handshake_body.size() - offset);
+    if (model.available_public_key_length != declared_public_key_length) {
+        return model;
+    }
+    model.public_key_complete = true;
+    offset += declared_public_key_length;
+
+    if (record_legacy_version == std::optional<std::uint16_t> {0x0303U}) {
+        const auto signature_scheme_id = read_be16(handshake_body, offset);
+        if (!signature_scheme_id.has_value()) {
+            return model;
+        }
+        model.signature_scheme_id = *signature_scheme_id;
+        offset += 2U;
+    }
+
+    const auto declared_signature_length = read_be16(handshake_body, offset);
+    if (!declared_signature_length.has_value()) {
+        return model;
+    }
+    model.declared_signature_length = *declared_signature_length;
+    offset += 2U;
+    if (*declared_signature_length == 0U || *declared_signature_length > kTlsRecordPayloadLengthLimit) {
+        model.status = TlsStructuredBodyStatus::malformed;
+        return model;
+    }
+
+    model.available_signature_length = std::min(
+        static_cast<std::size_t>(*declared_signature_length),
+        handshake_body.size() - offset
+    );
+    if (model.available_signature_length != *declared_signature_length) {
+        return model;
+    }
+    model.signature_complete = true;
+    offset += *declared_signature_length;
+
+    if (offset != handshake_body.size()) {
+        model.status = TlsStructuredBodyStatus::malformed;
+        return model;
+    }
+
+    model.status = TlsStructuredBodyStatus::complete;
+    return model;
+}
+
+TlsEcdheClientKeyExchangeModel parse_ecdhe_client_key_exchange_body(
+    std::span<const std::uint8_t> handshake_body
+) {
+    TlsEcdheClientKeyExchangeModel model {
+        .status = TlsStructuredBodyStatus::incomplete,
+    };
+
+    if (handshake_body.empty()) {
+        return model;
+    }
+
+    const auto declared_public_key_length = static_cast<std::size_t>(handshake_body[0]);
+    model.declared_public_key_length = declared_public_key_length;
+    if (declared_public_key_length == 0U || declared_public_key_length > kTlsRecordPayloadLengthLimit) {
+        model.status = TlsStructuredBodyStatus::malformed;
+        return model;
+    }
+
+    model.available_public_key_length = std::min(declared_public_key_length, handshake_body.size() - 1U);
+    if (model.available_public_key_length != declared_public_key_length) {
+        return model;
+    }
+    model.public_key_complete = true;
+
+    if (1U + declared_public_key_length != handshake_body.size()) {
+        model.status = TlsStructuredBodyStatus::malformed;
+        return model;
+    }
+
+    model.status = TlsStructuredBodyStatus::complete;
+    return model;
+}
+
 std::vector<TlsHandshakeModel> parse_handshake_messages(
     std::span<const std::uint8_t> record_body,
     const std::size_t record_source_offset,
-    const std::optional<std::uint16_t> record_legacy_version
+    const std::optional<std::uint16_t> record_legacy_version,
+    TlsInspectionParserContext& context
 ) {
     std::vector<TlsHandshakeModel> handshakes {};
     std::size_t offset = 0U;
@@ -1138,6 +1266,7 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
             if (server_hello.has_value()) {
                 handshake.server_hello = std::move(*server_hello);
                 handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
+                context.negotiated_cipher_suite = handshake.server_hello->selected_cipher_suite;
             } else {
                 handshake.structured_parse_status = TlsStructuredParseStatus::malformed;
             }
@@ -1163,6 +1292,21 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
             }
             break;
         }
+        case TlsHandshakeKind::server_key_exchange: {
+            if (!context.negotiated_cipher_suite.has_value() ||
+                !tls_cipher_suite_uses_ecdhe(*context.negotiated_cipher_suite)) {
+                handshake.structured_parse_status = TlsStructuredParseStatus::not_attempted;
+                break;
+            }
+
+            handshake.ecdhe_server_key_exchange = parse_ecdhe_server_key_exchange_body(
+                handshake_body,
+                record_legacy_version,
+                tls_cipher_suite_authentication_kind(*context.negotiated_cipher_suite)
+            );
+            handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
+            break;
+        }
         case TlsHandshakeKind::certificate_request: {
             if (record_legacy_version != std::optional<std::uint16_t> {0x0303U}) {
                 handshake.structured_parse_status = TlsStructuredParseStatus::not_attempted;
@@ -1176,6 +1320,17 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
             } else {
                 handshake.structured_parse_status = TlsStructuredParseStatus::malformed;
             }
+            break;
+        }
+        case TlsHandshakeKind::client_key_exchange: {
+            if (!context.negotiated_cipher_suite.has_value() ||
+                !tls_cipher_suite_uses_ecdhe(*context.negotiated_cipher_suite)) {
+                handshake.structured_parse_status = TlsStructuredParseStatus::not_attempted;
+                break;
+            }
+
+            handshake.ecdhe_client_key_exchange = parse_ecdhe_client_key_exchange_body(handshake_body);
+            handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
             break;
         }
         default:
@@ -1194,15 +1349,19 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
 
 TlsInspectionResult TlsInspectionParser::inspect(
     std::span<const std::uint8_t> tls_bytes,
-    const TlsInspectionSemanticState initial_state
+    const TlsInspectionParserContext initial_context
 ) const {
     TlsInspectionResult result {
         .total_input_bytes = tls_bytes.size(),
+        .final_context = initial_context,
     };
 
     std::size_t offset = 0U;
-    bool post_change_cipher_spec = initial_state == TlsInspectionSemanticState::post_change_cipher_spec;
-    bool semantic_state_known = initial_state != TlsInspectionSemanticState::unknown;
+    bool post_change_cipher_spec =
+        initial_context.semantic_state == TlsInspectionSemanticState::post_change_cipher_spec;
+    bool semantic_state_known =
+        initial_context.semantic_state != TlsInspectionSemanticState::unknown;
+    auto context = initial_context;
     while (offset < tls_bytes.size()) {
         TlsRecordModel record {
             .source_offset = offset,
@@ -1222,6 +1381,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
             result.records.push_back(std::move(record));
             result.consumed_bytes = tls_bytes.size();
             result.stopped_after_partial_record = true;
+            result.final_context = context;
             return result;
         }
 
@@ -1231,6 +1391,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
             result.records.push_back(std::move(record));
             result.consumed_bytes = tls_bytes.size();
             result.stopped_after_partial_record = true;
+            result.final_context = context;
             return result;
         }
 
@@ -1241,6 +1402,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
             result.records.push_back(std::move(record));
             result.consumed_bytes = tls_bytes.size();
             result.stopped_after_partial_record = true;
+            result.final_context = context;
             return result;
         }
 
@@ -1256,7 +1418,8 @@ TlsInspectionResult TlsInspectionParser::inspect(
                     record.handshake_messages = parse_handshake_messages(
                         tls_bytes.subspan(offset + kTlsRecordHeaderSize, available_record_body_bytes),
                         offset,
-                        record.legacy_version
+                        record.legacy_version,
+                        context
                     );
                 } else {
                     record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
@@ -1278,6 +1441,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
             result.records.push_back(std::move(record));
             result.consumed_bytes = tls_bytes.size();
             result.stopped_after_partial_record = true;
+            result.final_context = context;
             return result;
         }
 
@@ -1291,7 +1455,8 @@ TlsInspectionResult TlsInspectionParser::inspect(
                 record.handshake_messages = parse_handshake_messages(
                     tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
                     offset,
-                    record.legacy_version
+                    record.legacy_version,
+                    context
                 );
             } else {
                 record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
@@ -1314,13 +1479,25 @@ TlsInspectionResult TlsInspectionParser::inspect(
         if (result.records.back().content_type_kind == TlsRecordContentTypeKind::change_cipher_spec) {
             post_change_cipher_spec = true;
             semantic_state_known = true;
+            context.semantic_state = TlsInspectionSemanticState::post_change_cipher_spec;
         }
         offset += *result.records.back().total_size;
     }
 
     result.consumed_bytes = offset;
     result.unparsed_trailing_bytes = tls_bytes.size() - offset;
+    if (semantic_state_known && !post_change_cipher_spec) {
+        context.semantic_state = TlsInspectionSemanticState::plaintext;
+    }
+    result.final_context = context;
     return result;
+}
+
+TlsInspectionResult TlsInspectionParser::inspect(
+    std::span<const std::uint8_t> tls_bytes,
+    const TlsInspectionSemanticState initial_state
+) const {
+    return inspect(tls_bytes, make_tls_parser_context(initial_state));
 }
 
 }  // namespace pfl

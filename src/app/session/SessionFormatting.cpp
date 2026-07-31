@@ -3338,6 +3338,37 @@ std::optional<std::string_view> lookup_tls_certificate_type_name(const std::uint
     }
 }
 
+std::string format_tls_ec_curve_type_value(const std::uint8_t curve_type) {
+    if (const auto name = tls_ec_curve_type_name(curve_type); name.has_value()) {
+        return std::string(*name) + " (" + std::to_string(curve_type) + ")";
+    }
+    return std::to_string(curve_type);
+}
+
+std::string format_tls_signature_authentication_value(const TlsCipherSuiteAuthenticationKind kind) {
+    switch (kind) {
+    case TlsCipherSuiteAuthenticationKind::rsa:
+        return "RSA";
+    case TlsCipherSuiteAuthenticationKind::ecdsa:
+        return "ECDSA";
+    case TlsCipherSuiteAuthenticationKind::unknown:
+        break;
+    }
+    return "Unknown";
+}
+
+std::string format_tls_structured_body_status_value(const TlsStructuredBodyStatus status) {
+    switch (status) {
+    case TlsStructuredBodyStatus::complete:
+        return "Complete";
+    case TlsStructuredBodyStatus::incomplete:
+        return "Incomplete";
+    case TlsStructuredBodyStatus::malformed:
+        return "Malformed";
+    }
+    return "Malformed";
+}
+
 std::string format_tls_certificate_type_value(const std::uint8_t type_id) {
     if (const auto name = lookup_tls_certificate_type_name(type_id); name.has_value()) {
         return std::string {*name} + " (" + std::to_string(static_cast<unsigned>(type_id)) + ")";
@@ -4176,6 +4207,86 @@ void append_tls_handshake_fields(
         if (const auto entries = build_tls_certificate_entries_group(certificate); entries.has_value()) {
             children.push_back(*entries);
         }
+    } else if (handshake.ecdhe_server_key_exchange.has_value()) {
+        const auto& server_key_exchange = *handshake.ecdhe_server_key_exchange;
+        fields.push_back(make_summary_field("Key Exchange", "ECDHE"));
+        if (server_key_exchange.curve_type.has_value()) {
+            fields.push_back(make_summary_field(
+                "Curve Type",
+                format_tls_ec_curve_type_value(*server_key_exchange.curve_type)
+            ));
+        }
+        if (server_key_exchange.named_group_id.has_value()) {
+            fields.push_back(make_summary_field(
+                "Named Group",
+                format_tls_supported_group_value(*server_key_exchange.named_group_id)
+            ));
+        }
+        if (server_key_exchange.declared_public_key_length.has_value()) {
+            fields.push_back(make_summary_field(
+                "Public Key Length",
+                format_byte_count(*server_key_exchange.declared_public_key_length)
+            ));
+        }
+        fields.push_back(make_summary_field(
+            "Public Key Available Length",
+            format_byte_count(server_key_exchange.available_public_key_length)
+        ));
+        fields.push_back(make_summary_field(
+            "Public Key Status",
+            server_key_exchange.public_key_complete ? "Complete" : "Incomplete"
+        ));
+        if (server_key_exchange.signature_scheme_id.has_value()) {
+            fields.push_back(make_summary_field(
+                "Signature Scheme",
+                format_tls_signature_scheme_value(*server_key_exchange.signature_scheme_id)
+            ));
+        }
+        if (server_key_exchange.signature_authentication_kind != TlsCipherSuiteAuthenticationKind::unknown) {
+            fields.push_back(make_summary_field(
+                "Signature Authentication",
+                format_tls_signature_authentication_value(server_key_exchange.signature_authentication_kind)
+            ));
+        }
+        if (server_key_exchange.declared_signature_length.has_value()) {
+            fields.push_back(make_summary_field(
+                "Signature Length",
+                format_byte_count(*server_key_exchange.declared_signature_length)
+            ));
+        }
+        fields.push_back(make_summary_field(
+            "Signature Available Length",
+            format_byte_count(server_key_exchange.available_signature_length)
+        ));
+        fields.push_back(make_summary_field(
+            "Signature Status",
+            server_key_exchange.signature_complete ? "Complete" : "Incomplete"
+        ));
+        fields.push_back(make_summary_field(
+            "Status",
+            format_tls_structured_body_status_value(server_key_exchange.status)
+        ));
+    } else if (handshake.ecdhe_client_key_exchange.has_value()) {
+        const auto& client_key_exchange = *handshake.ecdhe_client_key_exchange;
+        fields.push_back(make_summary_field("Key Exchange", "ECDHE"));
+        if (client_key_exchange.declared_public_key_length.has_value()) {
+            fields.push_back(make_summary_field(
+                "Public Key Length",
+                format_byte_count(*client_key_exchange.declared_public_key_length)
+            ));
+        }
+        fields.push_back(make_summary_field(
+            "Public Key Available Length",
+            format_byte_count(client_key_exchange.available_public_key_length)
+        ));
+        fields.push_back(make_summary_field(
+            "Public Key Status",
+            client_key_exchange.public_key_complete ? "Complete" : "Incomplete"
+        ));
+        fields.push_back(make_summary_field(
+            "Status",
+            format_tls_structured_body_status_value(client_key_exchange.status)
+        ));
     } else if (handshake.certificate_request.has_value()) {
         const auto& certificate_request = *handshake.certificate_request;
         fields.push_back(make_summary_field(
@@ -4377,7 +4488,7 @@ std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& 
 
 std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     std::span<const std::uint8_t> transport_payload_bytes,
-    const TlsInspectionSemanticState initial_semantic_state,
+    const TlsInspectionParserContext initial_parser_context,
     const bool force_encrypted_handshake_records = false,
     const bool force_encrypted_alert_records = false
 ) {
@@ -4386,7 +4497,7 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     }
 
     TlsInspectionParser parser {};
-    auto inspection = parser.inspect(transport_payload_bytes, initial_semantic_state);
+    auto inspection = parser.inspect(transport_payload_bytes, initial_parser_context);
     if (force_encrypted_handshake_records) {
         for (auto& record : inspection.records) {
             if (record.status != TlsRecordStatus::complete ||
@@ -4421,25 +4532,31 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     return layers;
 }
 
-TlsInspectionSemanticState advance_tls_summary_semantic_state(
-    const TlsInspectionSemanticState current_state,
+TlsInspectionParserContext advance_tls_summary_parser_context(
+    const TlsInspectionParserContext& current_context,
     const TlsSelectedPacketRecordContext& reconstructed_record
-) noexcept {
-    if (current_state == TlsInspectionSemanticState::post_change_cipher_spec) {
-        return current_state;
-    }
+) {
     const bool selected_packet_completes_reconstructed_record =
         reconstructed_record.selected_contribution_flow_packet_index.has_value() &&
         reconstructed_record.completion_flow_packet_index.has_value() &&
         *reconstructed_record.selected_contribution_flow_packet_index ==
             *reconstructed_record.completion_flow_packet_index;
-    if (reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec &&
+    if ((reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec ||
+         reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake ||
+         reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::generic_record) &&
         reconstructed_record.status == TlsSelectedPacketStatus::complete &&
         reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size &&
         selected_packet_completes_reconstructed_record) {
-        return TlsInspectionSemanticState::post_change_cipher_spec;
+        TlsInspectionParser parser {};
+        return parser.inspect(
+            std::span<const std::uint8_t>(
+                reconstructed_record.captured_bytes.data(),
+                reconstructed_record.captured_bytes.size()
+            ),
+            reconstructed_record.initial_parser_context
+        ).final_context;
     }
-    return current_state;
+    return current_context;
 }
 
 struct TlsStreamSummaryContext {
@@ -5314,7 +5431,7 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
         const auto payload_bytes = decode_hex_dump_bytes(row.payload_hex_text);
         tls_layers = build_tls_summary_layers_impl(
             std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()),
-            TlsInspectionSemanticState::plaintext,
+            row.tls_initial_parser_context,
             context.force_encrypted_handshake_records,
             context.force_encrypted_alert_records
         );
@@ -5345,7 +5462,12 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
 }
 
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
-    return build_tls_summary_layers_impl(transport_payload_bytes, TlsInspectionSemanticState::plaintext);
+    return build_tls_summary_layers_impl(
+        transport_payload_bytes,
+        TlsInspectionParserContext {
+            .semantic_state = TlsInspectionSemanticState::plaintext,
+        }
+    );
 }
 
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
@@ -6652,10 +6774,13 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             if (reconstructed_record.status == TlsSelectedPacketStatus::complete &&
                 selected_packet_completes_record(reconstructed_record) &&
                 reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size) {
-                const auto reconstructed_tls_layers = build_tls_summary_layers(std::span<const std::uint8_t>(
-                    reconstructed_record.captured_bytes.data(),
-                    reconstructed_record.captured_bytes.size()
-                ));
+                const auto reconstructed_tls_layers = build_tls_summary_layers_impl(
+                    std::span<const std::uint8_t>(
+                        reconstructed_record.captured_bytes.data(),
+                        reconstructed_record.captured_bytes.size()
+                    ),
+                    reconstructed_record.initial_parser_context
+                );
                 for (const auto& reconstructed_tls_layer : reconstructed_tls_layers) {
                     append_layer_if_not_empty(layers, reconstructed_tls_layer);
                 }
@@ -6667,7 +6792,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (reassembled_prefix_bytes == 0U) {
         const auto tls_layers = build_tls_summary_layers_impl(
             options.transport_payload_bytes,
-            options.tls_initial_semantic_state
+            options.tls_initial_parser_context
         );
         if (!tls_layers.empty()) {
             for (const auto& tls_layer : tls_layers) {
@@ -6681,7 +6806,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     } else {
         const auto flow_packet_index = *options.flow_packet_index;
-        auto tls_initial_semantic_state = options.tls_initial_semantic_state;
+        auto tls_initial_parser_context = options.tls_initial_parser_context;
         for (const auto& reconstructed_record : options.reconstructed_tls_records) {
             const auto* selected_contribution =
                 find_selected_packet_contribution(reconstructed_record, flow_packet_index);
@@ -6689,8 +6814,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 continue;
             }
             append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-            tls_initial_semantic_state = advance_tls_summary_semantic_state(
-                tls_initial_semantic_state,
+            tls_initial_parser_context = advance_tls_summary_parser_context(
+                tls_initial_parser_context,
                 reconstructed_record
             );
         }
@@ -6701,7 +6826,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 : std::span<const std::uint8_t> {};
         const auto tls_layers = build_tls_summary_layers_impl(
             remaining_tls_payload,
-            tls_initial_semantic_state
+            tls_initial_parser_context
         );
         if (!tls_layers.empty()) {
             for (const auto& tls_layer : tls_layers) {

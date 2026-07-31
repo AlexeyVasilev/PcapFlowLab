@@ -577,6 +577,38 @@ std::string require_summary_field_value(
     return field->value;
 }
 
+void expect_ecdhe_server_key_exchange_summary(
+    const session_detail::PacketSummaryLayer& layer,
+    const bool expect_explicit_signature_scheme
+) {
+    PFL_EXPECT(require_summary_field_value(layer, "Handshake Type") == "ServerKeyExchange");
+    PFL_EXPECT(require_summary_field_value(layer, "Key Exchange") == "ECDHE");
+    PFL_EXPECT(require_summary_field_value(layer, "Curve Type") == "Named Curve (3)");
+    PFL_EXPECT(require_summary_field_value(layer, "Named Group") == "secp256r1 (0x0017)");
+    PFL_EXPECT(require_summary_field_value(layer, "Public Key Length") == "65 bytes");
+    PFL_EXPECT(require_summary_field_value(layer, "Public Key Available Length") == "65 bytes");
+    PFL_EXPECT(require_summary_field_value(layer, "Public Key Status") == "Complete");
+    PFL_EXPECT(require_summary_field_value(layer, "Signature Authentication") == "RSA");
+    if (expect_explicit_signature_scheme) {
+        PFL_EXPECT(require_summary_field_value(layer, "Signature Scheme") == "rsa_pkcs1_sha512 (0x0601)");
+    } else {
+        PFL_EXPECT(find_summary_field(layer, "Signature Scheme") == nullptr);
+    }
+    PFL_EXPECT(require_summary_field_value(layer, "Signature Length") == "256 bytes");
+    PFL_EXPECT(require_summary_field_value(layer, "Signature Available Length") == "256 bytes");
+    PFL_EXPECT(require_summary_field_value(layer, "Signature Status") == "Complete");
+    PFL_EXPECT(require_summary_field_value(layer, "Status") == "Complete");
+}
+
+void expect_ecdhe_client_key_exchange_summary(const session_detail::PacketSummaryLayer& layer) {
+    PFL_EXPECT(require_summary_field_value(layer, "Handshake Type") == "ClientKeyExchange");
+    PFL_EXPECT(require_summary_field_value(layer, "Key Exchange") == "ECDHE");
+    PFL_EXPECT(require_summary_field_value(layer, "Public Key Length") == "65 bytes");
+    PFL_EXPECT(require_summary_field_value(layer, "Public Key Available Length") == "65 bytes");
+    PFL_EXPECT(require_summary_field_value(layer, "Public Key Status") == "Complete");
+    PFL_EXPECT(require_summary_field_value(layer, "Status") == "Complete");
+}
+
 const session_detail::PacketSummaryLayer* find_summary_child(
     const session_detail::PacketSummaryLayer& layer,
     const std::string_view id,
@@ -2919,6 +2951,71 @@ void run_stream_query_tests() {
     }
 
     {
+        struct EcdheBaselineExpectation {
+            const char* relative_path;
+            bool expect_explicit_signature_scheme;
+        };
+
+        const std::vector<EcdheBaselineExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .expect_explicit_signature_scheme = false,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .expect_explicit_signature_scheme = false,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .expect_explicit_signature_scheme = true,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            CaptureSession session {};
+            PFL_EXPECT(session.open_capture(fixture_path(expectation.relative_path), fast_options));
+
+            const auto packet_rows = session.list_flow_packets(0);
+            const auto rows = session.list_flow_stream_items(0);
+
+            const auto* server_key_exchange_row = find_stream_row_by_label_and_packets(
+                rows,
+                "TLS ServerKeyExchange",
+                std::vector<std::uint64_t> {9U, 11U}
+            );
+            PFL_REQUIRE(server_key_exchange_row != nullptr);
+            PFL_EXPECT(server_key_exchange_row->packet_count == 2U);
+            const auto server_key_exchange_summary = build_stream_summary_layers(*server_key_exchange_row, packet_rows);
+            const auto* server_key_exchange_tls_layer = find_top_level_summary_layer(server_key_exchange_summary, "tls");
+            PFL_REQUIRE(server_key_exchange_tls_layer != nullptr);
+            expect_ecdhe_server_key_exchange_summary(
+                *server_key_exchange_tls_layer,
+                expectation.expect_explicit_signature_scheme
+            );
+
+            const auto* server_hello_done_row = find_stream_row_by_label(rows, "TLS ServerHelloDone");
+            PFL_REQUIRE(server_hello_done_row != nullptr);
+
+            const auto* client_key_exchange_row = find_stream_row_by_label_and_packets(
+                rows,
+                "TLS ClientKeyExchange",
+                std::vector<std::uint64_t> {13U}
+            );
+            PFL_REQUIRE(client_key_exchange_row != nullptr);
+            PFL_EXPECT(client_key_exchange_row->packet_count == 1U);
+            const auto client_key_exchange_summary = build_stream_summary_layers(*client_key_exchange_row, packet_rows);
+            const auto* client_key_exchange_tls_layer = find_top_level_summary_layer(client_key_exchange_summary, "tls");
+            PFL_REQUIRE(client_key_exchange_tls_layer != nullptr);
+            expect_ecdhe_client_key_exchange_summary(*client_key_exchange_tls_layer);
+
+            PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS ChangeCipherSpec", std::vector<std::uint64_t> {13U}) != nullptr);
+            PFL_REQUIRE(
+                find_stream_row_by_label_and_packets(rows, "TLS Encrypted Handshake Message", std::vector<std::uint64_t> {13U}) != nullptr
+            );
+        }
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(
             fixture_path("parsing/tls/tls_1_2_client_certificate_missing_18.pcap"),
@@ -2966,6 +3063,17 @@ void run_stream_query_tests() {
         PFL_EXPECT(require_summary_field_value(*server_hello_done_handshake, "Handshake Type") == "ServerHelloDone");
         PFL_EXPECT(require_summary_field_value(*server_hello_done_handshake, "Handshake Length") == "0");
 
+        const auto* server_key_exchange_row = find_stream_row_by_label_and_packets(
+            rows,
+            "TLS ServerKeyExchange",
+            std::vector<std::uint64_t> {9U, 10U}
+        );
+        PFL_REQUIRE(server_key_exchange_row != nullptr);
+        const auto server_key_exchange_summary = build_stream_summary_layers(*server_key_exchange_row, packet_rows);
+        const auto* server_key_exchange_tls_layer = find_top_level_summary_layer(server_key_exchange_summary, "tls");
+        PFL_REQUIRE(server_key_exchange_tls_layer != nullptr);
+        expect_ecdhe_server_key_exchange_summary(*server_key_exchange_tls_layer, true);
+
         const auto* empty_certificate_row = find_stream_row_by_label_and_packets(
             rows,
             "TLS Certificate",
@@ -2984,7 +3092,17 @@ void run_stream_query_tests() {
         PFL_EXPECT(require_summary_field_value(*empty_certificate_tls_layer, "Status") == "Complete");
         PFL_EXPECT(find_summary_child(*empty_certificate_tls_layer, "tls_certificate_entries") == nullptr);
 
-        PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS ClientKeyExchange", std::vector<std::uint64_t> {12U}) != nullptr);
+        const auto* client_key_exchange_row = find_stream_row_by_label_and_packets(
+            rows,
+            "TLS ClientKeyExchange",
+            std::vector<std::uint64_t> {12U}
+        );
+        PFL_REQUIRE(client_key_exchange_row != nullptr);
+        const auto client_key_exchange_summary = build_stream_summary_layers(*client_key_exchange_row, packet_rows);
+        const auto* client_key_exchange_tls_layer = find_top_level_summary_layer(client_key_exchange_summary, "tls");
+        PFL_REQUIRE(client_key_exchange_tls_layer != nullptr);
+        expect_ecdhe_client_key_exchange_summary(*client_key_exchange_tls_layer);
+
         PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS ChangeCipherSpec", std::vector<std::uint64_t> {12U}) != nullptr);
         PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS Encrypted Handshake Message", std::vector<std::uint64_t> {12U}) != nullptr);
     }
@@ -3036,6 +3154,13 @@ void run_stream_query_tests() {
         const auto* packet_server_hello_tls_layer = find_top_level_summary_layer(server_hello_packet_summary, "tls");
         PFL_REQUIRE(packet_server_hello_tls_layer != nullptr);
         PFL_EXPECT(require_summary_field_value(*packet_server_hello_tls_layer, "Selected Protocol") == "http/1.1");
+
+        const auto* server_key_exchange_row = find_stream_row_by_label(rows, "TLS ServerKeyExchange");
+        PFL_REQUIRE(server_key_exchange_row != nullptr);
+        const auto server_key_exchange_summary = build_stream_summary_layers(*server_key_exchange_row, packet_rows);
+        const auto* server_key_exchange_tls_layer = find_top_level_summary_layer(server_key_exchange_summary, "tls");
+        PFL_REQUIRE(server_key_exchange_tls_layer != nullptr);
+        expect_ecdhe_server_key_exchange_summary(*server_key_exchange_tls_layer, true);
     }
 
     {

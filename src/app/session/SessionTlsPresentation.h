@@ -31,6 +31,7 @@ struct TlsStreamPresentationItem {
     std::string payload_hex_text {};
     std::string protocol_text {};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
+    TlsInspectionParserContext initial_parser_context {};
 };
 
 struct TlsStreamScannerContribution {
@@ -61,6 +62,7 @@ struct TlsStreamScannerPendingRecordState {
     std::size_t total_byte_count {0U};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     std::string protocol_text {};
+    TlsInspectionParserContext initial_parser_context {};
     std::uint64_t first_packet_index {0};
     std::uint64_t first_flow_packet_index {0};
     std::uint32_t intra_packet_ordinal {0U};
@@ -81,6 +83,7 @@ struct TlsStreamScannerState {
     std::optional<TlsStreamScannerPendingRecordState> pending_record {};
     bool post_change_cipher_spec {false};
     bool saw_tls_context {false};
+    TlsInspectionParserContext parser_context {};
     bool prefer_payload_partial_for_unrecognized_trailing_bytes {false};
     std::uint64_t ordinal_packet_index {0};
     std::uint32_t next_intra_packet_ordinal {0U};
@@ -163,6 +166,7 @@ struct TlsSelectedPacketRecordContext {
     std::vector<std::uint8_t> captured_bytes {};
     std::size_t total_record_size {0U};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
+    TlsInspectionParserContext initial_parser_context {};
     TlsSelectedPacketStatus status {TlsSelectedPacketStatus::complete};
     std::vector<TlsSelectedPacketContribution> contributions {};
     std::optional<std::uint64_t> selected_contribution_flow_packet_index {};
@@ -202,6 +206,13 @@ std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(
 );
 
 [[nodiscard]] TlsInspectionSemanticState determine_selected_packet_tls_initial_state(
+    CaptureSession& session,
+    std::size_t flow_index,
+    std::uint64_t selected_flow_packet_index,
+    std::size_t loaded_packet_window_count
+);
+
+[[nodiscard]] TlsInspectionParserContext determine_selected_packet_tls_initial_context(
     CaptureSession& session,
     std::size_t flow_index,
     std::uint64_t selected_flow_packet_index,

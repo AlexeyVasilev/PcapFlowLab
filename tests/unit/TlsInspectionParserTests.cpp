@@ -328,6 +328,26 @@ const TlsServerHelloModel& require_parsed_server_hello(const TlsInspectionResult
     return *handshake.server_hello;
 }
 
+const TlsEcdheServerKeyExchangeModel& require_parsed_ecdhe_server_key_exchange(
+    const TlsInspectionResult& result
+) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::server_key_exchange);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.ecdhe_server_key_exchange.has_value());
+    return *handshake.ecdhe_server_key_exchange;
+}
+
+const TlsEcdheClientKeyExchangeModel& require_parsed_ecdhe_client_key_exchange(
+    const TlsInspectionResult& result
+) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_key_exchange);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.ecdhe_client_key_exchange.has_value());
+    return *handshake.ecdhe_client_key_exchange;
+}
+
 void expect_tls_alert_entry(
     const TlsAlertEntryModel& entry,
     const std::uint8_t expected_level,
@@ -393,6 +413,73 @@ std::vector<std::size_t> collect_certificate_authority_lengths(const TlsCertific
         lengths.push_back(entry.declared_length);
     }
     return lengths;
+}
+
+std::vector<std::uint8_t> make_repeating_bytes(const std::size_t count, const std::uint8_t seed = 0x01U) {
+    std::vector<std::uint8_t> bytes {};
+    bytes.reserve(count);
+    for (std::size_t index = 0U; index < count; ++index) {
+        bytes.push_back(static_cast<std::uint8_t>(seed + static_cast<std::uint8_t>(index & 0x3FU)));
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_minimal_server_hello_body_with_cipher_suite(
+    const std::uint16_t version,
+    const std::uint16_t cipher_suite
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, version);
+    const auto random = make_zero_filled(32U);
+    body.insert(body.end(), random.begin(), random.end());
+    body.push_back(0x00U);
+    append_be16(body, cipher_suite);
+    body.push_back(0x00U);
+    return body;
+}
+
+std::vector<std::uint8_t> make_ecdhe_server_key_exchange_body_tls10_or_tls11(
+    const std::uint16_t named_group_id,
+    const std::size_t public_key_length,
+    const std::size_t signature_length
+) {
+    std::vector<std::uint8_t> body {0x03U};
+    append_be16(body, named_group_id);
+    body.push_back(static_cast<std::uint8_t>(public_key_length));
+    const auto public_key = make_repeating_bytes(public_key_length, 0x41U);
+    body.insert(body.end(), public_key.begin(), public_key.end());
+    append_be16(body, static_cast<std::uint16_t>(signature_length));
+    const auto signature = make_repeating_bytes(signature_length, 0x80U);
+    body.insert(body.end(), signature.begin(), signature.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_ecdhe_server_key_exchange_body_tls12(
+    const std::uint16_t named_group_id,
+    const std::size_t public_key_length,
+    const std::uint16_t signature_scheme_id,
+    const std::size_t signature_length
+) {
+    auto body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(
+        named_group_id,
+        public_key_length,
+        0U
+    );
+    body.resize(4U + public_key_length);
+    append_be16(body, signature_scheme_id);
+    append_be16(body, static_cast<std::uint16_t>(signature_length));
+    const auto signature = make_repeating_bytes(signature_length, 0x80U);
+    body.insert(body.end(), signature.begin(), signature.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_ecdhe_client_key_exchange_body(const std::size_t public_key_length) {
+    std::vector<std::uint8_t> body {
+        static_cast<std::uint8_t>(public_key_length)
+    };
+    const auto public_key = make_repeating_bytes(public_key_length, 0x21U);
+    body.insert(body.end(), public_key.begin(), public_key.end());
+    return body;
 }
 
 }  // namespace
@@ -1092,6 +1179,357 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls10_complete"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(server_key_exchange.curve_type == std::optional<std::uint8_t> {3U});
+        PFL_EXPECT(server_key_exchange.named_group_id == std::optional<std::uint16_t> {0x0017U});
+        PFL_EXPECT(server_key_exchange.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(server_key_exchange.available_public_key_length == 65U);
+        PFL_EXPECT(server_key_exchange.public_key_complete);
+        PFL_EXPECT(server_key_exchange.signature_authentication_kind == TlsCipherSuiteAuthenticationKind::rsa);
+        PFL_EXPECT(!server_key_exchange.signature_scheme_id.has_value());
+        PFL_EXPECT(server_key_exchange.declared_signature_length == std::optional<std::size_t> {256U});
+        PFL_EXPECT(server_key_exchange.available_signature_length == 256U);
+        PFL_EXPECT(server_key_exchange.signature_complete);
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls12_complete"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(server_key_exchange.curve_type == std::optional<std::uint8_t> {3U});
+        PFL_EXPECT(server_key_exchange.named_group_id == std::optional<std::uint16_t> {0x0017U});
+        PFL_EXPECT(server_key_exchange.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(server_key_exchange.available_public_key_length == 65U);
+        PFL_EXPECT(server_key_exchange.public_key_complete);
+        PFL_EXPECT(server_key_exchange.signature_authentication_kind == TlsCipherSuiteAuthenticationKind::rsa);
+        PFL_EXPECT(server_key_exchange.signature_scheme_id == std::optional<std::uint16_t> {0x0601U});
+        PFL_EXPECT(server_key_exchange.declared_signature_length == std::optional<std::size_t> {256U});
+        PFL_EXPECT(server_key_exchange.available_signature_length == 256U);
+        PFL_EXPECT(server_key_exchange.signature_complete);
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_establishes_ecdhe_context_for_following_server_key_exchange"};
+        auto bytes = make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(
+                0x02U,
+                make_minimal_server_hello_body_with_cipher_suite(0x0303U, 0xC030U)
+            )
+        );
+        const auto server_key_exchange_record = make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(
+                0x0CU,
+                make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+            )
+        );
+        bytes.insert(bytes.end(), server_key_exchange_record.begin(), server_key_exchange_record.end());
+
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_REQUIRE(result.records[1].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[1].handshake_messages[0].kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(result.records[1].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[1].handshake_messages[0].ecdhe_server_key_exchange.has_value());
+        PFL_EXPECT(
+            result.records[1].handshake_messages[0].ecdhe_server_key_exchange->signature_scheme_id ==
+            std::optional<std::uint16_t> {0x0601U}
+        );
+        PFL_EXPECT(result.final_context.negotiated_cipher_suite == std::optional<std::uint16_t> {0xC030U});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_incomplete_and_malformed_cases"};
+
+        const auto truncated_curve_type = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, {})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_curve_type).status == TlsStructuredBodyStatus::incomplete);
+
+        const auto truncated_named_group = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, {0x03U, 0x00U})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_named_group).status == TlsStructuredBodyStatus::incomplete);
+
+        const auto truncated_point_length = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, {0x03U, 0x00U, 0x17U})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_point_length).status == TlsStructuredBodyStatus::incomplete);
+
+        auto short_point_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        short_point_body.resize(4U + 64U);
+        const auto short_point = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, short_point_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        const auto& short_point_model = require_parsed_ecdhe_server_key_exchange(short_point);
+        PFL_EXPECT(short_point_model.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(short_point_model.available_public_key_length == 64U);
+        PFL_EXPECT(!short_point_model.public_key_complete);
+        PFL_EXPECT(short_point_model.status == TlsStructuredBodyStatus::incomplete);
+
+        auto truncated_signature_length_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        truncated_signature_length_body.resize(4U + 65U + 1U);
+        const auto truncated_signature_length = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, truncated_signature_length_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(truncated_signature_length).status ==
+            TlsStructuredBodyStatus::incomplete
+        );
+
+        auto short_signature_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        short_signature_body.resize(4U + 65U + 2U + 255U);
+        const auto short_signature = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, short_signature_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        const auto& short_signature_model = require_parsed_ecdhe_server_key_exchange(short_signature);
+        PFL_EXPECT(short_signature_model.declared_signature_length == std::optional<std::size_t> {256U});
+        PFL_EXPECT(short_signature_model.available_signature_length == 255U);
+        PFL_EXPECT(!short_signature_model.signature_complete);
+        PFL_EXPECT(short_signature_model.status == TlsStructuredBodyStatus::incomplete);
+
+        const auto unknown_group = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls10_or_tls11(0xBEEFU, 65U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(unknown_group).named_group_id ==
+            std::optional<std::uint16_t> {0xBEEFU}
+        );
+
+        auto trailing_bytes_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        trailing_bytes_body.push_back(0xAAU);
+        const auto trailing_bytes = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, trailing_bytes_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(trailing_bytes).status == TlsStructuredBodyStatus::malformed);
+
+        auto truncated_signature_scheme_body = make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U);
+        truncated_signature_scheme_body.resize(4U + 65U + 1U);
+        const auto truncated_signature_scheme = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x0CU, truncated_signature_scheme_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(truncated_signature_scheme).status ==
+            TlsStructuredBodyStatus::incomplete
+        );
+
+        const auto unknown_signature_scheme = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0xBEEFU, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(unknown_signature_scheme).signature_scheme_id ==
+            std::optional<std::uint16_t> {0xBEEFU}
+        );
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_context_gating_and_isolation"};
+        const auto body = make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U);
+        const auto record = make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x0CU, body));
+
+        const auto without_context = parser.inspect(record);
+        const auto& generic_handshake = require_single_handshake(without_context);
+        PFL_EXPECT(generic_handshake.kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(generic_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!generic_handshake.ecdhe_server_key_exchange.has_value());
+
+        const auto non_ecdhe_context = parser.inspect(
+            record,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0x0035U,
+            }
+        );
+        const auto& non_ecdhe_handshake = require_single_handshake(non_ecdhe_context);
+        PFL_EXPECT(non_ecdhe_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!non_ecdhe_handshake.ecdhe_server_key_exchange.has_value());
+
+        const auto ecdhe_context = parser.inspect(
+            record,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(ecdhe_context).status == TlsStructuredBodyStatus::complete);
+
+        const auto repeated_without_context = parser.inspect(record);
+        const auto& repeated_generic_handshake = require_single_handshake(repeated_without_context);
+        PFL_EXPECT(repeated_generic_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!repeated_generic_handshake.ecdhe_server_key_exchange.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_client_key_exchange_cases"};
+        const auto complete = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x10U, make_ecdhe_client_key_exchange_body(65U))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        const auto& complete_model = require_parsed_ecdhe_client_key_exchange(complete);
+        PFL_EXPECT(complete_model.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(complete_model.available_public_key_length == 65U);
+        PFL_EXPECT(complete_model.public_key_complete);
+        PFL_EXPECT(complete_model.status == TlsStructuredBodyStatus::complete);
+
+        const auto zero_length = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, {0x00U})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_client_key_exchange(zero_length).status == TlsStructuredBodyStatus::malformed);
+
+        const auto truncated_length = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, {})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_client_key_exchange(truncated_length).status == TlsStructuredBodyStatus::incomplete);
+
+        auto short_point = make_ecdhe_client_key_exchange_body(65U);
+        short_point.resize(65U);
+        const auto truncated_point = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, short_point)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        const auto& truncated_point_model = require_parsed_ecdhe_client_key_exchange(truncated_point);
+        PFL_EXPECT(truncated_point_model.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(truncated_point_model.available_public_key_length == 64U);
+        PFL_EXPECT(!truncated_point_model.public_key_complete);
+        PFL_EXPECT(truncated_point_model.status == TlsStructuredBodyStatus::incomplete);
+
+        auto trailing_bytes = make_ecdhe_client_key_exchange_body(65U);
+        trailing_bytes.push_back(0xAAU);
+        const auto malformed_trailing = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, trailing_bytes)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_client_key_exchange(malformed_trailing).status == TlsStructuredBodyStatus::malformed);
+
+        const auto without_context = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, make_ecdhe_client_key_exchange_body(65U)))
+        );
+        const auto& generic_handshake = require_single_handshake(without_context);
+        PFL_EXPECT(generic_handshake.kind == TlsHandshakeKind::client_key_exchange);
+        PFL_EXPECT(generic_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!generic_handshake.ecdhe_client_key_exchange.has_value());
+
+        const auto non_ecdhe_context = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, make_ecdhe_client_key_exchange_body(65U))),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0x0035U,
+            }
+        );
+        const auto& non_ecdhe_handshake = require_single_handshake(non_ecdhe_context);
+        PFL_EXPECT(non_ecdhe_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!non_ecdhe_handshake.ecdhe_client_key_exchange.has_value());
+    }
+
+    {
         const std::vector<const char*> baseline_alert_fixtures {
             "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
             "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
@@ -1258,6 +1696,79 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[3].declared_payload_length == std::optional<std::size_t> {40U});
         PFL_EXPECT(result.records[3].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
         PFL_EXPECT(result.records[3].handshake_messages.empty());
+    }
+
+    {
+        struct ClientKeyExchangeFixtureExpectation {
+            const char* relative_path;
+            std::uint64_t packet_index;
+            std::uint16_t negotiated_cipher_suite;
+            std::size_t expected_record_count;
+            std::size_t client_key_exchange_record_index;
+        };
+
+        const std::vector<ClientKeyExchangeFixtureExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .packet_index = 13U,
+                .negotiated_cipher_suite = 0xC014U,
+                .expected_record_count = 3U,
+                .client_key_exchange_record_index = 0U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .packet_index = 13U,
+                .negotiated_cipher_suite = 0xC014U,
+                .expected_record_count = 3U,
+                .client_key_exchange_record_index = 0U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .packet_index = 13U,
+                .negotiated_cipher_suite = 0xC030U,
+                .expected_record_count = 3U,
+                .client_key_exchange_record_index = 0U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+                .packet_index = 12U,
+                .negotiated_cipher_suite = 0xC030U,
+                .expected_record_count = 4U,
+                .client_key_exchange_record_index = 1U,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=" + std::to_string(expectation.packet_index + 1U) +
+                " | ecdhe_client_key_exchange"
+            };
+            const auto payload = require_tls_fixture_transport_payload(expectation.relative_path, expectation.packet_index);
+            const auto result = parser.inspect(
+                payload,
+                TlsInspectionParserContext {
+                    .semantic_state = TlsInspectionSemanticState::plaintext,
+                    .negotiated_cipher_suite = expectation.negotiated_cipher_suite,
+                }
+            );
+
+            PFL_REQUIRE(result.records.size() == expectation.expected_record_count);
+            PFL_REQUIRE(result.records[expectation.client_key_exchange_record_index].handshake_messages.size() == 1U);
+            const auto& handshake =
+                result.records[expectation.client_key_exchange_record_index].handshake_messages[0];
+            PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_key_exchange);
+            PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+            PFL_EXPECT(handshake.declared_body_length == std::optional<std::size_t> {66U});
+            PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+            PFL_REQUIRE(handshake.ecdhe_client_key_exchange.has_value());
+
+            const auto& client_key_exchange = *handshake.ecdhe_client_key_exchange;
+            PFL_EXPECT(client_key_exchange.declared_public_key_length == std::optional<std::size_t> {65U});
+            PFL_EXPECT(client_key_exchange.available_public_key_length == 65U);
+            PFL_EXPECT(client_key_exchange.public_key_complete);
+            PFL_EXPECT(client_key_exchange.status == TlsStructuredBodyStatus::complete);
+        }
     }
 
     {
