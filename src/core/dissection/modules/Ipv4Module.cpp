@@ -126,6 +126,11 @@ ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
             .status = ParseStatus::malformed,
         };
     }
+    if (total_length != 0U && total_length > declared_length) {
+        return ParsedIpv4Packet {
+            .status = ParseStatus::malformed,
+        };
+    }
 
     const auto bounds = detail::parse_ipv4_packet_bounds(bytes, 0U);
     if (!bounds.has_value()) {

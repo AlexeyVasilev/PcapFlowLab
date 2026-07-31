@@ -541,9 +541,11 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
     }
 
     {
-        const auto exact_minimum_ipv4 = strip_ethernet_header(make_ethernet_ipv4_udp_packet(
+        auto exact_minimum_ipv4 = strip_ethernet_header(make_ethernet_ipv4_udp_packet(
             ipv4(10, 20, 8, 11), ipv4(10, 20, 8, 12), 9200U, 9201U
         ));
+        exact_minimum_ipv4[2U] = 0x00U;
+        exact_minimum_ipv4[3U] = static_cast<std::uint8_t>(detail::kIpv4MinimumHeaderSize);
         const auto exact_minimum_slice = make_root_packet_slice(
             ByteSourceId::captured_frame(101U),
             exact_minimum_ipv4,
