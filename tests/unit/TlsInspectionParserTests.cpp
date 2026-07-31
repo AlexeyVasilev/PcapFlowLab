@@ -320,14 +320,6 @@ const TlsCertificateRequestModel& require_parsed_certificate_request(const TlsIn
     return *handshake.certificate_request;
 }
 
-const TlsServerHelloModel& require_parsed_server_hello(const TlsInspectionResult& result) {
-    const auto& handshake = require_single_handshake(result);
-    PFL_EXPECT(handshake.kind == TlsHandshakeKind::server_hello);
-    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
-    PFL_REQUIRE(handshake.server_hello.has_value());
-    return *handshake.server_hello;
-}
-
 const TlsEcdheServerKeyExchangeModel& require_parsed_ecdhe_server_key_exchange(
     const TlsInspectionResult& result
 ) {
@@ -1197,6 +1189,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
@@ -1227,6 +1220,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
             }
         );
         const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
@@ -1241,6 +1235,73 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(server_key_exchange.available_signature_length == 256U);
         PFL_EXPECT(server_key_exchange.signature_complete);
         PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls12_negotiated_version_independent_from_record_legacy_version"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(server_key_exchange.signature_scheme_id == std::optional<std::uint16_t> {0x0601U});
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls11_negotiated_version_independent_from_record_legacy_version"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0302U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(!server_key_exchange.signature_scheme_id.has_value());
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_unknown_negotiated_version_does_not_guess_tls12_layout"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x7A7AU,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!handshake.ecdhe_server_key_exchange.has_value());
     }
 
     {
@@ -1274,6 +1335,7 @@ void run_tls_inspection_parser_tests() {
             std::optional<std::uint16_t> {0x0601U}
         );
         PFL_EXPECT(result.final_context.negotiated_cipher_suite == std::optional<std::uint16_t> {0xC030U});
+        PFL_EXPECT(result.final_context.negotiated_version == std::optional<std::uint16_t> {0x0303U});
     }
 
     {
@@ -1284,6 +1346,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_curve_type).status == TlsStructuredBodyStatus::incomplete);
@@ -1293,6 +1356,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_named_group).status == TlsStructuredBodyStatus::incomplete);
@@ -1302,6 +1366,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_point_length).status == TlsStructuredBodyStatus::incomplete);
@@ -1313,6 +1378,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         const auto& short_point_model = require_parsed_ecdhe_server_key_exchange(short_point);
@@ -1328,6 +1394,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         PFL_EXPECT(
@@ -1342,6 +1409,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         const auto& short_signature_model = require_parsed_ecdhe_server_key_exchange(short_signature);
@@ -1362,6 +1430,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         PFL_EXPECT(
@@ -1376,6 +1445,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
             }
         );
         PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(trailing_bytes).status == TlsStructuredBodyStatus::malformed);
@@ -1387,6 +1457,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
             }
         );
         PFL_EXPECT(
@@ -1406,6 +1477,7 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
             }
         );
         PFL_EXPECT(
@@ -1441,9 +1513,22 @@ void run_tls_inspection_parser_tests() {
             TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
             }
         );
         PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(ecdhe_context).status == TlsStructuredBodyStatus::complete);
+
+        const auto unknown_version_context = parser.inspect(
+            record,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x7A7AU,
+            }
+        );
+        const auto& unknown_version_handshake = require_single_handshake(unknown_version_context);
+        PFL_EXPECT(unknown_version_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!unknown_version_handshake.ecdhe_server_key_exchange.has_value());
 
         const auto repeated_without_context = parser.inspect(record);
         const auto& repeated_generic_handshake = require_single_handshake(repeated_without_context);
@@ -1899,15 +1984,21 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_tls12_valid"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
-                {1U, 2U, 64U},
-                {0x0401U, 0x0501U, 0x0601U},
-                {{0x30U, 0x31U}, {0x41U, 0x42U, 0x43U}}
-            ))
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U, 2U, 64U},
+                    {0x0401U, 0x0501U, 0x0601U},
+                    {{0x30U, 0x31U}, {0x41U, 0x42U, 0x43U}}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& request = require_parsed_certificate_request(result);
         PFL_EXPECT(request.certificate_type_ids == std::vector<std::uint8_t>({1U, 2U, 64U}));
         PFL_EXPECT(request.signature_scheme_bytes_length == 6U);
@@ -1919,11 +2010,17 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_zero_types_is_malformed"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, {0x00U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x00U})
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x00U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
         PFL_EXPECT(!handshake.certificate_request.has_value());
@@ -1931,11 +2028,17 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_odd_signature_scheme_vector"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x03U, 0x04U, 0x01U, 0x02U, 0x00U, 0x00U})
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x03U, 0x04U, 0x01U, 0x02U, 0x00U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
         PFL_EXPECT(!handshake.certificate_request.has_value());
@@ -1943,11 +2046,17 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_truncated_signature_scheme_vector"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x04U, 0x04U, 0x01U, 0x00U, 0x00U})
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x04U, 0x04U, 0x01U, 0x00U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
         PFL_EXPECT(!handshake.certificate_request.has_value());
@@ -1955,15 +2064,21 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_zero_authorities_is_valid"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
-                {1U},
-                {0x0401U},
-                {}
-            ))
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U},
+                    {0x0401U},
+                    {}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& request = require_parsed_certificate_request(result);
         PFL_EXPECT(request.certificate_authorities_bytes_length == 0U);
         PFL_EXPECT(request.complete_certificate_authorities_vector);
@@ -1972,11 +2087,17 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_truncated_authority_length"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x01U, 0x00U})
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x01U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
         PFL_EXPECT(!handshake.certificate_request.has_value());
@@ -1984,11 +2105,17 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_authority_exceeds_declared_vector"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x03U, 0x00U, 0x02U, 0xAAU})
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x03U, 0x00U, 0x02U, 0xAAU})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
         PFL_EXPECT(!handshake.certificate_request.has_value());
@@ -1996,11 +2123,17 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_trailing_bytes_after_authorities"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0303U,
-            make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x02U, 0x00U, 0x00U, 0xFFU})
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x02U, 0x00U, 0x00U, 0xFFU})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
         PFL_EXPECT(!handshake.certificate_request.has_value());
@@ -2008,20 +2141,81 @@ void run_tls_inspection_parser_tests() {
 
     {
         ScopedTestContext context {"synthetic=certificate_request_tls11_not_attempted"};
-        const auto result = parser.inspect(make_tls_record(
-            0x16U,
-            0x0302U,
-            make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
-                {1U},
-                {0x0401U},
-                {}
-            ))
-        ));
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U},
+                    {0x0401U},
+                    {}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0302U,
+            }
+        );
         const auto& handshake = require_single_handshake(result);
         PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate_request);
         PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
         PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
         PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_unknown_negotiated_version_not_attempted"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U},
+                    {0x0401U},
+                    {}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x7A7AU,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate_request);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_establishes_negotiated_version_for_following_certificate_request"};
+        auto bytes = make_tls_record(
+            0x16U,
+            0x0301U,
+            make_tls_handshake_message(
+                0x02U,
+                make_minimal_server_hello_body_with_cipher_suite(0x0303U, 0xC030U)
+            )
+        );
+        const auto certificate_request_record = make_tls_record(
+            0x16U,
+            0x0301U,
+            make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                {1U},
+                {0x0401U},
+                {}
+            ))
+        );
+        bytes.insert(bytes.end(), certificate_request_record.begin(), certificate_request_record.end());
+
+        const auto result = parser.inspect(bytes);
+        PFL_EXPECT(result.records.size() == 2U);
+        PFL_REQUIRE(result.records[1].handshake_messages.size() == 1U);
+        const auto& certificate_request_handshake = result.records[1].handshake_messages[0];
+        PFL_EXPECT(certificate_request_handshake.kind == TlsHandshakeKind::certificate_request);
+        PFL_EXPECT(certificate_request_handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(certificate_request_handshake.certificate_request.has_value());
+        PFL_EXPECT(result.final_context.negotiated_version == std::optional<std::uint16_t> {0x0303U});
     }
 
     {

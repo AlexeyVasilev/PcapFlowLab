@@ -1420,20 +1420,24 @@ void run_packet_details_tests() {
         struct ServerKeyExchangePacketExpectation {
             const char* relative_path;
             bool expect_explicit_signature_scheme;
+            std::uint16_t expected_negotiated_version;
         };
 
         const std::vector<ServerKeyExchangePacketExpectation> expectations {
             {
                 .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
                 .expect_explicit_signature_scheme = false,
+                .expected_negotiated_version = 0x0301U,
             },
             {
                 .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
                 .expect_explicit_signature_scheme = false,
+                .expected_negotiated_version = 0x0302U,
             },
             {
                 .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
                 .expect_explicit_signature_scheme = true,
+                .expected_negotiated_version = 0x0303U,
             },
         };
 
@@ -1467,6 +1471,10 @@ void run_packet_details_tests() {
                 std::optional<std::uint16_t> {
                     expectation.expect_explicit_signature_scheme ? 0xC030U : 0xC014U
                 }
+            );
+            PFL_EXPECT(
+                summary.reconstructed_tls_records[0].initial_parser_context.negotiated_version ==
+                std::optional<std::uint16_t> {expectation.expected_negotiated_version}
             );
 
             const auto reassembled_layers = find_summary_layers(summary.summary_layers, "tls_reassembled");
@@ -1505,6 +1513,10 @@ void run_packet_details_tests() {
         PFL_EXPECT(
             summary.reconstructed_tls_records[0].initial_parser_context.negotiated_cipher_suite ==
             std::optional<std::uint16_t> {0xC02FU}
+        );
+        PFL_EXPECT(
+            summary.reconstructed_tls_records[0].initial_parser_context.negotiated_version ==
+            std::optional<std::uint16_t> {0x0303U}
         );
 
         const auto reassembled_layers = find_summary_layers(summary.summary_layers, "tls_reassembled");

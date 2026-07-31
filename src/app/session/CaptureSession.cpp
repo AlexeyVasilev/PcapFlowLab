@@ -396,8 +396,9 @@ void merge_directional_policy(
     );
 }
 
-void propagate_tls_negotiated_cipher_context(std::vector<BuiltStreamRow>& rows) {
+void propagate_tls_negotiated_context(std::vector<BuiltStreamRow>& rows) {
     std::optional<std::uint16_t> negotiated_cipher_suite {};
+    std::optional<std::uint16_t> negotiated_version {};
 
     for (auto& built_row : rows) {
         auto& row = built_row.row;
@@ -408,14 +409,26 @@ void propagate_tls_negotiated_cipher_context(std::vector<BuiltStreamRow>& rows) 
         if (!row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
             row.tls_initial_parser_context.negotiated_cipher_suite = negotiated_cipher_suite;
         }
+        if (!row.tls_initial_parser_context.negotiated_version.has_value()) {
+            row.tls_initial_parser_context.negotiated_version = negotiated_version;
+        }
         if (!row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
             row.tls_final_parser_context.negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
+        }
+        if (!row.tls_final_parser_context.negotiated_version.has_value()) {
+            row.tls_final_parser_context.negotiated_version = row.tls_initial_parser_context.negotiated_version;
         }
 
         if (row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
             negotiated_cipher_suite = row.tls_final_parser_context.negotiated_cipher_suite;
         } else if (row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
             negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
+        }
+
+        if (row.tls_final_parser_context.negotiated_version.has_value()) {
+            negotiated_version = row.tls_final_parser_context.negotiated_version;
+        } else if (row.tls_initial_parser_context.negotiated_version.has_value()) {
+            negotiated_version = row.tls_initial_parser_context.negotiated_version;
         }
     }
 }
@@ -1937,7 +1950,7 @@ std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     std::stable_sort(rows.begin(), rows.end(), [](const BuiltStreamRow& left, const BuiltStreamRow& right) {
         return first_stream_packet_index(left) < first_stream_packet_index(right);
     });
-    propagate_tls_negotiated_cipher_context(rows);
+    propagate_tls_negotiated_context(rows);
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
         rows[index].row.stream_item_index = static_cast<std::uint64_t>(index + 1U);

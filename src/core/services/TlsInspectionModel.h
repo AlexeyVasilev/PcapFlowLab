@@ -91,6 +91,7 @@ enum class TlsCipherSuiteAuthenticationKind : std::uint8_t {
 struct TlsInspectionParserContext {
     TlsInspectionSemanticState semantic_state {TlsInspectionSemanticState::plaintext};
     std::optional<std::uint16_t> negotiated_cipher_suite {};
+    std::optional<std::uint16_t> negotiated_version {};
 };
 
 [[nodiscard]] inline std::optional<std::string_view> tls_alert_level_name(const std::uint8_t level) noexcept {

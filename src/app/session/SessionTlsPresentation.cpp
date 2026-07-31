@@ -2379,6 +2379,7 @@ TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
         .semantic_state = TlsInspectionSemanticState::plaintext,
     };
     std::optional<std::uint16_t> negotiated_cipher_suite {};
+    std::optional<std::uint16_t> negotiated_version {};
     TlsInspectionParser parser {};
 
     for (const auto& row : prefix_rows) {
@@ -2391,6 +2392,7 @@ TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
                 };
             } else {
                 current_context.negotiated_cipher_suite = negotiated_cipher_suite;
+                current_context.negotiated_version = negotiated_version;
                 analysis.initial_parser_context = current_context;
             }
             selected_initial_context_recorded = true;
@@ -2454,14 +2456,15 @@ TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
             const auto inspected = parser.inspect(payload_span, TlsInspectionParserContext {
                 .semantic_state = TlsInspectionSemanticState::plaintext,
                 .negotiated_cipher_suite = negotiated_cipher_suite,
+                .negotiated_version = negotiated_version,
             });
-            if (inspected.final_context.negotiated_cipher_suite.has_value()) {
-                negotiated_cipher_suite = inspected.final_context.negotiated_cipher_suite;
-            }
+            negotiated_cipher_suite = inspected.final_context.negotiated_cipher_suite;
+            negotiated_version = inspected.final_context.negotiated_version;
             continue;
         }
 
         current_context.negotiated_cipher_suite = negotiated_cipher_suite;
+        current_context.negotiated_version = negotiated_version;
 
         std::size_t captured_offset = 0U;
         std::size_t record_budget_remaining = *original_payload_length;
@@ -2530,6 +2533,7 @@ TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
                             )
                         );
                         negotiated_cipher_suite = current_context.negotiated_cipher_suite;
+                        negotiated_version = current_context.negotiated_version;
                     }
                     if (const auto context = finalize_selected_packet_record_context(
                             std::move(*pending_record),
@@ -2617,6 +2621,7 @@ TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
                         )
                     );
                     negotiated_cipher_suite = current_context.negotiated_cipher_suite;
+                    negotiated_version = current_context.negotiated_version;
                 }
                 if (const auto context = finalize_selected_packet_record_context(
                         std::move(record),

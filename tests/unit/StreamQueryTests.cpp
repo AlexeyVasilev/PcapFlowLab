@@ -2954,20 +2954,24 @@ void run_stream_query_tests() {
         struct EcdheBaselineExpectation {
             const char* relative_path;
             bool expect_explicit_signature_scheme;
+            std::uint16_t expected_negotiated_version;
         };
 
         const std::vector<EcdheBaselineExpectation> expectations {
             {
                 .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
                 .expect_explicit_signature_scheme = false,
+                .expected_negotiated_version = 0x0301U,
             },
             {
                 .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
                 .expect_explicit_signature_scheme = false,
+                .expected_negotiated_version = 0x0302U,
             },
             {
                 .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
                 .expect_explicit_signature_scheme = true,
+                .expected_negotiated_version = 0x0303U,
             },
         };
 
@@ -2986,6 +2990,10 @@ void run_stream_query_tests() {
             );
             PFL_REQUIRE(server_key_exchange_row != nullptr);
             PFL_EXPECT(server_key_exchange_row->packet_count == 2U);
+            PFL_EXPECT(
+                server_key_exchange_row->tls_initial_parser_context.negotiated_version ==
+                std::optional<std::uint16_t> {expectation.expected_negotiated_version}
+            );
             const auto server_key_exchange_summary = build_stream_summary_layers(*server_key_exchange_row, packet_rows);
             const auto* server_key_exchange_tls_layer = find_top_level_summary_layer(server_key_exchange_summary, "tls");
             PFL_REQUIRE(server_key_exchange_tls_layer != nullptr);
@@ -3033,6 +3041,10 @@ void run_stream_query_tests() {
         );
         PFL_REQUIRE(certificate_request_row != nullptr);
         PFL_EXPECT(certificate_request_row->packet_count == 1U);
+        PFL_EXPECT(
+            certificate_request_row->tls_initial_parser_context.negotiated_version ==
+            std::optional<std::uint16_t> {0x0303U}
+        );
         PFL_EXPECT(certificate_request_row->protocol_text.find("Handshake Type: CertificateRequest") != std::string::npos);
 
         const auto certificate_request_summary = build_stream_summary_layers(*certificate_request_row, packet_rows);
@@ -3071,6 +3083,10 @@ void run_stream_query_tests() {
             std::vector<std::uint64_t> {9U, 10U}
         );
         PFL_REQUIRE(server_key_exchange_row != nullptr);
+        PFL_EXPECT(
+            server_key_exchange_row->tls_initial_parser_context.negotiated_version ==
+            std::optional<std::uint16_t> {0x0303U}
+        );
         const auto server_key_exchange_summary = build_stream_summary_layers(*server_key_exchange_row, packet_rows);
         const auto* server_key_exchange_tls_layer = find_top_level_summary_layer(server_key_exchange_summary, "tls");
         PFL_REQUIRE(server_key_exchange_tls_layer != nullptr);

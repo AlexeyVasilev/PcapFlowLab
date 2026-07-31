@@ -79,6 +79,18 @@ TlsInspectionParserContext make_tls_parser_context(const TlsInspectionSemanticSt
     };
 }
 
+bool tls_negotiated_version_is_tls10_to_tls12(const std::optional<std::uint16_t> negotiated_version) noexcept {
+    return negotiated_version == std::optional<std::uint16_t> {0x0301U} ||
+        negotiated_version == std::optional<std::uint16_t> {0x0302U} ||
+        negotiated_version == std::optional<std::uint16_t> {0x0303U};
+}
+
+bool tls_negotiated_version_uses_tls12_signed_params_layout(
+    const std::optional<std::uint16_t> negotiated_version
+) noexcept {
+    return negotiated_version == std::optional<std::uint16_t> {0x0303U};
+}
+
 TlsRecordContentTypeKind classify_record_content_type(const std::uint8_t content_type) noexcept {
     switch (content_type) {
     case 20U:
@@ -1079,7 +1091,7 @@ std::optional<TlsServerHelloModel> parse_server_hello_body(
 
 TlsEcdheServerKeyExchangeModel parse_ecdhe_server_key_exchange_body(
     std::span<const std::uint8_t> handshake_body,
-    const std::optional<std::uint16_t> record_legacy_version,
+    const std::optional<std::uint16_t> negotiated_version,
     const TlsCipherSuiteAuthenticationKind signature_authentication_kind
 ) {
     TlsEcdheServerKeyExchangeModel model {
@@ -1125,7 +1137,7 @@ TlsEcdheServerKeyExchangeModel parse_ecdhe_server_key_exchange_body(
     model.public_key_complete = true;
     offset += declared_public_key_length;
 
-    if (record_legacy_version == std::optional<std::uint16_t> {0x0303U}) {
+    if (tls_negotiated_version_uses_tls12_signed_params_layout(negotiated_version)) {
         const auto signature_scheme_id = read_be16(handshake_body, offset);
         if (!signature_scheme_id.has_value()) {
             return model;
@@ -1200,7 +1212,6 @@ TlsEcdheClientKeyExchangeModel parse_ecdhe_client_key_exchange_body(
 std::vector<TlsHandshakeModel> parse_handshake_messages(
     std::span<const std::uint8_t> record_body,
     const std::size_t record_source_offset,
-    const std::optional<std::uint16_t> record_legacy_version,
     TlsInspectionParserContext& context
 ) {
     std::vector<TlsHandshakeModel> handshakes {};
@@ -1267,6 +1278,7 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
                 handshake.server_hello = std::move(*server_hello);
                 handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
                 context.negotiated_cipher_suite = handshake.server_hello->selected_cipher_suite;
+                context.negotiated_version = handshake.server_hello->selected_tls_version;
             } else {
                 handshake.structured_parse_status = TlsStructuredParseStatus::malformed;
             }
@@ -1294,21 +1306,22 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
         }
         case TlsHandshakeKind::server_key_exchange: {
             if (!context.negotiated_cipher_suite.has_value() ||
-                !tls_cipher_suite_uses_ecdhe(*context.negotiated_cipher_suite)) {
+                !tls_cipher_suite_uses_ecdhe(*context.negotiated_cipher_suite) ||
+                !tls_negotiated_version_is_tls10_to_tls12(context.negotiated_version)) {
                 handshake.structured_parse_status = TlsStructuredParseStatus::not_attempted;
                 break;
             }
 
             handshake.ecdhe_server_key_exchange = parse_ecdhe_server_key_exchange_body(
                 handshake_body,
-                record_legacy_version,
+                context.negotiated_version,
                 tls_cipher_suite_authentication_kind(*context.negotiated_cipher_suite)
             );
             handshake.structured_parse_status = TlsStructuredParseStatus::parsed;
             break;
         }
         case TlsHandshakeKind::certificate_request: {
-            if (record_legacy_version != std::optional<std::uint16_t> {0x0303U}) {
+            if (context.negotiated_version != std::optional<std::uint16_t> {0x0303U}) {
                 handshake.structured_parse_status = TlsStructuredParseStatus::not_attempted;
                 break;
             }
@@ -1418,7 +1431,6 @@ TlsInspectionResult TlsInspectionParser::inspect(
                     record.handshake_messages = parse_handshake_messages(
                         tls_bytes.subspan(offset + kTlsRecordHeaderSize, available_record_body_bytes),
                         offset,
-                        record.legacy_version,
                         context
                     );
                 } else {
@@ -1455,7 +1467,6 @@ TlsInspectionResult TlsInspectionParser::inspect(
                 record.handshake_messages = parse_handshake_messages(
                     tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
                     offset,
-                    record.legacy_version,
                     context
                 );
             } else {
