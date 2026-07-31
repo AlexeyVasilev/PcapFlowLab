@@ -243,6 +243,8 @@ int main() {
         try {
             const auto suite_context = std::string {"suite="} + std::string {suite.name};
             pfl::tests::ScopedTestContext scoped_suite_context {suite_context};
+            std::cout << "Entering core suite: " << suite.name << '\n';
+            std::cout.flush();
             suite.run();
         } catch (const pfl::tests::TestFailure& failure) {
             pfl::tests::record_failure_message(failure.what());

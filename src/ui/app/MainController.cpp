@@ -5724,17 +5724,21 @@ void MainController::reloadSelectedPacketDetails() {
             }
             return it->second - 1U;
         }();
-        const auto reconstructed_tls_records =
+        auto tls_packet_analysis =
             selected_flow_index_ >= 0 &&
                 flow_packet_index.has_value() &&
                 loaded_packet_row_count_ > 0U
-            ? session_detail::build_selected_packet_tls_contexts(
+            ? session_detail::analyze_selected_packet_tls_contexts(
                 session_,
                 static_cast<std::size_t>(selected_flow_index_),
                 *flow_packet_index,
                 loaded_packet_row_count_
             )
-            : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
+            : session_detail::TlsSelectedPacketAnalysis {
+                .initial_parser_context = TlsInspectionParserContext {
+                    .semantic_state = TlsInspectionSemanticState::plaintext,
+                },
+            };
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
             session_detail::build_packet_summary_layers(*details, *packet, {
@@ -5760,7 +5764,8 @@ void MainController::reloadSelectedPacketDetails() {
                     }
                     return lines;
                 }(),
-                .reconstructed_tls_records = std::move(reconstructed_tls_records),
+                .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
+                .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
             })
         ));
         packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));

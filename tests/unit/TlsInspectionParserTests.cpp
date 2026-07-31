@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
@@ -81,6 +84,46 @@ std::vector<std::uint8_t> make_tls_handshake_message(
 
 std::vector<std::uint8_t> make_zero_filled(const std::size_t count) {
     return std::vector<std::uint8_t>(count, 0x00U);
+}
+
+std::vector<std::uint8_t> make_tls_certificate_body(
+    const std::vector<std::vector<std::uint8_t>>& certificate_entries
+) {
+    std::vector<std::uint8_t> list_bytes {};
+    for (const auto& entry : certificate_entries) {
+        append_be24(list_bytes, static_cast<std::uint32_t>(entry.size()));
+        list_bytes.insert(list_bytes.end(), entry.begin(), entry.end());
+    }
+
+    std::vector<std::uint8_t> body {};
+    append_be24(body, static_cast<std::uint32_t>(list_bytes.size()));
+    body.insert(body.end(), list_bytes.begin(), list_bytes.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_tls12_certificate_request_body(
+    const std::vector<std::uint8_t>& certificate_type_ids,
+    const std::vector<std::uint16_t>& signature_scheme_ids,
+    const std::vector<std::vector<std::uint8_t>>& certificate_authorities
+) {
+    std::vector<std::uint8_t> body {};
+    body.push_back(static_cast<std::uint8_t>(certificate_type_ids.size()));
+    body.insert(body.end(), certificate_type_ids.begin(), certificate_type_ids.end());
+
+    append_be16(body, static_cast<std::uint16_t>(signature_scheme_ids.size() * 2U));
+    for (const auto signature_scheme_id : signature_scheme_ids) {
+        append_be16(body, signature_scheme_id);
+    }
+
+    std::vector<std::uint8_t> authorities_bytes {};
+    for (const auto& authority : certificate_authorities) {
+        append_be16(authorities_bytes, static_cast<std::uint16_t>(authority.size()));
+        authorities_bytes.insert(authorities_bytes.end(), authority.begin(), authority.end());
+    }
+
+    append_be16(body, static_cast<std::uint16_t>(authorities_bytes.size()));
+    body.insert(body.end(), authorities_bytes.begin(), authorities_bytes.end());
+    return body;
 }
 
 void append_extension(
@@ -259,6 +302,179 @@ const TlsNewSessionTicketModel& require_parsed_new_session_ticket(const TlsInspe
     PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
     PFL_REQUIRE(handshake.new_session_ticket.has_value());
     return *handshake.new_session_ticket;
+}
+
+const TlsCertificateModel& require_parsed_certificate(const TlsInspectionResult& result) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.certificate.has_value());
+    return *handshake.certificate;
+}
+
+const TlsCertificateRequestModel& require_parsed_certificate_request(const TlsInspectionResult& result) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate_request);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.certificate_request.has_value());
+    return *handshake.certificate_request;
+}
+
+const TlsEcdheServerKeyExchangeModel& require_parsed_ecdhe_server_key_exchange(
+    const TlsInspectionResult& result
+) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::server_key_exchange);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.ecdhe_server_key_exchange.has_value());
+    return *handshake.ecdhe_server_key_exchange;
+}
+
+const TlsEcdheClientKeyExchangeModel& require_parsed_ecdhe_client_key_exchange(
+    const TlsInspectionResult& result
+) {
+    const auto& handshake = require_single_handshake(result);
+    PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_key_exchange);
+    PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+    PFL_REQUIRE(handshake.ecdhe_client_key_exchange.has_value());
+    return *handshake.ecdhe_client_key_exchange;
+}
+
+void expect_tls_alert_entry(
+    const TlsAlertEntryModel& entry,
+    const std::uint8_t expected_level,
+    const std::uint8_t expected_description
+) {
+    PFL_EXPECT(entry.level == expected_level);
+    PFL_EXPECT(entry.description == expected_description);
+}
+
+std::vector<std::uint8_t> require_tls_fixture_transport_payload_matching_record(
+    const std::filesystem::path& relative_path,
+    const std::function<bool(const TlsInspectionResult&)>& predicate
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path), CaptureImportOptions {}));
+    const auto packet_count = session.summary().packet_count;
+
+    PacketPayloadService payload_service {};
+    TlsInspectionParser parser {};
+    for (std::uint64_t packet_index = 0U; packet_index < packet_count; ++packet_index) {
+        const auto packet = session.find_packet(packet_index);
+        PFL_REQUIRE(packet.has_value());
+
+        const auto packet_bytes = session.read_packet_data(*packet);
+        const auto payload = payload_service.extract_transport_payload(packet_bytes, packet->data_link_type);
+        if (payload.empty()) {
+            continue;
+        }
+
+        const auto result = parser.inspect(payload);
+        if (predicate(result)) {
+            return payload;
+        }
+    }
+
+    record_failure_message(
+        "fixture=" + relative_path.string() + " did not contain a transport payload matching the requested TLS predicate"
+    );
+    PFL_REQUIRE(false);
+    return {};
+}
+
+const TlsExtensionModel* find_extension_by_type(
+    const std::vector<TlsExtensionModel>& extensions,
+    const std::uint16_t type
+) {
+    const auto it = std::find_if(extensions.begin(), extensions.end(), [&](const TlsExtensionModel& extension) {
+        return extension.type == type;
+    });
+    return it == extensions.end() ? nullptr : &(*it);
+}
+
+std::vector<std::size_t> collect_certificate_entry_lengths(const TlsCertificateModel& certificate) {
+    std::vector<std::size_t> lengths {};
+    lengths.reserve(certificate.certificate_entries.size());
+    for (const auto& entry : certificate.certificate_entries) {
+        lengths.push_back(entry.declared_der_length);
+    }
+    return lengths;
+}
+
+std::vector<std::size_t> collect_certificate_authority_lengths(const TlsCertificateRequestModel& request) {
+    std::vector<std::size_t> lengths {};
+    lengths.reserve(request.certificate_authority_entries.size());
+    for (const auto& entry : request.certificate_authority_entries) {
+        lengths.push_back(entry.declared_length);
+    }
+    return lengths;
+}
+
+std::vector<std::uint8_t> make_repeating_bytes(const std::size_t count, const std::uint8_t seed = 0x01U) {
+    std::vector<std::uint8_t> bytes {};
+    bytes.reserve(count);
+    for (std::size_t index = 0U; index < count; ++index) {
+        bytes.push_back(static_cast<std::uint8_t>(seed + static_cast<std::uint8_t>(index & 0x3FU)));
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_minimal_server_hello_body_with_cipher_suite(
+    const std::uint16_t version,
+    const std::uint16_t cipher_suite
+) {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, version);
+    const auto random = make_zero_filled(32U);
+    body.insert(body.end(), random.begin(), random.end());
+    body.push_back(0x00U);
+    append_be16(body, cipher_suite);
+    body.push_back(0x00U);
+    return body;
+}
+
+std::vector<std::uint8_t> make_ecdhe_server_key_exchange_body_tls10_or_tls11(
+    const std::uint16_t named_group_id,
+    const std::size_t public_key_length,
+    const std::size_t signature_length
+) {
+    std::vector<std::uint8_t> body {0x03U};
+    append_be16(body, named_group_id);
+    body.push_back(static_cast<std::uint8_t>(public_key_length));
+    const auto public_key = make_repeating_bytes(public_key_length, 0x41U);
+    body.insert(body.end(), public_key.begin(), public_key.end());
+    append_be16(body, static_cast<std::uint16_t>(signature_length));
+    const auto signature = make_repeating_bytes(signature_length, 0x80U);
+    body.insert(body.end(), signature.begin(), signature.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_ecdhe_server_key_exchange_body_tls12(
+    const std::uint16_t named_group_id,
+    const std::size_t public_key_length,
+    const std::uint16_t signature_scheme_id,
+    const std::size_t signature_length
+) {
+    auto body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(
+        named_group_id,
+        public_key_length,
+        0U
+    );
+    body.resize(4U + public_key_length);
+    append_be16(body, signature_scheme_id);
+    append_be16(body, static_cast<std::uint16_t>(signature_length));
+    const auto signature = make_repeating_bytes(signature_length, 0x80U);
+    body.insert(body.end(), signature.begin(), signature.end());
+    return body;
+}
+
+std::vector<std::uint8_t> make_ecdhe_client_key_exchange_body(const std::size_t public_key_length) {
+    std::vector<std::uint8_t> body {
+        static_cast<std::uint8_t>(public_key_length)
+    };
+    const auto public_key = make_repeating_bytes(public_key_length, 0x21U);
+    body.insert(body.end(), public_key.begin(), public_key.end());
+    return body;
 }
 
 }  // namespace
@@ -615,7 +831,8 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(partial_record.source_offset == 1221U);
         PFL_EXPECT(partial_record.available_bytes == 179U);
         PFL_EXPECT(partial_record.status == TlsRecordStatus::partial_body);
-        PFL_EXPECT(partial_record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(partial_record.content_type_kind == TlsRecordContentTypeKind::application_data);
+        PFL_EXPECT(partial_record.handshake_payload_kind == TlsHandshakePayloadKind::none);
         PFL_EXPECT(partial_record.handshake_messages.empty());
     }
 
@@ -736,6 +953,1269 @@ void run_tls_inspection_parser_tests() {
         PFL_EXPECT(result.records[2].source_offset == 197U);
         PFL_EXPECT(result.records[2].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
         PFL_EXPECT(result.records[2].handshake_messages.empty());
+    }
+
+    {
+        struct ClientHelloFixtureExpectation {
+            const char* relative_path;
+            std::uint64_t packet_index;
+            std::size_t expected_total_input_bytes;
+            std::size_t expected_record_length;
+            std::size_t expected_handshake_length;
+            std::uint16_t expected_record_version;
+            std::uint16_t expected_client_hello_version;
+            const char* expected_sni;
+            std::size_t expected_cipher_suite_count;
+            std::size_t expected_extension_count;
+            bool expect_signature_algorithms;
+        };
+
+        const std::vector<ClientHelloFixtureExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 132U,
+                .expected_record_length = 127U,
+                .expected_handshake_length = 123U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0301U,
+                .expected_sni = "tls-v1-0.badssl.com",
+                .expected_cipher_suite_count = 9U,
+                .expected_extension_count = 6U,
+                .expect_signature_algorithms = false,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 132U,
+                .expected_record_length = 127U,
+                .expected_handshake_length = 123U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0302U,
+                .expected_sni = "tls-v1-1.badssl.com",
+                .expected_cipher_suite_count = 9U,
+                .expected_extension_count = 6U,
+                .expect_signature_algorithms = false,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 222U,
+                .expected_record_length = 217U,
+                .expected_handshake_length = 213U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0303U,
+                .expected_sni = "tls-v1-2.badssl.com",
+                .expected_cipher_suite_count = 28U,
+                .expected_extension_count = 7U,
+                .expect_signature_algorithms = true,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
+                .packet_index = 3U,
+                .expected_total_input_bytes = 246U,
+                .expected_record_length = 241U,
+                .expected_handshake_length = 237U,
+                .expected_record_version = 0x0301U,
+                .expected_client_hello_version = 0x0303U,
+                .expected_sni = "tls-v1-2.badssl.com",
+                .expected_cipher_suite_count = 28U,
+                .expected_extension_count = 9U,
+                .expect_signature_algorithms = true,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=" + std::to_string(expectation.packet_index + 1U)
+            };
+            const auto payload = require_tls_fixture_transport_payload(expectation.relative_path, expectation.packet_index);
+            const auto result = parser.inspect(payload);
+
+            PFL_EXPECT(result.total_input_bytes == expectation.expected_total_input_bytes);
+            PFL_EXPECT(result.consumed_bytes == expectation.expected_total_input_bytes);
+            PFL_REQUIRE(result.records.size() == 1U);
+            PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+            PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+            PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {expectation.expected_record_version});
+            PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {expectation.expected_record_length});
+            PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+
+            const auto& handshake = result.records[0].handshake_messages[0];
+            PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+            PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_hello);
+            PFL_EXPECT(handshake.declared_body_length == std::optional<std::size_t> {expectation.expected_handshake_length});
+            PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+            PFL_REQUIRE(handshake.client_hello.has_value());
+
+            const auto& hello = *handshake.client_hello;
+            PFL_EXPECT(hello.legacy_version == expectation.expected_client_hello_version);
+            PFL_EXPECT(hello.session_id.empty());
+            PFL_EXPECT(hello.cipher_suites.size() == expectation.expected_cipher_suite_count);
+            PFL_EXPECT(hello.extensions.size() == expectation.expected_extension_count);
+            PFL_EXPECT(hello.sni_names == std::vector<std::string> {expectation.expected_sni});
+            PFL_EXPECT(hello.alpn_protocols == (expectation.expected_extension_count == 9U
+                ? std::vector<std::string> {"http/1.1"}
+                : std::vector<std::string> {}));
+            PFL_EXPECT(hello.supported_versions.empty());
+
+            const auto* server_name = find_extension_by_type(hello.extensions, 0x0000U);
+            PFL_REQUIRE(server_name != nullptr);
+            PFL_EXPECT(server_name->server_names == std::vector<std::string> {expectation.expected_sni});
+
+            const auto* supported_groups = find_extension_by_type(hello.extensions, 0x000AU);
+            PFL_REQUIRE(supported_groups != nullptr);
+            PFL_EXPECT(supported_groups->structured_parse_status == TlsStructuredParseStatus::parsed);
+            PFL_EXPECT(!supported_groups->supported_group_ids.empty());
+
+            const auto* signature_algorithms = find_extension_by_type(hello.extensions, 0x000DU);
+            if (expectation.expect_signature_algorithms) {
+                PFL_REQUIRE(signature_algorithms != nullptr);
+                PFL_EXPECT(signature_algorithms->structured_parse_status == TlsStructuredParseStatus::parsed);
+                PFL_EXPECT(!signature_algorithms->signature_scheme_ids.empty());
+            } else {
+                PFL_EXPECT(signature_algorithms == nullptr);
+            }
+
+            const auto* status_request = find_extension_by_type(hello.extensions, 0x0005U);
+            if (std::string_view {expectation.relative_path} == "parsing/tls/tls_1_2_status_request_alpn_19.pcap") {
+                PFL_REQUIRE(status_request != nullptr);
+                PFL_REQUIRE(status_request->status_request.has_value());
+                PFL_EXPECT(status_request->status_request->status_type == 1U);
+                PFL_EXPECT(status_request->status_request->responder_id_list_length == 0U);
+                PFL_EXPECT(status_request->status_request->request_extensions_length == 0U);
+                const auto* alpn = find_extension_by_type(hello.extensions, 0x0010U);
+                PFL_REQUIRE(alpn != nullptr);
+                PFL_EXPECT(alpn->alpn_protocols == std::vector<std::string> {"http/1.1"});
+            } else {
+                PFL_EXPECT(status_request == nullptr);
+            }
+        }
+    }
+
+    {
+        struct AlertFixtureExpectation {
+            const char* relative_path;
+            std::uint64_t packet_index;
+            std::uint8_t expected_level;
+            std::uint8_t expected_description;
+        };
+
+        const std::vector<AlertFixtureExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_to_tls_1_0_protocol_version_15.pcap",
+                .packet_index = 13U,
+                .expected_level = 2U,
+                .expected_description = 70U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_expired_certificate_alert_16.pcap",
+                .packet_index = 13U,
+                .expected_level = 2U,
+                .expected_description = 45U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap",
+                .packet_index = 7U,
+                .expected_level = 2U,
+                .expected_description = 48U,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=" + std::to_string(expectation.packet_index + 1U)
+            };
+            const auto payload = require_tls_fixture_transport_payload(expectation.relative_path, expectation.packet_index);
+            const auto result = parser.inspect(payload);
+            PFL_EXPECT(result.total_input_bytes == 7U);
+            PFL_EXPECT(result.consumed_bytes == 7U);
+            PFL_REQUIRE(result.records.size() == 1U);
+            PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+            PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+            PFL_EXPECT(result.records[0].legacy_version == std::optional<std::uint16_t> {0x0303U});
+            PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {2U});
+            PFL_EXPECT(result.records[0].total_size == std::optional<std::size_t> {7U});
+            PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
+            PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+            PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+            PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+            expect_tls_alert_entry(
+                result.records[0].alert_entries[0],
+                expectation.expected_level,
+                expectation.expected_description
+            );
+            PFL_EXPECT(result.records[0].handshake_messages.empty());
+        }
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_status_request_alpn_19.pcap | server_hello"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_status_request_alpn_19.pcap",
+            5U
+        );
+        const auto result = parser.inspect(payload);
+        PFL_REQUIRE(result.records.size() >= 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::server_hello);
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].handshake_messages[0].server_hello.has_value());
+        const auto& hello = *result.records[0].handshake_messages[0].server_hello;
+        PFL_EXPECT(hello.selected_tls_version == 0x0303U);
+        PFL_EXPECT(hello.selected_cipher_suite == 0xC030U);
+        PFL_EXPECT(hello.selected_alpn_protocol == std::optional<std::string> {"http/1.1"});
+        const auto* alpn_extension = find_extension_by_type(hello.extensions, 0x0010U);
+        PFL_REQUIRE(alpn_extension != nullptr);
+        PFL_EXPECT(alpn_extension->structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_EXPECT(alpn_extension->alpn_protocols == std::vector<std::string> {"http/1.1"});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls10_complete"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(server_key_exchange.curve_type == std::optional<std::uint8_t> {3U});
+        PFL_EXPECT(server_key_exchange.named_group_id == std::optional<std::uint16_t> {0x0017U});
+        PFL_EXPECT(server_key_exchange.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(server_key_exchange.available_public_key_length == 65U);
+        PFL_EXPECT(server_key_exchange.public_key_complete);
+        PFL_EXPECT(server_key_exchange.signature_authentication_kind == TlsCipherSuiteAuthenticationKind::rsa);
+        PFL_EXPECT(!server_key_exchange.signature_scheme_id.has_value());
+        PFL_EXPECT(server_key_exchange.declared_signature_length == std::optional<std::size_t> {256U});
+        PFL_EXPECT(server_key_exchange.available_signature_length == 256U);
+        PFL_EXPECT(server_key_exchange.signature_complete);
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls12_complete"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(server_key_exchange.curve_type == std::optional<std::uint8_t> {3U});
+        PFL_EXPECT(server_key_exchange.named_group_id == std::optional<std::uint16_t> {0x0017U});
+        PFL_EXPECT(server_key_exchange.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(server_key_exchange.available_public_key_length == 65U);
+        PFL_EXPECT(server_key_exchange.public_key_complete);
+        PFL_EXPECT(server_key_exchange.signature_authentication_kind == TlsCipherSuiteAuthenticationKind::rsa);
+        PFL_EXPECT(server_key_exchange.signature_scheme_id == std::optional<std::uint16_t> {0x0601U});
+        PFL_EXPECT(server_key_exchange.declared_signature_length == std::optional<std::size_t> {256U});
+        PFL_EXPECT(server_key_exchange.available_signature_length == 256U);
+        PFL_EXPECT(server_key_exchange.signature_complete);
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls12_negotiated_version_independent_from_record_legacy_version"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(server_key_exchange.signature_scheme_id == std::optional<std::uint16_t> {0x0601U});
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_tls11_negotiated_version_independent_from_record_legacy_version"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0302U,
+            }
+        );
+        const auto& server_key_exchange = require_parsed_ecdhe_server_key_exchange(result);
+        PFL_EXPECT(!server_key_exchange.signature_scheme_id.has_value());
+        PFL_EXPECT(server_key_exchange.status == TlsStructuredBodyStatus::complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_unknown_negotiated_version_does_not_guess_tls12_layout"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x7A7AU,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!handshake.ecdhe_server_key_exchange.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_establishes_ecdhe_context_for_following_server_key_exchange"};
+        auto bytes = make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(
+                0x02U,
+                make_minimal_server_hello_body_with_cipher_suite(0x0303U, 0xC030U)
+            )
+        );
+        const auto server_key_exchange_record = make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(
+                0x0CU,
+                make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U)
+            )
+        );
+        bytes.insert(bytes.end(), server_key_exchange_record.begin(), server_key_exchange_record.end());
+
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_REQUIRE(result.records[1].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[1].handshake_messages[0].kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(result.records[1].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[1].handshake_messages[0].ecdhe_server_key_exchange.has_value());
+        PFL_EXPECT(
+            result.records[1].handshake_messages[0].ecdhe_server_key_exchange->signature_scheme_id ==
+            std::optional<std::uint16_t> {0x0601U}
+        );
+        PFL_EXPECT(result.final_context.negotiated_cipher_suite == std::optional<std::uint16_t> {0xC030U});
+        PFL_EXPECT(result.final_context.negotiated_version == std::optional<std::uint16_t> {0x0303U});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_incomplete_and_malformed_cases"};
+
+        const auto truncated_curve_type = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, {})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_curve_type).status == TlsStructuredBodyStatus::incomplete);
+
+        const auto truncated_named_group = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, {0x03U, 0x00U})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_named_group).status == TlsStructuredBodyStatus::incomplete);
+
+        const auto truncated_point_length = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, {0x03U, 0x00U, 0x17U})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(truncated_point_length).status == TlsStructuredBodyStatus::incomplete);
+
+        auto short_point_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        short_point_body.resize(4U + 64U);
+        const auto short_point = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, short_point_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        const auto& short_point_model = require_parsed_ecdhe_server_key_exchange(short_point);
+        PFL_EXPECT(short_point_model.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(short_point_model.available_public_key_length == 64U);
+        PFL_EXPECT(!short_point_model.public_key_complete);
+        PFL_EXPECT(short_point_model.status == TlsStructuredBodyStatus::incomplete);
+
+        auto truncated_signature_length_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        truncated_signature_length_body.resize(4U + 65U + 1U);
+        const auto truncated_signature_length = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, truncated_signature_length_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(truncated_signature_length).status ==
+            TlsStructuredBodyStatus::incomplete
+        );
+
+        auto short_signature_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        short_signature_body.resize(4U + 65U + 2U + 255U);
+        const auto short_signature = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, short_signature_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        const auto& short_signature_model = require_parsed_ecdhe_server_key_exchange(short_signature);
+        PFL_EXPECT(short_signature_model.declared_signature_length == std::optional<std::size_t> {256U});
+        PFL_EXPECT(short_signature_model.available_signature_length == 255U);
+        PFL_EXPECT(!short_signature_model.signature_complete);
+        PFL_EXPECT(short_signature_model.status == TlsStructuredBodyStatus::incomplete);
+
+        const auto unknown_group = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls10_or_tls11(0xBEEFU, 65U, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(unknown_group).named_group_id ==
+            std::optional<std::uint16_t> {0xBEEFU}
+        );
+
+        auto trailing_bytes_body = make_ecdhe_server_key_exchange_body_tls10_or_tls11(0x0017U, 65U, 256U);
+        trailing_bytes_body.push_back(0xAAU);
+        const auto trailing_bytes = parser.inspect(
+            make_tls_record(0x16U, 0x0301U, make_tls_handshake_message(0x0CU, trailing_bytes_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC014U,
+                .negotiated_version = 0x0301U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(trailing_bytes).status == TlsStructuredBodyStatus::malformed);
+
+        auto truncated_signature_scheme_body = make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U);
+        truncated_signature_scheme_body.resize(4U + 65U + 1U);
+        const auto truncated_signature_scheme = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x0CU, truncated_signature_scheme_body)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(truncated_signature_scheme).status ==
+            TlsStructuredBodyStatus::incomplete
+        );
+
+        const auto unknown_signature_scheme = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(
+                    0x0CU,
+                    make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0xBEEFU, 256U)
+                )
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        PFL_EXPECT(
+            require_parsed_ecdhe_server_key_exchange(unknown_signature_scheme).signature_scheme_id ==
+            std::optional<std::uint16_t> {0xBEEFU}
+        );
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_server_key_exchange_context_gating_and_isolation"};
+        const auto body = make_ecdhe_server_key_exchange_body_tls12(0x0017U, 65U, 0x0601U, 256U);
+        const auto record = make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x0CU, body));
+
+        const auto without_context = parser.inspect(record);
+        const auto& generic_handshake = require_single_handshake(without_context);
+        PFL_EXPECT(generic_handshake.kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(generic_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!generic_handshake.ecdhe_server_key_exchange.has_value());
+
+        const auto non_ecdhe_context = parser.inspect(
+            record,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0x0035U,
+            }
+        );
+        const auto& non_ecdhe_handshake = require_single_handshake(non_ecdhe_context);
+        PFL_EXPECT(non_ecdhe_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!non_ecdhe_handshake.ecdhe_server_key_exchange.has_value());
+
+        const auto ecdhe_context = parser.inspect(
+            record,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_server_key_exchange(ecdhe_context).status == TlsStructuredBodyStatus::complete);
+
+        const auto unknown_version_context = parser.inspect(
+            record,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+                .negotiated_version = 0x7A7AU,
+            }
+        );
+        const auto& unknown_version_handshake = require_single_handshake(unknown_version_context);
+        PFL_EXPECT(unknown_version_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!unknown_version_handshake.ecdhe_server_key_exchange.has_value());
+
+        const auto repeated_without_context = parser.inspect(record);
+        const auto& repeated_generic_handshake = require_single_handshake(repeated_without_context);
+        PFL_EXPECT(repeated_generic_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!repeated_generic_handshake.ecdhe_server_key_exchange.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ecdhe_client_key_exchange_cases"};
+        const auto complete = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x10U, make_ecdhe_client_key_exchange_body(65U))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        const auto& complete_model = require_parsed_ecdhe_client_key_exchange(complete);
+        PFL_EXPECT(complete_model.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(complete_model.available_public_key_length == 65U);
+        PFL_EXPECT(complete_model.public_key_complete);
+        PFL_EXPECT(complete_model.status == TlsStructuredBodyStatus::complete);
+
+        const auto zero_length = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, {0x00U})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_client_key_exchange(zero_length).status == TlsStructuredBodyStatus::malformed);
+
+        const auto truncated_length = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, {})),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_client_key_exchange(truncated_length).status == TlsStructuredBodyStatus::incomplete);
+
+        auto short_point = make_ecdhe_client_key_exchange_body(65U);
+        short_point.resize(65U);
+        const auto truncated_point = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, short_point)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        const auto& truncated_point_model = require_parsed_ecdhe_client_key_exchange(truncated_point);
+        PFL_EXPECT(truncated_point_model.declared_public_key_length == std::optional<std::size_t> {65U});
+        PFL_EXPECT(truncated_point_model.available_public_key_length == 64U);
+        PFL_EXPECT(!truncated_point_model.public_key_complete);
+        PFL_EXPECT(truncated_point_model.status == TlsStructuredBodyStatus::incomplete);
+
+        auto trailing_bytes = make_ecdhe_client_key_exchange_body(65U);
+        trailing_bytes.push_back(0xAAU);
+        const auto malformed_trailing = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, trailing_bytes)),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0xC030U,
+            }
+        );
+        PFL_EXPECT(require_parsed_ecdhe_client_key_exchange(malformed_trailing).status == TlsStructuredBodyStatus::malformed);
+
+        const auto without_context = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, make_ecdhe_client_key_exchange_body(65U)))
+        );
+        const auto& generic_handshake = require_single_handshake(without_context);
+        PFL_EXPECT(generic_handshake.kind == TlsHandshakeKind::client_key_exchange);
+        PFL_EXPECT(generic_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!generic_handshake.ecdhe_client_key_exchange.has_value());
+
+        const auto non_ecdhe_context = parser.inspect(
+            make_tls_record(0x16U, 0x0303U, make_tls_handshake_message(0x10U, make_ecdhe_client_key_exchange_body(65U))),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_cipher_suite = 0x0035U,
+            }
+        );
+        const auto& non_ecdhe_handshake = require_single_handshake(non_ecdhe_context);
+        PFL_EXPECT(non_ecdhe_handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!non_ecdhe_handshake.ecdhe_client_key_exchange.has_value());
+    }
+
+    {
+        const std::vector<const char*> baseline_alert_fixtures {
+            "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+            "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+            "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+        };
+
+        for (const auto* relative_path : baseline_alert_fixtures) {
+            ScopedTestContext context {std::string {"fixture="} + relative_path + " | encrypted_alert"};
+            const auto payload = require_tls_fixture_transport_payload_matching_record(
+                relative_path,
+                [](const TlsInspectionResult& result) {
+                    return result.records.size() == 1U &&
+                        result.records[0].status == TlsRecordStatus::complete &&
+                        result.records[0].content_type_kind == TlsRecordContentTypeKind::alert;
+                }
+            );
+            const auto result = parser.inspect(payload, TlsInspectionSemanticState::post_change_cipher_spec);
+            PFL_REQUIRE(result.records.size() == 1U);
+            PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+            PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+            PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::not_attempted);
+            PFL_EXPECT(result.records[0].alert_entries.empty());
+        }
+    }
+
+    {
+        ScopedTestContext context {"synthetic | alert_initial_semantic_state"};
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x30U});
+
+        const auto plaintext_result = parser.inspect(alert_record, TlsInspectionSemanticState::plaintext);
+        PFL_REQUIRE(plaintext_result.records.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(plaintext_result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(plaintext_result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(plaintext_result.records[0].alert_entries[0], 2U, 48U);
+
+        const auto encrypted_result = parser.inspect(
+            alert_record,
+            TlsInspectionSemanticState::post_change_cipher_spec
+        );
+        PFL_REQUIRE(encrypted_result.records.size() == 1U);
+        PFL_EXPECT(encrypted_result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(encrypted_result.records[0].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(encrypted_result.records[0].alert_entries.empty());
+
+        const auto unknown_result = parser.inspect(alert_record, TlsInspectionSemanticState::unknown);
+        PFL_REQUIRE(unknown_result.records.size() == 1U);
+        PFL_EXPECT(unknown_result.records[0].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(unknown_result.records[0].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(unknown_result.records[0].alert_entries.empty());
+
+        const auto plaintext_repeat = parser.inspect(alert_record, TlsInspectionSemanticState::plaintext);
+        PFL_REQUIRE(plaintext_repeat.records.size() == 1U);
+        PFL_EXPECT(plaintext_repeat.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(plaintext_repeat.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(plaintext_repeat.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(plaintext_repeat.records[0].alert_entries[0], 2U, 48U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic | same_packet_ccs_then_alert"};
+        std::vector<std::uint8_t> payload = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x30U});
+        payload.insert(payload.end(), alert_record.begin(), alert_record.end());
+
+        const auto result = parser.inspect(payload, TlsInspectionSemanticState::plaintext);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[1].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[1].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(result.records[1].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap | packet=6"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap",
+            5U
+        );
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 1325U);
+        PFL_EXPECT(result.consumed_bytes == 1325U);
+        PFL_REQUIRE(result.records.size() == 4U);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::server_hello);
+
+        const auto& certificate_record = result.records[1];
+        PFL_EXPECT(certificate_record.status == TlsRecordStatus::complete);
+        PFL_EXPECT(certificate_record.content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(certificate_record.declared_payload_length == std::optional<std::size_t> {903U});
+        PFL_REQUIRE(certificate_record.handshake_messages.size() == 1U);
+        PFL_EXPECT(certificate_record.handshake_messages[0].kind == TlsHandshakeKind::certificate);
+        PFL_EXPECT(certificate_record.handshake_messages[0].declared_body_length == std::optional<std::size_t> {899U});
+        PFL_EXPECT(certificate_record.handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(certificate_record.handshake_messages[0].certificate.has_value());
+        const auto& certificate = *certificate_record.handshake_messages[0].certificate;
+        PFL_EXPECT(certificate.declared_certificate_list_length == 896U);
+        PFL_EXPECT(certificate.complete_certificate_list);
+        PFL_EXPECT(certificate.certificate_entries.size() == 1U);
+        PFL_EXPECT(collect_certificate_entry_lengths(certificate) == std::vector<std::size_t> {893U});
+        PFL_EXPECT(certificate.certificate_entries[0].available_der_length == 893U);
+        PFL_EXPECT(certificate.certificate_entries[0].complete);
+        PFL_EXPECT(result.records[2].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[2].handshake_messages[0].kind == TlsHandshakeKind::server_key_exchange);
+        PFL_EXPECT(result.records[3].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[3].handshake_messages[0].kind == TlsHandshakeKind::server_hello_done);
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_certificate_missing_18.pcap | packet=11"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+            10U
+        );
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 399U);
+        PFL_EXPECT(result.consumed_bytes == 399U);
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::partial_body);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::unknown);
+        PFL_EXPECT(result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::none);
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {11350U});
+        PFL_EXPECT(result.records[0].handshake_messages.empty());
+    }
+
+    {
+        ScopedTestContext context {"fixture=parsing/tls/tls_1_2_client_certificate_missing_18.pcap | packet=13"};
+        const auto payload = require_tls_fixture_transport_payload(
+            "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+            12U
+        );
+        const auto result = parser.inspect(payload);
+        PFL_EXPECT(result.total_input_bytes == 138U);
+        PFL_EXPECT(result.consumed_bytes == 138U);
+        PFL_REQUIRE(result.records.size() == 4U);
+
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[0].declared_payload_length == std::optional<std::size_t> {7U});
+        PFL_REQUIRE(result.records[0].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].kind == TlsHandshakeKind::certificate);
+        PFL_EXPECT(result.records[0].handshake_messages[0].declared_body_length == std::optional<std::size_t> {3U});
+        PFL_EXPECT(result.records[0].handshake_messages[0].structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].handshake_messages[0].certificate.has_value());
+        PFL_EXPECT(result.records[0].handshake_messages[0].certificate->declared_certificate_list_length == 0U);
+        PFL_EXPECT(result.records[0].handshake_messages[0].certificate->complete_certificate_list);
+        PFL_EXPECT(result.records[0].handshake_messages[0].certificate->certificate_entries.empty());
+
+        PFL_EXPECT(result.records[1].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[1].declared_payload_length == std::optional<std::size_t> {70U});
+        PFL_REQUIRE(result.records[1].handshake_messages.size() == 1U);
+        PFL_EXPECT(result.records[1].handshake_messages[0].kind == TlsHandshakeKind::client_key_exchange);
+        PFL_EXPECT(result.records[1].handshake_messages[0].declared_body_length == std::optional<std::size_t> {66U});
+
+        PFL_EXPECT(result.records[2].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[2].content_type_kind == TlsRecordContentTypeKind::change_cipher_spec);
+        PFL_EXPECT(result.records[2].declared_payload_length == std::optional<std::size_t> {1U});
+
+        PFL_EXPECT(result.records[3].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[3].content_type_kind == TlsRecordContentTypeKind::handshake);
+        PFL_EXPECT(result.records[3].declared_payload_length == std::optional<std::size_t> {40U});
+        PFL_EXPECT(result.records[3].handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[3].handshake_messages.empty());
+    }
+
+    {
+        struct ClientKeyExchangeFixtureExpectation {
+            const char* relative_path;
+            std::uint64_t packet_index;
+            std::uint16_t negotiated_cipher_suite;
+            std::size_t expected_record_count;
+            std::size_t client_key_exchange_record_index;
+        };
+
+        const std::vector<ClientKeyExchangeFixtureExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .packet_index = 13U,
+                .negotiated_cipher_suite = 0xC014U,
+                .expected_record_count = 3U,
+                .client_key_exchange_record_index = 0U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .packet_index = 13U,
+                .negotiated_cipher_suite = 0xC014U,
+                .expected_record_count = 3U,
+                .client_key_exchange_record_index = 0U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .packet_index = 13U,
+                .negotiated_cipher_suite = 0xC030U,
+                .expected_record_count = 3U,
+                .client_key_exchange_record_index = 0U,
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_client_certificate_missing_18.pcap",
+                .packet_index = 12U,
+                .negotiated_cipher_suite = 0xC030U,
+                .expected_record_count = 4U,
+                .client_key_exchange_record_index = 1U,
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {
+                std::string {"fixture="} + expectation.relative_path +
+                " | packet=" + std::to_string(expectation.packet_index + 1U) +
+                " | ecdhe_client_key_exchange"
+            };
+            const auto payload = require_tls_fixture_transport_payload(expectation.relative_path, expectation.packet_index);
+            const auto result = parser.inspect(
+                payload,
+                TlsInspectionParserContext {
+                    .semantic_state = TlsInspectionSemanticState::plaintext,
+                    .negotiated_cipher_suite = expectation.negotiated_cipher_suite,
+                }
+            );
+
+            PFL_REQUIRE(result.records.size() == expectation.expected_record_count);
+            PFL_REQUIRE(result.records[expectation.client_key_exchange_record_index].handshake_messages.size() == 1U);
+            const auto& handshake =
+                result.records[expectation.client_key_exchange_record_index].handshake_messages[0];
+            PFL_EXPECT(handshake.kind == TlsHandshakeKind::client_key_exchange);
+            PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+            PFL_EXPECT(handshake.declared_body_length == std::optional<std::size_t> {66U});
+            PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+            PFL_REQUIRE(handshake.ecdhe_client_key_exchange.has_value());
+
+            const auto& client_key_exchange = *handshake.ecdhe_client_key_exchange;
+            PFL_EXPECT(client_key_exchange.declared_public_key_length == std::optional<std::size_t> {65U});
+            PFL_EXPECT(client_key_exchange.available_public_key_length == 65U);
+            PFL_EXPECT(client_key_exchange.public_key_complete);
+            PFL_EXPECT(client_key_exchange.status == TlsStructuredBodyStatus::complete);
+        }
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_empty_list"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, make_tls_certificate_body({}))
+        ));
+        const auto& certificate = require_parsed_certificate(result);
+        PFL_EXPECT(certificate.declared_certificate_list_length == 0U);
+        PFL_EXPECT(certificate.complete_certificate_list);
+        PFL_EXPECT(certificate.certificate_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_single_entry"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, make_tls_certificate_body({{0x01U, 0x02U, 0x03U, 0x04U}}))
+        ));
+        const auto& certificate = require_parsed_certificate(result);
+        PFL_EXPECT(certificate.declared_certificate_list_length == 7U);
+        PFL_EXPECT(collect_certificate_entry_lengths(certificate) == std::vector<std::size_t>({4U}));
+        PFL_EXPECT(certificate.certificate_entries[0].available_der_length == 4U);
+        PFL_EXPECT(certificate.certificate_entries[0].complete);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_multiple_entries"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, make_tls_certificate_body({
+                {0xAAU, 0xBBU},
+                {0x11U, 0x22U, 0x33U},
+                {0x44U},
+            }))
+        ));
+        const auto& certificate = require_parsed_certificate(result);
+        PFL_EXPECT(certificate.declared_certificate_list_length == 15U);
+        PFL_EXPECT(collect_certificate_entry_lengths(certificate) == std::vector<std::size_t>({2U, 3U, 1U}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_truncated_list_length"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, {0x00U, 0x00U})
+        ));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_declared_list_longer_than_body"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, {0x00U, 0x00U, 0x05U, 0xAAU, 0xBBU})
+        ));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_truncated_entry_length"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, {0x00U, 0x00U, 0x03U, 0x00U, 0x00U})
+        ));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_entry_exceeds_declared_list"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, {0x00U, 0x00U, 0x04U, 0x00U, 0x00U, 0x02U, 0xAAU})
+        ));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_trailing_bytes_in_declared_list"};
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, {0x00U, 0x00U, 0x05U, 0x00U, 0x00U, 0x01U, 0xAAU, 0xBBU})
+        ));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_entry_limit_enforced"};
+        std::vector<std::vector<std::uint8_t>> entries {};
+        entries.reserve(1025U);
+        for (std::size_t index = 0U; index < 1025U; ++index) {
+            entries.push_back({static_cast<std::uint8_t>(index & 0xFFU)});
+        }
+        const auto result = parser.inspect(make_tls_record(
+            0x16U,
+            0x0303U,
+            make_tls_handshake_message(0x0BU, make_tls_certificate_body(entries))
+        ));
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_tls12_valid"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0301U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U, 2U, 64U},
+                    {0x0401U, 0x0501U, 0x0601U},
+                    {{0x30U, 0x31U}, {0x41U, 0x42U, 0x43U}}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& request = require_parsed_certificate_request(result);
+        PFL_EXPECT(request.certificate_type_ids == std::vector<std::uint8_t>({1U, 2U, 64U}));
+        PFL_EXPECT(request.signature_scheme_bytes_length == 6U);
+        PFL_EXPECT(request.signature_scheme_ids == std::vector<std::uint16_t>({0x0401U, 0x0501U, 0x0601U}));
+        PFL_EXPECT(request.certificate_authorities_bytes_length == 9U);
+        PFL_EXPECT(request.complete_certificate_authorities_vector);
+        PFL_EXPECT(collect_certificate_authority_lengths(request) == std::vector<std::size_t>({2U, 3U}));
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_zero_types_is_malformed"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x00U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_odd_signature_scheme_vector"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x03U, 0x04U, 0x01U, 0x02U, 0x00U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_truncated_signature_scheme_vector"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x04U, 0x04U, 0x01U, 0x00U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_zero_authorities_is_valid"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U},
+                    {0x0401U},
+                    {}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& request = require_parsed_certificate_request(result);
+        PFL_EXPECT(request.certificate_authorities_bytes_length == 0U);
+        PFL_EXPECT(request.complete_certificate_authorities_vector);
+        PFL_EXPECT(request.certificate_authority_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_truncated_authority_length"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x01U, 0x00U})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_authority_exceeds_declared_vector"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x03U, 0x00U, 0x02U, 0xAAU})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_trailing_bytes_after_authorities"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, {0x01U, 0x01U, 0x00U, 0x02U, 0x04U, 0x01U, 0x00U, 0x02U, 0x00U, 0x00U, 0xFFU})
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0303U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::malformed);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_tls11_not_attempted"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U},
+                    {0x0401U},
+                    {}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x0302U,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate_request);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=certificate_request_unknown_negotiated_version_not_attempted"};
+        const auto result = parser.inspect(
+            make_tls_record(
+                0x16U,
+                0x0303U,
+                make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                    {1U},
+                    {0x0401U},
+                    {}
+                ))
+            ),
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+                .negotiated_version = 0x7A7AU,
+            }
+        );
+        const auto& handshake = require_single_handshake(result);
+        PFL_EXPECT(handshake.kind == TlsHandshakeKind::certificate_request);
+        PFL_EXPECT(handshake.status == TlsHandshakeStatus::complete);
+        PFL_EXPECT(handshake.structured_parse_status == TlsStructuredParseStatus::not_attempted);
+        PFL_EXPECT(!handshake.certificate_request.has_value());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=server_hello_establishes_negotiated_version_for_following_certificate_request"};
+        auto bytes = make_tls_record(
+            0x16U,
+            0x0301U,
+            make_tls_handshake_message(
+                0x02U,
+                make_minimal_server_hello_body_with_cipher_suite(0x0303U, 0xC030U)
+            )
+        );
+        const auto certificate_request_record = make_tls_record(
+            0x16U,
+            0x0301U,
+            make_tls_handshake_message(0x0DU, make_tls12_certificate_request_body(
+                {1U},
+                {0x0401U},
+                {}
+            ))
+        );
+        bytes.insert(bytes.end(), certificate_request_record.begin(), certificate_request_record.end());
+
+        const auto result = parser.inspect(bytes);
+        PFL_EXPECT(result.records.size() == 2U);
+        PFL_REQUIRE(result.records[1].handshake_messages.size() == 1U);
+        const auto& certificate_request_handshake = result.records[1].handshake_messages[0];
+        PFL_EXPECT(certificate_request_handshake.kind == TlsHandshakeKind::certificate_request);
+        PFL_EXPECT(certificate_request_handshake.structured_parse_status == TlsStructuredParseStatus::parsed);
+        PFL_REQUIRE(certificate_request_handshake.certificate_request.has_value());
+        PFL_EXPECT(result.final_context.negotiated_version == std::optional<std::uint16_t> {0x0303U});
     }
 
     {
@@ -968,6 +2448,114 @@ void run_tls_inspection_parser_tests() {
         PFL_REQUIRE(plaintext_result.records.size() == 1U);
         PFL_EXPECT(plaintext_result.records[0].handshake_payload_kind == TlsHandshakePayloadKind::plaintext);
         PFL_REQUIRE(plaintext_result.records[0].handshake_messages.size() == 1U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_warning_complete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x01U, 0x00U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].status == TlsRecordStatus::complete);
+        PFL_EXPECT(result.records[0].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 1U, 0U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_fatal_complete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x02U, 0x46U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 2U, 70U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_multiple_entries_complete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x01U, 0x00U, 0x02U, 0x30U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 2U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 1U, 0U);
+        expect_tls_alert_entry(result.records[0].alert_entries[1], 2U, 48U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_unknown_level_and_description_preserved"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x07U, 0xF0U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(result.records[0].alert_entries[0], 7U, 240U);
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_empty_body_malformed"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::malformed);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_single_byte_incomplete"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x02U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::incomplete);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_odd_trailing_byte_incomplete_without_partial_commit"};
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, {0x01U, 0x00U, 0x02U}));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::incomplete);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=plaintext_alert_entry_count_bound_malformed"};
+        std::vector<std::uint8_t> alert_body {};
+        alert_body.resize((1024U * 2U) + 2U, 0x00U);
+        const auto result = parser.inspect(make_tls_record(0x15U, 0x0303U, alert_body));
+        PFL_REQUIRE(result.records.size() == 1U);
+        PFL_EXPECT(result.records[0].alert_parse_status == TlsAlertParseStatus::malformed);
+        PFL_EXPECT(result.records[0].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=post_ccs_alert_is_encrypted_opaque"};
+        auto bytes = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x30U});
+        bytes.insert(bytes.end(), alert_record.begin(), alert_record.end());
+        const auto result = parser.inspect(bytes);
+        PFL_REQUIRE(result.records.size() == 2U);
+        PFL_EXPECT(result.records[1].content_type_kind == TlsRecordContentTypeKind::alert);
+        PFL_EXPECT(result.records[1].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(result.records[1].alert_parse_status == TlsAlertParseStatus::not_attempted);
+        PFL_EXPECT(result.records[1].alert_entries.empty());
+    }
+
+    {
+        ScopedTestContext context {"synthetic=ccs_state_is_direction_local_for_alerts"};
+        auto encrypted_direction = make_tls_record(0x14U, 0x0303U, {0x01U});
+        const auto alert_record = make_tls_record(0x15U, 0x0303U, {0x02U, 0x2DU});
+        encrypted_direction.insert(encrypted_direction.end(), alert_record.begin(), alert_record.end());
+        const auto encrypted_result = parser.inspect(encrypted_direction);
+        PFL_REQUIRE(encrypted_result.records.size() == 2U);
+        PFL_EXPECT(encrypted_result.records[1].alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque);
+        PFL_EXPECT(encrypted_result.records[1].alert_entries.empty());
+
+        const auto plaintext_result = parser.inspect(alert_record);
+        PFL_REQUIRE(plaintext_result.records.size() == 1U);
+        PFL_EXPECT(plaintext_result.records[0].alert_payload_kind == TlsAlertPayloadKind::plaintext);
+        PFL_EXPECT(plaintext_result.records[0].alert_parse_status == TlsAlertParseStatus::parsed);
+        PFL_REQUIRE(plaintext_result.records[0].alert_entries.size() == 1U);
+        expect_tls_alert_entry(plaintext_result.records[0].alert_entries[0], 2U, 45U);
     }
 
     {

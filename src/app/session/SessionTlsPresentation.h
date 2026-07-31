@@ -12,6 +12,7 @@
 #include "app/session/FlowRows.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketRef.h"
+#include "core/services/TlsInspectionModel.h"
 
 namespace pfl {
 
@@ -27,9 +28,12 @@ struct TlsStreamPresentationItem {
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
+    std::vector<std::uint8_t> summary_payload_bytes {};
     std::string payload_hex_text {};
     std::string protocol_text {};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
+    TlsInspectionParserContext initial_parser_context {};
+    TlsInspectionParserContext final_parser_context {};
 };
 
 struct TlsStreamScannerContribution {
@@ -60,6 +64,7 @@ struct TlsStreamScannerPendingRecordState {
     std::size_t total_byte_count {0U};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     std::string protocol_text {};
+    TlsInspectionParserContext initial_parser_context {};
     std::uint64_t first_packet_index {0};
     std::uint64_t first_flow_packet_index {0};
     std::uint32_t intra_packet_ordinal {0U};
@@ -80,6 +85,7 @@ struct TlsStreamScannerState {
     std::optional<TlsStreamScannerPendingRecordState> pending_record {};
     bool post_change_cipher_spec {false};
     bool saw_tls_context {false};
+    TlsInspectionParserContext parser_context {};
     bool prefer_payload_partial_for_unrecognized_trailing_bytes {false};
     std::uint64_t ordinal_packet_index {0};
     std::uint32_t next_intra_packet_ordinal {0U};
@@ -162,6 +168,7 @@ struct TlsSelectedPacketRecordContext {
     std::vector<std::uint8_t> captured_bytes {};
     std::size_t total_record_size {0U};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
+    TlsInspectionParserContext initial_parser_context {};
     TlsSelectedPacketStatus status {TlsSelectedPacketStatus::complete};
     std::vector<TlsSelectedPacketContribution> contributions {};
     std::optional<std::uint64_t> selected_contribution_flow_packet_index {};
@@ -169,6 +176,13 @@ struct TlsSelectedPacketRecordContext {
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
+};
+
+struct TlsSelectedPacketAnalysis {
+    TlsInspectionParserContext initial_parser_context {
+        .semantic_state = TlsInspectionSemanticState::unknown,
+    };
+    std::vector<TlsSelectedPacketRecordContext> reconstructed_records {};
 };
 
 TlsPacketStreamPresentation build_tls_stream_items_for_packet(
@@ -190,6 +204,14 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly_bounded(
     std::span<const PacketRef> direction_packets,
     std::size_t skip_item_count,
     std::size_t max_item_count
+);
+
+TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
+    CaptureSession& session,
+    std::size_t flow_index,
+    // Zero-based selected flow-packet index within the loaded flow packet window.
+    std::uint64_t selected_flow_packet_index,
+    std::size_t loaded_packet_window_count
 );
 
 std::vector<TlsSelectedPacketRecordContext> build_selected_packet_tls_contexts(

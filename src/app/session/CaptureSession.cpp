@@ -152,12 +152,15 @@ StreamItemRow make_stream_item_row(
     const std::size_t byte_count,
     const std::vector<std::uint64_t>& packet_indices,
     const std::string& summary_text = {},
+    const std::vector<std::uint8_t>& summary_payload_bytes = {},
     const std::string& payload_hex_text = {},
     const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
-    const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none
+    const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
+    const TlsInspectionParserContext tls_initial_parser_context = {},
+    const TlsInspectionParserContext tls_final_parser_context = {}
 ) {
     return StreamItemRow {
         .stream_item_index = stream_item_index,
@@ -170,9 +173,12 @@ StreamItemRow make_stream_item_row(
         .constricted_contribution_notes = constricted_contribution_notes,
         .constricted_packet_notes = constricted_packet_notes,
         .summary_text = summary_text,
+        .summary_payload_bytes = summary_payload_bytes,
         .payload_hex_text = payload_hex_text,
         .protocol_text = protocol_text,
         .tls_semantic_kind = tls_semantic_kind,
+        .tls_initial_parser_context = tls_initial_parser_context,
+        .tls_final_parser_context = tls_final_parser_context,
     };
 }
 
@@ -183,12 +189,15 @@ StreamItemRow make_stream_item_row(
     const std::size_t byte_count,
     const PacketRef& packet,
     const std::string& summary_text = {},
+    const std::vector<std::uint8_t>& summary_payload_bytes = {},
     const std::string& payload_hex_text = {},
     const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
-    const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none
+    const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
+    const TlsInspectionParserContext tls_initial_parser_context = {},
+    const TlsInspectionParserContext tls_final_parser_context = {}
 ) {
     return make_stream_item_row(
         stream_item_index,
@@ -197,12 +206,15 @@ StreamItemRow make_stream_item_row(
         byte_count,
         std::vector<std::uint64_t> {packet.packet_index},
         summary_text,
+        summary_payload_bytes,
         payload_hex_text,
         protocol_text,
         has_constricted_contribution,
         constricted_contribution_notes,
         constricted_packet_notes,
-        tls_semantic_kind
+        tls_semantic_kind,
+        tls_initial_parser_context,
+        tls_final_parser_context
     );
 }
 
@@ -230,12 +242,15 @@ bool append_tls_stream_items(
                 item.byte_count,
                 item.packet_indices,
                 {},
+                item.summary_payload_bytes,
                 item.payload_hex_text,
                 item.protocol_text,
                 item.has_constricted_contribution,
                 item.constricted_contribution_notes,
                 item.constricted_packet_notes,
-                item.semantic_kind
+                item.semantic_kind,
+                item.initial_parser_context,
+                item.final_parser_context
             ),
             .stability = item.stability,
         });
@@ -310,12 +325,15 @@ BuiltStreamRow make_stream_item_row_from_tls_scanned_row(
             row.item.byte_count,
             row.item.packet_indices,
             {},
+            row.item.summary_payload_bytes,
             row.item.payload_hex_text,
             row.item.protocol_text,
             row.item.has_constricted_contribution,
             row.item.constricted_contribution_notes,
             row.item.constricted_packet_notes,
-            row.item.semantic_kind
+            row.item.semantic_kind,
+            row.item.initial_parser_context,
+            row.item.final_parser_context
         ),
         .stability = stability,
     };
@@ -378,6 +396,43 @@ void merge_directional_policy(
     );
 }
 
+void propagate_tls_negotiated_context(std::vector<BuiltStreamRow>& rows) {
+    std::optional<std::uint16_t> negotiated_cipher_suite {};
+    std::optional<std::uint16_t> negotiated_version {};
+
+    for (auto& built_row : rows) {
+        auto& row = built_row.row;
+        if (row.tls_semantic_kind == TlsStreamItemSemanticKind::none) {
+            continue;
+        }
+
+        if (!row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
+            row.tls_initial_parser_context.negotiated_cipher_suite = negotiated_cipher_suite;
+        }
+        if (!row.tls_initial_parser_context.negotiated_version.has_value()) {
+            row.tls_initial_parser_context.negotiated_version = negotiated_version;
+        }
+        if (!row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
+            row.tls_final_parser_context.negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
+        }
+        if (!row.tls_final_parser_context.negotiated_version.has_value()) {
+            row.tls_final_parser_context.negotiated_version = row.tls_initial_parser_context.negotiated_version;
+        }
+
+        if (row.tls_final_parser_context.negotiated_cipher_suite.has_value()) {
+            negotiated_cipher_suite = row.tls_final_parser_context.negotiated_cipher_suite;
+        } else if (row.tls_initial_parser_context.negotiated_cipher_suite.has_value()) {
+            negotiated_cipher_suite = row.tls_initial_parser_context.negotiated_cipher_suite;
+        }
+
+        if (row.tls_final_parser_context.negotiated_version.has_value()) {
+            negotiated_version = row.tls_final_parser_context.negotiated_version;
+        } else if (row.tls_initial_parser_context.negotiated_version.has_value()) {
+            negotiated_version = row.tls_initial_parser_context.negotiated_version;
+        }
+    }
+}
+
 void merge_directional_policy(
     DirectionalStreamPolicy& policy,
     const session_detail::HttpDirectionalStreamPresentation& presentation
@@ -411,12 +466,15 @@ BuiltStreamRow make_stream_item_row_from_tls_presentation(
             item.byte_count,
             item.packet_indices,
             {},
+            item.summary_payload_bytes,
             item.payload_hex_text,
             item.protocol_text,
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             item.constricted_packet_notes,
-            item.semantic_kind
+            item.semantic_kind,
+            item.initial_parser_context,
+            item.final_parser_context
         ),
         .stability = item.stability,
     };
@@ -433,6 +491,7 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
             item.label,
             item.byte_count,
             item.packet_indices,
+            {},
             {},
             item.payload_hex_text,
             item.protocol_text
@@ -690,6 +749,7 @@ bool append_quic_stream_items_for_packet(
                 item.label,
                 item.byte_count,
                 packet,
+                {},
                 {},
                 packet_hex_dump,
                 item.protocol_text,
@@ -1240,6 +1300,7 @@ bool append_arp_stream_item_for_packet(
             payload_bytes.size(),
             packet,
             join_summary_lines(summary_lines),
+            {},
             hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
             protocol_text
         ),
@@ -1366,6 +1427,7 @@ void append_connection_stream_items_bounded(
                     packet,
                     {},
                     {},
+                    {},
                     gap_protocol
                 ),
                 .stability = StreamMaterializationStability::stable,
@@ -1446,6 +1508,7 @@ void append_connection_stream_items_bounded(
                 label,
                 payload_span.size(),
                 packet,
+                {},
                 {},
                 {},
                 protocol_text
@@ -1887,6 +1950,7 @@ std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     std::stable_sort(rows.begin(), rows.end(), [](const BuiltStreamRow& left, const BuiltStreamRow& right) {
         return first_stream_packet_index(left) < first_stream_packet_index(right);
     });
+    propagate_tls_negotiated_context(rows);
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
         rows[index].row.stream_item_index = static_cast<std::uint64_t>(index + 1U);

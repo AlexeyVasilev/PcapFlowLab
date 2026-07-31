@@ -1449,7 +1449,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
             make_gre_header(detail::kEtherTypeIpv4, truncated_inner_ipv4)
         ), 14U + 20U + detail::kGreBaseHeaderSize + 20U), registry);
         PFL_EXPECT(truncated_inner_shadow.outcome == ImportDissectionOutcome::unrecognized);
-        PFL_EXPECT(truncated_inner_shadow.stop_reason == StopReason::truncated);
+        PFL_EXPECT(truncated_inner_shadow.stop_reason == StopReason::malformed);
         PFL_EXPECT(format_shadow_path(truncated_inner_shadow) == "EthernetII -> IPv4 -> GRE");
         PFL_EXPECT(!truncated_inner_shadow.has_ports);
     }
@@ -1946,7 +1946,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
         make_root_slice(short_inner_header_packet),
         DissectionConsumer {.on_step = record_step_kind, .context = &short_inner_header_recorder}
     );
-    PFL_EXPECT(short_inner_header_result.stop_reason == StopReason::truncated);
+    PFL_EXPECT(short_inner_header_result.stop_reason == StopReason::malformed);
     const std::vector<DissectionLayerKind> expected_short_inner_header_kinds {
         DissectionLayerKind::ethernet_ii,
         DissectionLayerKind::ipv4,
@@ -1955,7 +1955,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
     PFL_EXPECT(short_inner_header_recorder.kinds == expected_short_inner_header_kinds);
     const auto short_inner_header_shadow = run_shadow(short_inner_header_packet, registry);
     PFL_EXPECT(short_inner_header_shadow.outcome == ImportDissectionOutcome::unrecognized);
-    PFL_EXPECT(short_inner_header_shadow.stop_reason == StopReason::truncated);
+    PFL_EXPECT(short_inner_header_shadow.stop_reason == StopReason::malformed);
     PFL_EXPECT(format_shadow_path(short_inner_header_shadow) == "EthernetII -> IPv4");
 
     const auto unknown_deepest_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(

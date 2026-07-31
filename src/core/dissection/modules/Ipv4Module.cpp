@@ -126,6 +126,11 @@ ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
             .status = ParseStatus::malformed,
         };
     }
+    if (total_length != 0U && total_length > declared_length) {
+        return ParsedIpv4Packet {
+            .status = ParseStatus::malformed,
+        };
+    }
 
     const auto bounds = detail::parse_ipv4_packet_bounds(bytes, 0U);
     if (!bounds.has_value()) {
@@ -136,13 +141,16 @@ ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
 
     const auto flags_fragment = detail::read_be16(bytes, 6U);
     const auto fragment_offset_units = static_cast<std::uint16_t>(flags_fragment & 0x1FFFU);
+    const auto bounded_nominal_packet_end = std::min(bounds->nominal_packet_end, declared_length);
+    const auto bounded_packet_end = std::min(bounds->packet_end, declared_length);
+
     return ParsedIpv4Packet {
         .status = ParseStatus::complete,
         .protocol = bytes[9U],
         .total_length = bounds->total_length,
         .header_length = bounds->header_length,
-        .nominal_packet_end = bounds->nominal_packet_end,
-        .packet_end = bounds->packet_end,
+        .nominal_packet_end = bounded_nominal_packet_end,
+        .packet_end = bounded_packet_end,
         .src_addr = detail::read_be32(bytes, 12U),
         .dst_addr = detail::read_be32(bytes, 16U),
         .flags_fragment = flags_fragment,

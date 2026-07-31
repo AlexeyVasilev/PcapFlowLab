@@ -3094,17 +3094,21 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             flow_packet_index.has_value()
                 ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
                 : std::nullopt;
-        const auto reconstructed_tls_records =
+        auto tls_packet_analysis =
             flow_index.has_value() &&
             internal_flow_packet_index.has_value() &&
             loaded_packet_window_count.has_value()
-                ? session_detail::build_selected_packet_tls_contexts(
+                ? session_detail::analyze_selected_packet_tls_contexts(
                     session_,
                     *flow_index,
                     *internal_flow_packet_index,
                     *loaded_packet_window_count
                 )
-                : std::vector<session_detail::TlsSelectedPacketRecordContext> {};
+                : session_detail::TlsSelectedPacketAnalysis {
+                    .initial_parser_context = TlsInspectionParserContext {
+                        .semantic_state = TlsInspectionSemanticState::plaintext,
+                    },
+                };
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
@@ -3120,7 +3124,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,
-            .reconstructed_tls_records = std::move(reconstructed_tls_records),
+            .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
+            .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
         });
     } else {
         result.unavailable_text = "Only partial packet details are available for this packet.";

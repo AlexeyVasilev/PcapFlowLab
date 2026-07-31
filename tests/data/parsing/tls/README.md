@@ -50,7 +50,9 @@ A bounded structured TLS inspection parser now has isolated direct fixture contr
 - `tls_client_hello_1.pcap`;
 - `tls_1_3_client_hello_5.pcap`;
 - `tls_1_2_server_hello_4.pcap`;
-- `tls_1_3_server_hello_6.pcap`.
+- `tls_1_3_server_hello_6.pcap`;
+- `tls_1_2_self_signed_unknown_ca_17.pcap`;
+- `tls_1_2_client_certificate_missing_18.pcap`.
 
 Current structured-parser limitations and boundaries:
 
@@ -59,6 +61,8 @@ Current structured-parser limitations and boundaries:
 - `source_offset` is input-relative for records, handshake messages, and structured extensions; extension offsets are no longer relative to the handshake body;
 - `available_bytes` means visible bytes for partial records/handshakes, but equals `total_size` for complete records/handshakes;
 - complete bounded `ClientHello` and `ServerHello` parsing now requires exact consumption of the declared extension block; malformed trailing bytes in that block make only the structured hello parse malformed;
+- complete bounded `Certificate` parsing now records only certificate-list structure and per-entry declared/available DER lengths; raw certificate bytes are not retained in this pass;
+- bounded TLS 1.2 `CertificateRequest` parsing now records certificate types, ordered signature scheme IDs, and certificate-authority entry lengths without retaining distinguished-name bytes;
 - extension-local structured parsing now covers `supported_groups`, `signature_algorithms`, `key_share`, `psk_key_exchange_modes`, `status_request`, `compress_certificate`, and `padding`;
 - decoded extension vectors preserve exact wire order and raw numeric values, including GREASE and unknown codes;
 - known extension parsers that claim support now require exact body consumption and parse transactionally; on malformed input they keep generic extension metadata but do not leak partial structured values into the model;
@@ -92,6 +96,14 @@ Current structured-parser limitations and boundaries:
 | `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local and stream-item multiple-record TLS Summary behavior | Partially complete | Keep for now |
 | `tls_1_3_split_client_hello_10.pcap` | Session and reassembly | `PacketDetailsTests`, `FlowHintsRealFixturesTests`, `MainControllerUiTests`, `StreamQueryTests` | Medium | Bounded selected-packet TLS reconstruction contract layered on top of packet-local partial ClientHello coverage | Partially complete | Keep for now |
 | `tls_1_3_many_records_continuation_11.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Real multi-record cumulative `Load more` parity fixture for bounded selected-flow TLS Stream rebuilds | Manual verification required | Keep for now |
+| `tls_1_0_badssl_baseline_12.pcap` | Small single-record / handshake | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.0 ClientHello baseline with packet-local SNI extraction and no modern extension-only fields | Partially complete | Keep for now |
+| `tls_1_1_badssl_baseline_13.pcap` | Small single-record / handshake | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.1 ClientHello baseline proving record-layer `0x0301` and ClientHello `0x0302` remain distinct | Partially complete | Keep for now |
+| `tls_1_2_badssl_baseline_14.pcap` | Small single-record / handshake | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.2 ClientHello baseline with `signature_algorithms` and packet-local SNI extraction | Partially complete | Keep for now |
+| `tls_1_2_client_to_tls_1_0_protocol_version_15.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | Version-mismatch handshake ending in a plaintext fatal `protocol_version` Alert before CCS with structured Alert summary fields | Partially complete | Keep for now |
+| `tls_1_2_expired_certificate_alert_16.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.2 certificate-validation failure ending in a plaintext fatal `certificate_expired` Alert with structured Alert summary fields | Partially complete | Keep for now |
+| `tls_1_2_self_signed_unknown_ca_17.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | Complete single-packet server handshake flight followed by a plaintext fatal `unknown_ca` Alert with structured Alert summary fields | Partially complete | Keep for now |
+| `tls_1_2_client_certificate_missing_18.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | CertificateRequest session with a valid empty client Certificate response and successful continuation | Partially complete | Keep for now |
+| `tls_1_2_status_request_alpn_19.pcap` | Session and reassembly | `FlowHintsTests`, `FlowHintsRealFixturesTests`, `TlsInspectionParserTests`, `StreamQueryTests` | Medium | TLS 1.2 ClientHello carrying OCSP `status_request` plus ALPN `http/1.1`, and ServerHello selecting `http/1.1`, without a fabricated CertificateStatus item | Partially complete | Keep for now |
 | `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `StreamQueryTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet/stream summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
@@ -1501,6 +1513,230 @@ Current additional TLS fields available only in Protocol:
 - Repeated identical requests and smaller compatible projections may reuse the retained materialized result.
 - Bounds growth currently uses a fresh bounded rebuild rather than a retained continuation frontier.
 - The diagnostic or retained session context must not cause suffix-only visible output or renumber `stream_item_index` from `1` during `Load more`.
+
+### Structured ECDHE handshake note
+
+Fixtures `12`, `13`, `14`, and `18` now expose bounded structured ECDHE `ServerKeyExchange` and `ClientKeyExchange` metadata through the automated Packet and Stream Summary contracts.
+
+- Public-key bytes and signature bytes are not retained.
+- Signatures are not validated.
+- TLS 1.0 and TLS 1.1 ECDHE `ServerKeyExchange` do not carry an explicit signature-scheme field.
+- Unsupported key-exchange families still remain generic rather than being guessed from unrelated context.
+
+### tls_1_0_badssl_baseline_12.pcap
+
+**Category:** Small single-record / handshake fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/baseline/tls10_baseline_mtu1500/tls10_baseline_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-0.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-0.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` is one complete TLS Handshake record with record version `TLS 1.0 (0x0301)`;
+  - ClientHello version also remains `TLS 1.0 (0x0301)`;
+  - SNI is `tls-v1-0.badssl.com`;
+  - no `signature_algorithms` extension is expected.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `12` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` exposes a bounded ECDHE `ClientKeyExchange` summary with public-point length `65` / available length `65`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
+    `ClientHello Legacy Version = TLS 1.0 (0x0301)`, and SNI;
+  - `Offered Protocols` and `Supported TLS Versions` are absent;
+  - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, and `10`;
+  - that row exposes handshake length `4070`, certificate-list length `4067`, and three certificate entries with declared sizes `1284`, `1246`, and `1528`;
+  - one reassembled `TLS ServerKeyExchange` row spans packets `10` and `12` and now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` `TLS ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`;
+  - the terminal `TLS Alert` row remains encrypted/opaque after CCS, so no alert level/description fields are invented.
+
+### tls_1_1_badssl_baseline_13.pcap
+
+**Category:** Small single-record / handshake fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/baseline/tls11_baseline_mtu1500/tls11_baseline_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-1.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-1.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` is one complete TLS Handshake record with record version `TLS 1.0 (0x0301)`;
+  - ClientHello version remains distinct as `TLS 1.1 (0x0302)`;
+  - SNI is `tls-v1-1.badssl.com`;
+  - no `signature_algorithms` extension is expected.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `12` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` exposes a bounded ECDHE `ClientKeyExchange` summary with public-point length `65` / available length `65`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
+    `ClientHello Legacy Version = TLS 1.1 (0x0302)`, and SNI;
+  - `Offered Protocols` and `Supported TLS Versions` are absent;
+  - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, and `10`;
+  - that row exposes handshake length `4070`, certificate-list length `4067`, and three certificate entries with declared sizes `1284`, `1246`, and `1528`;
+  - one reassembled `TLS ServerKeyExchange` row spans packets `10` and `12` and now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, signature length `256`, available signature length `256`, and no invented TLS 1.2 signature-scheme field;
+  - packet `14` `TLS ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`;
+  - the terminal `TLS Alert` row remains encrypted/opaque after CCS, so no alert level/description fields are invented.
+
+### tls_1_2_badssl_baseline_14.pcap
+
+**Category:** Small single-record / handshake fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/baseline/tls12_baseline_mtu1500/tls12_baseline_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` is one complete TLS Handshake record with record version `TLS 1.0 (0x0301)`;
+  - ClientHello version remains distinct as `TLS 1.2 (0x0303)`;
+  - SNI is `tls-v1-2.badssl.com`;
+  - a parsed `signature_algorithms` extension is present.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `12` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - packet `14` exposes a bounded ECDHE `ClientKeyExchange` summary with public-point length `65` / available length `65`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Summary keeps `Record Legacy Version = TLS 1.0 (0x0301)`,
+    `ClientHello Legacy Version = TLS 1.2 (0x0303)`, and SNI;
+  - `Offered Protocols` and `Supported TLS Versions` are absent;
+  - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, and `10`;
+  - that row exposes handshake length `4070`, certificate-list length `4067`, and three certificate entries with declared sizes `1284`, `1246`, and `1528`;
+  - one reassembled `TLS ServerKeyExchange` row spans packets `10` and `12` and now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - packet `14` `TLS ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`;
+  - the terminal `TLS Alert` row remains encrypted/opaque after CCS, so no alert level/description fields are invented.
+
+### tls_1_2_client_to_tls_1_0_protocol_version_15.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/errors/tls12_client_to_tls10_server_mtu1500/tls12_client_to_tls10_server_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-0.badssl.com`;
+  - packet `14` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-0.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `14` is a complete plaintext TLS `Alert` record with length `2`, version `TLS 1.2 (0x0303)`, level `Fatal (2)`, and description `Protocol Version (70)`.
+- `tests/unit/StreamQueryTests.cpp`
+  - the Stream contains exactly one `TLS Alert` row;
+  - the Alert remains plaintext and reports fatal `Protocol Version`;
+  - both Packet Details Summary and Stream Item Details Summary expose structured alert fields for one fatal `Protocol Version (70)` entry.
+
+### tls_1_2_expired_certificate_alert_16.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/errors/tls12_expired_certificate_mtu1500/tls12_expired_certificate_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `expired.badssl.com`;
+  - packet `14` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `expired.badssl.com`.
+- `tests/unit/StreamQueryTests.cpp`
+  - one reassembled `TLS Certificate` Stream row spans packets `6`, `8`, `10`, and `12`;
+  - that row exposes record length `4323`, handshake length `4319`, certificate-list length `4316`, and three certificate entries with declared sizes `1359`, `1548`, and `1400`;
+  - the Stream contains exactly one `TLS Alert` row;
+  - the Alert remains plaintext and reports fatal `Certificate Expired`;
+  - both Packet Details Summary and Stream Item Details Summary expose structured alert fields for one fatal `Certificate Expired (45)` entry;
+  - no encrypted Alert interpretation is invented before CCS.
+
+### tls_1_2_self_signed_unknown_ca_17.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/errors/tls12_self_signed_certificate_mtu1500/tls12_self_signed_certificate_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `self-signed.badssl.com`;
+  - packet `8` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `self-signed.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `6` is a complete single-record `Certificate` handshake with record length `903`, handshake length `899`, certificate-list length `896`, and one declared certificate entry of `893` bytes.
+- `tests/unit/StreamQueryTests.cpp`
+  - one packet-local `TLS Certificate` Stream row comes entirely from packet `6`;
+  - that row exposes record length `903`, handshake length `899`, certificate-list length `896`, and one declared certificate entry of `893` bytes;
+  - the Stream contains exactly one `TLS Alert` row;
+  - the Alert remains plaintext and reports fatal `Unknown CA`;
+  - both Packet Details Summary and Stream Item Details Summary expose structured alert fields for one fatal `Unknown CA (48)` entry;
+  - no encrypted Alert interpretation is invented before CCS.
+
+### tls_1_2_client_certificate_missing_18.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/extras/tls12_client_certificate_missing_mtu1500/tls12_client_certificate_missing_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `client-cert-missing.badssl.com`;
+  - packet `13` remains a `TLS` packet without a service hint.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `client-cert-missing.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `11` is a complete TLS Handshake record containing an ordered `CertificateRequest` followed by `ServerHelloDone`;
+  - the parsed `CertificateRequest` exposes certificate types `1`, `2`, and `64`, signature/hash algorithm byte length `30`, fifteen ordered signature scheme IDs, and one certificate-authority entry with declared length `139`;
+  - packet `13` parses as four ordered records:
+    - empty client `Certificate`;
+    - `ClientKeyExchange`;
+    - `ChangeCipherSpec`;
+    - encrypted Handshake;
+  - the empty client Certificate remains a complete handshake with declared body length `3` and certificate-list length `0`;
+  - with explicit negotiated ECDHE context, the packet `13` `ClientKeyExchange` exposes bounded ECDHE public-point length `65` / available length `65`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet `11` exposes a reassembled bounded ECDHE `ServerKeyExchange` summary with named curve `secp256r1 (0x0017)`, public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - packet `13` keeps the empty client `Certificate`, bounded ECDHE `ClientKeyExchange`, `ChangeCipherSpec`, and encrypted Handshake in exact wire order.
+- `tests/unit/StreamQueryTests.cpp`
+  - packet `11` contributes one reassembled `TLS ServerKeyExchange` row plus one `TLS CertificateRequest` Stream row and one `TLS ServerHelloDone` Stream row;
+  - the reassembled `TLS ServerKeyExchange` row now exposes bounded ECDHE named-curve metadata with public-key length `65`, available public-key length `65`, explicit signature scheme `rsa_pkcs1_sha512 (0x0601)`, signature length `256`, and available signature length `256`;
+  - the `TLS CertificateRequest` row exposes the same certificate-type, signature-scheme, and certificate-authority counts as the parser contract;
+  - packet `13` contributes a packet-local empty `TLS Certificate` Stream row plus `TLS ClientKeyExchange`, `TLS ChangeCipherSpec`, and `TLS Encrypted Handshake Message`;
+  - the packet-local `TLS ClientKeyExchange` row exposes bounded ECDHE public-point length `65` / available length `65`;
+  - the empty `TLS Certificate` row exposes handshake length `3`, certificate-list length `0`, and no fabricated certificate-entry children.
+
+### tls_1_2_status_request_alpn_19.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Local real capture copied byte-for-byte from `tmp/tls_data_2/extras/tls12_ocsp_alpn_mtu1500/tls12_ocsp_alpn_mtu1500.pcap`  
+**Decision:** Keep for now
+
+#### Automated contract
+
+- `tests/unit/FlowHintsTests.cpp`
+  - packet `4` is detected as `TLS` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/FlowHintsRealFixturesTests.cpp`
+  - open-capture flow hint is `tls` with service hint `tls-v1-2.badssl.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - packet `4` parses as a complete TLS 1.2 ClientHello;
+  - the parsed ClientHello exposes ALPN `http/1.1`;
+  - the negotiated ServerHello exposes selected ALPN `http/1.1`;
+  - the parsed `status_request` extension exposes `OCSP (1)` with zero responder IDs and zero request-extension bytes.
+- `tests/unit/StreamQueryTests.cpp`
+  - the first Stream row is `TLS ClientHello`;
+  - Stream Summary exposes SNI, offered ALPN `http/1.1`, and structured `status_request` metadata;
+  - the ServerHello Stream row and the matching Packet Details Summary expose selected protocol `http/1.1`;
+  - no `Supported TLS Versions` field is invented for this TLS 1.2 ClientHello;
+  - no `TLS CertificateStatus` Stream row is invented when the server omits stapled OCSP data.
 
 ### tls_normal_1.pcap
 

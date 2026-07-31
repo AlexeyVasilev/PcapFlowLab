@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pfl {
@@ -24,6 +25,12 @@ enum class TlsRecordStatus : std::uint8_t {
 };
 
 enum class TlsHandshakePayloadKind : std::uint8_t {
+    none,
+    plaintext,
+    encrypted_opaque,
+};
+
+enum class TlsAlertPayloadKind : std::uint8_t {
     none,
     plaintext,
     encrypted_opaque,
@@ -54,6 +61,171 @@ enum class TlsStructuredParseStatus : std::uint8_t {
     not_attempted,
     parsed,
     malformed,
+};
+
+enum class TlsAlertParseStatus : std::uint8_t {
+    not_attempted,
+    parsed,
+    incomplete,
+    malformed,
+};
+
+enum class TlsInspectionSemanticState : std::uint8_t {
+    unknown,
+    plaintext,
+    post_change_cipher_spec,
+};
+
+enum class TlsStructuredBodyStatus : std::uint8_t {
+    complete,
+    incomplete,
+    malformed,
+};
+
+enum class TlsCipherSuiteAuthenticationKind : std::uint8_t {
+    unknown,
+    rsa,
+    ecdsa,
+};
+
+struct TlsInspectionParserContext {
+    TlsInspectionSemanticState semantic_state {TlsInspectionSemanticState::plaintext};
+    std::optional<std::uint16_t> negotiated_cipher_suite {};
+    std::optional<std::uint16_t> negotiated_version {};
+};
+
+[[nodiscard]] inline std::optional<std::string_view> tls_alert_level_name(const std::uint8_t level) noexcept {
+    switch (level) {
+    case 1U:
+        return std::string_view {"Warning"};
+    case 2U:
+        return std::string_view {"Fatal"};
+    default:
+        return std::nullopt;
+    }
+}
+
+[[nodiscard]] inline std::optional<std::string_view> tls_alert_description_name(
+    const std::uint8_t description
+) noexcept {
+    switch (description) {
+    case 0U:
+        return std::string_view {"Close Notify"};
+    case 10U:
+        return std::string_view {"Unexpected Message"};
+    case 20U:
+        return std::string_view {"Bad Record MAC"};
+    case 21U:
+        return std::string_view {"Decryption Failed"};
+    case 22U:
+        return std::string_view {"Record Overflow"};
+    case 40U:
+        return std::string_view {"Handshake Failure"};
+    case 42U:
+        return std::string_view {"Bad Certificate"};
+    case 43U:
+        return std::string_view {"Unsupported Certificate"};
+    case 44U:
+        return std::string_view {"Certificate Revoked"};
+    case 45U:
+        return std::string_view {"Certificate Expired"};
+    case 46U:
+        return std::string_view {"Certificate Unknown"};
+    case 47U:
+        return std::string_view {"Illegal Parameter"};
+    case 48U:
+        return std::string_view {"Unknown CA"};
+    case 49U:
+        return std::string_view {"Access Denied"};
+    case 50U:
+        return std::string_view {"Decode Error"};
+    case 51U:
+        return std::string_view {"Decrypt Error"};
+    case 70U:
+        return std::string_view {"Protocol Version"};
+    case 71U:
+        return std::string_view {"Insufficient Security"};
+    case 80U:
+        return std::string_view {"Internal Error"};
+    case 86U:
+        return std::string_view {"Inappropriate Fallback"};
+    case 90U:
+        return std::string_view {"User Canceled"};
+    case 109U:
+        return std::string_view {"Missing Extension"};
+    case 110U:
+        return std::string_view {"Unsupported Extension"};
+    case 112U:
+        return std::string_view {"Unrecognized Name"};
+    case 116U:
+        return std::string_view {"Certificate Required"};
+    case 120U:
+        return std::string_view {"No Application Protocol"};
+    default:
+        return std::nullopt;
+    }
+}
+
+[[nodiscard]] inline bool tls_cipher_suite_uses_ecdhe(const std::uint16_t cipher_suite) noexcept {
+    switch (cipher_suite) {
+    case 0xC008U:
+    case 0xC009U:
+    case 0xC00AU:
+    case 0xC012U:
+    case 0xC013U:
+    case 0xC014U:
+    case 0xC02BU:
+    case 0xC02CU:
+    case 0xC02FU:
+    case 0xC030U:
+    case 0xCCA8U:
+    case 0xCCA9U:
+        return true;
+    default:
+        return false;
+    }
+}
+
+[[nodiscard]] inline TlsCipherSuiteAuthenticationKind tls_cipher_suite_authentication_kind(
+    const std::uint16_t cipher_suite
+) noexcept {
+    switch (cipher_suite) {
+    case 0xC008U:
+    case 0xC009U:
+    case 0xC00AU:
+    case 0xC02BU:
+    case 0xC02CU:
+    case 0xCCA9U:
+        return TlsCipherSuiteAuthenticationKind::ecdsa;
+    case 0xC012U:
+    case 0xC013U:
+    case 0xC014U:
+    case 0xC02FU:
+    case 0xC030U:
+    case 0xCCA8U:
+        return TlsCipherSuiteAuthenticationKind::rsa;
+    default:
+        return TlsCipherSuiteAuthenticationKind::unknown;
+    }
+}
+
+[[nodiscard]] inline std::optional<std::string_view> tls_ec_curve_type_name(const std::uint8_t curve_type) noexcept {
+    switch (curve_type) {
+    case 1U:
+        return std::string_view {"Explicit Prime"};
+    case 2U:
+        return std::string_view {"Explicit Char2"};
+    case 3U:
+        return std::string_view {"Named Curve"};
+    default:
+        return std::nullopt;
+    }
+}
+
+struct TlsAlertEntryModel {
+    std::size_t order_index {0U};
+    std::uint8_t level {0U};
+    std::uint8_t description {0U};
 };
 
 struct TlsKeyShareEntryModel {
@@ -107,11 +279,60 @@ struct TlsServerHelloModel {
     std::uint8_t compression_method {0U};
     std::vector<TlsExtensionModel> extensions {};
     std::uint16_t selected_tls_version {0U};
+    std::optional<std::string> selected_alpn_protocol {};
 };
 
 struct TlsNewSessionTicketModel {
     std::uint32_t ticket_lifetime_hint_seconds {0U};
     std::size_t ticket_length {0U};
+};
+
+struct TlsCertificateEntryModel {
+    std::size_t declared_der_length {0U};
+    std::size_t available_der_length {0U};
+    bool complete {false};
+};
+
+struct TlsCertificateModel {
+    std::size_t declared_certificate_list_length {0U};
+    bool complete_certificate_list {false};
+    std::vector<TlsCertificateEntryModel> certificate_entries {};
+};
+
+struct TlsCertificateAuthorityEntryModel {
+    std::size_t declared_length {0U};
+    std::size_t available_length {0U};
+    bool complete {false};
+};
+
+struct TlsCertificateRequestModel {
+    std::vector<std::uint8_t> certificate_type_ids {};
+    std::size_t signature_scheme_bytes_length {0U};
+    std::vector<std::uint16_t> signature_scheme_ids {};
+    std::size_t certificate_authorities_bytes_length {0U};
+    bool complete_certificate_authorities_vector {false};
+    std::vector<TlsCertificateAuthorityEntryModel> certificate_authority_entries {};
+};
+
+struct TlsEcdheServerKeyExchangeModel {
+    std::optional<std::uint8_t> curve_type {};
+    std::optional<std::uint16_t> named_group_id {};
+    std::optional<std::size_t> declared_public_key_length {};
+    std::size_t available_public_key_length {0U};
+    bool public_key_complete {false};
+    TlsCipherSuiteAuthenticationKind signature_authentication_kind {TlsCipherSuiteAuthenticationKind::unknown};
+    std::optional<std::uint16_t> signature_scheme_id {};
+    std::optional<std::size_t> declared_signature_length {};
+    std::size_t available_signature_length {0U};
+    bool signature_complete {false};
+    TlsStructuredBodyStatus status {TlsStructuredBodyStatus::malformed};
+};
+
+struct TlsEcdheClientKeyExchangeModel {
+    std::optional<std::size_t> declared_public_key_length {};
+    std::size_t available_public_key_length {0U};
+    bool public_key_complete {false};
+    TlsStructuredBodyStatus status {TlsStructuredBodyStatus::malformed};
 };
 
 struct TlsHandshakeModel {
@@ -126,6 +347,10 @@ struct TlsHandshakeModel {
     std::optional<TlsClientHelloModel> client_hello {};
     std::optional<TlsServerHelloModel> server_hello {};
     std::optional<TlsNewSessionTicketModel> new_session_ticket {};
+    std::optional<TlsCertificateModel> certificate {};
+    std::optional<TlsCertificateRequestModel> certificate_request {};
+    std::optional<TlsEcdheServerKeyExchangeModel> ecdhe_server_key_exchange {};
+    std::optional<TlsEcdheClientKeyExchangeModel> ecdhe_client_key_exchange {};
 };
 
 struct TlsRecordModel {
@@ -138,6 +363,9 @@ struct TlsRecordModel {
     std::size_t available_bytes {0U};
     TlsRecordStatus status {TlsRecordStatus::partial_header};
     TlsHandshakePayloadKind handshake_payload_kind {TlsHandshakePayloadKind::none};
+    TlsAlertPayloadKind alert_payload_kind {TlsAlertPayloadKind::none};
+    TlsAlertParseStatus alert_parse_status {TlsAlertParseStatus::not_attempted};
+    std::vector<TlsAlertEntryModel> alert_entries {};
     std::vector<TlsHandshakeModel> handshake_messages {};
 };
 
@@ -146,6 +374,7 @@ struct TlsInspectionResult {
     std::size_t consumed_bytes {0U};
     bool stopped_after_partial_record {false};
     std::size_t unparsed_trailing_bytes {0U};
+    TlsInspectionParserContext final_context {};
     std::vector<TlsRecordModel> records {};
 };
 
