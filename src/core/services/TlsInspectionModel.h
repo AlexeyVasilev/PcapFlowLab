@@ -114,6 +114,33 @@ struct TlsNewSessionTicketModel {
     std::size_t ticket_length {0U};
 };
 
+struct TlsCertificateEntryModel {
+    std::size_t declared_der_length {0U};
+    std::size_t available_der_length {0U};
+    bool complete {false};
+};
+
+struct TlsCertificateModel {
+    std::size_t declared_certificate_list_length {0U};
+    bool complete_certificate_list {false};
+    std::vector<TlsCertificateEntryModel> certificate_entries {};
+};
+
+struct TlsCertificateAuthorityEntryModel {
+    std::size_t declared_length {0U};
+    std::size_t available_length {0U};
+    bool complete {false};
+};
+
+struct TlsCertificateRequestModel {
+    std::vector<std::uint8_t> certificate_type_ids {};
+    std::size_t signature_scheme_bytes_length {0U};
+    std::vector<std::uint16_t> signature_scheme_ids {};
+    std::size_t certificate_authorities_bytes_length {0U};
+    bool complete_certificate_authorities_vector {false};
+    std::vector<TlsCertificateAuthorityEntryModel> certificate_authority_entries {};
+};
+
 struct TlsHandshakeModel {
     std::size_t source_offset {0U};
     std::optional<std::uint8_t> type {};
@@ -126,6 +153,8 @@ struct TlsHandshakeModel {
     std::optional<TlsClientHelloModel> client_hello {};
     std::optional<TlsServerHelloModel> server_hello {};
     std::optional<TlsNewSessionTicketModel> new_session_ticket {};
+    std::optional<TlsCertificateModel> certificate {};
+    std::optional<TlsCertificateRequestModel> certificate_request {};
 };
 
 struct TlsRecordModel {

@@ -315,6 +315,17 @@ const StreamItemRow* find_stream_row_by_label(const std::vector<StreamItemRow>& 
     return it == rows.end() ? nullptr : &(*it);
 }
 
+const StreamItemRow* find_stream_row_by_label_and_packets(
+    const std::vector<StreamItemRow>& rows,
+    const std::string_view label,
+    const std::vector<std::uint64_t>& packet_indices
+) {
+    const auto it = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
+        return row.label == label && row.packet_indices == packet_indices;
+    });
+    return it == rows.end() ? nullptr : &(*it);
+}
+
 void expect_matching_stream_row_prefix(
     const std::vector<StreamItemRow>& actual,
     const std::vector<StreamItemRow>& expected,
@@ -2214,23 +2225,23 @@ void run_stream_query_tests() {
             "TLS_AES_128_GCM_SHA256 (0x1301)",
             "TLS_AES_256_GCM_SHA384 (0x1302)",
             "TLS_CHACHA20_POLY1305_SHA256 (0x1303)",
-            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)",
-            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)",
             "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)",
-            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)",
+            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)",
             "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)",
+            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)",
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)",
             "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)",
-            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)",
-            "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)",
-            "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA (0xc012)",
-            "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)",
-            "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)",
-            "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)",
-            "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)",
-            "TLS_RSA_WITH_3DES_EDE_CBC_SHA (0x000a)",
-            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)",
             "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xc00a)",
+            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA (0xc009)",
+            "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)",
+            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)",
+            "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)",
+            "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)",
+            "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)",
+            "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)",
             "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA (0xc008)",
+            "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA (0xc012)",
+            "TLS_RSA_WITH_3DES_EDE_CBC_SHA (0x000a)",
         });
         PFL_EXPECT(stream_compression_methods_group->title == "Compression Methods (1)");
         PFL_EXPECT(stream_compression_methods_group->children.empty());
@@ -2743,6 +2754,204 @@ void run_stream_query_tests() {
             PFL_EXPECT(require_summary_field_value(*tls_layer, "Total Record Size") == "7 bytes");
             PFL_EXPECT(find_summary_field(*tls_layer, "Handshake Type") == nullptr);
         }
+    }
+
+    {
+        struct BaselineCertificateExpectation {
+            const char* relative_path;
+            const char* expected_sni;
+        };
+
+        const std::vector<BaselineCertificateExpectation> expectations {
+            {
+                .relative_path = "parsing/tls/tls_1_0_badssl_baseline_12.pcap",
+                .expected_sni = "tls-v1-0.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_1_badssl_baseline_13.pcap",
+                .expected_sni = "tls-v1-1.badssl.com",
+            },
+            {
+                .relative_path = "parsing/tls/tls_1_2_badssl_baseline_14.pcap",
+                .expected_sni = "tls-v1-2.badssl.com",
+            },
+        };
+
+        for (const auto& expectation : expectations) {
+            ScopedTestContext context {std::string {"fixture="} + expectation.relative_path};
+            CaptureSession session {};
+            PFL_EXPECT(session.open_capture(fixture_path(expectation.relative_path), fast_options));
+
+            const auto packet_rows = session.list_flow_packets(0);
+            const auto rows = session.list_flow_stream_items(0);
+            const auto* certificate_row = find_stream_row_by_label_and_packets(
+                rows,
+                "TLS Certificate",
+                std::vector<std::uint64_t> {5U, 7U, 9U}
+            );
+            PFL_REQUIRE(certificate_row != nullptr);
+            PFL_EXPECT(certificate_row->packet_count == 3U);
+            PFL_EXPECT(certificate_row->protocol_text.find("Handshake Type: Certificate") != std::string::npos);
+
+            const auto summary_layers = build_stream_summary_layers(*certificate_row, packet_rows);
+            const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+            PFL_REQUIRE(tls_layer != nullptr);
+            PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "Certificate");
+            PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Length") == "4070");
+            PFL_EXPECT(require_summary_field_value(*tls_layer, "Certificate List Length") == "4067");
+            PFL_EXPECT(require_summary_field_value(*tls_layer, "Certificate Count") == "3");
+            PFL_EXPECT(require_summary_field_value(*tls_layer, "Status") == "Complete");
+            const auto* entries_group = require_summary_child(*tls_layer, "tls_certificate_entries");
+            PFL_EXPECT(entries_group->title == "Certificate Entries (3)");
+            PFL_EXPECT(require_summary_field_value(entries_group->children[0], "Declared Length") == "1284 bytes");
+            PFL_EXPECT(require_summary_field_value(entries_group->children[1], "Declared Length") == "1246 bytes");
+            PFL_EXPECT(require_summary_field_value(entries_group->children[2], "Declared Length") == "1528 bytes");
+            PFL_EXPECT(require_summary_field_value(entries_group->children[0], "Status") == "Complete");
+            PFL_EXPECT(require_summary_field_value(entries_group->children[1], "Status") == "Complete");
+            PFL_EXPECT(require_summary_field_value(entries_group->children[2], "Status") == "Complete");
+
+            const auto* client_hello_row = find_stream_row_by_label(rows, "TLS ClientHello");
+            PFL_REQUIRE(client_hello_row != nullptr);
+            const auto client_hello_summary = build_stream_summary_layers(*client_hello_row, packet_rows);
+            const auto* client_hello_tls_layer = find_top_level_summary_layer(client_hello_summary, "tls");
+            PFL_REQUIRE(client_hello_tls_layer != nullptr);
+            PFL_EXPECT(require_summary_field_value(*client_hello_tls_layer, "SNI") == expectation.expected_sni);
+        }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/tls/tls_1_2_expired_certificate_alert_16.pcap"),
+            fast_options
+        ));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        const auto* certificate_row = find_stream_row_by_label_and_packets(
+            rows,
+            "TLS Certificate",
+            std::vector<std::uint64_t> {5U, 7U, 9U, 11U}
+        );
+        PFL_REQUIRE(certificate_row != nullptr);
+        PFL_EXPECT(certificate_row->packet_count == 4U);
+        PFL_EXPECT(certificate_row->protocol_text.find("Handshake Type: Certificate") != std::string::npos);
+
+        const auto summary_layers = build_stream_summary_layers(*certificate_row, packet_rows);
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Length") == "4323");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Length") == "4319");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Certificate List Length") == "4316");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Certificate Count") == "3");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Status") == "Complete");
+        const auto* entries_group = require_summary_child(*tls_layer, "tls_certificate_entries");
+        PFL_EXPECT(entries_group->title == "Certificate Entries (3)");
+        PFL_EXPECT(require_summary_field_value(entries_group->children[0], "Declared Length") == "1359 bytes");
+        PFL_EXPECT(require_summary_field_value(entries_group->children[1], "Declared Length") == "1548 bytes");
+        PFL_EXPECT(require_summary_field_value(entries_group->children[2], "Declared Length") == "1400 bytes");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/tls/tls_1_2_self_signed_unknown_ca_17.pcap"),
+            fast_options
+        ));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        const auto* certificate_row = find_stream_row_by_label_and_packets(
+            rows,
+            "TLS Certificate",
+            std::vector<std::uint64_t> {5U}
+        );
+        PFL_REQUIRE(certificate_row != nullptr);
+        PFL_EXPECT(certificate_row->packet_count == 1U);
+
+        const auto summary_layers = build_stream_summary_layers(*certificate_row, packet_rows);
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Record Length") == "903");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Length") == "899");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Certificate List Length") == "896");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Certificate Count") == "1");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Status") == "Complete");
+        const auto* entries_group = require_summary_child(*tls_layer, "tls_certificate_entries");
+        PFL_EXPECT(entries_group->title == "Certificate Entries (1)");
+        PFL_EXPECT(require_summary_field_value(entries_group->children[0], "Declared Length") == "893 bytes");
+        PFL_EXPECT(require_summary_field_value(entries_group->children[0], "Status") == "Complete");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/tls/tls_1_2_client_certificate_missing_18.pcap"),
+            fast_options
+        ));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto rows = session.list_flow_stream_items(0);
+        const auto* certificate_request_row = find_stream_row_by_label_and_packets(
+            rows,
+            "TLS CertificateRequest",
+            std::vector<std::uint64_t> {10U}
+        );
+        PFL_REQUIRE(certificate_request_row != nullptr);
+        PFL_EXPECT(certificate_request_row->packet_count == 1U);
+        PFL_EXPECT(certificate_request_row->protocol_text.find("Handshake Type: CertificateRequest") != std::string::npos);
+
+        const auto certificate_request_summary = build_stream_summary_layers(*certificate_request_row, packet_rows);
+        const auto* certificate_request_tls_layer = find_top_level_summary_layer(certificate_request_summary, "tls");
+        PFL_REQUIRE(certificate_request_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*certificate_request_tls_layer, "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_tls_layer, "Record Length") == "187");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_tls_layer, "Handshake Count") == "2");
+
+        const auto* certificate_request_handshake = require_summary_child(*certificate_request_tls_layer, "tls_handshake", 0U);
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Handshake Type") == "CertificateRequest");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Handshake Length") == "179");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Type Count") == "3");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Type [0]") == "RSA Sign (1)");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Type [1]") == "DSS Sign (2)");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Type [2]") == "ECDSA Sign (64)");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Signature/Hash Algorithms Length") == "30");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Signature/Hash Algorithm Count") == "15");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Signature Scheme [0]") == "rsa_pkcs1_sha512 (0x0601)");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Signature Scheme [14]") == "Unknown Signature Scheme (0x0203)");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Authorities Length") == "141");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Authority Count") == "1");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Status") == "Complete");
+        const auto* authorities_group = require_summary_child(*certificate_request_handshake, "tls_certificate_authorities");
+        PFL_EXPECT(authorities_group->title == "Certificate Authorities (1)");
+        PFL_EXPECT(require_summary_field_value(authorities_group->children[0], "Declared Length") == "139 bytes");
+        PFL_EXPECT(require_summary_field_value(authorities_group->children[0], "Status") == "Complete");
+
+        const auto* server_hello_done_handshake = require_summary_child(*certificate_request_tls_layer, "tls_handshake", 1U);
+        PFL_EXPECT(require_summary_field_value(*server_hello_done_handshake, "Handshake Type") == "ServerHelloDone");
+        PFL_EXPECT(require_summary_field_value(*server_hello_done_handshake, "Handshake Length") == "0");
+
+        const auto* empty_certificate_row = find_stream_row_by_label_and_packets(
+            rows,
+            "TLS Certificate",
+            std::vector<std::uint64_t> {12U}
+        );
+        PFL_REQUIRE(empty_certificate_row != nullptr);
+        PFL_EXPECT(empty_certificate_row->packet_count == 1U);
+
+        const auto empty_certificate_summary = build_stream_summary_layers(*empty_certificate_row, packet_rows);
+        const auto* empty_certificate_tls_layer = find_top_level_summary_layer(empty_certificate_summary, "tls");
+        PFL_REQUIRE(empty_certificate_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*empty_certificate_tls_layer, "Handshake Type") == "Certificate");
+        PFL_EXPECT(require_summary_field_value(*empty_certificate_tls_layer, "Handshake Length") == "3");
+        PFL_EXPECT(require_summary_field_value(*empty_certificate_tls_layer, "Certificate List Length") == "0");
+        PFL_EXPECT(require_summary_field_value(*empty_certificate_tls_layer, "Certificate Count") == "0");
+        PFL_EXPECT(require_summary_field_value(*empty_certificate_tls_layer, "Status") == "Complete");
+        PFL_EXPECT(find_summary_child(*empty_certificate_tls_layer, "tls_certificate_entries") == nullptr);
+
+        PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS ClientKeyExchange", std::vector<std::uint64_t> {12U}) != nullptr);
+        PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS ChangeCipherSpec", std::vector<std::uint64_t> {12U}) != nullptr);
+        PFL_REQUIRE(find_stream_row_by_label_and_packets(rows, "TLS Encrypted Handshake Message", std::vector<std::uint64_t> {12U}) != nullptr);
     }
 
     {

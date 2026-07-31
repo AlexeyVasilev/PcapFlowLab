@@ -209,6 +209,63 @@ std::vector<const session_detail::PacketSummaryLayer*> find_summary_layers(
     return matches;
 }
 
+std::size_t find_summary_layer_index(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id,
+    const std::size_t occurrence = 0U
+) {
+    std::size_t seen = 0U;
+    for (std::size_t index = 0U; index < layers.size(); ++index) {
+        if (layers[index].id != id) {
+            continue;
+        }
+        if (seen == occurrence) {
+            return index;
+        }
+        ++seen;
+    }
+    return layers.size();
+}
+
+struct SelectedPacketSummaryResult {
+    std::vector<session_detail::PacketSummaryLayer> summary_layers {};
+    std::vector<session_detail::TlsSelectedPacketRecordContext> reconstructed_tls_records {};
+};
+
+SelectedPacketSummaryResult build_selected_packet_summary(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t packet_index,
+    const std::uint64_t flow_packet_index,
+    const std::size_t loaded_packet_window_count
+) {
+    const auto packet = require_packet(session, packet_index);
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+
+    const auto packet_bytes = session.read_packet_data(packet);
+    PacketPayloadService payload_service {};
+    const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    auto reconstructed_tls_records = session_detail::build_selected_packet_tls_contexts(
+        session,
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count
+    );
+
+    return SelectedPacketSummaryResult {
+        .summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+            .flow_packet_index = flow_packet_index,
+            .transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
+            .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
+            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
+            .protocol_details_text = session.read_packet_protocol_details_text(packet),
+            .reconstructed_tls_records = reconstructed_tls_records,
+        }),
+        .reconstructed_tls_records = std::move(reconstructed_tls_records),
+    };
+}
+
 std::size_t count_hex_byte_tokens(const std::string_view value) {
     std::size_t count = 0U;
     std::size_t offset = 0U;
@@ -1310,6 +1367,92 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Packet in File") == "5");
         PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Record Byte Range") == "1413-1898");
         PFL_EXPECT(require_summary_field_value(*packet5_selected_contribution, "Captured Contribution") == "486 bytes");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/tls/tls_1_2_client_certificate_missing_18.pcap"),
+            CaptureImportOptions {}
+        ));
+
+        const auto loaded_packet_window_count = session.list_flow_packets(0).size();
+        const auto summary = build_selected_packet_summary(session, 0U, 10U, 10U, loaded_packet_window_count);
+
+        PFL_REQUIRE(summary.reconstructed_tls_records.size() == 1U);
+        PFL_EXPECT(summary.reconstructed_tls_records[0].status == session_detail::TlsSelectedPacketStatus::complete);
+        PFL_EXPECT(summary.reconstructed_tls_records[0].selected_contribution_flow_packet_index == std::optional<std::uint64_t> {10U});
+        PFL_EXPECT(summary.reconstructed_tls_records[0].completion_flow_packet_index == std::optional<std::uint64_t> {10U});
+
+        const auto reassembled_layers = find_summary_layers(summary.summary_layers, "tls_reassembled");
+        const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
+        PFL_REQUIRE(reassembled_layers.size() == 1U);
+        PFL_REQUIRE(tls_layers.size() == 2U);
+
+        const auto reassembled_index = find_summary_layer_index(summary.summary_layers, "tls_reassembled");
+        const auto first_tls_index = find_summary_layer_index(summary.summary_layers, "tls", 0U);
+        const auto second_tls_index = find_summary_layer_index(summary.summary_layers, "tls", 1U);
+        PFL_EXPECT(reassembled_index < first_tls_index);
+        PFL_EXPECT(first_tls_index < second_tls_index);
+
+        PFL_EXPECT(require_summary_field_value(*reassembled_layers[0], "Status") == "Reassembled in this packet");
+        const auto* selected_contribution = require_summary_child(*reassembled_layers[0], "tls_reassembled_contribution", 1U);
+        PFL_EXPECT(require_summary_field_value(*selected_contribution, "Flow Packet") == "11");
+        PFL_EXPECT(require_summary_field_value(*selected_contribution, "Packet in File") == "11");
+
+        PFL_EXPECT(tls_layers[0]->title.find("ServerKeyExchange") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ServerKeyExchange");
+
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Record Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Handshake Count") == "2");
+        const auto* certificate_request_handshake = require_summary_child(*tls_layers[1], "tls_handshake", 0U);
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Handshake Type") == "CertificateRequest");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Handshake Length") == "179");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Type Count") == "3");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Signature/Hash Algorithm Count") == "15");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Certificate Authorities Length") == "141");
+        PFL_EXPECT(require_summary_field_value(*certificate_request_handshake, "Authority Count") == "1");
+        const auto* authorities_group = require_summary_child(*certificate_request_handshake, "tls_certificate_authorities");
+        PFL_EXPECT(authorities_group->title == "Certificate Authorities (1)");
+
+        const auto* server_hello_done_handshake = require_summary_child(*tls_layers[1], "tls_handshake", 1U);
+        PFL_EXPECT(require_summary_field_value(*server_hello_done_handshake, "Handshake Type") == "ServerHelloDone");
+        PFL_EXPECT(require_summary_field_value(*server_hello_done_handshake, "Handshake Length") == "0");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/tls/tls_1_2_expired_certificate_alert_16.pcap"),
+            CaptureImportOptions {}
+        ));
+
+        const auto loaded_packet_window_count = session.list_flow_packets(0).size();
+        const auto summary = build_selected_packet_summary(session, 0U, 11U, 11U, loaded_packet_window_count);
+
+        PFL_REQUIRE(summary.reconstructed_tls_records.size() == 1U);
+        PFL_EXPECT(summary.reconstructed_tls_records[0].status == session_detail::TlsSelectedPacketStatus::complete);
+        PFL_EXPECT(summary.reconstructed_tls_records[0].selected_contribution_flow_packet_index == std::optional<std::uint64_t> {11U});
+        PFL_EXPECT(summary.reconstructed_tls_records[0].completion_flow_packet_index == std::optional<std::uint64_t> {11U});
+
+        const auto reassembled_layers = find_summary_layers(summary.summary_layers, "tls_reassembled");
+        const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
+        PFL_REQUIRE(reassembled_layers.size() == 1U);
+        PFL_REQUIRE(tls_layers.size() == 3U);
+
+        const auto reassembled_index = find_summary_layer_index(summary.summary_layers, "tls_reassembled");
+        const auto first_tls_index = find_summary_layer_index(summary.summary_layers, "tls", 0U);
+        const auto second_tls_index = find_summary_layer_index(summary.summary_layers, "tls", 1U);
+        const auto third_tls_index = find_summary_layer_index(summary.summary_layers, "tls", 2U);
+        PFL_EXPECT(reassembled_index < first_tls_index);
+        PFL_EXPECT(first_tls_index < second_tls_index);
+        PFL_EXPECT(second_tls_index < third_tls_index);
+
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "Certificate");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Certificate Count") == "3");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[1], "Handshake Type") == "ServerKeyExchange");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Handshake Type") == "ServerHelloDone");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[2], "Handshake Length") == "0");
     }
 
     {
