@@ -411,6 +411,81 @@ decoding plus production fixture tests.
 - Packet-details behavior: outer IPv6 visible; no UDP or GTP-U fabricated
 - Purpose: outer IPv6 fragmentation blocks GTP-U continuation
 
+### 32_gtpu_inner_ipv4_udp_data.pcap
+
+- Purpose: deterministic synthetic inner-UDP transport payload for Packet Details `data` Summary ownership
+- Generation command used for the authoritative output:
+  `python3 tests/data/parsing/gtpu/generate_inner_transport_data_fixtures.py`
+- Outer stack:
+  - EthernetII
+  - IPv4 `192.0.2.10 -> 198.51.100.20`
+  - UDP `2152 -> 2152`
+  - GTP-U T-PDU, TEID `0x01020301`
+- Inner stack:
+  - IPv4 `10.0.0.10 -> 10.0.0.20`
+  - UDP `40000 -> 40001`
+  - 48-byte synthetic application payload
+- Payload string:
+  `INNER-UDP-DATA|0123456789|ABCDEFGHIJKLMNOPQRSTUV`
+- Expected first 32-byte preview:
+  `49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41 7c 30 31 32 33 34 35 36 37 38 39 7c 41 42 43 44 45 46`
+- Packet Details Summary order:
+  `Frame -> Ethernet -> IPv4 -> UDP -> GTP-U -> Inner IPv4 -> Inner UDP -> Data`
+- Expected Data contract:
+  - exactly one `data` layer
+  - `Transport = UDP`
+  - `Data Length = 48 bytes`
+  - preview bounded to the first 32 inner-UDP application bytes
+  - outer UDP / GTP-U bytes must not be exposed as generic Data
+
+### 33_gtpu_inner_ipv4_tcp_data.pcap
+
+- Purpose: deterministic synthetic inner-TCP transport payload for Packet Details `data` Summary ownership
+- Generation command used for the authoritative output:
+  `python3 tests/data/parsing/gtpu/generate_inner_transport_data_fixtures.py`
+- Outer stack:
+  - EthernetII
+  - IPv4 `192.0.2.10 -> 198.51.100.20`
+  - UDP `2152 -> 2152`
+  - GTP-U T-PDU, TEID `0x01020302`
+- Inner stack:
+  - IPv4 `10.0.0.10 -> 10.0.0.20`
+  - TCP `41000 -> 41001`, `PSH, ACK`
+  - 48-byte synthetic application payload
+- Payload string:
+  `INNER-TCP-DATA|0123456789|abcdefghijklmnopqrstuv`
+- Expected first 32-byte preview:
+  `49 4e 4e 45 52 2d 54 43 50 2d 44 41 54 41 7c 30 31 32 33 34 35 36 37 38 39 7c 61 62 63 64 65 66`
+- Packet Details Summary order:
+  `Frame -> Ethernet -> IPv4 -> UDP -> GTP-U -> Inner IPv4 -> Inner TCP -> Data`
+- Expected Data contract:
+  - exactly one `data` layer
+  - `Transport = TCP`
+  - `Data Length = 48 bytes`
+  - preview bounded to the first 32 inner-TCP application bytes
+  - outer UDP / GTP-U bytes must not be exposed as generic Data
+
+### 34_gtpu_inner_ipv4_tcp_ack_only.pcap
+
+- Purpose: deterministic synthetic inner-TCP ACK-only packet proving zero terminal application payload emits no `data` layer
+- Generation command used for the authoritative output:
+  `python3 tests/data/parsing/gtpu/generate_inner_transport_data_fixtures.py`
+- Outer stack:
+  - EthernetII
+  - IPv4 `192.0.2.10 -> 198.51.100.20`
+  - UDP `2152 -> 2152`
+  - GTP-U T-PDU, TEID `0x01020303`
+- Inner stack:
+  - IPv4 `10.0.0.10 -> 10.0.0.20`
+  - TCP `41000 -> 41001`, `ACK`
+  - no application payload bytes
+- Packet Details Summary order:
+  `Frame -> Ethernet -> IPv4 -> UDP -> GTP-U -> Inner IPv4 -> Inner TCP`
+- Expected Data contract:
+  - no `data` layer
+  - no preview
+  - no outer UDP / GTP-U fallback as generic Data
+
 ## Notes for migration
 
 - This directory defines the production contract that the shadow GTP-U path now matches.
@@ -419,4 +494,5 @@ decoding plus production fixture tests.
   E/S/PN handling, bounded extension-header skipping, direct inner IPv4/IPv6
   continuation, nested inner-UDP non-recursion, outer carrier reachability, and
   outer-fragment shell behavior.
-- No temporary fixture generator is committed with this directory.
+- Fixtures `32`, `33`, and `34` are synthetic deterministic Packet Details Data-ownership fixtures; they contain no private capture values.
+- Their Summary-level `data` presentation is ephemeral: no ProtocolPath, import, index, or flow-identity semantics change.

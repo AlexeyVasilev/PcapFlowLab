@@ -32,6 +32,44 @@ struct PacketSummaryField {
     std::string value {};
 };
 
+enum class PacketDataRole : std::uint8_t {
+    none = 0,
+    transport_payload,
+};
+
+enum class PacketDataTransportKind : std::uint8_t {
+    unknown = 0,
+    tcp,
+    udp,
+};
+
+enum class TransportPayloadDisposition : std::uint8_t {
+    none = 0,
+    unclaimed_data,
+    claimed_by_supported_protocol,
+    known_opaque_or_encrypted,
+    unavailable_or_truncated,
+};
+
+enum class PacketDataPlacement : std::uint8_t {
+    none = 0,
+    after_tcp,
+    after_udp,
+    after_inner_tcp,
+    after_inner_udp,
+};
+
+struct PacketDataPresentation {
+    PacketDataRole role {PacketDataRole::none};
+    PacketDataTransportKind transport {PacketDataTransportKind::unknown};
+    TransportPayloadDisposition disposition {TransportPayloadDisposition::none};
+    PacketDataPlacement placement {PacketDataPlacement::none};
+    std::uint32_t declared_length {0U};
+    std::uint32_t captured_length {0U};
+    bool declared_length_reliable {false};
+    bool truncation_reliable {false};
+};
+
 struct PacketSummaryLayer {
     std::string id {};
     std::string title {};
@@ -52,13 +90,16 @@ struct PacketSummaryOptions {
     std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
+    std::span<const std::uint8_t> packet_data_preview_bytes {};
     TlsInspectionParserContext tls_initial_parser_context {};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
     std::optional<QuicPresentationResult> quic_presentation {};
+    std::optional<PacketDataPresentation> packet_data {};
 };
 
 struct SelectedPacketSummaryPreparation {
     std::vector<std::uint8_t> transport_payload {};
+    std::vector<std::uint8_t> packet_data_preview {};
     PacketSummaryOptions options {};
 };
 
@@ -91,6 +132,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 );
 SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     CaptureSession& session,
+    const PacketDetails& details,
     const PacketRef& packet,
     std::optional<std::size_t> flow_index,
     std::optional<std::uint64_t> flow_packet_index,

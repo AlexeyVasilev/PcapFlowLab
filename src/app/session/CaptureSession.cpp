@@ -3593,6 +3593,9 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }
+    if (effective_protocol_hint(connections[flow_index], analysis_settings_) != FlowProtocolHint::quic) {
+        return std::nullopt;
+    }
 
     std::vector<std::uint64_t> selected_packet_indices = packet_indices;
     std::sort(selected_packet_indices.begin(), selected_packet_indices.end());

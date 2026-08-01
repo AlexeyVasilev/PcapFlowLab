@@ -1,6 +1,9 @@
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <filesystem>
+#include <iomanip>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -294,6 +297,7 @@ SelectedPacketSummaryResult build_selected_packet_summary(
     PFL_REQUIRE(details.has_value());
     auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
         session,
+        *details,
         packet,
         flow_index,
         flow_packet_index,
@@ -345,6 +349,28 @@ std::size_t count_hex_byte_tokens(const std::string_view value) {
     return count;
 }
 
+std::string format_expected_hex_byte_list(std::span<const std::uint8_t> bytes) {
+    std::ostringstream builder {};
+    builder << std::hex << std::setfill('0');
+    for (std::size_t index = 0U; index < bytes.size(); ++index) {
+        if (index > 0U) {
+            builder << ' ';
+        }
+        builder << std::setw(2) << static_cast<unsigned>(bytes[index]);
+    }
+    return builder.str();
+}
+
+std::string format_transport_port_prefix_hex(const std::uint16_t src_port, const std::uint16_t dst_port) {
+    const std::array<std::uint8_t, 4> bytes {
+        static_cast<std::uint8_t>((src_port >> 8U) & 0xFFU),
+        static_cast<std::uint8_t>(src_port & 0xFFU),
+        static_cast<std::uint8_t>((dst_port >> 8U) & 0xFFU),
+        static_cast<std::uint8_t>(dst_port & 0xFFU),
+    };
+    return format_expected_hex_byte_list(bytes);
+}
+
 std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
     const std::filesystem::path& relative_fixture_path
 ) {
@@ -377,6 +403,7 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
         : std::nullopt;
     auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
         session,
+        *details,
         packet,
         flow_index,
         flow_packet_index,
@@ -403,6 +430,7 @@ std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers
     const auto internal_flow_packet_index = *flow_packet_number - 1U;
     auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
         session,
+        *details,
         packet,
         flow_index,
         internal_flow_packet_index,
@@ -889,27 +917,22 @@ void run_packet_details_tests() {
     }
 
     {
-        CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {}));
-        const auto packet = require_packet(session, 0U);
-        const auto details = session.read_packet_details(packet);
-        PFL_REQUIRE(details.has_value());
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
-            .transport_payload_length = packet.payload_length,
-            .original_transport_payload_length = packet.payload_length,
-            .protocol_details_text = session.read_packet_protocol_details_text(packet),
-        });
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/dns_request_1.pcap");
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
         PFL_EXPECT(!summary_layers[summary_layers.size() - 2U].expanded_by_default);
         PFL_EXPECT(summary_layers.back().id == "dns");
         PFL_EXPECT(summary_layers.back().expanded_by_default);
         PFL_EXPECT(summary_layers.back().title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {}));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "quic");
         const auto presentation = session.derive_quic_presentation_for_packet(0U, 0U);
         PFL_REQUIRE(presentation.has_value());
         PFL_REQUIRE(presentation->packets.size() == 1U);
@@ -944,11 +967,15 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*crypto_frame, "Type") == "CRYPTO");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ClientHello");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "SNI") == "bag.itunes.apple.com");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_example_1.pcap"), CaptureImportOptions {}));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "quic");
         const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 14U);
         const auto quic_layers = find_summary_layers(summary_layers, "quic");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
@@ -956,6 +983,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Handshake");
         PFL_EXPECT(require_summary_field_value(*quic_layers[1], "Packet Type") == "Protected Payload");
         PFL_EXPECT(tls_layers.empty());
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
@@ -970,6 +998,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*mixed_quic_layers[0], "Frame Presence") == "CRYPTO");
         PFL_EXPECT(require_summary_field_value(*mixed_tls_layers[0], "Handshake Type") == "ClientHello");
         PFL_EXPECT(require_summary_field_value(*mixed_quic_layers[1], "Packet Type") == "0-RTT");
+        PFL_EXPECT(find_summary_layer(mixed_summary_layers, "data") == nullptr);
 
         const auto server_hello_summary_layers = build_flow_packet_summary_layers(session, 0U, 12U);
         const auto server_hello_quic_layers = find_summary_layers(server_hello_summary_layers, "quic");
@@ -980,6 +1009,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*server_hello_quic_layers[0], "Frame Presence") == "CRYPTO, PADDING");
         PFL_EXPECT(require_summary_field_value(*server_hello_tls_layers[0], "Handshake Type") == "ServerHello");
         PFL_EXPECT(find_summary_field(*server_hello_tls_layers[0], "SNI") == nullptr);
+        PFL_EXPECT(find_summary_layer(server_hello_summary_layers, "data") == nullptr);
     }
 
     {
@@ -1012,27 +1042,39 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Frame Presence") == "CRYPTO");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ServerHello");
         PFL_EXPECT(find_summary_field(*tls_layers[0], "SNI") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/quic/quic_handshake_3.pcap");
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_handshake_3.pcap"), CaptureImportOptions {}));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "quic");
         const auto quic_layers = find_summary_layers(summary_layers, "quic");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(quic_layers.size() == 1U);
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Handshake");
         PFL_EXPECT(tls_layers.empty());
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
-        const auto summary_layers = build_fixture_summary_layers("parsing/quic/quic_protected_payload_4.pcap");
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_protected_payload_4.pcap"), CaptureImportOptions {}));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
         const auto quic_layers = find_summary_layers(summary_layers, "quic");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
-        PFL_REQUIRE(quic_layers.size() == 1U);
-        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Short");
-        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Protected Payload");
-        PFL_EXPECT(find_summary_field(*quic_layers[0], "Version") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_EXPECT(quic_layers.empty());
         PFL_EXPECT(tls_layers.empty());
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
     }
 
     {
@@ -1045,6 +1087,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Frame Presence") == "ACK");
         PFL_EXPECT(tls_layers.empty());
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
@@ -1066,6 +1109,72 @@ void run_packet_details_tests() {
         PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Handshake Type", "ClientHello") == nullptr);
         PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Handshake Type", "ServerHello") == nullptr);
         PFL_EXPECT(find_descendant_summary_field(*quic_layers[0], "SNI") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+    }
+
+    {
+        const auto udp_payload = std::vector<std::uint8_t> {
+            0x53U, 0x45U, 0x41U, 0x52U, 0x43U, 0x48U, 0x20U, 0x42U,
+            0x53U, 0x44U, 0x50U, 0x2fU, 0x30U, 0x2eU, 0x31U, 0x0aU,
+        };
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_summary_possible_quic_ascii_search_bsdp.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 0, 1, 20),
+                    ipv4(10, 0, 1, 21),
+                    54040,
+                    443,
+                    udp_payload)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.use_possible_tls_quic = true},
+        }));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "possible_quic");
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_EXPECT(find_summary_layer(summary_layers, "quic") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(udp_payload));
+    }
+
+    {
+        const auto short_header_like_payload = std::vector<std::uint8_t> {0x40U, 0xAAU, 0xBBU, 0xCCU, 0xDDU};
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_summary_possible_quic_short_header_only.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 0, 1, 22),
+                    ipv4(10, 0, 1, 23),
+                    54041,
+                    443,
+                    short_header_like_payload)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.use_possible_tls_quic = true},
+        }));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "possible_quic");
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_EXPECT(find_summary_layer(summary_layers, "quic") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(short_header_like_payload));
     }
 
     {
@@ -1098,6 +1207,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(!summary_layers[summary_layers.size() - 2U].expanded_by_default);
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
         const auto* tls_layer = tls_layers[0];
         PFL_EXPECT(tls_layer->expanded_by_default);
         PFL_EXPECT(tls_layer->title.find("Transport Layer Security") != std::string::npos);
@@ -1461,6 +1571,7 @@ void run_packet_details_tests() {
                 break;
             }
         }
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
         PFL_REQUIRE(tcp_index < summary_layers.size());
         PFL_REQUIRE(tcp_index + 3U < summary_layers.size());
         PFL_EXPECT(summary_layers[tcp_index + 1U].id == "tls");
@@ -1919,6 +2030,7 @@ void run_packet_details_tests() {
         const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_2_app_data_3.pcap");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
         PFL_EXPECT(tls_layers[0]->title.find("ApplicationData") != std::string::npos);
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ApplicationData");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Legacy Version") == "TLS 1.2 (0x0303)");
@@ -1931,6 +2043,7 @@ void run_packet_details_tests() {
         const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_3_app_data_7.pcap");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(tls_layers.size() == 2U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
         PFL_EXPECT(tls_layers[0]->title.find("ApplicationData") != std::string::npos);
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ApplicationData");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Legacy Version") == "TLS 1.2 (0x0303)");
@@ -1947,6 +2060,7 @@ void run_packet_details_tests() {
         const auto summary_layers = build_fixture_summary_layers("parsing/tls/tls_1_2_change_cipher_spec_2.pcap");
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(tls_layers.size() == 2U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
         PFL_EXPECT(tls_layers[0]->title.find("ChangeCipherSpec") != std::string::npos);
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ChangeCipherSpec");
         PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "1");
@@ -2056,6 +2170,7 @@ void run_packet_details_tests() {
             );
             const auto tls_layers = find_summary_layers(summary.summary_layers, "tls");
             PFL_REQUIRE(!tls_layers.empty());
+            PFL_EXPECT(find_summary_layer(summary.summary_layers, "data") == nullptr);
             for (std::size_t index = 0U; index + 1U < tls_layers.size(); ++index) {
                 PFL_EXPECT(tls_layers[index]->title.find("ApplicationData") != std::string::npos);
             }
@@ -2247,20 +2362,342 @@ void run_packet_details_tests() {
     }
 
     {
-        CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {}));
-        const auto packet = require_packet(session, 0U);
-        const auto details = session.read_packet_details(packet);
-        PFL_REQUIRE(details.has_value());
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
-            .transport_payload_length = packet.payload_length,
-            .original_transport_payload_length = packet.payload_length,
-            .protocol_details_text = session.read_packet_protocol_details_text(packet),
-        });
+        const auto summary_layers = build_fixture_summary_layers("parsing/http/http_get_1.pcap");
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "tcp");
         PFL_EXPECT(summary_layers.back().id == "http");
         PFL_EXPECT(summary_layers.back().title.find("Hypertext Transfer Protocol") != std::string::npos);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+    }
+
+    {
+        const auto udp_payload = std::vector<std::uint8_t> {0xdeU, 0xadU, 0xbeU, 0xefU};
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_summary_unclaimed_udp_data.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 0, 0, 20),
+                    ipv4(10, 0, 0, 21),
+                    54020,
+                    40000,
+                    udp_payload)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::top_level);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_udp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == udp_payload.size());
+        PFL_EXPECT(details->effective_transport_payload->declared_payload_length == udp_payload.size());
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "dns") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "http") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "quic") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "udp") < find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Role") == "Transport Payload");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "4 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Status") == "Complete");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(udp_payload));
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Displayed Bytes") == "4 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Omitted Bytes") == "0 bytes");
+        PFL_EXPECT(find_summary_field(*data_layers[0], "Declared Length") == nullptr);
+        PFL_EXPECT(find_summary_field(*data_layers[0], "Captured Length") == nullptr);
+    }
+
+    {
+        std::vector<std::uint8_t> tcp_payload {};
+        tcp_payload.reserve(40U);
+        for (std::uint8_t value = 0U; value < 40U; ++value) {
+            tcp_payload.push_back(value);
+        }
+
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_summary_unclaimed_tcp_data.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 0, 0, 22),
+                    ipv4(10, 0, 0, 23),
+                    41020,
+                    40001,
+                    tcp_payload)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::top_level);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_tcp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == tcp_payload.size());
+        PFL_EXPECT(!details->effective_transport_payload->declared_payload_length.has_value());
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "http") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "quic") == nullptr);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp") < find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Role") == "Transport Payload");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "40 bytes");
+        PFL_EXPECT(find_summary_field(*data_layers[0], "Status") == nullptr);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") ==
+            format_expected_hex_byte_list(std::span<const std::uint8_t>(tcp_payload.data(), 32U)));
+        PFL_EXPECT(count_hex_byte_tokens(require_summary_field_value(*data_layers[0], "Preview")) == 32U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Displayed Bytes") == "32 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Omitted Bytes") == "8 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview").find("20 21 22") == std::string::npos);
+    }
+
+    {
+        const auto tcp_capture_path = write_temp_pcap(
+            "pfl_packet_summary_empty_tcp_payload.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 0, 24),
+                    ipv4(10, 0, 0, 25),
+                    41021,
+                    40002)
+            }})
+        );
+        CaptureSession tcp_session {};
+        PFL_EXPECT(tcp_session.open_capture(tcp_capture_path, CaptureImportOptions {}));
+        PFL_EXPECT(find_summary_layer(build_flow_packet_summary_layers(tcp_session, 0U, 0U), "data") == nullptr);
+
+        const auto udp_capture_path = write_temp_pcap(
+            "pfl_packet_summary_empty_udp_payload.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_udp_packet(
+                    ipv4(10, 0, 0, 26),
+                    ipv4(10, 0, 0, 27),
+                    54021,
+                    40003)
+            }})
+        );
+        CaptureSession udp_session {};
+        PFL_EXPECT(udp_session.open_capture(udp_capture_path, CaptureImportOptions {}));
+        PFL_EXPECT(find_summary_layer(build_flow_packet_summary_layers(udp_session, 0U, 0U), "data") == nullptr);
+    }
+
+    {
+        const std::string_view expected_udp_data_text = "INNER-UDP-DATA|0123456789|ABCDEFGHIJKLMNOPQRSTUV";
+        const std::vector<std::uint8_t> expected_udp_data(
+            expected_udp_data_text.begin(),
+            expected_udp_data_text.end()
+        );
+        const auto summary_layers = build_fixture_summary_layers("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap");
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(find_summary_layer(summary_layers, "udp") != nullptr);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "gtpu") != nullptr);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "ipv4-inner") != nullptr);
+        const auto* inner_udp_layer = find_summary_layer(summary_layers, "udp-inner");
+        PFL_REQUIRE(inner_udp_layer != nullptr);
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "udp-inner") + 1U == find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(require_summary_field_value(*inner_udp_layer, "Payload Length") == "48 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Role") == "Transport Payload");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "48 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Status") == "Complete");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") ==
+            format_expected_hex_byte_list(std::span<const std::uint8_t>(expected_udp_data.data(), 32U)));
+        PFL_EXPECT(count_hex_byte_tokens(require_summary_field_value(*data_layers[0], "Preview")) == 32U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Displayed Bytes") == "32 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Omitted Bytes") == "16 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview").find("49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41") == 0U);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_udp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == expected_udp_data.size());
+        PFL_EXPECT(details->effective_transport_payload->declared_payload_length == expected_udp_data.size());
+    }
+
+    {
+        const std::string_view expected_tcp_data_text = "INNER-TCP-DATA|0123456789|abcdefghijklmnopqrstuv";
+        const std::vector<std::uint8_t> expected_tcp_data(
+            expected_tcp_data_text.begin(),
+            expected_tcp_data_text.end()
+        );
+        const auto summary_layers = build_fixture_summary_layers("parsing/gtpu/33_gtpu_inner_ipv4_tcp_data.pcap");
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(find_summary_layer(summary_layers, "udp") != nullptr);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "gtpu") != nullptr);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "ipv4-inner") != nullptr);
+        const auto* inner_tcp_layer = find_summary_layer(summary_layers, "tcp-inner");
+        PFL_REQUIRE(inner_tcp_layer != nullptr);
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp-inner") + 1U == find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(require_summary_field_value(*inner_tcp_layer, "Payload Length") == "48 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Role") == "Transport Payload");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "48 bytes");
+        PFL_EXPECT(find_summary_field(*data_layers[0], "Status") == nullptr);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") ==
+            format_expected_hex_byte_list(std::span<const std::uint8_t>(expected_tcp_data.data(), 32U)));
+        PFL_EXPECT(count_hex_byte_tokens(require_summary_field_value(*data_layers[0], "Preview")) == 32U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Displayed Bytes") == "32 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Omitted Bytes") == "16 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview").find("49 4e 4e 45 52 2d 54 43 50 2d 44 41 54 41") == 0U);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/gtpu/33_gtpu_inner_ipv4_tcp_data.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_tcp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == expected_tcp_data.size());
+        PFL_EXPECT(!details->effective_transport_payload->declared_payload_length.has_value());
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/gtpu/34_gtpu_inner_ipv4_tcp_ack_only.pcap");
+        PFL_REQUIRE(find_summary_layer(summary_layers, "gtpu") != nullptr);
+        const auto* inner_tcp_layer = find_summary_layer(summary_layers, "tcp-inner");
+        PFL_REQUIRE(inner_tcp_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*inner_tcp_layer, "Flags") == "ACK");
+        PFL_EXPECT(require_summary_field_value(*inner_tcp_layer, "Payload Length") == "0 bytes");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/gtpu/34_gtpu_inner_ipv4_tcp_ack_only.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_tcp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == 0U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/gre/15_gre_mpls_ipv4_udp.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_udp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        const auto* gre_layer = find_summary_layer(summary_layers, "gre");
+        const auto* mpls_layer = find_summary_layer(summary_layers, "mpls");
+        const auto* inner_udp_layer = find_summary_layer(summary_layers, "udp-inner");
+        PFL_REQUIRE(gre_layer != nullptr);
+        PFL_REQUIRE(mpls_layer != nullptr);
+        PFL_REQUIRE(inner_udp_layer != nullptr);
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "udp") == nullptr);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "udp-inner") + 1U == find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") ==
+            require_summary_field_value(*inner_udp_layer, "Payload Length"));
+        const auto preview = require_summary_field_value(*data_layers[0], "Preview");
+        PFL_EXPECT(!preview.empty());
+        PFL_EXPECT(preview.find("45 ") != 0U);
+        const auto src_port = static_cast<std::uint16_t>(std::stoul(
+            require_summary_field_value(*inner_udp_layer, "Source Port")
+        ));
+        const auto dst_port = static_cast<std::uint16_t>(std::stoul(
+            require_summary_field_value(*inner_udp_layer, "Destination Port")
+        ));
+        PFL_EXPECT(preview.find(format_transport_port_prefix_hex(src_port, dst_port)) != 0U);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/ah/12_ipv4_ah_inner_ipv4_udp.pcap");
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        const auto* ah_layer = find_summary_layer(summary_layers, "ah");
+        const auto* inner_udp_layer = find_summary_layer(summary_layers, "udp-inner");
+        PFL_REQUIRE(ah_layer != nullptr);
+        PFL_REQUIRE(inner_udp_layer != nullptr);
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "udp") == nullptr);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "udp-inner") + 1U == find_summary_layer_index(summary_layers, "data"));
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "UDP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") ==
+            require_summary_field_value(*inner_udp_layer, "Payload Length"));
+        const auto preview = require_summary_field_value(*data_layers[0], "Preview");
+        PFL_EXPECT(!preview.empty());
+        PFL_EXPECT(preview.find("45 ") != 0U);
+        const auto src_port = static_cast<std::uint16_t>(std::stoul(
+            require_summary_field_value(*inner_udp_layer, "Source Port")
+        ));
+        const auto dst_port = static_cast<std::uint16_t>(std::stoul(
+            require_summary_field_value(*inner_udp_layer, "Destination Port")
+        ));
+        PFL_EXPECT(preview != format_transport_port_prefix_hex(src_port, dst_port));
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/ah/12_ipv4_ah_inner_ipv4_udp.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_udp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == 4U);
+        PFL_EXPECT(details->effective_transport_payload->declared_payload_length == 4U);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/ah/13_ipv4_ah_inner_ipv6_tcp.pcap");
+        PFL_REQUIRE(find_summary_layer(summary_layers, "ah") != nullptr);
+        const auto* inner_tcp_layer = find_summary_layer(summary_layers, "tcp-inner");
+        PFL_REQUIRE(inner_tcp_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*inner_tcp_layer, "Payload Length") == "0 bytes");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/ah/13_ipv4_ah_inner_ipv6_tcp.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_tcp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == 0U);
     }
 
     {

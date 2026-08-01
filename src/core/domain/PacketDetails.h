@@ -421,6 +421,36 @@ struct IcmpV6Details {
     std::uint8_t code {0};
 };
 
+enum class EffectiveTransportKind : std::uint8_t {
+    unknown = 0,
+    tcp,
+    udp,
+};
+
+enum class EffectiveTransportRole : std::uint8_t {
+    top_level = 0,
+    inner,
+};
+
+enum class EffectiveTransportSummaryPlacement : std::uint8_t {
+    none = 0,
+    after_tcp,
+    after_udp,
+    after_inner_tcp,
+    after_inner_udp,
+};
+
+struct EffectiveTransportPayloadDetails {
+    EffectiveTransportKind transport {EffectiveTransportKind::unknown};
+    EffectiveTransportRole role {EffectiveTransportRole::top_level};
+    EffectiveTransportSummaryPlacement summary_placement {EffectiveTransportSummaryPlacement::none};
+    std::uint32_t transport_header_offset {0};
+    std::uint32_t payload_offset {0};
+    std::optional<std::uint32_t> declared_payload_length {};
+    std::uint32_t captured_payload_length {0};
+    bool payload_truncated {false};
+};
+
 struct VxlanInnerPacketDetails {
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
@@ -473,6 +503,9 @@ struct GtpuInnerPacketDetails {
     UdpDetails udp {};
     bool has_sctp {false};
     SctpDetails sctp {};
+    std::optional<std::uint32_t> transport_payload_offset {};
+    std::optional<std::uint32_t> transport_payload_length {};
+    std::optional<std::uint32_t> original_transport_payload_length {};
 };
 
 struct AhInnerPacketDetails {
@@ -627,6 +660,7 @@ struct PacketDetails {
     IPv6Details ipv6 {};
     bool has_ip_encapsulation {false};
     IpEncapsulationDetails ip_encapsulation {};
+    std::optional<EffectiveTransportPayloadDetails> effective_transport_payload {};
 
     bool has_tcp {false};
     TcpDetails tcp {};

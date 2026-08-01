@@ -1,5 +1,7 @@
 #include "app/session/SessionFormatting.h"
 #include "app/session/CaptureSession.h"
+#include "core/services/DnsPacketProtocolAnalyzer.h"
+#include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/TlsInspectionParser.h"
 
@@ -65,6 +67,7 @@ constexpr std::uint8_t kIpv4OptionTimestamp = 68U;
 constexpr std::uint8_t kIpv4OptionLooseSourceRoute = 131U;
 constexpr std::uint8_t kIpv4OptionStrictSourceRoute = 137U;
 constexpr std::uint8_t kIpv4OptionRouterAlert = 148U;
+constexpr std::size_t kPacketDataPreviewMaxBytes = 32U;
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 
@@ -1340,9 +1343,17 @@ void append_gtpu_inner_summary_layers(
         }
         layers.push_back(std::move(layer));
         if (inner.has_tcp) {
-            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_udp) {
-            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_sctp) {
             layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
             if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
@@ -1395,9 +1406,17 @@ void append_gtpu_inner_summary_layers(
             layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
         }
         if (inner.has_tcp) {
-            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_udp) {
-            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_sctp) {
             layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
             if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
@@ -2273,6 +2292,162 @@ std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const Pac
     }
 
     return std::nullopt;
+}
+
+std::string format_packet_data_transport(const PacketDataTransportKind transport) {
+    switch (transport) {
+    case PacketDataTransportKind::tcp:
+        return "TCP";
+    case PacketDataTransportKind::udp:
+        return "UDP";
+    case PacketDataTransportKind::unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+PacketDataTransportKind map_packet_data_transport_kind(const EffectiveTransportKind transport) noexcept {
+    switch (transport) {
+    case EffectiveTransportKind::tcp:
+        return PacketDataTransportKind::tcp;
+    case EffectiveTransportKind::udp:
+        return PacketDataTransportKind::udp;
+    case EffectiveTransportKind::unknown:
+    default:
+        return PacketDataTransportKind::unknown;
+    }
+}
+
+PacketDataPlacement map_packet_data_placement(
+    const EffectiveTransportSummaryPlacement placement
+) noexcept {
+    switch (placement) {
+    case EffectiveTransportSummaryPlacement::after_tcp:
+        return PacketDataPlacement::after_tcp;
+    case EffectiveTransportSummaryPlacement::after_udp:
+        return PacketDataPlacement::after_udp;
+    case EffectiveTransportSummaryPlacement::after_inner_tcp:
+        return PacketDataPlacement::after_inner_tcp;
+    case EffectiveTransportSummaryPlacement::after_inner_udp:
+        return PacketDataPlacement::after_inner_udp;
+    case EffectiveTransportSummaryPlacement::none:
+    default:
+        return PacketDataPlacement::none;
+    }
+}
+
+std::optional<PacketSummaryLayer> build_packet_data_summary_layer(
+    const PacketSummaryOptions& options
+) {
+    if (!options.packet_data.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& data = *options.packet_data;
+    if (data.role != PacketDataRole::transport_payload ||
+        data.disposition != TransportPayloadDisposition::unclaimed_data ||
+        data.transport == PacketDataTransportKind::unknown ||
+        data.captured_length == 0U ||
+        options.packet_data_preview_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    const auto preview_length = std::min<std::size_t>({
+        options.packet_data_preview_bytes.size(),
+        static_cast<std::size_t>(data.captured_length),
+        kPacketDataPreviewMaxBytes,
+    });
+    if (preview_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Role", "Transport Payload"),
+        make_summary_field("Transport", format_packet_data_transport(data.transport)),
+        make_summary_field("Data Length", format_byte_count(data.captured_length)),
+    };
+
+    if (data.truncation_reliable) {
+        fields.push_back(make_summary_field(
+            "Status",
+            data.declared_length_reliable && data.captured_length < data.declared_length
+                ? "Truncated"
+                : "Complete"
+        ));
+    }
+    if (data.declared_length_reliable && data.declared_length != data.captured_length) {
+        fields.push_back(make_summary_field("Declared Length", format_byte_count(data.declared_length)));
+        fields.push_back(make_summary_field("Captured Length", format_byte_count(data.captured_length)));
+    }
+
+    fields.push_back(make_summary_field(
+        "Preview",
+        format_hex_byte_list(options.packet_data_preview_bytes.first(preview_length))
+    ));
+    fields.push_back(make_summary_field("Displayed Bytes", format_byte_count(preview_length)));
+    fields.push_back(make_summary_field(
+        "Omitted Bytes",
+        format_byte_count(static_cast<std::size_t>(data.captured_length) - preview_length)
+    ));
+
+    return PacketSummaryLayer {
+        .id = "data",
+        .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<std::size_t> find_last_summary_layer_index(
+    const std::vector<PacketSummaryLayer>& layers,
+    const std::string_view id
+) {
+    for (std::size_t index = layers.size(); index > 0U; --index) {
+        if (layers[index - 1U].id == id) {
+            return index - 1U;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::size_t> resolve_packet_data_insertion_index(
+    const std::vector<PacketSummaryLayer>& layers,
+    const PacketDataPresentation& data
+) {
+    const auto target_id =
+        data.placement == PacketDataPlacement::after_tcp ? std::string_view {"tcp"} :
+        data.placement == PacketDataPlacement::after_udp ? std::string_view {"udp"} :
+        data.placement == PacketDataPlacement::after_inner_tcp ? std::string_view {"tcp-inner"} :
+        data.placement == PacketDataPlacement::after_inner_udp ? std::string_view {"udp-inner"} :
+        std::string_view {};
+    if (target_id.empty()) {
+        return std::nullopt;
+    }
+
+    const auto target_index = find_last_summary_layer_index(layers, target_id);
+    if (!target_index.has_value()) {
+        return std::nullopt;
+    }
+    return *target_index + 1U;
+}
+
+void insert_packet_data_summary_layer(
+    std::vector<PacketSummaryLayer>& layers,
+    const PacketSummaryOptions& options
+) {
+    const auto data_layer = build_packet_data_summary_layer(options);
+    if (!data_layer.has_value()) {
+        return;
+    }
+
+    if (options.packet_data.has_value()) {
+        if (const auto insertion_index = resolve_packet_data_insertion_index(layers, *options.packet_data);
+            insertion_index.has_value() && *insertion_index <= layers.size()) {
+            layers.insert(layers.begin() + static_cast<std::ptrdiff_t>(*insertion_index), *data_layer);
+            return;
+        }
+    }
+
+    layers.push_back(*data_layer);
 }
 
 std::optional<PacketSummaryLayer> build_ieee_802_3_trailer_layer(const PacketDetails& details) {
@@ -4999,6 +5174,111 @@ std::vector<PacketSummaryLayer> build_quic_summary_layers_for_packets(
     return layers;
 }
 
+TransportPayloadDisposition strongest_transport_payload_disposition(
+    const TransportPayloadDisposition current,
+    const TransportPayloadDisposition candidate
+) {
+    const auto rank = [](const TransportPayloadDisposition disposition) {
+        switch (disposition) {
+        case TransportPayloadDisposition::claimed_by_supported_protocol:
+            return 4;
+        case TransportPayloadDisposition::known_opaque_or_encrypted:
+            return 3;
+        case TransportPayloadDisposition::unavailable_or_truncated:
+            return 2;
+        case TransportPayloadDisposition::unclaimed_data:
+            return 1;
+        case TransportPayloadDisposition::none:
+        default:
+            return 0;
+        }
+    };
+    return rank(candidate) > rank(current) ? candidate : current;
+}
+
+TransportPayloadDisposition classify_quic_payload_ownership(
+    const QuicPresentationResult& presentation
+) {
+    if (presentation.packets.empty()) {
+        return TransportPayloadDisposition::none;
+    }
+
+    for (const auto& packet : presentation.packets) {
+        if (!packet.frames.empty() || !packet.tls_handshakes.empty()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
+    }
+
+    return TransportPayloadDisposition::known_opaque_or_encrypted;
+}
+
+TransportPayloadDisposition classify_tls_record_ownership(
+    const TlsRecordModel& record
+) {
+    if (record.content_type_kind == TlsRecordContentTypeKind::unknown) {
+        return TransportPayloadDisposition::none;
+    }
+    if (record.content_type_kind == TlsRecordContentTypeKind::application_data) {
+        return TransportPayloadDisposition::known_opaque_or_encrypted;
+    }
+    if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+        record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque) {
+        return TransportPayloadDisposition::known_opaque_or_encrypted;
+    }
+    if (record.content_type_kind == TlsRecordContentTypeKind::alert &&
+        record.alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque) {
+        return TransportPayloadDisposition::known_opaque_or_encrypted;
+    }
+    return TransportPayloadDisposition::claimed_by_supported_protocol;
+}
+
+TransportPayloadDisposition classify_tls_records_ownership(
+    const std::vector<TlsRecordModel>& records
+) {
+    auto disposition = TransportPayloadDisposition::none;
+    for (const auto& record : records) {
+        disposition = strongest_transport_payload_disposition(
+            disposition,
+            classify_tls_record_ownership(record)
+        );
+    }
+    return disposition;
+}
+
+TransportPayloadDisposition classify_reconstructed_tls_ownership(
+    const std::vector<TlsSelectedPacketRecordContext>& reconstructed_records
+) {
+    auto disposition = TransportPayloadDisposition::none;
+    for (const auto& record : reconstructed_records) {
+        switch (record.semantic_kind) {
+        case TlsStreamItemSemanticKind::application_data:
+        case TlsStreamItemSemanticKind::encrypted_alert:
+        case TlsStreamItemSemanticKind::encrypted_handshake:
+            disposition = strongest_transport_payload_disposition(
+                disposition,
+                TransportPayloadDisposition::known_opaque_or_encrypted
+            );
+            break;
+        case TlsStreamItemSemanticKind::change_cipher_spec:
+        case TlsStreamItemSemanticKind::plaintext_handshake:
+        case TlsStreamItemSemanticKind::alert:
+        case TlsStreamItemSemanticKind::generic_record:
+        case TlsStreamItemSemanticKind::partial_record:
+        case TlsStreamItemSemanticKind::partial_payload:
+        case TlsStreamItemSemanticKind::gap:
+            disposition = strongest_transport_payload_disposition(
+                disposition,
+                TransportPayloadDisposition::claimed_by_supported_protocol
+            );
+            break;
+        case TlsStreamItemSemanticKind::none:
+        default:
+            break;
+        }
+    }
+    return disposition;
+}
+
 std::vector<PacketSummaryLayer> build_quic_summary_layers(
     const PacketDetails& details,
     const PacketSummaryOptions& options
@@ -5194,6 +5474,94 @@ std::size_t selected_packet_reassembled_tls_prefix_bytes(const PacketSummaryOpti
     }
 
     return std::min(consumed_prefix_bytes, options.transport_payload_bytes.size());
+}
+
+TransportPayloadDisposition inspect_tls_payload_ownership(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    const TlsInspectionParserContext& initial_parser_context
+) {
+    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
+        return TransportPayloadDisposition::none;
+    }
+
+    TlsInspectionParser parser {};
+    const auto inspection = parser.inspect(transport_payload_bytes, initial_parser_context);
+    return classify_tls_records_ownership(inspection.records);
+}
+
+TransportPayloadDisposition detect_selected_packet_tls_ownership(
+    const PacketSummaryOptions& options
+) {
+    auto disposition = classify_reconstructed_tls_ownership(options.reconstructed_tls_records);
+    const auto reassembled_prefix_bytes = selected_packet_reassembled_tls_prefix_bytes(options);
+    if (reassembled_prefix_bytes == 0U) {
+        return strongest_transport_payload_disposition(
+            disposition,
+            inspect_tls_payload_ownership(
+                options.transport_payload_bytes,
+                selected_packet_starting_tls_initial_context(options)
+            )
+        );
+    }
+
+    auto tls_initial_parser_context = options.tls_initial_parser_context;
+    const auto flow_packet_index = options.flow_packet_index;
+    if (flow_packet_index.has_value()) {
+        for (const auto& reconstructed_record : options.reconstructed_tls_records) {
+            const auto* selected_contribution =
+                find_selected_packet_contribution(reconstructed_record, *flow_packet_index);
+            if (selected_contribution == nullptr || selected_packet_starts_record(reconstructed_record, *flow_packet_index)) {
+                continue;
+            }
+            tls_initial_parser_context = advance_tls_summary_parser_context(
+                tls_initial_parser_context,
+                reconstructed_record
+            );
+        }
+    }
+
+    const auto remaining_tls_payload =
+        reassembled_prefix_bytes < options.transport_payload_bytes.size()
+            ? options.transport_payload_bytes.subspan(reassembled_prefix_bytes)
+            : std::span<const std::uint8_t> {};
+    return strongest_transport_payload_disposition(
+        disposition,
+        inspect_tls_payload_ownership(remaining_tls_payload, tls_initial_parser_context)
+    );
+}
+
+TransportPayloadDisposition detect_supported_transport_payload_ownership(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const PacketDetails& details,
+    const PacketSummaryOptions& options
+) {
+    if (options.quic_presentation.has_value()) {
+        const auto quic_disposition = classify_quic_payload_ownership(*options.quic_presentation);
+        if (quic_disposition != TransportPayloadDisposition::none) {
+            return quic_disposition;
+        }
+    }
+
+    const auto tls_disposition = detect_selected_packet_tls_ownership(options);
+    if (tls_disposition != TransportPayloadDisposition::none) {
+        return tls_disposition;
+    }
+
+    if (details.has_udp) {
+        DnsPacketProtocolAnalyzer dns_analyzer {};
+        if (dns_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
+    }
+    if (details.has_tcp) {
+        HttpPacketProtocolAnalyzer http_analyzer {};
+        if (http_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
+    }
+
+    return TransportPayloadDisposition::none;
 }
 
 std::string format_tls_selected_packet_status(
@@ -7095,6 +7463,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         appended_tls_summary = true;
     }
 
+    insert_packet_data_summary_layer(layers, options);
+
     const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
     if (!appended_tls_summary && protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
@@ -7106,6 +7476,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
 SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     CaptureSession& session,
+    const PacketDetails& details,
     const PacketRef& packet,
     std::optional<std::size_t> flow_index,
     std::optional<std::uint64_t> flow_packet_index,
@@ -7135,6 +7506,9 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
                     .semantic_state = TlsInspectionSemanticState::plaintext,
                 },
             };
+    const auto quic_presentation = flow_index.has_value()
+        ? session.derive_quic_presentation_for_packet(*flow_index, packet.packet_index)
+        : std::optional<QuicPresentationResult> {};
 
     SelectedPacketSummaryPreparation preparation {
         .transport_payload = std::move(transport_payload),
@@ -7148,15 +7522,88 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
             .checksum_warning_lines = std::move(checksum_warning_lines),
             .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
             .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
-            .quic_presentation = flow_index.has_value()
-                ? session.derive_quic_presentation_for_packet(*flow_index, packet.packet_index)
-                : std::optional<QuicPresentationResult> {},
+            .quic_presentation = quic_presentation,
         },
     };
     preparation.options.transport_payload_bytes = std::span<const std::uint8_t>(
         preparation.transport_payload.data(),
         preparation.transport_payload.size()
     );
+
+    const auto assign_packet_data_preview_from_packet_offset =
+        [&](const std::size_t offset, const std::size_t captured_length) {
+            preparation.packet_data_preview.clear();
+            if (offset >= packet_bytes.size() || captured_length == 0U) {
+                preparation.options.packet_data_preview_bytes = {};
+                return;
+            }
+
+            const auto preview_length = std::min<std::size_t>({
+                kPacketDataPreviewMaxBytes,
+                captured_length,
+                packet_bytes.size() - offset,
+            });
+            preparation.packet_data_preview.assign(
+                packet_bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+                packet_bytes.begin() + static_cast<std::ptrdiff_t>(offset + preview_length)
+            );
+            preparation.options.packet_data_preview_bytes = std::span<const std::uint8_t>(
+                preparation.packet_data_preview.data(),
+                preparation.packet_data_preview.size()
+            );
+        };
+
+    const auto classify_packet_data_disposition =
+        [&](const PacketDataPresentation& packet_data, const bool transport_truncated) {
+            if (packet_data.captured_length == 0U) {
+                return TransportPayloadDisposition::none;
+            }
+            if (packet.is_ip_fragmented) {
+                return TransportPayloadDisposition::none;
+            }
+            if (transport_truncated ||
+                packet_data.captured_length != packet_data.declared_length) {
+                return TransportPayloadDisposition::unavailable_or_truncated;
+            }
+
+            const auto disposition = detect_supported_transport_payload_ownership(
+                std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                packet.data_link_type,
+                details,
+                preparation.options
+            );
+            return disposition == TransportPayloadDisposition::none
+                ? TransportPayloadDisposition::unclaimed_data
+                : disposition;
+        };
+
+    if (details.effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details.effective_transport_payload;
+        PacketDataPresentation packet_data {};
+        packet_data.role = PacketDataRole::transport_payload;
+        packet_data.transport = map_packet_data_transport_kind(effective_payload.transport);
+        packet_data.placement = map_packet_data_placement(effective_payload.summary_placement);
+        packet_data.captured_length = effective_payload.captured_payload_length;
+        packet_data.declared_length = effective_payload.declared_payload_length.value_or(packet_data.captured_length);
+        packet_data.declared_length_reliable = effective_payload.declared_payload_length.has_value();
+        packet_data.truncation_reliable = effective_payload.declared_payload_length.has_value();
+        assign_packet_data_preview_from_packet_offset(
+            effective_payload.payload_offset,
+            packet_data.captured_length
+        );
+
+        const bool capture_truncated = details.captured_length != details.original_length;
+        const bool transport_truncated =
+            effective_payload.payload_truncated ||
+            (effective_payload.role == EffectiveTransportRole::top_level && capture_truncated);
+        if (transport_truncated && !packet_data.truncation_reliable) {
+            packet_data.disposition = TransportPayloadDisposition::unavailable_or_truncated;
+        } else {
+            packet_data.disposition = classify_packet_data_disposition(packet_data, transport_truncated);
+        }
+        preparation.options.packet_data = packet_data;
+    }
+
     return preparation;
 }
 

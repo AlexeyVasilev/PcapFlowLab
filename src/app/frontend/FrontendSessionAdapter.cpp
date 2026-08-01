@@ -3094,6 +3094,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
                 : std::nullopt;
         auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
             session_,
+            *details,
             packet,
             flow_index,
             internal_flow_packet_index,

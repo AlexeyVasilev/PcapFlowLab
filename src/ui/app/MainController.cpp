@@ -5724,6 +5724,7 @@ void MainController::reloadSelectedPacketDetails() {
         }();
         auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
             session_,
+            *details,
             *packet,
             selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
             flow_packet_index,

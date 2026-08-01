@@ -508,6 +508,13 @@ Current direction note:
 - the TCP and UDP layers should expose conservative transport header fields from selected-packet/on-demand parsing, including header checksums;
 - the TCP layer should expose raw sequence/acknowledgment numbers, header length, window, urgent pointer, and a nested `tcp_options` child when options are present;
 - the `tcp_options` child should keep raw option bytes visible and may contain nested child nodes such as MSS, Window Scale, SACK Permitted, SACK, Timestamps, unknown options, and malformed/warning nodes;
+- Packet Details Summary may append one ephemeral top-level `data` layer immediately after the effective terminal TCP or UDP layer when the selected packet contains captured transport payload bytes that are genuinely unclaimed by any supported child protocol;
+- the effective terminal transport is tunnel-neutral and comes from one shared selected-packet model populated by existing top-level and supported nested dissection paths;
+- the effective terminal transport may be the ordinary top-level TCP/UDP layer or a supported nested terminal inner TCP/UDP layer already exposed by selected-packet decoding; when multiple supported layers exist, the deepest supported terminal transport wins;
+- tunnel-carrier UDP does not independently emit generic `data` when a supported child tunnel owns those bytes, and unsupported tunnel bodies remain deferred rather than being reparsed inside the Summary layer builder;
+- an inner TCP ACK-only packet with zero terminal application payload must not emit `data`;
+- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in Raw / TCP Payload / UDP Payload tabs, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
+- recognized encrypted or opaque protocol payload remains owned by that protocol and must not fall back to generic `data`;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
 - the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.
