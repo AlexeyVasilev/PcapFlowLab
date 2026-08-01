@@ -1211,18 +1211,14 @@ TlsEcdheClientKeyExchangeModel parse_ecdhe_client_key_exchange_body(
 
 std::vector<TlsHandshakeModel> parse_handshake_messages(
     std::span<const std::uint8_t> record_body,
-    const std::size_t record_source_offset,
+    const std::size_t payload_source_offset,
     TlsInspectionParserContext& context
 ) {
     std::vector<TlsHandshakeModel> handshakes {};
     std::size_t offset = 0U;
-    const auto record_body_source_offset = checked_add(record_source_offset, kTlsRecordHeaderSize);
-    if (!record_body_source_offset.has_value()) {
-        return handshakes;
-    }
 
     while (offset < record_body.size()) {
-        const auto handshake_source_offset = checked_add(*record_body_source_offset, offset);
+        const auto handshake_source_offset = checked_add(payload_source_offset, offset);
         if (!handshake_source_offset.has_value()) {
             break;
         }
@@ -1430,7 +1426,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
                     const auto available_record_body_bytes = tls_bytes.size() - (offset + kTlsRecordHeaderSize);
                     record.handshake_messages = parse_handshake_messages(
                         tls_bytes.subspan(offset + kTlsRecordHeaderSize, available_record_body_bytes),
-                        offset,
+                        offset + kTlsRecordHeaderSize,
                         context
                     );
                 } else {
@@ -1466,7 +1462,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
                 record.handshake_payload_kind = TlsHandshakePayloadKind::plaintext;
                 record.handshake_messages = parse_handshake_messages(
                     tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
-                    offset,
+                    offset + kTlsRecordHeaderSize,
                     context
                 );
             } else {
@@ -1502,6 +1498,14 @@ TlsInspectionResult TlsInspectionParser::inspect(
     }
     result.final_context = context;
     return result;
+}
+
+std::vector<TlsHandshakeModel> TlsInspectionParser::inspect_handshake_messages(
+    std::span<const std::uint8_t> handshake_bytes,
+    const TlsInspectionParserContext initial_context
+) const {
+    auto context = initial_context;
+    return parse_handshake_messages(handshake_bytes, 0U, context);
 }
 
 TlsInspectionResult TlsInspectionParser::inspect(

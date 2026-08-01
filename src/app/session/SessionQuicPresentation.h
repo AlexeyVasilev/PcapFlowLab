@@ -10,6 +10,7 @@
 #include "core/domain/Connection.h"
 #include "core/domain/FlowKey.h"
 #include "core/domain/PacketRef.h"
+#include "core/services/TlsInspectionModel.h"
 #include "core/services/TlsHandshakeDetails.h"
 
 namespace pfl {
@@ -43,11 +44,40 @@ struct QuicPresentationShellMetadata {
     std::vector<std::uint8_t> scid {};
 };
 
+enum class QuicPresentationFrameType : std::uint8_t {
+    unknown,
+    ack,
+    crypto,
+    padding,
+    stream,
+    ping,
+};
+
+struct QuicPresentationFrame {
+    QuicPresentationFrameType type {QuicPresentationFrameType::unknown};
+    std::uint8_t wire_type {0U};
+    std::size_t frame_offset {0U};
+    std::size_t frame_length {0U};
+    std::optional<std::uint64_t> crypto_offset {};
+    std::optional<std::size_t> crypto_length {};
+};
+
+struct QuicPresentationPacket {
+    QuicPresentationShellType shell_type {QuicPresentationShellType::none};
+    QuicPresentationShellMetadata shell {};
+    std::vector<std::uint32_t> supported_versions {};
+    std::vector<QuicPresentationFrame> frames {};
+    std::vector<TlsHandshakeModel> tls_handshakes {};
+    std::optional<std::string> sni {};
+    std::size_t packet_bytes_consumed {0U};
+};
+
 struct QuicPresentationResult {
     QuicPresentationShellType shell_type {QuicPresentationShellType::none};
     QuicPresentationShellMetadata shell {};
     std::vector<QuicPresentationSemanticType> semantics {};
     std::vector<QuicPresentationShellType> additional_shell_types {};
+    std::vector<QuicPresentationPacket> packets {};
     std::vector<std::uint64_t> selected_packet_indices {};
     std::vector<std::uint64_t> crypto_packet_indices {};
     std::vector<std::uint8_t> selected_initial_plaintext_payload {};

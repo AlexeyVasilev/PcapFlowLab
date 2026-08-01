@@ -9,11 +9,16 @@
 #include <vector>
 
 #include "app/session/FlowRows.h"
+#include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
 #include "core/services/TlsInspectionModel.h"
+
+namespace pfl {
+class CaptureSession;
+}
 
 namespace pfl::session_detail {
 
@@ -49,6 +54,12 @@ struct PacketSummaryOptions {
     std::vector<std::string> checksum_warning_lines {};
     TlsInspectionParserContext tls_initial_parser_context {};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
+    std::optional<QuicPresentationResult> quic_presentation {};
+};
+
+struct SelectedPacketSummaryPreparation {
+    std::vector<std::uint8_t> transport_payload {};
+    PacketSummaryOptions options {};
 };
 
 std::string format_packet_timestamp(const PacketRef& packet);
@@ -77,6 +88,18 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     const PacketDetails& details,
     const PacketRef& packet,
     const PacketSummaryOptions& options = {}
+);
+SelectedPacketSummaryPreparation prepare_selected_packet_summary(
+    CaptureSession& session,
+    const PacketRef& packet,
+    std::optional<std::size_t> flow_index,
+    std::optional<std::uint64_t> flow_packet_index,
+    std::optional<std::size_t> loaded_packet_window_count,
+    std::string protocol_details_text,
+    std::optional<std::uint32_t> transport_payload_length = {},
+    std::optional<std::uint32_t> original_transport_payload_length = {},
+    std::vector<std::string> checksum_summary_lines = {},
+    std::vector<std::string> checksum_warning_lines = {}
 );
 std::string packet_payload_tab_title(const PacketDetails& details);
 std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details);

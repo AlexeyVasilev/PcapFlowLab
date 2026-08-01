@@ -3566,7 +3566,14 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet(
     return derive_quic_protocol_text_for_packet_context(flow_index, std::vector<std::uint64_t> {packet_index});
 }
 
-std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_context(
+std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_quic_presentation_for_packet(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const {
+    return derive_quic_presentation_for_packet_context(flow_index, std::vector<std::uint64_t> {packet_index});
+}
+
+std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_quic_presentation_for_packet_context(
     const std::size_t flow_index,
     const std::vector<std::uint64_t>& packet_indices
 ) const {
@@ -3586,50 +3593,56 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_
         selected_packet_indices.end()
     );
 
-    const auto build_for_connection = [&](const auto& connection) -> std::optional<std::string> {
-        if (connection.key.protocol != ProtocolId::udp) {
-            return std::nullopt;
-        }
+    const auto build_for_connection =
+        [&](const auto& connection) -> std::optional<session_detail::QuicPresentationResult> {
+            if (connection.key.protocol != ProtocolId::udp) {
+                return std::nullopt;
+            }
 
-        const auto initial_secret_connection_id = find_quic_client_initial_connection_id_for_connection(*this, connection, flow_index);
-        const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
-            ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
-            : std::span<const std::uint8_t> {};
+            const auto initial_secret_connection_id =
+                find_quic_client_initial_connection_id_for_connection(*this, connection, flow_index);
+            const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
+                ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
+                : std::span<const std::uint8_t> {};
 
-        std::optional<QuicPresentationResult> result {};
-        if (connection.has_flow_a) {
-            result = build_quic_presentation_for_selected_direction(
-                *this,
-                connection.flow_a.key,
-                connection.flow_a.packets,
-                selected_packet_indices,
-                initial_secret_connection_id_span,
-                flow_index
-            );
-        }
-        if (!result.has_value() && connection.has_flow_b) {
-            result = build_quic_presentation_for_selected_direction(
-                *this,
-                connection.flow_b.key,
-                connection.flow_b.packets,
-                selected_packet_indices,
-                initial_secret_connection_id_span,
-                flow_index
-            );
-        }
+            std::optional<session_detail::QuicPresentationResult> result {};
+            if (connection.has_flow_a) {
+                result = build_quic_presentation_for_selected_direction(
+                    *this,
+                    connection.flow_a.key,
+                    connection.flow_a.packets,
+                    selected_packet_indices,
+                    initial_secret_connection_id_span,
+                    flow_index
+                );
+            }
+            if (!result.has_value() && connection.has_flow_b) {
+                result = build_quic_presentation_for_selected_direction(
+                    *this,
+                    connection.flow_b.key,
+                    connection.flow_b.packets,
+                    selected_packet_indices,
+                    initial_secret_connection_id_span,
+                    flow_index
+                );
+            }
 
-        if (!result.has_value()) {
-            return std::nullopt;
-        }
-
-        return format_quic_presentation_protocol_text(*result);
-    };
+            return result;
+        };
 
     if (connections[flow_index].family == FlowAddressFamily::ipv4) {
         return build_for_connection(*connections[flow_index].ipv4);
     }
 
     return build_for_connection(*connections[flow_index].ipv6);
+}
+
+std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_context(
+    const std::size_t flow_index,
+    const std::vector<std::uint64_t>& packet_indices
+) const {
+    const auto result = derive_quic_presentation_for_packet_context(flow_index, packet_indices);
+    return result.has_value() ? format_quic_presentation_protocol_text(*result) : std::nullopt;
 }
 
 std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_packet(
@@ -3643,66 +3656,8 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_pack
     const std::size_t flow_index,
     const std::vector<std::uint64_t>& packet_indices
 ) const {
-    if (!has_source_capture() || packet_indices.empty()) {
-        return std::nullopt;
-    }
-
-    const auto& connections = listed_connections();
-    if (flow_index >= connections.size()) {
-        return std::nullopt;
-    }
-
-    std::vector<std::uint64_t> selected_packet_indices = packet_indices;
-    std::sort(selected_packet_indices.begin(), selected_packet_indices.end());
-    selected_packet_indices.erase(
-        std::unique(selected_packet_indices.begin(), selected_packet_indices.end()),
-        selected_packet_indices.end()
-    );
-
-    const auto build_for_connection = [&](const auto& connection) -> std::optional<std::string> {
-        if (connection.key.protocol != ProtocolId::udp) {
-            return std::nullopt;
-        }
-
-        const auto initial_secret_connection_id = find_quic_client_initial_connection_id_for_connection(*this, connection, flow_index);
-        const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
-            ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
-            : std::span<const std::uint8_t> {};
-
-        std::optional<QuicPresentationResult> result {};
-        if (connection.has_flow_a) {
-            result = build_quic_presentation_for_selected_direction(
-                *this,
-                connection.flow_a.key,
-                connection.flow_a.packets,
-                selected_packet_indices,
-                initial_secret_connection_id_span,
-                flow_index
-            );
-        }
-        if (!result.has_value() && connection.has_flow_b) {
-            result = build_quic_presentation_for_selected_direction(
-                *this,
-                connection.flow_b.key,
-                connection.flow_b.packets,
-                selected_packet_indices,
-                initial_secret_connection_id_span,
-                flow_index
-            );
-        }
-
-        if (!result.has_value()) {
-            return std::nullopt;
-        }
-
-        return format_quic_presentation_enrichment(*result);
-    };
-
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        return build_for_connection(*connections[flow_index].ipv4);
-    }
-
-    return build_for_connection(*connections[flow_index].ipv6);
+    const auto result = derive_quic_presentation_for_packet_context(flow_index, packet_indices);
+    return result.has_value() ? format_quic_presentation_enrichment(*result) : std::nullopt;
 }
 
 std::vector<FlowRow> CaptureSession::list_flows() const {

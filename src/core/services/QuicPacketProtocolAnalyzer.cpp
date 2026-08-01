@@ -232,19 +232,42 @@ std::string quic_version_text(const std::uint32_t version) {
     }
 }
 
-struct FramePresenceSummary {
-    bool ack {false};
-    bool crypto {false};
-    bool padding {false};
-    bool stream {false};
-};
+std::string quic_header_form_text(const QuicPacketHeaderForm header_form) {
+    switch (header_form) {
+    case QuicPacketHeaderForm::short_header:
+        return "Short";
+    case QuicPacketHeaderForm::long_header:
+        return "Long";
+    default:
+        return "Unknown";
+    }
+}
 
-std::optional<FramePresenceSummary> summarize_plaintext_frames(std::span<const std::uint8_t> bytes) {
+std::string quic_packet_type_text(const QuicPacketType packet_type) {
+    switch (packet_type) {
+    case QuicPacketType::initial:
+        return "Initial";
+    case QuicPacketType::zero_rtt:
+        return "0-RTT";
+    case QuicPacketType::handshake:
+        return "Handshake";
+    case QuicPacketType::retry:
+        return "Retry";
+    case QuicPacketType::version_negotiation:
+        return "Version Negotiation";
+    case QuicPacketType::protected_payload:
+        return "Protected Payload";
+    default:
+        return "Unknown";
+    }
+}
+
+std::optional<QuicFramePresenceSummary> summarize_plaintext_frames(std::span<const std::uint8_t> bytes) {
     if (bytes.empty() || bytes.size() > kMaxFrameSummaryBytes) {
         return std::nullopt;
     }
 
-    FramePresenceSummary summary {};
+    QuicFramePresenceSummary summary {};
     std::size_t offset = 0U;
     std::size_t frame_count = 0U;
     bool saw_non_padding = false;
@@ -304,7 +327,7 @@ std::optional<FramePresenceSummary> summarize_plaintext_frames(std::span<const s
     return summary;
 }
 
-std::string frame_presence_text(const FramePresenceSummary& summary) {
+std::string frame_presence_text(const QuicFramePresenceSummary& summary) {
     std::vector<std::string> labels {};
     if (summary.ack) {
         labels.emplace_back("ACK");
@@ -333,52 +356,51 @@ std::string frame_presence_text(const FramePresenceSummary& summary) {
     return text.str();
 }
 
-struct ParsedQuicPacket {
-    std::string header_form {};
-    std::string packet_type {};
-    std::uint32_t version {0U};
-    bool has_version {false};
-    std::vector<std::uint8_t> dcid {};
-    std::vector<std::uint8_t> scid {};
-    std::vector<std::uint32_t> supported_versions {};
-    std::optional<FramePresenceSummary> frame_summary {};
-    std::optional<std::string> sni {};
-    std::optional<TlsHandshakeDetails> tls_handshake {};
-};
-
-std::optional<TlsHandshakeDetails> parse_tls_handshake_from_plaintext_payloads(
-    std::span<const std::vector<std::uint8_t>> plaintext_payloads
+std::optional<std::vector<std::uint8_t>> extract_tls_crypto_prefix_from_plaintext_payload(
+    std::span<const std::uint8_t> plaintext_payload
 ) {
     QuicInitialParser initial_parser {};
-    const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(plaintext_payloads);
+    const std::vector<std::vector<std::uint8_t>> plaintext_payloads {
+        std::vector<std::uint8_t>(plaintext_payload.begin(), plaintext_payload.end())
+    };
+    const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(
+        std::span<const std::vector<std::uint8_t>>(plaintext_payloads.data(), plaintext_payloads.size())
+    );
     if (!crypto_prefix.has_value()) {
         return std::nullopt;
     }
 
-    const auto handshake = parse_tls_handshake_details(std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size()));
+    return crypto_prefix;
+}
+
+std::optional<TlsHandshakeDetails> parse_tls_handshake_from_crypto_prefix(
+    std::span<const std::uint8_t> crypto_prefix
+) {
+    const auto handshake = parse_tls_handshake_details(crypto_prefix);
     if (!handshake.has_value() || handshake->details_text.empty()) {
         return std::nullopt;
     }
-
     return handshake;
 }
 
-std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t> udp_payload) {
+std::optional<QuicInspectedPacket> parse_quic_payload(std::span<const std::uint8_t> udp_payload) {
     if (udp_payload.empty()) {
         return std::nullopt;
     }
 
     const auto first = udp_payload[0];
     const bool long_header = (first & 0x80U) != 0U;
+    QuicInitialParser initial_parser {};
 
     if (!long_header) {
         if ((first & 0x40U) == 0U || udp_payload.size() < 4U) {
             return std::nullopt;
         }
 
-        return ParsedQuicPacket {
-            .header_form = "Short",
-            .packet_type = "Protected Payload",
+        return QuicInspectedPacket {
+            .header_form = QuicPacketHeaderForm::short_header,
+            .packet_type = QuicPacketType::protected_payload,
+            .packet_bytes_consumed = udp_payload.size(),
         };
     }
 
@@ -386,10 +408,9 @@ std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t>
         return std::nullopt;
     }
 
-    ParsedQuicPacket packet {
-        .header_form = "Long",
+    QuicInspectedPacket packet {
+        .header_form = QuicPacketHeaderForm::long_header,
         .version = read_be32(udp_payload, 1U),
-        .has_version = true,
     };
 
     std::size_t offset = 5U;
@@ -409,12 +430,13 @@ std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t>
                        udp_payload.begin() + static_cast<std::ptrdiff_t>(offset + scid_length));
     offset += scid_length;
 
-    if (packet.version == 0U) {
-        packet.packet_type = "Version Negotiation";
+    if (*packet.version == 0U) {
+        packet.packet_type = QuicPacketType::version_negotiation;
         while (offset + 4U <= udp_payload.size()) {
             packet.supported_versions.push_back(read_be32(udp_payload, offset));
             offset += 4U;
         }
+        packet.packet_bytes_consumed = udp_payload.size();
         return packet;
     }
 
@@ -424,20 +446,21 @@ std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t>
 
     const auto packet_type_bits = static_cast<std::uint8_t>((first >> 4U) & 0x03U);
     if (packet_type_bits == 0U) {
-        packet.packet_type = "Initial";
+        packet.packet_type = QuicPacketType::initial;
         const auto token_length = read_varint_size(udp_payload, offset);
         if (!token_length.has_value() || !skip_bytes(udp_payload, offset, *token_length)) {
             return std::nullopt;
         }
     } else if (packet_type_bits == 1U) {
-        packet.packet_type = "Protected Payload";
+        packet.packet_type = QuicPacketType::zero_rtt;
     } else if (packet_type_bits == 2U) {
-        packet.packet_type = "Handshake";
+        packet.packet_type = QuicPacketType::handshake;
     } else {
-        packet.packet_type = "Retry";
+        packet.packet_type = QuicPacketType::retry;
         if (udp_payload.size() < offset + 16U) {
             return std::nullopt;
         }
+        packet.packet_bytes_consumed = udp_payload.size();
         return packet;
     }
 
@@ -459,32 +482,59 @@ std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t>
 
     const auto plaintext_candidate = udp_payload.subspan(frame_offset, packet_end - frame_offset);
     packet.frame_summary = summarize_plaintext_frames(plaintext_candidate);
-    if (packet.frame_summary.has_value() && packet.frame_summary->crypto && !plaintext_candidate.empty()) {
-        const std::vector<std::vector<std::uint8_t>> plaintext_payloads {
-            std::vector<std::uint8_t>(plaintext_candidate.begin(), plaintext_candidate.end())
-        };
-        packet.tls_handshake = parse_tls_handshake_from_plaintext_payloads(plaintext_payloads);
+    if (packet.frame_summary.has_value() &&
+        packet.frame_summary->crypto &&
+        !plaintext_candidate.empty() &&
+        packet.packet_type == QuicPacketType::initial) {
+        if (const auto crypto_prefix = extract_tls_crypto_prefix_from_plaintext_payload(plaintext_candidate);
+            crypto_prefix.has_value()) {
+            packet.tls_crypto_prefix = *crypto_prefix;
+        }
     }
 
-    if (packet.packet_type == "Initial") {
-        QuicInitialParser initial_parser {};
-        if (initial_parser.is_client_initial_packet(udp_payload)) {
-            packet.sni = initial_parser.extract_client_initial_sni(udp_payload);
-            if (!packet.tls_handshake.has_value()) {
-                const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(udp_payload);
+    if (packet.packet_type == QuicPacketType::initial) {
+        const auto packet_bytes = udp_payload.first(packet_end);
+        if (initial_parser.is_client_initial_packet(packet_bytes)) {
+            packet.sni = initial_parser.extract_client_initial_sni(packet_bytes);
+            if (packet.tls_crypto_prefix.empty()) {
+                const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(packet_bytes);
                 if (crypto_prefix.has_value()) {
-                    const auto handshake = parse_tls_handshake_details(
-                        std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
-                    );
-                    if (handshake.has_value() && !handshake->details_text.empty()) {
-                        packet.tls_handshake = handshake;
-                    }
+                    packet.tls_crypto_prefix = *crypto_prefix;
                 }
             }
         }
     }
 
+    packet.packet_bytes_consumed = packet_end;
     return packet;
+}
+
+std::optional<QuicDatagramInspection> inspect_quic_payload(std::span<const std::uint8_t> udp_payload) {
+    QuicDatagramInspection inspection {};
+    std::size_t offset = 0U;
+
+    while (offset < udp_payload.size()) {
+        const auto parsed = parse_quic_payload(udp_payload.subspan(offset));
+        if (!parsed.has_value() || parsed->packet_bytes_consumed == 0U) {
+            if (inspection.packets.empty()) {
+                return std::nullopt;
+            }
+            break;
+        }
+
+        inspection.packets.push_back(*parsed);
+        if (parsed->header_form == QuicPacketHeaderForm::short_header) {
+            break;
+        }
+
+        offset += parsed->packet_bytes_consumed;
+    }
+
+    if (inspection.packets.empty()) {
+        return std::nullopt;
+    }
+
+    return inspection;
 }
 
 struct UdpPayloadView {
@@ -568,18 +618,18 @@ bool likely_quic_ports(const std::uint16_t src_port, const std::uint16_t dst_por
     return src_port == kHttpsPort || dst_port == kHttpsPort;
 }
 
-std::string protocol_text_from_packet(const ParsedQuicPacket& packet) {
+std::string protocol_text_from_packet(const QuicInspectedPacket& packet) {
     std::ostringstream text {};
     text << "QUIC\n"
-         << "  Header Form: " << packet.header_form << "\n"
-         << "  Packet Type: " << packet.packet_type;
+         << "  Header Form: " << quic_header_form_text(packet.header_form) << "\n"
+         << "  Packet Type: " << quic_packet_type_text(packet.packet_type);
 
-    if (packet.has_version) {
+    if (packet.version.has_value()) {
         text << "\n"
-             << "  Version: " << quic_version_text(packet.version);
+             << "  Version: " << quic_version_text(*packet.version);
     }
 
-    if (!packet.dcid.empty() || packet.header_form == "Long") {
+    if (!packet.dcid.empty() || packet.header_form == QuicPacketHeaderForm::long_header) {
         text << "\n"
              << "  Destination Connection ID Length: " << packet.dcid.size();
         if (!packet.dcid.empty()) {
@@ -588,7 +638,7 @@ std::string protocol_text_from_packet(const ParsedQuicPacket& packet) {
         }
     }
 
-    if (!packet.scid.empty() || packet.header_form == "Long") {
+    if (!packet.scid.empty() || packet.header_form == QuicPacketHeaderForm::long_header) {
         text << "\n"
              << "  Source Connection ID Length: " << packet.scid.size();
         if (!packet.scid.empty()) {
@@ -621,16 +671,41 @@ std::string protocol_text_from_packet(const ParsedQuicPacket& packet) {
              << "  SNI: " << *packet.sni;
     }
 
-    if (packet.tls_handshake.has_value()) {
+    if (const auto tls_handshake = parse_tls_handshake_from_crypto_prefix(
+            std::span<const std::uint8_t>(packet.tls_crypto_prefix.data(), packet.tls_crypto_prefix.size()));
+        tls_handshake.has_value()) {
         text << "\n"
-             << "  TLS Handshake Type: " << packet.tls_handshake->handshake_type_text << "\n"
-             << "  TLS Handshake Length: " << packet.tls_handshake->handshake_length;
-        if (!packet.tls_handshake->details_text.empty()) {
-            text << "\n" << packet.tls_handshake->details_text;
+             << "  TLS Handshake Type: " << tls_handshake->handshake_type_text << "\n"
+             << "  TLS Handshake Length: " << tls_handshake->handshake_length;
+        if (!tls_handshake->details_text.empty()) {
+            text << "\n" << tls_handshake->details_text;
         }
     }
 
     return text.str();
+}
+
+std::string protocol_text_from_datagram(const QuicDatagramInspection& inspection) {
+    if (inspection.packets.empty()) {
+        return {};
+    }
+
+    std::string text = protocol_text_from_packet(inspection.packets.front());
+    if (inspection.packets.size() <= 1U) {
+        return text;
+    }
+
+    std::ostringstream additional {};
+    additional << "\n  Coalesced Packet Count: " << inspection.packets.size()
+               << "\n  Additional Packet Types: ";
+    for (std::size_t index = 1U; index < inspection.packets.size(); ++index) {
+        if (index > 1U) {
+            additional << ", ";
+        }
+        additional << quic_packet_type_text(inspection.packets[index].packet_type);
+    }
+    text += additional.str();
+    return text;
 }
 
 }  // namespace
@@ -639,22 +714,36 @@ std::optional<std::string> QuicPacketProtocolAnalyzer::analyze(std::span<const s
     return analyze(packet_bytes, kLinkTypeEthernet);
 }
 
-std::optional<std::string> QuicPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
+std::optional<QuicDatagramInspection> QuicPacketProtocolAnalyzer::inspect(std::span<const std::uint8_t> packet_bytes) const {
+    return inspect(packet_bytes, kLinkTypeEthernet);
+}
+
+std::optional<QuicDatagramInspection> QuicPacketProtocolAnalyzer::inspect(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type
+) const {
     const auto udp_view = extract_udp_payload_view(packet_bytes, data_link_type);
     if (!udp_view.has_value() || !likely_quic_ports(udp_view->src_port, udp_view->dst_port)) {
         return std::nullopt;
     }
 
-    return analyze_udp_payload(udp_view->payload);
+    return inspect_udp_payload(udp_view->payload);
+}
+
+std::optional<std::string> QuicPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
+    const auto inspection = inspect(packet_bytes, data_link_type);
+    return inspection.has_value() ? std::optional<std::string> {protocol_text_from_datagram(*inspection)} : std::nullopt;
 }
 
 std::optional<std::string> QuicPacketProtocolAnalyzer::analyze_udp_payload(std::span<const std::uint8_t> udp_payload) const {
-    const auto packet = parse_quic_payload(udp_payload);
-    if (!packet.has_value()) {
-        return std::nullopt;
-    }
+    const auto inspection = inspect_udp_payload(udp_payload);
+    return inspection.has_value() ? std::optional<std::string> {protocol_text_from_datagram(*inspection)} : std::nullopt;
+}
 
-    return protocol_text_from_packet(*packet);
+std::optional<QuicDatagramInspection> QuicPacketProtocolAnalyzer::inspect_udp_payload(
+    std::span<const std::uint8_t> udp_payload
+) const {
+    return inspect_quic_payload(udp_payload);
 }
 
 }  // namespace pfl

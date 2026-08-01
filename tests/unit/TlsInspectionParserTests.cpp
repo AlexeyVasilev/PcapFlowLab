@@ -2392,6 +2392,48 @@ void run_tls_inspection_parser_tests() {
     }
 
     {
+        ScopedTestContext context {"synthetic=raw_handshake_offsets_start_at_zero"};
+        std::vector<std::uint8_t> extensions {};
+        append_extension(extensions, 0xFAFAU, {});
+        const auto client_hello = make_tls_handshake_message(
+            0x01U,
+            make_minimal_client_hello_body_with_extensions(extensions)
+        );
+        const auto unknown_handshake = make_tls_handshake_message(0x7FU, {0xAAU, 0xBBU});
+        std::vector<std::uint8_t> handshake_bytes = client_hello;
+        handshake_bytes.insert(handshake_bytes.end(), unknown_handshake.begin(), unknown_handshake.end());
+
+        const auto handshakes = parser.inspect_handshake_messages(
+            handshake_bytes,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+            }
+        );
+        PFL_REQUIRE(handshakes.size() == 2U);
+        PFL_EXPECT(handshakes[0].source_offset == 0U);
+        PFL_EXPECT(handshakes[0].total_size == std::optional<std::size_t> {51U});
+        PFL_EXPECT(handshakes[1].source_offset == 51U);
+        PFL_EXPECT(handshakes[1].total_size == std::optional<std::size_t> {6U});
+    }
+
+    {
+        ScopedTestContext context {"synthetic=raw_handshake_partial_body_offsets_are_input_relative"};
+        const std::array<std::uint8_t, 6> handshake_bytes {
+            0x01U, 0x00U, 0x00U, 0x08U, 0xAAU, 0xBBU
+        };
+        const auto handshakes = parser.inspect_handshake_messages(
+            handshake_bytes,
+            TlsInspectionParserContext {
+                .semantic_state = TlsInspectionSemanticState::plaintext,
+            }
+        );
+        PFL_REQUIRE(handshakes.size() == 1U);
+        PFL_EXPECT(handshakes[0].source_offset == 0U);
+        PFL_EXPECT(handshakes[0].status == TlsHandshakeStatus::partial_body);
+        PFL_EXPECT(handshakes[0].available_bytes == 6U);
+    }
+
+    {
         ScopedTestContext context {"synthetic=partial_handshake_body_available_bytes"};
         const auto result = parser.inspect(make_tls_record(
             0x16U,

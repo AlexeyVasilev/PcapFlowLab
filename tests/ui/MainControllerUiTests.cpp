@@ -172,47 +172,6 @@ void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
-void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t value) {
-    if (value < 64U) {
-        bytes.push_back(static_cast<std::uint8_t>(value));
-        return;
-    }
-
-    ::pfl::tests::require(value < 16384U, "value < 16384U", __FILE__, __LINE__);
-    bytes.push_back(static_cast<std::uint8_t>(0x40U | ((value >> 8U) & 0x3FU)));
-    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
-}
-
-std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<std::uint8_t>& frame_bytes) {
-    std::vector<std::uint8_t> payload {
-        0xC0U,
-        0x00U, 0x00U, 0x00U, 0x01U,
-        0x08U,
-        0x11U, 0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U,
-        0x08U,
-        0x99U, 0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU, 0xFFU, 0x00U,
-        0x00U,
-    };
-
-    append_quic_varint(payload, frame_bytes.size() + 1U);
-    payload.push_back(0x00U);
-    payload.insert(payload.end(), frame_bytes.begin(), frame_bytes.end());
-    return payload;
-}
-
-std::vector<std::uint8_t> make_quic_crypto_frame_bytes(
-    const std::vector<std::uint8_t>& crypto_bytes = std::vector<std::uint8_t> {'a', 'b', 'c'}
-) {
-    std::vector<std::uint8_t> frame {0x06U, 0x00U};
-    append_quic_varint(frame, crypto_bytes.size());
-    frame.insert(frame.end(), crypto_bytes.begin(), crypto_bytes.end());
-    return frame;
-}
-
-std::vector<std::uint8_t> make_quic_ack_frame_bytes() {
-    return {0x02U, 0x00U, 0x00U, 0x00U, 0x00U};
-}
-
 std::vector<std::uint8_t> make_tls_handshake_record(
     const std::uint8_t handshake_type,
     const std::vector<std::uint8_t>& body,
@@ -3068,38 +3027,6 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("originalLength")).toUInt() == 2978U);
     UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("2920"));
 
-    const auto quic_crypto_frame_bytes = make_quic_crypto_frame_bytes();
-    const auto quic_ack_frame_bytes = make_quic_ack_frame_bytes();
-    const auto quic_size_capture_path = write_temp_pcap(
-        "pfl_ui_quic_item_sizes.pcap",
-        make_classic_pcap({
-            {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                ipv4(10, 51, 0, 1), ipv4(10, 51, 0, 2), 54500, 443,
-                make_plaintext_quic_initial_payload(quic_crypto_frame_bytes))},
-            {200, make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                ipv4(10, 51, 0, 1), ipv4(10, 51, 0, 2), 54500, 443,
-                make_plaintext_quic_initial_payload(quic_ack_frame_bytes))},
-        })
-    );
-
-    MainController quic_size_controller {};
-    UI_EXPECT(open_capture_and_wait(app, quic_size_controller, quic_size_capture_path));
-    quic_size_controller.setFlowDetailsTabIndex(1);
-    quic_size_controller.setSelectedFlowIndex(0);
-    auto* quic_size_stream_model = qobject_cast<StreamListModel*>(quic_size_controller.streamModel());
-    auto* quic_size_details_model = qobject_cast<PacketDetailsViewModel*>(quic_size_controller.packetDetailsModel());
-    UI_EXPECT(quic_size_stream_model != nullptr);
-    UI_EXPECT(quic_size_details_model != nullptr);
-    UI_EXPECT(quic_size_stream_model->rowCount() == 2);
-    UI_EXPECT(quic_size_stream_model->data(quic_size_stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
-    UI_EXPECT(quic_size_stream_model->data(quic_size_stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == quic_crypto_frame_bytes.size());
-    UI_EXPECT(quic_size_stream_model->data(quic_size_stream_model->index(1, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: ACK"));
-    UI_EXPECT(quic_size_stream_model->data(quic_size_stream_model->index(1, 0), StreamListModel::ByteCountRole).toUInt() == quic_ack_frame_bytes.size());
-    quic_size_controller.setSelectedStreamItemIndex(
-        quic_size_stream_model->data(quic_size_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong()
-    );
-    UI_EXPECT(quic_size_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
-
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
     MainController tls_details_controller {};
     UI_EXPECT(open_capture_and_wait(app, tls_details_controller, tls_capture_path));
@@ -3261,6 +3188,8 @@ int main(int argc, char* argv[]) {
         QStringLiteral("QUIC Initial: ACK")
     );
 
+    // Use a checked-in decryptable Initial fixture here rather than synthetic plaintext bytes
+    // so StreamListModel label/byte-count projection stays aligned with production QUIC semantics.
     const auto quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "quic_constricted_1.pcap";
     MainController quic_constricted_controller {};
     UI_EXPECT(open_capture_and_wait(app, quic_constricted_controller, quic_constricted_fixture_path));

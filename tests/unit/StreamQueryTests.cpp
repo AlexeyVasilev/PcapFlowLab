@@ -4319,6 +4319,9 @@ void run_stream_query_tests() {
         PFL_EXPECT(packet_eight_row != rows.end());
         PFL_EXPECT(packet_eight_row->label == "QUIC Initial");
         PFL_EXPECT(packet_eight_row->label != "QUIC Initial: ACK");
+        PFL_EXPECT(packet_eight_row->label != "QUIC Initial: CRYPTO");
+        PFL_EXPECT(packet_eight_row->protocol_text.find("Frame Presence: ACK") == std::string::npos);
+        PFL_EXPECT(packet_eight_row->protocol_text.find("Frame Presence: CRYPTO") == std::string::npos);
     }
 
     {

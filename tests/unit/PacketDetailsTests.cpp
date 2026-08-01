@@ -9,6 +9,7 @@
 #include "TestSupport.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionTlsPresentation.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
 #include "core/services/HexDumpService.h"
@@ -168,6 +169,55 @@ const session_detail::PacketSummaryLayer* require_summary_child(
     return child;
 }
 
+const session_detail::PacketSummaryLayer* find_descendant_summary_layer(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& id
+) {
+    for (const auto& child : layer.children) {
+        if (child.id == id) {
+            return &child;
+        }
+        if (const auto* descendant = find_descendant_summary_layer(child, id); descendant != nullptr) {
+            return descendant;
+        }
+    }
+    return nullptr;
+}
+
+const session_detail::PacketSummaryField* find_descendant_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    if (const auto* field = find_summary_field(layer, label); field != nullptr) {
+        return field;
+    }
+
+    for (const auto& child : layer.children) {
+        if (const auto* descendant = find_descendant_summary_field(child, label); descendant != nullptr) {
+            return descendant;
+        }
+    }
+    return nullptr;
+}
+
+const session_detail::PacketSummaryLayer* find_descendant_summary_layer_with_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label,
+    const std::string& value
+) {
+    if (const auto* field = find_summary_field(layer, label); field != nullptr && field->value == value) {
+        return &layer;
+    }
+
+    for (const auto& child : layer.children) {
+        if (const auto* descendant = find_descendant_summary_layer_with_field_value(child, label, value);
+            descendant != nullptr) {
+            return descendant;
+        }
+    }
+    return nullptr;
+}
+
 void expect_summary_child_titles(
     const session_detail::PacketSummaryLayer& layer,
     const std::vector<std::string>& expected_titles
@@ -242,28 +292,22 @@ SelectedPacketSummaryResult build_selected_packet_summary(
     const auto packet = require_packet(session, packet_index);
     const auto details = session.read_packet_details(packet);
     PFL_REQUIRE(details.has_value());
-
-    const auto packet_bytes = session.read_packet_data(packet);
-    PacketPayloadService payload_service {};
-    const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-    auto tls_packet_analysis = session_detail::analyze_selected_packet_tls_contexts(
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
         session,
+        packet,
         flow_index,
         flow_packet_index,
-        loaded_packet_window_count
+        loaded_packet_window_count,
+        session.read_packet_protocol_details_text(packet),
+        packet.payload_length,
+        packet.payload_length
     );
 
+    auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.options);
+    auto reconstructed_tls_records = std::move(packet_summary_preparation.options.reconstructed_tls_records);
     return SelectedPacketSummaryResult {
-        .summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
-            .flow_packet_index = flow_packet_index,
-            .transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
-            .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
-            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-            .protocol_details_text = session.read_packet_protocol_details_text(packet),
-            .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
-            .reconstructed_tls_records = tls_packet_analysis.reconstructed_records,
-        }),
-        .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
+        .summary_layers = std::move(summary_layers),
+        .reconstructed_tls_records = std::move(reconstructed_tls_records),
     };
 }
 
@@ -309,16 +353,68 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
     PFL_REQUIRE(details.has_value());
-    const auto packet_bytes = session.read_packet_data(packet);
-    PacketPayloadService payload_service {};
-    const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-    return session_detail::build_packet_summary_layers(*details, packet, {
-        .source_capture_accessible = true,
-        .transport_payload_length = packet.payload_length,
-        .original_transport_payload_length = packet.payload_length,
-        .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-        .protocol_details_text = session.read_packet_protocol_details_text(packet),
-    });
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> flow_packet_index {};
+
+    const auto flow_rows = session.list_flows();
+    for (const auto& flow_row : flow_rows) {
+        const auto packet_rows = session.list_flow_packets(flow_row.index);
+        const auto packet_it = std::find_if(packet_rows.begin(), packet_rows.end(), [&](const PacketRow& row) {
+            return row.packet_index == packet.packet_index;
+        });
+        if (packet_it == packet_rows.end()) {
+            continue;
+        }
+
+        flow_index = flow_row.index;
+        PFL_REQUIRE(packet_it->row_number > 0U);
+        flow_packet_index = packet_it->row_number - 1U;
+        break;
+    }
+
+    const auto loaded_packet_window_count = flow_index.has_value()
+        ? std::optional<std::size_t> {session.list_flow_packets(*flow_index).size()}
+        : std::nullopt;
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session,
+        packet,
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count,
+        session.read_packet_protocol_details_text(packet),
+        packet.payload_length,
+        packet.payload_length
+    );
+    return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.options);
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    const std::uint64_t packet_index,
+    const std::size_t loaded_packet_window_count = 64U,
+    const std::string& protocol_details_text_override = {}
+) {
+    const auto packet = require_packet(session, packet_index);
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+    const auto flow_packet_number = session.selected_flow_exact_packet_number(flow_index, packet_index);
+    PFL_REQUIRE(flow_packet_number.has_value());
+    const auto internal_flow_packet_index = *flow_packet_number - 1U;
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session,
+        packet,
+        flow_index,
+        internal_flow_packet_index,
+        loaded_packet_window_count,
+        protocol_details_text_override.empty()
+            ? session.derive_quic_protocol_text_for_packet(flow_index, packet.packet_index)
+                .value_or(session.read_packet_protocol_details_text(packet))
+            : protocol_details_text_override,
+        packet.payload_length,
+        packet.payload_length
+    );
+    return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.options);
 }
 
 void expect_ecdhe_server_key_exchange_summary(
@@ -814,20 +910,180 @@ void run_packet_details_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {}));
-        const auto packet = require_packet(session, 0U);
-        const auto details = session.read_packet_details(packet);
-        PFL_REQUIRE(details.has_value());
-        const auto protocol_text = session.derive_quic_protocol_text_for_packet(0U, packet.packet_index)
-            .value_or(session.read_packet_protocol_details_text(packet));
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
-            .transport_payload_length = packet.payload_length,
-            .original_transport_payload_length = packet.payload_length,
-            .protocol_details_text = protocol_text,
-        });
+        const auto presentation = session.derive_quic_presentation_for_packet(0U, 0U);
+        PFL_REQUIRE(presentation.has_value());
+        PFL_REQUIRE(presentation->packets.size() == 1U);
+        PFL_EXPECT(presentation->packets[0].shell_type == session_detail::QuicPresentationShellType::initial);
+        PFL_EXPECT(std::any_of(
+            presentation->packets[0].frames.begin(),
+            presentation->packets[0].frames.end(),
+            [](const session_detail::QuicPresentationFrame& frame) {
+                return frame.type == session_detail::QuicPresentationFrameType::crypto;
+            }
+        ));
+        PFL_REQUIRE(presentation->packets[0].tls_handshakes.size() == 1U);
+        PFL_EXPECT(presentation->packets[0].tls_handshakes[0].kind == TlsHandshakeKind::client_hello);
+        PFL_EXPECT(presentation->sni == std::optional<std::string> {"bag.itunes.apple.com"});
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {}));
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U, 64U, std::string {});
         PFL_EXPECT(summary_layers.size() >= 5U);
-        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
-        PFL_EXPECT(summary_layers.back().id == "quic");
-        PFL_EXPECT(summary_layers.back().title.find("QUIC") != std::string::npos);
+        const auto* udp_layer = find_summary_layer(summary_layers, "udp");
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(udp_layer != nullptr);
+        PFL_REQUIRE(quic_layers.size() == 1U);
+        PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Frame Presence") == "CRYPTO");
+        const auto* crypto_frame = find_summary_child(*quic_layers[0], "quic_frame");
+        PFL_REQUIRE(crypto_frame != nullptr);
+        PFL_EXPECT(require_summary_field_value(*crypto_frame, "Type") == "CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "SNI") == "bag.itunes.apple.com");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_example_1.pcap"), CaptureImportOptions {}));
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 14U);
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(quic_layers.size() == 2U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[1], "Packet Type") == "Protected Payload");
+        PFL_EXPECT(tls_layers.empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"), CaptureImportOptions {}));
+        const auto mixed_summary_layers = build_flow_packet_summary_layers(session, 0U, 2U);
+        const auto mixed_quic_layers = find_summary_layers(mixed_summary_layers, "quic");
+        const auto mixed_tls_layers = find_summary_layers(mixed_summary_layers, "tls");
+        PFL_REQUIRE(mixed_quic_layers.size() == 2U);
+        PFL_REQUIRE(mixed_tls_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*mixed_quic_layers[0], "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*mixed_quic_layers[0], "Frame Presence") == "CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*mixed_tls_layers[0], "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*mixed_quic_layers[1], "Packet Type") == "0-RTT");
+
+        const auto server_hello_summary_layers = build_flow_packet_summary_layers(session, 0U, 12U);
+        const auto server_hello_quic_layers = find_summary_layers(server_hello_summary_layers, "quic");
+        const auto server_hello_tls_layers = find_summary_layers(server_hello_summary_layers, "tls");
+        PFL_REQUIRE(server_hello_quic_layers.size() == 1U);
+        PFL_REQUIRE(server_hello_tls_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*server_hello_quic_layers[0], "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*server_hello_quic_layers[0], "Frame Presence") == "CRYPTO, PADDING");
+        PFL_EXPECT(require_summary_field_value(*server_hello_tls_layers[0], "Handshake Type") == "ServerHello");
+        PFL_EXPECT(find_summary_field(*server_hello_tls_layers[0], "SNI") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_sh_2.pcap"), CaptureImportOptions {}));
+        const auto presentation = session.derive_quic_presentation_for_packet(0U, 0U);
+        PFL_REQUIRE(presentation.has_value());
+        PFL_REQUIRE(presentation->packets.size() == 1U);
+        PFL_EXPECT(presentation->packets[0].shell_type == session_detail::QuicPresentationShellType::initial);
+        PFL_EXPECT(std::any_of(
+            presentation->packets[0].frames.begin(),
+            presentation->packets[0].frames.end(),
+            [](const session_detail::QuicPresentationFrame& frame) {
+                return frame.type == session_detail::QuicPresentationFrameType::crypto;
+            }
+        ));
+        PFL_REQUIRE(presentation->packets[0].tls_handshakes.size() == 1U);
+        PFL_EXPECT(presentation->packets[0].tls_handshakes[0].kind == TlsHandshakeKind::server_hello);
+        PFL_EXPECT(presentation->sni == std::nullopt);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/quic/quic_initial_sh_2.pcap");
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(quic_layers.size() == 1U);
+        PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Frame Presence") == "CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ServerHello");
+        PFL_EXPECT(find_summary_field(*tls_layers[0], "SNI") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/quic/quic_handshake_3.pcap");
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(quic_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Handshake");
+        PFL_EXPECT(tls_layers.empty());
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/quic/quic_protected_payload_4.pcap");
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(quic_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Short");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Protected Payload");
+        PFL_EXPECT(find_summary_field(*quic_layers[0], "Version") == nullptr);
+        PFL_EXPECT(tls_layers.empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ack_decrypt_ok_1.pcap"), CaptureImportOptions {}));
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 7U);
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(quic_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Frame Presence") == "ACK");
+        PFL_EXPECT(tls_layers.empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ack_wrong_pkn_1.pcap"), CaptureImportOptions {}));
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 7U);
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(quic_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
+        PFL_EXPECT(find_summary_field(*quic_layers[0], "Frame Presence") == nullptr);
+        PFL_EXPECT(find_descendant_summary_layer(*quic_layers[0], "quic_frame") == nullptr);
+        PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Type", "ACK") == nullptr);
+        PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Type", "CRYPTO") == nullptr);
+        PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Type", "PADDING") == nullptr);
+        PFL_EXPECT(tls_layers.empty());
+        PFL_EXPECT(find_descendant_summary_layer(*quic_layers[0], "tls") == nullptr);
+        PFL_EXPECT(find_descendant_summary_field(*quic_layers[0], "Handshake Type") == nullptr);
+        PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Handshake Type", "ClientHello") == nullptr);
+        PFL_EXPECT(find_descendant_summary_layer_with_field_value(*quic_layers[0], "Handshake Type", "ServerHello") == nullptr);
+        PFL_EXPECT(find_descendant_summary_field(*quic_layers[0], "SNI") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/quic/ipv6_quic_constricted_1.pcap");
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        PFL_REQUIRE(!quic_layers.empty());
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_constricted_1.pcap"), CaptureImportOptions {}));
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U, 30U, std::string {});
+        const auto quic_layers = find_summary_layers(summary_layers, "quic");
+        PFL_REQUIRE(!quic_layers.empty());
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
+        PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
     }
 
     {
