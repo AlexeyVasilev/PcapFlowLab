@@ -558,6 +558,24 @@ std::vector<const session_detail::PacketSummaryLayer*> find_top_level_summary_la
     return matches;
 }
 
+const session_detail::PacketSummaryLayer* find_child_summary_layer(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view id,
+    const std::size_t occurrence = 0U
+) {
+    std::size_t current = 0U;
+    for (const auto& child : layer.children) {
+        if (child.id != id) {
+            continue;
+        }
+        if (current == occurrence) {
+            return &child;
+        }
+        ++current;
+    }
+    return nullptr;
+}
+
 const session_detail::PacketSummaryField* find_summary_field(
     const session_detail::PacketSummaryLayer& layer,
     const std::string_view label
@@ -3279,6 +3297,119 @@ void run_stream_query_tests() {
         PFL_EXPECT(quic_row->protocol_text.find("TLS Handshake Type: ClientHello") != std::string::npos);
         PFL_EXPECT(quic_row->protocol_text.find("Cipher Suites:") != std::string::npos);
         PFL_EXPECT(quic_row->protocol_text.find("SNI:") != std::string::npos);
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto summary_layers = build_stream_summary_layers(*quic_row, packet_rows);
+        const auto* stream_item_layer = find_top_level_summary_layer(summary_layers, "stream_item");
+        const auto* quic_layer = find_top_level_summary_layer(summary_layers, "quic");
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(stream_item_layer != nullptr);
+        PFL_REQUIRE(quic_layer != nullptr);
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(find_top_level_summary_layers(summary_layers, "tls").size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Label") == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Stream item");
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Frame Presence") == "CRYPTO");
+        PFL_EXPECT(quic_layer->children.size() == 1U);
+        const auto* crypto_frame = find_child_summary_layer(*quic_layer, "quic_frame");
+        PFL_REQUIRE(crypto_frame != nullptr);
+        PFL_EXPECT(require_summary_field_value(*crypto_frame, "Type") == "CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "SNI") == "bag.itunes.apple.com");
+        PFL_EXPECT(find_summary_field(*tls_layer, "Selected Cipher Suite") == nullptr);
+    }
+
+    {
+        const auto overlapping_crypto_frame = session_detail::QuicPresentationFrame {
+            .type = session_detail::QuicPresentationFrameType::crypto,
+            .wire_type = 0x06U,
+            .frame_offset = 0U,
+            .frame_length = 12U,
+            .crypto_offset = 4U,
+            .crypto_length = 12U,
+        };
+        const auto unrelated_crypto_frame = session_detail::QuicPresentationFrame {
+            .type = session_detail::QuicPresentationFrameType::crypto,
+            .wire_type = 0x06U,
+            .frame_offset = 16U,
+            .frame_length = 8U,
+            .crypto_offset = 40U,
+            .crypto_length = 8U,
+        };
+        const auto client_hello = TlsHandshakeModel {
+            .source_offset = 0U,
+            .type = 0x01U,
+            .kind = TlsHandshakeKind::client_hello,
+            .declared_body_length = 15U,
+            .total_size = 19U,
+            .available_bytes = 19U,
+            .status = TlsHandshakeStatus::complete,
+        };
+        const auto server_hello = TlsHandshakeModel {
+            .source_offset = 40U,
+            .type = 0x02U,
+            .kind = TlsHandshakeKind::server_hello,
+            .declared_body_length = 7U,
+            .total_size = 11U,
+            .available_bytes = 11U,
+            .status = TlsHandshakeStatus::complete,
+        };
+        const std::array<TlsHandshakeModel, 2U> distinct_handshakes {client_hello, server_hello};
+
+        const auto overlapping_match = session_detail::select_tls_handshakes_for_quic_crypto_frames(
+            std::span<const session_detail::QuicPresentationFrame>(&overlapping_crypto_frame, 1U),
+            std::span<const TlsHandshakeModel>(distinct_handshakes.data(), distinct_handshakes.size())
+        );
+        PFL_EXPECT(overlapping_match.size() == 1U);
+        PFL_EXPECT(overlapping_match[0].kind == TlsHandshakeKind::client_hello);
+
+        const auto unrelated_match = session_detail::select_tls_handshakes_for_quic_crypto_frames(
+            std::span<const session_detail::QuicPresentationFrame>(&unrelated_crypto_frame, 1U),
+            std::span<const TlsHandshakeModel>(distinct_handshakes.data(), distinct_handshakes.size())
+        );
+        PFL_EXPECT(unrelated_match.size() == 1U);
+        PFL_EXPECT(unrelated_match[0].kind == TlsHandshakeKind::server_hello);
+
+        const std::array<session_detail::QuicPresentationFrame, 2U> mixed_frames {
+            overlapping_crypto_frame,
+            unrelated_crypto_frame,
+        };
+        const std::array<TlsHandshakeModel, 3U> duplicated_handshakes {
+            client_hello,
+            client_hello,
+            server_hello,
+        };
+        const auto mixed_match = session_detail::select_tls_handshakes_for_quic_crypto_frames(
+            std::span<const session_detail::QuicPresentationFrame>(mixed_frames.data(), mixed_frames.size()),
+            std::span<const TlsHandshakeModel>(duplicated_handshakes.data(), duplicated_handshakes.size())
+        );
+        PFL_EXPECT(mixed_match.size() == 2U);
+        PFL_EXPECT(mixed_match[0].kind == TlsHandshakeKind::client_hello);
+        PFL_EXPECT(mixed_match[1].kind == TlsHandshakeKind::server_hello);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_sh_2.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto* quic_row = find_stream_row_by_label(rows, "QUIC Initial: CRYPTO");
+        PFL_REQUIRE(quic_row != nullptr);
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto summary_layers = build_stream_summary_layers(*quic_row, packet_rows);
+        const auto* quic_layer = find_top_level_summary_layer(summary_layers, "quic");
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(quic_layer != nullptr);
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(find_top_level_summary_layers(summary_layers, "tls").size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Frame Presence") == "CRYPTO");
+        PFL_EXPECT(quic_layer->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(quic_layer->children[0], "Type") == "CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ServerHello");
+        PFL_EXPECT(find_summary_field(*tls_layer, "SNI") == nullptr);
+        PFL_EXPECT(find_summary_field(*tls_layer, "Cipher Suite Count") == nullptr);
     }
 
     {
@@ -3309,6 +3440,14 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].protocol_text.find("Packet Type: Handshake") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Header Form: Long") != std::string::npos);
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* quic_layer = find_top_level_summary_layer(summary_layers, "quic");
+        PFL_REQUIRE(quic_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Handshake");
+        PFL_EXPECT(quic_layer->children.empty());
+        PFL_EXPECT(find_top_level_summary_layer(summary_layers, "tls") == nullptr);
     }
 
     {
@@ -4300,6 +4439,16 @@ void run_stream_query_tests() {
         PFL_EXPECT(packet_eight_row->label == "QUIC Initial: ACK");
         PFL_EXPECT(packet_eight_row->label != "QUIC Initial");
         PFL_EXPECT(packet_eight_row->protocol_text.find("Frame Presence: ACK") != std::string::npos);
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto summary_layers = build_stream_summary_layers(*packet_eight_row, packet_rows);
+        const auto* quic_layer = find_top_level_summary_layer(summary_layers, "quic");
+        PFL_REQUIRE(quic_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Frame Presence") == "ACK");
+        PFL_EXPECT(quic_layer->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(quic_layer->children[0], "Type") == "ACK");
+        PFL_EXPECT(find_top_level_summary_layer(summary_layers, "tls") == nullptr);
     }
 
     {
@@ -4322,6 +4471,156 @@ void run_stream_query_tests() {
         PFL_EXPECT(packet_eight_row->label != "QUIC Initial: CRYPTO");
         PFL_EXPECT(packet_eight_row->protocol_text.find("Frame Presence: ACK") == std::string::npos);
         PFL_EXPECT(packet_eight_row->protocol_text.find("Frame Presence: CRYPTO") == std::string::npos);
+
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto summary_layers = build_stream_summary_layers(*packet_eight_row, packet_rows);
+        const auto* quic_layer = find_top_level_summary_layer(summary_layers, "quic");
+        PFL_REQUIRE(quic_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Initial");
+        PFL_EXPECT(find_summary_field(*quic_layer, "Frame Presence") == nullptr);
+        PFL_EXPECT(quic_layer->children.empty());
+        PFL_EXPECT(find_top_level_summary_layer(summary_layers, "tls") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto packet_rows = session.list_flow_packets(0);
+
+        const auto* initial_crypto = find_stream_row_by_label_and_packets(rows, "QUIC Initial: CRYPTO", {2U});
+        const auto* zero_rtt = find_stream_row_by_label_and_packets(rows, "0-RTT", {2U});
+        const auto* initial_ack = find_stream_row_by_label_and_packets(rows, "QUIC Initial: ACK", {15U});
+        const auto* handshake = find_stream_row_by_label_and_packets(rows, "Handshake", {15U});
+        const auto* protected_payload = find_stream_row_by_label_and_packets(rows, "Protected payload", {15U});
+        PFL_REQUIRE(initial_crypto != nullptr);
+        PFL_REQUIRE(zero_rtt != nullptr);
+        PFL_REQUIRE(initial_ack != nullptr);
+        PFL_REQUIRE(handshake != nullptr);
+        PFL_REQUIRE(protected_payload != nullptr);
+
+        const auto initial_crypto_summary = build_stream_summary_layers(*initial_crypto, packet_rows);
+        const auto zero_rtt_summary = build_stream_summary_layers(*zero_rtt, packet_rows);
+        const auto initial_ack_summary = build_stream_summary_layers(*initial_ack, packet_rows);
+        const auto handshake_summary = build_stream_summary_layers(*handshake, packet_rows);
+        const auto protected_payload_summary = build_stream_summary_layers(*protected_payload, packet_rows);
+
+        const auto* initial_crypto_quic = find_top_level_summary_layer(initial_crypto_summary, "quic");
+        const auto* initial_crypto_tls = find_top_level_summary_layer(initial_crypto_summary, "tls");
+        PFL_REQUIRE(initial_crypto_quic != nullptr);
+        PFL_REQUIRE(initial_crypto_tls != nullptr);
+        PFL_EXPECT(require_summary_field_value(*initial_crypto_quic, "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*initial_crypto_tls, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(find_summary_field(*initial_crypto_tls, "SNI") != nullptr);
+
+        const auto* zero_rtt_quic = find_top_level_summary_layer(zero_rtt_summary, "quic");
+        PFL_REQUIRE(zero_rtt_quic != nullptr);
+        PFL_EXPECT(require_summary_field_value(*zero_rtt_quic, "Packet Type") == "0-RTT");
+        PFL_EXPECT(zero_rtt_quic->children.empty());
+        PFL_EXPECT(find_top_level_summary_layer(zero_rtt_summary, "tls") == nullptr);
+
+        const auto* initial_ack_quic = find_top_level_summary_layer(initial_ack_summary, "quic");
+        PFL_REQUIRE(initial_ack_quic != nullptr);
+        PFL_EXPECT(require_summary_field_value(*initial_ack_quic, "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*initial_ack_quic, "Frame Presence") == "ACK");
+        PFL_EXPECT(initial_ack_quic->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(initial_ack_quic->children[0], "Type") == "ACK");
+        PFL_EXPECT(find_top_level_summary_layer(initial_ack_summary, "tls") == nullptr);
+
+        const auto* handshake_quic = find_top_level_summary_layer(handshake_summary, "quic");
+        const auto* protected_quic = find_top_level_summary_layer(protected_payload_summary, "quic");
+        PFL_REQUIRE(handshake_quic != nullptr);
+        PFL_REQUIRE(protected_quic != nullptr);
+        PFL_EXPECT(require_summary_field_value(*handshake_quic, "Packet Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*protected_quic, "Packet Type") == "Protected Payload");
+        PFL_EXPECT(handshake_quic->children.empty());
+        PFL_EXPECT(protected_quic->children.empty());
+        PFL_EXPECT(find_top_level_summary_layer(handshake_summary, "tls") == nullptr);
+        PFL_EXPECT(find_top_level_summary_layer(protected_payload_summary, "tls") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/ipv6_quic_constricted_1.pcap"), fast_options));
+
+        const auto flows = session.list_flows();
+        PFL_REQUIRE(flows.size() == 1U);
+        PFL_EXPECT(flows[0].service_hint == "www.instagram.com");
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto packet_rows = session.list_flow_packets(0);
+        PFL_REQUIRE(rows.size() >= 9U);
+        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[1].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[2].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[7].label == "QUIC Initial: ACK");
+        PFL_EXPECT(rows[8].label == "QUIC Initial: ACK");
+
+        const auto summary0 = build_stream_summary_layers(rows[0], packet_rows);
+        const auto summary1 = build_stream_summary_layers(rows[1], packet_rows);
+        const auto summary2 = build_stream_summary_layers(rows[2], packet_rows);
+        const auto ack_summary0 = build_stream_summary_layers(rows[7], packet_rows);
+        const auto ack_summary1 = build_stream_summary_layers(rows[8], packet_rows);
+
+        const auto* tls0 = find_top_level_summary_layer(summary0, "tls");
+        const auto* tls1 = find_top_level_summary_layer(summary1, "tls");
+        const auto* tls2 = find_top_level_summary_layer(summary2, "tls");
+        PFL_REQUIRE(tls0 != nullptr);
+        PFL_REQUIRE(tls1 != nullptr);
+        PFL_REQUIRE(tls2 != nullptr);
+        PFL_EXPECT(find_top_level_summary_layers(summary0, "tls").size() == 1U);
+        PFL_EXPECT(find_top_level_summary_layers(summary1, "tls").size() == 1U);
+        PFL_EXPECT(find_top_level_summary_layers(summary2, "tls").size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*tls0, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls1, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls2, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls0, "SNI") == "www.instagram.com");
+        PFL_EXPECT(require_summary_field_value(*tls1, "SNI") == "www.instagram.com");
+        PFL_EXPECT(require_summary_field_value(*tls2, "SNI") == "www.instagram.com");
+
+        PFL_EXPECT(find_top_level_summary_layer(ack_summary0, "tls") == nullptr);
+        PFL_EXPECT(find_top_level_summary_layer(ack_summary1, "tls") == nullptr);
+        PFL_EXPECT(rows[0].byte_count == 820U);
+        PFL_EXPECT(rows[1].byte_count == 111U);
+        PFL_EXPECT(rows[2].byte_count == 928U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t>({1U}));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_example_1.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto* server_initial_crypto = find_stream_row_by_label_and_packets(rows, "QUIC Initial: CRYPTO", {4U});
+        const auto* handshake = find_stream_row_by_label_and_packets(rows, "Handshake", {16U});
+        const auto* protected_payload = find_stream_row_by_label_and_packets(rows, "Protected payload", {16U});
+        PFL_REQUIRE(server_initial_crypto != nullptr);
+        PFL_REQUIRE(handshake != nullptr);
+        PFL_REQUIRE(protected_payload != nullptr);
+
+        const auto server_initial_summary = build_stream_summary_layers(*server_initial_crypto, packet_rows);
+        const auto handshake_summary = build_stream_summary_layers(*handshake, packet_rows);
+        const auto protected_summary = build_stream_summary_layers(*protected_payload, packet_rows);
+
+        const auto* server_initial_tls = find_top_level_summary_layer(server_initial_summary, "tls");
+        PFL_REQUIRE(server_initial_tls != nullptr);
+        PFL_EXPECT(require_summary_field_value(*server_initial_tls, "Handshake Type") == "ServerHello");
+        PFL_EXPECT(find_summary_field(*server_initial_tls, "SNI") == nullptr);
+
+        const auto* handshake_quic = find_top_level_summary_layer(handshake_summary, "quic");
+        const auto* protected_quic = find_top_level_summary_layer(protected_summary, "quic");
+        PFL_REQUIRE(handshake_quic != nullptr);
+        PFL_REQUIRE(protected_quic != nullptr);
+        PFL_EXPECT(require_summary_field_value(*handshake_quic, "Packet Type") == "Handshake");
+        PFL_EXPECT(require_summary_field_value(*protected_quic, "Packet Type") == "Protected Payload");
+        PFL_EXPECT(handshake_quic->children.empty());
+        PFL_EXPECT(protected_quic->children.empty());
+        PFL_EXPECT(find_top_level_summary_layer(handshake_summary, "tls") == nullptr);
+        PFL_EXPECT(find_top_level_summary_layer(protected_summary, "tls") == nullptr);
     }
 
     {

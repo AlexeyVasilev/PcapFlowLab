@@ -4909,19 +4909,17 @@ std::optional<PacketSummaryLayer> build_quic_frame_summary_layer(
     };
 }
 
-std::vector<PacketSummaryLayer> build_quic_summary_layers(
-    const PacketDetails& details,
-    const PacketSummaryOptions& options
+std::vector<PacketSummaryLayer> build_quic_summary_layers_for_packets(
+    std::span<const QuicPresentationPacket> packets
 ) {
-    if (!details.has_udp || !options.quic_presentation.has_value() || options.quic_presentation->packets.empty()) {
+    if (packets.empty()) {
         return {};
     }
-    const auto& presentation = *options.quic_presentation;
 
     std::vector<PacketSummaryLayer> layers {};
-    layers.reserve(presentation.packets.size() + 2U);
+    layers.reserve(packets.size() + 2U);
 
-    for (const auto& packet : presentation.packets) {
+    for (const auto& packet : packets) {
         std::vector<PacketSummaryField> fields {
             make_summary_field("Header Form", packet.shell.header_form),
             make_summary_field("Packet Type", format_quic_presented_packet_type_value(packet.shell_type)),
@@ -4999,6 +4997,19 @@ std::vector<PacketSummaryLayer> build_quic_summary_layers(
     }
 
     return layers;
+}
+
+std::vector<PacketSummaryLayer> build_quic_summary_layers(
+    const PacketDetails& details,
+    const PacketSummaryOptions& options
+) {
+    if (!details.has_udp || !options.quic_presentation.has_value() || options.quic_presentation->packets.empty()) {
+        return {};
+    }
+    const auto& presentation = *options.quic_presentation;
+    return build_quic_summary_layers_for_packets(
+        std::span<const QuicPresentationPacket>(presentation.packets.data(), presentation.packets.size())
+    );
 }
 
 std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
@@ -5625,6 +5636,27 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     std::string_view details_source_text,
     std::string_view frames_hint_text
 ) {
+    if (row.quic_stream_presentation.has_value()) {
+        const auto& quic_item = *row.quic_stream_presentation;
+        auto layers = std::vector<PacketSummaryLayer> {};
+        layers.reserve(3U);
+        layers.push_back(build_stream_item_metadata_layer(
+            row,
+            source_packets_text,
+            details_source_text,
+            frames_hint_text,
+            0U
+        ));
+        const auto quic_layers = build_quic_summary_layers_for_packets(
+            std::span<const QuicPresentationPacket>(&quic_item.packet, 1U)
+        );
+        for (const auto& quic_layer : quic_layers) {
+            layers.push_back(quic_layer);
+        }
+        apply_default_summary_layer_expansion(layers);
+        return layers;
+    }
+
     const auto context = tls_stream_summary_context(row.tls_semantic_kind);
     std::vector<PacketSummaryLayer> tls_layers {};
     const auto can_parse_structured_tls =

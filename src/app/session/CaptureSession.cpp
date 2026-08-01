@@ -160,7 +160,8 @@ StreamItemRow make_stream_item_row(
     const std::vector<std::string>& constricted_packet_notes = {},
     const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
     const TlsInspectionParserContext tls_initial_parser_context = {},
-    const TlsInspectionParserContext tls_final_parser_context = {}
+    const TlsInspectionParserContext tls_final_parser_context = {},
+    const std::optional<session_detail::QuicStreamItemPresentation>& quic_stream_presentation = {}
 ) {
     return StreamItemRow {
         .stream_item_index = stream_item_index,
@@ -179,6 +180,7 @@ StreamItemRow make_stream_item_row(
         .tls_semantic_kind = tls_semantic_kind,
         .tls_initial_parser_context = tls_initial_parser_context,
         .tls_final_parser_context = tls_final_parser_context,
+        .quic_stream_presentation = quic_stream_presentation,
     };
 }
 
@@ -197,7 +199,8 @@ StreamItemRow make_stream_item_row(
     const std::vector<std::string>& constricted_packet_notes = {},
     const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
     const TlsInspectionParserContext tls_initial_parser_context = {},
-    const TlsInspectionParserContext tls_final_parser_context = {}
+    const TlsInspectionParserContext tls_final_parser_context = {},
+    const std::optional<session_detail::QuicStreamItemPresentation>& quic_stream_presentation = {}
 ) {
     return make_stream_item_row(
         stream_item_index,
@@ -214,7 +217,8 @@ StreamItemRow make_stream_item_row(
         constricted_packet_notes,
         tls_semantic_kind,
         tls_initial_parser_context,
-        tls_final_parser_context
+        tls_final_parser_context,
+        quic_stream_presentation
     );
 }
 
@@ -755,7 +759,11 @@ bool append_quic_stream_items_for_packet(
                 item.protocol_text,
                 item.has_constricted_contribution,
                 item.constricted_contribution_notes,
-                {}
+                {},
+                TlsStreamItemSemanticKind::none,
+                {},
+                {},
+                item.structured_presentation
             ),
             .stability = StreamMaterializationStability::stable,
         });

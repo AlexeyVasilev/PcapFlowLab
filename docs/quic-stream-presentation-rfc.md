@@ -32,6 +32,40 @@ However, the project does not yet have a clearly fixed conceptual model for:
 
 This RFC fixes that model.
 
+Structured Stream Item Summary now retains lightweight QUIC presentation per
+selected-flow row and reuses the shared QUIC and TLS field mappers already used
+by Packet Details Summary.
+
+The retained row-level QUIC presentation is limited to:
+
+- owning shell or envelope metadata
+- owned frame metadata for the selected semantic row
+- owned structured TLS handshake models when the row contributes CRYPTO bytes
+  that overlap the handshake interval
+
+It does not retain:
+
+- raw UDP payload copies
+- decrypted Initial plaintext copies
+- formatter-derived semantics from `protocol_text`
+
+Failed Initial decryption remains intentionally coarse at the Stream Summary
+layer. Retry, Version Negotiation, and harder CRYPTO edge-fixture expansion
+remain future hardening work.
+
+Packet Details Summary and Stream Item Summary now intentionally use parallel
+contribution rules:
+
+- Packet Details exposes reconstructed TLS on contributing packets.
+- Stream Item Summary exposes reconstructed TLS on contributing CRYPTO semantic
+  rows.
+
+Stream TLS ownership is no longer completion-row-only. The selected-flow QUIC
+path attaches a structured TLS handshake to every CRYPTO semantic row whose
+structured CRYPTO frame intervals overlap the handshake's available byte
+interval. This prevents leakage into unrelated CRYPTO rows and into coalesced
+non-Initial rows such as `0-RTT`, `Handshake`, and `Protected payload`.
+
 ## Architectural alignment
 
 The RFC must remain aligned with the existing selected-flow analysis boundaries described in [docs/stream_architecture.md](docs/stream_architecture.md) and [docs/architecture.md](docs/architecture.md).

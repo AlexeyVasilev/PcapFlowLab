@@ -86,12 +86,30 @@ struct QuicPresentationResult {
     bool used_bounded_crypto_assembly {false};
 };
 
+enum class QuicStreamItemSemanticKind : std::uint8_t {
+    none = 0,
+    initial_crypto,
+    initial_ack,
+    coarse_initial,
+    zero_rtt,
+    handshake,
+    protected_payload,
+    retry,
+    version_negotiation,
+};
+
+struct QuicStreamItemPresentation {
+    QuicStreamItemSemanticKind semantic_kind {QuicStreamItemSemanticKind::none};
+    QuicPresentationPacket packet {};
+};
+
 struct QuicStreamPacketItem {
     std::string label {};
     std::size_t byte_count {0};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::string protocol_text {};
+    std::optional<QuicStreamItemPresentation> structured_presentation {};
 };
 
 struct QuicStreamPacketPresentation {
@@ -162,6 +180,11 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation(
     const PacketRef& packet,
     std::span<const std::uint8_t> payload_span,
     std::span<const std::uint8_t> initial_secret_connection_id = {}
+);
+
+std::vector<TlsHandshakeModel> select_tls_handshakes_for_quic_crypto_frames(
+    std::span<const QuicPresentationFrame> owned_frames,
+    std::span<const TlsHandshakeModel> handshakes
 );
 
 }  // namespace session_detail
