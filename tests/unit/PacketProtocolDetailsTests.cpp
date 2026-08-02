@@ -13,6 +13,7 @@
 #include "app/session/SessionFormatting.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
+#include "core/services/QuicPacketProtocolAnalyzer.h"
 
 namespace pfl::tests {
 
@@ -484,6 +485,32 @@ std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<
     return payload;
 }
 
+std::vector<std::uint8_t> make_plaintext_quic_long_header_payload(
+    const std::uint8_t first_byte,
+    const std::vector<std::uint8_t>& frame_bytes
+) {
+    std::vector<std::uint8_t> payload {
+        first_byte,
+        0x00U, 0x00U, 0x00U, 0x01U,
+        0x08U,
+        0x11U, 0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U,
+        0x08U,
+        0x99U, 0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU, 0xFFU, 0x00U,
+    };
+
+    if (((first_byte >> 4U) & 0x03U) == 0U) {
+        payload.push_back(0x00U);
+    }
+    append_quic_varint(payload, frame_bytes.size() + 1U);
+    payload.push_back(0x00U);
+    payload.insert(payload.end(), frame_bytes.begin(), frame_bytes.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> make_plaintext_quic_zero_rtt_payload(const std::vector<std::uint8_t>& frame_bytes) {
+    return make_plaintext_quic_long_header_payload(0xD0U, frame_bytes);
+}
+
 std::vector<std::uint8_t> concat_bytes(
     const std::vector<std::uint8_t>& first,
     const std::vector<std::uint8_t>& second
@@ -877,6 +904,47 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(text.find("Header Form: Long") != std::string::npos);
         PFL_EXPECT(text.find("Packet Type: Handshake") != std::string::npos);
         PFL_EXPECT(text.find("Destination Connection ID Length:") != std::string::npos);
+    }
+
+    {
+        QuicPacketProtocolAnalyzer analyzer {};
+        const auto zero_rtt_payload = make_plaintext_quic_zero_rtt_payload({0x01U});
+        const auto zero_rtt_inspection = analyzer.inspect_udp_payload(
+            std::span<const std::uint8_t>(zero_rtt_payload.data(), zero_rtt_payload.size())
+        );
+        PFL_REQUIRE(zero_rtt_inspection.has_value());
+        PFL_REQUIRE(zero_rtt_inspection->packets.size() == 1U);
+        PFL_EXPECT(zero_rtt_inspection->packets[0].packet_type == QuicPacketType::zero_rtt);
+
+        const auto zero_rtt_text = analyzer.analyze_udp_payload(
+            std::span<const std::uint8_t>(zero_rtt_payload.data(), zero_rtt_payload.size())
+        );
+        PFL_REQUIRE(zero_rtt_text.has_value());
+        PFL_EXPECT(zero_rtt_text->find("Packet Type: 0-RTT") != std::string::npos);
+    }
+
+    {
+        QuicPacketProtocolAnalyzer analyzer {};
+        const auto initial_payload = make_plaintext_quic_initial_payload(
+            make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())
+        );
+        const auto zero_rtt_payload = make_plaintext_quic_zero_rtt_payload({0x01U});
+        const auto coalesced_payload = concat_bytes(initial_payload, zero_rtt_payload);
+        const auto coalesced_inspection = analyzer.inspect_udp_payload(
+            std::span<const std::uint8_t>(coalesced_payload.data(), coalesced_payload.size())
+        );
+        PFL_REQUIRE(coalesced_inspection.has_value());
+        PFL_REQUIRE(coalesced_inspection->packets.size() == 2U);
+        PFL_EXPECT(coalesced_inspection->packets[0].packet_type == QuicPacketType::initial);
+        PFL_EXPECT(coalesced_inspection->packets[1].packet_type == QuicPacketType::zero_rtt);
+        PFL_EXPECT(!coalesced_inspection->packets[0].tls_crypto_prefix.empty());
+
+        const auto coalesced_text = analyzer.analyze_udp_payload(
+            std::span<const std::uint8_t>(coalesced_payload.data(), coalesced_payload.size())
+        );
+        PFL_REQUIRE(coalesced_text.has_value());
+        PFL_EXPECT(coalesced_text->find("Packet Type: Initial") != std::string::npos);
+        PFL_EXPECT(coalesced_text->find("Additional Packet Types: 0-RTT") != std::string::npos);
     }
 
     {

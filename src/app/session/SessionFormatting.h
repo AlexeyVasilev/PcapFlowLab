@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app/session/FlowRows.h"
+#include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/PacketDetails.h"
@@ -25,6 +26,44 @@ struct ArpPresentation {
 struct PacketSummaryField {
     std::string label {};
     std::string value {};
+};
+
+enum class PacketDataRole : std::uint8_t {
+    none = 0,
+    transport_payload,
+};
+
+enum class PacketDataTransportKind : std::uint8_t {
+    unknown = 0,
+    tcp,
+    udp,
+};
+
+enum class TransportPayloadDisposition : std::uint8_t {
+    none = 0,
+    unclaimed_data,
+    claimed_by_supported_protocol,
+    known_opaque_or_encrypted,
+    unavailable_or_truncated,
+};
+
+enum class PacketDataPlacement : std::uint8_t {
+    none = 0,
+    after_tcp,
+    after_udp,
+    after_inner_tcp,
+    after_inner_udp,
+};
+
+struct PacketDataPresentation {
+    PacketDataRole role {PacketDataRole::none};
+    PacketDataTransportKind transport {PacketDataTransportKind::unknown};
+    TransportPayloadDisposition disposition {TransportPayloadDisposition::none};
+    PacketDataPlacement placement {PacketDataPlacement::none};
+    std::uint32_t declared_length {0U};
+    std::uint32_t captured_length {0U};
+    bool declared_length_reliable {false};
+    bool truncation_reliable {false};
 };
 
 struct PacketSummaryLayer {
@@ -47,8 +86,12 @@ struct PacketSummaryOptions {
     std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
+    std::span<const std::uint8_t> packet_data_preview_bytes {};
     TlsInspectionParserContext tls_initial_parser_context {};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
+    std::vector<PacketSummaryLayer> tls_summary_layers {};
+    std::optional<QuicPresentationResult> quic_presentation {};
+    std::optional<PacketDataPresentation> packet_data {};
 };
 
 std::string format_packet_timestamp(const PacketRef& packet);
@@ -67,6 +110,13 @@ std::string format_arp_opcode(std::uint16_t opcode);
 std::optional<ArpPresentation> describe_arp_packet(const PacketDetails& details);
 std::vector<std::string> build_basic_summary_lines(const PacketDetails& details);
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes);
+std::vector<PacketSummaryLayer> build_tls_summary_layers(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    TlsInspectionParserContext initial_parser_context,
+    bool force_encrypted_handshake_records = false,
+    bool force_encrypted_alert_records = false
+);
+PacketSummaryLayer build_tls_reassembled_metadata_layer(const TlsSelectedPacketRecordContext& context);
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     const StreamItemRow& row,
     std::string_view source_packets_text,

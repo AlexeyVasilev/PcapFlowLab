@@ -1,6 +1,7 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -3088,45 +3089,34 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         const auto original_transport_payload_length =
             session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
         const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
-        PacketPayloadService payload_service {};
-        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
         const auto internal_flow_packet_index =
             flow_packet_index.has_value()
                 ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
                 : std::nullopt;
-        auto tls_packet_analysis =
-            flow_index.has_value() &&
-            internal_flow_packet_index.has_value() &&
-            loaded_packet_window_count.has_value()
-                ? session_detail::analyze_selected_packet_tls_contexts(
-                    session_,
-                    *flow_index,
-                    *internal_flow_packet_index,
-                    *loaded_packet_window_count
-                )
-                : session_detail::TlsSelectedPacketAnalysis {
-                    .initial_parser_context = TlsInspectionParserContext {
-                        .semantic_state = TlsInspectionSemanticState::plaintext,
-                    },
-                };
+        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+            session_,
+            *details,
+            packet,
+            flow_index,
+            internal_flow_packet_index,
+            loaded_packet_window_count,
+            result.protocol_details_text,
+            captured_transport_payload_length,
+            original_transport_payload_length,
+            result.checksum_summary_lines,
+            result.checksum_warning_lines
+        );
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
         result.link_summary_text = format_link_summary(*details);
         result.network_summary_text = format_network_summary(*details);
         result.transport_summary_text = format_transport_summary(*details);
-        result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
-            .source_capture_accessible = true,
-            .flow_packet_index = internal_flow_packet_index,
-            .transport_payload_length = captured_transport_payload_length,
-            .original_transport_payload_length = original_transport_payload_length,
-            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-            .protocol_details_text = result.protocol_details_text,
-            .checksum_summary_lines = result.checksum_summary_lines,
-            .checksum_warning_lines = result.checksum_warning_lines,
-            .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
-            .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
-        });
+        result.summary_layers = session_detail::build_packet_summary_layers(
+            *details,
+            packet,
+            packet_summary_preparation.make_options()
+        );
     } else {
         result.unavailable_text = "Only partial packet details are available for this packet.";
     }

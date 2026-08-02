@@ -112,6 +112,7 @@ add_library(
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
+    src/app/session/SelectedPacketSummaryPreparation.cpp
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp
     src/app/session/SessionOpenHelpers.cpp

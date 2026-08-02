@@ -80,6 +80,7 @@ Implemented in the current branch:
   - `AH(spi=0x...)`
 - outer VLAN / QinQ preservation before AH;
 - selected-packet AH Summary / Protocol Details, including AH-owned inner IPv4 / IPv6 + TCP / UDP presentation;
+- selected-packet Summary `Data` may now follow the effective terminal AH-carried TCP or UDP payload when captured application bytes are non-empty and unclaimed, including tunnel-mode inner UDP fixture `12`; ACK-only inner TCP fixtures `13` and `15` remain `Data`-free;
 - current shared index format persists AH protocol-path identity through the capture-level protocol-path registry plus flow/connection path ids.
 
 Still intentionally deferred:

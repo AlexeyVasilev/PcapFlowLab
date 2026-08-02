@@ -3,6 +3,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/services/PacketPayloadService.h"
 
@@ -5715,8 +5716,6 @@ void MainController::reloadSelectedPacketDetails() {
             std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
             *packet
         );
-        PacketPayloadService payload_service {};
-        const auto transport_payload = payload_service.extract_transport_payload(packetBytes, packet->data_link_type);
         const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
             const auto it = current_flow_packet_numbers_.find(packet->packet_index);
             if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
@@ -5724,49 +5723,36 @@ void MainController::reloadSelectedPacketDetails() {
             }
             return it->second - 1U;
         }();
-        auto tls_packet_analysis =
-            selected_flow_index_ >= 0 &&
-                flow_packet_index.has_value() &&
-                loaded_packet_row_count_ > 0U
-            ? session_detail::analyze_selected_packet_tls_contexts(
-                session_,
-                static_cast<std::size_t>(selected_flow_index_),
-                *flow_packet_index,
-                loaded_packet_row_count_
-            )
-            : session_detail::TlsSelectedPacketAnalysis {
-                .initial_parser_context = TlsInspectionParserContext {
-                    .semantic_state = TlsInspectionSemanticState::plaintext,
-                },
-            };
+        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+            session_,
+            *details,
+            *packet,
+            selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
+            flow_packet_index,
+            loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
+            protocolText.toStdString(),
+            payload_lengths.real_payload_length,
+            payload_lengths.original_payload_length,
+            [&]() {
+                std::vector<std::string> lines {};
+                lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
+                for (const auto& line : checksum_sections.summary_lines) {
+                    lines.push_back(line.toStdString());
+                }
+                return lines;
+            }(),
+            [&]() {
+                std::vector<std::string> lines {};
+                lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
+                for (const auto& line : checksum_sections.warnings) {
+                    lines.push_back(line.toStdString());
+                }
+                return lines;
+            }()
+        );
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-            session_detail::build_packet_summary_layers(*details, *packet, {
-                .source_capture_accessible = true,
-                .flow_packet_index = flow_packet_index,
-                .transport_payload_length = payload_lengths.real_payload_length,
-                .original_transport_payload_length = payload_lengths.original_payload_length,
-                .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-                .protocol_details_text = protocolText.toStdString(),
-                .checksum_summary_lines = [&]() {
-                    std::vector<std::string> lines {};
-                    lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
-                    for (const auto& line : checksum_sections.summary_lines) {
-                        lines.push_back(line.toStdString());
-                    }
-                    return lines;
-                }(),
-                .checksum_warning_lines = [&]() {
-                    std::vector<std::string> lines {};
-                    lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
-                    for (const auto& line : checksum_sections.warnings) {
-                        lines.push_back(line.toStdString());
-                    }
-                    return lines;
-                }(),
-                .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
-                .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
-            })
+            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation.make_options())
         ));
         packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
         packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));

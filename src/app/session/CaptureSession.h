@@ -12,6 +12,7 @@
 
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
@@ -195,6 +196,14 @@ public:
     [[nodiscard]] std::optional<std::string> derive_quic_service_hint_for_flow(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_protocol_text_for_packet(std::size_t flow_index, std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_protocol_text_for_packet_context(
+        std::size_t flow_index,
+        const std::vector<std::uint64_t>& packet_indices
+    ) const;
+    [[nodiscard]] std::optional<session_detail::QuicPresentationResult> derive_quic_presentation_for_packet(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const;
+    [[nodiscard]] std::optional<session_detail::QuicPresentationResult> derive_quic_presentation_for_packet_context(
         std::size_t flow_index,
         const std::vector<std::uint64_t>& packet_indices
     ) const;

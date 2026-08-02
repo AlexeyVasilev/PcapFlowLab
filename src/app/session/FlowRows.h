@@ -3,10 +3,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include "app/session/SessionQuicPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/TlsInspectionModel.h"
@@ -111,6 +113,7 @@ struct StreamItemRow {
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
     TlsInspectionParserContext tls_initial_parser_context {};
     TlsInspectionParserContext tls_final_parser_context {};
+    std::optional<session_detail::QuicStreamItemPresentation> quic_stream_presentation {};
 };
 
 struct ProtocolStats {

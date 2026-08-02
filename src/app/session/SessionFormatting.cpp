@@ -1,5 +1,4 @@
 #include "app/session/SessionFormatting.h"
-#include "core/services/TlsInspectionParser.h"
 
 #include <algorithm>
 #include <ctime>
@@ -8,6 +7,13 @@
 #include <string_view>
 
 namespace pfl::session_detail {
+
+std::vector<TlsRecordModel> inspect_tls_summary_records(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    const TlsInspectionParserContext& initial_parser_context,
+    bool force_encrypted_handshake_records = false,
+    bool force_encrypted_alert_records = false
+);
 
 namespace {
 
@@ -63,6 +69,7 @@ constexpr std::uint8_t kIpv4OptionTimestamp = 68U;
 constexpr std::uint8_t kIpv4OptionLooseSourceRoute = 131U;
 constexpr std::uint8_t kIpv4OptionStrictSourceRoute = 137U;
 constexpr std::uint8_t kIpv4OptionRouterAlert = 148U;
+constexpr std::size_t kPacketDataPreviewMaxBytes = 32U;
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 
@@ -1338,9 +1345,17 @@ void append_gtpu_inner_summary_layers(
         }
         layers.push_back(std::move(layer));
         if (inner.has_tcp) {
-            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_udp) {
-            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_sctp) {
             layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
             if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
@@ -1393,9 +1408,17 @@ void append_gtpu_inner_summary_layers(
             layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
         }
         if (inner.has_tcp) {
-            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_udp) {
-            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         } else if (inner.has_sctp) {
             layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
             if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
@@ -2271,6 +2294,132 @@ std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const Pac
     }
 
     return std::nullopt;
+}
+
+std::string format_packet_data_transport(const PacketDataTransportKind transport) {
+    switch (transport) {
+    case PacketDataTransportKind::tcp:
+        return "TCP";
+    case PacketDataTransportKind::udp:
+        return "UDP";
+    case PacketDataTransportKind::unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+std::optional<PacketSummaryLayer> build_packet_data_summary_layer(
+    const PacketSummaryOptions& options
+) {
+    if (!options.packet_data.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& data = *options.packet_data;
+    if (data.role != PacketDataRole::transport_payload ||
+        data.disposition != TransportPayloadDisposition::unclaimed_data ||
+        data.transport == PacketDataTransportKind::unknown ||
+        data.captured_length == 0U ||
+        options.packet_data_preview_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    const auto preview_length = std::min<std::size_t>({
+        options.packet_data_preview_bytes.size(),
+        static_cast<std::size_t>(data.captured_length),
+        kPacketDataPreviewMaxBytes,
+    });
+    if (preview_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Role", "Transport Payload"),
+        make_summary_field("Transport", format_packet_data_transport(data.transport)),
+        make_summary_field("Data Length", format_byte_count(data.captured_length)),
+    };
+
+    if (data.truncation_reliable) {
+        fields.push_back(make_summary_field(
+            "Status",
+            data.declared_length_reliable && data.captured_length < data.declared_length
+                ? "Truncated"
+                : "Complete"
+        ));
+    }
+    if (data.declared_length_reliable && data.declared_length != data.captured_length) {
+        fields.push_back(make_summary_field("Declared Length", format_byte_count(data.declared_length)));
+        fields.push_back(make_summary_field("Captured Length", format_byte_count(data.captured_length)));
+    }
+
+    fields.push_back(make_summary_field(
+        "Preview",
+        format_hex_byte_list(options.packet_data_preview_bytes.first(preview_length))
+    ));
+    fields.push_back(make_summary_field("Displayed Bytes", format_byte_count(preview_length)));
+    fields.push_back(make_summary_field(
+        "Omitted Bytes",
+        format_byte_count(static_cast<std::size_t>(data.captured_length) - preview_length)
+    ));
+
+    return PacketSummaryLayer {
+        .id = "data",
+        .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<std::size_t> find_last_summary_layer_index(
+    const std::vector<PacketSummaryLayer>& layers,
+    const std::string_view id
+) {
+    for (std::size_t index = layers.size(); index > 0U; --index) {
+        if (layers[index - 1U].id == id) {
+            return index - 1U;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::size_t> resolve_packet_data_insertion_index(
+    const std::vector<PacketSummaryLayer>& layers,
+    const PacketDataPresentation& data
+) {
+    const auto target_id =
+        data.placement == PacketDataPlacement::after_tcp ? std::string_view {"tcp"} :
+        data.placement == PacketDataPlacement::after_udp ? std::string_view {"udp"} :
+        data.placement == PacketDataPlacement::after_inner_tcp ? std::string_view {"tcp-inner"} :
+        data.placement == PacketDataPlacement::after_inner_udp ? std::string_view {"udp-inner"} :
+        std::string_view {};
+    if (target_id.empty()) {
+        return std::nullopt;
+    }
+
+    const auto target_index = find_last_summary_layer_index(layers, target_id);
+    if (!target_index.has_value()) {
+        return std::nullopt;
+    }
+    return *target_index + 1U;
+}
+
+void insert_packet_data_summary_layer(
+    std::vector<PacketSummaryLayer>& layers,
+    const PacketSummaryOptions& options
+) {
+    const auto data_layer = build_packet_data_summary_layer(options);
+    if (!data_layer.has_value()) {
+        return;
+    }
+
+    if (options.packet_data.has_value()) {
+        if (const auto insertion_index = resolve_packet_data_insertion_index(layers, *options.packet_data);
+            insertion_index.has_value() && *insertion_index <= layers.size()) {
+            layers.insert(layers.begin() + static_cast<std::ptrdiff_t>(*insertion_index), *data_layer);
+            return;
+        }
+    }
+
+    layers.push_back(*data_layer);
 }
 
 std::optional<PacketSummaryLayer> build_ieee_802_3_trailer_layer(const PacketDetails& details) {
@@ -3181,31 +3330,6 @@ std::optional<PacketSummaryLayer> build_icmpv6_summary_layer(const PacketDetails
         .title = "Internet Control Message Protocol v6",
         .fields = std::move(fields),
     };
-}
-
-bool looks_like_tls_summary_payload_prefix(std::span<const std::uint8_t> payload) {
-    if (payload.size() < 5U) {
-        return false;
-    }
-
-    const auto content_type = payload[0];
-    if (content_type < 20U || content_type > 23U) {
-        return false;
-    }
-
-    if (payload[1] != 0x03U || payload[2] > 0x04U) {
-        return false;
-    }
-
-    const auto record_length = static_cast<std::size_t>(
-        (static_cast<std::uint16_t>(payload[3]) << 8U) |
-        static_cast<std::uint16_t>(payload[4])
-    );
-    // Allow partial TLS records through to the structured inspector. The
-    // inspector already distinguishes complete and incomplete record bodies,
-    // and selected-packet Packet Details rely on that for split-handshake
-    // packet-local fragment coverage.
-    return record_length > 0U;
 }
 
 std::string format_tls_version_value(const std::uint16_t version) {
@@ -4347,6 +4471,60 @@ void append_tls_handshake_fields(
     }
 }
 
+std::string tls_handshake_summary_title(const TlsHandshakeModel& handshake) {
+    const auto handshake_type = format_tls_handshake_type_value(handshake.kind, handshake.type);
+    if (handshake.status != TlsHandshakeStatus::complete) {
+        if (!handshake_type.empty() && handshake_type != "Unknown") {
+            return "Transport Layer Security, " + handshake_type + " Fragment";
+        }
+        return "TLS Handshake Fragment (partial)";
+    }
+
+    if (!handshake_type.empty() && handshake_type != "Unknown") {
+        return "Transport Layer Security, " + handshake_type;
+    }
+    return "Transport Layer Security, Handshake";
+}
+
+std::optional<PacketSummaryLayer> build_tls_handshake_summary_layer(const TlsHandshakeModel& handshake) {
+    std::vector<PacketSummaryField> fields {};
+    std::vector<PacketSummaryLayer> children {};
+
+    if (handshake.status == TlsHandshakeStatus::complete) {
+        append_tls_handshake_fields(fields, children, handshake);
+        if (fields.empty() && children.empty()) {
+            return std::nullopt;
+        }
+
+        return PacketSummaryLayer {
+            .id = "tls",
+            .title = tls_handshake_summary_title(handshake),
+            .fields = std::move(fields),
+            .children = std::move(children),
+        };
+    }
+
+    fields.push_back(make_summary_field("Status", tls_partial_handshake_status_text(handshake.status)));
+    fields.push_back(make_summary_field("Available Handshake Bytes", std::to_string(handshake.available_bytes)));
+    if (handshake.type.has_value()) {
+        fields.push_back(make_summary_field(
+            "Handshake Type",
+            format_tls_handshake_type_value(handshake.kind, handshake.type)
+        ));
+    }
+    if (handshake.declared_body_length.has_value()) {
+        fields.push_back(make_summary_field("Handshake Length", std::to_string(*handshake.declared_body_length)));
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = tls_handshake_summary_title(handshake),
+        .fields = std::move(fields),
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
 std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& record) {
     std::vector<PacketSummaryField> fields {};
     std::vector<PacketSummaryLayer> children {};
@@ -4492,71 +4670,21 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     const bool force_encrypted_handshake_records = false,
     const bool force_encrypted_alert_records = false
 ) {
-    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
-        return {};
-    }
-
-    TlsInspectionParser parser {};
-    auto inspection = parser.inspect(transport_payload_bytes, initial_parser_context);
-    if (force_encrypted_handshake_records) {
-        for (auto& record : inspection.records) {
-            if (record.status != TlsRecordStatus::complete ||
-                record.content_type_kind != TlsRecordContentTypeKind::handshake) {
-                continue;
-            }
-
-            record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
-            record.handshake_messages.clear();
-        }
-    }
-    if (force_encrypted_alert_records) {
-        for (auto& record : inspection.records) {
-            if (record.status != TlsRecordStatus::complete ||
-                record.content_type_kind != TlsRecordContentTypeKind::alert) {
-                continue;
-            }
-
-            record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
-            record.alert_parse_status = TlsAlertParseStatus::not_attempted;
-            record.alert_entries.clear();
-        }
-    }
+    const auto records = inspect_tls_summary_records(
+        transport_payload_bytes,
+        initial_parser_context,
+        force_encrypted_handshake_records,
+        force_encrypted_alert_records
+    );
 
     std::vector<PacketSummaryLayer> layers {};
-    layers.reserve(inspection.records.size());
-    for (const auto& record : inspection.records) {
+    layers.reserve(records.size());
+    for (const auto& record : records) {
         if (const auto layer = build_tls_summary_layer(record); layer.has_value()) {
             layers.push_back(*layer);
         }
     }
     return layers;
-}
-
-TlsInspectionParserContext advance_tls_summary_parser_context(
-    const TlsInspectionParserContext& current_context,
-    const TlsSelectedPacketRecordContext& reconstructed_record
-) {
-    const bool selected_packet_completes_reconstructed_record =
-        reconstructed_record.selected_contribution_flow_packet_index.has_value() &&
-        reconstructed_record.completion_flow_packet_index.has_value() &&
-        *reconstructed_record.selected_contribution_flow_packet_index ==
-            *reconstructed_record.completion_flow_packet_index;
-    if ((reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec ||
-         reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake ||
-         reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::generic_record) &&
-        reconstructed_record.status == TlsSelectedPacketStatus::complete &&
-        reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size &&
-        selected_packet_completes_reconstructed_record) {
-        TlsInspectionParser parser {};
-        return parser.inspect(
-            std::span<const std::uint8_t>(
-                reconstructed_record.captured_bytes.data(),
-                reconstructed_record.captured_bytes.size()
-            ),
-            reconstructed_record.initial_parser_context
-        ).final_context;
-    }
-    return current_context;
 }
 
 struct TlsStreamSummaryContext {
@@ -4741,6 +4869,221 @@ PacketSummaryLayer build_stream_item_metadata_layer(
     };
 }
 
+std::string format_quic_version_value(const std::uint32_t version) {
+    switch (version) {
+    case 0x00000000U:
+        return "Version Negotiation (0x00000000)";
+    case 0x00000001U:
+        return "QUIC v1 (0x00000001)";
+    case 0x6B3343CFU:
+        return "QUIC v2 (0x6b3343cf)";
+    case 0xFF00001DU:
+        return "QUIC draft-29 (0xff00001d)";
+    default:
+        return format_hex_value(version, 8);
+    }
+}
+
+std::string format_quic_presented_packet_type_value(const QuicPresentationShellType shell_type) {
+    switch (shell_type) {
+    case QuicPresentationShellType::initial:
+        return "Initial";
+    case QuicPresentationShellType::zero_rtt:
+        return "0-RTT";
+    case QuicPresentationShellType::handshake:
+        return "Handshake";
+    case QuicPresentationShellType::retry:
+        return "Retry";
+    case QuicPresentationShellType::version_negotiation:
+        return "Version Negotiation";
+    case QuicPresentationShellType::protected_payload:
+        return "Protected Payload";
+    case QuicPresentationShellType::none:
+    default:
+        return "Unknown";
+    }
+}
+
+std::string format_quic_presented_frame_type_value(const QuicPresentationFrameType frame_type) {
+    switch (frame_type) {
+    case QuicPresentationFrameType::ack:
+        return "ACK";
+    case QuicPresentationFrameType::crypto:
+        return "CRYPTO";
+    case QuicPresentationFrameType::padding:
+        return "PADDING";
+    case QuicPresentationFrameType::stream:
+        return "STREAM";
+    case QuicPresentationFrameType::ping:
+        return "PING";
+    case QuicPresentationFrameType::unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+std::string format_quic_frame_presence_value(std::span<const QuicPresentationFrame> frames) {
+    std::vector<std::string> values {};
+    const auto append_once = [&](const std::string& value) {
+        if (std::find(values.begin(), values.end(), value) == values.end()) {
+            values.push_back(value);
+        }
+    };
+
+    for (const auto& frame : frames) {
+        switch (frame.type) {
+        case QuicPresentationFrameType::ack:
+            append_once("ACK");
+            break;
+        case QuicPresentationFrameType::crypto:
+            append_once("CRYPTO");
+            break;
+        case QuicPresentationFrameType::padding:
+            append_once("PADDING");
+            break;
+        case QuicPresentationFrameType::stream:
+            append_once("STREAM");
+            break;
+        case QuicPresentationFrameType::ping:
+            append_once("PING");
+            break;
+        case QuicPresentationFrameType::unknown:
+        default:
+            break;
+        }
+    }
+
+    return join_tls_texts(values);
+}
+
+std::optional<PacketSummaryLayer> build_quic_frame_summary_layer(
+    const QuicPresentationFrame& frame,
+    const std::size_t frame_index
+) {
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Type", format_quic_presented_frame_type_value(frame.type)),
+        make_summary_field("Wire Type", format_hex_value(frame.wire_type, 2)),
+        make_summary_field("Frame Offset", std::to_string(frame.frame_offset)),
+        make_summary_field("Frame Length", format_byte_count(frame.frame_length)),
+    };
+
+    if (frame.crypto_offset.has_value()) {
+        fields.push_back(make_summary_field("CRYPTO Offset", std::to_string(*frame.crypto_offset)));
+    }
+    if (frame.crypto_length.has_value()) {
+        fields.push_back(make_summary_field("CRYPTO Length", format_byte_count(*frame.crypto_length)));
+    }
+
+    return PacketSummaryLayer {
+        .id = "quic_frame",
+        .title = "Frame #" + std::to_string(frame_index + 1U) + ", " + format_quic_presented_frame_type_value(frame.type),
+        .fields = std::move(fields),
+    };
+}
+
+std::vector<PacketSummaryLayer> build_quic_summary_layers_for_packets(
+    std::span<const QuicPresentationPacket> packets
+) {
+    if (packets.empty()) {
+        return {};
+    }
+
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(packets.size() + 2U);
+
+    for (const auto& packet : packets) {
+        std::vector<PacketSummaryField> fields {
+            make_summary_field("Header Form", packet.shell.header_form),
+            make_summary_field("Packet Type", format_quic_presented_packet_type_value(packet.shell_type)),
+        };
+
+        if (packet.shell.version.has_value()) {
+            fields.push_back(make_summary_field("Version", format_quic_version_value(*packet.shell.version)));
+        }
+
+        if (!packet.shell.dcid.empty() || packet.shell.header_form == "Long") {
+            fields.push_back(make_summary_field(
+                "Destination Connection ID Length",
+                format_byte_count(packet.shell.dcid.size())
+            ));
+            if (!packet.shell.dcid.empty()) {
+                fields.push_back(make_summary_field(
+                    "Destination Connection ID",
+                    format_hex_byte_sequence(std::span<const std::uint8_t>(packet.shell.dcid.data(), packet.shell.dcid.size()))
+                ));
+            }
+        }
+
+        if (!packet.shell.scid.empty() || packet.shell.header_form == "Long") {
+            fields.push_back(make_summary_field(
+                "Source Connection ID Length",
+                format_byte_count(packet.shell.scid.size())
+            ));
+            if (!packet.shell.scid.empty()) {
+                fields.push_back(make_summary_field(
+                    "Source Connection ID",
+                    format_hex_byte_sequence(std::span<const std::uint8_t>(packet.shell.scid.data(), packet.shell.scid.size()))
+                ));
+            }
+        }
+
+        const auto frame_presence = format_quic_frame_presence_value(packet.frames);
+        if (!frame_presence.empty()) {
+            fields.push_back(make_summary_field("Frame Presence", frame_presence));
+        }
+
+        if (!packet.supported_versions.empty()) {
+            std::vector<std::string> supported_versions {};
+            supported_versions.reserve(packet.supported_versions.size());
+            for (const auto version : packet.supported_versions) {
+                supported_versions.push_back(format_quic_version_value(version));
+            }
+            fields.push_back(make_summary_field("Supported Versions", join_tls_texts(supported_versions)));
+        }
+
+        if (packet.packet_bytes_consumed > 0U) {
+            fields.push_back(make_summary_field("Datagram Span", format_byte_count(packet.packet_bytes_consumed)));
+        }
+
+        std::vector<PacketSummaryLayer> children {};
+        children.reserve(packet.frames.size());
+        for (std::size_t frame_index = 0U; frame_index < packet.frames.size(); ++frame_index) {
+            if (const auto child = build_quic_frame_summary_layer(packet.frames[frame_index], frame_index);
+                child.has_value()) {
+                children.push_back(*child);
+            }
+        }
+
+        layers.push_back(PacketSummaryLayer {
+            .id = "quic",
+            .title = "QUIC, " + format_quic_presented_packet_type_value(packet.shell_type),
+            .fields = std::move(fields),
+            .children = std::move(children),
+        });
+
+        for (const auto& handshake : packet.tls_handshakes) {
+            if (const auto tls_layer = build_tls_handshake_summary_layer(handshake); tls_layer.has_value()) {
+                layers.push_back(*tls_layer);
+            }
+        }
+    }
+
+    return layers;
+}
+
+std::vector<PacketSummaryLayer> build_quic_summary_layers(
+    const PacketDetails& details,
+    const PacketSummaryOptions& options
+) {
+    if (!details.has_udp || !options.quic_presentation.has_value() || options.quic_presentation->packets.empty()) {
+        return {};
+    }
+    const auto& presentation = *options.quic_presentation;
+    return build_quic_summary_layers_for_packets(
+        std::span<const QuicPresentationPacket>(presentation.packets.data(), presentation.packets.size())
+    );
+}
+
 std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     const PacketDetails& details,
     std::string_view protocol_details_text
@@ -4765,28 +5108,6 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     const auto first_line = first_non_empty_line(protocol_details_text);
     if (!first_line.has_value()) {
         return std::nullopt;
-    }
-
-    if (*first_line == "QUIC") {
-        std::vector<PacketSummaryField> fields {};
-        const auto packet_type = find_protocol_detail_value(protocol_details_text, "Packet Type:");
-        const auto tls_handshake_type = find_protocol_detail_value(protocol_details_text, "TLS Handshake Type:");
-        const auto sni = find_protocol_detail_value(protocol_details_text, "SNI:");
-        append_protocol_field_if_present(fields, "Packet Type", packet_type);
-        append_protocol_field_if_present(fields, "Version", find_protocol_detail_value(protocol_details_text, "Version:"));
-        append_protocol_field_if_present(fields, "TLS Handshake Type", tls_handshake_type);
-        append_protocol_field_if_present(fields, "SNI", sni);
-
-        std::string title = "QUIC";
-        if (packet_type.has_value()) {
-            title += ", " + *packet_type;
-        }
-
-        return PacketSummaryLayer {
-            .id = "quic",
-            .title = std::move(title),
-            .fields = std::move(fields),
-        };
     }
 
     if (*first_line == "DNS") {
@@ -4882,71 +5203,6 @@ bool selected_packet_completes_record(const TlsSelectedPacketRecordContext& cont
         *context.selected_contribution_flow_packet_index == *context.completion_flow_packet_index;
 }
 
-const TlsSelectedPacketContribution* find_selected_packet_contribution(
-    const TlsSelectedPacketRecordContext& context,
-    const std::uint64_t flow_packet_index
-) {
-    const auto it = std::find_if(
-        context.contributions.begin(),
-        context.contributions.end(),
-        [&](const TlsSelectedPacketContribution& contribution) {
-            return contribution.flow_packet_index == flow_packet_index;
-        }
-    );
-    return it == context.contributions.end() ? nullptr : &(*it);
-}
-
-bool selected_packet_starts_record(
-    const TlsSelectedPacketRecordContext& context,
-    const std::uint64_t flow_packet_index
-) {
-    return !context.contributions.empty() &&
-        context.contributions.front().flow_packet_index == flow_packet_index;
-}
-
-TlsInspectionParserContext selected_packet_starting_tls_initial_context(
-    const PacketSummaryOptions& options
-) {
-    if (!options.flow_packet_index.has_value()) {
-        return options.tls_initial_parser_context;
-    }
-
-    if (options.tls_initial_parser_context.semantic_state != TlsInspectionSemanticState::unknown) {
-        return options.tls_initial_parser_context;
-    }
-
-    const auto flow_packet_index = *options.flow_packet_index;
-    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-        if (selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-            return reconstructed_record.initial_parser_context;
-        }
-    }
-
-    return options.tls_initial_parser_context;
-}
-
-std::size_t selected_packet_reassembled_tls_prefix_bytes(const PacketSummaryOptions& options) {
-    if (!options.flow_packet_index.has_value()) {
-        return 0U;
-    }
-
-    std::size_t consumed_prefix_bytes = 0U;
-    const auto flow_packet_index = *options.flow_packet_index;
-    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-        const auto* selected_contribution =
-            find_selected_packet_contribution(reconstructed_record, flow_packet_index);
-        if (selected_contribution == nullptr) {
-            continue;
-        }
-        if (selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-            break;
-        }
-        consumed_prefix_bytes += selected_contribution->captured_byte_count;
-    }
-
-    return std::min(consumed_prefix_bytes, options.transport_payload_bytes.size());
-}
-
 std::string format_tls_selected_packet_status(
     const TlsSelectedPacketRecordContext& context
 ) {
@@ -4968,7 +5224,7 @@ std::string format_tls_selected_packet_status(
     return "Unknown";
 }
 
-PacketSummaryLayer build_tls_reassembled_metadata_layer(
+PacketSummaryLayer build_tls_reassembled_metadata_layer_impl(
     const TlsSelectedPacketRecordContext& context
 ) {
     std::vector<PacketSummaryField> fields {
@@ -5387,6 +5643,27 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     std::string_view details_source_text,
     std::string_view frames_hint_text
 ) {
+    if (row.quic_stream_presentation.has_value()) {
+        const auto& quic_item = *row.quic_stream_presentation;
+        auto layers = std::vector<PacketSummaryLayer> {};
+        layers.reserve(3U);
+        layers.push_back(build_stream_item_metadata_layer(
+            row,
+            source_packets_text,
+            details_source_text,
+            frames_hint_text,
+            0U
+        ));
+        const auto quic_layers = build_quic_summary_layers_for_packets(
+            std::span<const QuicPresentationPacket>(&quic_item.packet, 1U)
+        );
+        for (const auto& quic_layer : quic_layers) {
+            layers.push_back(quic_layer);
+        }
+        apply_default_summary_layer_expansion(layers);
+        return layers;
+    }
+
     const auto context = tls_stream_summary_context(row.tls_semantic_kind);
     std::vector<PacketSummaryLayer> tls_layers {};
     const auto can_parse_structured_tls =
@@ -5428,12 +5705,32 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
 }
 
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
-    return build_tls_summary_layers_impl(
+    return build_tls_summary_layers(
         transport_payload_bytes,
         TlsInspectionParserContext {
             .semantic_state = TlsInspectionSemanticState::plaintext,
         }
     );
+}
+
+std::vector<PacketSummaryLayer> build_tls_summary_layers(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    const TlsInspectionParserContext initial_parser_context,
+    const bool force_encrypted_handshake_records,
+    const bool force_encrypted_alert_records
+) {
+    return build_tls_summary_layers_impl(
+        transport_payload_bytes,
+        initial_parser_context,
+        force_encrypted_handshake_records,
+        force_encrypted_alert_records
+    );
+}
+
+PacketSummaryLayer build_tls_reassembled_metadata_layer(
+    const TlsSelectedPacketRecordContext& context
+) {
+    return build_tls_reassembled_metadata_layer_impl(context);
 }
 
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
@@ -6729,89 +7026,23 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *trailer_layer);
     }
 
-    const auto append_reconstructed_tls_record_summary =
-        [&](const TlsSelectedPacketRecordContext& reconstructed_record, bool& appended_tls_summary_ref) {
-            append_layer_if_not_empty(
-                layers,
-                build_tls_reassembled_metadata_layer(reconstructed_record)
-            );
-            appended_tls_summary_ref = true;
-
-            if (reconstructed_record.status == TlsSelectedPacketStatus::complete &&
-                selected_packet_completes_record(reconstructed_record) &&
-                reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size) {
-                const auto reconstructed_tls_layers = build_tls_summary_layers_impl(
-                    std::span<const std::uint8_t>(
-                        reconstructed_record.captured_bytes.data(),
-                        reconstructed_record.captured_bytes.size()
-                    ),
-                    reconstructed_record.initial_parser_context
-                );
-                for (const auto& reconstructed_tls_layer : reconstructed_tls_layers) {
-                    append_layer_if_not_empty(layers, reconstructed_tls_layer);
-                }
-            }
-        };
-
     bool appended_tls_summary = false;
-    const auto reassembled_prefix_bytes = selected_packet_reassembled_tls_prefix_bytes(options);
-    if (reassembled_prefix_bytes == 0U) {
-        const auto tls_initial_parser_context =
-            selected_packet_starting_tls_initial_context(options);
-        const auto tls_layers = build_tls_summary_layers_impl(
-            options.transport_payload_bytes,
-            tls_initial_parser_context
-        );
-        if (!tls_layers.empty()) {
-            for (const auto& tls_layer : tls_layers) {
-                append_layer_if_not_empty(layers, tls_layer);
-            }
-            appended_tls_summary = true;
-        }
-
-        for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-            append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-        }
-    } else {
-        const auto flow_packet_index = *options.flow_packet_index;
-        auto tls_initial_parser_context = options.tls_initial_parser_context;
-        for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-            const auto* selected_contribution =
-                find_selected_packet_contribution(reconstructed_record, flow_packet_index);
-            if (selected_contribution == nullptr || selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-                continue;
-            }
-            append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-            tls_initial_parser_context = advance_tls_summary_parser_context(
-                tls_initial_parser_context,
-                reconstructed_record
-            );
-        }
-
-        const auto remaining_tls_payload =
-            reassembled_prefix_bytes < options.transport_payload_bytes.size()
-                ? options.transport_payload_bytes.subspan(reassembled_prefix_bytes)
-                : std::span<const std::uint8_t> {};
-        const auto tls_layers = build_tls_summary_layers_impl(
-            remaining_tls_payload,
-            tls_initial_parser_context
-        );
-        if (!tls_layers.empty()) {
-            for (const auto& tls_layer : tls_layers) {
-                append_layer_if_not_empty(layers, tls_layer);
-            }
-            appended_tls_summary = true;
-        }
-
-        for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-            const auto* selected_contribution =
-                find_selected_packet_contribution(reconstructed_record, flow_packet_index);
-            if (selected_contribution == nullptr || !selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-                continue;
-            }
-            append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-        }
+    // Selected-packet TLS context walking and reassembly ordering are prepared
+    // upstream; formatter only maps the prepared layers into the final tree.
+    for (const auto& tls_layer : options.tls_summary_layers) {
+        append_layer_if_not_empty(layers, tls_layer);
+        appended_tls_summary = true;
     }
+
+    const auto quic_layers = build_quic_summary_layers(details, options);
+    for (const auto& quic_layer : quic_layers) {
+        append_layer_if_not_empty(layers, quic_layer);
+    }
+    if (!quic_layers.empty()) {
+        appended_tls_summary = true;
+    }
+
+    insert_packet_data_summary_layer(layers, options);
 
     const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
     if (!appended_tls_summary && protocol_layer.has_value()) {

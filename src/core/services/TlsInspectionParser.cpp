@@ -1211,18 +1211,14 @@ TlsEcdheClientKeyExchangeModel parse_ecdhe_client_key_exchange_body(
 
 std::vector<TlsHandshakeModel> parse_handshake_messages(
     std::span<const std::uint8_t> record_body,
-    const std::size_t record_source_offset,
+    const std::size_t payload_source_offset,
     TlsInspectionParserContext& context
 ) {
     std::vector<TlsHandshakeModel> handshakes {};
     std::size_t offset = 0U;
-    const auto record_body_source_offset = checked_add(record_source_offset, kTlsRecordHeaderSize);
-    if (!record_body_source_offset.has_value()) {
-        return handshakes;
-    }
 
     while (offset < record_body.size()) {
-        const auto handshake_source_offset = checked_add(*record_body_source_offset, offset);
+        const auto handshake_source_offset = checked_add(payload_source_offset, offset);
         if (!handshake_source_offset.has_value()) {
             break;
         }
@@ -1360,6 +1356,48 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
 
 }  // namespace
 
+std::optional<TlsRecordHeaderInspection> inspect_tls_record_header(
+    std::span<const std::uint8_t> tls_bytes
+) noexcept {
+    if (tls_bytes.size() < kTlsRecordHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto content_type_kind = classify_record_content_type(tls_bytes[0]);
+    if (content_type_kind == TlsRecordContentTypeKind::unknown) {
+        return std::nullopt;
+    }
+
+    const auto legacy_version = read_be16(tls_bytes, 1U);
+    if (!legacy_version.has_value() ||
+        ((*legacy_version >> 8U) & 0x00FFU) != 0x03U ||
+        (*legacy_version & 0x00FFU) > 0x04U) {
+        return std::nullopt;
+    }
+
+    const auto declared_payload_length = read_be16(tls_bytes, 3U);
+    if (!declared_payload_length.has_value() ||
+        *declared_payload_length > kTlsRecordPayloadLengthLimit) {
+        return std::nullopt;
+    }
+
+    const auto total_size = checked_add(
+        kTlsRecordHeaderSize,
+        static_cast<std::size_t>(*declared_payload_length)
+    );
+    if (!total_size.has_value()) {
+        return std::nullopt;
+    }
+
+    return TlsRecordHeaderInspection {
+        .content_type_kind = content_type_kind,
+        .legacy_version = *legacy_version,
+        .declared_payload_length = *declared_payload_length,
+        .total_size = *total_size,
+        .complete_record_available = *total_size <= tls_bytes.size(),
+    };
+}
+
 TlsInspectionResult TlsInspectionParser::inspect(
     std::span<const std::uint8_t> tls_bytes,
     const TlsInspectionParserContext initial_context
@@ -1430,7 +1468,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
                     const auto available_record_body_bytes = tls_bytes.size() - (offset + kTlsRecordHeaderSize);
                     record.handshake_messages = parse_handshake_messages(
                         tls_bytes.subspan(offset + kTlsRecordHeaderSize, available_record_body_bytes),
-                        offset,
+                        offset + kTlsRecordHeaderSize,
                         context
                     );
                 } else {
@@ -1466,7 +1504,7 @@ TlsInspectionResult TlsInspectionParser::inspect(
                 record.handshake_payload_kind = TlsHandshakePayloadKind::plaintext;
                 record.handshake_messages = parse_handshake_messages(
                     tls_bytes.subspan(offset + kTlsRecordHeaderSize, *record.declared_payload_length),
-                    offset,
+                    offset + kTlsRecordHeaderSize,
                     context
                 );
             } else {
@@ -1502,6 +1540,14 @@ TlsInspectionResult TlsInspectionParser::inspect(
     }
     result.final_context = context;
     return result;
+}
+
+std::vector<TlsHandshakeModel> TlsInspectionParser::inspect_handshake_messages(
+    std::span<const std::uint8_t> handshake_bytes,
+    const TlsInspectionParserContext initial_context
+) const {
+    auto context = initial_context;
+    return parse_handshake_messages(handshake_bytes, 0U, context);
 }
 
 TlsInspectionResult TlsInspectionParser::inspect(

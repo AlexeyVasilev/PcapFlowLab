@@ -42,6 +42,144 @@ struct LinkLayerView {
     std::optional<std::size_t> bounded_packet_end {};
 };
 
+constexpr EffectiveTransportSummaryPlacement effective_transport_summary_placement(
+    const EffectiveTransportKind transport,
+    const EffectiveTransportRole role
+) noexcept {
+    if (transport == EffectiveTransportKind::tcp) {
+        return role == EffectiveTransportRole::inner
+            ? EffectiveTransportSummaryPlacement::after_inner_tcp
+            : EffectiveTransportSummaryPlacement::after_tcp;
+    }
+    if (transport == EffectiveTransportKind::udp) {
+        return role == EffectiveTransportRole::inner
+            ? EffectiveTransportSummaryPlacement::after_inner_udp
+            : EffectiveTransportSummaryPlacement::after_udp;
+    }
+    return EffectiveTransportSummaryPlacement::none;
+}
+
+std::optional<EffectiveTransportPayloadDetails> make_effective_tcp_payload_details(
+    const std::size_t transport_header_offset,
+    const std::size_t tcp_header_length,
+    const std::size_t captured_packet_end,
+    const EffectiveTransportRole role
+) {
+    if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+        transport_header_offset + tcp_header_length > captured_packet_end) {
+        return std::nullopt;
+    }
+
+    return EffectiveTransportPayloadDetails {
+        .transport = EffectiveTransportKind::tcp,
+        .role = role,
+        .summary_placement = effective_transport_summary_placement(EffectiveTransportKind::tcp, role),
+        .transport_header_offset = static_cast<std::uint32_t>(transport_header_offset),
+        .payload_offset = static_cast<std::uint32_t>(transport_header_offset + tcp_header_length),
+        .captured_payload_length = static_cast<std::uint32_t>(
+            captured_packet_end - (transport_header_offset + tcp_header_length)
+        ),
+    };
+}
+
+std::optional<EffectiveTransportPayloadDetails> make_effective_udp_payload_details(
+    const std::size_t transport_header_offset,
+    const std::size_t payload_offset,
+    const std::size_t captured_payload_length,
+    const std::optional<std::size_t> declared_payload_length,
+    const bool payload_truncated,
+    const EffectiveTransportRole role
+) {
+    if (payload_offset < transport_header_offset + detail::kUdpHeaderSize) {
+        return std::nullopt;
+    }
+
+    return EffectiveTransportPayloadDetails {
+        .transport = EffectiveTransportKind::udp,
+        .role = role,
+        .summary_placement = effective_transport_summary_placement(EffectiveTransportKind::udp, role),
+        .transport_header_offset = static_cast<std::uint32_t>(transport_header_offset),
+        .payload_offset = static_cast<std::uint32_t>(payload_offset),
+        .declared_payload_length = declared_payload_length.has_value()
+            ? std::optional<std::uint32_t> {static_cast<std::uint32_t>(*declared_payload_length)}
+            : std::nullopt,
+        .captured_payload_length = static_cast<std::uint32_t>(captured_payload_length),
+        .payload_truncated = payload_truncated,
+    };
+}
+
+std::optional<EffectiveTransportPayloadDetails> rebase_effective_transport_payload(
+    const std::optional<EffectiveTransportPayloadDetails>& nested_payload,
+    const std::size_t base_offset,
+    const std::size_t trimmed_prefix
+) {
+    if (!nested_payload.has_value()) {
+        return std::nullopt;
+    }
+
+    if (nested_payload->transport == EffectiveTransportKind::unknown ||
+        nested_payload->transport_header_offset < trimmed_prefix ||
+        nested_payload->payload_offset < trimmed_prefix) {
+        return std::nullopt;
+    }
+
+    auto rebased = *nested_payload;
+    rebased.role = EffectiveTransportRole::inner;
+    rebased.summary_placement = effective_transport_summary_placement(
+        rebased.transport,
+        EffectiveTransportRole::inner
+    );
+    rebased.transport_header_offset = static_cast<std::uint32_t>(
+        base_offset + (static_cast<std::size_t>(nested_payload->transport_header_offset) - trimmed_prefix)
+    );
+    rebased.payload_offset = static_cast<std::uint32_t>(
+        base_offset + (static_cast<std::size_t>(nested_payload->payload_offset) - trimmed_prefix)
+    );
+    return rebased;
+}
+
+std::optional<EffectiveTransportPayloadDetails> make_effective_transport_payload_from_inner_transport(
+    const GtpuInnerPacketDetails& inner,
+    const EffectiveTransportRole role
+) {
+    if (!inner.transport_payload_offset.has_value() || !inner.transport_payload_length.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto payload_offset = static_cast<std::size_t>(*inner.transport_payload_offset);
+    if (inner.has_tcp) {
+        const auto tcp_header_length = static_cast<std::size_t>(inner.tcp.header_length_bytes);
+        if (payload_offset < tcp_header_length) {
+            return std::nullopt;
+        }
+        return make_effective_tcp_payload_details(
+            payload_offset - tcp_header_length,
+            tcp_header_length,
+            payload_offset + static_cast<std::size_t>(*inner.transport_payload_length),
+            role
+        );
+    }
+
+    if (inner.has_udp) {
+        if (payload_offset < detail::kUdpHeaderSize) {
+            return std::nullopt;
+        }
+        return make_effective_udp_payload_details(
+            payload_offset - detail::kUdpHeaderSize,
+            payload_offset,
+            static_cast<std::size_t>(*inner.transport_payload_length),
+            inner.original_transport_payload_length.has_value()
+                ? std::optional<std::size_t> {static_cast<std::size_t>(*inner.original_transport_payload_length)}
+                : std::nullopt,
+            inner.original_transport_payload_length.has_value() &&
+                *inner.transport_payload_length < *inner.original_transport_payload_length,
+            role
+        );
+    }
+
+    return std::nullopt;
+}
+
 std::optional<PacketDetails> decode_packet_details(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet_ref,
@@ -212,7 +350,8 @@ void populate_ip_encapsulation_tcp_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t transport_offset,
     const std::size_t packet_end,
-    IpEncapsulationDetails& encapsulation
+    IpEncapsulationDetails& encapsulation,
+    std::optional<EffectiveTransportPayloadDetails>* effective_transport_payload = nullptr
 ) {
     if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
         packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
@@ -244,6 +383,14 @@ void populate_ip_encapsulation_tcp_details(
             packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
         );
     }
+    if (effective_transport_payload != nullptr) {
+        *effective_transport_payload = make_effective_tcp_payload_details(
+            transport_offset,
+            tcp_header_length,
+            packet_end,
+            EffectiveTransportRole::inner
+        );
+    }
 }
 
 void populate_partial_inner_vlan_details(
@@ -273,7 +420,8 @@ void populate_ip_encapsulation_udp_details(
     const std::size_t transport_offset,
     const std::size_t packet_end,
     const std::size_t nominal_packet_end,
-    IpEncapsulationDetails& encapsulation
+    IpEncapsulationDetails& encapsulation,
+    std::optional<EffectiveTransportPayloadDetails>* effective_transport_payload = nullptr
 ) {
     if (transport_offset + detail::kUdpHeaderSize > packet_end ||
         packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
@@ -297,6 +445,16 @@ void populate_ip_encapsulation_udp_details(
         .checksum = detail::read_be16(packet_bytes, transport_offset + 6U),
         .payload_truncated = udp_payload_truncated,
     };
+    if (effective_transport_payload != nullptr && udp_payload.has_value()) {
+        *effective_transport_payload = make_effective_udp_payload_details(
+            transport_offset,
+            udp_payload->payload_offset,
+            udp_payload->payload_length,
+            declared_udp_payload_length,
+            udp_payload_truncated,
+            EffectiveTransportRole::inner
+        );
+    }
 }
 
 void populate_ip_encapsulation_icmp_details(
@@ -565,14 +723,21 @@ bool try_populate_plain_ip_encapsulation_inner_ipv4(
 
     const auto transport_offset = inner_ipv4_offset + claimed_header_length;
     if (inner_layer.ipv4.protocol == detail::kIpProtocolTcp) {
-        populate_ip_encapsulation_tcp_details(packet_bytes, transport_offset, ipv4_bounds->packet_end, encapsulation);
+        populate_ip_encapsulation_tcp_details(
+            packet_bytes,
+            transport_offset,
+            ipv4_bounds->packet_end,
+            encapsulation,
+            &details.effective_transport_payload
+        );
     } else if (inner_layer.ipv4.protocol == detail::kIpProtocolUdp) {
         populate_ip_encapsulation_udp_details(
             packet_bytes,
             transport_offset,
             ipv4_bounds->packet_end,
             ipv4_bounds->nominal_packet_end,
-            encapsulation
+            encapsulation,
+            &details.effective_transport_payload
         );
     } else if (inner_layer.ipv4.protocol == detail::kIpProtocolIcmp) {
         populate_ip_encapsulation_icmp_details(packet_bytes, transport_offset, ipv4_bounds->packet_end, encapsulation);
@@ -660,14 +825,21 @@ bool try_populate_bounded_plain_ipv4_encapsulation_chain(
         const auto transport_offset = current_ipv4_offset + claimed_header_length;
         const auto protocol = encapsulation.inner_ip_layers.back().ipv4.protocol;
         if (protocol == detail::kIpProtocolTcp) {
-            populate_ip_encapsulation_tcp_details(packet_bytes, transport_offset, ipv4_bounds->packet_end, encapsulation);
+            populate_ip_encapsulation_tcp_details(
+                packet_bytes,
+                transport_offset,
+                ipv4_bounds->packet_end,
+                encapsulation,
+                &details.effective_transport_payload
+            );
         } else if (protocol == detail::kIpProtocolUdp) {
             populate_ip_encapsulation_udp_details(
                 packet_bytes,
                 transport_offset,
                 ipv4_bounds->packet_end,
                 ipv4_bounds->nominal_packet_end,
-                encapsulation
+                encapsulation,
+                &details.effective_transport_payload
             );
         } else if (protocol == detail::kIpProtocolIcmp) {
             populate_ip_encapsulation_icmp_details(packet_bytes, transport_offset, ipv4_bounds->packet_end, encapsulation);
@@ -777,14 +949,21 @@ bool try_populate_plain_ip_encapsulation_inner_ipv6(
     }
 
     if (payload->next_header == detail::kIpProtocolTcp) {
-        populate_ip_encapsulation_tcp_details(packet_bytes, payload->payload_offset, packet_end, encapsulation);
+        populate_ip_encapsulation_tcp_details(
+            packet_bytes,
+            payload->payload_offset,
+            packet_end,
+            encapsulation,
+            &details.effective_transport_payload
+        );
     } else if (payload->next_header == detail::kIpProtocolUdp) {
         populate_ip_encapsulation_udp_details(
             packet_bytes,
             payload->payload_offset,
             packet_end,
             inner_ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner_layer.ipv6.payload_length),
-            encapsulation
+            encapsulation,
+            &details.effective_transport_payload
         );
     } else if (payload->next_header == detail::kIpProtocolIcmpV6) {
         populate_ip_encapsulation_icmpv6_details(packet_bytes, payload->payload_offset, packet_end, encapsulation);
@@ -1188,6 +1367,11 @@ void populate_vxlan_inner_packet_details(
         return;
     }
 
+    details.effective_transport_payload = rebase_effective_transport_payload(
+        decoded_inner->effective_transport_payload,
+        vxlan.inner_ethernet_offset,
+        0U
+    );
     details.vxlan.has_inner_packet = true;
     details.vxlan.inner_packet = make_vxlan_inner_packet_details(*decoded_inner);
 }
@@ -1379,6 +1563,11 @@ void populate_geneve_inner_packet_details(
         return;
     }
 
+    details.effective_transport_payload = rebase_effective_transport_payload(
+        decoded_inner->effective_transport_payload,
+        geneve.inner_ethernet_offset,
+        0U
+    );
     details.geneve.has_inner_packet = true;
     details.geneve.inner_packet = make_geneve_inner_packet_details(*decoded_inner);
 }
@@ -1616,6 +1805,11 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
                     network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
                 );
             }
+            const auto payload_offset_inner = transport_offset + tcp_header_length;
+            inner.transport_payload_offset = static_cast<std::uint32_t>(payload_offset_inner);
+            inner.transport_payload_length = static_cast<std::uint32_t>(packet_end - payload_offset_inner);
+            inner.original_transport_payload_length =
+                static_cast<std::uint32_t>(ipv4_bounds->nominal_packet_end - payload_offset_inner);
             return inner;
         }
 
@@ -1644,6 +1838,11 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
                 .payload_truncated = !udp_payload.has_value() ||
                     (udp_payload->payload_length < declared_udp_payload_length),
             };
+            if (udp_payload.has_value()) {
+                inner.transport_payload_offset = static_cast<std::uint32_t>(udp_payload->payload_offset);
+                inner.transport_payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+                inner.original_transport_payload_length = static_cast<std::uint32_t>(declared_udp_payload_length);
+            }
             return inner;
         }
 
@@ -1743,6 +1942,14 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
                     network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + tcp_header_length)
                 );
             }
+            const auto payload_offset_inner = payload->payload_offset + tcp_header_length;
+            inner.transport_payload_offset = static_cast<std::uint32_t>(payload_offset_inner);
+            inner.transport_payload_length = static_cast<std::uint32_t>(packet_end - payload_offset_inner);
+            inner.original_transport_payload_length =
+                static_cast<std::uint32_t>(
+                    (payload_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner.ipv6.payload_length)) -
+                    payload_offset_inner
+                );
             return inner;
         }
 
@@ -1771,6 +1978,11 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
                 .payload_truncated = !udp_payload.has_value() ||
                     (udp_payload->payload_length < declared_udp_payload_length),
             };
+            if (udp_payload.has_value()) {
+                inner.transport_payload_offset = static_cast<std::uint32_t>(udp_payload->payload_offset);
+                inner.transport_payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+                inner.original_transport_payload_length = static_cast<std::uint32_t>(declared_udp_payload_length);
+            }
             return inner;
         }
 
@@ -1797,7 +2009,8 @@ std::optional<AhInnerPacketDetails> decode_ah_inner_packet_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint8_t next_header,
     const std::size_t payload_offset,
-    const std::size_t bounded_packet_end
+    const std::size_t bounded_packet_end,
+    std::optional<EffectiveTransportPayloadDetails>* effective_transport_payload = nullptr
 ) {
     const std::uint16_t protocol_type =
         next_header == detail::kIpProtocolIpv4Encapsulation ? detail::kEtherTypeIpv4 :
@@ -1829,6 +2042,12 @@ std::optional<AhInnerPacketDetails> decode_ah_inner_packet_details(
     ah_inner.tcp = inner->tcp;
     ah_inner.has_udp = inner->has_udp;
     ah_inner.udp = inner->udp;
+    if (effective_transport_payload != nullptr) {
+        *effective_transport_payload = make_effective_transport_payload_from_inner_transport(
+            *inner,
+            EffectiveTransportRole::inner
+        );
+    }
     if (const auto payload_lengths = derive_inner_transport_payload_lengths(
             packet_bytes,
             protocol_type,
@@ -1856,7 +2075,8 @@ void populate_ah_inner_packet_details(
             packet_bytes,
             next_header,
             payload_offset,
-            packet_end
+            packet_end,
+            &details.effective_transport_payload
         );
         inner.has_value()) {
         details.ah.has_inner_packet = true;
@@ -1903,6 +2123,12 @@ void populate_ah_payload_details(
                 packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + tcp_header_length)
             );
         }
+        details.effective_transport_payload = make_effective_tcp_payload_details(
+            ah_payload_offset,
+            tcp_header_length,
+            packet_end,
+            EffectiveTransportRole::top_level
+        );
         return;
     }
 
@@ -1932,6 +2158,16 @@ void populate_ah_payload_details(
             .checksum = detail::read_be16(packet_bytes, ah_payload_offset + 6U),
             .payload_truncated = udp_payload_truncated,
         };
+        if (udp_payload.has_value()) {
+            details.effective_transport_payload = make_effective_udp_payload_details(
+                ah_payload_offset,
+                udp_payload->payload_offset,
+                udp_payload->payload_length,
+                declared_udp_payload_length,
+                udp_payload_truncated,
+                EffectiveTransportRole::top_level
+            );
+        }
         return;
     }
 
@@ -2020,7 +2256,8 @@ std::shared_ptr<GreInnerPacketDetails> make_gre_inner_packet_details(
 
 std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
     std::span<const std::uint8_t> packet_bytes,
-    const detail::GrePayloadView& gre
+    const detail::GrePayloadView& gre,
+    std::optional<EffectiveTransportPayloadDetails>* effective_transport_payload = nullptr
 ) {
     const auto bounded_end = std::min(gre.bounded_packet_end.value_or(packet_bytes.size()), packet_bytes.size());
     if (gre.is_eoip || gre.protocol_type == detail::kGreProtocolTypeTransparentEthernetBridging) {
@@ -2043,6 +2280,13 @@ std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
             return std::nullopt;
         }
 
+        if (effective_transport_payload != nullptr) {
+            *effective_transport_payload = rebase_effective_transport_payload(
+                decoded_inner->effective_transport_payload,
+                gre.inner_ethernet_offset,
+                0U
+            );
+        }
         const auto inner = make_gre_inner_packet_details(*decoded_inner, true);
         return gre_inner_packet_has_content(*inner) ? std::optional<GreInnerPacketDetails> {*inner} : std::nullopt;
     }
@@ -2081,6 +2325,13 @@ std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
         return std::nullopt;
     }
 
+    if (effective_transport_payload != nullptr) {
+        *effective_transport_payload = rebase_effective_transport_payload(
+            decoded_inner->effective_transport_payload,
+            gre.payload_offset,
+            detail::kEthernetHeaderSize
+        );
+    }
     const auto inner = make_gre_inner_packet_details(*decoded_inner, false);
     return gre_inner_packet_has_content(*inner) ? std::optional<GreInnerPacketDetails> {*inner} : std::nullopt;
 }
@@ -2196,7 +2447,12 @@ void populate_lenient_gre_details(
                 }
             }
 
-            if (const auto inner = decode_gre_inner_packet_details(packet_bytes, *gre); inner.has_value()) {
+            if (const auto inner = decode_gre_inner_packet_details(
+                    packet_bytes,
+                    *gre,
+                    &details.effective_transport_payload
+                );
+                inner.has_value()) {
                 details.gre.has_inner_packet = true;
                 details.gre.inner_packet = std::make_shared<GreInnerPacketDetails>(*inner);
             } else if (!gre->has_inner_ethernet) {
@@ -2262,7 +2518,12 @@ void populate_lenient_gre_details(
         }
     }
 
-    if (const auto inner = decode_gre_inner_packet_details(packet_bytes, *gre); inner.has_value()) {
+    if (const auto inner = decode_gre_inner_packet_details(
+            packet_bytes,
+            *gre,
+            &details.effective_transport_payload
+        );
+        inner.has_value()) {
         details.gre.has_inner_packet = true;
         details.gre.inner_packet = std::make_shared<GreInnerPacketDetails>(*inner);
     } else if (gre->protocol_type != detail::kGreProtocolTypeTransparentEthernetBridging) {
@@ -2377,6 +2638,10 @@ void populate_lenient_gtpu_details(
             inner.has_value()) {
             details.gtpu.has_inner_packet = true;
             details.gtpu.inner_packet = std::make_shared<GtpuInnerPacketDetails>(*inner);
+            details.effective_transport_payload = make_effective_transport_payload_from_inner_transport(
+                *inner,
+                EffectiveTransportRole::inner
+            );
         }
         return;
     }
@@ -2391,6 +2656,10 @@ void populate_lenient_gtpu_details(
             inner.has_value()) {
             details.gtpu.has_inner_packet = true;
             details.gtpu.inner_packet = std::make_shared<GtpuInnerPacketDetails>(*inner);
+            details.effective_transport_payload = make_effective_transport_payload_from_inner_transport(
+                *inner,
+                EffectiveTransportRole::inner
+            );
         }
         return;
     }
@@ -3327,6 +3596,12 @@ std::optional<PacketDetails> decode_packet_details(
                     network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
                 );
             }
+            details.effective_transport_payload = make_effective_tcp_payload_details(
+                transport_offset,
+                tcp_header_length,
+                packet_end,
+                EffectiveTransportRole::top_level
+            );
             return details;
         }
 
@@ -3356,6 +3631,16 @@ std::optional<PacketDetails> decode_packet_details(
                 .checksum = detail::read_be16(network_packet_bytes, transport_offset + 6U),
                 .payload_truncated = udp_payload_truncated,
             };
+            if (udp_payload.has_value()) {
+                details.effective_transport_payload = make_effective_udp_payload_details(
+                    transport_offset,
+                    udp_payload->payload_offset,
+                    udp_payload->payload_length,
+                    declared_udp_payload_length,
+                    udp_payload_truncated,
+                    EffectiveTransportRole::top_level
+                );
+            }
             if (details.udp.dst_port == detail::kUdpPortGtpu) {
                 const auto gtpu_offset = transport_offset + detail::kUdpHeaderSize;
                 const auto gtpu_payload_end = udp_payload.has_value()
@@ -3625,6 +3910,12 @@ std::optional<PacketDetails> decode_packet_details(
                     network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + tcp_header_length)
                 );
             }
+            details.effective_transport_payload = make_effective_tcp_payload_details(
+                payload->payload_offset,
+                tcp_header_length,
+                packet_end,
+                EffectiveTransportRole::top_level
+            );
             return details;
         }
 
@@ -3654,6 +3945,16 @@ std::optional<PacketDetails> decode_packet_details(
                 .checksum = detail::read_be16(network_packet_bytes, payload->payload_offset + 6U),
                 .payload_truncated = udp_payload_truncated,
             };
+            if (udp_payload.has_value()) {
+                details.effective_transport_payload = make_effective_udp_payload_details(
+                    payload->payload_offset,
+                    udp_payload->payload_offset,
+                    udp_payload->payload_length,
+                    declared_udp_payload_length,
+                    udp_payload_truncated,
+                    EffectiveTransportRole::top_level
+                );
+            }
             if (details.udp.dst_port == detail::kUdpPortGtpu) {
                 const auto gtpu_offset = payload->payload_offset + detail::kUdpHeaderSize;
                 const auto gtpu_payload_end = udp_payload.has_value()
