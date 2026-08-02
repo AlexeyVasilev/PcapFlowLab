@@ -108,6 +108,27 @@ struct SelectedPacketByteMaterialization {
     std::span<const std::uint8_t> bytes {};
 };
 
+struct SelectedPacketByteViewPresentationDescriptor {
+    std::string stable_id {};
+    std::string label {};
+    std::optional<std::string> parent_stable_id {};
+    std::size_t depth {0U};
+    std::string owner_kind {};
+    std::uint32_t available_length {0U};
+    std::optional<std::uint32_t> declared_length {};
+    std::string state {};
+    std::optional<std::uint64_t> quic_crypto_stream_offset {};
+};
+
+struct SelectedPacketByteViewContent {
+    std::string stable_id {};
+    std::string label {};
+    std::uint32_t available_length {0U};
+    std::optional<std::uint32_t> declared_length {};
+    std::string state {};
+    std::string formatted_text {};
+};
+
 [[nodiscard]] SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     const PacketDetails& details,
     const PacketRef& packet,
@@ -121,6 +142,18 @@ struct SelectedPacketByteMaterialization {
 ) noexcept;
 
 [[nodiscard]] std::optional<std::string> format_selected_packet_byte_view_hex_dump(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewId& id,
+    std::span<const std::uint8_t> owner_bytes,
+    const HexDumpService& hex_dump_service
+);
+
+[[nodiscard]] std::string format_selected_packet_byte_view_stable_id(const SelectedPacketByteViewId& id);
+[[nodiscard]] std::optional<SelectedPacketByteViewId> parse_selected_packet_byte_view_stable_id(std::string_view stable_id);
+[[nodiscard]] std::vector<SelectedPacketByteViewPresentationDescriptor> build_selected_packet_byte_view_descriptors(
+    const SelectedPacketBytePresentation& presentation
+);
+[[nodiscard]] std::optional<SelectedPacketByteViewContent> format_selected_packet_byte_view_content(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewId& id,
     std::span<const std::uint8_t> owner_bytes,

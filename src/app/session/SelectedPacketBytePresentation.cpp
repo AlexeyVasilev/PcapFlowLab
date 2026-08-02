@@ -1,6 +1,7 @@
 #include "app/session/SelectedPacketBytePresentation.h"
 
 #include <algorithm>
+#include <sstream>
 
 #include "core/services/HexDumpService.h"
 
@@ -44,6 +45,236 @@ std::optional<std::uint32_t> narrow_u32(const std::size_t value) noexcept {
         return std::nullopt;
     }
     return static_cast<std::uint32_t>(value);
+}
+
+std::string owner_kind_key(const SelectedPacketByteOwnerKind kind) {
+    switch (kind) {
+    case SelectedPacketByteOwnerKind::captured_packet:
+        return "captured_packet";
+    case SelectedPacketByteOwnerKind::quic_initial_plaintext:
+        return "quic_initial_plaintext";
+    default:
+        return "unknown";
+    }
+}
+
+std::string view_kind_key(const SelectedPacketByteViewKind kind) {
+    switch (kind) {
+    case SelectedPacketByteViewKind::frame:
+        return "frame";
+    case SelectedPacketByteViewKind::ethernet_payload:
+        return "ethernet_payload";
+    case SelectedPacketByteViewKind::vlan_payload:
+        return "vlan_payload";
+    case SelectedPacketByteViewKind::mpls_payload:
+        return "mpls_payload";
+    case SelectedPacketByteViewKind::ipv4_payload:
+        return "ipv4_payload";
+    case SelectedPacketByteViewKind::ipv6_payload:
+        return "ipv6_payload";
+    case SelectedPacketByteViewKind::tcp_payload:
+        return "tcp_payload";
+    case SelectedPacketByteViewKind::udp_payload:
+        return "udp_payload";
+    case SelectedPacketByteViewKind::sctp_payload:
+        return "sctp_payload";
+    case SelectedPacketByteViewKind::effective_transport_payload:
+        return "effective_transport_payload";
+    case SelectedPacketByteViewKind::inner_ethernet_payload:
+        return "inner_ethernet_payload";
+    case SelectedPacketByteViewKind::inner_vlan_payload:
+        return "inner_vlan_payload";
+    case SelectedPacketByteViewKind::inner_ipv4_payload:
+        return "inner_ipv4_payload";
+    case SelectedPacketByteViewKind::inner_ipv6_payload:
+        return "inner_ipv6_payload";
+    case SelectedPacketByteViewKind::inner_tcp_payload:
+        return "inner_tcp_payload";
+    case SelectedPacketByteViewKind::inner_udp_payload:
+        return "inner_udp_payload";
+    case SelectedPacketByteViewKind::inner_sctp_payload:
+        return "inner_sctp_payload";
+    case SelectedPacketByteViewKind::gre_payload:
+        return "gre_payload";
+    case SelectedPacketByteViewKind::eoip_payload:
+        return "eoip_payload";
+    case SelectedPacketByteViewKind::vxlan_payload:
+        return "vxlan_payload";
+    case SelectedPacketByteViewKind::geneve_payload:
+        return "geneve_payload";
+    case SelectedPacketByteViewKind::gtpu_payload:
+        return "gtpu_payload";
+    case SelectedPacketByteViewKind::ah_payload:
+        return "ah_payload";
+    case SelectedPacketByteViewKind::esp_protected_payload:
+        return "esp_protected_payload";
+    case SelectedPacketByteViewKind::quic_initial_packet:
+        return "quic_initial_packet";
+    case SelectedPacketByteViewKind::quic_zero_rtt_packet:
+        return "quic_zero_rtt_packet";
+    case SelectedPacketByteViewKind::quic_handshake_packet:
+        return "quic_handshake_packet";
+    case SelectedPacketByteViewKind::quic_retry_packet:
+        return "quic_retry_packet";
+    case SelectedPacketByteViewKind::quic_version_negotiation_packet:
+        return "quic_version_negotiation_packet";
+    case SelectedPacketByteViewKind::quic_protected_packet:
+        return "quic_protected_packet";
+    case SelectedPacketByteViewKind::quic_initial_protected_payload:
+        return "quic_initial_protected_payload";
+    case SelectedPacketByteViewKind::quic_initial_plaintext:
+        return "quic_initial_plaintext";
+    case SelectedPacketByteViewKind::quic_frame:
+        return "quic_frame";
+    case SelectedPacketByteViewKind::quic_crypto_data:
+        return "quic_crypto_data";
+    default:
+        return "unknown";
+    }
+}
+
+std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_view key) {
+    constexpr std::pair<std::string_view, SelectedPacketByteViewKind> kKinds[] {
+        {"frame", SelectedPacketByteViewKind::frame},
+        {"ethernet_payload", SelectedPacketByteViewKind::ethernet_payload},
+        {"vlan_payload", SelectedPacketByteViewKind::vlan_payload},
+        {"mpls_payload", SelectedPacketByteViewKind::mpls_payload},
+        {"ipv4_payload", SelectedPacketByteViewKind::ipv4_payload},
+        {"ipv6_payload", SelectedPacketByteViewKind::ipv6_payload},
+        {"tcp_payload", SelectedPacketByteViewKind::tcp_payload},
+        {"udp_payload", SelectedPacketByteViewKind::udp_payload},
+        {"sctp_payload", SelectedPacketByteViewKind::sctp_payload},
+        {"effective_transport_payload", SelectedPacketByteViewKind::effective_transport_payload},
+        {"inner_ethernet_payload", SelectedPacketByteViewKind::inner_ethernet_payload},
+        {"inner_vlan_payload", SelectedPacketByteViewKind::inner_vlan_payload},
+        {"inner_ipv4_payload", SelectedPacketByteViewKind::inner_ipv4_payload},
+        {"inner_ipv6_payload", SelectedPacketByteViewKind::inner_ipv6_payload},
+        {"inner_tcp_payload", SelectedPacketByteViewKind::inner_tcp_payload},
+        {"inner_udp_payload", SelectedPacketByteViewKind::inner_udp_payload},
+        {"inner_sctp_payload", SelectedPacketByteViewKind::inner_sctp_payload},
+        {"gre_payload", SelectedPacketByteViewKind::gre_payload},
+        {"eoip_payload", SelectedPacketByteViewKind::eoip_payload},
+        {"vxlan_payload", SelectedPacketByteViewKind::vxlan_payload},
+        {"geneve_payload", SelectedPacketByteViewKind::geneve_payload},
+        {"gtpu_payload", SelectedPacketByteViewKind::gtpu_payload},
+        {"ah_payload", SelectedPacketByteViewKind::ah_payload},
+        {"esp_protected_payload", SelectedPacketByteViewKind::esp_protected_payload},
+        {"quic_initial_packet", SelectedPacketByteViewKind::quic_initial_packet},
+        {"quic_zero_rtt_packet", SelectedPacketByteViewKind::quic_zero_rtt_packet},
+        {"quic_handshake_packet", SelectedPacketByteViewKind::quic_handshake_packet},
+        {"quic_retry_packet", SelectedPacketByteViewKind::quic_retry_packet},
+        {"quic_version_negotiation_packet", SelectedPacketByteViewKind::quic_version_negotiation_packet},
+        {"quic_protected_packet", SelectedPacketByteViewKind::quic_protected_packet},
+        {"quic_initial_protected_payload", SelectedPacketByteViewKind::quic_initial_protected_payload},
+        {"quic_initial_plaintext", SelectedPacketByteViewKind::quic_initial_plaintext},
+        {"quic_frame", SelectedPacketByteViewKind::quic_frame},
+        {"quic_crypto_data", SelectedPacketByteViewKind::quic_crypto_data},
+    };
+
+    const auto it = std::find_if(
+        std::begin(kKinds),
+        std::end(kKinds),
+        [&](const auto& entry) {
+            return entry.first == key;
+        }
+    );
+    if (it == std::end(kKinds)) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) {
+    switch (descriptor.id.kind) {
+    case SelectedPacketByteViewKind::frame:
+        return "Frame";
+    case SelectedPacketByteViewKind::ethernet_payload:
+        return "Ethernet Payload";
+    case SelectedPacketByteViewKind::vlan_payload:
+        return "VLAN Payload";
+    case SelectedPacketByteViewKind::mpls_payload:
+        return "MPLS Payload";
+    case SelectedPacketByteViewKind::ipv4_payload:
+        return "IPv4 Payload";
+    case SelectedPacketByteViewKind::ipv6_payload:
+        return "IPv6 Payload";
+    case SelectedPacketByteViewKind::tcp_payload:
+        return "TCP Payload";
+    case SelectedPacketByteViewKind::udp_payload:
+        return "UDP Payload";
+    case SelectedPacketByteViewKind::sctp_payload:
+        return "SCTP Payload";
+    case SelectedPacketByteViewKind::effective_transport_payload:
+        return "Transport Payload";
+    case SelectedPacketByteViewKind::inner_ethernet_payload:
+        return "Inner Ethernet Payload";
+    case SelectedPacketByteViewKind::inner_vlan_payload:
+        return "Inner VLAN Payload";
+    case SelectedPacketByteViewKind::inner_ipv4_payload:
+        return "Inner IPv4 Payload";
+    case SelectedPacketByteViewKind::inner_ipv6_payload:
+        return "Inner IPv6 Payload";
+    case SelectedPacketByteViewKind::inner_tcp_payload:
+        return "Inner TCP Payload";
+    case SelectedPacketByteViewKind::inner_udp_payload:
+        return "Inner UDP Payload";
+    case SelectedPacketByteViewKind::inner_sctp_payload:
+        return "Inner SCTP Payload";
+    case SelectedPacketByteViewKind::gre_payload:
+        return "GRE Payload";
+    case SelectedPacketByteViewKind::eoip_payload:
+        return "EoIP Payload";
+    case SelectedPacketByteViewKind::vxlan_payload:
+        return "VXLAN Payload";
+    case SelectedPacketByteViewKind::geneve_payload:
+        return "Geneve Payload";
+    case SelectedPacketByteViewKind::gtpu_payload:
+        return "GTP-U Payload";
+    case SelectedPacketByteViewKind::ah_payload:
+        return "AH Payload";
+    case SelectedPacketByteViewKind::esp_protected_payload:
+        return "ESP Protected Payload";
+    case SelectedPacketByteViewKind::quic_initial_packet:
+        return "QUIC Initial Packet";
+    case SelectedPacketByteViewKind::quic_zero_rtt_packet:
+        return "QUIC 0-RTT Packet";
+    case SelectedPacketByteViewKind::quic_handshake_packet:
+        return "QUIC Handshake Packet";
+    case SelectedPacketByteViewKind::quic_retry_packet:
+        return "QUIC Retry Packet";
+    case SelectedPacketByteViewKind::quic_version_negotiation_packet:
+        return "QUIC Version Negotiation Packet";
+    case SelectedPacketByteViewKind::quic_protected_packet:
+        return "QUIC Protected Packet";
+    case SelectedPacketByteViewKind::quic_initial_protected_payload:
+        return "QUIC Initial Protected Payload";
+    case SelectedPacketByteViewKind::quic_initial_plaintext:
+        return "QUIC Initial Decrypted Payload";
+    case SelectedPacketByteViewKind::quic_frame:
+        return descriptor.quic_crypto_stream_offset.has_value() ? "CRYPTO Frame" : "QUIC Frame";
+    case SelectedPacketByteViewKind::quic_crypto_data:
+        return "CRYPTO Frame Data";
+    default:
+        return "Bytes";
+    }
+}
+
+std::string view_label(const SelectedPacketByteViewDescriptor& descriptor) {
+    auto label = base_view_label(descriptor);
+    if (descriptor.id.occurrence > 0U) {
+        label += " #" + std::to_string(static_cast<std::size_t>(descriptor.id.occurrence) + 1U);
+    }
+    return label;
+}
+
+std::string descriptor_state(const SelectedPacketByteViewDescriptor& descriptor) {
+    if (descriptor.truncated) {
+        return "truncated";
+    }
+    if (descriptor.declared_length.has_value() && descriptor.captured_length < *descriptor.declared_length) {
+        return "partial";
+    }
+    return "complete";
 }
 
 std::optional<SelectedPacketByteOwnerId> append_derived_owner(
@@ -1073,6 +1304,111 @@ std::optional<std::string> format_selected_packet_byte_view_hex_dump(
         return std::nullopt;
     }
     return hex_dump_service.format(materialized->bytes);
+}
+
+std::string format_selected_packet_byte_view_stable_id(const SelectedPacketByteViewId& id) {
+    std::ostringstream out {};
+    out << view_kind_key(id.kind) << ':' << static_cast<unsigned int>(id.scope) << ':' << static_cast<unsigned int>(id.occurrence);
+    return out.str();
+}
+
+std::optional<SelectedPacketByteViewId> parse_selected_packet_byte_view_stable_id(const std::string_view stable_id) {
+    const auto first_separator = stable_id.find(':');
+    if (first_separator == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto second_separator = stable_id.find(':', first_separator + 1U);
+    if (second_separator == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    const auto kind_key = stable_id.substr(0U, first_separator);
+    const auto parsed_kind = parse_view_kind_key(kind_key);
+    if (!parsed_kind.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto scope_text = stable_id.substr(first_separator + 1U, second_separator - first_separator - 1U);
+    const auto occurrence_text = stable_id.substr(second_separator + 1U);
+    if (scope_text.empty() || occurrence_text.empty()) {
+        return std::nullopt;
+    }
+
+    try {
+        const auto scope_value = static_cast<unsigned long>(std::stoul(std::string {scope_text}));
+        const auto occurrence_value = static_cast<unsigned long>(std::stoul(std::string {occurrence_text}));
+        if (scope_value > 0xFFUL || occurrence_value > 0xFFUL) {
+            return std::nullopt;
+        }
+
+        return SelectedPacketByteViewId {
+            .kind = *parsed_kind,
+            .scope = static_cast<std::uint8_t>(scope_value),
+            .occurrence = static_cast<std::uint8_t>(occurrence_value),
+        };
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::vector<SelectedPacketByteViewPresentationDescriptor> build_selected_packet_byte_view_descriptors(
+    const SelectedPacketBytePresentation& presentation
+) {
+    std::vector<SelectedPacketByteViewPresentationDescriptor> descriptors {};
+    descriptors.reserve(presentation.views.size());
+
+    auto resolve_depth = [&](const SelectedPacketByteViewDescriptor& view) {
+        std::size_t depth = 0U;
+        auto parent_id = view.parent_id;
+        while (parent_id.has_value()) {
+            const auto* parent = presentation.find_view(*parent_id);
+            if (parent == nullptr) {
+                break;
+            }
+            ++depth;
+            parent_id = parent->parent_id;
+        }
+        return depth;
+    };
+
+    for (const auto& view : presentation.views) {
+        descriptors.push_back(SelectedPacketByteViewPresentationDescriptor {
+            .stable_id = format_selected_packet_byte_view_stable_id(view.id),
+            .label = view_label(view),
+            .parent_stable_id = view.parent_id.has_value()
+                ? std::optional<std::string> {format_selected_packet_byte_view_stable_id(*view.parent_id)}
+                : std::nullopt,
+            .depth = resolve_depth(view),
+            .owner_kind = owner_kind_key(view.owner_kind),
+            .available_length = view.captured_length,
+            .declared_length = view.declared_length,
+            .state = descriptor_state(view),
+            .quic_crypto_stream_offset = view.quic_crypto_stream_offset,
+        });
+    }
+
+    return descriptors;
+}
+
+std::optional<SelectedPacketByteViewContent> format_selected_packet_byte_view_content(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewId& id,
+    std::span<const std::uint8_t> owner_bytes,
+    const HexDumpService& hex_dump_service
+) {
+    const auto materialized = materialize_selected_packet_byte_view(presentation, id, owner_bytes);
+    if (!materialized.has_value() || materialized->descriptor == nullptr) {
+        return std::nullopt;
+    }
+
+    return SelectedPacketByteViewContent {
+        .stable_id = format_selected_packet_byte_view_stable_id(id),
+        .label = view_label(*materialized->descriptor),
+        .available_length = materialized->descriptor->captured_length,
+        .declared_length = materialized->descriptor->declared_length,
+        .state = descriptor_state(*materialized->descriptor),
+        .formatted_text = hex_dump_service.format(materialized->bytes),
+    };
 }
 
 }  // namespace pfl::session_detail

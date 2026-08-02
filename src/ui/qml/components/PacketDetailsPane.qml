@@ -6,6 +6,7 @@ Frame {
     id: root
 
     property var packetDetailsModel: null
+    property var packetDetailsController: null
     property var summaryExpansionProfiles: ({})
 
     function isStreamItemDetails() {
@@ -71,6 +72,54 @@ Frame {
         }
 
         return root.packetDetailsModel.payloadTabTitle
+    }
+
+    function packetByteViews() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
+            return []
+        }
+
+        const descriptors = root.packetDetailsModel.packetByteViewDescriptors
+        const items = []
+        for (let index = 0; index < descriptors.length; ++index) {
+            const descriptor = descriptors[index]
+            const depth = descriptor && descriptor["depth"] !== undefined && descriptor["depth"] !== null
+                ? Number(descriptor["depth"])
+                : 0
+            const label = descriptor && descriptor["label"] !== undefined && descriptor["label"] !== null
+                ? String(descriptor["label"])
+                : ""
+            items.push({
+                "stableId": descriptor && descriptor["stableId"] !== undefined && descriptor["stableId"] !== null
+                    ? String(descriptor["stableId"])
+                    : "",
+                "label": label,
+                "displayLabel": `${"  ".repeat(Math.max(0, depth))}${label}`,
+                "depth": depth,
+                "state": descriptor && descriptor["state"] !== undefined && descriptor["state"] !== null
+                    ? String(descriptor["state"])
+                    : "",
+                "statusText": descriptor && descriptor["statusText"] !== undefined && descriptor["statusText"] !== null
+                    ? String(descriptor["statusText"])
+                    : ""
+            })
+        }
+        return items
+    }
+
+    function packetByteViewCurrentIndex() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
+            return -1
+        }
+
+        const selectedId = root.packetDetailsModel.selectedPacketByteViewId
+        const items = root.packetByteViews()
+        for (let index = 0; index < items.length; ++index) {
+            if (items[index].stableId === selectedId) {
+                return index
+            }
+        }
+        return items.length > 0 ? 0 : -1
     }
 
     function buildSummaryLayerOccurrences(layers) {
@@ -756,31 +805,7 @@ Frame {
             }
 
             TabButton {
-                text: "Raw"
-                implicitHeight: 28
-
-                contentItem: Label {
-                    text: parent.text
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 11
-                    font.bold: parent.checked
-                    color: parent.checked ? "#0f172a" : "#64748b"
-                }
-
-                background: Rectangle {
-                    radius: 6
-                    color: parent.checked
-                        ? "#ffffff"
-                        : parent.hovered
-                            ? "#f8fafc"
-                            : "#f1f5f9"
-                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
-                }
-            }
-
-            TabButton {
-                text: root.payloadTabTitle()
+                text: "Bytes"
                 implicitHeight: 28
 
                 contentItem: Label {
@@ -992,18 +1017,54 @@ Frame {
                 }
             }
 
-            TextPane {
-                monospace: true
-                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                    ? root.packetDetailsModel.hexText
-                    : root.emptyText()
-            }
+            Rectangle {
+                color: "transparent"
 
-            TextPane {
-                monospace: true
-                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                    ? root.packetDetailsModel.payloadText
-                    : root.emptyText()
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    ComboBox {
+                        id: packetByteViewSelector
+                        Layout.fillWidth: true
+                        model: root.packetByteViews()
+                        textRole: "displayLabel"
+                        valueRole: "stableId"
+                        currentIndex: root.packetByteViewCurrentIndex()
+                        enabled: model.length > 0
+
+                        onActivated: function(index) {
+                            const item = model[index]
+                            if (root.packetDetailsController && item && item.stableId) {
+                                root.packetDetailsController.selectPacketByteView(item.stableId)
+                            }
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                        text: root.packetDetailsModel
+                            ? root.packetDetailsModel.selectedPacketByteViewStatusText
+                            : ""
+                        color: "#64748b"
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                    }
+
+                    TextPane {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        monospace: true
+                        viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            ? (root.packetDetailsModel.selectedPacketByteViewText.length > 0
+                                ? root.packetDetailsModel.selectedPacketByteViewText
+                                : (root.packetByteViews().length > 0
+                                    ? "Selected byte view is unavailable."
+                                    : "No byte views are available for this packet."))
+                            : root.emptyText()
+                    }
+                }
             }
 
             TextPane {

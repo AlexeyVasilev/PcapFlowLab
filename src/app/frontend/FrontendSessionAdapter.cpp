@@ -679,10 +679,6 @@ std::string build_frontend_packet_summary_text(
     return out.str();
 }
 
-std::string packet_payload_tab_title(const PacketDetails& details) {
-    return session_detail::packet_payload_tab_title(details);
-}
-
 std::string format_stream_source_packets_text(
     const StreamItemRow& row,
     const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
@@ -1018,31 +1014,73 @@ std::string frontend_packet_protocol_text(
     return protocol_text;
 }
 
-std::string build_packet_payload_text(
-    const std::vector<std::uint8_t>& packet_bytes,
-    const PacketRef& packet
-) {
-    if (packet_bytes.empty()) {
-        return {};
-    }
-
-    PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
-    if (payload_bytes.empty()) {
-        return {};
-    }
-
-    HexDumpService hex_dump_service {};
-    return hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()));
+std::string format_byte_count_text(const std::size_t count) {
+    return std::to_string(count) + (count == 1U ? " byte" : " bytes");
 }
 
-std::string build_packet_raw_text(const std::vector<std::uint8_t>& packet_bytes) {
-    if (packet_bytes.empty()) {
-        return {};
+std::string packet_byte_view_state_text(const std::string_view state) {
+    if (state == "complete") {
+        return "Complete";
     }
+    if (state == "partial") {
+        return "Partial";
+    }
+    if (state == "truncated") {
+        return "Truncated";
+    }
+    return "Unavailable";
+}
 
-    HexDumpService hex_dump_service {};
-    return hex_dump_service.format(std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
+std::string packet_byte_view_status_text(
+    const std::string_view state,
+    const std::uint32_t available_length,
+    const std::optional<std::uint32_t>& declared_length
+) {
+    auto status = packet_byte_view_state_text(state) + " \xE2\x80\xA2 Available: " + format_byte_count_text(available_length);
+    if (declared_length.has_value()) {
+        status += " \xE2\x80\xA2 Declared: " + format_byte_count_text(*declared_length);
+    }
+    return status;
+}
+
+std::vector<FrontendPacketDetailsDto::PacketByteViewDescriptor> build_frontend_packet_byte_view_descriptors(
+    const std::vector<session_detail::SelectedPacketByteViewPresentationDescriptor>& descriptors
+) {
+    std::vector<FrontendPacketDetailsDto::PacketByteViewDescriptor> items {};
+    items.reserve(descriptors.size());
+    for (const auto& descriptor : descriptors) {
+        items.push_back(FrontendPacketDetailsDto::PacketByteViewDescriptor {
+            .stable_id = descriptor.stable_id,
+            .label = descriptor.label,
+            .parent_stable_id = descriptor.parent_stable_id,
+            .depth = descriptor.depth,
+            .owner_kind = descriptor.owner_kind,
+            .available_length = descriptor.available_length,
+            .declared_length = descriptor.declared_length,
+            .state = descriptor.state,
+            .quic_crypto_stream_offset = descriptor.quic_crypto_stream_offset,
+        });
+    }
+    return items;
+}
+
+std::optional<session_detail::SelectedPacketByteViewId> select_default_packet_byte_view_id(
+    const std::vector<session_detail::SelectedPacketByteViewPresentationDescriptor>& descriptors
+) {
+    const auto frame_it = std::find_if(
+        descriptors.begin(),
+        descriptors.end(),
+        [](const session_detail::SelectedPacketByteViewPresentationDescriptor& descriptor) {
+            return descriptor.stable_id == "frame:0:0";
+        }
+    );
+    if (frame_it != descriptors.end()) {
+        return session_detail::parse_selected_packet_byte_view_stable_id(frame_it->stable_id);
+    }
+    if (!descriptors.empty()) {
+        return session_detail::parse_selected_packet_byte_view_stable_id(descriptors.front().stable_id);
+    }
+    return std::nullopt;
 }
 
 std::string checksum_status_text(const ChecksumValidationStatus status) {
@@ -2936,7 +2974,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         .has_selected_flow = selected_flow_index_.has_value(),
         .packet_index = packet_index,
         .details_title = packet_details_title(),
-        .payload_tab_title = "Payload",
         .source_availability = current_source_availability(),
     };
 
@@ -2978,13 +3015,61 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     return details;
 }
 
+FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_selected_flow_packet_byte_view_content(
+    const std::uint64_t packet_index,
+    const std::string& stable_id,
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
+) {
+    static_cast<void>(loaded_packet_window_count);
+
+    if (!session_.has_capture()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "No capture is open.",
+        };
+    }
+    if (!selected_flow_index_.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "No flow is selected.",
+        };
+    }
+
+    std::optional<PacketRef> packet {};
+    if (flow_packet_index != 0U) {
+        packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
+        if (!packet.has_value() || packet->packet_index != packet_index) {
+            return FrontendPacketDetailsDto::PacketByteViewContent {
+                .available = false,
+                .unavailable_text = "The selected packet is unavailable.",
+            };
+        }
+    } else {
+        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+            return FrontendPacketDetailsDto::PacketByteViewContent {
+                .available = false,
+                .unavailable_text = "The selected packet is unavailable.",
+            };
+        }
+        packet = session_.find_packet(packet_index);
+        if (!packet.has_value()) {
+            return FrontendPacketDetailsDto::PacketByteViewContent {
+                .available = false,
+                .unavailable_text = "The selected packet is unavailable.",
+            };
+        }
+    }
+
+    return build_frontend_packet_byte_view_content(*packet, stable_id);
+}
+
 FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = false,
         .packet_index = packet_index,
         .details_title = packet_details_title(),
-        .payload_tab_title = "Payload",
         .source_availability = current_source_availability(),
     };
 
@@ -3014,6 +3099,28 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details
     return build_frontend_packet_details(*packet, std::nullopt, std::nullopt);
 }
 
+FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_unrecognized_packet_byte_view_content(
+    const std::uint64_t packet_index,
+    const std::string& stable_id
+) {
+    if (!session_.has_capture()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "No capture is open.",
+        };
+    }
+
+    const auto packet = session_.find_packet(packet_index);
+    if (!packet.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The selected packet is unavailable.",
+        };
+    }
+
+    return build_frontend_packet_byte_view_content(*packet, stable_id);
+}
+
 FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     const PacketRef& packet,
     const std::optional<std::size_t> flow_index,
@@ -3026,17 +3133,11 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         .packet_found = true,
         .source_capture_accessible = session_.source_capture_accessible(),
         .details_available = false,
-        .raw_preview_available = false,
-        .raw_preview_truncated = false,
-        .payload_preview_available = false,
-        .payload_preview_truncated = false,
-        .payload_preview_no_payload = false,
         .checksum_validation_enabled = settings_.validate_selected_packet_checksums,
         .flow_index = flow_index.value_or(0U),
         .packet_index = packet.packet_index,
         .details_title = packet_details_title(),
         .summary_text = {},
-        .payload_tab_title = "Payload",
         .timestamp_text = session_detail::format_packet_timestamp_full(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
@@ -3050,8 +3151,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.summary_text = build_frontend_packet_summary_text(packet, std::nullopt, {}, false);
         result.unavailable_text =
             "Byte-backed packet details are unavailable because the original source capture cannot be read.";
-        result.raw_preview_unavailable_text = result.unavailable_text;
-        result.payload_preview_unavailable_text = result.unavailable_text;
+        result.selected_byte_view.unavailable_text = result.unavailable_text;
         if (result.checksum_validation_enabled) {
             result.checksum_warning_lines.push_back(
                 "Checksum validation requires the original source capture bytes to be attached and readable."
@@ -3062,19 +3162,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
 
     const auto details = session_.read_packet_details(packet);
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto raw_preview_text = build_packet_raw_text(packet_bytes);
-    result.raw_preview_text = raw_preview_text;
-    result.raw_preview_truncated = false;
-    result.raw_preview_available = !raw_preview_text.empty();
-    result.raw_preview_unavailable_text = result.raw_preview_available
-        ? std::string {}
-        : "Raw packet bytes are unavailable for this packet.";
-
-    const auto payload_preview_text = build_packet_payload_text(packet_bytes, packet);
-    result.payload_preview_text = payload_preview_text;
-    result.payload_preview_truncated = false;
-    result.payload_preview_available = !payload_preview_text.empty();
-
     PacketChecksumSections checksum_sections {};
     result.protocol_details_text = frontend_packet_protocol_text(session_, flow_index, packet);
 
@@ -3108,7 +3195,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         );
 
         result.details_available = true;
-        result.payload_tab_title = packet_payload_tab_title(*details);
         result.link_summary_text = format_link_summary(*details);
         result.network_summary_text = format_network_summary(*details);
         result.transport_summary_text = format_transport_summary(*details);
@@ -3121,20 +3207,100 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.unavailable_text = "Only partial packet details are available for this packet.";
     }
 
-    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
-    result.payload_preview_no_payload =
-        !result.payload_preview_available && packet.payload_length == 0U && (details.has_value() ? (details->has_tcp || details->has_udp) : true);
-    result.payload_preview_unavailable_text = result.payload_preview_available
-        ? std::string {}
-        : (result.payload_preview_no_payload
-            ? "No transport payload is available for this packet."
-            : "Transport payload bytes are unavailable for this packet.");
+    if (const auto byte_presentation = session_.derive_selected_packet_byte_presentation(packet); byte_presentation.has_value()) {
+        const auto prepared_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*byte_presentation);
+        result.byte_view_descriptors = build_frontend_packet_byte_view_descriptors(prepared_descriptors);
+        if (const auto selected_id = select_default_packet_byte_view_id(prepared_descriptors); selected_id.has_value()) {
+            HexDumpService hex_dump_service {};
+            if (const auto content = session_detail::format_selected_packet_byte_view_content(
+                    *byte_presentation,
+                    *selected_id,
+                    std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                    hex_dump_service);
+                content.has_value()) {
+                result.selected_byte_view = FrontendPacketDetailsDto::PacketByteViewContent {
+                    .available = true,
+                    .stable_id = content->stable_id,
+                    .label = content->label,
+                    .available_length = content->available_length,
+                    .declared_length = content->declared_length,
+                    .state = content->state,
+                    .status_text = packet_byte_view_status_text(
+                        content->state,
+                        content->available_length,
+                        content->declared_length
+                    ),
+                    .formatted_text = content->formatted_text,
+                    .unavailable_text = {},
+                };
+            }
+        }
+    }
 
-    if (!result.payload_preview_available && result.unavailable_text.empty()) {
-        result.unavailable_text = result.payload_preview_unavailable_text;
+    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
+    if (!result.selected_byte_view.available && result.unavailable_text.empty()) {
+        result.selected_byte_view.unavailable_text = result.byte_view_descriptors.empty()
+            ? "No byte views are available for this packet."
+            : "The selected byte view is unavailable for this packet.";
+        result.unavailable_text = result.selected_byte_view.unavailable_text;
     }
 
     return result;
+}
+
+FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_frontend_packet_byte_view_content(
+    const PacketRef& packet,
+    const std::string& stable_id
+) {
+    if (!session_.source_capture_accessible()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "Byte-backed packet details are unavailable because the original source capture cannot be read.",
+        };
+    }
+
+    const auto packet_bytes = session_.read_packet_data(packet);
+    const auto packet_byte_presentation = session_.derive_selected_packet_byte_presentation(packet);
+    if (packet_bytes.empty() || !packet_byte_presentation.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "No byte views are available for this packet.",
+        };
+    }
+
+    const auto selected_id = session_detail::parse_selected_packet_byte_view_stable_id(stable_id);
+    if (!selected_id.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The requested byte view is unavailable for this packet.",
+        };
+    }
+
+    HexDumpService hex_dump_service {};
+    const auto content = session_detail::format_selected_packet_byte_view_content(
+        *packet_byte_presentation,
+        *selected_id,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        hex_dump_service
+    );
+    if (!content.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The requested byte view is unavailable for this packet.",
+        };
+    }
+
+    return FrontendPacketDetailsDto::PacketByteViewContent {
+        .available = true,
+        .stable_id = content->stable_id,
+        .label = content->label,
+        .available_length = content->available_length,
+        .declared_length = content->declared_length,
+        .state = content->state,
+        .status_text = packet_byte_view_status_text(content->state, content->available_length, content->declared_length),
+        .formatted_text = content->formatted_text,
+        .unavailable_text = {},
+    };
 }
 
 bool FrontendSessionAdapter::has_capture() const noexcept {

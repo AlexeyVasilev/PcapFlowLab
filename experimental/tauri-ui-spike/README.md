@@ -49,7 +49,7 @@ Implemented slice:
   - selected-flow packets
   - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags / Marker`
   - compact direction chips, TCP flag highlighting, and shared packet marker display such as `Suspected retransmission`
-  - packet details tabs: `Summary / Raw / Payload / Protocol`
+- packet details tabs: `Summary / Bytes / Protocol`
   - Qt-like text-style packet summary in the `Summary` tab
 - selected-flow `Stream` workflow:
   - selected-flow-only
@@ -159,7 +159,7 @@ Implemented slice:
 - The lower-left Flows workspace keeps `Packets` and `Stream` as tabs, but they now sit in one compact toolbar row together with packet-count status and `Load More`.
 - The initial selected-flow packet batch is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
-- Clicking a packet row loads packet details and full available Raw/Payload byte text for the selected packet when byte-backed inspection is available.
+- Clicking a packet row loads packet details and a bounded selected packet-byte view when byte-backed inspection is available.
 - Selected Packet Details use the explicit browser Packet-list window only; opening Stream or loading more Stream items does not widen the bounded packet-details reconstruction window.
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of looking like standalone buttons.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
@@ -244,14 +244,14 @@ Implemented slice:
 - The following Analysis areas remain deferred:
   - richer charts
   - fuller Qt analysis workspace parity
-- Selected packet inspection is still basic compared with Qt even though it now has `Summary / Raw / Payload / Protocol` tabs.
+- Selected packet inspection is still basic compared with Qt even though it now has `Summary / Bytes / Protocol` tabs and shared selected packet-byte views.
 - Packet details display polish still differs from Qt and remains a smaller parity task.
 - Packet details should eventually move toward a shared structured decoded-layer DTO so Qt, Tauri, and future CLI surfaces can render the same packet layer list consistently.
-- In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload tabs can be unavailable even though packet metadata is still shown.
+- In index-only mode or when the original source capture is unavailable, byte-backed packet details plus the `Bytes` tab can be unavailable even though packet metadata is still shown.
 - Any selected-flow packet-response `updated_flow` is ephemeral frontend state only; it is not written back into the capture index.
 - After a valid source attach, byte-backed packet details and stream become available on the next explicit reload; the shell does not trigger global stream or analysis recomputation.
 - Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.
-- Raw and Payload tabs now show the full available selected-packet byte text on demand; they still do not prefetch bytes for the full packet list.
+- The `Bytes` tab now shows one selected packet-byte view on demand; it still does not prefetch byte text for every available view or for the full packet list.
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
 - Flows/Analysis splitter positions are runtime-only in the current shell and are not persisted yet.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.

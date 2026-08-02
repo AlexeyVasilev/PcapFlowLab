@@ -33,6 +33,7 @@ Item {
     property bool streamPacketWindowPartial: false
     property bool canLoadMoreStreamItems: false
     property var packetDetailsModel: null
+    property var packetDetailsController: null
     property var selectedPacketIndex: 0
     property var selectedStreamItemIndex: 0
     readonly property bool selectedFlowWorkspaceLoading: root.selectedFlowIndex >= 0 && (root.packetsLoading || root.streamLoading)
@@ -318,6 +319,7 @@ Item {
                 SplitView.fillHeight: true
                 SplitView.preferredWidth: 720
                 packetDetailsModel: root.packetDetailsModel
+                packetDetailsController: root.packetDetailsController
             }
         }
 

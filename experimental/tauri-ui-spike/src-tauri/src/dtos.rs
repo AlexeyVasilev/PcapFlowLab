@@ -394,17 +394,11 @@ pub struct PacketDetailsDto {
     pub packet_found: bool,
     pub source_capture_accessible: bool,
     pub details_available: bool,
-    pub raw_preview_available: bool,
-    pub raw_preview_truncated: bool,
-    pub payload_preview_available: bool,
-    pub payload_preview_truncated: bool,
-    pub payload_preview_no_payload: bool,
     pub checksum_validation_enabled: bool,
     pub flow_index: usize,
     pub packet_index: u64,
     pub details_title: String,
     pub summary_text: String,
-    pub payload_tab_title: String,
     pub timestamp_text: String,
     pub captured_length: u32,
     pub original_length: u32,
@@ -415,16 +409,40 @@ pub struct PacketDetailsDto {
     pub network_summary_text: String,
     pub transport_summary_text: String,
     pub summary_layers: Vec<PacketSummaryLayerDto>,
+    pub byte_view_descriptors: Vec<PacketByteViewDescriptorDto>,
+    pub selected_byte_view: PacketByteViewContentDto,
     pub protocol_details_text: String,
-    pub raw_preview_text: String,
-    pub raw_preview_unavailable_text: String,
-    pub payload_preview_text: String,
-    pub payload_preview_unavailable_text: String,
     pub checksum_summary_lines: Vec<String>,
     pub checksum_warning_lines: Vec<String>,
     pub unavailable_text: String,
     pub error_text: String,
     pub source_availability: SourceAvailabilityDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketByteViewDescriptorDto {
+    pub stable_id: String,
+    pub label: String,
+    pub parent_stable_id: Option<String>,
+    pub depth: usize,
+    pub owner_kind: String,
+    pub available_length: u32,
+    pub declared_length: Option<u32>,
+    pub state: String,
+    pub quic_crypto_stream_offset: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketByteViewContentDto {
+    pub available: bool,
+    pub stable_id: String,
+    pub label: String,
+    pub available_length: u32,
+    pub declared_length: Option<u32>,
+    pub state: String,
+    pub status_text: String,
+    pub formatted_text: String,
+    pub unavailable_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

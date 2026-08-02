@@ -505,6 +505,7 @@ public:
     Q_INVOKABLE void ensureProtocolPathStatisticsLoaded();
     Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
+    Q_INVOKABLE void selectPacketByteView(const QString& stableId);
     Q_INVOKABLE void selectUnrecognizedPackets();
     Q_INVOKABLE QString captureStorageSummaryText() const;
 
@@ -562,6 +563,7 @@ private:
     void reloadSelectedPacketDetails();
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
+    void refreshSelectedPacketByteView();
     bool ensureSourceCaptureAvailable(const QString& unavailableActionText = {});
     void handleSourceCaptureUnavailable();
     void showSourceUnavailablePacketDetailsPlaceholder();
@@ -670,6 +672,7 @@ private:
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
+    QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};
     bool has_active_protocol_path_filter_ {false};
     ProtocolPathStatisticsMode active_protocol_path_filter_mode_ {ProtocolPathStatisticsMode::kind_overview};

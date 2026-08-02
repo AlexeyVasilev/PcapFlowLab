@@ -16,6 +16,14 @@ class PacketDetailsViewModel final : public QObject {
     Q_PROPERTY(QString badgeText READ badgeText NOTIFY changed)
     Q_PROPERTY(QString summaryText READ summaryText NOTIFY changed)
     Q_PROPERTY(QVariantList summaryLayers READ summaryLayers NOTIFY changed)
+    Q_PROPERTY(QVariantList packetByteViewDescriptors READ packetByteViewDescriptors NOTIFY changed)
+    Q_PROPERTY(QString selectedPacketByteViewId READ selectedPacketByteViewId NOTIFY changed)
+    Q_PROPERTY(QString selectedPacketByteViewLabel READ selectedPacketByteViewLabel NOTIFY changed)
+    Q_PROPERTY(QString selectedPacketByteViewState READ selectedPacketByteViewState NOTIFY changed)
+    Q_PROPERTY(qulonglong selectedPacketByteViewAvailableLength READ selectedPacketByteViewAvailableLength NOTIFY changed)
+    Q_PROPERTY(QVariant selectedPacketByteViewDeclaredLength READ selectedPacketByteViewDeclaredLength NOTIFY changed)
+    Q_PROPERTY(QString selectedPacketByteViewStatusText READ selectedPacketByteViewStatusText NOTIFY changed)
+    Q_PROPERTY(QString selectedPacketByteViewText READ selectedPacketByteViewText NOTIFY changed)
     Q_PROPERTY(QString hexText READ hexText NOTIFY changed)
     Q_PROPERTY(QString payloadText READ payloadText NOTIFY changed)
     Q_PROPERTY(QString payloadTabTitle READ payloadTabTitle NOTIFY changed)
@@ -32,6 +40,14 @@ public:
     [[nodiscard]] const QString& badgeText() const noexcept;
     [[nodiscard]] const QString& summaryText() const noexcept;
     [[nodiscard]] const QVariantList& summaryLayers() const noexcept;
+    [[nodiscard]] const QVariantList& packetByteViewDescriptors() const noexcept;
+    [[nodiscard]] const QString& selectedPacketByteViewId() const noexcept;
+    [[nodiscard]] const QString& selectedPacketByteViewLabel() const noexcept;
+    [[nodiscard]] const QString& selectedPacketByteViewState() const noexcept;
+    [[nodiscard]] qulonglong selectedPacketByteViewAvailableLength() const noexcept;
+    [[nodiscard]] const QVariant& selectedPacketByteViewDeclaredLength() const noexcept;
+    [[nodiscard]] const QString& selectedPacketByteViewStatusText() const noexcept;
+    [[nodiscard]] const QString& selectedPacketByteViewText() const noexcept;
     [[nodiscard]] const QString& hexText() const noexcept;
     [[nodiscard]] const QString& payloadText() const noexcept;
     [[nodiscard]] const QString& payloadTabTitle() const noexcept;
@@ -43,6 +59,17 @@ public:
     void clearStreamItemPresentation();
     void setPacketDetailsText(const QString& text);
     void setSummaryLayers(const QVariantList& layers);
+    void clearPacketBytePresentation();
+    void setPacketBytePresentation(
+        const QVariantList& descriptors,
+        const QString& selectedId,
+        const QString& selectedLabel,
+        const QString& selectedState,
+        qulonglong selectedAvailableLength,
+        const QVariant& selectedDeclaredLength,
+        const QString& statusText,
+        const QString& formattedText
+    );
     void setHexText(const QString& text);
     void setPayloadText(const QString& text);
     void setPayloadTabTitle(const QString& text);
@@ -60,6 +87,14 @@ private:
                        const QString& newBadgeText,
                        const QString& newSummaryText,
                        const QVariantList& newSummaryLayers,
+                       const QVariantList& newPacketByteViewDescriptors,
+                       const QString& newSelectedPacketByteViewId,
+                       const QString& newSelectedPacketByteViewLabel,
+                       const QString& newSelectedPacketByteViewState,
+                       qulonglong newSelectedPacketByteViewAvailableLength,
+                       const QVariant& newSelectedPacketByteViewDeclaredLength,
+                       const QString& newSelectedPacketByteViewStatusText,
+                       const QString& newSelectedPacketByteViewText,
                        const QString& newHexText,
                        const QString& newPayloadText,
                        const QString& newPayloadTabTitle,
@@ -73,6 +108,14 @@ private:
     QString badge_text_ {};
     QString summary_text_ {};
     QVariantList summary_layers_ {};
+    QVariantList packet_byte_view_descriptors_ {};
+    QString selected_packet_byte_view_id_ {};
+    QString selected_packet_byte_view_label_ {};
+    QString selected_packet_byte_view_state_ {};
+    qulonglong selected_packet_byte_view_available_length_ {0U};
+    QVariant selected_packet_byte_view_declared_length_ {};
+    QString selected_packet_byte_view_status_text_ {};
+    QString selected_packet_byte_view_text_ {};
     QString hex_text_ {};
     QString payload_text_ {};
     QString payload_tab_title_ {QStringLiteral("Payload")};

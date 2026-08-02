@@ -222,8 +222,7 @@
                 <div id="packetInspectorView" class="inspector-view active">
                   <div class="inspector-tabbar" aria-label="Packet details tabs">
                     <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
-                    <button type="button" class="inspector-tab" data-packet-details-tab="raw">Raw</button>
-                    <button id="packetDetailsPayloadTabButton" type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
+                    <button type="button" class="inspector-tab" data-packet-details-tab="bytes">Bytes</button>
                     <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
                   </div>
                   <div class="details-scroll">
@@ -231,13 +230,10 @@
                     <section class="packet-details-tab-panel active" data-packet-details-panel="summary">
                       <div id="packetDetailsSummary" class="packet-summary-panel"></div>
                     </section>
-                    <section class="packet-details-tab-panel" data-packet-details-panel="raw">
-                      <p id="packetDetailsRawStateText" class="status-text compact-status-text"></p>
-                      <pre id="packetDetailsRawText" class="details-pre byte-preview-pre raw-preview-pre">No packet selected.</pre>
-                    </section>
-                    <section class="packet-details-tab-panel" data-packet-details-panel="payload">
-                      <p id="packetDetailsPayloadStateText" class="status-text compact-status-text"></p>
-                      <pre id="packetDetailsPayloadText" class="details-pre byte-preview-pre">No packet selected.</pre>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="bytes">
+                      <select id="packetDetailsByteViewSelector" class="details-select"></select>
+                      <p id="packetDetailsBytesStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsBytesText" class="details-pre byte-preview-pre">No packet selected.</pre>
                     </section>
                     <section class="packet-details-tab-panel" data-packet-details-panel="protocol">
                       <p id="packetDetailsProtocolStateText" class="status-text compact-status-text"></p>

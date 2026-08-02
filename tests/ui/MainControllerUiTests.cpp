@@ -166,6 +166,21 @@ std::vector<std::uint8_t> bytes_payload(std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+QStringList packet_byte_view_labels(pfl::PacketDetailsViewModel* model) {
+    QStringList labels {};
+    if (model == nullptr) {
+        return labels;
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    labels.reserve(static_cast<qsizetype>(descriptors.size()));
+    for (const auto& descriptor_variant : descriptors) {
+        const auto descriptor = descriptor_variant.toMap();
+        labels.push_back(descriptor.value(QStringLiteral("label")).toString());
+    }
+    return labels;
+}
+
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -2058,6 +2073,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("bag.itunes.apple.com")));
     UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
     UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Cipher Suites:")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Packet")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Protected Payload")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Decrypted Payload")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("CRYPTO Frame Data")));
+    quic_controller.selectPacketByteView(QStringLiteral("quic_crypto_data:0:0"));
+    UI_EXPECT(quic_details_model->selectedPacketByteViewId() == QStringLiteral("quic_crypto_data:0:0"));
+    UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("03 03")));
 
     quic_controller.setFlowDetailsTabIndex(1);
     UI_EXPECT(quic_stream_model->rowCount() >= 1);
@@ -2242,8 +2265,68 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model->hasPacket());
     UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
     UI_EXPECT(!details_model->summaryLayers().isEmpty());
-    UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
+    const auto expected_packet_byte_labels = QStringList {
+        QStringLiteral("Frame"),
+        QStringLiteral("Ethernet Payload"),
+        QStringLiteral("IPv4 Payload"),
+        QStringLiteral("TCP Payload"),
+    };
+    UI_EXPECT(packet_byte_view_labels(details_model) == expected_packet_byte_labels);
+    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
+    controller.selectPacketByteView(QStringLiteral("tcp_payload:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("tcp_payload:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(!details_model->protocolText().isEmpty());
+
+    const auto byte_view_selection_capture_path = write_temp_pcap(
+        "pfl_ui_packet_byte_view_selection.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 45000, 80, bytes_payload("payload-a"), 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet(
+                ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 45000, 80)},
+        })
+    );
+
+    MainController byte_view_selection_controller {};
+    UI_EXPECT(open_capture_and_wait(app, byte_view_selection_controller, byte_view_selection_capture_path));
+    auto* byte_view_selection_flow_model = qobject_cast<FlowListModel*>(byte_view_selection_controller.flowModel());
+    auto* byte_view_selection_packet_model = qobject_cast<PacketListModel*>(byte_view_selection_controller.packetModel());
+    auto* byte_view_selection_details_model =
+        qobject_cast<PacketDetailsViewModel*>(byte_view_selection_controller.packetDetailsModel());
+    UI_EXPECT(byte_view_selection_flow_model != nullptr);
+    UI_EXPECT(byte_view_selection_packet_model != nullptr);
+    UI_EXPECT(byte_view_selection_details_model != nullptr);
+    UI_EXPECT(byte_view_selection_flow_model->rowCount() == 1);
+
+    byte_view_selection_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(byte_view_selection_packet_model->rowCount() == 2);
+
+    const auto first_byte_view_packet_index = byte_view_selection_packet_model->data(
+        byte_view_selection_packet_model->index(0, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    const auto second_byte_view_packet_index = byte_view_selection_packet_model->data(
+        byte_view_selection_packet_model->index(1, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+
+    byte_view_selection_controller.setSelectedPacketIndex(first_byte_view_packet_index);
+    byte_view_selection_controller.selectPacketByteView(QStringLiteral("ipv4_payload:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4_payload:0:0"));
+
+    byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4_payload:0:0"));
+    UI_EXPECT(!packet_byte_view_labels(byte_view_selection_details_model).contains(QStringLiteral("TCP Payload")));
+
+    byte_view_selection_controller.setSelectedPacketIndex(first_byte_view_packet_index);
+    byte_view_selection_controller.selectPacketByteView(QStringLiteral("tcp_payload:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp_payload:0:0"));
+
+    byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
 
     controller.setCurrentTabIndex(2);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));
@@ -2253,7 +2336,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.selectedFlowIndex() == -1);
     UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(details_model->payloadText().isEmpty());
+    UI_EXPECT(details_model->selectedPacketByteViewText().isEmpty());
+    UI_EXPECT(details_model->packetByteViewDescriptors().isEmpty());
     UI_EXPECT(flow_model->rowCount() == 1);
 
     controller.setCurrentTabIndex(2);

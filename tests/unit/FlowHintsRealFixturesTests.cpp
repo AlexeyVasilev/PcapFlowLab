@@ -81,6 +81,15 @@ const session_detail::PacketSummaryLayer* find_summary_layer(
     return nullptr;
 }
 
+std::vector<std::string> packet_byte_view_labels(const FrontendPacketDetailsDto& details) {
+    std::vector<std::string> labels {};
+    labels.reserve(details.byte_view_descriptors.size());
+    for (const auto& descriptor : details.byte_view_descriptors) {
+        labels.push_back(descriptor.label);
+    }
+    return labels;
+}
+
 const session_detail::PacketSummaryField* find_summary_field(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& label
@@ -300,6 +309,47 @@ void expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "SNI") == "www.youtube.com");
 }
 
+void expect_frontend_adapter_selected_flow_packet_byte_views() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+
+    const auto& packet = packets.packets[0];
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+    PFL_EXPECT(details.selected_byte_view.available);
+    PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
+    PFL_EXPECT(details.selected_byte_view.formatted_text.find("00000000") != std::string::npos);
+
+    const std::vector<std::string> expected_labels {
+        "Frame",
+        "Ethernet Payload",
+        "IPv4 Payload",
+        "TCP Payload",
+    };
+    PFL_EXPECT(packet_byte_view_labels(details) == expected_labels);
+
+    const auto tcp_payload = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "tcp_payload:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(tcp_payload.available);
+    PFL_EXPECT(tcp_payload.stable_id == "tcp_payload:0:0");
+    PFL_EXPECT(tcp_payload.formatted_text.find("47 45 54 20 2f") != std::string::npos);
+    PFL_EXPECT(tcp_payload.status_text.find("Available:") != std::string::npos);
+}
+
 void expect_bounded_tls_selected_flow_service_hint_query() {
     CaptureSession session {};
     PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap")));
@@ -485,6 +535,7 @@ void run_flow_hints_real_fixtures_tests() {
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
+    expect_frontend_adapter_selected_flow_packet_byte_views();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
     expect_bounded_tls_selected_flow_service_hint_query();
     expect_non_client_hello_tls_selected_flow_service_hint_queries_return_empty();

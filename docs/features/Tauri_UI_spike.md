@@ -138,12 +138,11 @@ The `Flows` tab now supports:
 - Qt-like packet marker display for existing shared packet semantics such as `Suspected retransmission`
 - packet details tabs:
   - `Summary`
-  - `Raw`
-  - `Payload`
+  - `Bytes`
   - `Protocol`
 - the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
 - the top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button
-- Raw/Payload tabs now show the full available selected-packet byte text on demand rather than a preview-only display
+- the `Bytes` tab now shows one selected packet-byte view on demand rather than a preview-only display
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of button styling
 - byte-backed packet details can recover after a valid source-capture attach
 - a compact checked-flow status bar shown only when one or more flows are checked
@@ -175,7 +174,7 @@ The `Stream` tab now supports:
 - shared ARP stream items for selected ARP flows, one packet per item
 - Qt-like selected stream-item details with:
   - compact header/title block
-  - `Summary / Payload / Protocol` tabs
+- `Summary / Payload / Protocol` tabs
   - bounded payload preview
   - protocol text when available
 - shared structured source-packet references and constricted notes in the DTO path
@@ -346,7 +345,7 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - save/open index workflow polish
 - the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
-- packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
+- packet inspector still intentionally simpler than Qt even though it now has `Summary / Bytes / Protocol`
 - packet details display polish remains incomplete compared with Qt
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing
