@@ -293,6 +293,7 @@ std::string packet_byte_view_descriptor_json(const pfl::FrontendPacketDetailsDto
     out << ','
         << "\"depth\":" << descriptor.depth << ','
         << "\"owner_kind\":" << json_string(descriptor.owner_kind) << ','
+        << "\"role\":" << json_string(descriptor.role) << ','
         << "\"available_length\":" << descriptor.available_length << ','
         << "\"declared_length\":";
     if (descriptor.declared_length.has_value()) {
@@ -302,6 +303,28 @@ std::string packet_byte_view_descriptor_json(const pfl::FrontendPacketDetailsDto
     }
     out << ','
         << "\"state\":" << json_string(descriptor.state) << ','
+        << "\"supports_payload_only\":" << bool_json(descriptor.supports_payload_only) << ','
+        << "\"payload_available_length\":";
+    if (descriptor.payload_available_length.has_value()) {
+        out << *descriptor.payload_available_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"payload_declared_length\":";
+    if (descriptor.payload_declared_length.has_value()) {
+        out << *descriptor.payload_declared_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"payload_state\":";
+    if (descriptor.payload_state.has_value()) {
+        out << json_string(*descriptor.payload_state);
+    } else {
+        out << "null";
+    }
+    out << ','
         << "\"quic_crypto_stream_offset\":";
     if (descriptor.quic_crypto_stream_offset.has_value()) {
         out << *descriptor.quic_crypto_stream_offset;
@@ -318,6 +341,7 @@ std::string packet_byte_view_content_json(const pfl::FrontendPacketDetailsDto::P
         << "\"available\":" << bool_json(content.available) << ','
         << "\"stable_id\":" << json_string(content.stable_id) << ','
         << "\"label\":" << json_string(content.label) << ','
+        << "\"mode\":" << json_string(content.mode) << ','
         << "\"available_length\":" << content.available_length << ','
         << "\"declared_length\":";
     if (content.declared_length.has_value()) {

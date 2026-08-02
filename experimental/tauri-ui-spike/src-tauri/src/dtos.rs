@@ -426,9 +426,14 @@ pub struct PacketByteViewDescriptorDto {
     pub parent_stable_id: Option<String>,
     pub depth: usize,
     pub owner_kind: String,
+    pub role: String,
     pub available_length: u32,
     pub declared_length: Option<u32>,
     pub state: String,
+    pub supports_payload_only: bool,
+    pub payload_available_length: Option<u32>,
+    pub payload_declared_length: Option<u32>,
+    pub payload_state: Option<String>,
     pub quic_crypto_stream_offset: Option<u64>,
 }
 
@@ -437,6 +442,7 @@ pub struct PacketByteViewContentDto {
     pub available: bool,
     pub stable_id: String,
     pub label: String,
+    pub mode: String,
     pub available_length: u32,
     pub declared_length: Option<u32>,
     pub state: String,

@@ -335,15 +335,21 @@ struct FrontendPacketDetailsDto {
         std::optional<std::string> parent_stable_id {};
         std::size_t depth {0U};
         std::string owner_kind {};
+        std::string role {};
         std::uint32_t available_length {0U};
         std::optional<std::uint32_t> declared_length {};
         std::string state {};
+        bool supports_payload_only {false};
+        std::optional<std::uint32_t> payload_available_length {};
+        std::optional<std::uint32_t> payload_declared_length {};
+        std::optional<std::string> payload_state {};
         std::optional<std::uint64_t> quic_crypto_stream_offset {};
     };
     struct PacketByteViewContent {
         bool available {false};
         std::string stable_id {};
         std::string label {};
+        std::string mode {"whole_unit"};
         std::uint32_t available_length {0U};
         std::optional<std::uint32_t> declared_length {};
         std::string state {};

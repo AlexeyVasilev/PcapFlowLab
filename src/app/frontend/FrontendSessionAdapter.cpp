@@ -1055,9 +1055,14 @@ std::vector<FrontendPacketDetailsDto::PacketByteViewDescriptor> build_frontend_p
             .parent_stable_id = descriptor.parent_stable_id,
             .depth = descriptor.depth,
             .owner_kind = descriptor.owner_kind,
+            .role = descriptor.role,
             .available_length = descriptor.available_length,
             .declared_length = descriptor.declared_length,
             .state = descriptor.state,
+            .supports_payload_only = descriptor.supports_payload_only,
+            .payload_available_length = descriptor.payload_available_length,
+            .payload_declared_length = descriptor.payload_declared_length,
+            .payload_state = descriptor.payload_state,
             .quic_crypto_stream_offset = descriptor.quic_crypto_stream_offset,
         });
     }
@@ -3222,6 +3227,9 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
                     .available = true,
                     .stable_id = content->stable_id,
                     .label = content->label,
+                    .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
+                        ? "payload_only"
+                        : "whole_unit",
                     .available_length = content->available_length,
                     .declared_length = content->declared_length,
                     .state = content->state,
@@ -3294,6 +3302,9 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
         .available = true,
         .stable_id = content->stable_id,
         .label = content->label,
+        .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
+            ? "payload_only"
+            : "whole_unit",
         .available_length = content->available_length,
         .declared_length = content->declared_length,
         .state = content->state,

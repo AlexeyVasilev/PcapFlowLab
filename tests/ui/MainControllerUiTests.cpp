@@ -2267,15 +2267,15 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!details_model->summaryLayers().isEmpty());
     const auto expected_packet_byte_labels = QStringList {
         QStringLiteral("Frame"),
-        QStringLiteral("Ethernet Payload"),
-        QStringLiteral("IPv4 Payload"),
-        QStringLiteral("TCP Payload"),
+        QStringLiteral("Ethernet II Frame"),
+        QStringLiteral("IPv4 Packet"),
+        QStringLiteral("TCP Segment"),
     };
     UI_EXPECT(packet_byte_view_labels(details_model) == expected_packet_byte_labels);
     UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0"));
     UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
-    controller.selectPacketByteView(QStringLiteral("tcp_payload:0:0"));
-    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("tcp_payload:0:0"));
+    controller.selectPacketByteView(QStringLiteral("tcp:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
     UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(!details_model->protocolText().isEmpty());
 
@@ -2313,19 +2313,19 @@ int main(int argc, char* argv[]) {
     ).toULongLong();
 
     byte_view_selection_controller.setSelectedPacketIndex(first_byte_view_packet_index);
-    byte_view_selection_controller.selectPacketByteView(QStringLiteral("ipv4_payload:0:0"));
-    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4_payload:0:0"));
+    byte_view_selection_controller.selectPacketByteView(QStringLiteral("ipv4:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4:0:0"));
 
     byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
-    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4_payload:0:0"));
-    UI_EXPECT(!packet_byte_view_labels(byte_view_selection_details_model).contains(QStringLiteral("TCP Payload")));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4:0:0"));
+    UI_EXPECT(packet_byte_view_labels(byte_view_selection_details_model).contains(QStringLiteral("TCP Segment")));
 
     byte_view_selection_controller.setSelectedPacketIndex(first_byte_view_packet_index);
-    byte_view_selection_controller.selectPacketByteView(QStringLiteral("tcp_payload:0:0"));
-    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp_payload:0:0"));
+    byte_view_selection_controller.selectPacketByteView(QStringLiteral("tcp:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
 
     byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
-    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
     UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
 
     controller.setCurrentTabIndex(2);
@@ -2911,7 +2911,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_controller.selectedPacketIndex() == 0U);
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Packet Details"));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
-    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("TCP Payload"));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Payload"));
 
     stream_controller.setSelectedFlowIndex(dns_stream_flow_index);
     UI_EXPECT(stream_model->rowCount() == 1);
@@ -2924,7 +2924,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(dns_packet_model->rowCount() == 1);
     const auto dns_packet_index = dns_packet_model->data(dns_packet_model->index(0, 0), PacketListModel::PacketIndexRole).toULongLong();
     stream_controller.setSelectedPacketIndex(dns_packet_index);
-    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Payload"));
 
     stream_controller.setSelectedFlowIndex(-1);
     UI_EXPECT(stream_model->rowCount() == 0);

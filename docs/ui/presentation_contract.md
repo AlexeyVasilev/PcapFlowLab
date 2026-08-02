@@ -476,7 +476,9 @@ Current Packet Details direction note:
 
 - `Summary / Bytes / Protocol` is now the shared packet-details tab shape for Qt and the experimental Tauri UI;
 - the removed `Raw` tab is represented by the `Frame` byte view;
-- the removed `Payload` tab is represented by protocol-level payload views such as `TCP Payload`, `UDP Payload`, `GTP-U Payload`, `Inner IPv4 Payload`, or `CRYPTO Frame Data` when those authoritative views exist;
+- the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
+- the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
+- temporary payload-only fallback entries remain explicit for nested carriers whose complete unit boundary is not yet authoritative, for example `GTP-U Payload`, `GRE Payload`, `Geneve Payload`, or `CRYPTO Frame Data`;
 - Stream Item Details tabs remain unchanged in this pass and continue to use their existing payload/protocol surfaces.
 
 Qt also supports stream-item details in the same right-hand panel. That is noted separately below as a cross-cutting selection question.
@@ -533,7 +535,16 @@ Bytes should show one selected bounded byte view at a time.
 Expected semantics:
 
 - `Frame` replaces the old `Raw` packet preview;
-- protocol-level payload views replace the old `Payload` packet preview;
+- the selector order now represents decoded protocol-layer units such as `Frame`, `Ethernet II Frame`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
+- complete unit means protocol header plus bounded protocol payload;
+- stable identity belongs to the protocol layer, not to the currently displayed range mode;
+- `Frame` and the decoded link-layer unit may intentionally coexist even when both cover the same captured bytes;
+- the current UI always materializes `whole_unit`;
+- a future UI pass may add `Whole Unit | Payload Only` without changing descriptor identities;
+- when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
+- TLS byte views remain deferred;
+- future TLS over TCP should naturally layer as `TCP Segment -> TLS Record -> TLS Handshake Message`;
+- future TLS over QUIC must not invent a `TLS Record` layer because QUIC carries TLS handshake messages through `CRYPTO Frame Data`;
 - the selector uses backend-provided stable ids and backend-provided descriptor order;
 - only one selected view is materialized/formatted at a time;
 - frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
@@ -549,19 +560,20 @@ Backend note for the current migration stage:
 - the current pass now supports two owner kinds:
   - captured packet bytes loaded on demand through `CaptureSession::read_packet_data(...)`;
   - one selected-packet QUIC Initial plaintext owner when authenticated Initial decryption succeeds on the existing bounded QUIC path;
-- descriptors carry stable non-localized identities, explicit parent relationships, and bounded packet-relative ranges only; they do not retain per-view byte buffers or preformatted text;
+- descriptors carry stable non-localized protocol-layer identities, explicit parent relationships, one primary complete-unit range, and an optional payload-only range only where that second range is already authoritative; they do not retain per-view byte buffers or preformatted text;
 - materialization and hex formatting happen on demand for one selected view at a time;
-- the current pass covers authoritative top-level and nested payload views for frame, Ethernet, stacked VLAN, MPLS, IPv4, IPv6, TCP, UDP, SCTP, GRE, EoIP, VXLAN, Geneve, GTP-U, AH, ESP protected payload, inner Ethernet, and inner transport payloads where production packet details already expose authoritative bounds;
-- overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier payload view and the decoded child payload view;
+- the current pass covers protocol-unit defaults for Frame, Ethernet II, stacked VLAN encapsulations, MPLS label-stack-and-payload units, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, inner Ethernet, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier unit and the decoded child unit;
 - duplicate suppression applies only to semantically equivalent descriptors; plain IP-in-IP does not manufacture an extra tunnel-payload view when only the nested IP payloads are authoritative;
+- temporary payload-only fallback descriptors remain explicit for nested carriers whose full unit boundary is not yet carried authoritatively by packet details, rather than being mislabeled as complete packets; the current explicit fallbacks still include tunnel-carrier views such as `GRE Payload`, `EoIP Payload`, `GTP-U Payload`, `VXLAN Payload`, `Geneve Payload`, `AH Payload`, `ESP Protected Payload`, and derived value views such as `CRYPTO Frame Data`;
 - selected-packet QUIC byte inspection now also exposes:
-  - captured QUIC envelope ranges as children of the captured UDP payload;
+  - captured QUIC envelope ranges as children of the captured `UDP Datagram`;
   - captured QUIC Initial protected-payload ranges only when the packet-number length and packet end are authoritative;
-  - one derived `QUIC Initial Decrypted Payload` owner with child `QUIC Frame` and `CRYPTO Data` ranges when authenticated Initial decryption succeeds;
+  - one derived `QUIC Initial Decrypted Payload` owner with child `QUIC Frame` and `CRYPTO Frame Data` ranges when authenticated Initial decryption succeeds;
 - QUIC envelope offsets retained by the byte-presentation layer are rebased exactly once from UDP-payload-relative provenance to captured-frame-relative byte offsets;
 - the captured `QUIC Initial Protected Payload` contract starts immediately after the unprotected packet-number field and currently includes the AEAD authentication tag because that is the authoritative encrypted-payload extent already exposed by the selected-packet QUIC code path;
 - derived QUIC frame offsets are relative to the decrypted Initial plaintext owner, while `CRYPTO` stream offsets remain logical QUIC metadata and are not reused as plaintext byte offsets;
-- `CRYPTO Data` views exclude the frame type and encoded offset/length varints and expose only the CRYPTO frame value bytes;
+- `CRYPTO Frame Data` views exclude the frame type and encoded offset/length varints and expose only the CRYPTO frame value bytes;
 - coalesced QUIC UDP datagrams retain one descriptor identity per envelope; derived Initial plaintext belongs only to its owning envelope and is never attached to neighboring `0-RTT`, `Handshake`, or `Protected payload` envelopes;
 - failed Initial decryption may still retain the captured QUIC packet view and, when header-protection removal established an authoritative boundary, the captured protected-payload view, but it must not fabricate derived plaintext, QUIC frame, `CRYPTO Data`, or TLS byte ownership;
 - the retained QUIC Initial plaintext owner reuses the existing selected-packet QUIC plaintext artifact and is not copied into a second complete buffer solely for byte presentation;

@@ -328,24 +328,47 @@ void expect_frontend_adapter_selected_flow_packet_byte_views() {
     PFL_EXPECT(details.details_available);
     PFL_EXPECT(details.selected_byte_view.available);
     PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
+    PFL_EXPECT(details.selected_byte_view.label == "Frame");
+    PFL_EXPECT(details.selected_byte_view.mode == "whole_unit");
     PFL_EXPECT(details.selected_byte_view.formatted_text.find("00000000") != std::string::npos);
 
     const std::vector<std::string> expected_labels {
         "Frame",
-        "Ethernet Payload",
-        "IPv4 Payload",
-        "TCP Payload",
+        "Ethernet II Frame",
+        "IPv4 Packet",
+        "TCP Segment",
     };
     PFL_EXPECT(packet_byte_view_labels(details) == expected_labels);
+    PFL_REQUIRE(details.byte_view_descriptors.size() == 4U);
+    PFL_EXPECT(details.byte_view_descriptors[0].stable_id == "frame:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[1].stable_id == "ethernet:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[2].stable_id == "ipv4:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[3].stable_id == "tcp:0:0");
+    PFL_EXPECT(!details.byte_view_descriptors[0].parent_stable_id.has_value());
+    PFL_EXPECT(details.byte_view_descriptors[1].parent_stable_id == std::optional<std::string> {"frame:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[2].parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[3].parent_stable_id == std::optional<std::string> {"ipv4:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[0].owner_kind == "captured_packet");
+    PFL_EXPECT(details.byte_view_descriptors[3].owner_kind == "captured_packet");
+    PFL_EXPECT(details.byte_view_descriptors[0].role == "protocol_unit");
+    PFL_EXPECT(details.byte_view_descriptors[1].role == "protocol_unit");
+    PFL_EXPECT(details.byte_view_descriptors[2].role == "protocol_unit");
+    PFL_EXPECT(details.byte_view_descriptors[3].role == "protocol_unit");
+    PFL_EXPECT(!details.byte_view_descriptors[0].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[1].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[2].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[3].supports_payload_only);
+    PFL_REQUIRE(details.byte_view_descriptors[3].payload_available_length.has_value());
 
     const auto tcp_payload = adapter.get_selected_flow_packet_byte_view_content(
         packet.packet_index,
-        "tcp_payload:0:0",
+        "tcp:0:0",
         packet.row_number,
         1U
     );
     PFL_EXPECT(tcp_payload.available);
-    PFL_EXPECT(tcp_payload.stable_id == "tcp_payload:0:0");
+    PFL_EXPECT(tcp_payload.stable_id == "tcp:0:0");
+    PFL_EXPECT(tcp_payload.mode == "whole_unit");
     PFL_EXPECT(tcp_payload.formatted_text.find("47 45 54 20 2f") != std::string::npos);
     PFL_EXPECT(tcp_payload.status_text.find("Available:") != std::string::npos);
 }

@@ -1111,9 +1111,16 @@ QVariantList packet_byte_view_descriptors_to_variant_list(
         item.insert(QStringLiteral("label"), QString::fromStdString(descriptor.label));
         item.insert(QStringLiteral("depth"), static_cast<int>(descriptor.depth));
         item.insert(QStringLiteral("ownerKind"), QString::fromStdString(descriptor.owner_kind));
+        item.insert(QStringLiteral("role"), QString::fromStdString(descriptor.role));
         item.insert(QStringLiteral("availableLength"), QVariant::fromValue<qulonglong>(descriptor.available_length));
         item.insert(QStringLiteral("declaredLength"), optional_length_variant(descriptor.declared_length));
         item.insert(QStringLiteral("state"), QString::fromStdString(descriptor.state));
+        item.insert(QStringLiteral("supportsPayloadOnly"), descriptor.supports_payload_only);
+        item.insert(QStringLiteral("payloadAvailableLength"), optional_length_variant(descriptor.payload_available_length));
+        item.insert(QStringLiteral("payloadDeclaredLength"), optional_length_variant(descriptor.payload_declared_length));
+        if (descriptor.payload_state.has_value()) {
+            item.insert(QStringLiteral("payloadState"), QString::fromStdString(*descriptor.payload_state));
+        }
         item.insert(QStringLiteral("statusText"), packet_byte_view_status_text(
             QString::fromStdString(descriptor.state),
             descriptor.available_length,
