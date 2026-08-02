@@ -597,6 +597,10 @@ void run_selected_packet_byte_presentation_tests_impl() {
         expect_parent(*tls_handshake, SelectedPacketByteViewKind::tls_record);
         PFL_EXPECT(tls_record->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
         PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_EXPECT(tls_record->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::packet_local);
+        PFL_EXPECT(tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::packet_local);
+        PFL_EXPECT(!tls_record->contributing_unit_count.has_value());
+        PFL_EXPECT(!tls_handshake->contributing_unit_count.has_value());
         PFL_EXPECT(tls_record->offset == tcp_segment->payload_range->offset);
         PFL_REQUIRE(tls_record->payload_range.has_value());
         PFL_REQUIRE(tls_handshake->payload_range.has_value());
@@ -743,6 +747,22 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(packet4_tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
         PFL_EXPECT(packet5_tls_record->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
         PFL_EXPECT(packet5_tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
+        PFL_EXPECT(packet4_tls_record->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(packet4_tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(packet5_tls_record->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(packet5_tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(packet4_tls_record->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(packet4_tls_handshake->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(packet5_tls_record->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(packet5_tls_handshake->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(packet4_tls_record->contributing_unit_kind ==
+            std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
+                session_detail::SelectedPacketByteContributionUnitKind::tcp_segment
+            });
+        PFL_EXPECT(packet4_tls_handshake->contributing_unit_kind ==
+            std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
+                session_detail::SelectedPacketByteContributionUnitKind::tcp_segment
+            });
         expect_parent(*packet4_tls_record, SelectedPacketByteViewKind::tcp_payload);
         expect_parent(*packet4_tls_handshake, SelectedPacketByteViewKind::tls_record);
         expect_parent(*packet5_tls_record, SelectedPacketByteViewKind::tcp_payload);
@@ -750,6 +770,14 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(packet4_tls_record->offset == 0U);
         PFL_EXPECT(packet5_tls_record->offset == 0U);
         PFL_EXPECT(packet4_tls_record->captured_length == packet5_tls_record->captured_length);
+        PFL_EXPECT(std::find(
+            collect_labels(packet4_presentation).begin(),
+            collect_labels(packet4_presentation).end(),
+            "TLS Handshake Record (Reassembled)") != collect_labels(packet4_presentation).end());
+        PFL_EXPECT(std::find(
+            collect_labels(packet5_presentation).begin(),
+            collect_labels(packet5_presentation).end(),
+            "TLS Handshake Message, ClientHello (Reassembled)") != collect_labels(packet5_presentation).end());
         expect_materialized_view_aliases_derived_owner(packet4_presentation, *packet4_tls_record);
         expect_materialized_view_aliases_derived_owner(packet4_presentation, *packet4_tls_handshake);
         expect_materialized_view_aliases_derived_owner(packet5_presentation, *packet5_tls_record);
@@ -1094,9 +1122,12 @@ void run_selected_packet_byte_presentation_tests_impl() {
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U);
         const auto* tls_handshake =
             require_view_in_scope(presentation, SelectedPacketByteViewKind::tls_handshake, 0U);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_stream, 0U) == nullptr);
         PFL_EXPECT(quic_packet->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
         PFL_EXPECT(plaintext->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext);
         PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
+        PFL_EXPECT(tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::packet_local);
+        PFL_EXPECT(!tls_handshake->contributing_unit_count.has_value());
         PFL_EXPECT(quic_packet->offset >= udp_payload->offset);
         PFL_EXPECT(quic_packet->offset + quic_packet->captured_length <= udp_payload->offset + udp_payload->captured_length);
         expect_parent(*quic_packet, SelectedPacketByteViewKind::udp_payload);
@@ -1197,7 +1228,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap")));
         const auto packet = require_packet(session, 2U);
-        const auto presentation = require_presentation(session, packet);
+        const auto presentation = require_flow_aware_presentation(session, packet);
 
         const auto* udp_payload = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
         const auto* initial_packet =
@@ -1206,12 +1237,54 @@ void run_selected_packet_byte_presentation_tests_impl() {
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_zero_rtt_packet, 1U);
         const auto* plaintext =
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        const auto* first_crypto_frame =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
+        const auto* second_crypto_frame =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
+        const auto* first_crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 0U);
+        const auto* second_crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 1U);
+        const auto* crypto_stream =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_stream, 0U);
+        const auto* tls_handshake =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::tls_handshake, 0U);
         PFL_EXPECT(initial_packet->offset >= udp_payload->offset);
         PFL_EXPECT(zero_rtt_packet->offset >= udp_payload->offset);
         PFL_EXPECT(initial_packet->offset + initial_packet->captured_length <= zero_rtt_packet->offset);
         expect_parent(*initial_packet, SelectedPacketByteViewKind::udp_payload);
         expect_parent(*zero_rtt_packet, SelectedPacketByteViewKind::udp_payload);
         expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        expect_parent_in_scope(*first_crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*second_crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*first_crypto_data, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
+        expect_parent_in_scope(*second_crypto_data, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
+        expect_parent_in_scope(*crypto_stream, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*tls_handshake, SelectedPacketByteViewKind::quic_crypto_stream, 0U);
+        PFL_EXPECT(crypto_stream->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
+        PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
+        PFL_EXPECT(crypto_stream->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(crypto_stream->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(tls_handshake->contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(crypto_stream->contributing_unit_kind ==
+            std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
+                session_detail::SelectedPacketByteContributionUnitKind::quic_crypto_frame
+            });
+        PFL_EXPECT(tls_handshake->contributing_unit_kind ==
+            std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
+                session_detail::SelectedPacketByteContributionUnitKind::quic_crypto_frame
+            });
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_record, 0U) == nullptr);
+        const auto labels = collect_labels(presentation);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC CRYPTO Stream (Reassembled)") != labels.end());
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello (Reassembled)") != labels.end());
+        const auto crypto_stream_materialized = require_materialized_view(presentation, crypto_stream->id, std::vector<std::uint8_t> {});
+        const auto tls_handshake_materialized = require_materialized_view(presentation, tls_handshake->id, std::vector<std::uint8_t> {});
+        PFL_REQUIRE(!crypto_stream_materialized.bytes.empty());
+        PFL_REQUIRE(!tls_handshake_materialized.bytes.empty());
+        PFL_EXPECT(crypto_stream_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(tls_handshake_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 1U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 1U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 1U) == nullptr);

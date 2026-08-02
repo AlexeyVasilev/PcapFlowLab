@@ -90,6 +90,20 @@ std::vector<std::string> packet_byte_view_labels(const FrontendPacketDetailsDto&
     return labels;
 }
 
+const FrontendPacketDetailsDto::PacketByteViewDescriptor* find_packet_byte_view_descriptor(
+    const FrontendPacketDetailsDto& details,
+    const std::string& stable_id
+) {
+    const auto it = std::find_if(
+        details.byte_view_descriptors.begin(),
+        details.byte_view_descriptors.end(),
+        [&](const FrontendPacketDetailsDto::PacketByteViewDescriptor& descriptor) {
+            return descriptor.stable_id == stable_id;
+        }
+    );
+    return it == details.byte_view_descriptors.end() ? nullptr : &(*it);
+}
+
 const session_detail::PacketSummaryField* find_summary_field(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& label
@@ -307,6 +321,106 @@ void expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_reassembled, "Completion Flow Packet") == "5");
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "Handshake Type") == "ClientHello");
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "SNI") == "www.youtube.com");
+
+    const auto packet3_details = adapter.get_selected_flow_packet_details(
+        packets.packets[2].packet_index,
+        packets.packets[2].row_number,
+        5U
+    );
+    PFL_EXPECT(packet3_details.error_text.empty());
+    const auto packet3_labels = packet_byte_view_labels(packet3_details);
+    const auto packet4_labels = packet_byte_view_labels(details4_loaded);
+    const auto packet5_labels = packet_byte_view_labels(details5_loaded);
+    PFL_EXPECT(std::find(
+        packet3_labels.begin(),
+        packet3_labels.end(),
+        "TLS Handshake Record (Reassembled)") == packet3_labels.end());
+    PFL_EXPECT(std::find(
+        packet4_labels.begin(),
+        packet4_labels.end(),
+        "TLS Handshake Record (Reassembled)") != packet4_labels.end());
+    PFL_EXPECT(std::find(
+        packet5_labels.begin(),
+        packet5_labels.end(),
+        "TLS Handshake Message, ClientHello (Reassembled)") != packet5_labels.end());
+
+    const auto* packet4_record_descriptor = find_packet_byte_view_descriptor(details4_loaded, "tls_record:0:0");
+    const auto* packet5_handshake_descriptor = find_packet_byte_view_descriptor(details5_loaded, "tls_handshake:0:0");
+    PFL_REQUIRE(packet4_record_descriptor != nullptr);
+    PFL_REQUIRE(packet5_handshake_descriptor != nullptr);
+    PFL_EXPECT(packet4_record_descriptor->owner_kind == "tls_reconstructed_record");
+    PFL_EXPECT(packet4_record_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(packet4_record_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(packet4_record_descriptor->contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+    PFL_EXPECT(packet5_handshake_descriptor->owner_kind == "tls_reconstructed_record");
+    PFL_EXPECT(packet5_handshake_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(packet5_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(packet5_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+
+    const auto packet5_handshake_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet5.packet_index,
+        "tls_handshake:0:0",
+        packet5.row_number,
+        5U
+    );
+    PFL_EXPECT(packet5_handshake_content.available);
+    PFL_EXPECT(packet5_handshake_content.assembly_kind == "reassembled");
+    PFL_EXPECT(packet5_handshake_content.contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(packet5_handshake_content.contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+    PFL_EXPECT(packet5_handshake_content.status_text.find("Reassembled from 2 TCP segments") != std::string::npos);
+}
+
+void expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 3U);
+    PFL_REQUIRE(packets.packets.size() >= 3U);
+    const auto& packet3 = packets.packets[2];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet3.packet_index, packet3.row_number, 3U);
+    PFL_EXPECT(details.error_text.empty());
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC Initial Decrypted Payload") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame Data") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC CRYPTO Stream (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Record") == labels.end());
+
+    const auto* crypto_stream_descriptor = find_packet_byte_view_descriptor(details, "quic_crypto_stream:0:0");
+    const auto* tls_handshake_descriptor = find_packet_byte_view_descriptor(details, "tls_handshake:0:0");
+    PFL_REQUIRE(crypto_stream_descriptor != nullptr);
+    PFL_REQUIRE(tls_handshake_descriptor != nullptr);
+    PFL_EXPECT(crypto_stream_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(crypto_stream_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(crypto_stream_descriptor->parent_stable_id == std::optional<std::string> {"quic_initial_plaintext:0:0"});
+    PFL_EXPECT(tls_handshake_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(tls_handshake_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(tls_handshake_descriptor->parent_stable_id == std::optional<std::string> {"quic_crypto_stream:0:0"});
+
+    const auto handshake_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet3.packet_index,
+        "tls_handshake:0:0",
+        packet3.row_number,
+        3U
+    );
+    PFL_EXPECT(handshake_content.available);
+    PFL_EXPECT(handshake_content.assembly_kind == "reassembled");
+    PFL_EXPECT(handshake_content.contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(handshake_content.contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(handshake_content.status_text.find("Reassembled from 2 CRYPTO frames") != std::string::npos);
+    PFL_EXPECT(handshake_content.formatted_text.find("01 00") != std::string::npos);
 }
 
 void expect_frontend_adapter_selected_flow_packet_byte_views() {
@@ -560,6 +674,7 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
     expect_frontend_adapter_selected_flow_packet_byte_views();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
+    expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views();
     expect_bounded_tls_selected_flow_service_hint_query();
     expect_non_client_hello_tls_selected_flow_service_hint_queries_return_empty();
     expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_explicit_window();

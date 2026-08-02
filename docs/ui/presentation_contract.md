@@ -545,7 +545,12 @@ Expected semantics:
 - packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
 - packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
 - record-layer TLS over TCP now layers as `TCP Segment -> TLS Record -> TLS Handshake Message` when the current bounded TLS parser confirms ownership;
-- QUIC never invents a `TLS Record` layer: QUIC carries TLS handshake messages only through `CRYPTO Frame Data -> TLS Handshake Message`;
+- packet-local byte views keep their normal label and do not carry a `Reassembled` suffix;
+- byte views backed by bounded reconstructed owners keep one stable descriptor identity and surface `Reassembled` through structured assembly metadata and the display label;
+- record-layer TLS over TCP may therefore appear either as packet-local `TCP Segment -> TLS Record -> TLS Handshake Message` or, when multiple contributing TCP segments are required, as `TLS Handshake Record (Reassembled)` with a reassembled handshake child;
+- QUIC never invents a `TLS Record` layer: TLS over QUIC exposes only `TLS Handshake Message`;
+- when one TLS handshake maps unambiguously to one CRYPTO data range, QUIC may layer as `CRYPTO Frame Data -> TLS Handshake Message`;
+- when one TLS handshake spans multiple CRYPTO contributions, QUIC uses one bounded reconstructed `QUIC CRYPTO Stream (Reassembled)` owner under the decrypted Initial plaintext and attaches the TLS handshake there rather than to one arbitrary frame;
 - the selector uses backend-provided stable ids and backend-provided descriptor order;
 - only one selected view is materialized/formatted at a time;
 - frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
@@ -572,6 +577,7 @@ Backend note for the current migration stage:
 - temporary payload-only fallback descriptors remain explicit for nested carriers whose full unit boundary is not yet carried authoritatively by packet details, rather than being mislabeled as complete packets; the current explicit fallbacks still include tunnel-carrier views such as `GRE Payload`, `EoIP Payload`, `GTP-U Payload`, `VXLAN Payload`, `Geneve Payload`, `AH Payload`, `ESP Protected Payload`, and derived value views such as `CRYPTO Frame Data`;
 - selected-packet TLS byte views reuse the same bounded selected-packet TLS analysis already used by Summary rather than running a second independent full-flow reconstruction pass;
 - selected TCP packet policy is contribution-based: a selected packet shows only TLS records and handshake messages to which that packet contributes, and split TLS records use a bounded reconstructed owner instead of fabricating a fake contiguous captured range inside one packet;
+- packet-local TLS records keep packet-backed ownership and normal labels, while split TLS records and their handshake children surface `Reassembled` plus contributing TCP-segment count from structured reconstruction metadata rather than from inferred lengths;
 - complete packet-local TLS records use captured packet bytes directly, while split or bounded reconstructed TLS records and their handshake children use one reconstructed owner plus child ranges into that owner rather than per-record or per-handshake byte copies;
 - encrypted or opaque TLS records such as `ApplicationData` remain TLS records even when no plaintext handshake child exists;
 - when current metadata confirms TLS ownership but only a bounded partial TCP fragment is available, the descriptor remains the narrowest honest TLS unit, such as `TLS Record Fragment`, with complete/partial/truncated state derived from structured TLS lengths;
@@ -584,9 +590,10 @@ Backend note for the current migration stage:
 - the captured `QUIC Initial Protected Payload` contract starts immediately after the unprotected packet-number field and currently includes the AEAD authentication tag because that is the authoritative encrypted-payload extent already exposed by the selected-packet QUIC code path;
 - derived QUIC frame offsets are relative to the decrypted Initial plaintext owner, while `CRYPTO` stream offsets remain logical QUIC metadata and are not reused as plaintext byte offsets;
 - `CRYPTO Frame Data` views exclude the frame type and encoded offset/length varints and expose only the CRYPTO frame value bytes;
-- QUIC TLS handshake views inherit their range from existing QUIC/TLS handshake semantics and remain children of `CRYPTO Frame Data`; QUIC does not synthesize a TLS record header or record owner;
+- QUIC TLS handshake views inherit their range from the same structured QUIC/TLS handshake model already used by Packet Summary; when one handshake spans multiple CRYPTO contributions, one bounded `QUIC CRYPTO Stream` descriptor becomes the handshake parent and carries reassembled assembly metadata such as contributing CRYPTO-frame count;
+- QUIC does not synthesize a TLS record header or record owner, and failed Initial decryption must not fabricate QUIC frame, `CRYPTO Frame Data`, `QUIC CRYPTO Stream`, or TLS handshake byte ownership;
 - coalesced QUIC UDP datagrams retain one descriptor identity per envelope; derived Initial plaintext belongs only to its owning envelope and is never attached to neighboring `0-RTT`, `Handshake`, or `Protected payload` envelopes;
-- failed Initial decryption may still retain the captured QUIC packet view and, when header-protection removal established an authoritative boundary, the captured protected-payload view, but it must not fabricate derived plaintext, QUIC frame, `CRYPTO Data`, or TLS byte ownership;
+- failed Initial decryption may still retain the captured QUIC packet view and, when header-protection removal established an authoritative boundary, the captured protected-payload view, but it must not fabricate derived plaintext, QUIC frame, `CRYPTO Frame Data`, `QUIC CRYPTO Stream`, or TLS byte ownership;
 - the retained QUIC Initial plaintext owner reuses the existing selected-packet QUIC plaintext artifact and is not copied into a second complete buffer solely for byte presentation;
 - captured and derived owners are intentionally transparent to the UI once the selector has chosen a stable id;
 - application protocols still deferred from Packet Details Bytes in this stage include packet-local HTTP message units and DHCP/BOOTP message units, because current packet presentation does not yet expose a single shared authoritative application-unit byte range for those protocols.

@@ -1082,12 +1082,35 @@ QString packet_byte_view_state_text(const QString& state) {
     return QStringLiteral("Unavailable");
 }
 
+QString packet_byte_view_contributing_unit_text(const QString& unit_kind, const qulonglong count) {
+    if (unit_kind == QStringLiteral("tcp_segment")) {
+        return count == 1ULL ? QStringLiteral("TCP segment") : QStringLiteral("TCP segments");
+    }
+    if (unit_kind == QStringLiteral("quic_crypto_frame")) {
+        return count == 1ULL ? QStringLiteral("CRYPTO frame") : QStringLiteral("CRYPTO frames");
+    }
+    return count == 1ULL ? QStringLiteral("unit") : QStringLiteral("units");
+}
+
 QString packet_byte_view_status_text(
     const QString& state,
+    const QString& assembly_kind,
+    const QVariant& contributing_unit_count,
+    const QVariant& contributing_unit_kind,
     const qulonglong available_length,
     const QVariant& declared_length
 ) {
-    QString status = packet_byte_view_state_text(state) + QStringLiteral(" • Available: ") + format_byte_count_text(available_length);
+    QString status = packet_byte_view_state_text(state);
+    if (assembly_kind == QStringLiteral("reassembled")) {
+        status += QStringLiteral(" • Reassembled");
+        if (contributing_unit_count.isValid() && contributing_unit_kind.isValid()) {
+            const auto count = contributing_unit_count.toULongLong();
+            status += QStringLiteral(" from %1 %2")
+                .arg(count)
+                .arg(packet_byte_view_contributing_unit_text(contributing_unit_kind.toString(), count));
+        }
+    }
+    status += QStringLiteral(" • Available: ") + format_byte_count_text(available_length);
     if (declared_length.isValid()) {
         status += QStringLiteral(" • Declared: ") + format_byte_count_text(declared_length.toULongLong());
     }
@@ -1112,6 +1135,7 @@ QVariantList packet_byte_view_descriptors_to_variant_list(
         item.insert(QStringLiteral("depth"), static_cast<int>(descriptor.depth));
         item.insert(QStringLiteral("ownerKind"), QString::fromStdString(descriptor.owner_kind));
         item.insert(QStringLiteral("role"), QString::fromStdString(descriptor.role));
+        item.insert(QStringLiteral("assemblyKind"), QString::fromStdString(descriptor.assembly_kind));
         item.insert(QStringLiteral("availableLength"), QVariant::fromValue<qulonglong>(descriptor.available_length));
         item.insert(QStringLiteral("declaredLength"), optional_length_variant(descriptor.declared_length));
         item.insert(QStringLiteral("state"), QString::fromStdString(descriptor.state));
@@ -1121,8 +1145,17 @@ QVariantList packet_byte_view_descriptors_to_variant_list(
         if (descriptor.payload_state.has_value()) {
             item.insert(QStringLiteral("payloadState"), QString::fromStdString(*descriptor.payload_state));
         }
+        item.insert(QStringLiteral("contributingUnitCount"), optional_length_variant(descriptor.contributing_unit_count));
+        if (descriptor.contributing_unit_kind.has_value()) {
+            item.insert(QStringLiteral("contributingUnitKind"), QString::fromStdString(*descriptor.contributing_unit_kind));
+        }
         item.insert(QStringLiteral("statusText"), packet_byte_view_status_text(
             QString::fromStdString(descriptor.state),
+            QString::fromStdString(descriptor.assembly_kind),
+            optional_length_variant(descriptor.contributing_unit_count),
+            descriptor.contributing_unit_kind.has_value()
+                ? QVariant(QString::fromStdString(*descriptor.contributing_unit_kind))
+                : QVariant {},
             descriptor.available_length,
             optional_length_variant(descriptor.declared_length)
         ));
@@ -4752,6 +4785,11 @@ void MainController::refreshSelectedPacketByteView() {
         optional_length_variant(packet_byte_content->declared_length),
         packet_byte_view_status_text(
             QString::fromStdString(packet_byte_content->state),
+            QString::fromStdString(packet_byte_content->assembly_kind),
+            optional_length_variant(packet_byte_content->contributing_unit_count),
+            packet_byte_content->contributing_unit_kind.has_value()
+                ? QVariant(QString::fromStdString(*packet_byte_content->contributing_unit_kind))
+                : QVariant {},
             packet_byte_content->available_length,
             optional_length_variant(packet_byte_content->declared_length)
         ),
@@ -6019,6 +6057,11 @@ void MainController::reloadSelectedPacketDetails() {
                     optional_length_variant(packet_byte_content->declared_length),
                     packet_byte_view_status_text(
                         QString::fromStdString(packet_byte_content->state),
+                        QString::fromStdString(packet_byte_content->assembly_kind),
+                        optional_length_variant(packet_byte_content->contributing_unit_count),
+                        packet_byte_content->contributing_unit_kind.has_value()
+                            ? QVariant(QString::fromStdString(*packet_byte_content->contributing_unit_kind))
+                            : QVariant {},
                         packet_byte_content->available_length,
                         optional_length_variant(packet_byte_content->declared_length)
                     ),

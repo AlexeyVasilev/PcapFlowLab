@@ -71,6 +71,7 @@ enum class SelectedPacketByteViewKind : std::uint8_t {
     quic_initial_plaintext,
     quic_frame,
     quic_crypto_data,
+    quic_crypto_stream,
     dns_message,
     tls_record,
     tls_handshake,
@@ -85,6 +86,16 @@ enum class SelectedPacketByteViewRole : std::uint8_t {
 enum class SelectedPacketByteRangeMode : std::uint8_t {
     whole_unit = 0,
     payload_only,
+};
+
+enum class SelectedPacketByteAssemblyKind : std::uint8_t {
+    packet_local = 0,
+    reassembled,
+};
+
+enum class SelectedPacketByteContributionUnitKind : std::uint8_t {
+    tcp_segment = 0,
+    quic_crypto_frame,
 };
 
 struct SelectedPacketByteViewId {
@@ -108,11 +119,14 @@ struct SelectedPacketByteViewDescriptor {
     SelectedPacketByteOwnerId owner_id {};
     SelectedPacketByteOwnerKind owner_kind {SelectedPacketByteOwnerKind::captured_packet};
     SelectedPacketByteViewRole role {SelectedPacketByteViewRole::protocol_unit};
+    SelectedPacketByteAssemblyKind assembly_kind {SelectedPacketByteAssemblyKind::packet_local};
     std::uint32_t offset {0};
     std::optional<std::uint32_t> declared_length {};
     std::uint32_t captured_length {0};
     bool truncated {false};
     std::optional<PacketByteRange> payload_range {};
+    std::optional<std::uint32_t> contributing_unit_count {};
+    std::optional<SelectedPacketByteContributionUnitKind> contributing_unit_kind {};
     std::optional<std::uint64_t> quic_crypto_stream_offset {};
     std::optional<TlsRecordContentTypeKind> tls_record_content_type_kind {};
     std::optional<std::uint8_t> tls_record_content_type {};
@@ -151,6 +165,7 @@ struct SelectedPacketByteViewPresentationDescriptor {
     std::size_t depth {0U};
     std::string owner_kind {};
     std::string role {};
+    std::string assembly_kind {};
     std::uint32_t available_length {0U};
     std::optional<std::uint32_t> declared_length {};
     std::string state {};
@@ -158,6 +173,8 @@ struct SelectedPacketByteViewPresentationDescriptor {
     std::optional<std::uint32_t> payload_available_length {};
     std::optional<std::uint32_t> payload_declared_length {};
     std::optional<std::string> payload_state {};
+    std::optional<std::uint32_t> contributing_unit_count {};
+    std::optional<std::string> contributing_unit_kind {};
     std::optional<std::uint64_t> quic_crypto_stream_offset {};
 };
 
@@ -165,9 +182,12 @@ struct SelectedPacketByteViewContent {
     std::string stable_id {};
     std::string label {};
     SelectedPacketByteRangeMode mode {SelectedPacketByteRangeMode::whole_unit};
+    std::string assembly_kind {};
     std::uint32_t available_length {0U};
     std::optional<std::uint32_t> declared_length {};
     std::string state {};
+    std::optional<std::uint32_t> contributing_unit_count {};
+    std::optional<std::string> contributing_unit_kind {};
     std::string formatted_text {};
 };
 

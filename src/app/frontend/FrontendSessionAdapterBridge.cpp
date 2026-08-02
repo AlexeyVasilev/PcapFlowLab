@@ -294,6 +294,7 @@ std::string packet_byte_view_descriptor_json(const pfl::FrontendPacketDetailsDto
         << "\"depth\":" << descriptor.depth << ','
         << "\"owner_kind\":" << json_string(descriptor.owner_kind) << ','
         << "\"role\":" << json_string(descriptor.role) << ','
+        << "\"assembly_kind\":" << json_string(descriptor.assembly_kind) << ','
         << "\"available_length\":" << descriptor.available_length << ','
         << "\"declared_length\":";
     if (descriptor.declared_length.has_value()) {
@@ -325,6 +326,20 @@ std::string packet_byte_view_descriptor_json(const pfl::FrontendPacketDetailsDto
         out << "null";
     }
     out << ','
+        << "\"contributing_unit_count\":";
+    if (descriptor.contributing_unit_count.has_value()) {
+        out << *descriptor.contributing_unit_count;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_kind\":";
+    if (descriptor.contributing_unit_kind.has_value()) {
+        out << json_string(*descriptor.contributing_unit_kind);
+    } else {
+        out << "null";
+    }
+    out << ','
         << "\"quic_crypto_stream_offset\":";
     if (descriptor.quic_crypto_stream_offset.has_value()) {
         out << *descriptor.quic_crypto_stream_offset;
@@ -342,6 +357,7 @@ std::string packet_byte_view_content_json(const pfl::FrontendPacketDetailsDto::P
         << "\"stable_id\":" << json_string(content.stable_id) << ','
         << "\"label\":" << json_string(content.label) << ','
         << "\"mode\":" << json_string(content.mode) << ','
+        << "\"assembly_kind\":" << json_string(content.assembly_kind) << ','
         << "\"available_length\":" << content.available_length << ','
         << "\"declared_length\":";
     if (content.declared_length.has_value()) {
@@ -351,6 +367,20 @@ std::string packet_byte_view_content_json(const pfl::FrontendPacketDetailsDto::P
     }
     out << ','
         << "\"state\":" << json_string(content.state) << ','
+        << "\"contributing_unit_count\":";
+    if (content.contributing_unit_count.has_value()) {
+        out << *content.contributing_unit_count;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_kind\":";
+    if (content.contributing_unit_kind.has_value()) {
+        out << json_string(*content.contributing_unit_kind);
+    } else {
+        out << "null";
+    }
+    out << ','
         << "\"status_text\":" << json_string(content.status_text) << ','
         << "\"formatted_text\":" << json_string(content.formatted_text) << ','
         << "\"unavailable_text\":" << json_string(content.unavailable_text)

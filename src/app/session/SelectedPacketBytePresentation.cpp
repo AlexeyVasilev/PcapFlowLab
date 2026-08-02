@@ -48,6 +48,7 @@ bool equivalent_view(
     const SelectedPacketByteOwnerId& owner_id,
     const SelectedPacketByteOwnerKind owner_kind,
     const SelectedPacketByteViewRole role,
+    const SelectedPacketByteAssemblyKind assembly_kind,
     const SelectedPacketByteViewKind kind,
     const std::uint8_t scope,
     const std::uint32_t offset,
@@ -55,6 +56,8 @@ bool equivalent_view(
     const std::uint32_t captured_length,
     const bool truncated,
     const std::optional<PacketByteRange>& payload_range,
+    const std::optional<std::uint32_t>& contributing_unit_count,
+    const std::optional<SelectedPacketByteContributionUnitKind>& contributing_unit_kind,
     const std::optional<std::uint64_t>& quic_crypto_stream_offset,
     const std::optional<TlsRecordContentTypeKind>& tls_record_content_type_kind,
     const std::optional<std::uint8_t>& tls_record_content_type,
@@ -65,6 +68,7 @@ bool equivalent_view(
         existing.owner_id == owner_id &&
         existing.owner_kind == owner_kind &&
         existing.role == role &&
+        existing.assembly_kind == assembly_kind &&
         existing.id.kind == kind &&
         existing.id.scope == scope &&
         existing.offset == offset &&
@@ -72,6 +76,8 @@ bool equivalent_view(
         existing.captured_length == captured_length &&
         existing.truncated == truncated &&
         optional_packet_byte_range_equals(existing.payload_range, payload_range) &&
+        existing.contributing_unit_count == contributing_unit_count &&
+        existing.contributing_unit_kind == contributing_unit_kind &&
         existing.quic_crypto_stream_offset == quic_crypto_stream_offset &&
         existing.tls_record_content_type_kind == tls_record_content_type_kind &&
         existing.tls_record_content_type == tls_record_content_type &&
@@ -145,6 +151,28 @@ std::string view_role_key(const SelectedPacketByteViewRole role) {
         return "derived_value";
     default:
         return "unknown";
+    }
+}
+
+std::string assembly_kind_key(const SelectedPacketByteAssemblyKind kind) {
+    switch (kind) {
+    case SelectedPacketByteAssemblyKind::packet_local:
+        return "packet_local";
+    case SelectedPacketByteAssemblyKind::reassembled:
+        return "reassembled";
+    default:
+        return "packet_local";
+    }
+}
+
+std::string contribution_unit_kind_key(const SelectedPacketByteContributionUnitKind kind) {
+    switch (kind) {
+    case SelectedPacketByteContributionUnitKind::tcp_segment:
+        return "tcp_segment";
+    case SelectedPacketByteContributionUnitKind::quic_crypto_frame:
+        return "quic_crypto_frame";
+    default:
+        return "tcp_segment";
     }
 }
 
@@ -226,6 +254,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "quic_frame";
     case SelectedPacketByteViewKind::quic_crypto_data:
         return "quic_crypto_data";
+    case SelectedPacketByteViewKind::quic_crypto_stream:
+        return "quic_crypto_stream";
     case SelectedPacketByteViewKind::dns_message:
         return "dns";
     case SelectedPacketByteViewKind::tls_record:
@@ -277,6 +307,7 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"quic_initial_plaintext", SelectedPacketByteViewKind::quic_initial_plaintext},
         {"quic_frame", SelectedPacketByteViewKind::quic_frame},
         {"quic_crypto_data", SelectedPacketByteViewKind::quic_crypto_data},
+        {"quic_crypto_stream", SelectedPacketByteViewKind::quic_crypto_stream},
         {"dns", SelectedPacketByteViewKind::dns_message},
         {"tls_record", SelectedPacketByteViewKind::tls_record},
         {"tls_handshake", SelectedPacketByteViewKind::tls_handshake},
@@ -407,6 +438,8 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return descriptor.quic_crypto_stream_offset.has_value() ? "CRYPTO Frame" : "QUIC Frame";
     case SelectedPacketByteViewKind::quic_crypto_data:
         return "CRYPTO Frame Data";
+    case SelectedPacketByteViewKind::quic_crypto_stream:
+        return "QUIC CRYPTO Stream";
     case SelectedPacketByteViewKind::dns_message:
         return "DNS Message";
     case SelectedPacketByteViewKind::tls_record:
@@ -445,6 +478,9 @@ std::string view_label(const SelectedPacketByteViewDescriptor& descriptor) {
     auto label = base_view_label(descriptor);
     if (descriptor.id.occurrence > 0U) {
         label += " #" + std::to_string(static_cast<std::size_t>(descriptor.id.occurrence) + 1U);
+    }
+    if (descriptor.assembly_kind == SelectedPacketByteAssemblyKind::reassembled) {
+        label += " (Reassembled)";
     }
     return label;
 }
@@ -584,6 +620,7 @@ std::optional<SelectedPacketByteViewId> append_view(
     const SelectedPacketByteOwnerId& owner_id,
     const SelectedPacketByteOwnerKind owner_kind,
     const SelectedPacketByteViewRole role,
+    const SelectedPacketByteAssemblyKind assembly_kind,
     const SelectedPacketByteViewKind kind,
     const std::uint8_t scope,
     const std::uint32_t owner_byte_length,
@@ -592,6 +629,8 @@ std::optional<SelectedPacketByteViewId> append_view(
     const std::uint32_t captured_length,
     const bool truncated,
     const std::optional<PacketByteRange>& payload_range = std::nullopt,
+    const std::optional<std::uint32_t>& contributing_unit_count = std::nullopt,
+    const std::optional<SelectedPacketByteContributionUnitKind>& contributing_unit_kind = std::nullopt,
     const std::optional<std::uint64_t>& quic_crypto_stream_offset = std::nullopt,
     const std::optional<TlsRecordContentTypeKind>& tls_record_content_type_kind = std::nullopt,
     const std::optional<std::uint8_t>& tls_record_content_type = std::nullopt,
@@ -611,6 +650,7 @@ std::optional<SelectedPacketByteViewId> append_view(
                 owner_id,
                 owner_kind,
                 role,
+                assembly_kind,
                 kind,
                 scope,
                 offset,
@@ -618,6 +658,8 @@ std::optional<SelectedPacketByteViewId> append_view(
                 captured_length,
                 truncated,
                 payload_range,
+                contributing_unit_count,
+                contributing_unit_kind,
                 quic_crypto_stream_offset,
                 tls_record_content_type_kind,
                 tls_record_content_type,
@@ -650,11 +692,14 @@ std::optional<SelectedPacketByteViewId> append_view(
         .owner_id = owner_id,
         .owner_kind = owner_kind,
         .role = role,
+        .assembly_kind = assembly_kind,
         .offset = offset,
         .declared_length = declared_length,
         .captured_length = captured_length,
         .truncated = truncated,
         .payload_range = payload_range,
+        .contributing_unit_count = contributing_unit_count,
+        .contributing_unit_kind = contributing_unit_kind,
         .quic_crypto_stream_offset = quic_crypto_stream_offset,
         .tls_record_content_type_kind = tls_record_content_type_kind,
         .tls_record_content_type = tls_record_content_type,
@@ -684,6 +729,7 @@ std::optional<SelectedPacketByteViewId> append_view(
         owner_id,
         owner_kind,
         SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteAssemblyKind::packet_local,
         kind,
         scope,
         owner_byte_length,
@@ -715,6 +761,7 @@ std::optional<SelectedPacketByteViewId> append_protocol_unit_view(
         owner_id,
         owner_kind,
         role,
+        SelectedPacketByteAssemblyKind::packet_local,
         kind,
         scope,
         owner_captured_length,
@@ -1776,6 +1823,9 @@ void append_tls_handshake_views(
     const std::uint8_t scope,
     const std::uint32_t base_offset,
     std::span<const TlsHandshakeModel> handshakes,
+    const SelectedPacketByteAssemblyKind assembly_kind = SelectedPacketByteAssemblyKind::packet_local,
+    const std::optional<std::uint32_t>& contributing_unit_count = std::nullopt,
+    const std::optional<SelectedPacketByteContributionUnitKind>& contributing_unit_kind = std::nullopt,
     const std::optional<std::uint64_t> quic_crypto_stream_base = std::nullopt
 ) {
     for (const auto& handshake : handshakes) {
@@ -1800,6 +1850,7 @@ void append_tls_handshake_views(
             owner_id,
             owner_kind,
             SelectedPacketByteViewRole::protocol_unit,
+            assembly_kind,
             SelectedPacketByteViewKind::tls_handshake,
             scope,
             owner_captured_length,
@@ -1808,6 +1859,8 @@ void append_tls_handshake_views(
             *captured_length,
             truncated,
             payload_range,
+            contributing_unit_count,
+            contributing_unit_kind,
             stream_offset,
             std::nullopt,
             std::nullopt,
@@ -1851,6 +1904,9 @@ void append_tls_record_view(
     const std::uint8_t scope,
     const TlsRecordModel& record,
     const std::uint32_t base_offset,
+    const SelectedPacketByteAssemblyKind assembly_kind = SelectedPacketByteAssemblyKind::packet_local,
+    const std::optional<std::uint32_t>& contributing_unit_count = std::nullopt,
+    const std::optional<SelectedPacketByteContributionUnitKind>& contributing_unit_kind = std::nullopt,
     const std::optional<std::uint64_t> quic_crypto_stream_base = std::nullopt
 ) {
     const auto record_offset = narrow_u32(static_cast<std::size_t>(base_offset) + record.source_offset);
@@ -1871,6 +1927,7 @@ void append_tls_record_view(
         owner_id,
         owner_kind,
         SelectedPacketByteViewRole::protocol_unit,
+        assembly_kind,
         SelectedPacketByteViewKind::tls_record,
         scope,
         owner_captured_length,
@@ -1879,6 +1936,8 @@ void append_tls_record_view(
         *captured_length,
         truncated,
         payload_range,
+        contributing_unit_count,
+        contributing_unit_kind,
         quic_crypto_stream_base,
         record.content_type_kind,
         record.content_type
@@ -1899,6 +1958,9 @@ void append_tls_record_view(
             record_id->occurrence,
             base_offset,
             std::span<const TlsHandshakeModel>(record.handshake_messages.data(), record.handshake_messages.size()),
+            assembly_kind,
+            contributing_unit_count,
+            contributing_unit_kind,
             quic_crypto_stream_base
         );
     }
@@ -1970,32 +2032,43 @@ std::optional<std::vector<std::uint8_t>> build_quic_crypto_prefix_bytes(
     return prefix_bytes;
 }
 
-const SelectedPacketByteViewDescriptor* find_quic_crypto_parent_view(
+const SelectedPacketByteViewDescriptor* find_view_in_scope(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewKind kind,
+    const std::uint8_t scope
+) {
+    for (const auto& view : presentation.views) {
+        if (view.id.kind == kind && view.id.scope == scope) {
+            return &view;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<const SelectedPacketByteViewDescriptor*> find_quic_crypto_parent_views(
     const SelectedPacketBytePresentation& presentation,
     const std::uint8_t scope,
     const TlsHandshakeModel& handshake
 ) {
     const auto handshake_begin = static_cast<std::uint64_t>(handshake.source_offset);
     const auto handshake_end = handshake_begin + handshake.available_bytes;
-    const auto* exact_parent = static_cast<const SelectedPacketByteViewDescriptor*>(nullptr);
+
+    std::vector<const SelectedPacketByteViewDescriptor*> matches {};
     for (const auto& view : presentation.views) {
         if (view.id.kind != SelectedPacketByteViewKind::quic_crypto_data ||
             view.id.scope != scope ||
             !view.quic_crypto_stream_offset.has_value()) {
             continue;
         }
+
         const auto frame_begin = *view.quic_crypto_stream_offset;
         const auto frame_end = frame_begin + view.captured_length;
-        if (handshake_begin >= frame_begin && handshake_begin < frame_end) {
-            return &view;
-        }
-        if (exact_parent == nullptr &&
-            handshake_end > frame_begin &&
-            handshake_begin < frame_end) {
-            exact_parent = &view;
+        if (handshake_end > frame_begin && handshake_begin < frame_end) {
+            matches.push_back(&view);
         }
     }
-    return exact_parent;
+
+    return matches;
 }
 
 void append_quic_tls_handshake_views(
@@ -2005,6 +2078,7 @@ void append_quic_tls_handshake_views(
     const SelectedPacketByteOwnerId& owner_id,
     const std::uint32_t owner_captured_length
 ) {
+    static_cast<void>(owner_captured_length);
     if (quic_packet.tls_handshakes.empty()) {
         return;
     }
@@ -2027,7 +2101,7 @@ void append_quic_tls_handshake_views(
         presentation.derived_owners,
         SelectedPacketByteOwnerKind::quic_crypto_prefix,
         static_cast<std::size_t>(packet_scope),
-        std::move(*crypto_prefix_bytes)
+        *crypto_prefix_bytes
     );
     if (!crypto_owner_id.has_value()) {
         return;
@@ -2042,20 +2116,104 @@ void append_quic_tls_handshake_views(
         return;
     }
 
+    std::vector<std::vector<const SelectedPacketByteViewDescriptor*>> handshake_parent_views {};
+    handshake_parent_views.reserve(quic_packet.tls_handshakes.size());
+    bool needs_crypto_stream_parent = false;
     for (const auto& handshake : quic_packet.tls_handshakes) {
-        const auto* parent_view = find_quic_crypto_parent_view(presentation, packet_scope, handshake);
-        if (parent_view == nullptr) {
+        auto matches = find_quic_crypto_parent_views(presentation, packet_scope, handshake);
+        if (matches.empty() || matches.size() > 1U) {
+            needs_crypto_stream_parent = true;
+        }
+        handshake_parent_views.push_back(std::move(matches));
+    }
+
+    std::optional<SelectedPacketByteViewId> crypto_stream_id {};
+    std::optional<std::uint32_t> crypto_stream_frame_count {};
+    if (needs_crypto_stream_parent) {
+        const auto* plaintext_view = find_view_in_scope(
+            presentation,
+            SelectedPacketByteViewKind::quic_initial_plaintext,
+            packet_scope
+        );
+        if (plaintext_view == nullptr) {
+            return;
+        }
+
+        const auto frame_count = static_cast<std::uint32_t>(std::count_if(
+            presentation.views.begin(),
+            presentation.views.end(),
+            [&](const SelectedPacketByteViewDescriptor& view) {
+                return view.id.kind == SelectedPacketByteViewKind::quic_crypto_data &&
+                    view.id.scope == packet_scope;
+            }
+        ));
+        if (frame_count == 0U) {
+            return;
+        }
+
+        crypto_stream_frame_count = frame_count;
+        crypto_stream_id = append_view(
+            presentation.views,
+            plaintext_view->id,
+            *crypto_owner_id,
+            SelectedPacketByteOwnerKind::quic_crypto_prefix,
+            SelectedPacketByteViewRole::protocol_unit,
+            SelectedPacketByteAssemblyKind::reassembled,
+            SelectedPacketByteViewKind::quic_crypto_stream,
+            packet_scope,
+            *crypto_owner_length,
+            0U,
+            std::optional<std::uint32_t> {*crypto_owner_length},
+            *crypto_owner_length,
+            false,
+            std::nullopt,
+            crypto_stream_frame_count,
+            SelectedPacketByteContributionUnitKind::quic_crypto_frame
+        );
+        if (!crypto_stream_id.has_value()) {
+            return;
+        }
+    }
+
+    for (std::size_t index = 0U; index < quic_packet.tls_handshakes.size(); ++index) {
+        const auto& handshake = quic_packet.tls_handshakes[index];
+        const auto& parent_views = handshake_parent_views[index];
+        if (crypto_stream_id.has_value()) {
+            append_tls_handshake_views(
+                presentation.views,
+                *crypto_stream_id,
+                *crypto_owner_id,
+                SelectedPacketByteOwnerKind::quic_crypto_prefix,
+                *crypto_owner_length,
+                packet_scope,
+                0U,
+                std::span<const TlsHandshakeModel>(&handshake, 1U),
+                SelectedPacketByteAssemblyKind::reassembled,
+                !parent_views.empty()
+                    ? std::optional<std::uint32_t> {static_cast<std::uint32_t>(parent_views.size())}
+                    : crypto_stream_frame_count,
+                SelectedPacketByteContributionUnitKind::quic_crypto_frame,
+                0U
+            );
             continue;
         }
+
+        if (parent_views.empty()) {
+            continue;
+        }
+
         append_tls_handshake_views(
             presentation.views,
-            parent_view->id,
+            parent_views.front()->id,
             *crypto_owner_id,
             SelectedPacketByteOwnerKind::quic_crypto_prefix,
             *crypto_owner_length,
             packet_scope,
             0U,
             std::span<const TlsHandshakeModel>(&handshake, 1U),
+            SelectedPacketByteAssemblyKind::packet_local,
+            std::nullopt,
+            std::nullopt,
             0U
         );
     }
@@ -2099,6 +2257,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         kCapturedPacketOwnerId,
         presentation.owner_kind,
         SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteAssemblyKind::packet_local,
         SelectedPacketByteViewKind::frame,
         0U,
         presentation.owner_captured_length,
@@ -2329,6 +2488,16 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
                     if (!owner_length.has_value()) {
                         continue;
                     }
+                    const auto contribution_count =
+                        reconstructed_record.contributions.size() > 1U
+                            ? std::optional<std::uint32_t> {
+                                static_cast<std::uint32_t>(reconstructed_record.contributions.size())
+                            }
+                            : std::nullopt;
+                    const auto assembly_kind =
+                        contribution_count.has_value()
+                            ? SelectedPacketByteAssemblyKind::reassembled
+                            : SelectedPacketByteAssemblyKind::packet_local;
                     if (!inspection.records.empty()) {
                         append_tls_record_view(
                             presentation,
@@ -2338,7 +2507,14 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
                             *owner_length,
                             0U,
                             inspection.records.front(),
-                            0U
+                            0U,
+                            assembly_kind,
+                            contribution_count,
+                            contribution_count.has_value()
+                                ? std::optional<SelectedPacketByteContributionUnitKind> {
+                                    SelectedPacketByteContributionUnitKind::tcp_segment
+                                }
+                                : std::nullopt
                         );
                     }
                 }
@@ -2513,6 +2689,7 @@ std::vector<SelectedPacketByteViewPresentationDescriptor> build_selected_packet_
             .depth = resolve_depth(view),
             .owner_kind = owner_kind_key(view.owner_kind),
             .role = view_role_key(view.role),
+            .assembly_kind = assembly_kind_key(view.assembly_kind),
             .available_length = view.captured_length,
             .declared_length = view.declared_length,
             .state = descriptor_state(view),
@@ -2524,6 +2701,10 @@ std::vector<SelectedPacketByteViewPresentationDescriptor> build_selected_packet_
                 ? view.payload_range->declared_length
                 : std::nullopt,
             .payload_state = payload_state(view),
+            .contributing_unit_count = view.contributing_unit_count,
+            .contributing_unit_kind = view.contributing_unit_kind.has_value()
+                ? std::optional<std::string> {contribution_unit_kind_key(*view.contributing_unit_kind)}
+                : std::nullopt,
             .quic_crypto_stream_offset = view.quic_crypto_stream_offset,
         });
     }
@@ -2557,9 +2738,14 @@ std::optional<SelectedPacketByteViewContent> format_selected_packet_byte_view_co
         .stable_id = format_selected_packet_byte_view_stable_id(id),
         .label = view_label(*materialized->descriptor),
         .mode = mode,
+        .assembly_kind = assembly_kind_key(materialized->descriptor->assembly_kind),
         .available_length = available_length,
         .declared_length = declared_length,
         .state = state,
+        .contributing_unit_count = materialized->descriptor->contributing_unit_count,
+        .contributing_unit_kind = materialized->descriptor->contributing_unit_kind.has_value()
+            ? std::optional<std::string> {contribution_unit_kind_key(*materialized->descriptor->contributing_unit_kind)}
+            : std::nullopt,
         .formatted_text = hex_dump_service.format(materialized->bytes),
     };
 }

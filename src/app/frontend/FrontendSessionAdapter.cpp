@@ -1031,12 +1031,36 @@ std::string packet_byte_view_state_text(const std::string_view state) {
     return "Unavailable";
 }
 
+std::string packet_byte_view_contributing_unit_text(
+    const std::string_view unit_kind,
+    const std::uint32_t count
+) {
+    if (unit_kind == "tcp_segment") {
+        return count == 1U ? "TCP segment" : "TCP segments";
+    }
+    if (unit_kind == "quic_crypto_frame") {
+        return count == 1U ? "CRYPTO frame" : "CRYPTO frames";
+    }
+    return count == 1U ? "unit" : "units";
+}
+
 std::string packet_byte_view_status_text(
     const std::string_view state,
+    const std::string_view assembly_kind,
+    const std::optional<std::uint32_t>& contributing_unit_count,
+    const std::optional<std::string>& contributing_unit_kind,
     const std::uint32_t available_length,
     const std::optional<std::uint32_t>& declared_length
 ) {
-    auto status = packet_byte_view_state_text(state) + " \xE2\x80\xA2 Available: " + format_byte_count_text(available_length);
+    auto status = packet_byte_view_state_text(state);
+    if (assembly_kind == "reassembled") {
+        status += " \xE2\x80\xA2 Reassembled";
+        if (contributing_unit_count.has_value() && contributing_unit_kind.has_value()) {
+            status += " from " + std::to_string(*contributing_unit_count) + ' ' +
+                packet_byte_view_contributing_unit_text(*contributing_unit_kind, *contributing_unit_count);
+        }
+    }
+    status += " \xE2\x80\xA2 Available: " + format_byte_count_text(available_length);
     if (declared_length.has_value()) {
         status += " \xE2\x80\xA2 Declared: " + format_byte_count_text(*declared_length);
     }
@@ -1056,6 +1080,7 @@ std::vector<FrontendPacketDetailsDto::PacketByteViewDescriptor> build_frontend_p
             .depth = descriptor.depth,
             .owner_kind = descriptor.owner_kind,
             .role = descriptor.role,
+            .assembly_kind = descriptor.assembly_kind,
             .available_length = descriptor.available_length,
             .declared_length = descriptor.declared_length,
             .state = descriptor.state,
@@ -1063,6 +1088,8 @@ std::vector<FrontendPacketDetailsDto::PacketByteViewDescriptor> build_frontend_p
             .payload_available_length = descriptor.payload_available_length,
             .payload_declared_length = descriptor.payload_declared_length,
             .payload_state = descriptor.payload_state,
+            .contributing_unit_count = descriptor.contributing_unit_count,
+            .contributing_unit_kind = descriptor.contributing_unit_kind,
             .quic_crypto_stream_offset = descriptor.quic_crypto_stream_offset,
         });
     }
@@ -3247,11 +3274,17 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
                     .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
                         ? "payload_only"
                         : "whole_unit",
+                    .assembly_kind = content->assembly_kind,
                     .available_length = content->available_length,
                     .declared_length = content->declared_length,
                     .state = content->state,
+                    .contributing_unit_count = content->contributing_unit_count,
+                    .contributing_unit_kind = content->contributing_unit_kind,
                     .status_text = packet_byte_view_status_text(
                         content->state,
+                        content->assembly_kind,
+                        content->contributing_unit_count,
+                        content->contributing_unit_kind,
                         content->available_length,
                         content->declared_length
                     ),
@@ -3354,10 +3387,20 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
         .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
             ? "payload_only"
             : "whole_unit",
+        .assembly_kind = content->assembly_kind,
         .available_length = content->available_length,
         .declared_length = content->declared_length,
         .state = content->state,
-        .status_text = packet_byte_view_status_text(content->state, content->available_length, content->declared_length),
+        .contributing_unit_count = content->contributing_unit_count,
+        .contributing_unit_kind = content->contributing_unit_kind,
+        .status_text = packet_byte_view_status_text(
+            content->state,
+            content->assembly_kind,
+            content->contributing_unit_count,
+            content->contributing_unit_kind,
+            content->available_length,
+            content->declared_length
+        ),
         .formatted_text = content->formatted_text,
         .unavailable_text = {},
     };
