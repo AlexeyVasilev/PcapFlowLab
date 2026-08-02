@@ -337,6 +337,13 @@ struct ArpDetails {
     bool address_section_truncated {false};
 };
 
+struct PacketByteRange {
+    std::uint32_t offset {0};
+    std::optional<std::uint32_t> declared_length {};
+    std::uint32_t captured_length {0};
+    bool truncated {false};
+};
+
 struct IPv4Details {
     std::uint8_t available_header_bytes {0};
     std::uint16_t available_packet_bytes {0};
@@ -356,6 +363,7 @@ struct IPv4Details {
     bool header_truncated {false};
     bool options_truncated {false};
     bool total_length_invalid {false};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct IPv6Details {
@@ -366,6 +374,7 @@ struct IPv6Details {
     std::uint8_t hop_limit {0};
     std::uint32_t flow_label {0};
     std::uint16_t payload_length {0};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct TcpDetails {
@@ -409,6 +418,7 @@ struct SctpDetails {
     std::uint16_t stream_identifier {0};
     std::uint16_t stream_sequence_number {0};
     std::uint32_t ppid {0};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct IcmpDetails {
@@ -600,6 +610,7 @@ struct PacketDetails {
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
     bool ipv4_bounds_from_captured_bytes {false};
+    std::optional<PacketByteRange> mpls_payload_range {};
 
     bool has_ethernet {false};
     EthernetDetails ethernet {};

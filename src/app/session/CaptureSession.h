@@ -11,6 +11,7 @@
 #include <array>
 
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
@@ -182,6 +183,13 @@ public:
     [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
+    [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
+        const PacketRef& packet
+    ) const;
+    [[nodiscard]] std::optional<std::string> format_selected_packet_byte_view_hex_dump(
+        const PacketRef& packet,
+        const session_detail::SelectedPacketByteViewId& id
+    ) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_payload_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_protocol_details_text(const PacketRef& packet) const;

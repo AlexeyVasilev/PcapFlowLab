@@ -108,6 +108,45 @@ std::optional<EffectiveTransportPayloadDetails> make_effective_udp_payload_detai
     };
 }
 
+std::optional<PacketByteRange> make_packet_byte_range(
+    const std::size_t offset,
+    const std::size_t captured_length,
+    const std::optional<std::size_t> declared_length,
+    const bool truncated
+) {
+    if (captured_length == 0U || offset > 0xFFFFFFFFU || captured_length > 0xFFFFFFFFU) {
+        return std::nullopt;
+    }
+    if (declared_length.has_value() && *declared_length > 0xFFFFFFFFU) {
+        return std::nullopt;
+    }
+
+    return PacketByteRange {
+        .offset = static_cast<std::uint32_t>(offset),
+        .declared_length = declared_length.has_value()
+            ? std::optional<std::uint32_t> {static_cast<std::uint32_t>(*declared_length)}
+            : std::nullopt,
+        .captured_length = static_cast<std::uint32_t>(captured_length),
+        .truncated = truncated,
+    };
+}
+
+std::optional<PacketByteRange> rebase_packet_byte_range(
+    const std::optional<PacketByteRange>& nested_range,
+    const std::size_t base_offset,
+    const std::size_t trimmed_prefix
+) {
+    if (!nested_range.has_value() || nested_range->offset < trimmed_prefix) {
+        return std::nullopt;
+    }
+
+    auto rebased = *nested_range;
+    rebased.offset = static_cast<std::uint32_t>(
+        base_offset + (static_cast<std::size_t>(nested_range->offset) - trimmed_prefix)
+    );
+    return rebased;
+}
+
 std::optional<EffectiveTransportPayloadDetails> rebase_effective_transport_payload(
     const std::optional<EffectiveTransportPayloadDetails>& nested_payload,
     const std::size_t base_offset,
@@ -333,6 +372,20 @@ void populate_sctp_details_fields(
     }
     if (available_data_metadata_bytes >= 12U) {
         sctp.ppid = detail::read_be32(packet_bytes, data_metadata_offset + 8U);
+    }
+
+    if (bounded_chunk_bytes > kSctpChunkHeaderSize + kSctpDataChunkMetadataSize) {
+        const auto payload_offset = data_metadata_offset + kSctpDataChunkMetadataSize;
+        const auto captured_payload_length = bounded_chunk_bytes - (kSctpChunkHeaderSize + kSctpDataChunkMetadataSize);
+        const auto declared_payload_length = declared_chunk_bytes > kSctpChunkHeaderSize + kSctpDataChunkMetadataSize
+            ? std::optional<std::size_t> {declared_chunk_bytes - (kSctpChunkHeaderSize + kSctpDataChunkMetadataSize)}
+            : std::optional<std::size_t> {};
+        sctp.payload_range = make_packet_byte_range(
+            payload_offset,
+            captured_payload_length,
+            declared_payload_length,
+            declared_payload_length.has_value() && captured_payload_length < *declared_payload_length
+        );
     }
 }
 
@@ -722,6 +775,14 @@ bool try_populate_plain_ip_encapsulation_inner_ipv4(
     }
 
     const auto transport_offset = inner_ipv4_offset + claimed_header_length;
+    inner_layer.ipv4.payload_range = make_packet_byte_range(
+        transport_offset,
+        ipv4_bounds->packet_end - transport_offset,
+        ipv4_bounds->nominal_packet_end > transport_offset
+            ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - transport_offset}
+            : std::optional<std::size_t> {},
+        ipv4_bounds->nominal_packet_end > ipv4_bounds->packet_end
+    );
     if (inner_layer.ipv4.protocol == detail::kIpProtocolTcp) {
         populate_ip_encapsulation_tcp_details(
             packet_bytes,
@@ -823,6 +884,14 @@ bool try_populate_bounded_plain_ipv4_encapsulation_chain(
         encapsulation.inner_ip_layers.push_back(std::move(inner_layer));
 
         const auto transport_offset = current_ipv4_offset + claimed_header_length;
+        encapsulation.inner_ip_layers.back().ipv4.payload_range = make_packet_byte_range(
+            transport_offset,
+            ipv4_bounds->packet_end - transport_offset,
+            ipv4_bounds->nominal_packet_end > transport_offset
+                ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - transport_offset}
+                : std::optional<std::size_t> {},
+            ipv4_bounds->nominal_packet_end > ipv4_bounds->packet_end
+        );
         const auto protocol = encapsulation.inner_ip_layers.back().ipv4.protocol;
         if (protocol == detail::kIpProtocolTcp) {
             populate_ip_encapsulation_tcp_details(
@@ -947,6 +1016,19 @@ bool try_populate_plain_ip_encapsulation_inner_ipv6(
             )
             : false;
     }
+
+    inner_layer.ipv6.payload_range = make_packet_byte_range(
+        payload->payload_offset,
+        packet_end - payload->payload_offset,
+        inner_ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner_layer.ipv6.payload_length) >
+                payload->payload_offset
+            ? std::optional<std::size_t> {
+                (inner_ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner_layer.ipv6.payload_length)) -
+                payload->payload_offset
+            }
+            : std::optional<std::size_t> {},
+        inner_ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner_layer.ipv6.payload_length) > packet_end
+    );
 
     if (payload->next_header == detail::kIpProtocolTcp) {
         populate_ip_encapsulation_tcp_details(
@@ -1303,7 +1385,11 @@ void populate_vxlan_details(
     }
 }
 
-std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(const PacketDetails& details) {
+std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(
+    const PacketDetails& details,
+    const std::size_t base_offset,
+    const std::size_t trimmed_prefix
+) {
     auto inner = std::make_shared<VxlanInnerPacketDetails>();
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
@@ -1321,6 +1407,15 @@ std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(const P
     inner->udp = details.udp;
     inner->has_sctp = details.has_sctp;
     inner->sctp = details.sctp;
+    if (inner->has_ipv4) {
+        inner->ipv4.payload_range = rebase_packet_byte_range(details.ipv4.payload_range, base_offset, trimmed_prefix);
+    }
+    if (inner->has_ipv6) {
+        inner->ipv6.payload_range = rebase_packet_byte_range(details.ipv6.payload_range, base_offset, trimmed_prefix);
+    }
+    if (inner->has_sctp) {
+        inner->sctp.payload_range = rebase_packet_byte_range(details.sctp.payload_range, base_offset, trimmed_prefix);
+    }
     return inner;
 }
 
@@ -1373,7 +1468,7 @@ void populate_vxlan_inner_packet_details(
         0U
     );
     details.vxlan.has_inner_packet = true;
-    details.vxlan.inner_packet = make_vxlan_inner_packet_details(*decoded_inner);
+    details.vxlan.inner_packet = make_vxlan_inner_packet_details(*decoded_inner, vxlan.inner_ethernet_offset, 0U);
 }
 
 void populate_lenient_vxlan_details(
@@ -1499,7 +1594,11 @@ void populate_geneve_details(
     }
 }
 
-std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(const PacketDetails& details) {
+std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(
+    const PacketDetails& details,
+    const std::size_t base_offset,
+    const std::size_t trimmed_prefix
+) {
     auto inner = std::make_shared<GeneveInnerPacketDetails>();
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
@@ -1517,6 +1616,15 @@ std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(const
     inner->udp = details.udp;
     inner->has_sctp = details.has_sctp;
     inner->sctp = details.sctp;
+    if (inner->has_ipv4) {
+        inner->ipv4.payload_range = rebase_packet_byte_range(details.ipv4.payload_range, base_offset, trimmed_prefix);
+    }
+    if (inner->has_ipv6) {
+        inner->ipv6.payload_range = rebase_packet_byte_range(details.ipv6.payload_range, base_offset, trimmed_prefix);
+    }
+    if (inner->has_sctp) {
+        inner->sctp.payload_range = rebase_packet_byte_range(details.sctp.payload_range, base_offset, trimmed_prefix);
+    }
     return inner;
 }
 
@@ -1569,7 +1677,7 @@ void populate_geneve_inner_packet_details(
         0U
     );
     details.geneve.has_inner_packet = true;
-    details.geneve.inner_packet = make_geneve_inner_packet_details(*decoded_inner);
+    details.geneve.inner_packet = make_geneve_inner_packet_details(*decoded_inner, geneve.inner_ethernet_offset, 0U);
 }
 
 void populate_lenient_geneve_details(
@@ -1767,11 +1875,27 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
 
         const auto flags_fragment = detail::read_be16(network_packet_bytes, payload_offset + 6U);
         if ((flags_fragment & 0x3FFFU) != 0U) {
+            inner.ipv4.payload_range = make_packet_byte_range(
+                payload_offset + claimed_header_length,
+                ipv4_bounds->packet_end - (payload_offset + claimed_header_length),
+                ipv4_bounds->nominal_packet_end > payload_offset + claimed_header_length
+                    ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - (payload_offset + claimed_header_length)}
+                    : std::optional<std::size_t> {},
+                ipv4_bounds->nominal_packet_end > ipv4_bounds->packet_end
+            );
             return inner;
         }
 
         const auto transport_offset = payload_offset + claimed_header_length;
         const auto packet_end = ipv4_bounds->packet_end;
+        inner.ipv4.payload_range = make_packet_byte_range(
+            transport_offset,
+            packet_end - transport_offset,
+            ipv4_bounds->nominal_packet_end > transport_offset
+                ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - transport_offset}
+                : std::optional<std::size_t> {},
+            ipv4_bounds->nominal_packet_end > packet_end
+        );
         if (inner.ipv4.protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 network_packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
@@ -1905,6 +2029,17 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
         }
 
         inner.ipv6.next_header = payload->next_header;
+        inner.ipv6.payload_range = make_packet_byte_range(
+            payload->payload_offset,
+            packet_end - payload->payload_offset,
+            payload_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner.ipv6.payload_length) > payload->payload_offset
+                ? std::optional<std::size_t> {
+                    (payload_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner.ipv6.payload_length)) -
+                    payload->payload_offset
+                }
+                : std::optional<std::size_t> {},
+            payload_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner.ipv6.payload_length) > packet_end
+        );
         if (payload->has_fragment_header) {
             return inner;
         }
@@ -3294,6 +3429,15 @@ std::optional<PacketDetails> decode_packet_details(
         if (mpls.bounded_packet_end.has_value()) {
             network_packet_bytes = packet_bytes.first(std::min(*mpls.bounded_packet_end, packet_bytes.size()));
         }
+        if (network_packet_bytes.size() > network_payload_offset) {
+            const auto captured_payload_length = network_packet_bytes.size() - network_payload_offset;
+            details.mpls_payload_range = make_packet_byte_range(
+                network_payload_offset,
+                captured_payload_length,
+                std::nullopt,
+                false
+            );
+        }
     }
 
     if (network_protocol_type == detail::kEtherTypePppoeDiscovery ||
@@ -3527,13 +3671,20 @@ std::optional<PacketDetails> decode_packet_details(
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
+        const auto transport_offset = ipv4_offset + claimed_header_length;
         const auto packet_end = ipv4_bounds->packet_end;
+        details.ipv4.payload_range = make_packet_byte_range(
+            transport_offset,
+            packet_end - transport_offset,
+            ipv4_bounds->nominal_packet_end > transport_offset
+                ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - transport_offset}
+                : std::optional<std::size_t> {},
+            ipv4_bounds->nominal_packet_end > packet_end
+        );
 
         if (is_fragmented) {
             return details;
         }
-
-        const auto transport_offset = ipv4_offset + claimed_header_length;
         if (details.ipv4.protocol == detail::kIpProtocolIpv4Encapsulation) {
             if (try_populate_bounded_plain_ipv4_encapsulation_chain(
                     network_packet_bytes,
@@ -3836,6 +3987,17 @@ std::optional<PacketDetails> decode_packet_details(
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
         details.ipv6.next_header = payload->next_header;
+        details.ipv6.payload_range = make_packet_byte_range(
+            payload->payload_offset,
+            packet_end - payload->payload_offset,
+            ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length) > payload->payload_offset
+                ? std::optional<std::size_t> {
+                    (ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)) -
+                    payload->payload_offset
+                }
+                : std::optional<std::size_t> {},
+            ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length) > packet_end
+        );
         if (payload->has_fragment_header) {
             return details;
         }

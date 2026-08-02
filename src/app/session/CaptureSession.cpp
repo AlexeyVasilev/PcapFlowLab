@@ -3373,6 +3373,40 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
     return service.decode_best_effort(bytes, packet);
 }
 
+std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
+    const PacketRef& packet
+) const {
+    const auto details = read_packet_details(packet);
+    if (!details.has_value()) {
+        return std::nullopt;
+    }
+
+    return session_detail::build_selected_packet_byte_presentation(*details, packet);
+}
+
+std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_dump(
+    const PacketRef& packet,
+    const session_detail::SelectedPacketByteViewId& id
+) const {
+    const auto presentation = derive_selected_packet_byte_presentation(packet);
+    if (!presentation.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        return std::nullopt;
+    }
+
+    HexDumpService service {};
+    return session_detail::format_selected_packet_byte_view_hex_dump(
+        *presentation,
+        id,
+        std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+        service
+    );
+}
+
 std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const {
     const auto bytes = read_packet_data(packet);
     if (bytes.empty()) {

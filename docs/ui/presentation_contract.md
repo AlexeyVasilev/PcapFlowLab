@@ -547,6 +547,15 @@ Expected semantics:
 - no unbounded payload loading;
 - protocol-specific payload tab label may be used when existing inspection paths already provide it.
 
+Backend note for the current migration stage:
+
+- selected-packet byte inspection now has a separate backend descriptor layer that is independent from the current `Raw` and `Payload` tabs;
+- the first pass supports only one owner kind, the captured packet bytes already loaded on demand through `CaptureSession::read_packet_data(...)`;
+- descriptors carry stable non-localized identities plus bounded packet-relative ranges only, and they do not retain per-view byte buffers or preformatted text;
+- materialization and hex formatting happen on demand for one selected view at a time;
+- the first pass covers frame bytes, top-level Ethernet / VLAN / MPLS / IPv4 / IPv6 / TCP / UDP / SCTP payload views, the effective terminal TCP or UDP payload when present, and existing authoritative inner IPv4 or IPv6 payload views;
+- derived QUIC, TLS, and stream-item byte owners remain future work.
+
 ### Protocol
 
 Protocol should show the currently available protocol details text/summary for the selected packet.
