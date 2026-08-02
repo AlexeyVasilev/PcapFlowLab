@@ -669,6 +669,27 @@ std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connectio
     return std::nullopt;
 }
 
+std::optional<std::size_t> find_quic_flow_index_for_packet(
+    const std::vector<ListedConnectionRef>& connections,
+    const AnalysisSettings& analysis_settings,
+    const std::uint64_t packet_index
+) {
+    for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
+        if (effective_protocol_hint(connections[flow_index], analysis_settings) != FlowProtocolHint::quic) {
+            continue;
+        }
+
+        const bool found_packet = connections[flow_index].family == FlowAddressFamily::ipv4
+            ? find_packet_in_connection(*connections[flow_index].ipv4, packet_index).has_value()
+            : find_packet_in_connection(*connections[flow_index].ipv6, packet_index).has_value();
+        if (found_packet) {
+            return flow_index;
+        }
+    }
+
+    return std::nullopt;
+}
+
 template <typename Connection>
 std::size_t connection_packet_count(const Connection& connection) noexcept {
     return connection.flow_a.packets.size() + connection.flow_b.packets.size();
@@ -3381,7 +3402,17 @@ std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::de
         return std::nullopt;
     }
 
-    return session_detail::build_selected_packet_byte_presentation(*details, packet);
+    const auto& connections = listed_connections();
+    const auto quic_flow_index = find_quic_flow_index_for_packet(connections, analysis_settings_, packet.packet_index);
+    auto quic_presentation = quic_flow_index.has_value()
+        ? derive_quic_presentation_for_packet(*quic_flow_index, packet.packet_index)
+        : std::optional<session_detail::QuicPresentationResult> {};
+
+    return session_detail::build_selected_packet_byte_presentation(
+        *details,
+        packet,
+        std::move(quic_presentation)
+    );
 }
 
 std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_dump(

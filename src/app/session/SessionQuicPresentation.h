@@ -56,10 +56,16 @@ enum class QuicPresentationFrameType : std::uint8_t {
 struct QuicPresentationFrame {
     QuicPresentationFrameType type {QuicPresentationFrameType::unknown};
     std::uint8_t wire_type {0U};
+    // Decrypted-plaintext-relative byte coordinates for the complete encoded frame.
     std::size_t frame_offset {0U};
     std::size_t frame_length {0U};
+    // CRYPTO stream logical offset, not a plaintext-buffer byte offset.
     std::optional<std::uint64_t> crypto_offset {};
+    // Exact parsed CRYPTO data length. When present here it is both declared
+    // and available because the frame parser validated the full frame bytes.
     std::optional<std::size_t> crypto_length {};
+    // Decrypted-plaintext-relative byte offset of the CRYPTO frame value bytes.
+    std::optional<std::size_t> crypto_data_offset_in_plaintext {};
 };
 
 struct QuicPresentationPacket {
@@ -69,7 +75,17 @@ struct QuicPresentationPacket {
     std::vector<QuicPresentationFrame> frames {};
     std::vector<TlsHandshakeModel> tls_handshakes {};
     std::optional<std::string> sni {};
+    // Selected UDP-payload-relative offset of this QUIC envelope.
+    std::size_t udp_payload_offset {0U};
+    // Exact envelope byte span inside the selected UDP payload.
     std::size_t packet_bytes_consumed {0U};
+    // For Initial packets only, authoritative bytes after the unprotected
+    // packet-number field through the end of the QUIC packet. This includes
+    // the AEAD authentication tag when present.
+    std::optional<std::size_t> protected_payload_offset {};
+    std::optional<std::size_t> protected_payload_length {};
+    bool protected_payload_includes_authentication_tag {false};
+    bool has_authenticated_initial_plaintext {false};
 };
 
 struct QuicPresentationResult {
@@ -84,6 +100,9 @@ struct QuicPresentationResult {
     // byte-level inspection. This remains bounded, ephemeral, and separate
     // from the structured frame/TLS semantic models used by Summary.
     std::vector<std::uint8_t> selected_initial_plaintext_payload {};
+    // Packet ordinal in `packets` that owns `selected_initial_plaintext_payload`.
+    // The current selected-packet model retains at most one such owner.
+    std::optional<std::size_t> selected_initial_plaintext_packet_index {};
     std::optional<std::string> sni {};
     std::optional<TlsHandshakeDetails> tls_handshake {};
     bool used_bounded_crypto_assembly {false};

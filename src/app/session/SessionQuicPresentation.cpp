@@ -35,16 +35,24 @@ struct ParsedQuicPresentationPacket {
     std::optional<QuicFramePresenceSummary> frame_summary {};
     std::vector<std::uint32_t> supported_versions {};
     std::vector<QuicPresentationFrame> frames {};
+    // Single-envelope decrypted Initial plaintext candidate. This does not
+    // describe any neighboring coalesced envelope in the same UDP datagram.
     std::vector<std::uint8_t> plaintext_payload_candidate {};
     bool is_client_initial {false};
     std::optional<std::string> sni {};
     std::vector<TlsHandshakeModel> tls_handshake_models {};
     std::optional<TlsHandshakeDetails> tls_handshake {};
+    // UDP-payload-relative envelope coordinates inside the selected datagram.
+    std::size_t udp_payload_offset {0U};
     std::size_t packet_bytes_consumed {0U};
+    std::optional<std::size_t> protected_payload_offset {};
+    std::optional<std::size_t> protected_payload_length {};
+    bool protected_payload_includes_authentication_tag {false};
 };
 
 struct QuicPresentationCandidate {
     PacketRef packet {};
+    // Full selected transport payload bytes for one captured UDP packet.
     std::vector<std::uint8_t> udp_payload {};
     ParsedQuicPresentationPacket parsed {};
     std::vector<ParsedQuicPresentationPacket> datagram_packets {};
@@ -77,7 +85,8 @@ QuicPresentationFrame make_quic_frame(
     const std::size_t frame_offset,
     const std::size_t frame_length,
     const std::optional<std::uint64_t> crypto_offset = std::nullopt,
-    const std::optional<std::size_t> crypto_length = std::nullopt
+    const std::optional<std::size_t> crypto_length = std::nullopt,
+    const std::optional<std::size_t> crypto_data_offset_in_plaintext = std::nullopt
 ) {
     QuicPresentationFrame frame {};
     frame.type = type;
@@ -86,6 +95,7 @@ QuicPresentationFrame make_quic_frame(
     frame.frame_length = frame_length;
     frame.crypto_offset = crypto_offset;
     frame.crypto_length = crypto_length;
+    frame.crypto_data_offset_in_plaintext = crypto_data_offset_in_plaintext;
     return frame;
 }
 
@@ -642,6 +652,7 @@ std::optional<std::vector<QuicPresentationFrame>> parse_quic_plaintext_frames(st
         if (frame_type == 0x06U) {
             const auto crypto_offset = quic_read_varint(bytes, offset);
             const auto crypto_length = quic_read_varint_size(bytes, offset);
+            const auto crypto_data_offset_in_plaintext = offset;
             if (!crypto_offset.has_value() || !crypto_length.has_value() || !quic_skip_bytes(bytes, offset, *crypto_length)) {
                 return std::nullopt;
             }
@@ -651,7 +662,8 @@ std::optional<std::vector<QuicPresentationFrame>> parse_quic_plaintext_frames(st
                 frame_start,
                 offset - frame_start,
                 *crypto_offset,
-                *crypto_length
+                *crypto_length,
+                crypto_data_offset_in_plaintext
             ));
             continue;
         }
@@ -964,7 +976,7 @@ std::vector<ParsedQuicPresentationPacket> parse_quic_presentation_datagram(std::
     std::size_t offset = 0U;
 
     while (offset < udp_payload.size()) {
-        const auto parsed = parse_quic_presentation_packet(udp_payload.subspan(offset));
+        auto parsed = parse_quic_presentation_packet(udp_payload.subspan(offset));
         if (!parsed.has_value() || parsed->packet_bytes_consumed == 0U) {
             if (packets.empty()) {
                 return {};
@@ -972,6 +984,7 @@ std::vector<ParsedQuicPresentationPacket> parse_quic_presentation_datagram(std::
             break;
         }
 
+        parsed->udp_payload_offset = offset;
         packets.push_back(*parsed);
 
         if (parsed->shell.header_form == "Short") {
@@ -1159,7 +1172,12 @@ QuicPresentationPacket make_quic_presentation_packet(const ParsedQuicPresentatio
     packet.frames = parsed_packet.frames;
     packet.tls_handshakes = parsed_packet.tls_handshake_models;
     packet.sni = parsed_packet.sni;
+    packet.udp_payload_offset = parsed_packet.udp_payload_offset;
     packet.packet_bytes_consumed = parsed_packet.packet_bytes_consumed;
+    packet.protected_payload_offset = parsed_packet.protected_payload_offset;
+    packet.protected_payload_length = parsed_packet.protected_payload_length;
+    packet.protected_payload_includes_authentication_tag =
+        parsed_packet.protected_payload_includes_authentication_tag;
     return packet;
 }
 
@@ -1281,6 +1299,14 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     for (const auto& parsed_packet : anchor_datagram_packets) {
         result.packets.push_back(make_quic_presentation_packet(parsed_packet));
     }
+    const auto anchor_initial_packet_index = [&]() -> std::optional<std::size_t> {
+        for (std::size_t packet_index = 0U; packet_index < anchor_datagram_packets.size(); ++packet_index) {
+            if (anchor_datagram_packets[packet_index].shell_type == QuicPresentationShellType::initial) {
+                return packet_index;
+            }
+        }
+        return std::nullopt;
+    }();
     for (std::size_t packet_index = 1U; packet_index < anchor_datagram_packets.size(); ++packet_index) {
         const auto shell_type = anchor_datagram_packets[packet_index].shell_type;
         if (shell_type == QuicPresentationShellType::none) {
@@ -1289,6 +1315,33 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         if (!quic_has_additional_shell_type(result, shell_type)) {
             result.additional_shell_types.push_back(shell_type);
         }
+    }
+    for (std::size_t packet_index = 0U; packet_index < anchor_datagram_packets.size(); ++packet_index) {
+        const auto& parsed_packet = anchor_datagram_packets[packet_index];
+        auto& result_packet = result.packets[packet_index];
+        if (parsed_packet.shell_type != QuicPresentationShellType::initial ||
+            parsed_packet.udp_payload_offset > anchor_candidate.udp_payload.size() ||
+            parsed_packet.packet_bytes_consumed > anchor_candidate.udp_payload.size() - parsed_packet.udp_payload_offset) {
+            continue;
+        }
+
+        const auto packet_slice = std::span<const std::uint8_t>(
+            anchor_candidate.udp_payload.data() + parsed_packet.udp_payload_offset,
+            parsed_packet.packet_bytes_consumed
+        );
+        const auto protected_payload = initial_parser.inspect_initial_protected_payload_provenance(
+            packet_slice,
+            !client_to_server,
+            initial_secret_connection_id
+        );
+        if (!protected_payload.has_value()) {
+            continue;
+        }
+
+        result_packet.protected_payload_offset = parsed_packet.udp_payload_offset + protected_payload->protected_payload_offset;
+        result_packet.protected_payload_length = protected_payload->protected_payload_length;
+        result_packet.protected_payload_includes_authentication_tag =
+            protected_payload->includes_authentication_tag;
     }
     if (anchor_parsed.shell_type != QuicPresentationShellType::initial &&
         !anchor_parsed.frames.empty()) {
@@ -1337,6 +1390,7 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             const bool is_anchor_packet = candidate.packet.packet_index == anchor_packet_index;
             if (is_anchor_packet) {
                 result.selected_initial_plaintext_payload = *plaintext;
+                result.selected_initial_plaintext_packet_index = anchor_initial_packet_index;
                 if (frames.has_value()) {
                     result.semantics = quic_semantics_from_frames(*frames);
                     if (initial_packet != nullptr) {
@@ -1380,6 +1434,7 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         if (result.selected_initial_plaintext_payload.empty() &&
             !anchor_parsed.plaintext_payload_candidate.empty()) {
             result.selected_initial_plaintext_payload = anchor_parsed.plaintext_payload_candidate;
+            result.selected_initial_plaintext_packet_index = anchor_initial_packet_index;
             if (!anchor_parsed.frames.empty()) {
                 result.semantics = quic_semantics_from_frames(anchor_parsed.frames);
                 if (initial_packet != nullptr && initial_packet->frames.empty()) {
@@ -1389,6 +1444,12 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             if (initial_packet != nullptr && initial_packet->tls_handshakes.empty()) {
                 initial_packet->tls_handshakes = anchor_parsed.tls_handshake_models;
             }
+        }
+
+        if (result.selected_initial_plaintext_packet_index.has_value() &&
+            *result.selected_initial_plaintext_packet_index < result.packets.size()) {
+            result.packets[*result.selected_initial_plaintext_packet_index].has_authenticated_initial_plaintext =
+                !result.selected_initial_plaintext_payload.empty();
         }
 
         if (!crypto_plaintexts.empty()) {

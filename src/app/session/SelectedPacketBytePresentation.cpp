@@ -9,40 +9,111 @@ namespace pfl::session_detail {
 namespace {
 
 constexpr std::size_t kMaxViewOccurrence = 0xFFU;
+constexpr SelectedPacketByteOwnerId kCapturedPacketOwnerId {
+    .kind = SelectedPacketByteOwnerKind::captured_packet,
+    .occurrence = 0U,
+};
 
 bool equivalent_view(
     const SelectedPacketByteViewDescriptor& existing,
     const std::optional<SelectedPacketByteViewId>& parent_id,
+    const SelectedPacketByteOwnerId& owner_id,
     const SelectedPacketByteOwnerKind owner_kind,
     const SelectedPacketByteViewKind kind,
+    const std::uint8_t scope,
     const std::uint32_t offset,
     const std::optional<std::uint32_t>& declared_length,
     const std::uint32_t captured_length,
-    const bool truncated
+    const bool truncated,
+    const std::optional<std::uint64_t>& quic_crypto_stream_offset
 ) noexcept {
     return existing.parent_id == parent_id &&
+        existing.owner_id == owner_id &&
         existing.owner_kind == owner_kind &&
         existing.id.kind == kind &&
+        existing.id.scope == scope &&
         existing.offset == offset &&
         existing.declared_length == declared_length &&
         existing.captured_length == captured_length &&
-        existing.truncated == truncated;
+        existing.truncated == truncated &&
+        existing.quic_crypto_stream_offset == quic_crypto_stream_offset;
+}
+
+std::optional<std::uint32_t> narrow_u32(const std::size_t value) noexcept {
+    if (value > 0xFFFFFFFFU) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint32_t>(value);
+}
+
+std::optional<SelectedPacketByteOwnerId> append_derived_owner(
+    std::vector<SelectedPacketByteDerivedOwner>& owners,
+    const SelectedPacketByteOwnerKind kind,
+    const std::size_t quic_packet_index,
+    std::vector<std::uint8_t> bytes
+) {
+    if (bytes.empty()) {
+        return std::nullopt;
+    }
+
+    const auto occurrence_count = static_cast<std::size_t>(std::count_if(
+        owners.begin(),
+        owners.end(),
+        [&](const SelectedPacketByteDerivedOwner& owner) {
+            return owner.id.kind == kind;
+        }
+    ));
+    if (occurrence_count > kMaxViewOccurrence) {
+        return std::nullopt;
+    }
+
+    const SelectedPacketByteOwnerId id {
+        .kind = kind,
+        .occurrence = static_cast<std::uint8_t>(occurrence_count),
+    };
+    owners.push_back(SelectedPacketByteDerivedOwner {
+        .id = id,
+        .quic_packet_index = quic_packet_index,
+        .bytes = std::move(bytes),
+    });
+    return id;
+}
+
+SelectedPacketByteViewKind quic_packet_view_kind(const QuicPresentationShellType shell_type) noexcept {
+    switch (shell_type) {
+    case QuicPresentationShellType::initial:
+        return SelectedPacketByteViewKind::quic_initial_packet;
+    case QuicPresentationShellType::zero_rtt:
+        return SelectedPacketByteViewKind::quic_zero_rtt_packet;
+    case QuicPresentationShellType::handshake:
+        return SelectedPacketByteViewKind::quic_handshake_packet;
+    case QuicPresentationShellType::retry:
+        return SelectedPacketByteViewKind::quic_retry_packet;
+    case QuicPresentationShellType::version_negotiation:
+        return SelectedPacketByteViewKind::quic_version_negotiation_packet;
+    case QuicPresentationShellType::protected_payload:
+    default:
+        return SelectedPacketByteViewKind::quic_protected_packet;
+    }
 }
 
 std::optional<SelectedPacketByteViewId> append_view(
     std::vector<SelectedPacketByteViewDescriptor>& views,
     const std::optional<SelectedPacketByteViewId>& parent_id,
+    const SelectedPacketByteOwnerId& owner_id,
     const SelectedPacketByteOwnerKind owner_kind,
     const SelectedPacketByteViewKind kind,
-    const std::uint32_t owner_captured_length,
+    const std::uint8_t scope,
+    const std::uint32_t owner_byte_length,
     const std::uint32_t offset,
     const std::optional<std::uint32_t>& declared_length,
     const std::uint32_t captured_length,
-    const bool truncated
+    const bool truncated,
+    const std::optional<std::uint64_t>& quic_crypto_stream_offset = std::nullopt
 ) {
     if (captured_length == 0U ||
-        offset >= owner_captured_length ||
-        captured_length > owner_captured_length - offset) {
+        offset >= owner_byte_length ||
+        captured_length > owner_byte_length - offset) {
         return std::nullopt;
     }
 
@@ -50,12 +121,15 @@ std::optional<SelectedPacketByteViewId> append_view(
             return equivalent_view(
                 existing,
                 parent_id,
+                owner_id,
                 owner_kind,
                 kind,
+                scope,
                 offset,
                 declared_length,
                 captured_length,
-                truncated
+                truncated,
+                quic_crypto_stream_offset
             );
         })) {
         return std::nullopt;
@@ -65,7 +139,7 @@ std::optional<SelectedPacketByteViewId> append_view(
         views.begin(),
         views.end(),
         [&](const SelectedPacketByteViewDescriptor& existing) {
-            return existing.id.kind == kind;
+            return existing.id.kind == kind && existing.id.scope == scope;
         }
     ));
     if (occurrence_count > kMaxViewOccurrence) {
@@ -74,16 +148,19 @@ std::optional<SelectedPacketByteViewId> append_view(
 
     const SelectedPacketByteViewId id {
         .kind = kind,
+        .scope = scope,
         .occurrence = static_cast<std::uint8_t>(occurrence_count),
     };
     views.push_back(SelectedPacketByteViewDescriptor {
         .id = id,
         .parent_id = parent_id,
+        .owner_id = owner_id,
         .owner_kind = owner_kind,
         .offset = offset,
         .declared_length = declared_length,
         .captured_length = captured_length,
         .truncated = truncated,
+        .quic_crypto_stream_offset = quic_crypto_stream_offset,
     });
     return id;
 }
@@ -91,17 +168,21 @@ std::optional<SelectedPacketByteViewId> append_view(
 std::optional<SelectedPacketByteViewId> append_view(
     std::vector<SelectedPacketByteViewDescriptor>& views,
     const std::optional<SelectedPacketByteViewId>& parent_id,
+    const SelectedPacketByteOwnerId& owner_id,
     const SelectedPacketByteOwnerKind owner_kind,
     const SelectedPacketByteViewKind kind,
-    const std::uint32_t owner_captured_length,
+    const std::uint8_t scope,
+    const std::uint32_t owner_byte_length,
     const PacketByteRange& range
 ) {
     return append_view(
         views,
         parent_id,
+        owner_id,
         owner_kind,
         kind,
-        owner_captured_length,
+        scope,
+        owner_byte_length,
         range.offset,
         range.declared_length,
         range.captured_length,
@@ -128,8 +209,10 @@ std::optional<SelectedPacketByteViewId> append_tcp_payload_view(
     return append_view(
         views,
         parent_id,
+        kCapturedPacketOwnerId,
         SelectedPacketByteOwnerKind::captured_packet,
         kind,
+        0U,
         owner_captured_length,
         parent_range.offset + header_length,
         parent_range.declared_length.has_value()
@@ -161,8 +244,10 @@ std::optional<SelectedPacketByteViewId> append_udp_payload_view(
     return append_view(
         views,
         parent_id,
+        kCapturedPacketOwnerId,
         SelectedPacketByteOwnerKind::captured_packet,
         kind,
+        0U,
         owner_captured_length,
         parent_range.offset + kUdpHeaderSize,
         declared_payload_length,
@@ -184,8 +269,10 @@ std::optional<SelectedPacketByteViewId> append_sctp_payload_view(
     return append_view(
         views,
         parent_id,
+        kCapturedPacketOwnerId,
         SelectedPacketByteOwnerKind::captured_packet,
         kind,
+        0U,
         owner_captured_length,
         *payload_range
     );
@@ -210,8 +297,10 @@ std::optional<SelectedPacketByteViewId> append_vlan_payload_chain(
         const auto appended = append_view(
             views,
             current_parent,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             kind,
+            0U,
             owner_captured_length,
             offset,
             std::nullopt,
@@ -240,8 +329,10 @@ std::optional<SelectedPacketByteViewId> append_inner_network_branch(
         const auto appended = append_view(
             views,
             current_parent,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::inner_ipv4_payload,
+            0U,
             owner_captured_length,
             *inner.ipv4.payload_range
         );
@@ -253,8 +344,10 @@ std::optional<SelectedPacketByteViewId> append_inner_network_branch(
         const auto appended = append_view(
             views,
             current_parent,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::inner_ipv6_payload,
+            0U,
             owner_captured_length,
             *inner.ipv6.payload_range
         );
@@ -317,8 +410,10 @@ std::optional<SelectedPacketByteViewId> append_inner_ethernet_branch(
         const auto appended = append_view(
             views,
             current_parent,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::inner_ethernet_payload,
+            0U,
             owner_captured_length,
             *inner.inner_ethernet.payload_range
         );
@@ -340,8 +435,10 @@ std::optional<SelectedPacketByteViewId> append_inner_ethernet_branch(
             const auto appended = append_view(
                 views,
                 current_parent,
+                kCapturedPacketOwnerId,
                 SelectedPacketByteOwnerKind::captured_packet,
                 SelectedPacketByteViewKind::mpls_payload,
+                0U,
                 owner_captured_length,
                 *inner.mpls_payload_range
             );
@@ -413,8 +510,10 @@ void append_overlay_payload_branches(
         const auto ah_id = append_view(
             views,
             outer_ip_id,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::ah_payload,
+            0U,
             owner_captured_length,
             *details.ah.payload_range
         );
@@ -436,10 +535,12 @@ void append_overlay_payload_branches(
         const auto gre_id = append_view(
             views,
             outer_ip_id,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             details.gre.is_eoip
                 ? SelectedPacketByteViewKind::eoip_payload
                 : SelectedPacketByteViewKind::gre_payload,
+            0U,
             owner_captured_length,
             *details.gre.payload_range
         );
@@ -453,8 +554,10 @@ void append_overlay_payload_branches(
         append_view(
             views,
             outer_ip_id,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::esp_protected_payload,
+            0U,
             owner_captured_length,
             *details.esp.protected_payload_range
         );
@@ -465,8 +568,10 @@ void append_overlay_payload_branches(
         const auto gtpu_id = append_view(
             views,
             outer_udp_id,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::gtpu_payload,
+            0U,
             owner_captured_length,
             *details.gtpu.payload_range
         );
@@ -480,8 +585,10 @@ void append_overlay_payload_branches(
         const auto vxlan_id = append_view(
             views,
             outer_udp_id,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::vxlan_payload,
+            0U,
             owner_captured_length,
             *details.vxlan.payload_range
         );
@@ -495,8 +602,10 @@ void append_overlay_payload_branches(
         const auto geneve_id = append_view(
             views,
             outer_udp_id,
+            kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::geneve_payload,
+            0U,
             owner_captured_length,
             *details.geneve.payload_range
         );
@@ -513,8 +622,10 @@ void append_overlay_payload_branches(
                 const auto appended = append_view(
                     views,
                     current_parent,
+                    kCapturedPacketOwnerId,
                     SelectedPacketByteOwnerKind::captured_packet,
                     SelectedPacketByteViewKind::inner_ipv4_payload,
+                    0U,
                     owner_captured_length,
                     *inner_layer.ipv4.payload_range
                 );
@@ -525,8 +636,10 @@ void append_overlay_payload_branches(
                 const auto appended = append_view(
                     views,
                     current_parent,
+                    kCapturedPacketOwnerId,
                     SelectedPacketByteOwnerKind::captured_packet,
                     SelectedPacketByteViewKind::inner_ipv6_payload,
+                    0U,
                     owner_captured_length,
                     *inner_layer.ipv6.payload_range
                 );
@@ -574,6 +687,190 @@ void append_overlay_payload_branches(
     }
 }
 
+std::vector<std::optional<SelectedPacketByteViewId>> append_quic_packet_views(
+    SelectedPacketBytePresentation& presentation,
+    const QuicPresentationResult& quic_presentation,
+    const SelectedPacketByteViewDescriptor* udp_payload_view
+) {
+    std::vector<std::optional<SelectedPacketByteViewId>> packet_ids(quic_presentation.packets.size());
+    if (udp_payload_view == nullptr) {
+        return packet_ids;
+    }
+    const auto udp_payload_id = udp_payload_view->id;
+
+    for (std::size_t packet_index = 0U; packet_index < quic_presentation.packets.size(); ++packet_index) {
+        if (packet_index > kMaxViewOccurrence) {
+            continue;
+        }
+        const auto& quic_packet = quic_presentation.packets[packet_index];
+        // QUIC parsing retains UDP-payload-relative envelope offsets. Rebase
+        // them once here into captured-frame-relative selected-packet bytes.
+        const auto packet_offset = narrow_u32(
+            static_cast<std::size_t>(udp_payload_view->offset) + quic_packet.udp_payload_offset
+        );
+        const auto packet_length = narrow_u32(quic_packet.packet_bytes_consumed);
+        if (!packet_offset.has_value() || !packet_length.has_value()) {
+            continue;
+        }
+
+        const auto packet_id = append_view(
+            presentation.views,
+            udp_payload_id,
+            kCapturedPacketOwnerId,
+            SelectedPacketByteOwnerKind::captured_packet,
+            quic_packet_view_kind(quic_packet.shell_type),
+            static_cast<std::uint8_t>(packet_index),
+            presentation.owner_captured_length,
+            *packet_offset,
+            std::optional<std::uint32_t> {*packet_length},
+            *packet_length,
+            false
+        );
+        if (!packet_id.has_value()) {
+            continue;
+        }
+        packet_ids[packet_index] = packet_id;
+
+        if (quic_packet.shell_type == QuicPresentationShellType::initial &&
+            quic_packet.protected_payload_offset.has_value() &&
+            quic_packet.protected_payload_length.has_value()) {
+            const auto protected_offset = narrow_u32(
+                static_cast<std::size_t>(udp_payload_view->offset) + *quic_packet.protected_payload_offset
+            );
+            const auto protected_length = narrow_u32(*quic_packet.protected_payload_length);
+            if (protected_offset.has_value() && protected_length.has_value()) {
+                append_view(
+                    presentation.views,
+                    packet_id,
+                    kCapturedPacketOwnerId,
+                    SelectedPacketByteOwnerKind::captured_packet,
+                    SelectedPacketByteViewKind::quic_initial_protected_payload,
+                    static_cast<std::uint8_t>(packet_index),
+                    presentation.owner_captured_length,
+                    *protected_offset,
+                    std::optional<std::uint32_t> {*protected_length},
+                    *protected_length,
+                    false
+                );
+            }
+        }
+    }
+    return packet_ids;
+}
+
+void append_quic_initial_plaintext_views(
+    SelectedPacketBytePresentation& presentation,
+    std::optional<QuicPresentationResult> quic_presentation,
+    std::span<const std::optional<SelectedPacketByteViewId>> packet_ids
+) {
+    if (!quic_presentation.has_value() ||
+        !quic_presentation->selected_initial_plaintext_packet_index.has_value() ||
+        quic_presentation->selected_initial_plaintext_payload.empty()) {
+        return;
+    }
+
+    const auto packet_index = *quic_presentation->selected_initial_plaintext_packet_index;
+    if (packet_index >= quic_presentation->packets.size() || packet_index > kMaxViewOccurrence) {
+        return;
+    }
+
+    const auto& quic_packet = quic_presentation->packets[packet_index];
+    if (quic_packet.shell_type != QuicPresentationShellType::initial) {
+        return;
+    }
+
+    const auto owner_id = append_derived_owner(
+        presentation.derived_owners,
+        SelectedPacketByteOwnerKind::quic_initial_plaintext,
+        packet_index,
+        std::move(quic_presentation->selected_initial_plaintext_payload)
+    );
+    if (!owner_id.has_value()) {
+        return;
+    }
+
+    const auto* owner = presentation.find_derived_owner(*owner_id);
+    if (owner == nullptr) {
+        return;
+    }
+    const auto owner_length = narrow_u32(owner->bytes.size());
+    if (!owner_length.has_value()) {
+        return;
+    }
+
+    const auto packet_parent_id =
+        packet_index < packet_ids.size()
+            ? packet_ids[packet_index]
+            : std::nullopt;
+
+    const auto plaintext_id = append_view(
+        presentation.views,
+        packet_parent_id,
+        *owner_id,
+        SelectedPacketByteOwnerKind::quic_initial_plaintext,
+        SelectedPacketByteViewKind::quic_initial_plaintext,
+        static_cast<std::uint8_t>(packet_index),
+        *owner_length,
+        0U,
+        std::optional<std::uint32_t> {*owner_length},
+        *owner_length,
+        false
+    );
+    if (!plaintext_id.has_value()) {
+        return;
+    }
+
+    for (const auto& frame : quic_packet.frames) {
+        const auto frame_offset = narrow_u32(frame.frame_offset);
+        const auto frame_length = narrow_u32(frame.frame_length);
+        if (!frame_offset.has_value() || !frame_length.has_value()) {
+            continue;
+        }
+
+        const auto frame_id = append_view(
+            presentation.views,
+            plaintext_id,
+            *owner_id,
+            SelectedPacketByteOwnerKind::quic_initial_plaintext,
+            SelectedPacketByteViewKind::quic_frame,
+            static_cast<std::uint8_t>(packet_index),
+            *owner_length,
+            *frame_offset,
+            std::optional<std::uint32_t> {*frame_length},
+            *frame_length,
+            false,
+            frame.crypto_offset
+        );
+        if (frame.type != QuicPresentationFrameType::crypto ||
+            !frame_id.has_value() ||
+            !frame.crypto_data_offset_in_plaintext.has_value() ||
+            !frame.crypto_length.has_value()) {
+            continue;
+        }
+
+        const auto crypto_data_offset = narrow_u32(*frame.crypto_data_offset_in_plaintext);
+        const auto crypto_data_length = narrow_u32(*frame.crypto_length);
+        if (!crypto_data_offset.has_value() || !crypto_data_length.has_value()) {
+            continue;
+        }
+
+        append_view(
+            presentation.views,
+            frame_id,
+            *owner_id,
+            SelectedPacketByteOwnerKind::quic_initial_plaintext,
+            SelectedPacketByteViewKind::quic_crypto_data,
+            static_cast<std::uint8_t>(packet_index),
+            *owner_length,
+            *crypto_data_offset,
+            std::optional<std::uint32_t> {*crypto_data_length},
+            *crypto_data_length,
+            false,
+            frame.crypto_offset
+        );
+    }
+}
+
 }  // namespace
 
 const SelectedPacketByteViewDescriptor* SelectedPacketBytePresentation::find_view(
@@ -585,9 +882,23 @@ const SelectedPacketByteViewDescriptor* SelectedPacketBytePresentation::find_vie
     return it != views.end() ? &(*it) : nullptr;
 }
 
+const SelectedPacketByteDerivedOwner* SelectedPacketBytePresentation::find_derived_owner(
+    const SelectedPacketByteOwnerId& id
+) const noexcept {
+    const auto it = std::find_if(
+        derived_owners.begin(),
+        derived_owners.end(),
+        [&](const SelectedPacketByteDerivedOwner& owner) {
+            return owner.id == id;
+        }
+    );
+    return it != derived_owners.end() ? &(*it) : nullptr;
+}
+
 SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     const PacketDetails& details,
-    const PacketRef& packet
+    const PacketRef& packet,
+    std::optional<QuicPresentationResult> quic_presentation
 ) {
     SelectedPacketBytePresentation presentation {};
     presentation.owner_captured_length = packet.captured_length;
@@ -595,8 +906,10 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     const auto frame_id = append_view(
         presentation.views,
         std::nullopt,
+        kCapturedPacketOwnerId,
         presentation.owner_kind,
         SelectedPacketByteViewKind::frame,
+        0U,
         presentation.owner_captured_length,
         0U,
         std::optional<std::uint32_t> {packet.original_length},
@@ -611,8 +924,10 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         const auto ethernet_id = append_view(
             presentation.views,
             frame_id,
+            kCapturedPacketOwnerId,
             presentation.owner_kind,
             SelectedPacketByteViewKind::ethernet_payload,
+            0U,
             presentation.owner_captured_length,
             *details.ethernet.payload_range
         );
@@ -633,8 +948,10 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         const auto mpls_id = append_view(
             presentation.views,
             outer_parent,
+            kCapturedPacketOwnerId,
             presentation.owner_kind,
             SelectedPacketByteViewKind::mpls_payload,
+            0U,
             presentation.owner_captured_length,
             *details.mpls_payload_range
         );
@@ -649,8 +966,10 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         outer_ip_id = append_view(
             presentation.views,
             outer_parent,
+            kCapturedPacketOwnerId,
             presentation.owner_kind,
             SelectedPacketByteViewKind::ipv4_payload,
+            0U,
             presentation.owner_captured_length,
             *details.ipv4.payload_range
         );
@@ -659,8 +978,10 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         outer_ip_id = append_view(
             presentation.views,
             outer_parent,
+            kCapturedPacketOwnerId,
             presentation.owner_kind,
             SelectedPacketByteViewKind::ipv6_payload,
+            0U,
             presentation.owner_captured_length,
             *details.ipv6.payload_range
         );
@@ -687,6 +1008,23 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         outer_udp_id
     );
 
+    const auto* outer_udp_view = outer_udp_id.has_value() ? presentation.find_view(*outer_udp_id) : nullptr;
+    const QuicPresentationResult empty_quic_presentation {};
+    const auto& quic_presentation_ref =
+        quic_presentation.has_value()
+            ? *quic_presentation
+            : empty_quic_presentation;
+    const auto quic_packet_ids = append_quic_packet_views(
+        presentation,
+        quic_presentation_ref,
+        outer_udp_view
+    );
+    append_quic_initial_plaintext_views(
+        presentation,
+        std::move(quic_presentation),
+        std::span<const std::optional<SelectedPacketByteViewId>>(quic_packet_ids.data(), quic_packet_ids.size())
+    );
+
     return presentation;
 }
 
@@ -696,19 +1034,31 @@ std::optional<SelectedPacketByteMaterialization> materialize_selected_packet_byt
     std::span<const std::uint8_t> owner_bytes
 ) noexcept {
     const auto* view = presentation.find_view(id);
-    if (view == nullptr || view->owner_kind != SelectedPacketByteOwnerKind::captured_packet) {
+    if (view == nullptr) {
         return std::nullopt;
     }
-    if (owner_bytes.size() < presentation.owner_captured_length) {
-        return std::nullopt;
+
+    std::span<const std::uint8_t> resolved_owner_bytes {};
+    if (view->owner_kind == SelectedPacketByteOwnerKind::captured_packet) {
+        if (owner_bytes.size() < presentation.owner_captured_length) {
+            return std::nullopt;
+        }
+        resolved_owner_bytes = owner_bytes;
+    } else {
+        const auto* owner = presentation.find_derived_owner(view->owner_id);
+        if (owner == nullptr) {
+            return std::nullopt;
+        }
+        resolved_owner_bytes = std::span<const std::uint8_t>(owner->bytes.data(), owner->bytes.size());
     }
-    if (view->offset > owner_bytes.size() || view->captured_length > owner_bytes.size() - view->offset) {
+    if (view->offset > resolved_owner_bytes.size() ||
+        view->captured_length > resolved_owner_bytes.size() - view->offset) {
         return std::nullopt;
     }
 
     return SelectedPacketByteMaterialization {
         .descriptor = view,
-        .bytes = owner_bytes.subspan(view->offset, view->captured_length),
+        .bytes = resolved_owner_bytes.subspan(view->offset, view->captured_length),
     };
 }
 

@@ -38,17 +38,40 @@ SelectedPacketBytePresentation require_presentation(CaptureSession& session, con
     return *presentation;
 }
 
+const SelectedPacketByteViewDescriptor* require_view_in_scope(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewKind kind,
+    const std::uint8_t scope,
+    const std::uint8_t occurrence = 0U
+) {
+    const auto* view = presentation.find_view(SelectedPacketByteViewId {
+        .kind = kind,
+        .scope = scope,
+        .occurrence = occurrence,
+    });
+    PFL_REQUIRE(view != nullptr);
+    return view;
+}
+
 const SelectedPacketByteViewDescriptor* require_view(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewKind kind,
     const std::uint8_t occurrence = 0U
 ) {
-    const auto* view = presentation.find_view(SelectedPacketByteViewId {
+    return require_view_in_scope(presentation, kind, 0U, occurrence);
+}
+
+const SelectedPacketByteViewDescriptor* find_view_in_scope(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewKind kind,
+    const std::uint8_t scope,
+    const std::uint8_t occurrence = 0U
+) {
+    return presentation.find_view(SelectedPacketByteViewId {
         .kind = kind,
+        .scope = scope,
         .occurrence = occurrence,
     });
-    PFL_REQUIRE(view != nullptr);
-    return view;
 }
 
 const SelectedPacketByteViewDescriptor* find_view(
@@ -56,10 +79,7 @@ const SelectedPacketByteViewDescriptor* find_view(
     const SelectedPacketByteViewKind kind,
     const std::uint8_t occurrence = 0U
 ) {
-    return presentation.find_view(SelectedPacketByteViewId {
-        .kind = kind,
-        .occurrence = occurrence,
-    });
+    return find_view_in_scope(presentation, kind, 0U, occurrence);
 }
 
 std::vector<SelectedPacketByteViewKind> collect_kinds(const SelectedPacketBytePresentation& presentation) {
@@ -71,18 +91,31 @@ std::vector<SelectedPacketByteViewKind> collect_kinds(const SelectedPacketBytePr
     return kinds;
 }
 
-std::size_t require_kind_index(
+std::size_t require_kind_index_in_scope(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewKind kind,
+    const std::uint8_t scope,
     const std::uint8_t occurrence = 0U
 ) {
     for (std::size_t index = 0U; index < presentation.views.size(); ++index) {
-        if (presentation.views[index].id == SelectedPacketByteViewId {.kind = kind, .occurrence = occurrence}) {
+        if (presentation.views[index].id == SelectedPacketByteViewId {
+                .kind = kind,
+                .scope = scope,
+                .occurrence = occurrence,
+            }) {
             return index;
         }
     }
     PFL_REQUIRE(false);
     return 0U;
+}
+
+std::size_t require_kind_index(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewKind kind,
+    const std::uint8_t occurrence = 0U
+) {
+    return require_kind_index_in_scope(presentation, kind, 0U, occurrence);
 }
 
 SelectedPacketByteMaterialization require_materialized_view(
@@ -110,17 +143,27 @@ void expect_materialized_view_aliases_owner_bytes(
     PFL_EXPECT(materialized.bytes.size() == materialized.descriptor->captured_length);
 }
 
-void expect_parent(
+void expect_parent_in_scope(
     const SelectedPacketByteViewDescriptor& child,
     const SelectedPacketByteViewKind parent_kind,
+    const std::uint8_t parent_scope,
     const std::uint8_t parent_occurrence = 0U
 ) {
     PFL_REQUIRE(child.parent_id.has_value());
     const SelectedPacketByteViewId expected_parent {
         .kind = parent_kind,
+        .scope = parent_scope,
         .occurrence = parent_occurrence,
     };
     PFL_EXPECT(*child.parent_id == expected_parent);
+}
+
+void expect_parent(
+    const SelectedPacketByteViewDescriptor& child,
+    const SelectedPacketByteViewKind parent_kind,
+    const std::uint8_t parent_occurrence = 0U
+) {
+    expect_parent_in_scope(child, parent_kind, 0U, parent_occurrence);
 }
 
 void expect_ascii_prefix(
@@ -134,6 +177,23 @@ void expect_ascii_prefix(
     for (std::size_t index = 0U; index < expected_prefix.size(); ++index) {
         PFL_EXPECT(materialized.bytes[index] == static_cast<std::uint8_t>(expected_prefix[index]));
     }
+}
+
+void expect_materialized_view_aliases_derived_owner(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewDescriptor& view
+) {
+    const auto* owner = presentation.find_derived_owner(view.owner_id);
+    PFL_REQUIRE(owner != nullptr);
+    const auto materialized = session_detail::materialize_selected_packet_byte_view(
+        presentation,
+        view.id,
+        std::span<const std::uint8_t> {}
+    );
+    PFL_REQUIRE(materialized.has_value());
+    PFL_REQUIRE(materialized->descriptor != nullptr);
+    PFL_EXPECT(materialized->bytes.data() == owner->bytes.data() + materialized->descriptor->offset);
+    PFL_EXPECT(materialized->bytes.size() == materialized->descriptor->captured_length);
 }
 
 void run_selected_packet_byte_presentation_tests_impl() {
@@ -492,6 +552,203 @@ void run_selected_packet_byte_presentation_tests_impl() {
             SelectedPacketByteViewId {.kind = SelectedPacketByteViewKind::inner_ipv4_payload, .occurrence = 0U},
             bytes
         );
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* udp_payload = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        const auto* quic_packet = require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        const auto* protected_payload =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_protected_payload, 0U);
+        const auto* plaintext =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        const auto* crypto_frame = require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U);
+        const auto* crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U);
+        PFL_EXPECT(quic_packet->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_EXPECT(plaintext->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext);
+        PFL_EXPECT(quic_packet->offset >= udp_payload->offset);
+        PFL_EXPECT(quic_packet->offset + quic_packet->captured_length <= udp_payload->offset + udp_payload->captured_length);
+        expect_parent(*quic_packet, SelectedPacketByteViewKind::udp_payload);
+        expect_parent_in_scope(*protected_payload, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        expect_parent_in_scope(*crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*crypto_data, SelectedPacketByteViewKind::quic_frame, 0U);
+        expect_materialized_view_aliases_owner_bytes(presentation, quic_packet->id, bytes);
+        expect_materialized_view_aliases_derived_owner(presentation, *plaintext);
+        expect_materialized_view_aliases_derived_owner(presentation, *crypto_frame);
+        expect_materialized_view_aliases_derived_owner(presentation, *crypto_data);
+
+        const auto frame_materialized = require_materialized_view(presentation, crypto_frame->id, bytes);
+        const auto crypto_data_materialized = require_materialized_view(presentation, crypto_data->id, bytes);
+        PFL_REQUIRE(!frame_materialized.bytes.empty());
+        PFL_REQUIRE(!crypto_data_materialized.bytes.empty());
+        PFL_EXPECT(frame_materialized.bytes.size() > crypto_data_materialized.bytes.size());
+        PFL_EXPECT(frame_materialized.bytes[0] != crypto_data_materialized.bytes[0]);
+        PFL_EXPECT(crypto_data_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(crypto_data->quic_crypto_stream_offset.has_value());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_example_1.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* first_crypto_frame =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
+        const auto* second_crypto_frame =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
+        const auto* first_crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 0U);
+        const auto* second_crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 1U);
+        PFL_EXPECT(first_crypto_frame->owner_id == second_crypto_frame->owner_id);
+        PFL_EXPECT(first_crypto_data->owner_id == second_crypto_data->owner_id);
+        PFL_EXPECT(first_crypto_data->offset != second_crypto_data->offset);
+        PFL_EXPECT(first_crypto_data->quic_crypto_stream_offset != second_crypto_data->quic_crypto_stream_offset);
+        expect_materialized_view_aliases_derived_owner(presentation, *first_crypto_data);
+        expect_materialized_view_aliases_derived_owner(presentation, *second_crypto_data);
+
+        const auto first_materialized = require_materialized_view(presentation, first_crypto_data->id, bytes);
+        const auto second_materialized = require_materialized_view(presentation, second_crypto_data->id, bytes);
+        PFL_REQUIRE(!first_materialized.bytes.empty());
+        PFL_REQUIRE(!second_materialized.bytes.empty());
+        PFL_EXPECT(first_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(second_materialized.bytes[0] == 0x01U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_initial_ack_decrypt_ok_1.pcap")));
+        const auto packet = require_packet(session, 7U);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* quic_packet = require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        const auto* plaintext =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        const auto* ack_frame = require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U);
+        PFL_EXPECT(quic_packet->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_EXPECT(plaintext->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U) == nullptr);
+        PFL_EXPECT(!ack_frame->quic_crypto_stream_offset.has_value());
+        expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        expect_parent_in_scope(*ack_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_initial_ack_wrong_pkn_1.pcap")));
+        const auto packet = require_packet(session, 7U);
+        const auto presentation = require_presentation(session, packet);
+
+        PFL_REQUIRE(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_packet, 0U) != nullptr);
+        if (const auto* protected_payload =
+                find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_protected_payload, 0U);
+            protected_payload != nullptr) {
+            expect_parent_in_scope(*protected_payload, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        }
+        PFL_EXPECT(presentation.derived_owners.empty());
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U) == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap")));
+        const auto packet = require_packet(session, 2U);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* udp_payload = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        const auto* initial_packet =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        const auto* zero_rtt_packet =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_zero_rtt_packet, 1U);
+        const auto* plaintext =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        PFL_EXPECT(initial_packet->offset >= udp_payload->offset);
+        PFL_EXPECT(zero_rtt_packet->offset >= udp_payload->offset);
+        PFL_EXPECT(initial_packet->offset + initial_packet->captured_length <= zero_rtt_packet->offset);
+        expect_parent(*initial_packet, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*zero_rtt_packet, SelectedPacketByteViewKind::udp_payload);
+        expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 1U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 1U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 1U) == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_example_1.pcap")));
+        const auto packet = require_packet(session, 14U);
+        const auto presentation = require_presentation(session, packet);
+
+        PFL_REQUIRE(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_handshake_packet, 0U) != nullptr);
+        PFL_REQUIRE(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_protected_packet, 1U) != nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U) == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_protected_payload_4.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+
+        PFL_REQUIRE(find_view(presentation, SelectedPacketByteViewKind::udp_payload) != nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_packet, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_zero_rtt_packet, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_handshake_packet, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_protected_packet, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U) == nullptr);
+    }
+
+    {
+        session_detail::SelectedPacketBytePresentation moved_from {};
+        moved_from.derived_owners.push_back(session_detail::SelectedPacketByteDerivedOwner {
+            .id = {
+                .kind = session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext,
+                .occurrence = 0U,
+            },
+            .quic_packet_index = 0U,
+            .bytes = {0xAAU, 0xBBU, 0xCCU, 0xDDU},
+        });
+        moved_from.views.push_back(session_detail::SelectedPacketByteViewDescriptor {
+            .id = {
+                .kind = SelectedPacketByteViewKind::quic_initial_plaintext,
+                .scope = 0U,
+                .occurrence = 0U,
+            },
+            .owner_id = moved_from.derived_owners[0].id,
+            .owner_kind = session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext,
+            .offset = 1U,
+            .declared_length = 2U,
+            .captured_length = 2U,
+        });
+
+        auto moved = std::move(moved_from);
+        const auto materialized = session_detail::materialize_selected_packet_byte_view(
+            moved,
+            SelectedPacketByteViewId {
+                .kind = SelectedPacketByteViewKind::quic_initial_plaintext,
+                .scope = 0U,
+                .occurrence = 0U,
+            },
+            std::span<const std::uint8_t> {}
+        );
+        PFL_REQUIRE(materialized.has_value());
+        PFL_REQUIRE(materialized->descriptor != nullptr);
+        PFL_EXPECT(materialized->bytes.size() == 2U);
+        PFL_EXPECT(materialized->bytes[0] == 0xBBU);
+        PFL_EXPECT(materialized->bytes.data() == moved.derived_owners[0].bytes.data() + 1);
     }
 
     {

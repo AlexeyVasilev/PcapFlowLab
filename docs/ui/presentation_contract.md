@@ -550,13 +550,26 @@ Expected semantics:
 Backend note for the current migration stage:
 
 - selected-packet byte inspection now has a separate backend descriptor layer that is independent from the current `Raw` and `Payload` tabs;
-- the current pass still supports only one owner kind, the captured packet bytes already loaded on demand through `CaptureSession::read_packet_data(...)`;
+- the current pass now supports two owner kinds:
+  - captured packet bytes loaded on demand through `CaptureSession::read_packet_data(...)`;
+  - one selected-packet QUIC Initial plaintext owner when authenticated Initial decryption succeeds on the existing bounded QUIC path;
 - descriptors carry stable non-localized identities, explicit parent relationships, and bounded packet-relative ranges only; they do not retain per-view byte buffers or preformatted text;
 - materialization and hex formatting happen on demand for one selected view at a time;
 - the current pass covers authoritative top-level and nested payload views for frame, Ethernet, stacked VLAN, MPLS, IPv4, IPv6, TCP, UDP, SCTP, GRE, EoIP, VXLAN, Geneve, GTP-U, AH, ESP protected payload, inner Ethernet, and inner transport payloads where production packet details already expose authoritative bounds;
 - overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier payload view and the decoded child payload view;
 - duplicate suppression applies only to semantically equivalent descriptors; plain IP-in-IP does not manufacture an extra tunnel-payload view when only the nested IP payloads are authoritative;
-- derived QUIC, TLS, and stream-item byte owners remain future work.
+- selected-packet QUIC byte inspection now also exposes:
+  - captured QUIC envelope ranges as children of the captured UDP payload;
+  - captured QUIC Initial protected-payload ranges only when the packet-number length and packet end are authoritative;
+  - one derived `QUIC Initial Decrypted Payload` owner with child `QUIC Frame` and `CRYPTO Data` ranges when authenticated Initial decryption succeeds;
+- QUIC envelope offsets retained by the byte-presentation layer are rebased exactly once from UDP-payload-relative provenance to captured-frame-relative byte offsets;
+- the captured `QUIC Initial Protected Payload` contract starts immediately after the unprotected packet-number field and currently includes the AEAD authentication tag because that is the authoritative encrypted-payload extent already exposed by the selected-packet QUIC code path;
+- derived QUIC frame offsets are relative to the decrypted Initial plaintext owner, while `CRYPTO` stream offsets remain logical QUIC metadata and are not reused as plaintext byte offsets;
+- `CRYPTO Data` views exclude the frame type and encoded offset/length varints and expose only the CRYPTO frame value bytes;
+- coalesced QUIC UDP datagrams retain one descriptor identity per envelope; derived Initial plaintext belongs only to its owning envelope and is never attached to neighboring `0-RTT`, `Handshake`, or `Protected payload` envelopes;
+- failed Initial decryption may still retain the captured QUIC packet view and, when header-protection removal established an authoritative boundary, the captured protected-payload view, but it must not fabricate derived plaintext, QUIC frame, `CRYPTO Data`, or TLS byte ownership;
+- the retained QUIC Initial plaintext owner reuses the existing selected-packet QUIC plaintext artifact and is not copied into a second complete buffer solely for byte presentation;
+- Stream-item byte owners, generic TLS reconstructed byte owners, and long-lived QUIC derived owners remain deferred.
 
 ### Protocol
 
