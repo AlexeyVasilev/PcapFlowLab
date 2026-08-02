@@ -3037,6 +3037,25 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("TLS")));
     UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
 
+    const auto gtpu_nested_data_fixture_path =
+        ui_test_root() / "data" / "parsing" / "gtpu" / "32_gtpu_inner_ipv4_udp_data.pcap";
+    MainController gtpu_nested_data_controller {};
+    UI_EXPECT(open_capture_and_wait(app, gtpu_nested_data_controller, gtpu_nested_data_fixture_path));
+    gtpu_nested_data_controller.setSelectedFlowIndex(0);
+    gtpu_nested_data_controller.setSelectedPacketIndex(0);
+    auto* gtpu_nested_data_details_model =
+        qobject_cast<PacketDetailsViewModel*>(gtpu_nested_data_controller.packetDetailsModel());
+    UI_EXPECT(gtpu_nested_data_details_model != nullptr);
+    UI_EXPECT(!gtpu_nested_data_details_model->summaryLayers().isEmpty());
+    const auto gtpu_nested_data_layers = gtpu_nested_data_details_model->summaryLayers();
+    const auto gtpu_inner_udp_layer =
+        find_top_level_summary_layer(gtpu_nested_data_layers, QStringLiteral("udp-inner"));
+    const auto gtpu_data_layer =
+        find_top_level_summary_layer(gtpu_nested_data_layers, QStringLiteral("data"));
+    UI_EXPECT(!gtpu_inner_udp_layer.isEmpty());
+    UI_EXPECT(!gtpu_data_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(gtpu_data_layer, QStringLiteral("Data Length")) == QStringLiteral("48 bytes"));
+
     const auto split_tls_fixture_capture_path =
         std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_1_3_split_client_hello_10.pcap";
     MainController split_tls_packet_controller {};

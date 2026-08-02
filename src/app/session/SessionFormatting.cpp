@@ -1,9 +1,4 @@
 #include "app/session/SessionFormatting.h"
-#include "app/session/CaptureSession.h"
-#include "core/services/DnsPacketProtocolAnalyzer.h"
-#include "core/services/HttpPacketProtocolAnalyzer.h"
-#include "core/services/PacketPayloadService.h"
-#include "core/services/TlsInspectionParser.h"
 
 #include <algorithm>
 #include <ctime>
@@ -12,6 +7,13 @@
 #include <string_view>
 
 namespace pfl::session_detail {
+
+std::vector<TlsRecordModel> inspect_tls_summary_records(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    const TlsInspectionParserContext& initial_parser_context,
+    bool force_encrypted_handshake_records = false,
+    bool force_encrypted_alert_records = false
+);
 
 namespace {
 
@@ -2306,36 +2308,6 @@ std::string format_packet_data_transport(const PacketDataTransportKind transport
     }
 }
 
-PacketDataTransportKind map_packet_data_transport_kind(const EffectiveTransportKind transport) noexcept {
-    switch (transport) {
-    case EffectiveTransportKind::tcp:
-        return PacketDataTransportKind::tcp;
-    case EffectiveTransportKind::udp:
-        return PacketDataTransportKind::udp;
-    case EffectiveTransportKind::unknown:
-    default:
-        return PacketDataTransportKind::unknown;
-    }
-}
-
-PacketDataPlacement map_packet_data_placement(
-    const EffectiveTransportSummaryPlacement placement
-) noexcept {
-    switch (placement) {
-    case EffectiveTransportSummaryPlacement::after_tcp:
-        return PacketDataPlacement::after_tcp;
-    case EffectiveTransportSummaryPlacement::after_udp:
-        return PacketDataPlacement::after_udp;
-    case EffectiveTransportSummaryPlacement::after_inner_tcp:
-        return PacketDataPlacement::after_inner_tcp;
-    case EffectiveTransportSummaryPlacement::after_inner_udp:
-        return PacketDataPlacement::after_inner_udp;
-    case EffectiveTransportSummaryPlacement::none:
-    default:
-        return PacketDataPlacement::none;
-    }
-}
-
 std::optional<PacketSummaryLayer> build_packet_data_summary_layer(
     const PacketSummaryOptions& options
 ) {
@@ -3358,31 +3330,6 @@ std::optional<PacketSummaryLayer> build_icmpv6_summary_layer(const PacketDetails
         .title = "Internet Control Message Protocol v6",
         .fields = std::move(fields),
     };
-}
-
-bool looks_like_tls_summary_payload_prefix(std::span<const std::uint8_t> payload) {
-    if (payload.size() < 5U) {
-        return false;
-    }
-
-    const auto content_type = payload[0];
-    if (content_type < 20U || content_type > 23U) {
-        return false;
-    }
-
-    if (payload[1] != 0x03U || payload[2] > 0x04U) {
-        return false;
-    }
-
-    const auto record_length = static_cast<std::size_t>(
-        (static_cast<std::uint16_t>(payload[3]) << 8U) |
-        static_cast<std::uint16_t>(payload[4])
-    );
-    // Allow partial TLS records through to the structured inspector. The
-    // inspector already distinguishes complete and incomplete record bodies,
-    // and selected-packet Packet Details rely on that for split-handshake
-    // packet-local fragment coverage.
-    return record_length > 0U;
 }
 
 std::string format_tls_version_value(const std::uint16_t version) {
@@ -4723,71 +4670,21 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     const bool force_encrypted_handshake_records = false,
     const bool force_encrypted_alert_records = false
 ) {
-    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
-        return {};
-    }
-
-    TlsInspectionParser parser {};
-    auto inspection = parser.inspect(transport_payload_bytes, initial_parser_context);
-    if (force_encrypted_handshake_records) {
-        for (auto& record : inspection.records) {
-            if (record.status != TlsRecordStatus::complete ||
-                record.content_type_kind != TlsRecordContentTypeKind::handshake) {
-                continue;
-            }
-
-            record.handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque;
-            record.handshake_messages.clear();
-        }
-    }
-    if (force_encrypted_alert_records) {
-        for (auto& record : inspection.records) {
-            if (record.status != TlsRecordStatus::complete ||
-                record.content_type_kind != TlsRecordContentTypeKind::alert) {
-                continue;
-            }
-
-            record.alert_payload_kind = TlsAlertPayloadKind::encrypted_opaque;
-            record.alert_parse_status = TlsAlertParseStatus::not_attempted;
-            record.alert_entries.clear();
-        }
-    }
+    const auto records = inspect_tls_summary_records(
+        transport_payload_bytes,
+        initial_parser_context,
+        force_encrypted_handshake_records,
+        force_encrypted_alert_records
+    );
 
     std::vector<PacketSummaryLayer> layers {};
-    layers.reserve(inspection.records.size());
-    for (const auto& record : inspection.records) {
+    layers.reserve(records.size());
+    for (const auto& record : records) {
         if (const auto layer = build_tls_summary_layer(record); layer.has_value()) {
             layers.push_back(*layer);
         }
     }
     return layers;
-}
-
-TlsInspectionParserContext advance_tls_summary_parser_context(
-    const TlsInspectionParserContext& current_context,
-    const TlsSelectedPacketRecordContext& reconstructed_record
-) {
-    const bool selected_packet_completes_reconstructed_record =
-        reconstructed_record.selected_contribution_flow_packet_index.has_value() &&
-        reconstructed_record.completion_flow_packet_index.has_value() &&
-        *reconstructed_record.selected_contribution_flow_packet_index ==
-            *reconstructed_record.completion_flow_packet_index;
-    if ((reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::change_cipher_spec ||
-         reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake ||
-         reconstructed_record.semantic_kind == TlsStreamItemSemanticKind::generic_record) &&
-        reconstructed_record.status == TlsSelectedPacketStatus::complete &&
-        reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size &&
-        selected_packet_completes_reconstructed_record) {
-        TlsInspectionParser parser {};
-        return parser.inspect(
-            std::span<const std::uint8_t>(
-                reconstructed_record.captured_bytes.data(),
-                reconstructed_record.captured_bytes.size()
-            ),
-            reconstructed_record.initial_parser_context
-        ).final_context;
-    }
-    return current_context;
 }
 
 struct TlsStreamSummaryContext {
@@ -5174,111 +5071,6 @@ std::vector<PacketSummaryLayer> build_quic_summary_layers_for_packets(
     return layers;
 }
 
-TransportPayloadDisposition strongest_transport_payload_disposition(
-    const TransportPayloadDisposition current,
-    const TransportPayloadDisposition candidate
-) {
-    const auto rank = [](const TransportPayloadDisposition disposition) {
-        switch (disposition) {
-        case TransportPayloadDisposition::claimed_by_supported_protocol:
-            return 4;
-        case TransportPayloadDisposition::known_opaque_or_encrypted:
-            return 3;
-        case TransportPayloadDisposition::unavailable_or_truncated:
-            return 2;
-        case TransportPayloadDisposition::unclaimed_data:
-            return 1;
-        case TransportPayloadDisposition::none:
-        default:
-            return 0;
-        }
-    };
-    return rank(candidate) > rank(current) ? candidate : current;
-}
-
-TransportPayloadDisposition classify_quic_payload_ownership(
-    const QuicPresentationResult& presentation
-) {
-    if (presentation.packets.empty()) {
-        return TransportPayloadDisposition::none;
-    }
-
-    for (const auto& packet : presentation.packets) {
-        if (!packet.frames.empty() || !packet.tls_handshakes.empty()) {
-            return TransportPayloadDisposition::claimed_by_supported_protocol;
-        }
-    }
-
-    return TransportPayloadDisposition::known_opaque_or_encrypted;
-}
-
-TransportPayloadDisposition classify_tls_record_ownership(
-    const TlsRecordModel& record
-) {
-    if (record.content_type_kind == TlsRecordContentTypeKind::unknown) {
-        return TransportPayloadDisposition::none;
-    }
-    if (record.content_type_kind == TlsRecordContentTypeKind::application_data) {
-        return TransportPayloadDisposition::known_opaque_or_encrypted;
-    }
-    if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
-        record.handshake_payload_kind == TlsHandshakePayloadKind::encrypted_opaque) {
-        return TransportPayloadDisposition::known_opaque_or_encrypted;
-    }
-    if (record.content_type_kind == TlsRecordContentTypeKind::alert &&
-        record.alert_payload_kind == TlsAlertPayloadKind::encrypted_opaque) {
-        return TransportPayloadDisposition::known_opaque_or_encrypted;
-    }
-    return TransportPayloadDisposition::claimed_by_supported_protocol;
-}
-
-TransportPayloadDisposition classify_tls_records_ownership(
-    const std::vector<TlsRecordModel>& records
-) {
-    auto disposition = TransportPayloadDisposition::none;
-    for (const auto& record : records) {
-        disposition = strongest_transport_payload_disposition(
-            disposition,
-            classify_tls_record_ownership(record)
-        );
-    }
-    return disposition;
-}
-
-TransportPayloadDisposition classify_reconstructed_tls_ownership(
-    const std::vector<TlsSelectedPacketRecordContext>& reconstructed_records
-) {
-    auto disposition = TransportPayloadDisposition::none;
-    for (const auto& record : reconstructed_records) {
-        switch (record.semantic_kind) {
-        case TlsStreamItemSemanticKind::application_data:
-        case TlsStreamItemSemanticKind::encrypted_alert:
-        case TlsStreamItemSemanticKind::encrypted_handshake:
-            disposition = strongest_transport_payload_disposition(
-                disposition,
-                TransportPayloadDisposition::known_opaque_or_encrypted
-            );
-            break;
-        case TlsStreamItemSemanticKind::change_cipher_spec:
-        case TlsStreamItemSemanticKind::plaintext_handshake:
-        case TlsStreamItemSemanticKind::alert:
-        case TlsStreamItemSemanticKind::generic_record:
-        case TlsStreamItemSemanticKind::partial_record:
-        case TlsStreamItemSemanticKind::partial_payload:
-        case TlsStreamItemSemanticKind::gap:
-            disposition = strongest_transport_payload_disposition(
-                disposition,
-                TransportPayloadDisposition::claimed_by_supported_protocol
-            );
-            break;
-        case TlsStreamItemSemanticKind::none:
-        default:
-            break;
-        }
-    }
-    return disposition;
-}
-
 std::vector<PacketSummaryLayer> build_quic_summary_layers(
     const PacketDetails& details,
     const PacketSummaryOptions& options
@@ -5411,159 +5203,6 @@ bool selected_packet_completes_record(const TlsSelectedPacketRecordContext& cont
         *context.selected_contribution_flow_packet_index == *context.completion_flow_packet_index;
 }
 
-const TlsSelectedPacketContribution* find_selected_packet_contribution(
-    const TlsSelectedPacketRecordContext& context,
-    const std::uint64_t flow_packet_index
-) {
-    const auto it = std::find_if(
-        context.contributions.begin(),
-        context.contributions.end(),
-        [&](const TlsSelectedPacketContribution& contribution) {
-            return contribution.flow_packet_index == flow_packet_index;
-        }
-    );
-    return it == context.contributions.end() ? nullptr : &(*it);
-}
-
-bool selected_packet_starts_record(
-    const TlsSelectedPacketRecordContext& context,
-    const std::uint64_t flow_packet_index
-) {
-    return !context.contributions.empty() &&
-        context.contributions.front().flow_packet_index == flow_packet_index;
-}
-
-TlsInspectionParserContext selected_packet_starting_tls_initial_context(
-    const PacketSummaryOptions& options
-) {
-    if (!options.flow_packet_index.has_value()) {
-        return options.tls_initial_parser_context;
-    }
-
-    if (options.tls_initial_parser_context.semantic_state != TlsInspectionSemanticState::unknown) {
-        return options.tls_initial_parser_context;
-    }
-
-    const auto flow_packet_index = *options.flow_packet_index;
-    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-        if (selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-            return reconstructed_record.initial_parser_context;
-        }
-    }
-
-    return options.tls_initial_parser_context;
-}
-
-std::size_t selected_packet_reassembled_tls_prefix_bytes(const PacketSummaryOptions& options) {
-    if (!options.flow_packet_index.has_value()) {
-        return 0U;
-    }
-
-    std::size_t consumed_prefix_bytes = 0U;
-    const auto flow_packet_index = *options.flow_packet_index;
-    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-        const auto* selected_contribution =
-            find_selected_packet_contribution(reconstructed_record, flow_packet_index);
-        if (selected_contribution == nullptr) {
-            continue;
-        }
-        if (selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-            break;
-        }
-        consumed_prefix_bytes += selected_contribution->captured_byte_count;
-    }
-
-    return std::min(consumed_prefix_bytes, options.transport_payload_bytes.size());
-}
-
-TransportPayloadDisposition inspect_tls_payload_ownership(
-    std::span<const std::uint8_t> transport_payload_bytes,
-    const TlsInspectionParserContext& initial_parser_context
-) {
-    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
-        return TransportPayloadDisposition::none;
-    }
-
-    TlsInspectionParser parser {};
-    const auto inspection = parser.inspect(transport_payload_bytes, initial_parser_context);
-    return classify_tls_records_ownership(inspection.records);
-}
-
-TransportPayloadDisposition detect_selected_packet_tls_ownership(
-    const PacketSummaryOptions& options
-) {
-    auto disposition = classify_reconstructed_tls_ownership(options.reconstructed_tls_records);
-    const auto reassembled_prefix_bytes = selected_packet_reassembled_tls_prefix_bytes(options);
-    if (reassembled_prefix_bytes == 0U) {
-        return strongest_transport_payload_disposition(
-            disposition,
-            inspect_tls_payload_ownership(
-                options.transport_payload_bytes,
-                selected_packet_starting_tls_initial_context(options)
-            )
-        );
-    }
-
-    auto tls_initial_parser_context = options.tls_initial_parser_context;
-    const auto flow_packet_index = options.flow_packet_index;
-    if (flow_packet_index.has_value()) {
-        for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-            const auto* selected_contribution =
-                find_selected_packet_contribution(reconstructed_record, *flow_packet_index);
-            if (selected_contribution == nullptr || selected_packet_starts_record(reconstructed_record, *flow_packet_index)) {
-                continue;
-            }
-            tls_initial_parser_context = advance_tls_summary_parser_context(
-                tls_initial_parser_context,
-                reconstructed_record
-            );
-        }
-    }
-
-    const auto remaining_tls_payload =
-        reassembled_prefix_bytes < options.transport_payload_bytes.size()
-            ? options.transport_payload_bytes.subspan(reassembled_prefix_bytes)
-            : std::span<const std::uint8_t> {};
-    return strongest_transport_payload_disposition(
-        disposition,
-        inspect_tls_payload_ownership(remaining_tls_payload, tls_initial_parser_context)
-    );
-}
-
-TransportPayloadDisposition detect_supported_transport_payload_ownership(
-    std::span<const std::uint8_t> packet_bytes,
-    const std::uint32_t data_link_type,
-    const PacketDetails& details,
-    const PacketSummaryOptions& options
-) {
-    if (options.quic_presentation.has_value()) {
-        const auto quic_disposition = classify_quic_payload_ownership(*options.quic_presentation);
-        if (quic_disposition != TransportPayloadDisposition::none) {
-            return quic_disposition;
-        }
-    }
-
-    const auto tls_disposition = detect_selected_packet_tls_ownership(options);
-    if (tls_disposition != TransportPayloadDisposition::none) {
-        return tls_disposition;
-    }
-
-    if (details.has_udp) {
-        DnsPacketProtocolAnalyzer dns_analyzer {};
-        if (dns_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
-            return TransportPayloadDisposition::claimed_by_supported_protocol;
-        }
-    }
-    if (details.has_tcp) {
-        HttpPacketProtocolAnalyzer http_analyzer {};
-        if (http_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
-            return TransportPayloadDisposition::claimed_by_supported_protocol;
-        }
-    }
-
-    return TransportPayloadDisposition::none;
-}
-
 std::string format_tls_selected_packet_status(
     const TlsSelectedPacketRecordContext& context
 ) {
@@ -5585,7 +5224,7 @@ std::string format_tls_selected_packet_status(
     return "Unknown";
 }
 
-PacketSummaryLayer build_tls_reassembled_metadata_layer(
+PacketSummaryLayer build_tls_reassembled_metadata_layer_impl(
     const TlsSelectedPacketRecordContext& context
 ) {
     std::vector<PacketSummaryField> fields {
@@ -6066,12 +5705,32 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
 }
 
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
-    return build_tls_summary_layers_impl(
+    return build_tls_summary_layers(
         transport_payload_bytes,
         TlsInspectionParserContext {
             .semantic_state = TlsInspectionSemanticState::plaintext,
         }
     );
+}
+
+std::vector<PacketSummaryLayer> build_tls_summary_layers(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    const TlsInspectionParserContext initial_parser_context,
+    const bool force_encrypted_handshake_records,
+    const bool force_encrypted_alert_records
+) {
+    return build_tls_summary_layers_impl(
+        transport_payload_bytes,
+        initial_parser_context,
+        force_encrypted_handshake_records,
+        force_encrypted_alert_records
+    );
+}
+
+PacketSummaryLayer build_tls_reassembled_metadata_layer(
+    const TlsSelectedPacketRecordContext& context
+) {
+    return build_tls_reassembled_metadata_layer_impl(context);
 }
 
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
@@ -7367,92 +7026,12 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *trailer_layer);
     }
 
-    const auto append_reconstructed_tls_record_summary =
-        [&](const TlsSelectedPacketRecordContext& reconstructed_record, bool& appended_tls_summary_ref) {
-            append_layer_if_not_empty(
-                layers,
-                build_tls_reassembled_metadata_layer(reconstructed_record)
-            );
-            appended_tls_summary_ref = true;
-
-            if (reconstructed_record.status == TlsSelectedPacketStatus::complete &&
-                selected_packet_completes_record(reconstructed_record) &&
-                reconstructed_record.captured_bytes.size() == reconstructed_record.total_record_size) {
-                const auto reconstructed_tls_layers = build_tls_summary_layers_impl(
-                    std::span<const std::uint8_t>(
-                        reconstructed_record.captured_bytes.data(),
-                        reconstructed_record.captured_bytes.size()
-                    ),
-                    reconstructed_record.initial_parser_context
-                );
-                for (const auto& reconstructed_tls_layer : reconstructed_tls_layers) {
-                    append_layer_if_not_empty(layers, reconstructed_tls_layer);
-                }
-            }
-        };
-
     bool appended_tls_summary = false;
-    // QUIC packet summaries own their TLS handshake models already; do not
-    // reparse the UDP payload as if it were a standalone TLS record stream.
-    if (!options.quic_presentation.has_value()) {
-        const auto reassembled_prefix_bytes = selected_packet_reassembled_tls_prefix_bytes(options);
-        if (reassembled_prefix_bytes == 0U) {
-            const auto tls_initial_parser_context =
-                selected_packet_starting_tls_initial_context(options);
-            const auto tls_layers = build_tls_summary_layers_impl(
-                options.transport_payload_bytes,
-                tls_initial_parser_context
-            );
-            if (!tls_layers.empty()) {
-                for (const auto& tls_layer : tls_layers) {
-                    append_layer_if_not_empty(layers, tls_layer);
-                }
-                appended_tls_summary = true;
-            }
-
-            for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-                append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-            }
-        } else {
-            const auto flow_packet_index = *options.flow_packet_index;
-            auto tls_initial_parser_context = options.tls_initial_parser_context;
-            for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-                const auto* selected_contribution =
-                    find_selected_packet_contribution(reconstructed_record, flow_packet_index);
-                if (selected_contribution == nullptr || selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-                    continue;
-                }
-                append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-                tls_initial_parser_context = advance_tls_summary_parser_context(
-                    tls_initial_parser_context,
-                    reconstructed_record
-                );
-            }
-
-            const auto remaining_tls_payload =
-                reassembled_prefix_bytes < options.transport_payload_bytes.size()
-                    ? options.transport_payload_bytes.subspan(reassembled_prefix_bytes)
-                    : std::span<const std::uint8_t> {};
-            const auto tls_layers = build_tls_summary_layers_impl(
-                remaining_tls_payload,
-                tls_initial_parser_context
-            );
-            if (!tls_layers.empty()) {
-                for (const auto& tls_layer : tls_layers) {
-                    append_layer_if_not_empty(layers, tls_layer);
-                }
-                appended_tls_summary = true;
-            }
-
-            for (const auto& reconstructed_record : options.reconstructed_tls_records) {
-                const auto* selected_contribution =
-                    find_selected_packet_contribution(reconstructed_record, flow_packet_index);
-                if (selected_contribution == nullptr || !selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
-                    continue;
-                }
-                append_reconstructed_tls_record_summary(reconstructed_record, appended_tls_summary);
-            }
-        }
+    // Selected-packet TLS context walking and reassembly ordering are prepared
+    // upstream; formatter only maps the prepared layers into the final tree.
+    for (const auto& tls_layer : options.tls_summary_layers) {
+        append_layer_if_not_empty(layers, tls_layer);
+        appended_tls_summary = true;
     }
 
     const auto quic_layers = build_quic_summary_layers(details, options);
@@ -7472,139 +7051,6 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     apply_default_summary_layer_expansion(layers);
     return layers;
-}
-
-SelectedPacketSummaryPreparation prepare_selected_packet_summary(
-    CaptureSession& session,
-    const PacketDetails& details,
-    const PacketRef& packet,
-    std::optional<std::size_t> flow_index,
-    std::optional<std::uint64_t> flow_packet_index,
-    std::optional<std::size_t> loaded_packet_window_count,
-    std::string protocol_details_text,
-    const std::optional<std::uint32_t> transport_payload_length,
-    const std::optional<std::uint32_t> original_transport_payload_length,
-    std::vector<std::string> checksum_summary_lines,
-    std::vector<std::string> checksum_warning_lines
-) {
-    const auto packet_bytes = session.read_packet_data(packet);
-    PacketPayloadService payload_service {};
-    auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-
-    auto tls_packet_analysis =
-        flow_index.has_value() &&
-        flow_packet_index.has_value() &&
-        loaded_packet_window_count.has_value()
-            ? analyze_selected_packet_tls_contexts(
-                session,
-                *flow_index,
-                *flow_packet_index,
-                *loaded_packet_window_count
-            )
-            : TlsSelectedPacketAnalysis {
-                .initial_parser_context = TlsInspectionParserContext {
-                    .semantic_state = TlsInspectionSemanticState::plaintext,
-                },
-            };
-    const auto quic_presentation = flow_index.has_value()
-        ? session.derive_quic_presentation_for_packet(*flow_index, packet.packet_index)
-        : std::optional<QuicPresentationResult> {};
-
-    SelectedPacketSummaryPreparation preparation {
-        .transport_payload = std::move(transport_payload),
-        .options = {
-            .source_capture_accessible = true,
-            .flow_packet_index = flow_packet_index,
-            .transport_payload_length = transport_payload_length,
-            .original_transport_payload_length = original_transport_payload_length,
-            .protocol_details_text = std::move(protocol_details_text),
-            .checksum_summary_lines = std::move(checksum_summary_lines),
-            .checksum_warning_lines = std::move(checksum_warning_lines),
-            .tls_initial_parser_context = tls_packet_analysis.initial_parser_context,
-            .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
-            .quic_presentation = quic_presentation,
-        },
-    };
-    preparation.options.transport_payload_bytes = std::span<const std::uint8_t>(
-        preparation.transport_payload.data(),
-        preparation.transport_payload.size()
-    );
-
-    const auto assign_packet_data_preview_from_packet_offset =
-        [&](const std::size_t offset, const std::size_t captured_length) {
-            preparation.packet_data_preview.clear();
-            if (offset >= packet_bytes.size() || captured_length == 0U) {
-                preparation.options.packet_data_preview_bytes = {};
-                return;
-            }
-
-            const auto preview_length = std::min<std::size_t>({
-                kPacketDataPreviewMaxBytes,
-                captured_length,
-                packet_bytes.size() - offset,
-            });
-            preparation.packet_data_preview.assign(
-                packet_bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-                packet_bytes.begin() + static_cast<std::ptrdiff_t>(offset + preview_length)
-            );
-            preparation.options.packet_data_preview_bytes = std::span<const std::uint8_t>(
-                preparation.packet_data_preview.data(),
-                preparation.packet_data_preview.size()
-            );
-        };
-
-    const auto classify_packet_data_disposition =
-        [&](const PacketDataPresentation& packet_data, const bool transport_truncated) {
-            if (packet_data.captured_length == 0U) {
-                return TransportPayloadDisposition::none;
-            }
-            if (packet.is_ip_fragmented) {
-                return TransportPayloadDisposition::none;
-            }
-            if (transport_truncated ||
-                packet_data.captured_length != packet_data.declared_length) {
-                return TransportPayloadDisposition::unavailable_or_truncated;
-            }
-
-            const auto disposition = detect_supported_transport_payload_ownership(
-                std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-                packet.data_link_type,
-                details,
-                preparation.options
-            );
-            return disposition == TransportPayloadDisposition::none
-                ? TransportPayloadDisposition::unclaimed_data
-                : disposition;
-        };
-
-    if (details.effective_transport_payload.has_value()) {
-        const auto& effective_payload = *details.effective_transport_payload;
-        PacketDataPresentation packet_data {};
-        packet_data.role = PacketDataRole::transport_payload;
-        packet_data.transport = map_packet_data_transport_kind(effective_payload.transport);
-        packet_data.placement = map_packet_data_placement(effective_payload.summary_placement);
-        packet_data.captured_length = effective_payload.captured_payload_length;
-        packet_data.declared_length = effective_payload.declared_payload_length.value_or(packet_data.captured_length);
-        packet_data.declared_length_reliable = effective_payload.declared_payload_length.has_value();
-        packet_data.truncation_reliable = effective_payload.declared_payload_length.has_value();
-        assign_packet_data_preview_from_packet_offset(
-            effective_payload.payload_offset,
-            packet_data.captured_length
-        );
-
-        const bool capture_truncated = details.captured_length != details.original_length;
-        const bool transport_truncated =
-            effective_payload.payload_truncated ||
-            (effective_payload.role == EffectiveTransportRole::top_level && capture_truncated);
-        if (transport_truncated && !packet_data.truncation_reliable) {
-            packet_data.disposition = TransportPayloadDisposition::unavailable_or_truncated;
-        } else {
-            packet_data.disposition = classify_packet_data_disposition(packet_data, transport_truncated);
-        }
-        preparation.options.packet_data = packet_data;
-    }
-
-    return preparation;
 }
 
 std::string packet_payload_tab_title(const PacketDetails& details) {

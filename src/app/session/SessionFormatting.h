@@ -16,10 +16,6 @@
 #include "core/domain/PacketRef.h"
 #include "core/services/TlsInspectionModel.h"
 
-namespace pfl {
-class CaptureSession;
-}
-
 namespace pfl::session_detail {
 
 struct ArpPresentation {
@@ -93,14 +89,9 @@ struct PacketSummaryOptions {
     std::span<const std::uint8_t> packet_data_preview_bytes {};
     TlsInspectionParserContext tls_initial_parser_context {};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
+    std::vector<PacketSummaryLayer> tls_summary_layers {};
     std::optional<QuicPresentationResult> quic_presentation {};
     std::optional<PacketDataPresentation> packet_data {};
-};
-
-struct SelectedPacketSummaryPreparation {
-    std::vector<std::uint8_t> transport_payload {};
-    std::vector<std::uint8_t> packet_data_preview {};
-    PacketSummaryOptions options {};
 };
 
 std::string format_packet_timestamp(const PacketRef& packet);
@@ -119,6 +110,13 @@ std::string format_arp_opcode(std::uint16_t opcode);
 std::optional<ArpPresentation> describe_arp_packet(const PacketDetails& details);
 std::vector<std::string> build_basic_summary_lines(const PacketDetails& details);
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes);
+std::vector<PacketSummaryLayer> build_tls_summary_layers(
+    std::span<const std::uint8_t> transport_payload_bytes,
+    TlsInspectionParserContext initial_parser_context,
+    bool force_encrypted_handshake_records = false,
+    bool force_encrypted_alert_records = false
+);
+PacketSummaryLayer build_tls_reassembled_metadata_layer(const TlsSelectedPacketRecordContext& context);
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     const StreamItemRow& row,
     std::string_view source_packets_text,
@@ -129,19 +127,6 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     const PacketDetails& details,
     const PacketRef& packet,
     const PacketSummaryOptions& options = {}
-);
-SelectedPacketSummaryPreparation prepare_selected_packet_summary(
-    CaptureSession& session,
-    const PacketDetails& details,
-    const PacketRef& packet,
-    std::optional<std::size_t> flow_index,
-    std::optional<std::uint64_t> flow_packet_index,
-    std::optional<std::size_t> loaded_packet_window_count,
-    std::string protocol_details_text,
-    std::optional<std::uint32_t> transport_payload_length = {},
-    std::optional<std::uint32_t> original_transport_payload_length = {},
-    std::vector<std::string> checksum_summary_lines = {},
-    std::vector<std::string> checksum_warning_lines = {}
 );
 std::string packet_payload_tab_title(const PacketDetails& details);
 std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details);

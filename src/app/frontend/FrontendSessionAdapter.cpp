@@ -1,6 +1,7 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -3114,7 +3115,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.summary_layers = session_detail::build_packet_summary_layers(
             *details,
             packet,
-            packet_summary_preparation.options
+            packet_summary_preparation.make_options()
         );
     } else {
         result.unavailable_text = "Only partial packet details are available for this packet.";

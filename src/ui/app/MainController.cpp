@@ -3,6 +3,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/services/PacketPayloadService.h"
 
@@ -5751,7 +5752,7 @@ void MainController::reloadSelectedPacketDetails() {
         );
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation.options)
+            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation.make_options())
         ));
         packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
         packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));

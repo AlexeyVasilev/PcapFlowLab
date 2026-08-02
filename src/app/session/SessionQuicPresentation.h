@@ -80,6 +80,9 @@ struct QuicPresentationResult {
     std::vector<QuicPresentationPacket> packets {};
     std::vector<std::uint64_t> selected_packet_indices {};
     std::vector<std::uint64_t> crypto_packet_indices {};
+    // Selected-packet-only decrypted Initial plaintext artifact for future
+    // byte-level inspection. This remains bounded, ephemeral, and separate
+    // from the structured frame/TLS semantic models used by Summary.
     std::vector<std::uint8_t> selected_initial_plaintext_payload {};
     std::optional<std::string> sni {};
     std::optional<TlsHandshakeDetails> tls_handshake {};

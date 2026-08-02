@@ -49,6 +49,25 @@ It does not retain:
 - decrypted Initial plaintext copies
 - formatter-derived semantics from `protocol_text`
 
+This no-copy statement applies to retained Stream structures such as
+`QuicStreamItemPresentation` and `StreamItemRow`.
+
+Selected-packet QUIC presentation is intentionally narrower and may retain one
+bounded `selected_initial_plaintext_payload` artifact when authenticated
+Initial decryption succeeds. That artifact is:
+
+- selected-packet-only
+- ephemeral
+- not persisted in the index
+- not copied into Stream rows
+- not used as the semantic source of truth for Summary
+
+Structured frame ownership and TLS ownership still come from the retained
+`QuicPresentationFrame` and `TlsHandshakeModel` metadata. A future Byte View
+surface may consume the selected packet's decrypted Initial plaintext together
+with the existing frame offsets and CRYPTO metadata, but that UI does not
+exist yet.
+
 Failed Initial decryption remains intentionally coarse at the Stream Summary
 layer. Retry, Version Negotiation, and harder CRYPTO edge-fixture expansion
 remain future hardening work.
