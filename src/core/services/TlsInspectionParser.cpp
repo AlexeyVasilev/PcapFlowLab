@@ -1356,6 +1356,48 @@ std::vector<TlsHandshakeModel> parse_handshake_messages(
 
 }  // namespace
 
+std::optional<TlsRecordHeaderInspection> inspect_tls_record_header(
+    std::span<const std::uint8_t> tls_bytes
+) noexcept {
+    if (tls_bytes.size() < kTlsRecordHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto content_type_kind = classify_record_content_type(tls_bytes[0]);
+    if (content_type_kind == TlsRecordContentTypeKind::unknown) {
+        return std::nullopt;
+    }
+
+    const auto legacy_version = read_be16(tls_bytes, 1U);
+    if (!legacy_version.has_value() ||
+        ((*legacy_version >> 8U) & 0x00FFU) != 0x03U ||
+        (*legacy_version & 0x00FFU) > 0x04U) {
+        return std::nullopt;
+    }
+
+    const auto declared_payload_length = read_be16(tls_bytes, 3U);
+    if (!declared_payload_length.has_value() ||
+        *declared_payload_length > kTlsRecordPayloadLengthLimit) {
+        return std::nullopt;
+    }
+
+    const auto total_size = checked_add(
+        kTlsRecordHeaderSize,
+        static_cast<std::size_t>(*declared_payload_length)
+    );
+    if (!total_size.has_value()) {
+        return std::nullopt;
+    }
+
+    return TlsRecordHeaderInspection {
+        .content_type_kind = content_type_kind,
+        .legacy_version = *legacy_version,
+        .declared_payload_length = *declared_payload_length,
+        .total_size = *total_size,
+        .complete_record_available = *total_size <= tls_bytes.size(),
+    };
+}
+
 TlsInspectionResult TlsInspectionParser::inspect(
     std::span<const std::uint8_t> tls_bytes,
     const TlsInspectionParserContext initial_context

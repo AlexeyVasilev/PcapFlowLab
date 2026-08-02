@@ -502,6 +502,37 @@ std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers
     return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
 }
 
+std::vector<session_detail::PacketSummaryLayer> build_synthetic_tcp_flow_summary_layers(
+    const std::string& file_name,
+    const std::vector<std::vector<std::uint8_t>>& tcp_payloads,
+    const std::uint64_t selected_packet_index
+) {
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+    packets.reserve(tcp_payloads.size());
+    for (std::size_t index = 0U; index < tcp_payloads.size(); ++index) {
+        packets.push_back({
+            static_cast<std::uint32_t>(100U + index),
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 10, 0, 1),
+                ipv4(10, 10, 0, 2),
+                41050,
+                443,
+                tcp_payloads[index],
+                0x18)
+        });
+    }
+
+    const auto capture_path = write_temp_pcap(file_name, make_classic_pcap(packets));
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+    return build_flow_packet_summary_layers(
+        session,
+        0U,
+        selected_packet_index,
+        tcp_payloads.size()
+    );
+}
+
 void expect_ecdhe_server_key_exchange_summary(
     const session_detail::PacketSummaryLayer& layer,
     const bool expect_explicit_signature_scheme
@@ -2428,6 +2459,126 @@ void run_packet_details_tests() {
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x16U, 0x03U, 0x03U, 0x00U, 0x00U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_zero_length_handshake_like.pcap",
+            {payload},
+            0U
+        );
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "5 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(payload));
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x15U, 0x03U, 0x03U, 0x00U, 0x00U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_zero_length_alert_like.pcap",
+            {payload},
+            0U
+        );
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "5 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(payload));
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x14U, 0x03U, 0x03U, 0x00U, 0x00U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_zero_length_ccs_like.pcap",
+            {payload},
+            0U
+        );
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "5 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(payload));
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x16U, 0x03U, 0x03U, 0x00U, 0x20U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_partial_header_only_like.pcap",
+            {payload},
+            0U
+        );
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "5 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(payload));
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x16U, 0x03U, 0x03U, 0x00U, 0x08U, 0x01U, 0x02U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_partial_client_hello_like.pcap",
+            {payload},
+            0U
+        );
+        const auto* tls_layer = find_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(tls_layer->title == "Transport Layer Security, ClientHello Fragment");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Status") == "Incomplete record body");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x16U, 0x03U, 0x03U, 0x40U, 0x01U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_invalid_record_length_like.pcap",
+            {payload},
+            0U
+        );
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "5 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(payload));
+    }
+
+    {
+        const auto payload = std::vector<std::uint8_t> {0x17U, 0x03U, 0x03U, 0x00U, 0x00U};
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_zero_length_app_data_without_context.pcap",
+            {payload},
+            0U
+        );
+        PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
+        const auto data_layers = find_summary_layers(summary_layers, "data");
+        PFL_REQUIRE(data_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Transport") == "TCP");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Data Length") == "5 bytes");
+        PFL_EXPECT(require_summary_field_value(*data_layers[0], "Preview") == format_expected_hex_byte_list(payload));
+    }
+
+    {
+        const auto summary_layers = build_synthetic_tcp_flow_summary_layers(
+            "pfl_packet_summary_tls_zero_length_app_data_with_confirmed_context.pcap",
+            {
+                make_tls_record(0x14U, 0x0303U, {0x01U}),
+                make_tls_record(0x17U, 0x0303U, {}),
+            },
+            1U
+        );
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Type") == "ApplicationData");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Record Length") == "0");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {

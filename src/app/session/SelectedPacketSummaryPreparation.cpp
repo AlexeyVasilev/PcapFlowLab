@@ -30,17 +30,43 @@ std::size_t selected_packet_reassembled_tls_prefix_bytes(const PacketSummaryOpti
 
 namespace {
 
-bool looks_like_tls_summary_payload_prefix(std::span<const std::uint8_t> payload) {
-    if (payload.size() < 5U) {
+constexpr std::size_t kTlsSummaryRecordHeaderSize = 5U;
+constexpr std::size_t kTlsSummaryMinimumPartialHandshakeBytes = 7U;
+
+bool has_confirmed_tls_summary_context(
+    const TlsInspectionParserContext& initial_parser_context
+) noexcept {
+    return initial_parser_context.semantic_state == TlsInspectionSemanticState::post_change_cipher_spec ||
+        initial_parser_context.negotiated_cipher_suite.has_value() ||
+        initial_parser_context.negotiated_version.has_value();
+}
+
+bool tls_summary_payload_is_owned_by_tls(
+    std::span<const std::uint8_t> payload,
+    const TlsInspectionParserContext& initial_parser_context
+) {
+    const auto header = inspect_tls_record_header(payload);
+    if (!header.has_value()) {
         return false;
     }
 
-    const auto record_type = payload[0];
-    if (record_type < 20U || record_type > 23U) {
-        return false;
+    const bool confirmed_tls_context = has_confirmed_tls_summary_context(initial_parser_context);
+    if (header->declared_payload_length == 0U) {
+        return header->content_type_kind == TlsRecordContentTypeKind::application_data &&
+            confirmed_tls_context;
     }
 
-    return payload[1] == 0x03U && payload[2] <= 0x04U;
+    if (header->complete_record_available) {
+        return true;
+    }
+
+    if (confirmed_tls_context) {
+        return true;
+    }
+
+    return header->content_type_kind == TlsRecordContentTypeKind::handshake &&
+        payload.size() >= kTlsSummaryMinimumPartialHandshakeBytes &&
+        payload.size() > kTlsSummaryRecordHeaderSize;
 }
 
 TransportPayloadDisposition strongest_transport_payload_disposition(
@@ -519,7 +545,7 @@ std::vector<TlsRecordModel> inspect_tls_summary_records(
     const bool force_encrypted_handshake_records,
     const bool force_encrypted_alert_records
 ) {
-    if (!looks_like_tls_summary_payload_prefix(transport_payload_bytes)) {
+    if (!tls_summary_payload_is_owned_by_tls(transport_payload_bytes, initial_parser_context)) {
         return {};
     }
 
