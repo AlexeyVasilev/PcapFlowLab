@@ -14,6 +14,14 @@ enum class NetworkAddressFamily : std::uint8_t {
     ipv6
 };
 
+// Packet-relative byte range using selected captured-frame coordinates.
+struct PacketByteRange {
+    std::uint32_t offset {0};
+    std::optional<std::uint32_t> declared_length {};
+    std::uint32_t captured_length {0};
+    bool truncated {false};
+};
+
 struct EthernetDetails {
     std::array<std::uint8_t, 6> src_mac {};
     std::array<std::uint8_t, 6> dst_mac {};
@@ -22,6 +30,7 @@ struct EthernetDetails {
     std::size_t trailer_length {0};
     std::vector<std::uint8_t> trailer_preview {};
     bool trailer_preview_truncated {false};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct LlcDetails {
@@ -74,6 +83,7 @@ struct InnerEthernetDetails {
     bool uses_length_field {false};
     std::uint8_t available_header_bytes {0};
     bool header_truncated {false};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct PbbDetails {
@@ -144,6 +154,7 @@ struct VxlanDetails {
     bool invalid_header {false};
     bool reserved_bits_non_zero {false};
     std::uint32_t vni {0};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
     bool has_inner_packet {false};
@@ -167,6 +178,7 @@ struct GeneveDetails {
     std::uint16_t protocol_type {0};
     bool protocol_type_supported {false};
     std::uint32_t vni {0};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
     bool has_inner_packet {false};
@@ -199,6 +211,7 @@ struct GtpuDetails {
     bool extension_headers_truncated {false};
     std::size_t extension_headers_skipped_bytes {0};
     bool unknown_inner_payload {false};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_packet {false};
     std::shared_ptr<GtpuInnerPacketDetails> inner_packet {};
 };
@@ -232,6 +245,7 @@ struct GreDetails {
     std::uint32_t sequence_number {0};
     bool protocol_type_supported {false};
     bool unknown_inner_payload {false};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
     bool inner_vlan_truncated {false};
@@ -250,6 +264,7 @@ struct EspDetails {
     std::uint32_t spi {0};
     std::uint32_t sequence_number {0};
     std::size_t opaque_payload_length {0};
+    std::optional<PacketByteRange> protected_payload_range {};
 };
 
 struct AhDetails {
@@ -266,6 +281,7 @@ struct AhDetails {
     std::size_t header_length {0};
     std::size_t icv_length {0};
     std::size_t available_icv_bytes {0};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_packet {false};
     std::shared_ptr<AhInnerPacketDetails> inner_packet {};
 };
@@ -335,13 +351,6 @@ struct ArpDetails {
     std::array<std::uint8_t, 4> target_ipv4 {};
     bool fixed_header_truncated {false};
     bool address_section_truncated {false};
-};
-
-struct PacketByteRange {
-    std::uint32_t offset {0};
-    std::optional<std::uint32_t> declared_length {};
-    std::uint32_t captured_length {0};
-    bool truncated {false};
 };
 
 struct IPv4Details {
@@ -462,6 +471,8 @@ struct EffectiveTransportPayloadDetails {
 };
 
 struct VxlanInnerPacketDetails {
+    bool has_inner_ethernet {false};
+    InnerEthernetDetails inner_ethernet {};
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
     bool has_llc {false};
@@ -481,6 +492,8 @@ struct VxlanInnerPacketDetails {
 };
 
 struct GeneveInnerPacketDetails {
+    bool has_inner_ethernet {false};
+    InnerEthernetDetails inner_ethernet {};
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
     bool has_llc {false};
@@ -573,6 +586,7 @@ struct GreInnerPacketDetails {
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     std::vector<MplsLabelDetails> mpls_labels {};
+    std::optional<PacketByteRange> mpls_payload_range {};
     bool has_mpls_pseudowire_control_word {false};
     MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
     bool has_unknown_inner_ethernet_payload {false};

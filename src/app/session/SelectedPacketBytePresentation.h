@@ -31,8 +31,20 @@ enum class SelectedPacketByteViewKind : std::uint8_t {
     udp_payload,
     sctp_payload,
     effective_transport_payload,
+    inner_ethernet_payload,
+    inner_vlan_payload,
     inner_ipv4_payload,
     inner_ipv6_payload,
+    inner_tcp_payload,
+    inner_udp_payload,
+    inner_sctp_payload,
+    gre_payload,
+    eoip_payload,
+    vxlan_payload,
+    geneve_payload,
+    gtpu_payload,
+    ah_payload,
+    esp_protected_payload,
 };
 
 struct SelectedPacketByteViewId {
@@ -44,6 +56,7 @@ struct SelectedPacketByteViewId {
 
 struct SelectedPacketByteViewDescriptor {
     SelectedPacketByteViewId id {};
+    std::optional<SelectedPacketByteViewId> parent_id {};
     SelectedPacketByteOwnerKind owner_kind {SelectedPacketByteOwnerKind::captured_packet};
     std::uint32_t offset {0};
     std::optional<std::uint32_t> declared_length {};

@@ -140,12 +140,17 @@ std::optional<PacketByteRange> rebase_packet_byte_range(
         return std::nullopt;
     }
 
+    const auto rebased_offset = base_offset + (static_cast<std::size_t>(nested_range->offset) - trimmed_prefix);
+    if (rebased_offset > 0xFFFFFFFFU) {
+        return std::nullopt;
+    }
+
     auto rebased = *nested_range;
-    rebased.offset = static_cast<std::uint32_t>(
-        base_offset + (static_cast<std::size_t>(nested_range->offset) - trimmed_prefix)
-    );
+    rebased.offset = static_cast<std::uint32_t>(rebased_offset);
     return rebased;
 }
+
+InnerEthernetDetails make_inner_ethernet_details(const EthernetDetails& ethernet);
 
 std::optional<EffectiveTransportPayloadDetails> rebase_effective_transport_payload(
     const std::optional<EffectiveTransportPayloadDetails>& nested_payload,
@@ -259,6 +264,20 @@ void populate_inner_ethernet_details(
         details.inner_ethernet.ether_type = details.inner_ethernet.uses_length_field
             ? inner_ethernet.declared_payload_length
             : inner_ethernet.protocol_type;
+    }
+
+    const auto payload_offset = inner_ethernet.payload_offset;
+    if (payload_offset < bounded_end) {
+        const auto captured_payload_length = bounded_end - payload_offset;
+        details.inner_ethernet.payload_range = make_packet_byte_range(
+            payload_offset,
+            captured_payload_length,
+            inner_ethernet.is_ieee_802_3
+                ? std::optional<std::size_t> {inner_ethernet.declared_payload_length}
+                : std::nullopt,
+            inner_ethernet.is_ieee_802_3 &&
+                captured_payload_length < static_cast<std::size_t>(inner_ethernet.declared_payload_length)
+        );
     }
 }
 
@@ -1092,6 +1111,14 @@ void populate_esp_details(
         details.esp.opaque_payload_length = bounded_packet_end > payload_offset
             ? (bounded_packet_end - payload_offset)
             : 0U;
+        if (bounded_packet_end > payload_offset) {
+            details.esp.protected_payload_range = make_packet_byte_range(
+                payload_offset,
+                bounded_packet_end - payload_offset,
+                std::nullopt,
+                false
+            );
+        }
     }
 }
 
@@ -1377,6 +1404,15 @@ void populate_vxlan_details(
     details.vxlan.flags = packet_bytes[vxlan_offset];
     details.vxlan.i_flag_set = (details.vxlan.flags & detail::kVxlanFlagI) != 0U;
     details.vxlan.vni = vxlan.vni;
+    if (vxlan.bounded_packet_end.has_value() &&
+        *vxlan.bounded_packet_end > vxlan.inner_payload_offset) {
+        details.vxlan.payload_range = make_packet_byte_range(
+            vxlan.inner_payload_offset,
+            *vxlan.bounded_packet_end - vxlan.inner_payload_offset,
+            std::nullopt,
+            false
+        );
+    }
     details.vxlan.has_inner_ethernet = vxlan.has_inner_ethernet;
     details.vxlan.inner_ethernet_truncated = vxlan.inner_ethernet_truncated;
 
@@ -1391,6 +1427,15 @@ std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(
     const std::size_t trimmed_prefix
 ) {
     auto inner = std::make_shared<VxlanInnerPacketDetails>();
+    if (details.has_ethernet) {
+        inner->has_inner_ethernet = true;
+        inner->inner_ethernet = make_inner_ethernet_details(details.ethernet);
+        inner->inner_ethernet.payload_range = rebase_packet_byte_range(
+            details.ethernet.payload_range,
+            base_offset,
+            trimmed_prefix
+        );
+    }
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
@@ -1585,6 +1630,15 @@ void populate_geneve_details(
     details.geneve.protocol_type = geneve.protocol_type;
     details.geneve.protocol_type_supported = geneve.protocol_type == detail::kGeneveProtocolTypeEthernet;
     details.geneve.vni = geneve.vni;
+    if (geneve.bounded_packet_end.has_value() &&
+        *geneve.bounded_packet_end > geneve.inner_payload_offset) {
+        details.geneve.payload_range = make_packet_byte_range(
+            geneve.inner_payload_offset,
+            *geneve.bounded_packet_end - geneve.inner_payload_offset,
+            std::nullopt,
+            false
+        );
+    }
     details.geneve.reserved_trailer_byte = packet_bytes[geneve_offset + 7U];
     details.geneve.has_inner_ethernet = geneve.has_inner_ethernet;
     details.geneve.inner_ethernet_truncated = geneve.inner_ethernet_truncated;
@@ -1600,6 +1654,15 @@ std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(
     const std::size_t trimmed_prefix
 ) {
     auto inner = std::make_shared<GeneveInnerPacketDetails>();
+    if (details.has_ethernet) {
+        inner->has_inner_ethernet = true;
+        inner->inner_ethernet = make_inner_ethernet_details(details.ethernet);
+        inner->inner_ethernet.payload_range = rebase_packet_byte_range(
+            details.ethernet.payload_range,
+            base_offset,
+            trimmed_prefix
+        );
+    }
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
@@ -2226,6 +2289,17 @@ void populate_ah_payload_details(
     const std::size_t nominal_packet_end,
     PacketDetails& details
 ) {
+    if (packet_end > ah_payload_offset) {
+        details.ah.payload_range = make_packet_byte_range(
+            ah_payload_offset,
+            packet_end - ah_payload_offset,
+            nominal_packet_end > ah_payload_offset
+                ? std::optional<std::size_t> {nominal_packet_end - ah_payload_offset}
+                : std::optional<std::size_t> {},
+            nominal_packet_end > packet_end
+        );
+    }
+
     if (details.ah.next_header == detail::kIpProtocolTcp) {
         if (ah_payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
             packet_bytes.size() < ah_payload_offset + detail::kTcpMinimumHeaderSize) {
@@ -2326,6 +2400,7 @@ InnerEthernetDetails make_inner_ethernet_details(const EthernetDetails& ethernet
     inner.uses_length_field = ethernet.uses_length_field;
     inner.available_header_bytes = static_cast<std::uint8_t>(detail::kEthernetHeaderSize);
     inner.header_truncated = false;
+    inner.payload_range = ethernet.payload_range;
     return inner;
 }
 
@@ -2346,15 +2421,27 @@ bool gre_inner_packet_has_content(const GreInnerPacketDetails& inner) noexcept {
 
 std::shared_ptr<GreInnerPacketDetails> make_gre_inner_packet_details(
     const PacketDetails& details,
+    const std::size_t base_offset,
+    const std::size_t trimmed_prefix,
     const bool preserve_outer_ethernet
 ) {
     auto inner = std::make_shared<GreInnerPacketDetails>();
     if (preserve_outer_ethernet && details.has_ethernet) {
         inner->has_inner_ethernet = true;
         inner->inner_ethernet = make_inner_ethernet_details(details.ethernet);
+        inner->inner_ethernet.payload_range = rebase_packet_byte_range(
+            details.ethernet.payload_range,
+            base_offset,
+            trimmed_prefix
+        );
     } else if (details.has_inner_ethernet) {
         inner->has_inner_ethernet = true;
         inner->inner_ethernet = details.inner_ethernet;
+        inner->inner_ethernet.payload_range = rebase_packet_byte_range(
+            details.inner_ethernet.payload_range,
+            base_offset,
+            trimmed_prefix
+        );
     }
     inner->has_vlan = details.has_vlan;
     inner->vlan_tags = details.vlan_tags;
@@ -2365,12 +2452,14 @@ std::shared_ptr<GreInnerPacketDetails> make_gre_inner_packet_details(
     inner->has_mpls = details.has_mpls;
     inner->mpls_ether_type = details.mpls_ether_type;
     inner->mpls_labels = details.mpls_labels;
+    inner->mpls_payload_range = rebase_packet_byte_range(details.mpls_payload_range, base_offset, trimmed_prefix);
     inner->has_mpls_pseudowire_control_word = details.has_mpls_pseudowire_control_word;
     inner->mpls_pseudowire_control_word = details.mpls_pseudowire_control_word;
     inner->has_unknown_inner_ethernet_payload = details.has_unknown_inner_ethernet_payload;
     inner->unknown_inner_ethernet_payload = details.unknown_inner_ethernet_payload;
     inner->has_ipv4 = details.has_ipv4;
     inner->ipv4 = details.ipv4;
+    inner->ipv4.payload_range = rebase_packet_byte_range(details.ipv4.payload_range, base_offset, trimmed_prefix);
     inner->ipv4_truncated = details.has_ipv4 &&
         (details.ipv4.header_truncated ||
          details.ipv4.invalid_header_length ||
@@ -2379,12 +2468,14 @@ std::shared_ptr<GreInnerPacketDetails> make_gre_inner_packet_details(
          (details.ipv4.total_length != 0U && details.ipv4.total_length > details.ipv4.available_packet_bytes));
     inner->has_ipv6 = details.has_ipv6;
     inner->ipv6 = details.ipv6;
+    inner->ipv6.payload_range = rebase_packet_byte_range(details.ipv6.payload_range, base_offset, trimmed_prefix);
     inner->has_tcp = details.has_tcp;
     inner->tcp = details.tcp;
     inner->has_udp = details.has_udp;
     inner->udp = details.udp;
     inner->has_sctp = details.has_sctp;
     inner->sctp = details.sctp;
+    inner->sctp.payload_range = rebase_packet_byte_range(details.sctp.payload_range, base_offset, trimmed_prefix);
     populate_gre_inner_transport_payload_lengths(*inner);
     return inner;
 }
@@ -2422,7 +2513,7 @@ std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
                 0U
             );
         }
-        const auto inner = make_gre_inner_packet_details(*decoded_inner, true);
+        const auto inner = make_gre_inner_packet_details(*decoded_inner, gre.inner_ethernet_offset, 0U, true);
         return gre_inner_packet_has_content(*inner) ? std::optional<GreInnerPacketDetails> {*inner} : std::nullopt;
     }
 
@@ -2467,7 +2558,7 @@ std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
             detail::kEthernetHeaderSize
         );
     }
-    const auto inner = make_gre_inner_packet_details(*decoded_inner, false);
+    const auto inner = make_gre_inner_packet_details(*decoded_inner, gre.payload_offset, detail::kEthernetHeaderSize, false);
     return gre_inner_packet_has_content(*inner) ? std::optional<GreInnerPacketDetails> {*inner} : std::nullopt;
 }
 
@@ -2560,6 +2651,15 @@ void populate_lenient_gre_details(
 
         if (const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, bounded_payload_end, true);
             gre.has_value()) {
+            if (gre->bounded_packet_end.has_value() &&
+                *gre->bounded_packet_end > gre->payload_offset) {
+                details.gre.payload_range = make_packet_byte_range(
+                    gre->payload_offset,
+                    *gre->bounded_packet_end - gre->payload_offset,
+                    static_cast<std::size_t>(details.gre.eoip_frame_length),
+                    details.gre.eoip_declared_frame_exceeds_available
+                );
+            }
             details.gre.has_inner_ethernet = gre->has_inner_ethernet;
             details.gre.inner_ethernet_truncated = gre->inner_ethernet_truncated;
             details.gre.inner_vlan_truncated = gre->inner_vlan_truncated;
@@ -2636,6 +2736,16 @@ void populate_lenient_gre_details(
     if (!gre.has_value()) {
         details.gre.optional_fields_truncated = true;
         return;
+    }
+
+    if (gre->bounded_packet_end.has_value() &&
+        *gre->bounded_packet_end > gre->payload_offset) {
+        details.gre.payload_range = make_packet_byte_range(
+            gre->payload_offset,
+            *gre->bounded_packet_end - gre->payload_offset,
+            std::nullopt,
+            false
+        );
     }
 
     if (gre->protocol_type == detail::kGreProtocolTypeTransparentEthernetBridging) {
@@ -2752,6 +2862,17 @@ void populate_lenient_gtpu_details(
                 cursor += extension_total_length;
             }
         }
+    }
+
+    if (logical_payload_end > cursor) {
+        details.gtpu.payload_range = make_packet_byte_range(
+            cursor,
+            logical_payload_end - cursor,
+            declared_payload_end > cursor
+                ? std::optional<std::size_t> {declared_payload_end - cursor}
+                : std::optional<std::size_t> {},
+            declared_payload_end > bounded_payload_end
+        );
     }
 
     if (details.gtpu.invalid_version ||
@@ -2913,6 +3034,14 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             .protocol_type = details.ethernet.ether_type,
             .payload_offset = detail::kEthernetHeaderSize,
         };
+        if (packet_bytes.size() > detail::kEthernetHeaderSize) {
+            details.ethernet.payload_range = make_packet_byte_range(
+                detail::kEthernetHeaderSize,
+                packet_bytes.size() - detail::kEthernetHeaderSize,
+                std::nullopt,
+                false
+            );
+        }
 
         std::size_t vlan_count = 0;
         while (detail::is_vlan_ether_type(view.protocol_type)) {
@@ -2989,6 +3118,15 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
                     packet_bytes.begin() + static_cast<std::ptrdiff_t>(llc_snap.payload_end + preview_length)
                 );
                 details.ethernet.trailer_preview_truncated = details.ethernet.trailer_length > preview_length;
+            }
+
+            if (llc_snap.payload_end > detail::kEthernetHeaderSize) {
+                details.ethernet.payload_range = make_packet_byte_range(
+                    detail::kEthernetHeaderSize,
+                    llc_snap.payload_end - detail::kEthernetHeaderSize,
+                    std::nullopt,
+                    false
+                );
             }
 
             if (llc_snap.resolved_supported_protocol) {
