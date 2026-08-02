@@ -3401,6 +3401,10 @@ std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::de
     if (!details.has_value()) {
         return std::nullopt;
     }
+    const auto packet_bytes = read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return std::nullopt;
+    }
 
     const auto& connections = listed_connections();
     const auto quic_flow_index = find_quic_flow_index_for_packet(connections, analysis_settings_, packet.packet_index);
@@ -3411,7 +3415,10 @@ std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::de
     return session_detail::build_selected_packet_byte_presentation(
         *details,
         packet,
-        std::move(quic_presentation)
+        session_detail::SelectedPacketByteBuildOptions {
+            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            .quic_presentation = std::move(quic_presentation),
+        }
     );
 }
 

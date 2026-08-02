@@ -115,7 +115,9 @@ private:
     );
     [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_packet_byte_view_content(
         const PacketRef& packet,
-        const std::string& stable_id
+        const std::string& stable_id,
+        std::optional<std::uint64_t> flow_packet_index = {},
+        std::optional<std::size_t> loaded_packet_window_count = {}
     );
     [[nodiscard]] static AnalysisSettings to_analysis_settings(const FrontendSettingsDto& settings) noexcept;
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(

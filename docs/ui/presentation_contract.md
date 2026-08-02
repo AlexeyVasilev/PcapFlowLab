@@ -542,9 +542,10 @@ Expected semantics:
 - the current UI always materializes `whole_unit`;
 - a future UI pass may add `Whole Unit | Payload Only` without changing descriptor identities;
 - when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
-- TLS byte views remain deferred;
-- future TLS over TCP should naturally layer as `TCP Segment -> TLS Record -> TLS Handshake Message`;
-- future TLS over QUIC must not invent a `TLS Record` layer because QUIC carries TLS handshake messages through `CRYPTO Frame Data`;
+- packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
+- packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
+- record-layer TLS over TCP now layers as `TCP Segment -> TLS Record -> TLS Handshake Message` when the current bounded TLS parser confirms ownership;
+- QUIC never invents a `TLS Record` layer: QUIC carries TLS handshake messages only through `CRYPTO Frame Data -> TLS Handshake Message`;
 - the selector uses backend-provided stable ids and backend-provided descriptor order;
 - only one selected view is materialized/formatted at a time;
 - frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
@@ -557,15 +558,24 @@ Expected semantics:
 Backend note for the current migration stage:
 
 - selected-packet byte inspection now has a separate backend descriptor layer that is independent from Summary and Protocol presentation;
-- the current pass now supports two owner kinds:
+- the current pass now supports four owner kinds:
   - captured packet bytes loaded on demand through `CaptureSession::read_packet_data(...)`;
   - one selected-packet QUIC Initial plaintext owner when authenticated Initial decryption succeeds on the existing bounded QUIC path;
+  - one bounded QUIC CRYPTO-prefix owner when existing QUIC/TLS handshake semantics already authorize a logical TLS handshake range that spans CRYPTO contributions;
+  - one bounded reconstructed TLS-record owner when existing selected-packet TLS analysis already reconstructs a contributing TCP TLS record;
 - descriptors carry stable non-localized protocol-layer identities, explicit parent relationships, one primary complete-unit range, and an optional payload-only range only where that second range is already authoritative; they do not retain per-view byte buffers or preformatted text;
 - materialization and hex formatting happen on demand for one selected view at a time;
 - the current pass covers protocol-unit defaults for Frame, Ethernet II, stacked VLAN encapsulations, MPLS label-stack-and-payload units, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, inner Ethernet, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- semantic child layers may intentionally overlap their parent transport or carrier range when the child unit is independently authoritative, including `UDP Datagram -> DNS Message`, `TCP Segment -> TLS Record`, `TLS Record -> TLS Handshake Message`, and `CRYPTO Frame Data -> TLS Handshake Message`;
 - overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier unit and the decoded child unit;
 - duplicate suppression applies only to semantically equivalent descriptors; plain IP-in-IP does not manufacture an extra tunnel-payload view when only the nested IP payloads are authoritative;
 - temporary payload-only fallback descriptors remain explicit for nested carriers whose full unit boundary is not yet carried authoritatively by packet details, rather than being mislabeled as complete packets; the current explicit fallbacks still include tunnel-carrier views such as `GRE Payload`, `EoIP Payload`, `GTP-U Payload`, `VXLAN Payload`, `Geneve Payload`, `AH Payload`, `ESP Protected Payload`, and derived value views such as `CRYPTO Frame Data`;
+- selected-packet TLS byte views reuse the same bounded selected-packet TLS analysis already used by Summary rather than running a second independent full-flow reconstruction pass;
+- selected TCP packet policy is contribution-based: a selected packet shows only TLS records and handshake messages to which that packet contributes, and split TLS records use a bounded reconstructed owner instead of fabricating a fake contiguous captured range inside one packet;
+- complete packet-local TLS records use captured packet bytes directly, while split or bounded reconstructed TLS records and their handshake children use one reconstructed owner plus child ranges into that owner rather than per-record or per-handshake byte copies;
+- encrypted or opaque TLS records such as `ApplicationData` remain TLS records even when no plaintext handshake child exists;
+- when current metadata confirms TLS ownership but only a bounded partial TCP fragment is available, the descriptor remains the narrowest honest TLS unit, such as `TLS Record Fragment`, with complete/partial/truncated state derived from structured TLS lengths;
+- DNS and TLS byte views remain packet-details-only in this stage; stream-item byte owners and stream-item application-unit byte selectors remain deferred;
 - selected-packet QUIC byte inspection now also exposes:
   - captured QUIC envelope ranges as children of the captured `UDP Datagram`;
   - captured QUIC Initial protected-payload ranges only when the packet-number length and packet end are authoritative;
@@ -574,11 +584,13 @@ Backend note for the current migration stage:
 - the captured `QUIC Initial Protected Payload` contract starts immediately after the unprotected packet-number field and currently includes the AEAD authentication tag because that is the authoritative encrypted-payload extent already exposed by the selected-packet QUIC code path;
 - derived QUIC frame offsets are relative to the decrypted Initial plaintext owner, while `CRYPTO` stream offsets remain logical QUIC metadata and are not reused as plaintext byte offsets;
 - `CRYPTO Frame Data` views exclude the frame type and encoded offset/length varints and expose only the CRYPTO frame value bytes;
+- QUIC TLS handshake views inherit their range from existing QUIC/TLS handshake semantics and remain children of `CRYPTO Frame Data`; QUIC does not synthesize a TLS record header or record owner;
 - coalesced QUIC UDP datagrams retain one descriptor identity per envelope; derived Initial plaintext belongs only to its owning envelope and is never attached to neighboring `0-RTT`, `Handshake`, or `Protected payload` envelopes;
 - failed Initial decryption may still retain the captured QUIC packet view and, when header-protection removal established an authoritative boundary, the captured protected-payload view, but it must not fabricate derived plaintext, QUIC frame, `CRYPTO Data`, or TLS byte ownership;
 - the retained QUIC Initial plaintext owner reuses the existing selected-packet QUIC plaintext artifact and is not copied into a second complete buffer solely for byte presentation;
 - captured and derived owners are intentionally transparent to the UI once the selector has chosen a stable id;
-- Stream Item Details tabs remain unchanged in this pass; stream-item byte owners, generic TLS reconstructed byte owners, and long-lived QUIC derived owners remain deferred.
+- application protocols still deferred from Packet Details Bytes in this stage include packet-local HTTP message units and DHCP/BOOTP message units, because current packet presentation does not yet expose a single shared authoritative application-unit byte range for those protocols.
+- Stream Item Details tabs remain unchanged in this pass; stream-item byte owners, packet-spanning HTTP message byte units, and long-lived QUIC derived owners remain deferred.
 
 ### Protocol
 

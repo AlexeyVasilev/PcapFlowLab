@@ -4673,14 +4673,55 @@ void MainController::refreshSelectedPacketByteView() {
     }
 
     const auto packet_bytes = session_.read_packet_data(*packet);
-    const auto packet_byte_presentation = session_.derive_selected_packet_byte_presentation(*packet);
-    if (packet_bytes.empty() || !packet_byte_presentation.has_value()) {
+    const auto details = session_.read_packet_details(*packet);
+    if (packet_bytes.empty() || !details.has_value()) {
         packet_details_model_.clearPacketBytePresentation();
         selected_packet_byte_view_stable_id_.clear();
         return;
     }
 
-    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
+    const auto protocol_text = selected_flow_quic_protocol_text_for_packet(
+        session_,
+        selected_flow_index_,
+        packet->packet_index,
+        QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
+    );
+    const auto payload_lengths = resolve_transport_payload_lengths(
+        *details,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        *packet
+    );
+    const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+        const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+        if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+            return std::nullopt;
+        }
+        return it->second - 1U;
+    }();
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session_,
+        *details,
+        *packet,
+        selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
+        flow_packet_index,
+        loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
+        protocol_text.toStdString(),
+        payload_lengths.real_payload_length,
+        payload_lengths.original_payload_length
+    );
+    auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+        *details,
+        *packet,
+        session_detail::SelectedPacketByteBuildOptions {
+            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            .flow_packet_index = packet_summary_preparation.flow_packet_index,
+            .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
+            .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
+            .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
+        }
+    );
+
+    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
     const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
     if (!selected_view_id.has_value()) {
         packet_details_model_.clearPacketBytePresentation();
@@ -4690,7 +4731,7 @@ void MainController::refreshSelectedPacketByteView() {
 
     HexDumpService hex_dump_service {};
     const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
-        *packet_byte_presentation,
+        packet_byte_presentation,
         *selected_view_id,
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         hex_dump_service
@@ -5893,14 +5934,77 @@ void MainController::reloadSelectedPacketDetails() {
         );
     }
 
-    const auto packet_byte_presentation = session_.derive_selected_packet_byte_presentation(*packet);
-    if (packet_byte_presentation.has_value()) {
-        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
+    packet_details_model_.setHexText({});
+
+    std::optional<session_detail::SelectedPacketSummaryPreparation> packet_summary_preparation {};
+
+    if (details.has_value()) {
+        const auto payload_lengths = resolve_transport_payload_lengths(
+            *details,
+            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+            *packet
+        );
+        const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+            const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+            if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+                return std::nullopt;
+            }
+            return it->second - 1U;
+        }();
+        packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+            session_,
+            *details,
+            *packet,
+            selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
+            flow_packet_index,
+            loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
+            protocolText.toStdString(),
+            payload_lengths.real_payload_length,
+            payload_lengths.original_payload_length,
+            [&]() {
+                std::vector<std::string> lines {};
+                lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
+                for (const auto& line : checksum_sections.summary_lines) {
+                    lines.push_back(line.toStdString());
+                }
+                return lines;
+            }(),
+            [&]() {
+                std::vector<std::string> lines {};
+                lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
+                for (const auto& line : checksum_sections.warnings) {
+                    lines.push_back(line.toStdString());
+                }
+                return lines;
+            }()
+        );
+        packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
+        packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation->make_options())
+        ));
+    } else {
+        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, checksum_sections));
+        packet_details_model_.setSummaryLayers({});
+    }
+
+    if (details.has_value() && packet_summary_preparation.has_value()) {
+        auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            *packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+                .flow_packet_index = packet_summary_preparation->flow_packet_index,
+                .tls_initial_parser_context = packet_summary_preparation->tls_initial_parser_context,
+                .reconstructed_tls_records = std::move(packet_summary_preparation->reconstructed_tls_records),
+                .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
+            }
+        );
+        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
         const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
         if (selected_view_id.has_value()) {
             HexDumpService hex_dump_service {};
             if (const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
-                    *packet_byte_presentation,
+                    packet_byte_presentation,
                     *selected_view_id,
                     std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
                     hex_dump_service);
@@ -5931,57 +6035,6 @@ void MainController::reloadSelectedPacketDetails() {
     } else {
         packet_details_model_.clearPacketBytePresentation();
         selected_packet_byte_view_stable_id_.clear();
-    }
-
-    packet_details_model_.setHexText({});
-
-    if (details.has_value()) {
-        const auto payload_lengths = resolve_transport_payload_lengths(
-            *details,
-            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
-            *packet
-        );
-        const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
-            const auto it = current_flow_packet_numbers_.find(packet->packet_index);
-            if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
-                return std::nullopt;
-            }
-            return it->second - 1U;
-        }();
-        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
-            session_,
-            *details,
-            *packet,
-            selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
-            flow_packet_index,
-            loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
-            protocolText.toStdString(),
-            payload_lengths.real_payload_length,
-            payload_lengths.original_payload_length,
-            [&]() {
-                std::vector<std::string> lines {};
-                lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
-                for (const auto& line : checksum_sections.summary_lines) {
-                    lines.push_back(line.toStdString());
-                }
-                return lines;
-            }(),
-            [&]() {
-                std::vector<std::string> lines {};
-                lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
-                for (const auto& line : checksum_sections.warnings) {
-                    lines.push_back(line.toStdString());
-                }
-                return lines;
-            }()
-        );
-        packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
-        packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation.make_options())
-        ));
-    } else {
-        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, checksum_sections));
-        packet_details_model_.setSummaryLayers({});
     }
 
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));

@@ -3066,7 +3066,12 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_sele
         }
     }
 
-    return build_frontend_packet_byte_view_content(*packet, stable_id);
+    return build_frontend_packet_byte_view_content(
+        *packet,
+        stable_id,
+        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt,
+        loaded_packet_window_count != 0U ? std::optional<std::size_t> {static_cast<std::size_t>(loaded_packet_window_count)} : std::nullopt
+    );
 }
 
 FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) {
@@ -3177,6 +3182,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.checksum_warning_lines = checksum_sections.warnings;
     }
 
+    std::optional<session_detail::SelectedPacketSummaryPreparation> packet_summary_preparation {};
     if (details.has_value()) {
         const auto original_transport_payload_length =
             session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
@@ -3185,7 +3191,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             flow_packet_index.has_value()
                 ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
                 : std::nullopt;
-        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        packet_summary_preparation = session_detail::prepare_selected_packet_summary(
             session_,
             *details,
             packet,
@@ -3206,19 +3212,30 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.summary_layers = session_detail::build_packet_summary_layers(
             *details,
             packet,
-            packet_summary_preparation.make_options()
+            packet_summary_preparation->make_options()
         );
     } else {
         result.unavailable_text = "Only partial packet details are available for this packet.";
     }
 
-    if (const auto byte_presentation = session_.derive_selected_packet_byte_presentation(packet); byte_presentation.has_value()) {
-        const auto prepared_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*byte_presentation);
+    if (details.has_value() && packet_summary_preparation.has_value()) {
+        auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                .flow_packet_index = packet_summary_preparation->flow_packet_index,
+                .tls_initial_parser_context = packet_summary_preparation->tls_initial_parser_context,
+                .reconstructed_tls_records = std::move(packet_summary_preparation->reconstructed_tls_records),
+                .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
+            }
+        );
+        const auto prepared_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
         result.byte_view_descriptors = build_frontend_packet_byte_view_descriptors(prepared_descriptors);
         if (const auto selected_id = select_default_packet_byte_view_id(prepared_descriptors); selected_id.has_value()) {
             HexDumpService hex_dump_service {};
             if (const auto content = session_detail::format_selected_packet_byte_view_content(
-                    *byte_presentation,
+                    packet_byte_presentation,
                     *selected_id,
                     std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
                     hex_dump_service);
@@ -3258,7 +3275,9 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
 
 FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_frontend_packet_byte_view_content(
     const PacketRef& packet,
-    const std::string& stable_id
+    const std::string& stable_id,
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count
 ) {
     if (!session_.source_capture_accessible()) {
         return FrontendPacketDetailsDto::PacketByteViewContent {
@@ -3268,13 +3287,43 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
     }
 
     const auto packet_bytes = session_.read_packet_data(packet);
-    const auto packet_byte_presentation = session_.derive_selected_packet_byte_presentation(packet);
-    if (packet_bytes.empty() || !packet_byte_presentation.has_value()) {
+    const auto details = session_.read_packet_details(packet);
+    if (packet_bytes.empty() || !details.has_value()) {
         return FrontendPacketDetailsDto::PacketByteViewContent {
             .available = false,
             .unavailable_text = "No byte views are available for this packet.",
         };
     }
+
+    const auto original_transport_payload_length =
+        session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
+    const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
+    const auto internal_flow_packet_index =
+        flow_packet_index.has_value()
+            ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
+            : std::nullopt;
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session_,
+        *details,
+        packet,
+        selected_flow_index_,
+        internal_flow_packet_index,
+        loaded_packet_window_count,
+        frontend_packet_protocol_text(session_, selected_flow_index_, packet),
+        captured_transport_payload_length,
+        original_transport_payload_length
+    );
+    auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+        *details,
+        packet,
+        session_detail::SelectedPacketByteBuildOptions {
+            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            .flow_packet_index = packet_summary_preparation.flow_packet_index,
+            .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
+            .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
+            .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
+        }
+    );
 
     const auto selected_id = session_detail::parse_selected_packet_byte_view_stable_id(stable_id);
     if (!selected_id.has_value()) {
@@ -3286,7 +3335,7 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
 
     HexDumpService hex_dump_service {};
     const auto content = session_detail::format_selected_packet_byte_view_content(
-        *packet_byte_presentation,
+        packet_byte_presentation,
         *selected_id,
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         hex_dump_service

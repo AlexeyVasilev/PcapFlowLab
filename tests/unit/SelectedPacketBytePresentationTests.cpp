@@ -11,6 +11,8 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedPacketBytePresentation.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 
 namespace pfl::tests {
 
@@ -36,6 +38,79 @@ SelectedPacketBytePresentation require_presentation(CaptureSession& session, con
     const auto presentation = session.derive_selected_packet_byte_presentation(packet);
     PFL_REQUIRE(presentation.has_value());
     return *presentation;
+}
+
+SelectedPacketBytePresentation require_flow_aware_presentation(CaptureSession& session, const PacketRef& packet) {
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<std::size_t> loaded_packet_window_count {};
+    for (const auto& flow_row : session.list_flows()) {
+        const auto packet_rows = session.list_flow_packets(flow_row.index);
+        const auto packet_it = std::find_if(packet_rows.begin(), packet_rows.end(), [&](const PacketRow& row) {
+            return row.packet_index == packet.packet_index;
+        });
+        if (packet_it == packet_rows.end()) {
+            continue;
+        }
+
+        flow_index = flow_row.index;
+        PFL_REQUIRE(packet_it->row_number > 0U);
+        flow_packet_index = packet_it->row_number - 1U;
+        loaded_packet_window_count = packet_rows.size();
+        break;
+    }
+    PFL_REQUIRE(flow_index.has_value());
+    PFL_REQUIRE(flow_packet_index.has_value());
+    PFL_REQUIRE(loaded_packet_window_count.has_value());
+
+    const auto packet_bytes = session.read_packet_data(packet);
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session,
+        *details,
+        packet,
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count,
+        session.read_packet_protocol_details_text(packet),
+        std::optional<std::uint32_t> {packet.payload_length},
+        session_detail::derive_original_transport_payload_length_from_headers(session, packet)
+    );
+    return session_detail::build_selected_packet_byte_presentation(
+        *details,
+        packet,
+        session_detail::SelectedPacketByteBuildOptions {
+            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            .flow_packet_index = packet_summary_preparation.flow_packet_index,
+            .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
+            .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
+            .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
+        }
+    );
+}
+
+std::vector<std::uint8_t> make_dns_query_payload() {
+    std::vector<std::uint8_t> payload {};
+    append_be16(payload, 0x1234U);
+    append_be16(payload, 0x0100U);
+    append_be16(payload, 1U);
+    append_be16(payload, 0U);
+    append_be16(payload, 0U);
+    append_be16(payload, 0U);
+    payload.push_back(3U);
+    payload.insert(payload.end(), {'a', 'p', 'i'});
+    payload.push_back(7U);
+    payload.insert(payload.end(), {'e', 'x', 'a', 'm', 'p', 'l', 'e'});
+    payload.push_back(0U);
+    append_be16(payload, 1U);
+    append_be16(payload, 1U);
+    return payload;
+}
+
+std::vector<std::uint8_t> bytes_payload(std::string_view text) {
+    return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
 const SelectedPacketByteViewDescriptor* require_view_in_scope(
@@ -354,6 +429,120 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* udp_payload = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        PFL_REQUIRE(udp_payload->payload_range.has_value());
+        const auto* dns_message = require_view(presentation, SelectedPacketByteViewKind::dns_message);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::udp_payload);
+        PFL_EXPECT(dns_message->offset == udp_payload->payload_range->offset);
+        PFL_EXPECT(dns_message->captured_length == udp_payload->payload_range->captured_length);
+        PFL_EXPECT(dns_message->declared_length == udp_payload->payload_range->declared_length);
+        PFL_EXPECT(!dns_message->payload_range.has_value());
+
+        const auto materialized = require_materialized_view(presentation, dns_message->id, bytes);
+        PFL_REQUIRE(materialized.bytes.size() >= 4U);
+        PFL_EXPECT(materialized.bytes[0] == 0xC7U);
+        PFL_EXPECT(materialized.bytes[1] == 0x07U);
+        PFL_EXPECT(materialized.bytes[2] == 0x01U);
+        PFL_EXPECT(materialized.bytes[3] == 0x00U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/dns/dns_response_2.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* udp_payload = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        PFL_REQUIRE(udp_payload->payload_range.has_value());
+        const auto* dns_message = require_view(presentation, SelectedPacketByteViewKind::dns_message);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::udp_payload);
+        PFL_EXPECT(dns_message->offset == udp_payload->payload_range->offset);
+        PFL_EXPECT(dns_message->captured_length == udp_payload->payload_range->captured_length);
+
+        const auto materialized = require_materialized_view(presentation, dns_message->id, bytes);
+        PFL_REQUIRE(materialized.bytes.size() >= 4U);
+        PFL_EXPECT(materialized.bytes[0] == 0x1DU);
+        PFL_EXPECT(materialized.bytes[1] == 0xE6U);
+        PFL_EXPECT(materialized.bytes[2] == 0x85U);
+        PFL_EXPECT(materialized.bytes[3] == 0x80U);
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_false_dns_port_53.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 2, 1, 1),
+                    ipv4(10, 2, 1, 2),
+                    53000,
+                    53,
+                    bytes_payload("not-dns-payload"))
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+        PFL_REQUIRE(require_view(presentation, SelectedPacketByteViewKind::udp_payload) != nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
+    }
+
+    {
+        auto dns_over_tcp_payload = make_dns_query_payload();
+        const auto dns_message_length = static_cast<std::uint16_t>(dns_over_tcp_payload.size());
+        dns_over_tcp_payload.insert(
+            dns_over_tcp_payload.begin(),
+            {
+                static_cast<std::uint8_t>((dns_message_length >> 8U) & 0xFFU),
+                static_cast<std::uint8_t>(dns_message_length & 0xFFU),
+            }
+        );
+
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_dns_over_tcp.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 2, 2, 1),
+                    ipv4(10, 2, 2, 2),
+                    52000,
+                    53,
+                    dns_over_tcp_payload,
+                    0x18)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* tcp_segment = require_view(presentation, SelectedPacketByteViewKind::tcp_payload);
+        PFL_REQUIRE(tcp_segment->payload_range.has_value());
+        const auto* dns_message = require_view(presentation, SelectedPacketByteViewKind::dns_message);
+        expect_parent(*dns_message, SelectedPacketByteViewKind::tcp_payload);
+        PFL_EXPECT(dns_message->offset == tcp_segment->payload_range->offset + 2U);
+        PFL_EXPECT(dns_message->captured_length + 2U == tcp_segment->payload_range->captured_length);
+
+        const auto materialized = require_materialized_view(presentation, dns_message->id, bytes);
+        PFL_REQUIRE(materialized.bytes.size() >= 4U);
+        PFL_EXPECT(materialized.bytes[0] == 0x12U);
+        PFL_EXPECT(materialized.bytes[1] == 0x34U);
+        PFL_EXPECT(materialized.bytes[2] == 0x01U);
+        PFL_EXPECT(materialized.bytes[3] == 0x00U);
+    }
+
+    {
+        CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vlan/05_qinq_ipv4_udp.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
@@ -391,6 +580,180 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(arp_view->captured_length == 28U);
         PFL_EXPECT(arp_view->declared_length == std::optional<std::uint32_t> {28U});
         PFL_EXPECT(!arp_view->payload_range.has_value());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* tcp_segment = require_view(presentation, SelectedPacketByteViewKind::tcp_payload);
+        PFL_REQUIRE(tcp_segment->payload_range.has_value());
+        const auto* tls_record = require_view(presentation, SelectedPacketByteViewKind::tls_record);
+        const auto* tls_handshake = require_view(presentation, SelectedPacketByteViewKind::tls_handshake);
+        expect_parent(*tls_record, SelectedPacketByteViewKind::tcp_payload);
+        expect_parent(*tls_handshake, SelectedPacketByteViewKind::tls_record);
+        PFL_EXPECT(tls_record->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
+        PFL_EXPECT(tls_record->offset == tcp_segment->payload_range->offset);
+        PFL_REQUIRE(tls_record->payload_range.has_value());
+        PFL_REQUIRE(tls_handshake->payload_range.has_value());
+
+        const auto labels = collect_labels(presentation);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Record") != labels.end());
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello") != labels.end());
+
+        const auto whole_record = require_materialized_view(presentation, tls_record->id, bytes);
+        const auto record_payload = require_materialized_view(
+            presentation,
+            tls_record->id,
+            bytes,
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+        const auto whole_handshake = require_materialized_view(presentation, tls_handshake->id, bytes);
+        const auto handshake_payload = require_materialized_view(
+            presentation,
+            tls_handshake->id,
+            bytes,
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+        PFL_REQUIRE(whole_record.bytes.size() >= 3U);
+        PFL_REQUIRE(record_payload.bytes.size() >= 1U);
+        PFL_REQUIRE(whole_handshake.bytes.size() >= 1U);
+        PFL_REQUIRE(handshake_payload.bytes.size() >= 2U);
+        PFL_EXPECT(whole_record.bytes[0] == 0x16U);
+        PFL_EXPECT(whole_record.bytes[1] == 0x03U);
+        PFL_EXPECT(whole_record.bytes[2] == 0x01U);
+        PFL_EXPECT(record_payload.bytes[0] == 0x01U);
+        PFL_EXPECT(whole_handshake.bytes[0] == 0x01U);
+        PFL_EXPECT(handshake_payload.bytes[0] == 0x03U);
+        PFL_EXPECT(handshake_payload.bytes[1] == 0x03U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/tls/tls_1_2_server_hello_4.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* tls_record = require_view(presentation, SelectedPacketByteViewKind::tls_record);
+        const auto* tls_handshake = require_view(presentation, SelectedPacketByteViewKind::tls_handshake);
+        expect_parent(*tls_record, SelectedPacketByteViewKind::tcp_payload);
+        expect_parent(*tls_handshake, SelectedPacketByteViewKind::tls_record);
+        const auto labels = collect_labels(presentation);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Record") != labels.end());
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ServerHello") != labels.end());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/tls/tls_1_2_app_data_3.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* tls_record = require_view(presentation, SelectedPacketByteViewKind::tls_record);
+        expect_parent(*tls_record, SelectedPacketByteViewKind::tcp_payload);
+        const auto labels = collect_labels(presentation);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Application Data Record") != labels.end());
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tls_handshake) == nullptr);
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_tls_partial_client_hello.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 3, 0, 1),
+                    ipv4(10, 3, 0, 2),
+                    41003,
+                    443,
+                    {0x16U, 0x03U, 0x03U, 0x00U, 0x08U, 0x01U, 0x02U},
+                    0x18)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* tls_record = require_view(presentation, SelectedPacketByteViewKind::tls_record);
+        const auto* tls_handshake = require_view(presentation, SelectedPacketByteViewKind::tls_handshake);
+        PFL_EXPECT(tls_record->truncated);
+        PFL_EXPECT(tls_handshake->truncated);
+        const auto labels = collect_labels(presentation);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Record Fragment") != labels.end());
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello") != labels.end());
+        const auto record_payload = require_materialized_view(
+            presentation,
+            tls_record->id,
+            bytes,
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+        PFL_REQUIRE(!record_payload.bytes.empty());
+        PFL_EXPECT(record_payload.bytes[0] == 0x01U);
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_tls_zero_length_handshake_like.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 3, 1, 1),
+                    ipv4(10, 3, 1, 2),
+                    41004,
+                    443,
+                    {0x16U, 0x03U, 0x03U, 0x00U, 0x00U},
+                    0x18)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tls_record) == nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tls_handshake) == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap")));
+
+        const auto packet3 = require_packet(session, 2U);
+        const auto packet4 = require_packet(session, 3U);
+        const auto packet5 = require_packet(session, 4U);
+        const auto packet3_presentation = require_flow_aware_presentation(session, packet3);
+        const auto packet4_presentation = require_flow_aware_presentation(session, packet4);
+        const auto packet5_presentation = require_flow_aware_presentation(session, packet5);
+
+        PFL_EXPECT(find_view(packet3_presentation, SelectedPacketByteViewKind::tls_record) == nullptr);
+        PFL_EXPECT(find_view(packet3_presentation, SelectedPacketByteViewKind::tls_handshake) == nullptr);
+
+        const auto* packet4_tls_record = require_view(packet4_presentation, SelectedPacketByteViewKind::tls_record);
+        const auto* packet4_tls_handshake = require_view(packet4_presentation, SelectedPacketByteViewKind::tls_handshake);
+        const auto* packet5_tls_record = require_view(packet5_presentation, SelectedPacketByteViewKind::tls_record);
+        const auto* packet5_tls_handshake = require_view(packet5_presentation, SelectedPacketByteViewKind::tls_handshake);
+        PFL_EXPECT(packet4_tls_record->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
+        PFL_EXPECT(packet4_tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
+        PFL_EXPECT(packet5_tls_record->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
+        PFL_EXPECT(packet5_tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::tls_reconstructed_record);
+        expect_parent(*packet4_tls_record, SelectedPacketByteViewKind::tcp_payload);
+        expect_parent(*packet4_tls_handshake, SelectedPacketByteViewKind::tls_record);
+        expect_parent(*packet5_tls_record, SelectedPacketByteViewKind::tcp_payload);
+        expect_parent(*packet5_tls_handshake, SelectedPacketByteViewKind::tls_record);
+        PFL_EXPECT(packet4_tls_record->offset == 0U);
+        PFL_EXPECT(packet5_tls_record->offset == 0U);
+        PFL_EXPECT(packet4_tls_record->captured_length == packet5_tls_record->captured_length);
+        expect_materialized_view_aliases_derived_owner(packet4_presentation, *packet4_tls_record);
+        expect_materialized_view_aliases_derived_owner(packet4_presentation, *packet4_tls_handshake);
+        expect_materialized_view_aliases_derived_owner(packet5_presentation, *packet5_tls_record);
+        expect_materialized_view_aliases_derived_owner(packet5_presentation, *packet5_tls_handshake);
     }
 
     {
@@ -729,8 +1092,11 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* crypto_frame = require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U);
         const auto* crypto_data =
             require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U);
+        const auto* tls_handshake =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::tls_handshake, 0U);
         PFL_EXPECT(quic_packet->owner_kind == session_detail::SelectedPacketByteOwnerKind::captured_packet);
         PFL_EXPECT(plaintext->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext);
+        PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
         PFL_EXPECT(quic_packet->offset >= udp_payload->offset);
         PFL_EXPECT(quic_packet->offset + quic_packet->captured_length <= udp_payload->offset + udp_payload->captured_length);
         expect_parent(*quic_packet, SelectedPacketByteViewKind::udp_payload);
@@ -738,19 +1104,25 @@ void run_selected_packet_byte_presentation_tests_impl() {
         expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
         expect_parent_in_scope(*crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
         expect_parent_in_scope(*crypto_data, SelectedPacketByteViewKind::quic_frame, 0U);
+        expect_parent_in_scope(*tls_handshake, SelectedPacketByteViewKind::quic_crypto_data, 0U);
         expect_materialized_view_aliases_owner_bytes(presentation, quic_packet->id, bytes);
         expect_materialized_view_aliases_derived_owner(presentation, *plaintext);
         expect_materialized_view_aliases_derived_owner(presentation, *crypto_frame);
         expect_materialized_view_aliases_derived_owner(presentation, *crypto_data);
+        expect_materialized_view_aliases_derived_owner(presentation, *tls_handshake);
 
         const auto frame_materialized = require_materialized_view(presentation, crypto_frame->id, bytes);
         const auto crypto_data_materialized = require_materialized_view(presentation, crypto_data->id, bytes);
+        const auto tls_handshake_materialized = require_materialized_view(presentation, tls_handshake->id, bytes);
         PFL_REQUIRE(!frame_materialized.bytes.empty());
         PFL_REQUIRE(!crypto_data_materialized.bytes.empty());
+        PFL_REQUIRE(!tls_handshake_materialized.bytes.empty());
         PFL_EXPECT(frame_materialized.bytes.size() > crypto_data_materialized.bytes.size());
         PFL_EXPECT(frame_materialized.bytes[0] != crypto_data_materialized.bytes[0]);
         PFL_EXPECT(crypto_data_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(tls_handshake_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(crypto_data->quic_crypto_stream_offset.has_value());
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_record, 0U) == nullptr);
     }
 
     {
@@ -817,6 +1189,8 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U) == nullptr);
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_handshake, 0U) == nullptr);
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_record, 0U) == nullptr);
     }
 
     {

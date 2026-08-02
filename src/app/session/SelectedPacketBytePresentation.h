@@ -10,6 +10,7 @@
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
 #include "app/session/SessionQuicPresentation.h"
+#include "app/session/SessionTlsPresentation.h"
 
 namespace pfl {
 class HexDumpService;
@@ -20,6 +21,8 @@ namespace pfl::session_detail {
 enum class SelectedPacketByteOwnerKind : std::uint8_t {
     captured_packet = 0,
     quic_initial_plaintext,
+    quic_crypto_prefix,
+    tls_reconstructed_record,
 };
 
 struct SelectedPacketByteOwnerId {
@@ -68,6 +71,9 @@ enum class SelectedPacketByteViewKind : std::uint8_t {
     quic_initial_plaintext,
     quic_frame,
     quic_crypto_data,
+    dns_message,
+    tls_record,
+    tls_handshake,
 };
 
 enum class SelectedPacketByteViewRole : std::uint8_t {
@@ -108,6 +114,18 @@ struct SelectedPacketByteViewDescriptor {
     bool truncated {false};
     std::optional<PacketByteRange> payload_range {};
     std::optional<std::uint64_t> quic_crypto_stream_offset {};
+    std::optional<TlsRecordContentTypeKind> tls_record_content_type_kind {};
+    std::optional<std::uint8_t> tls_record_content_type {};
+    std::optional<TlsHandshakeKind> tls_handshake_kind {};
+    std::optional<std::uint8_t> tls_handshake_type {};
+};
+
+struct SelectedPacketByteBuildOptions {
+    std::span<const std::uint8_t> packet_bytes {};
+    std::optional<std::uint64_t> flow_packet_index {};
+    TlsInspectionParserContext tls_initial_parser_context {};
+    std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
+    std::optional<QuicPresentationResult> quic_presentation {};
 };
 
 struct SelectedPacketBytePresentation {
@@ -156,7 +174,7 @@ struct SelectedPacketByteViewContent {
 [[nodiscard]] SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     const PacketDetails& details,
     const PacketRef& packet,
-    std::optional<QuicPresentationResult> quic_presentation = {}
+    SelectedPacketByteBuildOptions options = {}
 );
 
 [[nodiscard]] std::optional<SelectedPacketByteMaterialization> materialize_selected_packet_byte_view(

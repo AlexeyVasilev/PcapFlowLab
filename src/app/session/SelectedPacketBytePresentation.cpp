@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <sstream>
 
+#include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/TlsInspectionParser.h"
 
 namespace pfl::session_detail {
 
@@ -14,6 +16,14 @@ constexpr SelectedPacketByteOwnerId kCapturedPacketOwnerId {
     .kind = SelectedPacketByteOwnerKind::captured_packet,
     .occurrence = 0U,
 };
+
+void append_quic_tls_handshake_views(
+    SelectedPacketBytePresentation& presentation,
+    const QuicPresentationPacket& quic_packet,
+    std::uint8_t packet_scope,
+    const SelectedPacketByteOwnerId& owner_id,
+    std::uint32_t owner_captured_length
+);
 
 bool packet_byte_range_equals(const PacketByteRange& lhs, const PacketByteRange& rhs) noexcept {
     return lhs.offset == rhs.offset &&
@@ -45,7 +55,11 @@ bool equivalent_view(
     const std::uint32_t captured_length,
     const bool truncated,
     const std::optional<PacketByteRange>& payload_range,
-    const std::optional<std::uint64_t>& quic_crypto_stream_offset
+    const std::optional<std::uint64_t>& quic_crypto_stream_offset,
+    const std::optional<TlsRecordContentTypeKind>& tls_record_content_type_kind,
+    const std::optional<std::uint8_t>& tls_record_content_type,
+    const std::optional<TlsHandshakeKind>& tls_handshake_kind,
+    const std::optional<std::uint8_t>& tls_handshake_type
 ) noexcept {
     return existing.parent_id == parent_id &&
         existing.owner_id == owner_id &&
@@ -58,7 +72,11 @@ bool equivalent_view(
         existing.captured_length == captured_length &&
         existing.truncated == truncated &&
         optional_packet_byte_range_equals(existing.payload_range, payload_range) &&
-        existing.quic_crypto_stream_offset == quic_crypto_stream_offset;
+        existing.quic_crypto_stream_offset == quic_crypto_stream_offset &&
+        existing.tls_record_content_type_kind == tls_record_content_type_kind &&
+        existing.tls_record_content_type == tls_record_content_type &&
+        existing.tls_handshake_kind == tls_handshake_kind &&
+        existing.tls_handshake_type == tls_handshake_type;
 }
 
 std::optional<std::uint32_t> narrow_u32(const std::size_t value) noexcept {
@@ -68,12 +86,50 @@ std::optional<std::uint32_t> narrow_u32(const std::size_t value) noexcept {
     return static_cast<std::uint32_t>(value);
 }
 
+std::string tls_handshake_type_label(
+    const TlsHandshakeKind kind,
+    const std::optional<std::uint8_t> handshake_type
+) {
+    switch (kind) {
+    case TlsHandshakeKind::client_hello:
+        return "ClientHello";
+    case TlsHandshakeKind::server_hello:
+        return "ServerHello";
+    case TlsHandshakeKind::new_session_ticket:
+        return "NewSessionTicket";
+    case TlsHandshakeKind::encrypted_extensions:
+        return "EncryptedExtensions";
+    case TlsHandshakeKind::certificate:
+        return "Certificate";
+    case TlsHandshakeKind::server_key_exchange:
+        return "ServerKeyExchange";
+    case TlsHandshakeKind::certificate_request:
+        return "CertificateRequest";
+    case TlsHandshakeKind::server_hello_done:
+        return "ServerHelloDone";
+    case TlsHandshakeKind::certificate_verify:
+        return "CertificateVerify";
+    case TlsHandshakeKind::client_key_exchange:
+        return "ClientKeyExchange";
+    case TlsHandshakeKind::finished:
+        return "Finished";
+    case TlsHandshakeKind::unknown:
+        static_cast<void>(handshake_type);
+        return "Unknown";
+    }
+    return "Unknown";
+}
+
 std::string owner_kind_key(const SelectedPacketByteOwnerKind kind) {
     switch (kind) {
     case SelectedPacketByteOwnerKind::captured_packet:
         return "captured_packet";
     case SelectedPacketByteOwnerKind::quic_initial_plaintext:
         return "quic_initial_plaintext";
+    case SelectedPacketByteOwnerKind::quic_crypto_prefix:
+        return "quic_crypto_prefix";
+    case SelectedPacketByteOwnerKind::tls_reconstructed_record:
+        return "tls_reconstructed_record";
     default:
         return "unknown";
     }
@@ -170,6 +226,12 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "quic_frame";
     case SelectedPacketByteViewKind::quic_crypto_data:
         return "quic_crypto_data";
+    case SelectedPacketByteViewKind::dns_message:
+        return "dns";
+    case SelectedPacketByteViewKind::tls_record:
+        return "tls_record";
+    case SelectedPacketByteViewKind::tls_handshake:
+        return "tls_handshake";
     default:
         return "unknown";
     }
@@ -215,6 +277,9 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"quic_initial_plaintext", SelectedPacketByteViewKind::quic_initial_plaintext},
         {"quic_frame", SelectedPacketByteViewKind::quic_frame},
         {"quic_crypto_data", SelectedPacketByteViewKind::quic_crypto_data},
+        {"dns", SelectedPacketByteViewKind::dns_message},
+        {"tls_record", SelectedPacketByteViewKind::tls_record},
+        {"tls_handshake", SelectedPacketByteViewKind::tls_handshake},
     };
 
     const auto it = std::find_if(
@@ -231,6 +296,10 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
 }
 
 std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) {
+    const auto is_complete =
+        !descriptor.truncated &&
+        (!descriptor.declared_length.has_value() || descriptor.captured_length == *descriptor.declared_length);
+
     switch (descriptor.id.kind) {
     case SelectedPacketByteViewKind::frame:
         return "Frame";
@@ -338,6 +407,35 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return descriptor.quic_crypto_stream_offset.has_value() ? "CRYPTO Frame" : "QUIC Frame";
     case SelectedPacketByteViewKind::quic_crypto_data:
         return "CRYPTO Frame Data";
+    case SelectedPacketByteViewKind::dns_message:
+        return "DNS Message";
+    case SelectedPacketByteViewKind::tls_record:
+        if (!is_complete) {
+            return "TLS Record Fragment";
+        }
+        switch (descriptor.tls_record_content_type_kind.value_or(TlsRecordContentTypeKind::unknown)) {
+        case TlsRecordContentTypeKind::handshake:
+            return "TLS Handshake Record";
+        case TlsRecordContentTypeKind::application_data:
+            return "TLS Application Data Record";
+        case TlsRecordContentTypeKind::alert:
+            return "TLS Alert Record";
+        case TlsRecordContentTypeKind::change_cipher_spec:
+            return "TLS Change Cipher Spec Record";
+        case TlsRecordContentTypeKind::unknown:
+        default:
+            return "TLS Record";
+        }
+    case SelectedPacketByteViewKind::tls_handshake: {
+        auto label = std::string {"TLS Handshake Message"};
+        const auto handshake_kind = descriptor.tls_handshake_kind.value_or(TlsHandshakeKind::unknown);
+        const auto handshake_type = descriptor.tls_handshake_type;
+        const auto handshake_title = tls_handshake_type_label(handshake_kind, handshake_type);
+        if (!handshake_title.empty() && handshake_title != "Unknown") {
+            label += ", " + handshake_title;
+        }
+        return label;
+    }
     default:
         return "Bytes";
     }
@@ -494,7 +592,11 @@ std::optional<SelectedPacketByteViewId> append_view(
     const std::uint32_t captured_length,
     const bool truncated,
     const std::optional<PacketByteRange>& payload_range = std::nullopt,
-    const std::optional<std::uint64_t>& quic_crypto_stream_offset = std::nullopt
+    const std::optional<std::uint64_t>& quic_crypto_stream_offset = std::nullopt,
+    const std::optional<TlsRecordContentTypeKind>& tls_record_content_type_kind = std::nullopt,
+    const std::optional<std::uint8_t>& tls_record_content_type = std::nullopt,
+    const std::optional<TlsHandshakeKind>& tls_handshake_kind = std::nullopt,
+    const std::optional<std::uint8_t>& tls_handshake_type = std::nullopt
 ) {
     if (captured_length == 0U ||
         offset >= owner_byte_length ||
@@ -516,7 +618,11 @@ std::optional<SelectedPacketByteViewId> append_view(
                 captured_length,
                 truncated,
                 payload_range,
-                quic_crypto_stream_offset
+                quic_crypto_stream_offset,
+                tls_record_content_type_kind,
+                tls_record_content_type,
+                tls_handshake_kind,
+                tls_handshake_type
             );
         })) {
         return std::nullopt;
@@ -550,6 +656,10 @@ std::optional<SelectedPacketByteViewId> append_view(
         .truncated = truncated,
         .payload_range = payload_range,
         .quic_crypto_stream_offset = quic_crypto_stream_offset,
+        .tls_record_content_type_kind = tls_record_content_type_kind,
+        .tls_record_content_type = tls_record_content_type,
+        .tls_handshake_kind = tls_handshake_kind,
+        .tls_handshake_type = tls_handshake_type,
     });
     return id;
 }
@@ -1483,6 +1593,472 @@ void append_quic_initial_plaintext_views(
             frame.crypto_offset
         );
     }
+
+    append_quic_tls_handshake_views(
+        presentation,
+        quic_packet,
+        static_cast<std::uint8_t>(packet_index),
+        *owner_id,
+        *owner_length
+    );
+}
+
+bool has_confirmed_tls_context(const TlsInspectionParserContext& initial_parser_context) noexcept {
+    return initial_parser_context.semantic_state == TlsInspectionSemanticState::post_change_cipher_spec ||
+        initial_parser_context.negotiated_cipher_suite.has_value() ||
+        initial_parser_context.negotiated_version.has_value();
+}
+
+bool tls_payload_is_owned_by_tls(
+    std::span<const std::uint8_t> payload,
+    const TlsInspectionParserContext& initial_parser_context
+) {
+    const auto header = inspect_tls_record_header(payload);
+    if (!header.has_value()) {
+        return false;
+    }
+
+    const bool confirmed_tls_context = has_confirmed_tls_context(initial_parser_context);
+    if (header->declared_payload_length == 0U) {
+        return header->content_type_kind == TlsRecordContentTypeKind::application_data &&
+            confirmed_tls_context;
+    }
+
+    if (header->complete_record_available) {
+        return true;
+    }
+
+    if (confirmed_tls_context) {
+        return true;
+    }
+
+    return header->content_type_kind == TlsRecordContentTypeKind::handshake &&
+        payload.size() >= 7U &&
+        payload.size() > 5U;
+}
+
+const TlsSelectedPacketContribution* find_selected_packet_contribution(
+    const TlsSelectedPacketRecordContext& context,
+    const std::uint64_t flow_packet_index
+) {
+    const auto it = std::find_if(
+        context.contributions.begin(),
+        context.contributions.end(),
+        [&](const TlsSelectedPacketContribution& contribution) {
+            return contribution.flow_packet_index == flow_packet_index;
+        }
+    );
+    return it == context.contributions.end() ? nullptr : &(*it);
+}
+
+bool selected_packet_starts_record(
+    const TlsSelectedPacketRecordContext& context,
+    const std::uint64_t flow_packet_index
+) {
+    return !context.contributions.empty() &&
+        context.contributions.front().flow_packet_index == flow_packet_index;
+}
+
+std::size_t selected_packet_reassembled_tls_prefix_bytes(const SelectedPacketByteBuildOptions& options) {
+    if (!options.flow_packet_index.has_value()) {
+        return 0U;
+    }
+
+    std::size_t consumed_prefix_bytes = 0U;
+    const auto flow_packet_index = *options.flow_packet_index;
+    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
+        const auto* selected_contribution =
+            find_selected_packet_contribution(reconstructed_record, flow_packet_index);
+        if (selected_contribution == nullptr) {
+            continue;
+        }
+
+        const auto record_offset = selected_contribution->record_offset;
+        if (record_offset > consumed_prefix_bytes) {
+            continue;
+        }
+        const auto contribution_end = record_offset + selected_contribution->captured_byte_count;
+        if (contribution_end > consumed_prefix_bytes) {
+            consumed_prefix_bytes = contribution_end;
+        }
+    }
+
+    return consumed_prefix_bytes;
+}
+
+TlsInspectionParserContext selected_packet_starting_tls_context(const SelectedPacketByteBuildOptions& options) {
+    if (!options.flow_packet_index.has_value()) {
+        return options.tls_initial_parser_context;
+    }
+
+    if (options.tls_initial_parser_context.semantic_state != TlsInspectionSemanticState::unknown) {
+        return options.tls_initial_parser_context;
+    }
+
+    const auto flow_packet_index = *options.flow_packet_index;
+    for (const auto& reconstructed_record : options.reconstructed_tls_records) {
+        if (selected_packet_starts_record(reconstructed_record, flow_packet_index)) {
+            return reconstructed_record.initial_parser_context;
+        }
+    }
+
+    return options.tls_initial_parser_context;
+}
+
+std::optional<PacketByteRange> tls_record_payload_range(
+    const std::uint32_t record_offset,
+    const TlsRecordModel& record
+) {
+    constexpr std::uint32_t kTlsRecordHeaderSize = 5U;
+    if (record.available_bytes <= kTlsRecordHeaderSize) {
+        return std::nullopt;
+    }
+
+    std::optional<std::uint32_t> declared_length {};
+    if (record.declared_payload_length.has_value()) {
+        declared_length = static_cast<std::uint32_t>(*record.declared_payload_length);
+    }
+
+    return PacketByteRange {
+        .offset = record_offset + kTlsRecordHeaderSize,
+        .declared_length = declared_length,
+        .captured_length = static_cast<std::uint32_t>(record.available_bytes - kTlsRecordHeaderSize),
+        .truncated = record.status != TlsRecordStatus::complete &&
+            (!declared_length.has_value() || (record.available_bytes - kTlsRecordHeaderSize) < *declared_length),
+    };
+}
+
+std::optional<PacketByteRange> tls_handshake_payload_range(
+    const std::uint32_t handshake_offset,
+    const TlsHandshakeModel& handshake
+) {
+    constexpr std::uint32_t kTlsHandshakeHeaderSize = 4U;
+    if (handshake.available_bytes <= kTlsHandshakeHeaderSize) {
+        return std::nullopt;
+    }
+
+    std::optional<std::uint32_t> declared_length {};
+    if (handshake.declared_body_length.has_value()) {
+        declared_length = static_cast<std::uint32_t>(*handshake.declared_body_length);
+    }
+
+    return PacketByteRange {
+        .offset = handshake_offset + kTlsHandshakeHeaderSize,
+        .declared_length = declared_length,
+        .captured_length = static_cast<std::uint32_t>(handshake.available_bytes - kTlsHandshakeHeaderSize),
+        .truncated = handshake.status != TlsHandshakeStatus::complete &&
+            (!declared_length.has_value() || (handshake.available_bytes - kTlsHandshakeHeaderSize) < *declared_length),
+    };
+}
+
+bool tls_record_requires_fragment_state(
+    const TlsRecordModel& record,
+    const std::optional<std::uint32_t>& declared_length
+) {
+    return record.status == TlsRecordStatus::partial_header ||
+        (!declared_length.has_value() && record.status != TlsRecordStatus::complete);
+}
+
+bool tls_handshake_requires_fragment_state(
+    const TlsHandshakeModel& handshake,
+    const std::optional<std::uint32_t>& declared_length
+) {
+    return handshake.status == TlsHandshakeStatus::partial_header ||
+        (!declared_length.has_value() && handshake.status != TlsHandshakeStatus::complete);
+}
+
+void append_tls_handshake_views(
+    std::vector<SelectedPacketByteViewDescriptor>& views,
+    const SelectedPacketByteViewId& parent_id,
+    const SelectedPacketByteOwnerId& owner_id,
+    const SelectedPacketByteOwnerKind owner_kind,
+    const std::uint32_t owner_captured_length,
+    const std::uint8_t scope,
+    const std::uint32_t base_offset,
+    std::span<const TlsHandshakeModel> handshakes,
+    const std::optional<std::uint64_t> quic_crypto_stream_base = std::nullopt
+) {
+    for (const auto& handshake : handshakes) {
+        const auto handshake_offset = narrow_u32(static_cast<std::size_t>(base_offset) + handshake.source_offset);
+        const auto captured_length = narrow_u32(handshake.available_bytes);
+        if (!handshake_offset.has_value() || !captured_length.has_value()) {
+            continue;
+        }
+
+        std::optional<std::uint32_t> declared_length {};
+        if (handshake.total_size.has_value()) {
+            declared_length = narrow_u32(*handshake.total_size);
+        }
+        const auto payload_range = tls_handshake_payload_range(*handshake_offset, handshake);
+        const auto stream_offset = quic_crypto_stream_base.has_value()
+            ? std::optional<std::uint64_t> {*quic_crypto_stream_base + handshake.source_offset}
+            : std::nullopt;
+        const auto truncated = tls_handshake_requires_fragment_state(handshake, declared_length);
+        append_view(
+            views,
+            parent_id,
+            owner_id,
+            owner_kind,
+            SelectedPacketByteViewRole::protocol_unit,
+            SelectedPacketByteViewKind::tls_handshake,
+            scope,
+            owner_captured_length,
+            *handshake_offset,
+            declared_length,
+            *captured_length,
+            truncated,
+            payload_range,
+            stream_offset,
+            std::nullopt,
+            std::nullopt,
+            handshake.kind,
+            handshake.type
+        );
+    }
+}
+
+void append_dns_message_view(
+    SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewId& parent_id,
+    const SelectedPacketByteViewDescriptor& parent_view,
+    const DnsPacketMessageView& dns_view
+) {
+    PacketByteRange unit_range = dns_view.message_range;
+    if (parent_view.payload_range.has_value() && !dns_view.tcp_length_prefixed) {
+        unit_range = *parent_view.payload_range;
+    }
+
+    append_protocol_unit_view(
+        presentation.views,
+        parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::dns_message,
+        0U,
+        presentation.owner_captured_length,
+        unit_range,
+        std::nullopt
+    );
+}
+
+void append_tls_record_view(
+    SelectedPacketBytePresentation& presentation,
+    const std::optional<SelectedPacketByteViewId>& parent_id,
+    const SelectedPacketByteOwnerId& owner_id,
+    const SelectedPacketByteOwnerKind owner_kind,
+    const std::uint32_t owner_captured_length,
+    const std::uint8_t scope,
+    const TlsRecordModel& record,
+    const std::uint32_t base_offset,
+    const std::optional<std::uint64_t> quic_crypto_stream_base = std::nullopt
+) {
+    const auto record_offset = narrow_u32(static_cast<std::size_t>(base_offset) + record.source_offset);
+    const auto captured_length = narrow_u32(record.available_bytes);
+    if (!record_offset.has_value() || !captured_length.has_value()) {
+        return;
+    }
+
+    std::optional<std::uint32_t> declared_length {};
+    if (record.total_size.has_value()) {
+        declared_length = narrow_u32(*record.total_size);
+    }
+    const auto payload_range = tls_record_payload_range(*record_offset, record);
+    const auto truncated = tls_record_requires_fragment_state(record, declared_length);
+    const auto record_id = append_view(
+        presentation.views,
+        parent_id,
+        owner_id,
+        owner_kind,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::tls_record,
+        scope,
+        owner_captured_length,
+        *record_offset,
+        declared_length,
+        *captured_length,
+        truncated,
+        payload_range,
+        quic_crypto_stream_base,
+        record.content_type_kind,
+        record.content_type
+    );
+    if (!record_id.has_value()) {
+        return;
+    }
+
+    if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+        record.handshake_payload_kind == TlsHandshakePayloadKind::plaintext &&
+        !record.handshake_messages.empty()) {
+        append_tls_handshake_views(
+            presentation.views,
+            *record_id,
+            owner_id,
+            owner_kind,
+            owner_captured_length,
+            record_id->occurrence,
+            base_offset,
+            std::span<const TlsHandshakeModel>(record.handshake_messages.data(), record.handshake_messages.size()),
+            quic_crypto_stream_base
+        );
+    }
+}
+
+std::optional<std::vector<std::uint8_t>> build_quic_crypto_prefix_bytes(
+    std::span<const std::uint8_t> plaintext_bytes,
+    std::span<const QuicPresentationFrame> frames,
+    std::span<const TlsHandshakeModel> handshakes
+) {
+    std::size_t max_required_bytes = 0U;
+    for (const auto& handshake : handshakes) {
+        max_required_bytes = std::max(max_required_bytes, handshake.source_offset + handshake.available_bytes);
+    }
+    if (max_required_bytes == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> prefix_bytes {};
+    prefix_bytes.reserve(max_required_bytes);
+    for (const auto& frame : frames) {
+        if (frame.type != QuicPresentationFrameType::crypto ||
+            !frame.crypto_offset.has_value() ||
+            !frame.crypto_length.has_value() ||
+            !frame.crypto_data_offset_in_plaintext.has_value()) {
+            continue;
+        }
+
+        const auto crypto_offset = static_cast<std::size_t>(*frame.crypto_offset);
+        if (crypto_offset > prefix_bytes.size()) {
+            break;
+        }
+
+        const auto crypto_length = *frame.crypto_length;
+        const auto plaintext_offset = *frame.crypto_data_offset_in_plaintext;
+        if (plaintext_offset > plaintext_bytes.size() ||
+            crypto_length > plaintext_bytes.size() - plaintext_offset) {
+            break;
+        }
+
+        const auto copy_start = prefix_bytes.size() > crypto_offset
+            ? prefix_bytes.size() - crypto_offset
+            : 0U;
+        if (copy_start >= crypto_length) {
+            continue;
+        }
+
+        const auto max_copy_length = std::min<std::size_t>(
+            crypto_length - copy_start,
+            max_required_bytes > prefix_bytes.size() ? max_required_bytes - prefix_bytes.size() : 0U
+        );
+        if (max_copy_length == 0U) {
+            continue;
+        }
+
+        prefix_bytes.insert(
+            prefix_bytes.end(),
+            plaintext_bytes.begin() + static_cast<std::ptrdiff_t>(plaintext_offset + copy_start),
+            plaintext_bytes.begin() + static_cast<std::ptrdiff_t>(plaintext_offset + copy_start + max_copy_length)
+        );
+        if (prefix_bytes.size() >= max_required_bytes) {
+            break;
+        }
+    }
+
+    if (prefix_bytes.empty()) {
+        return std::nullopt;
+    }
+    return prefix_bytes;
+}
+
+const SelectedPacketByteViewDescriptor* find_quic_crypto_parent_view(
+    const SelectedPacketBytePresentation& presentation,
+    const std::uint8_t scope,
+    const TlsHandshakeModel& handshake
+) {
+    const auto handshake_begin = static_cast<std::uint64_t>(handshake.source_offset);
+    const auto handshake_end = handshake_begin + handshake.available_bytes;
+    const auto* exact_parent = static_cast<const SelectedPacketByteViewDescriptor*>(nullptr);
+    for (const auto& view : presentation.views) {
+        if (view.id.kind != SelectedPacketByteViewKind::quic_crypto_data ||
+            view.id.scope != scope ||
+            !view.quic_crypto_stream_offset.has_value()) {
+            continue;
+        }
+        const auto frame_begin = *view.quic_crypto_stream_offset;
+        const auto frame_end = frame_begin + view.captured_length;
+        if (handshake_begin >= frame_begin && handshake_begin < frame_end) {
+            return &view;
+        }
+        if (exact_parent == nullptr &&
+            handshake_end > frame_begin &&
+            handshake_begin < frame_end) {
+            exact_parent = &view;
+        }
+    }
+    return exact_parent;
+}
+
+void append_quic_tls_handshake_views(
+    SelectedPacketBytePresentation& presentation,
+    const QuicPresentationPacket& quic_packet,
+    const std::uint8_t packet_scope,
+    const SelectedPacketByteOwnerId& owner_id,
+    const std::uint32_t owner_captured_length
+) {
+    if (quic_packet.tls_handshakes.empty()) {
+        return;
+    }
+
+    const auto* owner = presentation.find_derived_owner(owner_id);
+    if (owner == nullptr) {
+        return;
+    }
+
+    const auto crypto_prefix_bytes = build_quic_crypto_prefix_bytes(
+        std::span<const std::uint8_t>(owner->bytes.data(), owner->bytes.size()),
+        std::span<const QuicPresentationFrame>(quic_packet.frames.data(), quic_packet.frames.size()),
+        std::span<const TlsHandshakeModel>(quic_packet.tls_handshakes.data(), quic_packet.tls_handshakes.size())
+    );
+    if (!crypto_prefix_bytes.has_value()) {
+        return;
+    }
+
+    const auto crypto_owner_id = append_derived_owner(
+        presentation.derived_owners,
+        SelectedPacketByteOwnerKind::quic_crypto_prefix,
+        static_cast<std::size_t>(packet_scope),
+        std::move(*crypto_prefix_bytes)
+    );
+    if (!crypto_owner_id.has_value()) {
+        return;
+    }
+
+    const auto* crypto_owner = presentation.find_derived_owner(*crypto_owner_id);
+    if (crypto_owner == nullptr) {
+        return;
+    }
+    const auto crypto_owner_length = narrow_u32(crypto_owner->bytes.size());
+    if (!crypto_owner_length.has_value()) {
+        return;
+    }
+
+    for (const auto& handshake : quic_packet.tls_handshakes) {
+        const auto* parent_view = find_quic_crypto_parent_view(presentation, packet_scope, handshake);
+        if (parent_view == nullptr) {
+            continue;
+        }
+        append_tls_handshake_views(
+            presentation.views,
+            parent_view->id,
+            *crypto_owner_id,
+            SelectedPacketByteOwnerKind::quic_crypto_prefix,
+            *crypto_owner_length,
+            packet_scope,
+            0U,
+            std::span<const TlsHandshakeModel>(&handshake, 1U),
+            0U
+        );
+    }
 }
 
 }  // namespace
@@ -1512,7 +2088,7 @@ const SelectedPacketByteDerivedOwner* SelectedPacketBytePresentation::find_deriv
 SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     const PacketDetails& details,
     const PacketRef& packet,
-    std::optional<QuicPresentationResult> quic_presentation
+    SelectedPacketByteBuildOptions options
 ) {
     SelectedPacketBytePresentation presentation {};
     presentation.owner_captured_length = packet.captured_length;
@@ -1612,6 +2188,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     }
 
     std::optional<SelectedPacketByteViewId> outer_ip_id {};
+    std::optional<SelectedPacketByteViewId> outer_tcp_id {};
     if (details.has_ipv4 && details.ipv4.payload_range.has_value()) {
         outer_ip_range = details.ipv4.payload_range;
         const auto outer_ipv4_offset = outer_payload_range.has_value()
@@ -1649,6 +2226,16 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     }
 
     std::optional<SelectedPacketByteViewId> outer_udp_id {};
+    if (!details.has_ah && details.has_tcp && outer_ip_range.has_value()) {
+        outer_tcp_id = append_tcp_segment_view(
+            presentation.views,
+            outer_ip_id,
+            presentation.owner_captured_length,
+            *outer_ip_range,
+            details.tcp,
+            SelectedPacketByteViewKind::tcp_payload
+        );
+    }
     if (!details.has_ah && details.has_udp && outer_ip_range.has_value()) {
         outer_udp_id = append_udp_datagram_view(
             presentation.views,
@@ -1672,8 +2259,8 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     const auto* outer_udp_view = outer_udp_id.has_value() ? presentation.find_view(*outer_udp_id) : nullptr;
     const QuicPresentationResult empty_quic_presentation {};
     const auto& quic_presentation_ref =
-        quic_presentation.has_value()
-            ? *quic_presentation
+        options.quic_presentation.has_value()
+            ? *options.quic_presentation
             : empty_quic_presentation;
     const auto quic_packet_ids = append_quic_packet_views(
         presentation,
@@ -1682,9 +2269,108 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     );
     append_quic_initial_plaintext_views(
         presentation,
-        std::move(quic_presentation),
+        std::move(options.quic_presentation),
         std::span<const std::optional<SelectedPacketByteViewId>>(quic_packet_ids.data(), quic_packet_ids.size())
     );
+
+    if (!options.packet_bytes.empty()) {
+        DnsPacketProtocolAnalyzer dns_analyzer {};
+        if (const auto dns_message = dns_analyzer.inspect_message(options.packet_bytes, packet.data_link_type);
+            dns_message.has_value()) {
+            if (outer_udp_id.has_value() &&
+                !details.has_vxlan &&
+                !details.has_geneve &&
+                !details.has_gtpu &&
+                quic_presentation_ref.packets.empty()) {
+                if (const auto* udp_view = presentation.find_view(*outer_udp_id); udp_view != nullptr) {
+                    append_dns_message_view(presentation, *outer_udp_id, *udp_view, *dns_message);
+                }
+            } else if (outer_tcp_id.has_value() && dns_message->tcp_length_prefixed) {
+                if (const auto* tcp_view = presentation.find_view(*outer_tcp_id); tcp_view != nullptr) {
+                    append_dns_message_view(presentation, *outer_tcp_id, *tcp_view, *dns_message);
+                }
+            }
+        }
+    }
+
+    if (outer_tcp_id.has_value() && !options.packet_bytes.empty()) {
+        const auto* tcp_view = presentation.find_view(*outer_tcp_id);
+        if (tcp_view != nullptr && tcp_view->payload_range.has_value()) {
+            const auto tls_payload_offset = static_cast<std::size_t>(tcp_view->payload_range->offset);
+            const auto tls_payload_length = static_cast<std::size_t>(tcp_view->payload_range->captured_length);
+            if (tls_payload_offset <= options.packet_bytes.size() &&
+                tls_payload_length <= options.packet_bytes.size() - tls_payload_offset) {
+                for (auto& reconstructed_record : options.reconstructed_tls_records) {
+                    if (reconstructed_record.captured_bytes.empty()) {
+                        continue;
+                    }
+                    TlsInspectionParser parser {};
+                    const auto inspection = parser.inspect(
+                        std::span<const std::uint8_t>(
+                            reconstructed_record.captured_bytes.data(),
+                            reconstructed_record.captured_bytes.size()
+                        ),
+                        reconstructed_record.initial_parser_context
+                    );
+                    const auto owner_id = append_derived_owner(
+                        presentation.derived_owners,
+                        SelectedPacketByteOwnerKind::tls_reconstructed_record,
+                        0U,
+                        std::move(reconstructed_record.captured_bytes)
+                    );
+                    if (!owner_id.has_value()) {
+                        continue;
+                    }
+                    const auto* owner = presentation.find_derived_owner(*owner_id);
+                    if (owner == nullptr) {
+                        continue;
+                    }
+                    const auto owner_length = narrow_u32(owner->bytes.size());
+                    if (!owner_length.has_value()) {
+                        continue;
+                    }
+                    if (!inspection.records.empty()) {
+                        append_tls_record_view(
+                            presentation,
+                            outer_tcp_id,
+                            *owner_id,
+                            SelectedPacketByteOwnerKind::tls_reconstructed_record,
+                            *owner_length,
+                            0U,
+                            inspection.records.front(),
+                            0U
+                        );
+                    }
+                }
+
+                const auto reassembled_prefix_bytes = std::min<std::size_t>(
+                    selected_packet_reassembled_tls_prefix_bytes(options),
+                    tls_payload_length
+                );
+                const auto remaining_payload = std::span<const std::uint8_t>(
+                    options.packet_bytes.data() + static_cast<std::ptrdiff_t>(tls_payload_offset + reassembled_prefix_bytes),
+                    tls_payload_length - reassembled_prefix_bytes
+                );
+                auto tls_context = selected_packet_starting_tls_context(options);
+                if (tls_payload_is_owned_by_tls(remaining_payload, tls_context)) {
+                    TlsInspectionParser parser {};
+                    const auto inspection = parser.inspect(remaining_payload, tls_context);
+                    for (const auto& record : inspection.records) {
+                        append_tls_record_view(
+                            presentation,
+                            outer_tcp_id,
+                            kCapturedPacketOwnerId,
+                            SelectedPacketByteOwnerKind::captured_packet,
+                            presentation.owner_captured_length,
+                            0U,
+                            record,
+                            static_cast<std::uint32_t>(tls_payload_offset + reassembled_prefix_bytes)
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     return presentation;
 }

@@ -2078,9 +2078,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Decrypted Payload")));
     UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("CRYPTO Frame")));
     UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("TLS Handshake Message, ClientHello")));
+    UI_EXPECT(!packet_byte_view_labels(quic_details_model).contains(QStringLiteral("TLS Handshake Record")));
     quic_controller.selectPacketByteView(QStringLiteral("quic_crypto_data:0:0"));
     UI_EXPECT(quic_details_model->selectedPacketByteViewId() == QStringLiteral("quic_crypto_data:0:0"));
     UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("03 03")));
+    quic_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(quic_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
 
     quic_controller.setFlowDetailsTabIndex(1);
     UI_EXPECT(quic_stream_model->rowCount() >= 1);
@@ -2925,6 +2930,10 @@ int main(int argc, char* argv[]) {
     const auto dns_packet_index = dns_packet_model->data(dns_packet_model->index(0, 0), PacketListModel::PacketIndexRole).toULongLong();
     stream_controller.setSelectedPacketIndex(dns_packet_index);
     UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Payload"));
+    UI_EXPECT(packet_byte_view_labels(stream_details_model).contains(QStringLiteral("DNS Message")));
+    stream_controller.selectPacketByteView(QStringLiteral("dns:0:0"));
+    UI_EXPECT(stream_details_model->selectedPacketByteViewId() == QStringLiteral("dns:0:0"));
+    UI_EXPECT(stream_details_model->selectedPacketByteViewText().contains(QStringLiteral("12 34 01 00")));
 
     stream_controller.setSelectedFlowIndex(-1);
     UI_EXPECT(stream_model->rowCount() == 0);
@@ -3120,6 +3129,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_details_model != nullptr);
     UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("TLS")));
     UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
+    UI_EXPECT(packet_byte_view_labels(tls_details_model).contains(QStringLiteral("TLS Handshake Record")));
+    UI_EXPECT(packet_byte_view_labels(tls_details_model).contains(QStringLiteral("TLS Handshake Message, ClientHello")));
+    tls_details_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(tls_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(tls_details_model->selectedPacketByteViewText().contains(QStringLiteral("03 03")));
 
     const auto gtpu_nested_data_fixture_path =
         ui_test_root() / "data" / "parsing" / "gtpu" / "32_gtpu_inner_ipv4_udp_data.pcap";
