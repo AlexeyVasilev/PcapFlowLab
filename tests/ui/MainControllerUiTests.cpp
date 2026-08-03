@@ -479,6 +479,31 @@ QObject* named_object(QObject* root, const char* objectName) {
     return root->findChild<QObject*>(QString::fromLatin1(objectName));
 }
 
+QStringList direct_child_tab_button_texts(QObject* root, const char* objectName) {
+    QStringList labels {};
+    auto* container = named_object(root, objectName);
+    if (container == nullptr) {
+        return labels;
+    }
+
+    const auto children = container->findChildren<QObject*>(QString {}, Qt::FindDirectChildrenOnly);
+    for (auto* child : children) {
+        if (child == nullptr) {
+            continue;
+        }
+
+        const auto text = child->property("text");
+        if (text.isValid()) {
+            const auto label = text.toString();
+            if (!label.isEmpty()) {
+                labels.push_back(label);
+            }
+        }
+    }
+
+    return labels;
+}
+
 QString packet_size_bucket_label(const std::uint32_t captured_length) {
     if (captured_length <= 63U) {
         return QStringLiteral("0-63");
@@ -2619,6 +2644,94 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
     });
 
+    run_ui_section("packet_details_tabs_protocol_removed", [&]() {
+        auto packet_details_pane = load_qml_component("src/ui/qml/components/PacketDetailsPane.qml", "PacketDetailsPane");
+        PacketDetailsViewModel packet_model {};
+        packet_model.setPacketDetailsText(QStringLiteral("Packet number in file: 1"));
+        packet_model.setPacketBytePresentation(
+            {},
+            QStringLiteral("frame:0:0"),
+            QStringLiteral("Frame"),
+            QStringLiteral("complete"),
+            0U,
+            {},
+            QStringLiteral("Byte view loaded."),
+            QStringLiteral("00000000")
+        );
+        packet_details_pane.object->setProperty("packetDetailsModel", QVariant::fromValue(static_cast<QObject*>(&packet_model)));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        const auto expected_packet_tab_labels = QStringList {
+            QStringLiteral("Summary"),
+            QStringLiteral("Bytes")
+        };
+        UI_EXPECT(direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsPacketTabs"
+        ) == expected_packet_tab_labels);
+        UI_EXPECT(!direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsPacketTabs"
+        ).contains(QStringLiteral("Protocol")));
+
+        auto* packet_tabs = named_object(packet_details_pane.object.get(), "packetDetailsPacketTabs");
+        UI_REQUIRE(packet_tabs != nullptr);
+        packet_tabs->setProperty("currentIndex", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(packet_tabs->property("currentIndex").toInt() == 0);
+    });
+
+    run_ui_section("stream_item_details_tabs_protocol_removed", [&]() {
+        auto packet_details_pane = load_qml_component("src/ui/qml/components/PacketDetailsPane.qml", "PacketDetailsPane");
+        PacketDetailsViewModel stream_item_model {};
+        stream_item_model.setPacketDetailsText(QStringLiteral("Label: HTTP GET /"));
+        stream_item_model.setDetailsTitle(QStringLiteral("Stream Item Details"));
+        stream_item_model.setStreamItemPresentation(
+            QStringLiteral("HTTP GET /"),
+            QStringLiteral("Source packet: #1"),
+            {}
+        );
+        stream_item_model.setPayloadTabTitle(QStringLiteral("Item Data"));
+        stream_item_model.setStreamItemDataPresentation(
+            false,
+            QStringLiteral("http_message"),
+            QStringLiteral("unavailable"),
+            QStringLiteral("synthetic"),
+            QStringLiteral("packet_local"),
+            0U,
+            {},
+            {},
+            {},
+            {},
+            QStringLiteral("Item data unavailable."),
+            {}
+        );
+        packet_details_pane.object->setProperty(
+            "packetDetailsModel",
+            QVariant::fromValue(static_cast<QObject*>(&stream_item_model))
+        );
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        const auto expected_stream_tab_labels = QStringList {
+            QStringLiteral("Summary"),
+            QStringLiteral("Item Data")
+        };
+        UI_EXPECT(direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsStreamTabs"
+        ) == expected_stream_tab_labels);
+        UI_EXPECT(!direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsStreamTabs"
+        ).contains(QStringLiteral("Protocol")));
+
+        auto* stream_tabs = named_object(packet_details_pane.object.get(), "packetDetailsStreamTabs");
+        UI_REQUIRE(stream_tabs != nullptr);
+        stream_tabs->setProperty("currentIndex", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(stream_tabs->property("currentIndex").toInt() == 0);
+    });
+
     const auto protocol_path_capture_path = write_temp_pcap(
         "pfl_ui_protocol_path_roles.pcap",
         make_classic_pcap({
@@ -3113,6 +3226,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Packet Details"));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
     UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Payload"));
+    UI_EXPECT(stream_details_model->streamItemDataText().isEmpty());
 
     stream_controller.setSelectedFlowIndex(dns_stream_flow_index);
     UI_EXPECT(stream_model->rowCount() == 1);

@@ -118,7 +118,7 @@ Packet Details describe the selected packet.
 - `Summary`: packet summary and packet-specific metadata.
 - `Raw`: raw packet hex view.
 - `TCP Payload` / `UDP Payload`: transport payload bytes for packet-level context.
-- `Protocol`: protocol-specific interpretation of the selected packet bytes when analyzable.
+- Current UI surface: `Summary` and `Bytes`.
 
 Packet Details reflect packet truth and packet bytes.
 
@@ -128,7 +128,7 @@ Stream Item Details describe the selected stream item.
 
 - `Summary`: compact structured item metadata and source ownership.
 - `Item Data`: exact bytes owned by the selected semantic stream item when one authoritative owner exists.
-- `Protocol`: richer protocol-specific interpretation of the stream item and attached semantics.
+- Current UI surface: `Summary` and `Item Data`.
 
 Stream Item Details reflect semantic-item truth, which may be reassembled and may not be packet-identical.
 
@@ -136,9 +136,9 @@ Summary-specific rules:
 
 - Stream Item Summary is model-driven and frontend-neutral.
 - Stream Item Summary semantics must come from authoritative stream-item model fields retained by selected-flow construction.
-- Display labels and Protocol text may remain visible for bubbles, tabs, and debug surfaces, but they are not semantic sources for Stream Item Summary.
+- Display labels and retained protocol text may remain visible in bubbles or internal debug-oriented surfaces, but they are not semantic sources for Stream Item Summary.
 - Item Data remains the byte-ownership surface and must stay separate from Summary semantics.
-- Protocol remains the richer text/debug surface until its remaining useful fields are either migrated or intentionally deferred.
+- Retained protocol text remains an internal richer text/debug surface until its remaining useful fields are either migrated or intentionally deferred.
 
 ### 8.3 Stream Item Data Backend Contract
 
@@ -153,13 +153,13 @@ Selected-flow backend now also supports a presentation-neutral Item Data model f
 - Synthetic rows such as gap markers expose no Item Data.
 - Bounded selected-flow packet/item limits still apply; the Item Data API must not read beyond the currently requested stream window.
 - Item Data materialization and hex formatting are selected-item-only operations; no eager per-row byte copies or preformatted dumps are retained for the whole stream result.
-- Qt and Tauri now surface this contract through `Summary / Item Data / Protocol` stream-item tabs.
-- Packet Details remain `Summary / Bytes / Protocol`.
+- Qt and Tauri now surface this contract through `Summary / Item Data` stream-item tabs.
+- Packet Details now use `Summary / Bytes`.
 - The Item Data view is selected-row-only and does not expose a packet-style selector hierarchy.
 
 Current limitation:
 
-- HTTP stream rows still expose Summary and Protocol, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
+- HTTP stream rows still expose structured Summary, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
 
 ## 9. Protocol-Specific Selected-Flow Rules
 

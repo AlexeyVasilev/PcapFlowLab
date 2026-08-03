@@ -74,6 +74,14 @@ Frame {
         return root.packetDetailsModel.payloadTabTitle
     }
 
+    function normalizePacketTabIndex(index) {
+        return index === 1 ? 1 : 0
+    }
+
+    function normalizeStreamTabIndex(index) {
+        return index === 1 ? 1 : 0
+    }
+
     function packetByteViews() {
         if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
             return []
@@ -772,15 +780,32 @@ Frame {
 
         TabBar {
             id: packetTabs
+            objectName: "packetDetailsPacketTabs"
             Layout.fillWidth: true
             visible: !root.isStreamItemDetails()
             spacing: 4
+            onCurrentIndexChanged: {
+                const normalizedIndex = root.normalizePacketTabIndex(currentIndex)
+                if (currentIndex !== normalizedIndex) {
+                    currentIndex = normalizedIndex
+                }
+            }
+
+            onVisibleChanged: {
+                if (visible) {
+                    const normalizedIndex = root.normalizePacketTabIndex(currentIndex)
+                    if (currentIndex !== normalizedIndex) {
+                        currentIndex = normalizedIndex
+                    }
+                }
+            }
 
             background: Rectangle {
                 color: "transparent"
             }
 
             TabButton {
+                objectName: "packetDetailsPacketSummaryTabButton"
                 text: "Summary"
                 implicitHeight: 30
 
@@ -805,31 +830,8 @@ Frame {
             }
 
             TabButton {
+                objectName: "packetDetailsPacketBytesTabButton"
                 text: "Bytes"
-                implicitHeight: 28
-
-                contentItem: Label {
-                    text: parent.text
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 11
-                    font.bold: parent.checked
-                    color: parent.checked ? "#0f172a" : "#64748b"
-                }
-
-                background: Rectangle {
-                    radius: 6
-                    color: parent.checked
-                        ? "#ffffff"
-                        : parent.hovered
-                            ? "#f8fafc"
-                            : "#f1f5f9"
-                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
-                }
-            }
-
-            TabButton {
-                text: "Protocol"
                 implicitHeight: 28
 
                 contentItem: Label {
@@ -855,15 +857,32 @@ Frame {
 
         TabBar {
             id: streamTabs
+            objectName: "packetDetailsStreamTabs"
             Layout.fillWidth: true
             visible: root.isStreamItemDetails()
             spacing: 4
+            onCurrentIndexChanged: {
+                const normalizedIndex = root.normalizeStreamTabIndex(currentIndex)
+                if (currentIndex !== normalizedIndex) {
+                    currentIndex = normalizedIndex
+                }
+            }
+
+            onVisibleChanged: {
+                if (visible) {
+                    const normalizedIndex = root.normalizeStreamTabIndex(currentIndex)
+                    if (currentIndex !== normalizedIndex) {
+                        currentIndex = normalizedIndex
+                    }
+                }
+            }
 
             background: Rectangle {
                 color: "transparent"
             }
 
             TabButton {
+                objectName: "packetDetailsStreamSummaryTabButton"
                 text: "Summary"
                 implicitHeight: 28
 
@@ -888,31 +907,8 @@ Frame {
             }
 
             TabButton {
+                objectName: "packetDetailsStreamItemDataTabButton"
                 text: "Item Data"
-                implicitHeight: 28
-
-                contentItem: Label {
-                    text: parent.text
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 11
-                    font.bold: parent.checked
-                    color: parent.checked ? "#0f172a" : "#64748b"
-                }
-
-                background: Rectangle {
-                    radius: 6
-                    color: parent.checked
-                        ? "#ffffff"
-                        : parent.hovered
-                            ? "#f8fafc"
-                            : "#f1f5f9"
-                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
-                }
-            }
-
-            TabButton {
-                text: "Protocol"
                 implicitHeight: 28
 
                 contentItem: Label {
@@ -1067,11 +1063,6 @@ Frame {
                 }
             }
 
-            TextPane {
-                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                    ? root.packetDetailsModel.protocolText
-                    : root.emptyText()
-            }
         }
 
         StackLayout {
@@ -1184,11 +1175,6 @@ Frame {
                 }
             }
 
-            TextPane {
-                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                    ? root.packetDetailsModel.protocolText
-                    : root.emptyText()
-            }
         }
     }
 }

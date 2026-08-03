@@ -174,9 +174,8 @@ The `Stream` tab now supports:
 - shared ARP stream items for selected ARP flows, one packet per item
 - Qt-like selected stream-item details with:
   - compact header/title block
-- `Summary / Payload / Protocol` tabs
-  - bounded payload preview
-  - protocol text when available
+  - `Summary / Item Data` tabs
+  - bounded item-data preview when authoritative bytes are available
 - shared structured source-packet references and constricted notes in the DTO path
 - stream reconstruction can recover after a valid source-capture attach
 - selected-flow stream latency on very large flows remains a known optimization area
@@ -345,7 +344,7 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - save/open index workflow polish
 - the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
-- packet inspector still intentionally simpler than Qt even though it now has `Summary / Bytes / Protocol`
+- packet inspector still intentionally simpler than Qt even though it now has `Summary / Bytes`
 - packet details display polish remains incomplete compared with Qt
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing

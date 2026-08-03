@@ -49,7 +49,7 @@ Implemented slice:
   - selected-flow packets
   - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags / Marker`
   - compact direction chips, TCP flag highlighting, and shared packet marker display such as `Suspected retransmission`
-- packet details tabs: `Summary / Bytes / Protocol`
+- packet details tabs: `Summary / Bytes`
   - Qt-like text-style packet summary in the `Summary` tab
 - selected-flow `Stream` workflow:
   - selected-flow-only
@@ -62,9 +62,8 @@ Implemented slice:
   - shared ARP stream items for selected ARP flows, one packet per item
   - Qt-like selected stream-item details with:
     - compact header/title block
-    - `Summary / Payload / Protocol` tabs
-    - bounded payload preview
-    - protocol text when available
+    - `Summary / Item Data` tabs
+    - bounded item-data preview when authoritative bytes are available
   - selected-flow stream latency on very large flows remains a known optimization area
 - richer `Statistics` workflow:
   - overview cards
@@ -165,7 +164,7 @@ Implemented slice:
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
 - The top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button.
 - The Stream tab keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
-- Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Payload / Protocol` tabs.
+- Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Item Data` tabs.
 - Selecting a stream item does not yet navigate to packet details or source packets.
 - Selected-flow packet and stream responsiveness on very large flows is still bounded, but not yet optimized deeply in the shared backend/session path.
 - The Statistics tab renders compact overview/statistics sections from the frontend-neutral overview DTO.
@@ -244,7 +243,7 @@ Implemented slice:
 - The following Analysis areas remain deferred:
   - richer charts
   - fuller Qt analysis workspace parity
-- Selected packet inspection is still basic compared with Qt even though it now has `Summary / Bytes / Protocol` tabs and shared selected packet-byte views.
+- Selected packet inspection is still basic compared with Qt even though it now has `Summary / Bytes` tabs and shared selected packet-byte views.
 - Packet details display polish still differs from Qt and remains a smaller parity task.
 - Packet details should eventually move toward a shared structured decoded-layer DTO so Qt, Tauri, and future CLI surfaces can render the same packet layer list consistently.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus the `Bytes` tab can be unavailable even though packet metadata is still shown.

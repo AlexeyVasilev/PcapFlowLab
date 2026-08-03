@@ -223,7 +223,6 @@
                   <div class="inspector-tabbar" aria-label="Packet details tabs">
                     <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
                     <button type="button" class="inspector-tab" data-packet-details-tab="bytes">Bytes</button>
-                    <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
                   </div>
                   <div class="details-scroll">
                     <p id="packetDetailsStateText" class="status-text"></p>
@@ -234,10 +233,6 @@
                       <select id="packetDetailsByteViewSelector" class="details-select"></select>
                       <p id="packetDetailsBytesStateText" class="status-text compact-status-text"></p>
                       <pre id="packetDetailsBytesText" class="details-pre byte-preview-pre">No packet selected.</pre>
-                    </section>
-                    <section class="packet-details-tab-panel" data-packet-details-panel="protocol">
-                      <p id="packetDetailsProtocolStateText" class="status-text compact-status-text"></p>
-                      <pre id="packetDetailsProtocolText" class="details-pre protocol-preview-pre">No packet selected.</pre>
                     </section>
                   </div>
                 </div>
@@ -255,7 +250,6 @@
                     <div class="inspector-tabbar" aria-label="Stream item details tabs">
                       <button type="button" class="inspector-tab active" data-stream-details-tab="summary">Summary</button>
                       <button id="streamDetailsItemDataTabButton" type="button" class="inspector-tab" data-stream-details-tab="item-data">Item Data</button>
-                      <button type="button" class="inspector-tab" data-stream-details-tab="protocol">Protocol</button>
                     </div>
                     <p id="streamDetailsStateText" class="status-text"></p>
                     <section class="stream-details-tab-panel active" data-stream-details-panel="summary">
@@ -264,10 +258,6 @@
                     <section class="stream-details-tab-panel" data-stream-details-panel="item-data">
                       <p id="streamDetailsItemDataStateText" class="status-text compact-status-text"></p>
                       <pre id="streamDetailsItemDataText" class="details-pre byte-preview-pre">Select a stream item to inspect details.</pre>
-                    </section>
-                    <section class="stream-details-tab-panel" data-stream-details-panel="protocol">
-                      <p id="streamDetailsProtocolStateText" class="status-text compact-status-text"></p>
-                      <pre id="streamDetailsProtocolText" class="details-pre protocol-preview-pre">Select a stream item to inspect details.</pre>
                     </section>
                   </div>
                 </div>
