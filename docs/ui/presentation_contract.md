@@ -527,6 +527,8 @@ Current direction note:
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
 - the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.
+- Packet Details Summary now treats packet-local DNS and HTTP fields as authoritative structured input and must not rebuild those Summary fields by reparsing the Protocol-tab text.
+- DHCP/BOOTP remains deferred in this stage because the current packet model still lacks one shared structured message view for Packet Details Summary.
 
 ### Bytes
 

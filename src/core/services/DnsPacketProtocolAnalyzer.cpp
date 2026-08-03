@@ -185,9 +185,7 @@ std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
         return std::nullopt;
     }
 
-    static_cast<void>(qname);
-    static_cast<void>(flags);
-    static_cast<void>(qtype_text(read_be16(message->bytes, offset)));
+    const auto qtype = read_be16(message->bytes, offset);
 
     const auto message_offset = narrow_u32(payload.offset + message->payload_offset);
     const auto declared_length = narrow_u32(message->bytes.size());
@@ -203,6 +201,13 @@ std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
             .truncated = false,
         },
         .tcp_length_prefixed = message->tcp_length_prefixed,
+        .is_response = (flags & 0x8000U) != 0U,
+        .transaction_id = read_be16(message->bytes, 0U),
+        .question_count = qdcount,
+        .answer_count = ancount,
+        .query_type = qtype,
+        .response_code = static_cast<std::uint8_t>(flags & 0x000FU),
+        .query_name = *qname,
     };
 }
 
@@ -210,46 +215,25 @@ std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint32_t data_link_type
 ) const {
-    PacketPayloadService payload_service {};
-    const auto payload = payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
-    if (!payload.found || payload.payload.empty()) {
+    const auto message = inspect_message(packet_bytes, data_link_type);
+    if (!message.has_value()) {
         return std::nullopt;
     }
-
-    const auto message = extract_dns_message(payload.payload);
-    if (!message.has_value() || message->bytes.size() < kDnsHeaderSize) {
-        return std::nullopt;
-    }
-
-    const auto flags = read_be16(message->bytes, 2U);
-    const auto qdcount = read_be16(message->bytes, 4U);
-    const auto ancount = read_be16(message->bytes, 6U);
-    if (qdcount == 0U || qdcount > 16U || ancount > 128U) {
-        return std::nullopt;
-    }
-
-    std::size_t offset = kDnsHeaderSize;
-    const auto qname = parse_dns_name(message->bytes, offset);
-    if (!qname.has_value() || offset + 4U > message->bytes.size()) {
-        return std::nullopt;
-    }
-
-    const auto qtype = read_be16(message->bytes, offset);
 
     std::ostringstream text {};
     text << "DNS\n"
-         << "  Message Type: " << (((flags & 0x8000U) != 0U) ? "Response" : "Query") << "\n"
-         << "  Transaction ID: 0x" << std::hex << std::uppercase << read_be16(message->bytes, 0U) << std::dec << "\n"
-         << "  Questions: " << qdcount << "\n"
-         << "  Answers: " << ancount;
+         << "  Message Type: " << (message->is_response ? "Response" : "Query") << "\n"
+         << "  Transaction ID: 0x" << std::hex << std::uppercase << message->transaction_id << std::dec << "\n"
+         << "  Questions: " << message->question_count << "\n"
+         << "  Answers: " << message->answer_count;
 
-    if (*qname != ".") {
+    if (message->query_name != ".") {
         text << "\n"
-             << "  QName: " << *qname;
+             << "  QName: " << message->query_name;
     }
 
     text << "\n"
-         << "  QType: " << qtype_text(qtype);
+         << "  QType: " << qtype_text(message->query_type);
 
     return text.str();
 }

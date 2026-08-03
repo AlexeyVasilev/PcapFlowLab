@@ -1005,13 +1005,32 @@ void run_packet_details_tests() {
     }
 
     {
-        const auto summary_layers = build_fixture_summary_layers("parsing/dns/dns_request_1.pcap");
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_dns);
+        PFL_EXPECT(!details->has_http);
+        PFL_EXPECT(!details->dns.is_response);
+        PFL_EXPECT(details->dns.query_name == "gsp85-ssl.ls.apple.com");
+        PFL_EXPECT(details->dns.query_type == 65U);
+        const auto summary_layers = build_flow_packet_summary_layers(
+            session,
+            0U,
+            0U,
+            64U,
+            "No protocol-specific details available for this packet."
+        );
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
         PFL_EXPECT(!summary_layers[summary_layers.size() - 2U].expanded_by_default);
         PFL_EXPECT(summary_layers.back().id == "dns");
         PFL_EXPECT(summary_layers.back().expanded_by_default);
         PFL_EXPECT(summary_layers.back().title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Message Type") == "Query");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "QName") == "gsp85-ssl.ls.apple.com");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "QType") == "HTTPS (65)");
         PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
@@ -2582,11 +2601,30 @@ void run_packet_details_tests() {
     }
 
     {
-        const auto summary_layers = build_fixture_summary_layers("parsing/http/http_get_1.pcap");
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_http);
+        PFL_EXPECT(!details->has_dns);
+        PFL_EXPECT(details->http.message_type == HttpMessageType::request);
+        PFL_EXPECT(details->http.method == "GET");
+        PFL_EXPECT(details->http.host == "www.kresla-darom.ru");
+        const auto summary_layers = build_flow_packet_summary_layers(
+            session,
+            0U,
+            0U,
+            64U,
+            "No protocol-specific details available for this packet."
+        );
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "tcp");
         PFL_EXPECT(summary_layers.back().id == "http");
         PFL_EXPECT(summary_layers.back().title.find("Hypertext Transfer Protocol") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Message Type") == "Request");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Method") == "GET");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Host") == "www.kresla-darom.ru");
         PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 

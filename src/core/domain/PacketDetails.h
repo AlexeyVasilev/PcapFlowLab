@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace pfl {
@@ -633,6 +634,29 @@ struct IgmpDetails {
     bool header_truncated {false};
 };
 
+struct DnsDetails {
+    bool is_response {false};
+    std::uint16_t transaction_id {0};
+    std::uint16_t query_type {0};
+    std::optional<std::uint8_t> response_code {};
+    std::string query_name {};
+};
+
+enum class HttpMessageType : std::uint8_t {
+    unknown,
+    request,
+    response,
+};
+
+struct HttpDetails {
+    HttpMessageType message_type {HttpMessageType::unknown};
+    std::string method {};
+    std::string path {};
+    std::string version {};
+    std::string host {};
+    std::string status_code {};
+};
+
 struct PacketDetails {
     std::uint64_t packet_index {0};
     std::uint32_t captured_length {0};
@@ -718,6 +742,12 @@ struct PacketDetails {
 
     bool has_igmp {false};
     IgmpDetails igmp {};
+
+    bool has_dns {false};
+    DnsDetails dns {};
+
+    bool has_http {false};
+    HttpDetails http {};
 
     [[nodiscard]] bool empty() const noexcept;
 };

@@ -4,6 +4,8 @@
 #include <span>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/DnsPacketProtocolAnalyzer.h"
+#include "core/services/HttpPacketProtocolAnalyzer.h"
 
 namespace pfl {
 
@@ -129,6 +131,46 @@ std::optional<PacketByteRange> make_packet_byte_range(
         .captured_length = static_cast<std::uint32_t>(captured_length),
         .truncated = truncated,
     };
+}
+
+void populate_application_protocol_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    PacketDetails& details
+) {
+    details.has_dns = false;
+    details.dns = {};
+    details.has_http = false;
+    details.http = {};
+
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    if (const auto dns = dns_analyzer.inspect_message(packet_bytes, packet_ref.data_link_type); dns.has_value()) {
+        details.has_dns = true;
+        details.dns = DnsDetails {
+            .is_response = dns->is_response,
+            .transaction_id = dns->transaction_id,
+            .query_type = dns->query_type,
+            .response_code = dns->response_code,
+            .query_name = dns->query_name,
+        };
+    }
+
+    HttpPacketProtocolAnalyzer http_analyzer {};
+    if (const auto http = http_analyzer.inspect_message(packet_bytes, packet_ref.data_link_type); http.has_value()) {
+        details.has_http = true;
+        details.http = HttpDetails {
+            .message_type = http->message_type == HttpPacketMessageType::request
+                ? HttpMessageType::request
+                : http->message_type == HttpPacketMessageType::response
+                    ? HttpMessageType::response
+                    : HttpMessageType::unknown,
+            .method = http->method,
+            .path = http->path,
+            .version = http->version,
+            .host = http->host,
+            .status_code = http->status_code,
+        };
+    }
 }
 
 std::optional<PacketByteRange> rebase_packet_byte_range(
@@ -4061,6 +4103,7 @@ std::optional<PacketDetails> decode_packet_details(
                 packet_end,
                 EffectiveTransportRole::top_level
             );
+            populate_application_protocol_details(packet_bytes, packet_ref, details);
             return details;
         }
 
@@ -4100,6 +4143,7 @@ std::optional<PacketDetails> decode_packet_details(
                     EffectiveTransportRole::top_level
                 );
             }
+            populate_application_protocol_details(packet_bytes, packet_ref, details);
             if (details.udp.dst_port == detail::kUdpPortGtpu) {
                 const auto gtpu_offset = transport_offset + detail::kUdpHeaderSize;
                 const auto gtpu_payload_end = udp_payload.has_value()
@@ -4386,6 +4430,7 @@ std::optional<PacketDetails> decode_packet_details(
                 packet_end,
                 EffectiveTransportRole::top_level
             );
+            populate_application_protocol_details(packet_bytes, packet_ref, details);
             return details;
         }
 
@@ -4425,6 +4470,7 @@ std::optional<PacketDetails> decode_packet_details(
                     EffectiveTransportRole::top_level
                 );
             }
+            populate_application_protocol_details(packet_bytes, packet_ref, details);
             if (details.udp.dst_port == detail::kUdpPortGtpu) {
                 const auto gtpu_offset = payload->payload_offset + detail::kUdpHeaderSize;
                 const auto gtpu_payload_end = udp_payload.has_value()

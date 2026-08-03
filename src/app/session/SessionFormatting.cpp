@@ -3144,49 +3144,6 @@ void apply_default_summary_layer_expansion(std::vector<PacketSummaryLayer>& laye
     }
 }
 
-std::string_view trim_ascii(std::string_view text) {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n')) {
-        text.remove_prefix(1U);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r' || text.back() == '\n')) {
-        text.remove_suffix(1U);
-    }
-    return text;
-}
-
-std::optional<std::string_view> first_non_empty_line(std::string_view text) {
-    while (!text.empty()) {
-        const auto newline = text.find('\n');
-        const auto line = trim_ascii(text.substr(0U, newline));
-        if (!line.empty()) {
-            return line;
-        }
-        if (newline == std::string_view::npos) {
-            break;
-        }
-        text.remove_prefix(newline + 1U);
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> find_protocol_detail_value(
-    std::string_view text,
-    const std::string_view prefix
-) {
-    while (!text.empty()) {
-        const auto newline = text.find('\n');
-        const auto line = trim_ascii(text.substr(0U, newline));
-        if (line.size() > prefix.size() && line.substr(0U, prefix.size()) == prefix) {
-            return std::string(trim_ascii(line.substr(prefix.size())));
-        }
-        if (newline == std::string_view::npos) {
-            break;
-        }
-        text.remove_prefix(newline + 1U);
-    }
-    return std::nullopt;
-}
-
 void append_protocol_field_if_present(
     std::vector<PacketSummaryField>& fields,
     std::string label,
@@ -3195,6 +3152,34 @@ void append_protocol_field_if_present(
     if (value.has_value() && !value->empty()) {
         fields.push_back(make_summary_field(std::move(label), *value));
     }
+}
+
+std::string dns_message_type_text(const DnsDetails& details) {
+    return details.is_response ? "Response" : "Query";
+}
+
+std::string dns_query_type_text(const std::uint16_t query_type) {
+    switch (query_type) {
+    case 1U:
+        return "A (1)";
+    case 28U:
+        return "AAAA (28)";
+    case 33U:
+        return "SRV (33)";
+    case 64U:
+        return "SVCB (64)";
+    case 65U:
+        return "HTTPS (65)";
+    default:
+        return std::to_string(query_type);
+    }
+}
+
+std::optional<std::string> dns_query_name_text(const DnsDetails& details) {
+    if (details.query_name.empty() || details.query_name == ".") {
+        return std::nullopt;
+    }
+    return details.query_name;
 }
 
 std::optional<PacketSummaryLayer> build_icmp_summary_layer(const PacketDetails& details) {
@@ -5084,17 +5069,8 @@ std::vector<PacketSummaryLayer> build_quic_summary_layers(
     );
 }
 
-std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
-    const PacketDetails& details,
-    std::string_view protocol_details_text
-) {
-    protocol_details_text = trim_ascii(protocol_details_text);
-    if (protocol_details_text.empty() ||
-        protocol_details_text == kNoProtocolDetailsMessage ||
-        protocol_details_text == kUnavailableProtocolDetailsMessage ||
-        details.has_pppoe ||
-        details.has_arp ||
-        details.has_igmp) {
+std::optional<PacketSummaryLayer> build_protocol_summary_layer(const PacketDetails& details) {
+    if (details.has_pppoe || details.has_arp || details.has_igmp) {
         return std::nullopt;
     }
 
@@ -5105,21 +5081,18 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
         return icmpv6_layer;
     }
 
-    const auto first_line = first_non_empty_line(protocol_details_text);
-    if (!first_line.has_value()) {
-        return std::nullopt;
-    }
-
-    if (*first_line == "DNS") {
+    if (details.has_dns) {
         std::vector<PacketSummaryField> fields {};
-        const auto message_type = find_protocol_detail_value(protocol_details_text, "Message Type:");
-        const auto qname = find_protocol_detail_value(protocol_details_text, "QName:");
-        const auto qtype = find_protocol_detail_value(protocol_details_text, "QType:");
+        const auto message_type = std::optional<std::string> {dns_message_type_text(details.dns)};
+        const auto qname = dns_query_name_text(details.dns);
+        const auto qtype = std::optional<std::string> {dns_query_type_text(details.dns.query_type)};
         append_protocol_field_if_present(fields, "Message Type", message_type);
         append_protocol_field_if_present(fields, "QName", qname);
         append_protocol_field_if_present(fields, "QType", qtype);
-        append_protocol_field_if_present(fields, "Transaction ID", find_protocol_detail_value(protocol_details_text, "Transaction ID:"));
-        append_protocol_field_if_present(fields, "Response Code", find_protocol_detail_value(protocol_details_text, "Response Code:"));
+        fields.push_back(make_summary_field("Transaction ID", format_hex16_value(details.dns.transaction_id)));
+        if (details.dns.response_code.has_value() && details.dns.is_response) {
+            fields.push_back(make_summary_field("Response Code", std::to_string(*details.dns.response_code)));
+        }
 
         std::string title = "Domain Name System";
         if (message_type.has_value()) {
@@ -5136,17 +5109,30 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
         };
     }
 
-    if (*first_line == "HTTP") {
+    if (details.has_http) {
         std::vector<PacketSummaryField> fields {};
-        const auto message_type = find_protocol_detail_value(protocol_details_text, "Message Type:");
-        const auto method = find_protocol_detail_value(protocol_details_text, "Method:");
-        const auto path = find_protocol_detail_value(protocol_details_text, "Path:");
-        const auto status_code = find_protocol_detail_value(protocol_details_text, "Status Code:");
+        const auto message_type = details.http.message_type == HttpMessageType::request
+            ? std::optional<std::string> {std::string {"Request"}}
+            : details.http.message_type == HttpMessageType::response
+                ? std::optional<std::string> {std::string {"Response"}}
+                : std::nullopt;
+        const auto method = details.http.method.empty() ? std::nullopt : std::optional<std::string> {details.http.method};
+        const auto path = details.http.path.empty() ? std::nullopt : std::optional<std::string> {details.http.path};
+        const auto status_code =
+            details.http.status_code.empty() ? std::nullopt : std::optional<std::string> {details.http.status_code};
         append_protocol_field_if_present(fields, "Message Type", message_type);
         append_protocol_field_if_present(fields, "Method", method);
         append_protocol_field_if_present(fields, "Path", path);
-        append_protocol_field_if_present(fields, "Version", find_protocol_detail_value(protocol_details_text, "Version:"));
-        append_protocol_field_if_present(fields, "Host", find_protocol_detail_value(protocol_details_text, "Host:"));
+        append_protocol_field_if_present(
+            fields,
+            "Version",
+            details.http.version.empty() ? std::nullopt : std::optional<std::string> {details.http.version}
+        );
+        append_protocol_field_if_present(
+            fields,
+            "Host",
+            details.http.host.empty() ? std::nullopt : std::optional<std::string> {details.http.host}
+        );
         append_protocol_field_if_present(fields, "Status Code", status_code);
 
         std::string title = "Hypertext Transfer Protocol";
@@ -7044,7 +7030,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     insert_packet_data_summary_layer(layers, options);
 
-    const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
+    const auto protocol_layer = build_protocol_summary_layer(details);
     if (!appended_tls_summary && protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
     }
