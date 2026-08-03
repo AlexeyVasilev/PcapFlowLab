@@ -197,6 +197,7 @@ fn main() {
         "src/app/session/CaptureSession.cpp",
         "src/app/session/ProtocolPathPresentation.cpp",
         "src/app/session/SelectedPacketBytePresentation.cpp",
+        "src/app/session/SelectedStreamItemDataPresentation.cpp",
         "src/app/session/SelectedFlowPacketSemantics.cpp",
         "src/app/session/SelectedPacketSummaryPreparation.cpp",
         "src/app/session/SessionFlowHelpers.cpp",

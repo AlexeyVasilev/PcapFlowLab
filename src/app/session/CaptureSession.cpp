@@ -1,6 +1,7 @@
 ﻿#include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionOpenHelpers.h"
@@ -3420,6 +3421,169 @@ std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::de
             .quic_presentation = std::move(quic_presentation),
         }
     );
+}
+
+session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto make_unavailable =
+        [&](const session_detail::StreamItemDataState state, std::string reason) {
+            return session_detail::SelectedStreamItemDataPresentation {
+                .stream_item_index = stream_item_index,
+                .semantic_kind = session_detail::StreamItemDataSemanticKind::other,
+                .source_kind = session_detail::StreamItemDataSourceKind::unavailable,
+                .state = state,
+                .assembly_kind = session_detail::StreamItemDataAssemblyKind::packet_local,
+                .available_length = 0U,
+                .declared_length = std::nullopt,
+                .captured_packet_range = std::nullopt,
+                .contributing_unit_count = std::nullopt,
+                .contributing_unit_kind = std::nullopt,
+                .quic_crypto_stream_offset = std::nullopt,
+                .owned_bytes = {},
+                .unavailable_reason = std::move(reason),
+            };
+        };
+
+    if (stream_item_index == 0U) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "Stream item index 0 is invalid."
+        );
+    }
+    if (limit == 0U || max_packets_to_scan == 0U) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "Selected stream item data requires non-zero packet and item bounds."
+        );
+    }
+    if (!has_source_capture()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "Selected stream item data requires source capture bytes."
+        );
+    }
+
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The selected flow index is outside the current listed-connection range."
+        );
+    }
+    const auto flow_protocol = protocol_id(connections[flow_index]);
+
+    static_cast<void>(list_flow_stream_items_for_packet_prefix(flow_index, max_packets_to_scan, limit));
+
+    if (!selected_flow_stream_context_.has_value() || !selected_flow_stream_context_->valid) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The bounded selected-flow stream context is unavailable."
+        );
+    }
+
+    const auto& context = *selected_flow_stream_context_;
+    if (context.flow_index != flow_index ||
+        context.rows.size() != context.intra_packet_ordinals.size() ||
+        context.rows.size() != context.stability_codes.size()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The bounded selected-flow stream context is incompatible with this request."
+        );
+    }
+
+    const auto row_it = std::find_if(context.rows.begin(), context.rows.end(), [&](const StreamItemRow& row) {
+        return row.stream_item_index == stream_item_index;
+    });
+    if (row_it == context.rows.end()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The selected stream item is stale or outside the requested bounded stream window."
+        );
+    }
+
+    const auto row_index = static_cast<std::size_t>(std::distance(context.rows.begin(), row_it));
+    return session_detail::derive_selected_stream_item_data_presentation(
+        *this,
+        flow_index,
+        flow_protocol,
+        *row_it,
+        decode_stream_stability(context.stability_codes[row_index]),
+        context.intra_packet_ordinals[row_index]
+    );
+}
+
+std::optional<std::vector<std::uint8_t>> CaptureSession::materialize_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto presentation = derive_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+
+    if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
+        if (!presentation.captured_packet_range.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet = find_packet(presentation.captured_packet_range->packet_index);
+        if (!packet.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_bytes = read_packet_data(*packet);
+        if (packet_bytes.empty()) {
+            return std::nullopt;
+        }
+        return session_detail::materialize_selected_stream_item_data(
+            presentation,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+        );
+    }
+
+    return session_detail::materialize_selected_stream_item_data(presentation, {});
+}
+
+std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data_hex_dump(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto presentation = derive_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+    HexDumpService service {};
+
+    if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
+        if (!presentation.captured_packet_range.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet = find_packet(presentation.captured_packet_range->packet_index);
+        if (!packet.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_bytes = read_packet_data(*packet);
+        if (packet_bytes.empty()) {
+            return std::nullopt;
+        }
+        return session_detail::format_selected_stream_item_data_hex_dump(
+            presentation,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            service
+        );
+    }
+
+    return session_detail::format_selected_stream_item_data_hex_dump(presentation, {}, service);
 }
 
 std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_dump(

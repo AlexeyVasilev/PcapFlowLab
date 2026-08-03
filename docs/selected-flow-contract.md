@@ -140,6 +140,25 @@ Contextual payload tab naming currently in effect:
 - Stream item details on TLS/HTTP stream items: `Item Payload`
 - Stream item details on QUIC stream items: `UDP Payload`
 
+### 8.3 Stream Item Data Backend Contract
+
+Selected-flow backend now also supports a presentation-neutral Item Data model for one selected stream item.
+
+- Item Data represents only the selected stream item's own bytes.
+- Item Data does not expose a packet-style protocol-level selector hierarchy.
+- One selected item has zero or one Item Data owner.
+- The owner is resolved on demand from either:
+  - an exact captured packet range; or
+  - bounded retained/reconstructed item bytes for that selected item.
+- Synthetic rows such as gap markers expose no Item Data.
+- Bounded selected-flow packet/item limits still apply; the Item Data API must not read beyond the currently requested stream window.
+- Item Data materialization and hex formatting are selected-item-only operations; no eager per-row byte copies or preformatted dumps are retained for the whole stream result.
+- This is a backend-only contract in the current pass. Existing Stream Item Details tabs, Summary, Payload, and Protocol behavior remain unchanged until later frontend wiring.
+
+Current limitation:
+
+- HTTP stream rows still expose Summary and preview-oriented payload/protocol text, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
+
 ## 9. Protocol-Specific Selected-Flow Rules
 
 ### 9.1 TLS
