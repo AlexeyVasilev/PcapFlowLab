@@ -123,7 +123,9 @@ private:
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(
         const StreamItemRow& row,
         const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
-        bool include_details
+        bool include_details,
+        std::size_t max_packets_to_scan = 0U,
+        std::size_t limit = 0U
     ) const;
     void join_finished_open_worker();
     void cancel_and_join_open_worker();

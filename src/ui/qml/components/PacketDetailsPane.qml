@@ -888,7 +888,7 @@ Frame {
             }
 
             TabButton {
-                text: root.payloadTabTitle()
+                text: "Item Data"
                 implicitHeight: 28
 
                 contentItem: Label {
@@ -1155,11 +1155,33 @@ Frame {
                 }
             }
 
-            TextPane {
-                monospace: true
-                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                    ? root.packetDetailsModel.payloadText
-                    : root.emptyText()
+            Rectangle {
+                color: "transparent"
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                        text: root.packetDetailsModel
+                            ? root.packetDetailsModel.streamItemDataStatusText
+                            : ""
+                        color: "#64748b"
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                    }
+
+                    TextPane {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        monospace: true
+                        viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            ? root.packetDetailsModel.streamItemDataText
+                            : root.emptyText()
+                    }
+                }
             }
 
             TextPane {

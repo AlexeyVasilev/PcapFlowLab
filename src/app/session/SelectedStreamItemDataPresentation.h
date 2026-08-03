@@ -78,6 +78,16 @@ struct SelectedStreamItemDataPresentation {
     std::string unavailable_reason {};
 };
 
+[[nodiscard]] std::string to_string(StreamItemDataSourceKind source_kind);
+[[nodiscard]] std::string to_string(StreamItemDataState state);
+[[nodiscard]] std::string to_string(StreamItemDataSemanticKind semantic_kind);
+[[nodiscard]] std::string to_string(StreamItemDataAssemblyKind assembly_kind);
+[[nodiscard]] std::string to_string(StreamItemDataContributionUnitKind contribution_unit_kind);
+
+[[nodiscard]] std::string format_selected_stream_item_data_status_text(
+    const SelectedStreamItemDataPresentation& presentation
+);
+
 [[nodiscard]] SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation(
     const CaptureSession& session,
     std::size_t flow_index,

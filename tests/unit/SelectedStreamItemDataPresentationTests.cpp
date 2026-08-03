@@ -10,6 +10,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "core/services/HexDumpService.h"
 
@@ -98,6 +99,16 @@ const StreamItemRow* find_stream_row_by_prefix(
         return row.label.rfind(prefix, 0U) == 0U;
     });
     return it == rows.end() ? nullptr : &(*it);
+}
+
+const FrontendStreamItemDto* find_frontend_stream_item_by_label(
+    const std::vector<FrontendStreamItemDto>& items,
+    const std::string_view label
+) {
+    const auto it = std::find_if(items.begin(), items.end(), [&](const FrontendStreamItemDto& item) {
+        return item.label == label;
+    });
+    return it == items.end() ? nullptr : &(*it);
 }
 
 session_detail::SelectedStreamItemDataPresentation require_selected_stream_item_data(
@@ -212,6 +223,46 @@ void run_selected_stream_item_data_presentation_tests() {
     }
 
     {
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(fixture_path("parsing/tcp/tcp_generic_payload_7.pcap"));
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stream = adapter.get_selected_flow_stream(30U, 32U);
+        PFL_REQUIRE(stream.items.size() == 1U);
+        PFL_EXPECT(stream.items[0].payload_preview_text.empty());
+        PFL_EXPECT(stream.items[0].payload_preview_unavailable_text.empty());
+        PFL_EXPECT(stream.items[0].stream_item_data.formatted_text.empty());
+
+        const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, stream.items[0].stream_item_index);
+        PFL_EXPECT(details.payload_tab_title == "Item Data");
+        PFL_EXPECT(details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.semantic_kind == "tcp_payload");
+        PFL_EXPECT(details.stream_item_data.source_kind == "captured_packet_range");
+        PFL_EXPECT(details.stream_item_data.formatted_text.find("48 65 6c 6c 6f") != std::string::npos);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stream = adapter.get_selected_flow_stream(30U, 16U);
+        const auto* row = find_frontend_stream_item_by_label(stream.items, "HTTP GET /");
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(row->stream_item_data.formatted_text.empty());
+
+        const auto details = adapter.get_selected_flow_stream_item_details(30U, 16U, row->stream_item_index);
+        PFL_EXPECT(details.payload_tab_title == "Item Data");
+        PFL_EXPECT(!details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(!details.stream_item_data.status_text.empty());
+        PFL_EXPECT(!details.stream_item_data.unavailable_text.empty());
+        PFL_EXPECT(details.stream_item_data.unavailable_text.find("authoritative item-owned byte sequence") != std::string::npos);
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), fast_options()));
 
@@ -271,6 +322,26 @@ void run_selected_stream_item_data_presentation_tests() {
             row->stream_item_index
         );
         PFL_EXPECT(materialized == row->summary_payload_bytes);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap"));
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stream = adapter.get_selected_flow_stream(5U, 16U);
+        const auto* row = find_frontend_stream_item_by_label(stream.items, "TLS ClientHello");
+        PFL_REQUIRE(row != nullptr);
+
+        const auto details = adapter.get_selected_flow_stream_item_details(5U, 16U, row->stream_item_index);
+        PFL_EXPECT(details.payload_tab_title == "Item Data");
+        PFL_EXPECT(details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.semantic_kind == "tls_record");
+        PFL_EXPECT(details.stream_item_data.assembly_kind == "reassembled");
+        PFL_EXPECT(details.stream_item_data.contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+        PFL_EXPECT(details.stream_item_data.contributing_unit_count == std::optional<std::uint64_t> {2U});
+        PFL_EXPECT(details.stream_item_data.formatted_text.find("16 03 03") != std::string::npos);
     }
 
     {
@@ -384,6 +455,24 @@ void run_selected_stream_item_data_presentation_tests() {
             protected_payload_presentation.captured_packet_range->packet_index);
         PFL_EXPECT(handshake_presentation.captured_packet_range->offset !=
             protected_payload_presentation.captured_packet_range->offset);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"));
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stream = adapter.get_selected_flow_stream(30U, 32U);
+        const auto* row = find_frontend_stream_item_by_label(stream.items, "QUIC Initial: CRYPTO");
+        PFL_REQUIRE(row != nullptr);
+
+        const auto details = adapter.get_selected_flow_stream_item_details(30U, 32U, row->stream_item_index);
+        PFL_EXPECT(details.payload_tab_title == "Item Data");
+        PFL_EXPECT(details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.semantic_kind == "quic_frame");
+        PFL_EXPECT(details.stream_item_data.logical_offset == std::optional<std::uint64_t> {0U});
+        PFL_EXPECT(details.stream_item_data.formatted_text.find("06") != std::string::npos);
     }
 
     {
@@ -524,6 +613,19 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(sixteenth != extended_rows.end());
         const auto second_page_presentation = require_selected_stream_item_data(session, 0U, 60U, 30U, 16U);
         PFL_EXPECT(second_page_presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(fixture_path("parsing/tls/tls_1_3_many_records_continuation_11.pcap"));
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stale_details = adapter.get_selected_flow_stream_item_details(30U, 15U, 16U);
+        PFL_EXPECT(stale_details.payload_tab_title == "Item Data");
+        PFL_EXPECT(!stale_details.stream_item_data.available);
+        PFL_EXPECT(stale_details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(stale_details.stream_item_data.unavailable_text.find("stale or outside the requested bounded stream window") != std::string::npos);
     }
 
     {

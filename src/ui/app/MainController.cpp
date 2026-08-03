@@ -1123,6 +1123,12 @@ QVariant optional_length_variant(const std::optional<std::uint32_t>& value) {
         : QVariant {};
 }
 
+QVariant optional_length_variant(const std::optional<std::uint64_t>& value) {
+    return value.has_value()
+        ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*value))
+        : QVariant {};
+}
+
 QVariantList packet_byte_view_descriptors_to_variant_list(
     const std::vector<session_detail::SelectedPacketByteViewPresentationDescriptor>& descriptors
 ) {
@@ -1366,43 +1372,12 @@ QStringList stream_item_constricted_summary_lines(const StreamItemRow& item) {
     return lines;
 }
 
-bool is_quic_stream_item_label(const QString& label) {
-    return label.startsWith(QStringLiteral("QUIC ")) ||
-           label == QStringLiteral("QUIC Initial: ACK") ||
-           label == QStringLiteral("QUIC Initial: CRYPTO") ||
-           label == QStringLiteral("ACK") ||
-           label == QStringLiteral("CRYPTO") ||
-           label == QStringLiteral("0-RTT") ||
-           label == QStringLiteral("Handshake") ||
-           label == QStringLiteral("Protected payload");
+QString stream_item_data_tab_title() {
+    return QStringLiteral("Item Data");
 }
 
-QString stream_item_payload_tab_title(const StreamItemRow& item) {
-    const auto label = QString::fromStdString(item.label);
-    const auto protocolText = QString::fromStdString(item.protocol_text);
-
-    if (protocolText.startsWith(QStringLiteral("Protocol: ARP"))) {
-        return QStringLiteral("ARP Payload");
-    }
-
-    if (is_quic_stream_item_label(label) || protocolText.startsWith(QStringLiteral("QUIC"))) {
-        return QStringLiteral("UDP Payload");
-    }
-
-    if (label.startsWith(QStringLiteral("TLS ")) ||
-        label.startsWith(QStringLiteral("HTTP ")) ||
-        label == QStringLiteral("HTTP Request") ||
-        label == QStringLiteral("HTTP Response") ||
-        protocolText.startsWith(QStringLiteral("TLS")) ||
-        protocolText.startsWith(QStringLiteral("HTTP"))) {
-        return QStringLiteral("Item Payload");
-    }
-
-    return QStringLiteral("Payload");
-}
-
-QString stream_payload_unavailable_text() {
-    return QStringLiteral("Payload is not available for this stream item.");
+QString stream_item_data_materialization_failure_text() {
+    return QStringLiteral("Item data unavailable • Failed to materialize the selected item bytes.");
 }
 
 QString stream_protocol_unavailable_text() {
@@ -1433,10 +1408,6 @@ QString source_capture_unavailable_stream_summary_text() {
         "Original source capture unavailable.\n\n"
         "Stream reconstruction requires source packet bytes.\n\n"
         "Reattach the original capture file to inspect stream items and stream-backed details.");
-}
-
-QString source_capture_unavailable_stream_payload_text() {
-    return QStringLiteral("Stream payload is unavailable because the original source capture cannot be read.");
 }
 
 QString source_capture_unavailable_stream_protocol_text() {
@@ -4963,6 +4934,7 @@ void MainController::showSourceUnavailablePacketDetailsPlaceholder() {
         source_capture_unavailable_packet_raw_text()
     );
     packet_details_model_.setHexText({});
+    packet_details_model_.clearStreamItemDataPresentation();
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
     packet_details_model_.setPayloadText({});
     packet_details_model_.setProtocolText(source_capture_unavailable_packet_protocol_text());
@@ -4976,8 +4948,22 @@ void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
     packet_details_model_.setSummaryLayers({});
     packet_details_model_.clearPacketBytePresentation();
     packet_details_model_.setHexText({});
-    packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
-    packet_details_model_.setPayloadText(source_capture_unavailable_stream_payload_text());
+    packet_details_model_.setPayloadTabTitle(stream_item_data_tab_title());
+    packet_details_model_.setPayloadText({});
+    packet_details_model_.setStreamItemDataPresentation(
+        false,
+        {},
+        QStringLiteral("unavailable"),
+        QStringLiteral("unavailable"),
+        {},
+        0U,
+        {},
+        {},
+        {},
+        {},
+        QStringLiteral("Item data unavailable • The original source capture cannot be read."),
+        {}
+    );
     packet_details_model_.setProtocolText(source_capture_unavailable_stream_protocol_text());
 }
 
@@ -6082,6 +6068,7 @@ void MainController::reloadSelectedPacketDetails() {
         selected_packet_byte_view_stable_id_.clear();
     }
 
+    packet_details_model_.clearStreamItemDataPresentation();
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
     packet_details_model_.setPayloadText({});
 
@@ -6122,52 +6109,68 @@ void MainController::reloadSelectedStreamDetails() {
         )
     ));
     packet_details_model_.clearPacketBytePresentation();
-    packet_details_model_.setPayloadTabTitle(stream_item_payload_tab_title(*itemIt));
-
-    if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {
-        packet_details_model_.setHexText({});
-        packet_details_model_.setPayloadText(
-            itemIt->payload_hex_text.empty()
-                ? stream_payload_unavailable_text()
-                : QString::fromStdString(itemIt->payload_hex_text)
-        );
-        const auto protocolText = itemIt->protocol_text.empty()
-            ? stream_protocol_unavailable_text()
-            : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
-        packet_details_model_.setProtocolText(
-            normalize_stream_protocol_text(
-                selected_flow_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
-            )
-        );
-        return;
-    }
-
-    if (itemIt->packet_indices.size() == 1U) {
-        const auto packet = session_.find_packet(itemIt->packet_indices.front());
-        if (packet.has_value()) {
-            const auto hexDump = session_.read_packet_hex_dump(*packet);
-            const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-            const auto protocolText = selected_flow_quic_protocol_text_for_packet(
-                session_,
-                selected_flow_index_,
-                packet->packet_index,
-                QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
-            );
-
-            packet_details_model_.setHexText(QString::fromStdString(hexDump));
-            if (!payloadHexDump.empty()) {
-                packet_details_model_.setPayloadText(QString::fromStdString(payloadHexDump));
-            } else {
-                packet_details_model_.setPayloadText(stream_payload_unavailable_text());
-            }
-            packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
-            return;
-        }
-    }
-
     packet_details_model_.setHexText({});
-    packet_details_model_.setPayloadText(stream_payload_unavailable_text());
-    packet_details_model_.setProtocolText(stream_protocol_unavailable_text());
+    packet_details_model_.setPayloadTabTitle(stream_item_data_tab_title());
+    packet_details_model_.clearStreamItemDataPresentation();
+
+    const auto flow_index = static_cast<std::size_t>(selected_flow_index_);
+    const auto packet_window_count = stream_packet_window_count_;
+    const auto item_limit = loaded_stream_item_count_ > 0U
+        ? loaded_stream_item_count_
+        : current_stream_items_.size();
+    const auto presentation = session_.derive_selected_flow_stream_item_data(
+        flow_index,
+        packet_window_count,
+        item_limit,
+        itemIt->stream_item_index
+    );
+    const auto formatted_text = session_.format_selected_flow_stream_item_data_hex_dump(
+        flow_index,
+        packet_window_count,
+        item_limit,
+        itemIt->stream_item_index
+    );
+    const auto item_data_available = formatted_text.has_value();
+    const auto item_data_requires_materialization = presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
+        presentation.state != session_detail::StreamItemDataState::synthetic;
+    const auto item_data_status_text = item_data_available || !item_data_requires_materialization
+        ? QString::fromStdString(session_detail::format_selected_stream_item_data_status_text(presentation))
+        : stream_item_data_materialization_failure_text();
+    packet_details_model_.setStreamItemDataPresentation(
+        item_data_available,
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.semantic_kind
+                : session_detail::StreamItemDataSemanticKind::other)),
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.source_kind
+                : session_detail::StreamItemDataSourceKind::unavailable)),
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.state
+                : session_detail::StreamItemDataState::unavailable)),
+        QString::fromStdString(session_detail::to_string(presentation.assembly_kind)),
+        item_data_available ? presentation.available_length : 0U,
+        optional_length_variant(presentation.declared_length),
+        optional_length_variant(presentation.contributing_unit_count),
+        presentation.contributing_unit_kind.has_value()
+            ? QString::fromStdString(session_detail::to_string(*presentation.contributing_unit_kind))
+            : QString {},
+        optional_length_variant(presentation.quic_crypto_stream_offset),
+        item_data_status_text,
+        formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {}
+    );
+    packet_details_model_.setPayloadText(formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {});
+
+    const auto protocolText = itemIt->protocol_text.empty()
+        ? stream_protocol_unavailable_text()
+        : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
+    packet_details_model_.setProtocolText(
+        normalize_stream_protocol_text(
+            selected_flow_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
+        )
+    );
 }
 
 void MainController::reloadActiveDetails() {

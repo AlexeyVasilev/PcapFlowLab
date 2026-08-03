@@ -479,7 +479,7 @@ Current Packet Details direction note:
 - the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
 - the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
 - complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
-- Stream Item Details tabs remain unchanged in this pass and continue to use their existing payload/protocol surfaces.
+- Stream Item Details now use `Summary / Item Data / Protocol`, where `Item Data` is selected-row-only and is backed by one bounded selected-item materialization.
 
 Qt also supports stream-item details in the same right-hand panel. That is noted separately below as a cross-cutting selection question.
 
@@ -677,6 +677,10 @@ Based on current Qt stream presentation, each stream item should expose:
 - contributing packet count;
 - source packet reference summary;
 - constricted / quality indicator when present.
+- selected-item-only Item Data through the details surface:
+  - exact selected-item bytes when authoritative;
+  - explicit unavailable / synthetic / stale state otherwise;
+  - no protocol-level byte selector hierarchy.
 
 Qt currently renders source-packet references in a compact user-facing form such as:
 
@@ -923,7 +927,7 @@ The contract does not require every frontend to expose every action immediately.
 | Inspector | protocol details text | frontend-neutral DTO | stable | shared product text is acceptable here | keep deep analysis out of scope |
 | Stream | stream item rows | frontend-neutral DTO | candidate | align with current Qt-visible stream fields | refine source-packet-reference structure |
 | Stream | stream load-more / boundedness | app/session + frontend-neutral DTO | stable | bounded selected-flow-only semantics are shared | expose packet-window metadata consistently |
-| Stream | stream item details | frontend-neutral DTO | deferred | do not freeze yet | revisit after packet inspector DTO stabilizes |
+| Stream | stream item details | frontend-neutral DTO | active | `Summary / Item Data / Protocol` backed by one selected-item materialization only | keep byte ownership in backend; avoid per-row eager text |
 | Statistics | counters | app/session + frontend-neutral DTO | stable | structured counters first | keep frontend formatting local |
 | Statistics | grouping / labels | frontend rendering or optional shared display semantics | needs decision | do not force into core | revisit after CLI requirements are clearer |
 | Analysis | analysis workspace | app/session + frontend-specific presentation | deferred | treat Qt as reference behavior | revisit after flows/packets/details/stream stabilize |

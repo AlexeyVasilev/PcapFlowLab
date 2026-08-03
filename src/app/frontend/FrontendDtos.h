@@ -282,6 +282,22 @@ struct FrontendStreamItemDto {
     std::string badge_text {};
     std::string summary_text {};
     std::vector<session_detail::PacketSummaryLayer> summary_layers {};
+    struct StreamItemDataDto {
+        bool available {false};
+        std::string semantic_kind {};
+        std::string source_kind {};
+        std::string state {};
+        std::string assembly_kind {};
+        std::uint64_t available_length {0};
+        std::optional<std::uint64_t> declared_length {};
+        std::optional<std::string> contributing_unit_kind {};
+        std::optional<std::uint64_t> contributing_unit_count {};
+        std::optional<std::uint64_t> logical_offset {};
+        std::string status_text {};
+        std::string formatted_text {};
+        std::string unavailable_text {};
+    };
+    StreamItemDataDto stream_item_data {};
     std::string payload_tab_title {};
     std::string payload_preview_text {};
     std::string payload_preview_unavailable_text {};

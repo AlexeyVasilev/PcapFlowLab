@@ -18,6 +18,42 @@ namespace {
 
 constexpr std::size_t kTlsRecordHeaderSize = 5U;
 
+std::string format_byte_count(const std::uint64_t count) {
+    return std::to_string(count) + (count == 1U ? " byte" : " bytes");
+}
+
+std::string status_prefix(const StreamItemDataState state) {
+    switch (state) {
+    case StreamItemDataState::complete:
+        return "Complete";
+    case StreamItemDataState::partial:
+        return "Partial";
+    case StreamItemDataState::truncated:
+        return "Truncated";
+    case StreamItemDataState::window_incomplete:
+        return "Window incomplete";
+    case StreamItemDataState::synthetic:
+        return "Synthetic item";
+    case StreamItemDataState::unavailable:
+    default:
+        return "Item data unavailable";
+    }
+}
+
+std::string join_status_parts(const std::vector<std::string>& parts) {
+    std::string text {};
+    for (const auto& part : parts) {
+        if (part.empty()) {
+            continue;
+        }
+        if (!text.empty()) {
+            text += " • ";
+        }
+        text += part;
+    }
+    return text;
+}
+
 SelectedStreamItemDataPresentation make_unavailable_presentation(
     const std::uint64_t stream_item_index,
     const StreamItemDataSemanticKind semantic_kind,
@@ -642,6 +678,134 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
 }
 
 }  // namespace
+
+std::string to_string(const StreamItemDataSourceKind source_kind) {
+    switch (source_kind) {
+    case StreamItemDataSourceKind::captured_packet_range:
+        return "captured_packet_range";
+    case StreamItemDataSourceKind::retained_item_bytes:
+        return "retained_item_bytes";
+    case StreamItemDataSourceKind::reconstructed_item:
+        return "reconstructed_item";
+    case StreamItemDataSourceKind::unavailable:
+    default:
+        return "unavailable";
+    }
+}
+
+std::string to_string(const StreamItemDataState state) {
+    switch (state) {
+    case StreamItemDataState::complete:
+        return "complete";
+    case StreamItemDataState::partial:
+        return "partial";
+    case StreamItemDataState::truncated:
+        return "truncated";
+    case StreamItemDataState::window_incomplete:
+        return "window_incomplete";
+    case StreamItemDataState::synthetic:
+        return "synthetic";
+    case StreamItemDataState::unavailable:
+    default:
+        return "unavailable";
+    }
+}
+
+std::string to_string(const StreamItemDataSemanticKind semantic_kind) {
+    switch (semantic_kind) {
+    case StreamItemDataSemanticKind::tcp_payload:
+        return "tcp_payload";
+    case StreamItemDataSemanticKind::http_message:
+        return "http_message";
+    case StreamItemDataSemanticKind::tls_record:
+        return "tls_record";
+    case StreamItemDataSemanticKind::tls_handshake:
+        return "tls_handshake";
+    case StreamItemDataSemanticKind::quic_packet:
+        return "quic_packet";
+    case StreamItemDataSemanticKind::quic_frame:
+        return "quic_frame";
+    case StreamItemDataSemanticKind::quic_crypto_data:
+        return "quic_crypto_data";
+    case StreamItemDataSemanticKind::opaque_payload:
+        return "opaque_payload";
+    case StreamItemDataSemanticKind::other:
+    default:
+        return "other";
+    }
+}
+
+std::string to_string(const StreamItemDataAssemblyKind assembly_kind) {
+    switch (assembly_kind) {
+    case StreamItemDataAssemblyKind::packet_local:
+        return "packet_local";
+    case StreamItemDataAssemblyKind::reassembled:
+        return "reassembled";
+    default:
+        return "packet_local";
+    }
+}
+
+std::string to_string(const StreamItemDataContributionUnitKind contribution_unit_kind) {
+    switch (contribution_unit_kind) {
+    case StreamItemDataContributionUnitKind::tcp_segment:
+        return "tcp_segment";
+    case StreamItemDataContributionUnitKind::quic_crypto_frame:
+        return "quic_crypto_frame";
+    default:
+        return "tcp_segment";
+    }
+}
+
+std::string format_selected_stream_item_data_status_text(
+    const SelectedStreamItemDataPresentation& presentation
+) {
+    if (presentation.state == StreamItemDataState::synthetic) {
+        return join_status_parts({
+            status_prefix(presentation.state),
+            presentation.unavailable_reason.empty()
+                ? "This Stream item has no byte data."
+                : presentation.unavailable_reason,
+        });
+    }
+
+    if (presentation.source_kind == StreamItemDataSourceKind::unavailable) {
+        return join_status_parts({
+            status_prefix(presentation.state),
+            presentation.unavailable_reason.empty()
+                ? "No authoritative item-owned byte sequence is retained for this Stream item."
+                : presentation.unavailable_reason,
+        });
+    }
+
+    std::vector<std::string> parts {};
+    parts.push_back(status_prefix(presentation.state));
+
+    if (presentation.contributing_unit_count.has_value() && presentation.contributing_unit_kind.has_value()) {
+        const auto count = *presentation.contributing_unit_count;
+        const auto source_text = *presentation.contributing_unit_kind ==
+                StreamItemDataContributionUnitKind::tcp_segment
+            ? "TCP segment"
+            : "CRYPTO frame";
+        parts.push_back(
+            "Reassembled from " + std::to_string(count) + " " +
+            source_text + (count == 1U ? "" : "s")
+        );
+    } else if (presentation.source_kind == StreamItemDataSourceKind::captured_packet_range) {
+        parts.push_back("Packet-backed");
+    }
+
+    if (presentation.quic_crypto_stream_offset.has_value()) {
+        parts.push_back("CRYPTO stream offset: " + std::to_string(*presentation.quic_crypto_stream_offset));
+    }
+
+    parts.push_back("Available: " + format_byte_count(presentation.available_length));
+    if (presentation.declared_length.has_value()) {
+        parts.push_back("Declared: " + format_byte_count(*presentation.declared_length));
+    }
+
+    return join_status_parts(parts);
+}
 
 SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation(
     const CaptureSession& session,

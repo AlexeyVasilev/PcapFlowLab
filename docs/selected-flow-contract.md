@@ -127,18 +127,10 @@ Packet Details reflect packet truth and packet bytes.
 Stream Item Details describe the selected stream item.
 
 - `Summary`: compact item metadata and source ownership.
-- `Item Payload`: payload/content of the semantic stream item where applicable.
-- `UDP Payload`: current payload tab name for QUIC stream items, because the payload view remains transport-oriented.
+- `Item Data`: exact bytes owned by the selected semantic stream item when one authoritative owner exists.
 - `Protocol`: richer protocol-specific interpretation of the stream item and attached semantics.
 
 Stream Item Details reflect semantic-item truth, which may be reassembled and may not be packet-identical.
-
-Contextual payload tab naming currently in effect:
-
-- Packet details on TCP packets: `TCP Payload`
-- Packet details on UDP packets: `UDP Payload`
-- Stream item details on TLS/HTTP stream items: `Item Payload`
-- Stream item details on QUIC stream items: `UDP Payload`
 
 ### 8.3 Stream Item Data Backend Contract
 
@@ -153,11 +145,13 @@ Selected-flow backend now also supports a presentation-neutral Item Data model f
 - Synthetic rows such as gap markers expose no Item Data.
 - Bounded selected-flow packet/item limits still apply; the Item Data API must not read beyond the currently requested stream window.
 - Item Data materialization and hex formatting are selected-item-only operations; no eager per-row byte copies or preformatted dumps are retained for the whole stream result.
-- This is a backend-only contract in the current pass. Existing Stream Item Details tabs, Summary, Payload, and Protocol behavior remain unchanged until later frontend wiring.
+- Qt and Tauri now surface this contract through `Summary / Item Data / Protocol` stream-item tabs.
+- Packet Details remain `Summary / Bytes / Protocol`.
+- The Item Data view is selected-row-only and does not expose a packet-style selector hierarchy.
 
 Current limitation:
 
-- HTTP stream rows still expose Summary and preview-oriented payload/protocol text, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
+- HTTP stream rows still expose Summary and Protocol, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
 
 ## 9. Protocol-Specific Selected-Flow Rules
 

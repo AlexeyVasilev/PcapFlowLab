@@ -388,6 +388,50 @@ std::string packet_byte_view_content_json(const pfl::FrontendPacketDetailsDto::P
     return out.str();
 }
 
+std::string stream_item_data_json(const pfl::FrontendStreamItemDto::StreamItemDataDto& item_data) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"available\":" << bool_json(item_data.available) << ','
+        << "\"semantic_kind\":" << json_string(item_data.semantic_kind) << ','
+        << "\"source_kind\":" << json_string(item_data.source_kind) << ','
+        << "\"state\":" << json_string(item_data.state) << ','
+        << "\"assembly_kind\":" << json_string(item_data.assembly_kind) << ','
+        << "\"available_length\":" << item_data.available_length << ','
+        << "\"declared_length\":";
+    if (item_data.declared_length.has_value()) {
+        out << *item_data.declared_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_kind\":";
+    if (item_data.contributing_unit_kind.has_value()) {
+        out << json_string(*item_data.contributing_unit_kind);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_count\":";
+    if (item_data.contributing_unit_count.has_value()) {
+        out << *item_data.contributing_unit_count;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"logical_offset\":";
+    if (item_data.logical_offset.has_value()) {
+        out << *item_data.logical_offset;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"status_text\":" << json_string(item_data.status_text) << ','
+        << "\"formatted_text\":" << json_string(item_data.formatted_text) << ','
+        << "\"unavailable_text\":" << json_string(item_data.unavailable_text)
+        << '}';
+    return out.str();
+}
+
 std::string open_result_json(const pfl::FrontendOpenResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -1073,6 +1117,7 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     }
 
     out << "],"
+        << "\"stream_item_data\":" << stream_item_data_json(item.stream_item_data) << ','
         << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
         << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
         << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
@@ -1123,7 +1168,9 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
 [[nodiscard]] pfl::FrontendStreamItemDto unavailable_stream_item(const std::uint64_t stream_item_index = 0U) {
     pfl::FrontendStreamItemDto item {};
     item.stream_item_index = stream_item_index;
-    item.payload_tab_title = "Payload";
+    item.payload_tab_title = "Item Data";
+    item.stream_item_data.status_text = std::string {kAdapterUnavailableText};
+    item.stream_item_data.unavailable_text = std::string {kAdapterUnavailableText};
     item.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
     item.protocol_details_text = std::string {kAdapterUnavailableText};
     return item;

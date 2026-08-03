@@ -335,12 +335,30 @@ pub struct StreamItemDto {
     pub badge_text: String,
     pub summary_text: String,
     pub summary_layers: Vec<PacketSummaryLayerDto>,
+    pub stream_item_data: StreamItemDataDto,
     pub payload_tab_title: String,
     pub payload_preview_text: String,
     pub payload_preview_unavailable_text: String,
     pub protocol_details_text: String,
     pub constricted_contribution_notes: Vec<String>,
     pub constricted_packet_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamItemDataDto {
+    pub available: bool,
+    pub semantic_kind: String,
+    pub source_kind: String,
+    pub state: String,
+    pub assembly_kind: String,
+    pub available_length: u64,
+    pub declared_length: Option<u64>,
+    pub contributing_unit_kind: Option<String>,
+    pub contributing_unit_count: Option<u64>,
+    pub logical_offset: Option<u64>,
+    pub status_text: String,
+    pub formatted_text: String,
+    pub unavailable_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

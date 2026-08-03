@@ -832,41 +832,79 @@ std::string stream_item_header_badge_text(const StreamItemRow& row) {
     return {};
 }
 
-std::string stream_item_payload_tab_title(const StreamItemRow& row) {
-    if (row.protocol_text.rfind("Protocol: ARP", 0) == 0) {
-        return "ARP Payload";
-    }
-
-    if (row.label.rfind("QUIC ", 0) == 0 ||
-        row.label == "QUIC Initial: ACK" ||
-        row.label == "QUIC Initial: CRYPTO" ||
-        row.label == "ACK" ||
-        row.label == "CRYPTO" ||
-        row.label == "0-RTT" ||
-        row.label == "Handshake" ||
-        row.label == "Protected payload" ||
-        row.protocol_text.rfind("QUIC", 0) == 0) {
-        return "UDP Payload";
-    }
-
-    if (row.label.rfind("TLS ", 0) == 0 ||
-        row.label.rfind("HTTP ", 0) == 0 ||
-        row.label == "HTTP Request" ||
-        row.label == "HTTP Response" ||
-        row.protocol_text.rfind("TLS", 0) == 0 ||
-        row.protocol_text.rfind("HTTP", 0) == 0) {
-        return "Item Payload";
-    }
-
-    return "Payload";
-}
-
-std::string stream_payload_unavailable_text() {
-    return "Payload is not available for this stream item.";
+std::string stream_item_payload_tab_title() {
+    return "Item Data";
 }
 
 std::string stream_protocol_unavailable_text() {
     return "Protocol details are not available for this stream item.";
+}
+
+FrontendStreamItemDto::StreamItemDataDto build_frontend_stream_item_data(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) {
+    const auto presentation = session.derive_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+    const auto formatted_text = session.format_selected_flow_stream_item_data_hex_dump(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+    const auto item_data_requires_materialization =
+        presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
+        presentation.state != session_detail::StreamItemDataState::synthetic;
+    const auto status_text = formatted_text.has_value() || !item_data_requires_materialization
+        ? session_detail::format_selected_stream_item_data_status_text(presentation)
+        : std::string {
+            "Item data unavailable • Failed to materialize the selected item bytes."
+        };
+    const auto available = formatted_text.has_value();
+
+    return FrontendStreamItemDto::StreamItemDataDto {
+        .available = available,
+        .semantic_kind = session_detail::to_string(
+            available || !item_data_requires_materialization
+                ? presentation.semantic_kind
+                : session_detail::StreamItemDataSemanticKind::other),
+        .source_kind = session_detail::to_string(
+            available || !item_data_requires_materialization
+                ? presentation.source_kind
+                : session_detail::StreamItemDataSourceKind::unavailable),
+        .state = session_detail::to_string(
+            available || !item_data_requires_materialization
+                ? presentation.state
+                : session_detail::StreamItemDataState::unavailable),
+        .assembly_kind = session_detail::to_string(presentation.assembly_kind),
+        .available_length = presentation.available_length,
+        .declared_length = presentation.declared_length.has_value()
+            ? std::optional<std::uint64_t> {static_cast<std::uint64_t>(*presentation.declared_length)}
+            : std::optional<std::uint64_t> {},
+        .contributing_unit_kind =
+            presentation.contributing_unit_kind.has_value()
+                ? std::optional<std::string> {session_detail::to_string(*presentation.contributing_unit_kind)}
+                : std::optional<std::string> {},
+        .contributing_unit_count =
+            presentation.contributing_unit_count.has_value()
+                ? std::optional<std::uint64_t> {static_cast<std::uint64_t>(*presentation.contributing_unit_count)}
+                : std::optional<std::uint64_t> {},
+        .logical_offset = presentation.quic_crypto_stream_offset,
+        .status_text = status_text,
+        .formatted_text = formatted_text.value_or(std::string {}),
+        .unavailable_text = available
+            ? std::string {}
+            : (!presentation.unavailable_reason.empty()
+                ? presentation.unavailable_reason
+                : "No authoritative item-owned byte sequence is retained for this Stream item."),
+    };
 }
 
 std::string build_stream_item_summary_text(
@@ -949,20 +987,6 @@ std::vector<session_detail::PacketSummaryLayer> build_stream_item_summary_layers
         stream_item_details_source_text(row),
         stream_item_frames_hint_text(row)
     );
-}
-
-std::string frontend_stream_payload_text(const CaptureSession& session, const StreamItemRow& row) {
-    if (!row.payload_hex_text.empty()) {
-        return row.payload_hex_text;
-    }
-
-    if (row.packet_indices.size() == 1U) {
-        if (const auto packet = session.find_packet(row.packet_indices.front()); packet.has_value()) {
-            return session.read_packet_payload_hex_dump(*packet);
-        }
-    }
-
-    return {};
 }
 
 std::string frontend_stream_protocol_text(
@@ -2697,7 +2721,7 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
         auto header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers);
         auto badge_text = stream_item_header_badge_text(row);
         auto summary_text = build_stream_item_summary_text(row, flow_packet_numbers);
-        auto payload_tab_title = stream_item_payload_tab_title(row);
+        auto payload_tab_title = stream_item_payload_tab_title();
 
         result.items.push_back(FrontendStreamItemDto {
             .stream_item_index = row.stream_item_index,
@@ -2713,6 +2737,7 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
             .header_secondary_text = std::move(header_secondary_text),
             .badge_text = std::move(badge_text),
             .summary_text = std::move(summary_text),
+            .stream_item_data = {},
             .payload_tab_title = std::move(payload_tab_title),
             .payload_preview_text = {},
             .payload_preview_unavailable_text = {},
@@ -2729,17 +2754,23 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
 ) const {
     FrontendStreamItemDto result {
         .stream_item_index = stream_item_index,
-        .payload_tab_title = "Payload",
+        .payload_tab_title = stream_item_payload_tab_title(),
     };
 
     if (!session_.has_capture() || !selected_flow_index_.has_value()) {
-        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.stream_item_data.status_text = "Item data unavailable • No selected flow is active.";
+        result.stream_item_data.unavailable_text = "No selected flow is active.";
+        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         result.protocol_details_text = stream_protocol_unavailable_text();
         return result;
     }
 
     if (!session_.source_capture_accessible()) {
-        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.stream_item_data.status_text =
+            "Item data unavailable • The original source capture cannot be read.";
+        result.stream_item_data.unavailable_text =
+            "The original source capture cannot be read.";
+        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         result.protocol_details_text = stream_protocol_unavailable_text();
         return result;
     }
@@ -2747,7 +2778,11 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
     const auto flow_index = *selected_flow_index_;
     const auto total_flow_packet_count = session_.flow_packet_count(flow_index);
     if (limit == 0U || max_packets_to_scan == 0U || total_flow_packet_count == 0U) {
-        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.stream_item_data.status_text =
+            "Item data unavailable • The selected stream window is empty.";
+        result.stream_item_data.unavailable_text =
+            "The selected stream window is empty.";
+        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         result.protocol_details_text = stream_protocol_unavailable_text();
         return result;
     }
@@ -2770,10 +2805,18 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
             [stream_item_index](const StreamItemRow& row) { return row.stream_item_index == stream_item_index; }
         );
         it != rows.end()) {
-        result = to_frontend_stream_item(*it, flow_packet_numbers, true);
+        result = to_frontend_stream_item(*it, flow_packet_numbers, true, packet_window_count, limit);
     } else {
-        result.payload_preview_unavailable_text = "The selected stream item is no longer available in the current stream window.";
+        result.stream_item_data = build_frontend_stream_item_data(
+            session_,
+            flow_index,
+            packet_window_count,
+            limit,
+            stream_item_index
+        );
+        result.payload_preview_unavailable_text = result.stream_item_data.status_text;
         result.protocol_details_text = stream_protocol_unavailable_text();
+        result.payload_tab_title = stream_item_payload_tab_title();
     }
     return result;
 }
@@ -3508,9 +3551,20 @@ FrontendPacketDto FrontendSessionAdapter::to_frontend_packet(const PacketRow& ro
 FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
     const StreamItemRow& row,
     const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
-    const bool include_details
+    const bool include_details,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit
 ) const {
-    const auto payload_preview_text = include_details ? frontend_stream_payload_text(session_, row) : std::string {};
+    FrontendStreamItemDto::StreamItemDataDto stream_item_data {};
+    if (include_details && selected_flow_index_.has_value()) {
+        stream_item_data = build_frontend_stream_item_data(
+            session_,
+            *selected_flow_index_,
+            max_packets_to_scan,
+            limit,
+            row.stream_item_index
+        );
+    }
     return FrontendStreamItemDto {
         .stream_item_index = row.stream_item_index,
         .direction_text = row.direction_text,
@@ -3526,11 +3580,13 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .badge_text = stream_item_header_badge_text(row),
         .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
         .summary_layers = include_details ? build_stream_item_summary_layers(row, flow_packet_numbers) : std::vector<session_detail::PacketSummaryLayer> {},
-        .payload_tab_title = stream_item_payload_tab_title(row),
-        .payload_preview_text = payload_preview_text,
-        .payload_preview_unavailable_text = include_details && payload_preview_text.empty()
-            ? stream_payload_unavailable_text()
-            : std::string {},
+        .stream_item_data = std::move(stream_item_data),
+        .payload_tab_title = stream_item_payload_tab_title(),
+        .payload_preview_text = include_details ? stream_item_data.formatted_text : std::string {},
+        .payload_preview_unavailable_text =
+            include_details && !stream_item_data.available
+                ? stream_item_data.status_text
+                : std::string {},
         .protocol_details_text = include_details
             ? frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row)
             : std::string {},

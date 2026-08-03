@@ -27,6 +27,18 @@ class PacketDetailsViewModel final : public QObject {
     Q_PROPERTY(QString hexText READ hexText NOTIFY changed)
     Q_PROPERTY(QString payloadText READ payloadText NOTIFY changed)
     Q_PROPERTY(QString payloadTabTitle READ payloadTabTitle NOTIFY changed)
+    Q_PROPERTY(bool streamItemDataAvailable READ streamItemDataAvailable NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataSemanticKind READ streamItemDataSemanticKind NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataSourceKind READ streamItemDataSourceKind NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataState READ streamItemDataState NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataAssemblyKind READ streamItemDataAssemblyKind NOTIFY changed)
+    Q_PROPERTY(qulonglong streamItemDataAvailableLength READ streamItemDataAvailableLength NOTIFY changed)
+    Q_PROPERTY(QVariant streamItemDataDeclaredLength READ streamItemDataDeclaredLength NOTIFY changed)
+    Q_PROPERTY(QVariant streamItemDataContributingUnitCount READ streamItemDataContributingUnitCount NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataContributingUnitKind READ streamItemDataContributingUnitKind NOTIFY changed)
+    Q_PROPERTY(QVariant streamItemDataLogicalOffset READ streamItemDataLogicalOffset NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataStatusText READ streamItemDataStatusText NOTIFY changed)
+    Q_PROPERTY(QString streamItemDataText READ streamItemDataText NOTIFY changed)
     Q_PROPERTY(QString protocolText READ protocolText NOTIFY changed)
 
 public:
@@ -51,6 +63,18 @@ public:
     [[nodiscard]] const QString& hexText() const noexcept;
     [[nodiscard]] const QString& payloadText() const noexcept;
     [[nodiscard]] const QString& payloadTabTitle() const noexcept;
+    [[nodiscard]] bool streamItemDataAvailable() const noexcept;
+    [[nodiscard]] const QString& streamItemDataSemanticKind() const noexcept;
+    [[nodiscard]] const QString& streamItemDataSourceKind() const noexcept;
+    [[nodiscard]] const QString& streamItemDataState() const noexcept;
+    [[nodiscard]] const QString& streamItemDataAssemblyKind() const noexcept;
+    [[nodiscard]] qulonglong streamItemDataAvailableLength() const noexcept;
+    [[nodiscard]] const QVariant& streamItemDataDeclaredLength() const noexcept;
+    [[nodiscard]] const QVariant& streamItemDataContributingUnitCount() const noexcept;
+    [[nodiscard]] const QString& streamItemDataContributingUnitKind() const noexcept;
+    [[nodiscard]] const QVariant& streamItemDataLogicalOffset() const noexcept;
+    [[nodiscard]] const QString& streamItemDataStatusText() const noexcept;
+    [[nodiscard]] const QString& streamItemDataText() const noexcept;
     [[nodiscard]] const QString& protocolText() const noexcept;
 
     void clear();
@@ -73,6 +97,21 @@ public:
     void setHexText(const QString& text);
     void setPayloadText(const QString& text);
     void setPayloadTabTitle(const QString& text);
+    void clearStreamItemDataPresentation();
+    void setStreamItemDataPresentation(
+        bool available,
+        const QString& semanticKind,
+        const QString& sourceKind,
+        const QString& state,
+        const QString& assemblyKind,
+        qulonglong availableLength,
+        const QVariant& declaredLength,
+        const QVariant& contributingUnitCount,
+        const QString& contributingUnitKind,
+        const QVariant& logicalOffset,
+        const QString& statusText,
+        const QString& formattedText
+    );
     void setProtocolText(const QString& text);
 
 signals:
@@ -98,6 +137,18 @@ private:
                        const QString& newHexText,
                        const QString& newPayloadText,
                        const QString& newPayloadTabTitle,
+                       bool newStreamItemDataAvailable,
+                       const QString& newStreamItemDataSemanticKind,
+                       const QString& newStreamItemDataSourceKind,
+                       const QString& newStreamItemDataState,
+                       const QString& newStreamItemDataAssemblyKind,
+                       qulonglong newStreamItemDataAvailableLength,
+                       const QVariant& newStreamItemDataDeclaredLength,
+                       const QVariant& newStreamItemDataContributingUnitCount,
+                       const QString& newStreamItemDataContributingUnitKind,
+                       const QVariant& newStreamItemDataLogicalOffset,
+                       const QString& newStreamItemDataStatusText,
+                       const QString& newStreamItemDataText,
                        const QString& newProtocolText);
 
     bool has_packet_ {false};
@@ -119,6 +170,18 @@ private:
     QString hex_text_ {};
     QString payload_text_ {};
     QString payload_tab_title_ {QStringLiteral("Payload")};
+    bool stream_item_data_available_ {false};
+    QString stream_item_data_semantic_kind_ {};
+    QString stream_item_data_source_kind_ {};
+    QString stream_item_data_state_ {};
+    QString stream_item_data_assembly_kind_ {};
+    qulonglong stream_item_data_available_length_ {0U};
+    QVariant stream_item_data_declared_length_ {};
+    QVariant stream_item_data_contributing_unit_count_ {};
+    QString stream_item_data_contributing_unit_kind_ {};
+    QVariant stream_item_data_logical_offset_ {};
+    QString stream_item_data_status_text_ {};
+    QString stream_item_data_text_ {};
     QString protocol_text_ {};
 };
 
