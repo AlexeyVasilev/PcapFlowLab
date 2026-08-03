@@ -103,6 +103,12 @@ struct QuicPresentationResult {
     // Packet ordinal in `packets` that owns `selected_initial_plaintext_payload`.
     // The current selected-packet model retains at most one such owner.
     std::optional<std::size_t> selected_initial_plaintext_packet_index {};
+    // Bounded contiguous CRYPTO stream prefix starting at logical offset 0 for
+    // the selected packet's reconstructed Initial context when packet-local
+    // plaintext bytes are insufficient to own the visible TLS handshake.
+    std::vector<std::uint8_t> selected_crypto_prefix_payload {};
+    std::optional<std::uint32_t> selected_crypto_prefix_contributing_frame_count {};
+    std::optional<std::uint32_t> selected_crypto_prefix_contributing_packet_count {};
     std::optional<std::string> sni {};
     std::optional<TlsHandshakeDetails> tls_handshake {};
     bool used_bounded_crypto_assembly {false};

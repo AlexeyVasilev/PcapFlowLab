@@ -95,6 +95,12 @@ Repository-wide interpretation rules confirmed by these fixtures:
 - Initial decryption behavior:
   - bounded client `CRYPTO` reassembly exposes `ClientHello`;
   - bounded server `CRYPTO` reassembly exposes `ServerHello`;
+  - selected-packet byte inspection now distinguishes:
+    - early contributing client `Initial` packets that need one bounded
+      cross-packet `QUIC CRYPTO Stream (Reassembled)` owner before exposing
+      `TLS Handshake Message, ClientHello (Reassembled)`;
+    - later/coalesced client `Initial` packet views that still expose the same
+      structured `ClientHello` contract with no synthetic TLS record;
   - pure `0-RTT` packets remain opaque QUIC packet summaries without false TLS.
 - TLS semantics:
   - `ClientHello` stays attached to the `Initial` shell, not to `0-RTT`;

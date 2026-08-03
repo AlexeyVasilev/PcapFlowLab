@@ -423,6 +423,63 @@ void expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views() {
     PFL_EXPECT(handshake_content.formatted_text.find("01 00") != std::string::npos);
 }
 
+void expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 3U);
+    PFL_REQUIRE(packets.packets.size() >= 1U);
+    const auto& packet1 = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet1.packet_index, packet1.row_number, 3U);
+    PFL_EXPECT(details.error_text.empty());
+    const auto* tls_layer = find_summary_layer(details.summary_layers, "tls");
+    PFL_REQUIRE(tls_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
+
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC Initial Decrypted Payload") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame Data") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC CRYPTO Stream (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Record") == labels.end());
+
+    const auto* crypto_stream_descriptor = find_packet_byte_view_descriptor(details, "quic_crypto_stream:0:0");
+    const auto* tls_handshake_descriptor = find_packet_byte_view_descriptor(details, "tls_handshake:0:0");
+    PFL_REQUIRE(crypto_stream_descriptor != nullptr);
+    PFL_REQUIRE(tls_handshake_descriptor != nullptr);
+    PFL_EXPECT(crypto_stream_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(crypto_stream_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_count == std::optional<std::uint32_t> {4U});
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(crypto_stream_descriptor->parent_stable_id == std::optional<std::string> {"quic_initial_packet:0:0"});
+    PFL_EXPECT(tls_handshake_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(tls_handshake_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {4U});
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(tls_handshake_descriptor->parent_stable_id == std::optional<std::string> {"quic_crypto_stream:0:0"});
+
+    const auto handshake_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet1.packet_index,
+        "tls_handshake:0:0",
+        packet1.row_number,
+        3U
+    );
+    PFL_EXPECT(handshake_content.available);
+    PFL_EXPECT(handshake_content.assembly_kind == "reassembled");
+    PFL_EXPECT(handshake_content.contributing_unit_count == std::optional<std::uint32_t> {4U});
+    PFL_EXPECT(handshake_content.contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(handshake_content.status_text.find("Reassembled from 4 CRYPTO frames") != std::string::npos);
+    PFL_EXPECT(handshake_content.formatted_text.find("01 00") != std::string::npos);
+}
+
 void expect_frontend_adapter_selected_flow_packet_byte_views() {
     FrontendSessionAdapter adapter {};
     const auto open_result = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
@@ -674,6 +731,7 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
     expect_frontend_adapter_selected_flow_packet_byte_views();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
+    expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views();
     expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views();
     expect_bounded_tls_selected_flow_service_hint_query();
     expect_non_client_hello_tls_selected_flow_service_hint_queries_return_empty();

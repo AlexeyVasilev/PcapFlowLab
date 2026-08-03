@@ -19,6 +19,7 @@ constexpr SelectedPacketByteOwnerId kCapturedPacketOwnerId {
 
 void append_quic_tls_handshake_views(
     SelectedPacketBytePresentation& presentation,
+    QuicPresentationResult& quic_presentation,
     const QuicPresentationPacket& quic_packet,
     std::uint8_t packet_scope,
     const SelectedPacketByteOwnerId& owner_id,
@@ -1643,6 +1644,7 @@ void append_quic_initial_plaintext_views(
 
     append_quic_tls_handshake_views(
         presentation,
+        *quic_presentation,
         quic_packet,
         static_cast<std::uint8_t>(packet_index),
         *owner_id,
@@ -2032,6 +2034,16 @@ std::optional<std::vector<std::uint8_t>> build_quic_crypto_prefix_bytes(
     return prefix_bytes;
 }
 
+std::size_t required_quic_tls_handshake_prefix_bytes(
+    std::span<const TlsHandshakeModel> handshakes
+) {
+    std::size_t required_bytes = 0U;
+    for (const auto& handshake : handshakes) {
+        required_bytes = std::max(required_bytes, handshake.source_offset + handshake.available_bytes);
+    }
+    return required_bytes;
+}
+
 const SelectedPacketByteViewDescriptor* find_view_in_scope(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewKind kind,
@@ -2073,6 +2085,7 @@ std::vector<const SelectedPacketByteViewDescriptor*> find_quic_crypto_parent_vie
 
 void append_quic_tls_handshake_views(
     SelectedPacketBytePresentation& presentation,
+    QuicPresentationResult& quic_presentation,
     const QuicPresentationPacket& quic_packet,
     const std::uint8_t packet_scope,
     const SelectedPacketByteOwnerId& owner_id,
@@ -2093,7 +2106,138 @@ void append_quic_tls_handshake_views(
         std::span<const QuicPresentationFrame>(quic_packet.frames.data(), quic_packet.frames.size()),
         std::span<const TlsHandshakeModel>(quic_packet.tls_handshakes.data(), quic_packet.tls_handshakes.size())
     );
-    if (!crypto_prefix_bytes.has_value()) {
+    const auto required_prefix_bytes = required_quic_tls_handshake_prefix_bytes(
+        std::span<const TlsHandshakeModel>(quic_packet.tls_handshakes.data(), quic_packet.tls_handshakes.size())
+    );
+    const bool local_crypto_prefix_is_complete =
+        crypto_prefix_bytes.has_value() &&
+        crypto_prefix_bytes->size() >= required_prefix_bytes;
+
+    if (local_crypto_prefix_is_complete) {
+        const auto crypto_owner_id = append_derived_owner(
+            presentation.derived_owners,
+            SelectedPacketByteOwnerKind::quic_crypto_prefix,
+            static_cast<std::size_t>(packet_scope),
+            *crypto_prefix_bytes
+        );
+        if (!crypto_owner_id.has_value()) {
+            return;
+        }
+
+        const auto* crypto_owner = presentation.find_derived_owner(*crypto_owner_id);
+        if (crypto_owner == nullptr) {
+            return;
+        }
+        const auto crypto_owner_length = narrow_u32(crypto_owner->bytes.size());
+        if (!crypto_owner_length.has_value()) {
+            return;
+        }
+
+        std::vector<std::vector<const SelectedPacketByteViewDescriptor*>> handshake_parent_views {};
+        handshake_parent_views.reserve(quic_packet.tls_handshakes.size());
+        bool needs_crypto_stream_parent = false;
+        for (const auto& handshake : quic_packet.tls_handshakes) {
+            auto matches = find_quic_crypto_parent_views(presentation, packet_scope, handshake);
+            if (matches.empty() || matches.size() > 1U) {
+                needs_crypto_stream_parent = true;
+            }
+            handshake_parent_views.push_back(std::move(matches));
+        }
+
+        std::optional<SelectedPacketByteViewId> crypto_stream_id {};
+        std::optional<std::uint32_t> crypto_stream_frame_count {};
+        if (needs_crypto_stream_parent) {
+            const auto* plaintext_view = find_view_in_scope(
+                presentation,
+                SelectedPacketByteViewKind::quic_initial_plaintext,
+                packet_scope
+            );
+            if (plaintext_view == nullptr) {
+                return;
+            }
+
+            const auto frame_count = static_cast<std::uint32_t>(std::count_if(
+                presentation.views.begin(),
+                presentation.views.end(),
+                [&](const SelectedPacketByteViewDescriptor& view) {
+                    return view.id.kind == SelectedPacketByteViewKind::quic_crypto_data &&
+                        view.id.scope == packet_scope;
+                }
+            ));
+            if (frame_count == 0U) {
+                return;
+            }
+
+            crypto_stream_frame_count = frame_count;
+            crypto_stream_id = append_view(
+                presentation.views,
+                plaintext_view->id,
+                *crypto_owner_id,
+                SelectedPacketByteOwnerKind::quic_crypto_prefix,
+                SelectedPacketByteViewRole::protocol_unit,
+                SelectedPacketByteAssemblyKind::reassembled,
+                SelectedPacketByteViewKind::quic_crypto_stream,
+                packet_scope,
+                *crypto_owner_length,
+                0U,
+                std::optional<std::uint32_t> {*crypto_owner_length},
+                *crypto_owner_length,
+                false,
+                std::nullopt,
+                crypto_stream_frame_count,
+                SelectedPacketByteContributionUnitKind::quic_crypto_frame
+            );
+            if (!crypto_stream_id.has_value()) {
+                return;
+            }
+        }
+
+        for (std::size_t index = 0U; index < quic_packet.tls_handshakes.size(); ++index) {
+            const auto& handshake = quic_packet.tls_handshakes[index];
+            const auto& parent_views = handshake_parent_views[index];
+            if (crypto_stream_id.has_value()) {
+                append_tls_handshake_views(
+                    presentation.views,
+                    *crypto_stream_id,
+                    *crypto_owner_id,
+                    SelectedPacketByteOwnerKind::quic_crypto_prefix,
+                    *crypto_owner_length,
+                    packet_scope,
+                    0U,
+                    std::span<const TlsHandshakeModel>(&handshake, 1U),
+                    SelectedPacketByteAssemblyKind::reassembled,
+                    !parent_views.empty()
+                        ? std::optional<std::uint32_t> {static_cast<std::uint32_t>(parent_views.size())}
+                        : crypto_stream_frame_count,
+                    SelectedPacketByteContributionUnitKind::quic_crypto_frame,
+                    0U
+                );
+                continue;
+            }
+
+            if (parent_views.empty()) {
+                continue;
+            }
+
+            append_tls_handshake_views(
+                presentation.views,
+                parent_views.front()->id,
+                *crypto_owner_id,
+                SelectedPacketByteOwnerKind::quic_crypto_prefix,
+                *crypto_owner_length,
+                packet_scope,
+                0U,
+                std::span<const TlsHandshakeModel>(&handshake, 1U),
+                SelectedPacketByteAssemblyKind::packet_local,
+                std::nullopt,
+                std::nullopt,
+                0U
+            );
+        }
+        return;
+    }
+
+    if (quic_presentation.selected_crypto_prefix_payload.empty()) {
         return;
     }
 
@@ -2101,7 +2245,7 @@ void append_quic_tls_handshake_views(
         presentation.derived_owners,
         SelectedPacketByteOwnerKind::quic_crypto_prefix,
         static_cast<std::size_t>(packet_scope),
-        *crypto_prefix_bytes
+        std::move(quic_presentation.selected_crypto_prefix_payload)
     );
     if (!crypto_owner_id.has_value()) {
         return;
@@ -2116,107 +2260,62 @@ void append_quic_tls_handshake_views(
         return;
     }
 
-    std::vector<std::vector<const SelectedPacketByteViewDescriptor*>> handshake_parent_views {};
-    handshake_parent_views.reserve(quic_packet.tls_handshakes.size());
-    bool needs_crypto_stream_parent = false;
-    for (const auto& handshake : quic_packet.tls_handshakes) {
-        auto matches = find_quic_crypto_parent_views(presentation, packet_scope, handshake);
-        if (matches.empty() || matches.size() > 1U) {
-            needs_crypto_stream_parent = true;
-        }
-        handshake_parent_views.push_back(std::move(matches));
+    const auto* packet_view = find_view_in_scope(
+        presentation,
+        SelectedPacketByteViewKind::quic_initial_packet,
+        packet_scope
+    );
+    const auto* plaintext_view = find_view_in_scope(
+        presentation,
+        SelectedPacketByteViewKind::quic_initial_plaintext,
+        packet_scope
+    );
+    const auto parent_id =
+        packet_view != nullptr
+            ? std::optional<SelectedPacketByteViewId> {packet_view->id}
+            : (plaintext_view != nullptr
+                ? std::optional<SelectedPacketByteViewId> {plaintext_view->id}
+                : std::nullopt);
+    if (!parent_id.has_value()) {
+        return;
     }
 
-    std::optional<SelectedPacketByteViewId> crypto_stream_id {};
-    std::optional<std::uint32_t> crypto_stream_frame_count {};
-    if (needs_crypto_stream_parent) {
-        const auto* plaintext_view = find_view_in_scope(
-            presentation,
-            SelectedPacketByteViewKind::quic_initial_plaintext,
-            packet_scope
-        );
-        if (plaintext_view == nullptr) {
-            return;
-        }
-
-        const auto frame_count = static_cast<std::uint32_t>(std::count_if(
-            presentation.views.begin(),
-            presentation.views.end(),
-            [&](const SelectedPacketByteViewDescriptor& view) {
-                return view.id.kind == SelectedPacketByteViewKind::quic_crypto_data &&
-                    view.id.scope == packet_scope;
-            }
-        ));
-        if (frame_count == 0U) {
-            return;
-        }
-
-        crypto_stream_frame_count = frame_count;
-        crypto_stream_id = append_view(
-            presentation.views,
-            plaintext_view->id,
-            *crypto_owner_id,
-            SelectedPacketByteOwnerKind::quic_crypto_prefix,
-            SelectedPacketByteViewRole::protocol_unit,
-            SelectedPacketByteAssemblyKind::reassembled,
-            SelectedPacketByteViewKind::quic_crypto_stream,
-            packet_scope,
-            *crypto_owner_length,
-            0U,
-            std::optional<std::uint32_t> {*crypto_owner_length},
-            *crypto_owner_length,
-            false,
-            std::nullopt,
-            crypto_stream_frame_count,
-            SelectedPacketByteContributionUnitKind::quic_crypto_frame
-        );
-        if (!crypto_stream_id.has_value()) {
-            return;
-        }
+    const auto crypto_stream_id = append_view(
+        presentation.views,
+        parent_id,
+        *crypto_owner_id,
+        SelectedPacketByteOwnerKind::quic_crypto_prefix,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteAssemblyKind::reassembled,
+        SelectedPacketByteViewKind::quic_crypto_stream,
+        packet_scope,
+        *crypto_owner_length,
+        0U,
+        std::optional<std::uint32_t> {*crypto_owner_length},
+        *crypto_owner_length,
+        false,
+        std::nullopt,
+        quic_presentation.selected_crypto_prefix_contributing_frame_count,
+        SelectedPacketByteContributionUnitKind::quic_crypto_frame
+    );
+    if (!crypto_stream_id.has_value()) {
+        return;
     }
 
-    for (std::size_t index = 0U; index < quic_packet.tls_handshakes.size(); ++index) {
-        const auto& handshake = quic_packet.tls_handshakes[index];
-        const auto& parent_views = handshake_parent_views[index];
-        if (crypto_stream_id.has_value()) {
-            append_tls_handshake_views(
-                presentation.views,
-                *crypto_stream_id,
-                *crypto_owner_id,
-                SelectedPacketByteOwnerKind::quic_crypto_prefix,
-                *crypto_owner_length,
-                packet_scope,
-                0U,
-                std::span<const TlsHandshakeModel>(&handshake, 1U),
-                SelectedPacketByteAssemblyKind::reassembled,
-                !parent_views.empty()
-                    ? std::optional<std::uint32_t> {static_cast<std::uint32_t>(parent_views.size())}
-                    : crypto_stream_frame_count,
-                SelectedPacketByteContributionUnitKind::quic_crypto_frame,
-                0U
-            );
-            continue;
-        }
-
-        if (parent_views.empty()) {
-            continue;
-        }
-
-        append_tls_handshake_views(
-            presentation.views,
-            parent_views.front()->id,
-            *crypto_owner_id,
-            SelectedPacketByteOwnerKind::quic_crypto_prefix,
-            *crypto_owner_length,
-            packet_scope,
-            0U,
-            std::span<const TlsHandshakeModel>(&handshake, 1U),
-            SelectedPacketByteAssemblyKind::packet_local,
-            std::nullopt,
-            std::nullopt,
-            0U
-        );
-    }
+    append_tls_handshake_views(
+        presentation.views,
+        *crypto_stream_id,
+        *crypto_owner_id,
+        SelectedPacketByteOwnerKind::quic_crypto_prefix,
+        *crypto_owner_length,
+        packet_scope,
+        0U,
+        std::span<const TlsHandshakeModel>(quic_packet.tls_handshakes.data(), quic_packet.tls_handshakes.size()),
+        SelectedPacketByteAssemblyKind::reassembled,
+        quic_presentation.selected_crypto_prefix_contributing_frame_count,
+        SelectedPacketByteContributionUnitKind::quic_crypto_frame,
+        0U
+    );
 }
 
 }  // namespace

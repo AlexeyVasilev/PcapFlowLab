@@ -1227,6 +1227,62 @@ void run_selected_packet_byte_presentation_tests_impl() {
     {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_flow_aware_presentation(session, packet);
+
+        const auto* plaintext =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        const auto* first_crypto_frame =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
+        const auto* second_crypto_frame =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
+        const auto* first_crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 0U);
+        const auto* second_crypto_data =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_data, 0U, 1U);
+        const auto* crypto_stream =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::quic_crypto_stream, 0U);
+        const auto* tls_handshake =
+            require_view_in_scope(presentation, SelectedPacketByteViewKind::tls_handshake, 0U);
+
+        expect_parent_in_scope(*plaintext, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        expect_parent_in_scope(*first_crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*second_crypto_frame, SelectedPacketByteViewKind::quic_initial_plaintext, 0U);
+        expect_parent_in_scope(*first_crypto_data, SelectedPacketByteViewKind::quic_frame, 0U, 0U);
+        expect_parent_in_scope(*second_crypto_data, SelectedPacketByteViewKind::quic_frame, 0U, 1U);
+        expect_parent_in_scope(*crypto_stream, SelectedPacketByteViewKind::quic_initial_packet, 0U);
+        expect_parent_in_scope(*tls_handshake, SelectedPacketByteViewKind::quic_crypto_stream, 0U);
+        PFL_EXPECT(crypto_stream->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
+        PFL_EXPECT(tls_handshake->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_crypto_prefix);
+        PFL_EXPECT(crypto_stream->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(tls_handshake->assembly_kind == session_detail::SelectedPacketByteAssemblyKind::reassembled);
+        PFL_EXPECT(crypto_stream->contributing_unit_count == std::optional<std::uint32_t> {4U});
+        PFL_EXPECT(tls_handshake->contributing_unit_count == std::optional<std::uint32_t> {4U});
+        PFL_EXPECT(crypto_stream->contributing_unit_kind ==
+            std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
+                session_detail::SelectedPacketByteContributionUnitKind::quic_crypto_frame
+            });
+        PFL_EXPECT(tls_handshake->contributing_unit_kind ==
+            std::optional<session_detail::SelectedPacketByteContributionUnitKind> {
+                session_detail::SelectedPacketByteContributionUnitKind::quic_crypto_frame
+            });
+        PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_record, 0U) == nullptr);
+        const auto labels = collect_labels(presentation);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC CRYPTO Stream (Reassembled)") != labels.end());
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello (Reassembled)") != labels.end());
+        const auto crypto_stream_materialized = require_materialized_view(presentation, crypto_stream->id, std::vector<std::uint8_t> {});
+        const auto tls_handshake_materialized = require_materialized_view(presentation, tls_handshake->id, std::vector<std::uint8_t> {});
+        PFL_REQUIRE(!crypto_stream_materialized.bytes.empty());
+        PFL_REQUIRE(!tls_handshake_materialized.bytes.empty());
+        PFL_EXPECT(crypto_stream_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(tls_handshake_materialized.bytes[0] == 0x01U);
+        PFL_EXPECT(first_crypto_data->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext);
+        PFL_EXPECT(second_crypto_data->owner_kind == session_detail::SelectedPacketByteOwnerKind::quic_initial_plaintext);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/quic/quic_example_2.pcap")));
         const auto packet = require_packet(session, 2U);
         const auto presentation = require_flow_aware_presentation(session, packet);
 

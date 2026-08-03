@@ -1164,6 +1164,89 @@ bool selected_packet_indices_are_covered(
     });
 }
 
+struct QuicCryptoContributionPacket {
+    std::uint64_t packet_index {0U};
+    std::vector<QuicPresentationFrame> frames {};
+};
+
+struct QuicCryptoContributionSummary {
+    std::uint32_t frame_count {0U};
+    std::uint32_t packet_count {0U};
+};
+
+QuicCryptoContributionSummary summarize_crypto_prefix_contributions(
+    std::span<const QuicCryptoContributionPacket> contributing_packets,
+    const std::size_t prefix_length
+) {
+    if (prefix_length == 0U) {
+        return {};
+    }
+
+    std::vector<std::uint8_t> covered(prefix_length, 0U);
+    QuicCryptoContributionSummary summary {};
+
+    for (const auto& packet : contributing_packets) {
+        bool packet_contributed = false;
+        for (const auto& frame : packet.frames) {
+            if (frame.type != QuicPresentationFrameType::crypto ||
+                !frame.crypto_offset.has_value() ||
+                !frame.crypto_length.has_value() ||
+                *frame.crypto_length == 0U ||
+                *frame.crypto_offset >= prefix_length) {
+                continue;
+            }
+
+            const auto frame_start = static_cast<std::size_t>(*frame.crypto_offset);
+            const auto writable_length = std::min(*frame.crypto_length, prefix_length - frame_start);
+            bool frame_contributed = false;
+            for (std::size_t index = 0U; index < writable_length; ++index) {
+                const auto absolute_index = frame_start + index;
+                if (covered[absolute_index] != 0U) {
+                    continue;
+                }
+                covered[absolute_index] = 1U;
+                frame_contributed = true;
+            }
+
+            if (frame_contributed) {
+                ++summary.frame_count;
+                packet_contributed = true;
+            }
+        }
+
+        if (packet_contributed) {
+            ++summary.packet_count;
+        }
+    }
+
+    return summary;
+}
+
+void store_selected_crypto_prefix_payload(
+    QuicPresentationResult& result,
+    QuicInitialParser& initial_parser,
+    std::span<const std::vector<std::uint8_t>> plaintext_payloads,
+    std::span<const QuicCryptoContributionPacket> contributing_packets
+) {
+    if (plaintext_payloads.size() <= 1U) {
+        return;
+    }
+
+    const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(plaintext_payloads);
+    if (!crypto_prefix.has_value() || crypto_prefix->empty()) {
+        return;
+    }
+
+    result.selected_crypto_prefix_payload = *crypto_prefix;
+    const auto summary = summarize_crypto_prefix_contributions(contributing_packets, crypto_prefix->size());
+    if (summary.frame_count > 0U) {
+        result.selected_crypto_prefix_contributing_frame_count = summary.frame_count;
+    }
+    if (summary.packet_count > 0U) {
+        result.selected_crypto_prefix_contributing_packet_count = summary.packet_count;
+    }
+}
+
 QuicPresentationPacket make_quic_presentation_packet(const ParsedQuicPresentationPacket& parsed_packet) {
     QuicPresentationPacket packet {};
     packet.shell_type = parsed_packet.shell_type;
@@ -1363,6 +1446,7 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     if (result.shell_type == QuicPresentationShellType::initial) {
         std::vector<std::vector<std::uint8_t>> crypto_plaintexts {};
         std::vector<std::uint64_t> crypto_packet_indices {};
+        std::vector<QuicCryptoContributionPacket> crypto_contribution_packets {};
         auto initial_start = anchor_position;
         while (initial_start > 0U && candidates[initial_start - 1U].parsed.shell_type == QuicPresentationShellType::initial) {
             --initial_start;
@@ -1429,6 +1513,10 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
 
             crypto_plaintexts.push_back(*plaintext);
             crypto_packet_indices.push_back(candidate.packet.packet_index);
+            crypto_contribution_packets.push_back(QuicCryptoContributionPacket {
+                .packet_index = candidate.packet.packet_index,
+                .frames = frames.has_value() ? *frames : std::vector<QuicPresentationFrame> {},
+            });
         }
 
         if (result.selected_initial_plaintext_payload.empty() &&
@@ -1471,6 +1559,15 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
                 if (!handshakes.empty()) {
                     initial_packet->tls_handshakes = std::move(handshakes);
                     result.used_bounded_crypto_assembly = crypto_plaintexts.size() > 1U;
+                    store_selected_crypto_prefix_payload(
+                        result,
+                        initial_parser,
+                        payload_span,
+                        std::span<const QuicCryptoContributionPacket>(
+                            crypto_contribution_packets.data(),
+                            crypto_contribution_packets.size()
+                        )
+                    );
                 }
             }
             if (!result.tls_handshake.has_value() &&
@@ -1480,6 +1577,15 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
                     result.tls_handshake = tls_handshake;
                     result.used_bounded_crypto_assembly = crypto_plaintexts.size() > 1U;
                     result.crypto_packet_indices = crypto_packet_indices;
+                    store_selected_crypto_prefix_payload(
+                        result,
+                        initial_parser,
+                        payload_span,
+                        std::span<const QuicCryptoContributionPacket>(
+                            crypto_contribution_packets.data(),
+                            crypto_contribution_packets.size()
+                        )
+                    );
                 } else {
                     const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(payload_span);
                     if (crypto_prefix.has_value()) {
@@ -1490,6 +1596,15 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
                             result.tls_handshake = tls_handshake;
                             result.used_bounded_crypto_assembly = crypto_plaintexts.size() > 1U;
                             result.crypto_packet_indices = crypto_packet_indices;
+                            store_selected_crypto_prefix_payload(
+                                result,
+                                initial_parser,
+                                payload_span,
+                                std::span<const QuicCryptoContributionPacket>(
+                                    crypto_contribution_packets.data(),
+                                    crypto_contribution_packets.size()
+                                )
+                            );
                         }
                     }
                 }

@@ -181,6 +181,40 @@ QStringList packet_byte_view_labels(pfl::PacketDetailsViewModel* model) {
     return labels;
 }
 
+bool packet_byte_view_label_starts_with(
+    pfl::PacketDetailsViewModel* model,
+    const QString& prefix
+) {
+    if (model == nullptr) {
+        return false;
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    return std::any_of(descriptors.begin(), descriptors.end(), [&](const QVariant& descriptor_variant) {
+        const auto descriptor = descriptor_variant.toMap();
+        return descriptor.value(QStringLiteral("label")).toString().startsWith(prefix);
+    });
+}
+
+QString find_packet_byte_view_stable_id_by_label_prefix(
+    pfl::PacketDetailsViewModel* model,
+    const QString& prefix
+) {
+    if (model == nullptr) {
+        return {};
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    for (const auto& descriptor_variant : descriptors) {
+        const auto descriptor = descriptor_variant.toMap();
+        if (descriptor.value(QStringLiteral("label")).toString().startsWith(prefix)) {
+            return descriptor.value(QStringLiteral("stableId")).toString();
+        }
+    }
+
+    return {};
+}
+
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -2072,10 +2106,8 @@ int main(int argc, char* argv[]) {
         return quic_details_model->detailsTitle() == QStringLiteral("Packet Details") &&
             quic_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")) &&
             labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")) &&
-            labels.contains(QStringLiteral("CRYPTO Frame")) &&
-            labels.contains(QStringLiteral("CRYPTO Frame Data")) &&
-            labels.contains(QStringLiteral("TLS Handshake Message, ClientHello")) &&
-            !labels.contains(QStringLiteral("QUIC CRYPTO Stream (Reassembled)"));
+            packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("CRYPTO Frame")) &&
+            packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("TLS Handshake Message, ClientHello"));
     }));
     UI_EXPECT(quic_details_model->detailsTitle() == QStringLiteral("Packet Details"));
     UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("QUIC")));
@@ -2086,22 +2118,30 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Packet")));
     UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Protected Payload")));
     UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Decrypted Payload")));
-    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("CRYPTO Frame")));
-    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("CRYPTO Frame Data")));
-    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("TLS Handshake Message, ClientHello")));
-    UI_EXPECT(!packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC CRYPTO Stream (Reassembled)")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("TLS Handshake Message, ClientHello")));
     UI_EXPECT(!packet_byte_view_labels(quic_details_model).contains(QStringLiteral("TLS Handshake Record")));
-    quic_controller.selectPacketByteView(QStringLiteral("quic_crypto_data:0:0"));
+    const auto quic_crypto_data_view_id = find_packet_byte_view_stable_id_by_label_prefix(
+        quic_details_model,
+        QStringLiteral("CRYPTO Frame Data")
+    );
+    UI_EXPECT(!quic_crypto_data_view_id.isEmpty());
+    quic_controller.selectPacketByteView(quic_crypto_data_view_id);
     UI_EXPECT(wait_until(app, [&]() {
-        return quic_details_model->selectedPacketByteViewId() == QStringLiteral("quic_crypto_data:0:0");
+        return quic_details_model->selectedPacketByteViewId() == quic_crypto_data_view_id;
     }));
     UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("03 03")));
-    quic_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    const auto quic_tls_handshake_view_id = find_packet_byte_view_stable_id_by_label_prefix(
+        quic_details_model,
+        QStringLiteral("TLS Handshake Message, ClientHello")
+    );
+    UI_EXPECT(!quic_tls_handshake_view_id.isEmpty());
+    quic_controller.selectPacketByteView(quic_tls_handshake_view_id);
     UI_EXPECT(wait_until(app, [&]() {
-        return quic_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0");
+        return quic_details_model->selectedPacketByteViewId() == quic_tls_handshake_view_id;
     }));
     UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
-    UI_EXPECT(!quic_details_model->selectedPacketByteViewStatusText().contains(QStringLiteral("Reassembled")));
 
     quic_controller.setFlowDetailsTabIndex(1);
     UI_EXPECT(quic_stream_model->rowCount() >= 1);
@@ -2139,36 +2179,79 @@ int main(int argc, char* argv[]) {
         const auto labels = packet_byte_view_labels(quic_multi_crypto_details_model);
         return !quic_multi_crypto_details_model->summaryLayers().isEmpty() &&
             labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")) &&
-            labels.contains(QStringLiteral("CRYPTO Frame")) &&
-            labels.contains(QStringLiteral("CRYPTO Frame Data")) &&
-            labels.contains(QStringLiteral("QUIC CRYPTO Stream (Reassembled)")) &&
-            labels.contains(QStringLiteral("TLS Handshake Message, ClientHello (Reassembled)"));
+            packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("CRYPTO Frame")) &&
+            packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("TLS Handshake Message, ClientHello"));
     }));
     UI_EXPECT(!quic_multi_crypto_details_model->summaryLayers().isEmpty());
     const auto quic_multi_crypto_labels = packet_byte_view_labels(quic_multi_crypto_details_model);
     UI_EXPECT(quic_multi_crypto_labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")));
-    UI_EXPECT(quic_multi_crypto_labels.contains(QStringLiteral("CRYPTO Frame")));
-    UI_EXPECT(quic_multi_crypto_labels.contains(QStringLiteral("CRYPTO Frame Data")));
-    UI_EXPECT(quic_multi_crypto_labels.contains(QStringLiteral("QUIC CRYPTO Stream (Reassembled)")));
-    UI_EXPECT(quic_multi_crypto_labels.contains(QStringLiteral("TLS Handshake Message, ClientHello (Reassembled)")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("TLS Handshake Message, ClientHello")));
     UI_EXPECT(!quic_multi_crypto_labels.contains(QStringLiteral("TLS Handshake Record")));
-    quic_multi_crypto_controller.selectPacketByteView(QStringLiteral("quic_crypto_stream:0:0"));
+    const auto quic_multi_crypto_handshake_view_id = find_packet_byte_view_stable_id_by_label_prefix(
+        quic_multi_crypto_details_model,
+        QStringLiteral("TLS Handshake Message, ClientHello")
+    );
+    UI_EXPECT(!quic_multi_crypto_handshake_view_id.isEmpty());
+    quic_multi_crypto_controller.selectPacketByteView(quic_multi_crypto_handshake_view_id);
     UI_EXPECT(wait_until(app, [&]() {
-        return quic_multi_crypto_details_model->selectedPacketByteViewId() == QStringLiteral("quic_crypto_stream:0:0") &&
-            quic_multi_crypto_details_model->selectedPacketByteViewStatusText().contains(
-                QStringLiteral("Reassembled from 2 CRYPTO frames"));
-    }));
-    quic_multi_crypto_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
-    UI_EXPECT(wait_until(app, [&]() {
-        return quic_multi_crypto_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0") &&
-            quic_multi_crypto_details_model->selectedPacketByteViewStatusText().contains(
-                QStringLiteral("Reassembled from 2 CRYPTO frames"));
+        return quic_multi_crypto_details_model->selectedPacketByteViewId() == quic_multi_crypto_handshake_view_id;
     }));
     UI_EXPECT(quic_multi_crypto_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
     UI_EXPECT(quic_multi_crypto_details_model->protocolText().contains(QStringLiteral("QUIC")));
     UI_EXPECT(quic_multi_crypto_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
     UI_EXPECT(quic_multi_crypto_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
     UI_EXPECT(quic_multi_crypto_details_model->payloadTabTitle() == QStringLiteral("Payload"));
+
+    MainController quic_multi_packet_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_multi_packet_controller, quic_multi_crypto_fixture_path));
+    auto* quic_multi_packet_flow_model = qobject_cast<FlowListModel*>(quic_multi_packet_controller.flowModel());
+    auto* quic_multi_packet_details_model =
+        qobject_cast<PacketDetailsViewModel*>(quic_multi_packet_controller.packetDetailsModel());
+    UI_EXPECT(quic_multi_packet_flow_model != nullptr);
+    UI_EXPECT(quic_multi_packet_details_model != nullptr);
+    UI_EXPECT(quic_multi_packet_flow_model->rowCount() == 1);
+    quic_multi_packet_controller.setSelectedFlowIndex(0);
+    quic_multi_packet_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(wait_until(app, [&]() {
+        const auto labels = packet_byte_view_labels(quic_multi_packet_details_model);
+        const auto tls_layer = find_top_level_summary_layer(
+            quic_multi_packet_details_model->summaryLayers(),
+            QStringLiteral("tls")
+        );
+        return !quic_multi_packet_details_model->summaryLayers().isEmpty() &&
+            !tls_layer.isEmpty() &&
+            find_summary_field_value(tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello") &&
+            labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame Data")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("QUIC CRYPTO Stream")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("TLS Handshake Message, ClientHello"));
+    }));
+    const auto quic_multi_packet_labels = packet_byte_view_labels(quic_multi_packet_details_model);
+    UI_EXPECT(quic_multi_packet_labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("QUIC CRYPTO Stream")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("TLS Handshake Message, ClientHello")));
+    UI_EXPECT(!quic_multi_packet_labels.contains(QStringLiteral("TLS Handshake Record")));
+    quic_multi_packet_controller.selectPacketByteView(QStringLiteral("quic_crypto_stream:0:0"));
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_multi_packet_details_model->selectedPacketByteViewId() == QStringLiteral("quic_crypto_stream:0:0") &&
+            quic_multi_packet_details_model->selectedPacketByteViewStatusText().contains(
+                QStringLiteral("Reassembled from 4 CRYPTO frames"));
+    }));
+    quic_multi_packet_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_multi_packet_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0") &&
+            quic_multi_packet_details_model->selectedPacketByteViewStatusText().contains(
+                QStringLiteral("Reassembled from 4 CRYPTO frames"));
+    }));
+    UI_EXPECT(quic_multi_packet_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
+    UI_EXPECT(quic_multi_packet_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
+    UI_EXPECT(quic_multi_packet_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+    UI_EXPECT(quic_multi_packet_details_model->payloadTabTitle() == QStringLiteral("Payload"));
 
     const auto quic_youtube_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_test_2.pcap";
     MainController quic_youtube_controller {};
