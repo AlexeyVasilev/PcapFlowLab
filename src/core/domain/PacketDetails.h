@@ -45,6 +45,7 @@ struct LlcDetails {
     std::size_t payload_length {0};
     std::vector<std::uint8_t> payload_preview {};
     bool payload_preview_truncated {false};
+    std::optional<PacketByteRange> unit_range {};
 };
 
 struct SnapDetails {
@@ -54,6 +55,7 @@ struct SnapDetails {
     std::size_t payload_length {0};
     std::vector<std::uint8_t> payload_preview {};
     bool payload_preview_truncated {false};
+    std::optional<PacketByteRange> unit_range {};
 };
 
 struct VlanTagDetails {
@@ -95,6 +97,7 @@ struct PbbDetails {
     bool nca {false};
     std::uint8_t reserved {0};
     std::uint32_t isid {0};
+    std::optional<PacketByteRange> unit_range {};
 };
 
 struct MacsecDetails {
@@ -154,6 +157,7 @@ struct VxlanDetails {
     bool invalid_header {false};
     bool reserved_bits_non_zero {false};
     std::uint32_t vni {0};
+    std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
@@ -328,6 +332,8 @@ struct PppoeSessionDetails {
     bool declared_payload_exceeds_captured {false};
     bool captured_payload_exceeds_declared {false};
     std::size_t captured_payload_length {0};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
     std::vector<PppoeTagDetails> discovery_tags {};
     bool discovery_tag_header_truncated {false};
     bool discovery_tag_value_truncated {false};

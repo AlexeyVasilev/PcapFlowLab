@@ -215,6 +215,25 @@ QString find_packet_byte_view_stable_id_by_label_prefix(
     return {};
 }
 
+QVariantMap find_packet_byte_view_descriptor(
+    pfl::PacketDetailsViewModel* model,
+    const QString& stable_id
+) {
+    if (model == nullptr) {
+        return {};
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    for (const auto& descriptor_variant : descriptors) {
+        const auto descriptor = descriptor_variant.toMap();
+        if (descriptor.value(QStringLiteral("stableId")).toString() == stable_id) {
+            return descriptor;
+        }
+    }
+
+    return {};
+}
+
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -2472,6 +2491,41 @@ int main(int argc, char* argv[]) {
     byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
     UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
     UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
+
+    const auto vxlan_byte_view_capture_path =
+        std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "vxlan" /
+        "13_vxlan_inner_vlan_ipv4_tcp.pcap";
+    MainController vxlan_byte_view_controller {};
+    UI_EXPECT(open_capture_and_wait(app, vxlan_byte_view_controller, vxlan_byte_view_capture_path));
+    auto* vxlan_byte_view_flow_model = qobject_cast<FlowListModel*>(vxlan_byte_view_controller.flowModel());
+    auto* vxlan_byte_view_details_model =
+        qobject_cast<PacketDetailsViewModel*>(vxlan_byte_view_controller.packetDetailsModel());
+    UI_EXPECT(vxlan_byte_view_flow_model != nullptr);
+    UI_EXPECT(vxlan_byte_view_details_model != nullptr);
+    UI_EXPECT(vxlan_byte_view_flow_model->rowCount() == 1);
+    vxlan_byte_view_controller.setSelectedFlowIndex(0);
+    vxlan_byte_view_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(wait_until(app, [&]() {
+        return packet_byte_view_labels(vxlan_byte_view_details_model).contains(QStringLiteral("VXLAN Packet")) &&
+            packet_byte_view_labels(vxlan_byte_view_details_model).contains(QStringLiteral("Inner Ethernet II Frame"));
+    }));
+    const auto vxlan_descriptor =
+        find_packet_byte_view_descriptor(vxlan_byte_view_details_model, QStringLiteral("vxlan:0:0"));
+    const auto inner_ethernet_descriptor =
+        find_packet_byte_view_descriptor(vxlan_byte_view_details_model, QStringLiteral("inner_ethernet:0:0"));
+    UI_EXPECT(!vxlan_descriptor.isEmpty());
+    UI_EXPECT(!inner_ethernet_descriptor.isEmpty());
+    UI_EXPECT(vxlan_descriptor.value(QStringLiteral("label")).toString() == QStringLiteral("VXLAN Packet"));
+    UI_EXPECT(vxlan_descriptor.value(QStringLiteral("parentStableId")).toString() == QStringLiteral("udp:0:0"));
+    UI_EXPECT(vxlan_descriptor.value(QStringLiteral("availableLength")).toULongLong() ==
+        inner_ethernet_descriptor.value(QStringLiteral("availableLength")).toULongLong() + 8ULL);
+    vxlan_byte_view_controller.selectPacketByteView(QStringLiteral("vxlan:0:0"));
+    UI_EXPECT(wait_until(app, [&]() {
+        return vxlan_byte_view_details_model->selectedPacketByteViewId() == QStringLiteral("vxlan:0:0") &&
+            vxlan_byte_view_details_model->selectedPacketByteViewAvailableLength() ==
+                vxlan_descriptor.value(QStringLiteral("availableLength")).toULongLong() &&
+            !vxlan_byte_view_details_model->selectedPacketByteViewText().isEmpty();
+    }));
 
     controller.setCurrentTabIndex(2);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));

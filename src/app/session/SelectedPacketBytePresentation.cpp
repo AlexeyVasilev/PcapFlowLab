@@ -12,9 +12,19 @@ namespace pfl::session_detail {
 namespace {
 
 constexpr std::size_t kMaxViewOccurrence = 0xFFU;
+constexpr std::uint32_t kLlcHeaderSize = 3U;
+constexpr std::uint32_t kSnapHeaderSize = 5U;
+constexpr std::uint32_t kPbbHeaderSize = 4U;
+constexpr std::uint32_t kPppProtocolFieldSize = 2U;
+
 constexpr SelectedPacketByteOwnerId kCapturedPacketOwnerId {
     .kind = SelectedPacketByteOwnerKind::captured_packet,
     .occurrence = 0U,
+};
+
+struct PayloadBranchResult {
+    std::optional<SelectedPacketByteViewId> parent_id {};
+    std::optional<PacketByteRange> child_payload_range {};
 };
 
 void append_quic_tls_handshake_views(
@@ -185,8 +195,16 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "ethernet";
     case SelectedPacketByteViewKind::vlan_payload:
         return "vlan";
+    case SelectedPacketByteViewKind::llc:
+        return "llc";
+    case SelectedPacketByteViewKind::snap:
+        return "snap";
     case SelectedPacketByteViewKind::mpls_payload:
         return "mpls";
+    case SelectedPacketByteViewKind::pbb:
+        return "pbb";
+    case SelectedPacketByteViewKind::pppoe:
+        return "pppoe";
     case SelectedPacketByteViewKind::arp:
         return "arp";
     case SelectedPacketByteViewKind::ipv4_payload:
@@ -228,7 +246,7 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
     case SelectedPacketByteViewKind::eoip_payload:
         return "eoip_payload";
     case SelectedPacketByteViewKind::vxlan_payload:
-        return "vxlan_payload";
+        return "vxlan";
     case SelectedPacketByteViewKind::geneve_payload:
         return "geneve_payload";
     case SelectedPacketByteViewKind::gtpu_payload:
@@ -275,7 +293,11 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"frame", SelectedPacketByteViewKind::frame},
         {"ethernet", SelectedPacketByteViewKind::ethernet_payload},
         {"vlan", SelectedPacketByteViewKind::vlan_payload},
+        {"llc", SelectedPacketByteViewKind::llc},
+        {"snap", SelectedPacketByteViewKind::snap},
         {"mpls", SelectedPacketByteViewKind::mpls_payload},
+        {"pbb", SelectedPacketByteViewKind::pbb},
+        {"pppoe", SelectedPacketByteViewKind::pppoe},
         {"arp", SelectedPacketByteViewKind::arp},
         {"ipv4", SelectedPacketByteViewKind::ipv4_payload},
         {"ipv6", SelectedPacketByteViewKind::ipv6_payload},
@@ -296,6 +318,7 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"inner_sctp", SelectedPacketByteViewKind::inner_sctp_payload},
         {"gre_payload", SelectedPacketByteViewKind::gre_payload},
         {"eoip_payload", SelectedPacketByteViewKind::eoip_payload},
+        {"vxlan", SelectedPacketByteViewKind::vxlan_payload},
         {"vxlan_payload", SelectedPacketByteViewKind::vxlan_payload},
         {"geneve_payload", SelectedPacketByteViewKind::geneve_payload},
         {"gtpu_payload", SelectedPacketByteViewKind::gtpu_payload},
@@ -346,10 +369,18 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "802.1Q Encapsulation"
             : "VLAN Payload";
+    case SelectedPacketByteViewKind::llc:
+        return "LLC PDU";
+    case SelectedPacketByteViewKind::snap:
+        return "SNAP PDU";
     case SelectedPacketByteViewKind::mpls_payload:
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "MPLS Label Stack and Payload"
             : "MPLS Payload";
+    case SelectedPacketByteViewKind::pbb:
+        return "PBB Packet";
+    case SelectedPacketByteViewKind::pppoe:
+        return "PPPoE Packet";
     case SelectedPacketByteViewKind::arp:
         return "ARP Packet";
     case SelectedPacketByteViewKind::ipv4_payload:
@@ -415,7 +446,9 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
     case SelectedPacketByteViewKind::eoip_payload:
         return "EoIP Payload";
     case SelectedPacketByteViewKind::vxlan_payload:
-        return "VXLAN Payload";
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "VXLAN Packet"
+            : "VXLAN Payload";
     case SelectedPacketByteViewKind::geneve_payload:
         return "Geneve Payload";
     case SelectedPacketByteViewKind::gtpu_payload:
@@ -836,6 +869,137 @@ std::optional<SelectedPacketByteViewId> append_payload_fallback_view(
     );
 }
 
+std::optional<SelectedPacketByteViewId> append_arp_packet_view(
+    std::vector<SelectedPacketByteViewDescriptor>& views,
+    const std::optional<SelectedPacketByteViewId>& parent_id,
+    const std::uint32_t owner_captured_length,
+    const PacketByteRange& parent_range,
+    const ArpDetails& arp
+) {
+    const auto declared_length = static_cast<std::uint32_t>(
+        8U + (2U * static_cast<std::uint32_t>(arp.hardware_size)) +
+        (2U * static_cast<std::uint32_t>(arp.protocol_size))
+    );
+    const auto captured_length = std::min<std::uint32_t>(parent_range.captured_length, declared_length);
+    return append_protocol_unit_view(
+        views,
+        parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::arp,
+        0U,
+        owner_captured_length,
+        PacketByteRange {
+            .offset = parent_range.offset,
+            .declared_length = std::optional<std::uint32_t> {declared_length},
+            .captured_length = captured_length,
+            .truncated = arp.fixed_header_truncated || arp.address_section_truncated || captured_length < declared_length,
+        },
+        std::nullopt
+    );
+}
+
+PayloadBranchResult append_llc_snap_branch(
+    const bool has_llc,
+    const LlcDetails& llc,
+    const bool has_snap,
+    const SnapDetails& snap,
+    std::vector<SelectedPacketByteViewDescriptor>& views,
+    const std::uint32_t owner_captured_length,
+    const std::optional<SelectedPacketByteViewId>& parent_id,
+    const std::optional<PacketByteRange>& carrier_payload_range
+) {
+    PayloadBranchResult result {
+        .parent_id = parent_id,
+        .child_payload_range = carrier_payload_range,
+    };
+    if (!has_llc || !llc.unit_range.has_value()) {
+        return result;
+    }
+
+    const auto llc_payload_range = shift_payload_range(*llc.unit_range, kLlcHeaderSize);
+    const auto llc_id = append_protocol_unit_view(
+        views,
+        parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::llc,
+        0U,
+        owner_captured_length,
+        *llc.unit_range,
+        llc_payload_range
+    );
+    if (llc_id.has_value()) {
+        result.parent_id = llc_id;
+    }
+    result.child_payload_range = llc_payload_range;
+
+    if (!has_snap || !snap.unit_range.has_value()) {
+        return result;
+    }
+
+    const auto snap_payload_range = shift_payload_range(*snap.unit_range, kSnapHeaderSize);
+    const auto snap_id = append_protocol_unit_view(
+        views,
+        result.parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::snap,
+        0U,
+        owner_captured_length,
+        *snap.unit_range,
+        snap_payload_range
+    );
+    if (snap_id.has_value()) {
+        result.parent_id = snap_id;
+    }
+    result.child_payload_range = snap_payload_range;
+    static_cast<void>(carrier_payload_range);
+    return result;
+}
+
+PayloadBranchResult append_pppoe_branch(
+    const PppoeSessionDetails& pppoe,
+    std::vector<SelectedPacketByteViewDescriptor>& views,
+    const std::uint32_t owner_captured_length,
+    const std::optional<SelectedPacketByteViewId>& parent_id,
+    const std::optional<PacketByteRange>& carrier_payload_range
+) {
+    PayloadBranchResult result {
+        .parent_id = parent_id,
+        .child_payload_range = carrier_payload_range,
+    };
+    if (!pppoe.unit_range.has_value()) {
+        return result;
+    }
+
+    const auto pppoe_id = append_protocol_unit_view(
+        views,
+        parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteViewKind::pppoe,
+        0U,
+        owner_captured_length,
+        *pppoe.unit_range,
+        pppoe.payload_range
+    );
+    if (pppoe_id.has_value()) {
+        result.parent_id = pppoe_id;
+    }
+
+    if (pppoe.payload_range.has_value()) {
+        result.child_payload_range = shift_payload_range(*pppoe.payload_range, kPppProtocolFieldSize);
+    } else {
+        result.child_payload_range = std::nullopt;
+    }
+    return result;
+}
+
 std::optional<SelectedPacketByteViewId> append_tcp_segment_view(
     std::vector<SelectedPacketByteViewDescriptor>& views,
     const std::optional<SelectedPacketByteViewId>& parent_id,
@@ -994,6 +1158,19 @@ std::optional<SelectedPacketByteViewId> append_inner_network_branch(
     auto current_parent = parent_id;
     auto current_payload_range = parent_payload_range;
 
+    if constexpr (requires { inner.has_arp; inner.arp; }) {
+        if (inner.has_arp && current_payload_range.has_value()) {
+            const auto appended = append_arp_packet_view(
+                views,
+                current_parent,
+                owner_captured_length,
+                *current_payload_range,
+                inner.arp
+            );
+            return appended.has_value() ? appended : current_parent;
+        }
+    }
+
     if (inner.has_ipv4 && inner.ipv4.payload_range.has_value()) {
         network_range = inner.ipv4.payload_range;
         const auto network_offset = current_payload_range.has_value()
@@ -1138,6 +1315,21 @@ std::optional<SelectedPacketByteViewId> append_inner_ethernet_branch(
             }
             current_payload_range = inner.mpls_payload_range;
         }
+    }
+
+    if constexpr (requires { inner.has_llc; inner.llc; inner.has_snap; inner.snap; }) {
+        const auto llc_snap_branch = append_llc_snap_branch(
+            inner.has_llc,
+            inner.llc,
+            inner.has_snap,
+            inner.snap,
+            views,
+            owner_captured_length,
+            current_parent,
+            current_payload_range
+        );
+        current_parent = llc_snap_branch.parent_id;
+        current_payload_range = llc_snap_branch.child_payload_range;
     }
 
     return append_inner_network_branch(inner, views, owner_captured_length, current_parent, current_payload_range);
@@ -1436,16 +1628,21 @@ void append_overlay_payload_branches(
         return;
     }
 
-    if (details.has_vxlan && details.vxlan.payload_range.has_value() && outer_udp_id.has_value()) {
-        const auto vxlan_id = append_payload_fallback_view(
+    if (details.has_vxlan &&
+        details.vxlan.unit_range.has_value() &&
+        details.vxlan.payload_range.has_value() &&
+        outer_udp_id.has_value()) {
+        const auto vxlan_id = append_protocol_unit_view(
             views,
             outer_udp_id,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
             SelectedPacketByteViewKind::vxlan_payload,
             0U,
             owner_captured_length,
-            *details.vxlan.payload_range
+            *details.vxlan.unit_range,
+            details.vxlan.payload_range
         );
         if (details.vxlan.has_inner_packet && details.vxlan.inner_packet != nullptr) {
             append_inner_ethernet_branch(*details.vxlan.inner_packet, views, owner_captured_length, vxlan_id);
@@ -2465,6 +2662,9 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     std::optional<SelectedPacketByteViewId> outer_parent = frame_id;
     std::optional<PacketByteRange> outer_payload_range {};
     std::optional<PacketByteRange> outer_ip_range {};
+    const auto outer_vlan_count = details.has_pbb
+        ? details.encapsulating_vlan_tags.size()
+        : details.vlan_tags.size();
 
     if (details.has_ethernet && details.ethernet.payload_range.has_value()) {
         outer_payload_range = details.ethernet.payload_range;
@@ -2487,10 +2687,10 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             outer_parent,
             presentation.owner_captured_length,
             *details.ethernet.payload_range,
-            details.vlan_tags.size(),
+            outer_vlan_count,
             SelectedPacketByteViewKind::vlan_payload
         );
-        for (std::size_t index = 0U; outer_payload_range.has_value() && index < details.vlan_tags.size(); ++index) {
+        for (std::size_t index = 0U; outer_payload_range.has_value() && index < outer_vlan_count; ++index) {
             outer_payload_range = shift_payload_range(*outer_payload_range, 4U);
         }
     }
@@ -2516,34 +2716,74 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         outer_payload_range = details.mpls_payload_range;
     }
 
-    if (details.has_arp && outer_parent.has_value() && outer_payload_range.has_value()) {
-        const auto declared_length = static_cast<std::uint32_t>(
-            8U + (2U * static_cast<std::uint32_t>(details.arp.hardware_size)) +
-            (2U * static_cast<std::uint32_t>(details.arp.protocol_size))
-        );
-        const auto captured_length = std::min<std::uint32_t>(outer_payload_range->captured_length, declared_length);
-        append_protocol_unit_view(
+    bool consumed_by_inner_link_branch = false;
+    if (details.has_pbb && outer_parent.has_value() && details.pbb.unit_range.has_value()) {
+        std::optional<PacketByteRange> pbb_payload_range {};
+        if (details.pbb.unit_range->captured_length > kPbbHeaderSize) {
+            pbb_payload_range = PacketByteRange {
+                .offset = details.pbb.unit_range->offset + kPbbHeaderSize,
+                .declared_length = details.pbb.unit_range->declared_length.has_value() &&
+                        *details.pbb.unit_range->declared_length > kPbbHeaderSize
+                    ? std::optional<std::uint32_t> {*details.pbb.unit_range->declared_length - kPbbHeaderSize}
+                    : std::nullopt,
+                .captured_length = details.pbb.unit_range->captured_length - kPbbHeaderSize,
+                .truncated = details.pbb.unit_range->truncated,
+            };
+        }
+        const auto pbb_id = append_protocol_unit_view(
             presentation.views,
             outer_parent,
             kCapturedPacketOwnerId,
             presentation.owner_kind,
             SelectedPacketByteViewRole::protocol_unit,
-            SelectedPacketByteViewKind::arp,
+            SelectedPacketByteViewKind::pbb,
             0U,
             presentation.owner_captured_length,
-            PacketByteRange {
-                .offset = outer_payload_range->offset,
-                .declared_length = std::optional<std::uint32_t> {declared_length},
-                .captured_length = captured_length,
-                .truncated = details.arp.fixed_header_truncated || details.arp.address_section_truncated || captured_length < declared_length,
-            },
-            std::nullopt
+            *details.pbb.unit_range,
+            pbb_payload_range
+        );
+        append_inner_ethernet_branch(details, presentation.views, presentation.owner_captured_length, pbb_id);
+        consumed_by_inner_link_branch = true;
+    } else {
+        const auto llc_snap_branch = append_llc_snap_branch(
+            details.has_llc,
+            details.llc,
+            details.has_snap,
+            details.snap,
+            presentation.views,
+            presentation.owner_captured_length,
+            outer_parent,
+            outer_payload_range
+        );
+        outer_parent = llc_snap_branch.parent_id;
+        outer_payload_range = llc_snap_branch.child_payload_range;
+
+        if (details.has_pppoe) {
+            const auto pppoe_branch = append_pppoe_branch(
+                details.pppoe,
+                presentation.views,
+                presentation.owner_captured_length,
+                outer_parent,
+                outer_payload_range
+            );
+            outer_parent = pppoe_branch.parent_id;
+            outer_payload_range = pppoe_branch.child_payload_range;
+        }
+    }
+
+    if (!consumed_by_inner_link_branch && details.has_arp && outer_parent.has_value() && outer_payload_range.has_value()) {
+        append_arp_packet_view(
+            presentation.views,
+            outer_parent,
+            presentation.owner_captured_length,
+            *outer_payload_range,
+            details.arp
         );
     }
 
     std::optional<SelectedPacketByteViewId> outer_ip_id {};
     std::optional<SelectedPacketByteViewId> outer_tcp_id {};
-    if (details.has_ipv4 && details.ipv4.payload_range.has_value()) {
+    if (!consumed_by_inner_link_branch && details.has_ipv4 && details.ipv4.payload_range.has_value()) {
         outer_ip_range = details.ipv4.payload_range;
         const auto outer_ipv4_offset = outer_payload_range.has_value()
             ? outer_payload_range->offset
@@ -2561,7 +2801,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             outer_ipv4_offset,
             *details.ipv4.payload_range
         );
-    } else if (details.has_ipv6 && details.ipv6.payload_range.has_value()) {
+    } else if (!consumed_by_inner_link_branch && details.has_ipv6 && details.ipv6.payload_range.has_value()) {
         outer_ip_range = details.ipv6.payload_range;
         const auto outer_ipv6_offset = outer_payload_range.has_value()
             ? outer_payload_range->offset
@@ -2580,7 +2820,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     }
 
     std::optional<SelectedPacketByteViewId> outer_udp_id {};
-    if (!details.has_ah && details.has_tcp && outer_ip_range.has_value()) {
+    if (!consumed_by_inner_link_branch && !details.has_ah && details.has_tcp && outer_ip_range.has_value()) {
         outer_tcp_id = append_tcp_segment_view(
             presentation.views,
             outer_ip_id,
@@ -2590,7 +2830,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             SelectedPacketByteViewKind::tcp_payload
         );
     }
-    if (!details.has_ah && details.has_udp && outer_ip_range.has_value()) {
+    if (!consumed_by_inner_link_branch && !details.has_ah && details.has_udp && outer_ip_range.has_value()) {
         outer_udp_id = append_udp_datagram_view(
             presentation.views,
             outer_ip_id,
@@ -2601,16 +2841,17 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         );
     }
 
-    append_overlay_payload_branches(
-        details,
-        presentation.views,
-        presentation.owner_captured_length,
-        outer_ip_id,
-        outer_ip_range,
-        outer_udp_id
-    );
-
     const auto* outer_udp_view = outer_udp_id.has_value() ? presentation.find_view(*outer_udp_id) : nullptr;
+    if (!consumed_by_inner_link_branch) {
+        append_overlay_payload_branches(
+            details,
+            presentation.views,
+            presentation.owner_captured_length,
+            outer_ip_id,
+            outer_ip_range,
+            outer_udp_id
+        );
+    }
     const QuicPresentationResult empty_quic_presentation {};
     const auto& quic_presentation_ref =
         options.quic_presentation.has_value()

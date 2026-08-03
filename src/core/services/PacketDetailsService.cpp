@@ -150,6 +150,37 @@ std::optional<PacketByteRange> rebase_packet_byte_range(
     return rebased;
 }
 
+void populate_llc_snap_unit_ranges(
+    const std::size_t llc_offset,
+    const std::uint16_t declared_payload_length,
+    const detail::LlcSnapPayloadView& llc_snap,
+    PacketDetails& details
+) {
+    details.llc.unit_range = make_packet_byte_range(
+        llc_offset,
+        llc_snap.payload_end > llc_offset ? (llc_snap.payload_end - llc_offset) : 0U,
+        declared_payload_length,
+        llc_snap.llc_header_truncated || llc_snap.payload_length_exceeds_captured
+    );
+
+    if (!details.has_snap) {
+        details.snap.unit_range = std::nullopt;
+        return;
+    }
+
+    const auto snap_offset = llc_offset + detail::kLlcHeaderSize;
+    const auto snap_declared_length =
+        declared_payload_length > detail::kLlcHeaderSize
+            ? std::optional<std::size_t> {declared_payload_length - detail::kLlcHeaderSize}
+            : std::nullopt;
+    details.snap.unit_range = make_packet_byte_range(
+        snap_offset,
+        llc_snap.payload_end > snap_offset ? (llc_snap.payload_end - snap_offset) : 0U,
+        snap_declared_length,
+        llc_snap.snap_header_truncated || llc_snap.payload_length_exceeds_captured
+    );
+}
+
 InnerEthernetDetails make_inner_ethernet_details(const EthernetDetails& ethernet);
 
 std::optional<EffectiveTransportPayloadDetails> rebase_effective_transport_payload(
@@ -1405,6 +1436,15 @@ void populate_vxlan_details(
     details.vxlan.i_flag_set = (details.vxlan.flags & detail::kVxlanFlagI) != 0U;
     details.vxlan.vni = vxlan.vni;
     if (vxlan.bounded_packet_end.has_value() &&
+        *vxlan.bounded_packet_end > vxlan_offset) {
+        details.vxlan.unit_range = make_packet_byte_range(
+            vxlan_offset,
+            *vxlan.bounded_packet_end - vxlan_offset,
+            std::nullopt,
+            false
+        );
+    }
+    if (vxlan.bounded_packet_end.has_value() &&
         *vxlan.bounded_packet_end > vxlan.inner_payload_offset) {
         details.vxlan.payload_range = make_packet_byte_range(
             vxlan.inner_payload_offset,
@@ -1440,8 +1480,10 @@ std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
     inner->llc = details.llc;
+    inner->llc.unit_range = rebase_packet_byte_range(details.llc.unit_range, base_offset, trimmed_prefix);
     inner->has_snap = details.has_snap;
     inner->snap = details.snap;
+    inner->snap.unit_range = rebase_packet_byte_range(details.snap.unit_range, base_offset, trimmed_prefix);
     inner->has_ipv4 = details.has_ipv4;
     inner->ipv4 = details.ipv4;
     inner->has_ipv6 = details.has_ipv6;
@@ -1547,6 +1589,15 @@ void populate_lenient_vxlan_details(
 
     if (details.vxlan.header_truncated) {
         return;
+    }
+
+    if (bounded_payload_end > vxlan_offset) {
+        details.vxlan.unit_range = make_packet_byte_range(
+            vxlan_offset,
+            bounded_payload_end - vxlan_offset,
+            std::nullopt,
+            false
+        );
     }
 
     details.vxlan.reserved_bits_non_zero =
@@ -1667,8 +1718,10 @@ std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
     inner->llc = details.llc;
+    inner->llc.unit_range = rebase_packet_byte_range(details.llc.unit_range, base_offset, trimmed_prefix);
     inner->has_snap = details.has_snap;
     inner->snap = details.snap;
+    inner->snap.unit_range = rebase_packet_byte_range(details.snap.unit_range, base_offset, trimmed_prefix);
     inner->has_ipv4 = details.has_ipv4;
     inner->ipv4 = details.ipv4;
     inner->has_ipv6 = details.has_ipv6;
@@ -2447,8 +2500,10 @@ std::shared_ptr<GreInnerPacketDetails> make_gre_inner_packet_details(
     inner->vlan_tags = details.vlan_tags;
     inner->has_llc = details.has_llc;
     inner->llc = details.llc;
+    inner->llc.unit_range = rebase_packet_byte_range(details.llc.unit_range, base_offset, trimmed_prefix);
     inner->has_snap = details.has_snap;
     inner->snap = details.snap;
+    inner->snap.unit_range = rebase_packet_byte_range(details.snap.unit_range, base_offset, trimmed_prefix);
     inner->has_mpls = details.has_mpls;
     inner->mpls_ether_type = details.mpls_ether_type;
     inner->mpls_labels = details.mpls_labels;
@@ -2979,6 +3034,7 @@ void populate_inner_ethernet_continuation_details(
     details.snap.oui = llc_snap.oui;
     details.snap.pid = llc_snap.pid;
     details.snap.header_truncated = llc_snap.snap_header_truncated;
+    populate_llc_snap_unit_ranges(payload_offset, protocol_type, llc_snap, details);
 
     const auto bounded_payload_end = llc_snap.payload_end;
     if (details.has_snap && !details.snap.header_truncated) {
@@ -3087,6 +3143,7 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             details.snap.oui = llc_snap.oui;
             details.snap.pid = llc_snap.pid;
             details.snap.header_truncated = llc_snap.snap_header_truncated;
+            populate_llc_snap_unit_ranges(view.payload_offset, view.protocol_type, llc_snap, details);
             view.bounded_packet_end = llc_snap.payload_end;
 
             const auto bounded_payload_end = llc_snap.payload_end;
@@ -3148,6 +3205,14 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             details.pbb.nca = pbb.nca;
             details.pbb.reserved = pbb.reserved;
             details.pbb.isid = pbb.isid;
+            const auto pbb_packet_end = pbb.bounded_packet_end.value_or(packet_bytes.size());
+            details.pbb.unit_range = make_packet_byte_range(
+                view.payload_offset,
+                pbb_packet_end > view.payload_offset ? (pbb_packet_end - view.payload_offset) : 0U,
+                std::nullopt,
+                pbb.status == detail::PbbParseStatus::itag_truncated ||
+                    pbb.status == detail::PbbParseStatus::inner_ethernet_truncated
+            );
 
             if (details.has_vlan) {
                 details.encapsulating_vlan_tags = details.vlan_tags;
@@ -3609,6 +3674,18 @@ std::optional<PacketDetails> decode_packet_details(
         details.pppoe.captured_payload_exceeds_declared = payload_bounds->captured_exceeds_declared;
         details.pppoe.payload_length_mismatch =
             payload_bounds->declared_exceeds_captured || payload_bounds->captured_exceeds_declared;
+        details.pppoe.unit_range = make_packet_byte_range(
+            network_payload_offset,
+            detail::kPppoeHeaderSize + logical_payload_length,
+            detail::kPppoeHeaderSize + declared_payload_length,
+            payload_bounds->declared_exceeds_captured
+        );
+        details.pppoe.payload_range = make_packet_byte_range(
+            payload_offset,
+            logical_payload_length,
+            declared_payload_length,
+            payload_bounds->declared_exceeds_captured
+        );
 
         if (details.pppoe.is_discovery) {
             parse_pppoe_discovery_tags(packet_bytes, payload_offset, logical_payload_length, details);

@@ -158,6 +158,19 @@ const SelectedPacketByteViewDescriptor* find_view(
     return find_view_in_scope(presentation, kind, 0U, occurrence);
 }
 
+std::size_t count_views(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewKind kind
+) {
+    return static_cast<std::size_t>(std::count_if(
+        presentation.views.begin(),
+        presentation.views.end(),
+        [&](const SelectedPacketByteViewDescriptor& view) {
+            return view.id.kind == kind;
+        }
+    ));
+}
+
 std::size_t require_kind_index_in_scope(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewKind kind,
@@ -917,6 +930,121 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/llc_snap/02_llc_snap_ipv4_udp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* ethernet = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
+        const auto* llc = require_view(presentation, SelectedPacketByteViewKind::llc);
+        const auto* snap = require_view(presentation, SelectedPacketByteViewKind::snap);
+        const auto* ipv4 = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
+        const auto* udp = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
+
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::llc) == 1U);
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::snap) == 1U);
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "llc:0:0" && descriptor.label == "LLC PDU";
+        }));
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "snap:0:0" && descriptor.label == "SNAP PDU";
+        }));
+        expect_parent(*llc, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*snap, SelectedPacketByteViewKind::llc);
+        expect_parent(*ipv4, SelectedPacketByteViewKind::snap);
+        expect_parent(*udp, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_REQUIRE(ethernet->payload_range.has_value());
+        PFL_REQUIRE(llc->payload_range.has_value());
+        PFL_REQUIRE(snap->payload_range.has_value());
+        PFL_EXPECT(llc->offset == ethernet->payload_range->offset);
+        PFL_EXPECT(snap->offset == llc->payload_range->offset);
+        PFL_EXPECT(ipv4->offset == snap->payload_range->offset);
+        PFL_EXPECT(llc->captured_length <= bytes.size() - llc->offset);
+        PFL_EXPECT(snap->captured_length <= bytes.size() - snap->offset);
+
+        const auto llc_materialized = require_materialized_view(presentation, llc->id, bytes);
+        const auto snap_materialized = require_materialized_view(presentation, snap->id, bytes);
+        PFL_REQUIRE(llc_materialized.bytes.size() >= 3U);
+        PFL_REQUIRE(snap_materialized.bytes.size() >= 5U);
+        PFL_EXPECT(llc_materialized.bytes[0] == 0xAAU);
+        PFL_EXPECT(llc_materialized.bytes[1] == 0xAAU);
+        PFL_EXPECT(llc_materialized.bytes[2] == 0x03U);
+        PFL_EXPECT(snap_materialized.bytes[0] == 0x00U);
+        PFL_EXPECT(snap_materialized.bytes[1] == 0x00U);
+        PFL_EXPECT(snap_materialized.bytes[2] == 0x00U);
+        PFL_EXPECT(snap_materialized.bytes[3] == 0x08U);
+        PFL_EXPECT(snap_materialized.bytes[4] == 0x00U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/pppoe/02_pppoe_session_ipv4_udp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* ethernet = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
+        const auto* pppoe = require_view(presentation, SelectedPacketByteViewKind::pppoe);
+        const auto* ipv4 = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
+        const auto* udp = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
+
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::pppoe) == 1U);
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "pppoe:0:0" && descriptor.label == "PPPoE Packet";
+        }));
+        expect_parent(*pppoe, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*ipv4, SelectedPacketByteViewKind::pppoe);
+        expect_parent(*udp, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_REQUIRE(ethernet->payload_range.has_value());
+        PFL_REQUIRE(pppoe->payload_range.has_value());
+        PFL_EXPECT(pppoe->offset == ethernet->payload_range->offset);
+        PFL_EXPECT(pppoe->payload_range->offset == pppoe->offset + 6U);
+        PFL_EXPECT(ipv4->offset == pppoe->offset + 8U);
+        PFL_EXPECT(pppoe->captured_length <= bytes.size() - pppoe->offset);
+
+        const auto pppoe_materialized = require_materialized_view(presentation, pppoe->id, bytes);
+        PFL_REQUIRE(pppoe_materialized.bytes.size() >= 8U);
+        for (std::size_t index = 0U; index < 6U; ++index) {
+            PFL_EXPECT(pppoe_materialized.bytes[index] == bytes[pppoe->offset + index]);
+        }
+        PFL_EXPECT(pppoe_materialized.bytes[6] == 0x00U);
+        PFL_EXPECT(pppoe_materialized.bytes[7] == 0x21U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/pbb/05_pbb_arp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* pbb = require_view(presentation, SelectedPacketByteViewKind::pbb);
+        const auto* inner_ethernet = require_view(presentation, SelectedPacketByteViewKind::inner_ethernet_payload);
+        const auto* arp = require_view(presentation, SelectedPacketByteViewKind::arp);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
+
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::pbb) == 1U);
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "pbb:0:0" && descriptor.label == "PBB Packet";
+        }));
+        expect_parent(*pbb, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*inner_ethernet, SelectedPacketByteViewKind::pbb);
+        expect_parent(*arp, SelectedPacketByteViewKind::inner_ethernet_payload);
+        PFL_EXPECT(pbb->offset + 4U == inner_ethernet->offset);
+        PFL_EXPECT(pbb->captured_length > inner_ethernet->captured_length);
+        PFL_EXPECT(pbb->captured_length <= bytes.size() - pbb->offset);
+
+        const auto pbb_materialized = require_materialized_view(presentation, pbb->id, bytes);
+        PFL_REQUIRE(pbb_materialized.bytes.size() >= 4U);
+        for (std::size_t index = 0U; index < 4U; ++index) {
+            PFL_EXPECT(pbb_materialized.bytes[index] == bytes[pbb->offset + index]);
+        }
+    }
+
+    {
+        CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto bytes = session.read_packet_data(packet);
@@ -1048,6 +1176,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/13_vxlan_inner_vlan_ipv4_tcp.pcap")));
         const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
 
         const auto* vxlan_payload = require_view(presentation, SelectedPacketByteViewKind::vxlan_payload);
@@ -1055,12 +1184,23 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* inner_vlan = require_view(presentation, SelectedPacketByteViewKind::inner_vlan_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
         expect_parent(*vxlan_payload, SelectedPacketByteViewKind::udp_payload);
         expect_parent(*inner_ethernet, SelectedPacketByteViewKind::vxlan_payload);
         expect_parent(*inner_vlan, SelectedPacketByteViewKind::inner_ethernet_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::inner_vlan_payload);
         expect_parent(*inner_tcp, SelectedPacketByteViewKind::inner_ipv4_payload);
-        PFL_EXPECT(vxlan_payload->offset == inner_ethernet->offset);
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "vxlan:0:0" && descriptor.label == "VXLAN Packet";
+        }));
+        PFL_EXPECT(vxlan_payload->offset + 8U == inner_ethernet->offset);
+        PFL_EXPECT(vxlan_payload->captured_length == inner_ethernet->captured_length + 8U);
+
+        const auto vxlan_materialized = require_materialized_view(presentation, vxlan_payload->id, bytes);
+        PFL_REQUIRE(vxlan_materialized.bytes.size() >= 8U);
+        for (std::size_t index = 0U; index < 8U; ++index) {
+            PFL_EXPECT(vxlan_materialized.bytes[index] == bytes[vxlan_payload->offset + index]);
+        }
     }
 
     {

@@ -592,6 +592,48 @@ void expect_frontend_adapter_nested_gtpu_data_byte_view() {
     PFL_EXPECT(data_content.formatted_text.find("49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41") != std::string::npos);
 }
 
+void expect_frontend_adapter_vxlan_packet_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/vxlan/13_vxlan_inner_vlan_ipv4_tcp.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+
+    const auto* vxlan_descriptor = find_packet_byte_view_descriptor(details, "vxlan:0:0");
+    const auto* inner_ethernet_descriptor = find_packet_byte_view_descriptor(details, "inner_ethernet:0:0");
+    PFL_REQUIRE(vxlan_descriptor != nullptr);
+    PFL_REQUIRE(inner_ethernet_descriptor != nullptr);
+    PFL_EXPECT(vxlan_descriptor->label == "VXLAN Packet");
+    PFL_EXPECT(vxlan_descriptor->parent_stable_id == std::optional<std::string> {"udp:0:0"});
+    PFL_EXPECT(vxlan_descriptor->available_length == inner_ethernet_descriptor->available_length + 8U);
+    PFL_EXPECT(vxlan_descriptor->supports_payload_only);
+    PFL_EXPECT(vxlan_descriptor->payload_available_length == std::optional<std::uint32_t> {inner_ethernet_descriptor->available_length});
+
+    const auto vxlan_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "vxlan:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(vxlan_content.available);
+    PFL_EXPECT(vxlan_content.stable_id == "vxlan:0:0");
+    PFL_EXPECT(vxlan_content.label == "VXLAN Packet");
+    PFL_EXPECT(vxlan_content.mode == "whole_unit");
+    PFL_EXPECT(vxlan_content.available_length == vxlan_descriptor->available_length);
+    PFL_EXPECT(!vxlan_content.formatted_text.empty());
+}
+
 void expect_bounded_tls_selected_flow_service_hint_query() {
     CaptureSession session {};
     PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap")));
@@ -779,6 +821,7 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
     expect_frontend_adapter_selected_flow_packet_byte_views();
     expect_frontend_adapter_nested_gtpu_data_byte_view();
+    expect_frontend_adapter_vxlan_packet_byte_view();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
     expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views();
     expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views();
