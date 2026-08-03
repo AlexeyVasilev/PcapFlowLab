@@ -15,7 +15,6 @@ constexpr std::size_t kMaxViewOccurrence = 0xFFU;
 constexpr std::uint32_t kLlcHeaderSize = 3U;
 constexpr std::uint32_t kSnapHeaderSize = 5U;
 constexpr std::uint32_t kPbbHeaderSize = 4U;
-constexpr std::uint32_t kPppProtocolFieldSize = 2U;
 
 constexpr SelectedPacketByteOwnerId kCapturedPacketOwnerId {
     .kind = SelectedPacketByteOwnerKind::captured_packet,
@@ -193,6 +192,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "frame";
     case SelectedPacketByteViewKind::ethernet_payload:
         return "ethernet";
+    case SelectedPacketByteViewKind::ieee8023_payload:
+        return "ieee8023";
     case SelectedPacketByteViewKind::vlan_payload:
         return "vlan";
     case SelectedPacketByteViewKind::llc:
@@ -205,6 +206,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "pbb";
     case SelectedPacketByteViewKind::pppoe:
         return "pppoe";
+    case SelectedPacketByteViewKind::ppp:
+        return "ppp";
     case SelectedPacketByteViewKind::arp:
         return "arp";
     case SelectedPacketByteViewKind::ipv4_payload:
@@ -229,6 +232,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "effective_transport_payload";
     case SelectedPacketByteViewKind::inner_ethernet_payload:
         return "inner_ethernet";
+    case SelectedPacketByteViewKind::inner_ieee8023_payload:
+        return "inner_ieee8023";
     case SelectedPacketByteViewKind::inner_vlan_payload:
         return "inner_vlan";
     case SelectedPacketByteViewKind::inner_ipv4_payload:
@@ -294,12 +299,14 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
     constexpr std::pair<std::string_view, SelectedPacketByteViewKind> kKinds[] {
         {"frame", SelectedPacketByteViewKind::frame},
         {"ethernet", SelectedPacketByteViewKind::ethernet_payload},
+        {"ieee8023", SelectedPacketByteViewKind::ieee8023_payload},
         {"vlan", SelectedPacketByteViewKind::vlan_payload},
         {"llc", SelectedPacketByteViewKind::llc},
         {"snap", SelectedPacketByteViewKind::snap},
         {"mpls", SelectedPacketByteViewKind::mpls_payload},
         {"pbb", SelectedPacketByteViewKind::pbb},
         {"pppoe", SelectedPacketByteViewKind::pppoe},
+        {"ppp", SelectedPacketByteViewKind::ppp},
         {"arp", SelectedPacketByteViewKind::arp},
         {"ipv4", SelectedPacketByteViewKind::ipv4_payload},
         {"ipv6", SelectedPacketByteViewKind::ipv6_payload},
@@ -312,6 +319,7 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"data", SelectedPacketByteViewKind::data},
         {"effective_transport_payload", SelectedPacketByteViewKind::effective_transport_payload},
         {"inner_ethernet", SelectedPacketByteViewKind::inner_ethernet_payload},
+        {"inner_ieee8023", SelectedPacketByteViewKind::inner_ieee8023_payload},
         {"inner_vlan", SelectedPacketByteViewKind::inner_vlan_payload},
         {"inner_ipv4", SelectedPacketByteViewKind::inner_ipv4_payload},
         {"inner_ipv6", SelectedPacketByteViewKind::inner_ipv6_payload},
@@ -373,6 +381,10 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "Ethernet II Frame"
             : "Ethernet Payload";
+    case SelectedPacketByteViewKind::ieee8023_payload:
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "IEEE 802.3 Frame"
+            : "IEEE 802.3 Payload";
     case SelectedPacketByteViewKind::vlan_payload:
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "802.1Q Encapsulation"
@@ -389,6 +401,10 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return "PBB Packet";
     case SelectedPacketByteViewKind::pppoe:
         return "PPPoE Packet";
+    case SelectedPacketByteViewKind::ppp:
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "PPP Packet"
+            : "PPP Payload";
     case SelectedPacketByteViewKind::arp:
         return "ARP Packet";
     case SelectedPacketByteViewKind::ipv4_payload:
@@ -425,6 +441,10 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "Inner Ethernet II Frame"
             : "Inner Ethernet Payload";
+    case SelectedPacketByteViewKind::inner_ieee8023_payload:
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "Inner IEEE 802.3 Frame"
+            : "Inner IEEE 802.3 Payload";
     case SelectedPacketByteViewKind::inner_vlan_payload:
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "Inner 802.1Q Encapsulation"
@@ -1012,8 +1032,28 @@ PayloadBranchResult append_pppoe_branch(
         result.parent_id = pppoe_id;
     }
 
-    if (pppoe.payload_range.has_value()) {
-        result.child_payload_range = shift_payload_range(*pppoe.payload_range, kPppProtocolFieldSize);
+    if (pppoe.ppp_unit_range.has_value()) {
+        const auto ppp_id = append_protocol_unit_view(
+            views,
+            result.parent_id,
+            kCapturedPacketOwnerId,
+            SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
+            SelectedPacketByteViewKind::ppp,
+            0U,
+            owner_captured_length,
+            *pppoe.ppp_unit_range,
+            pppoe.ppp_payload_range
+        );
+        if (ppp_id.has_value()) {
+            result.parent_id = ppp_id;
+        }
+    }
+
+    if (pppoe.ppp_payload_range.has_value()) {
+        result.child_payload_range = pppoe.ppp_payload_range;
+    } else if (pppoe.payload_range.has_value()) {
+        result.child_payload_range = pppoe.payload_range;
     } else {
         result.child_payload_range = std::nullopt;
     }
@@ -1289,12 +1329,15 @@ std::optional<SelectedPacketByteViewId> append_inner_ethernet_branch(
             inner.inner_ethernet.payload_range->offset >= 14U
                 ? inner.inner_ethernet.payload_range->offset - 14U
                 : 0U;
+        const auto inner_ethernet_kind = inner.inner_ethernet.uses_length_field
+            ? SelectedPacketByteViewKind::inner_ieee8023_payload
+            : SelectedPacketByteViewKind::inner_ethernet_payload;
         const auto appended = append_protocol_unit_from_payload_range(
             views,
             current_parent,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
-            SelectedPacketByteViewKind::inner_ethernet_payload,
+            inner_ethernet_kind,
             0U,
             owner_captured_length,
             inner_unit_offset,
@@ -2723,12 +2766,15 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
 
     if (details.has_ethernet && details.ethernet.payload_range.has_value()) {
         outer_payload_range = details.ethernet.payload_range;
+        const auto outer_ethernet_kind = details.ethernet.uses_length_field
+            ? SelectedPacketByteViewKind::ieee8023_payload
+            : SelectedPacketByteViewKind::ethernet_payload;
         const auto ethernet_id = append_protocol_unit_from_payload_range(
             presentation.views,
             frame_id,
             kCapturedPacketOwnerId,
             presentation.owner_kind,
-            SelectedPacketByteViewKind::ethernet_payload,
+            outer_ethernet_kind,
             0U,
             presentation.owner_captured_length,
             0U,

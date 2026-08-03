@@ -1011,38 +1011,51 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* ethernet = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
+        const auto* ieee8023 = require_view(presentation, SelectedPacketByteViewKind::ieee8023_payload);
         const auto* llc = require_view(presentation, SelectedPacketByteViewKind::llc);
         const auto* snap = require_view(presentation, SelectedPacketByteViewKind::snap);
         const auto* ipv4 = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
         const auto* udp = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
         const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
 
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ethernet_payload) == nullptr);
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::ieee8023_payload) == 1U);
         PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::llc) == 1U);
         PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::snap) == 1U);
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "ieee8023:0:0" && descriptor.label == "IEEE 802.3 Frame";
+        }));
         PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
             return descriptor.stable_id == "llc:0:0" && descriptor.label == "LLC PDU";
         }));
         PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
             return descriptor.stable_id == "snap:0:0" && descriptor.label == "SNAP PDU";
         }));
-        expect_parent(*llc, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*llc, SelectedPacketByteViewKind::ieee8023_payload);
         expect_parent(*snap, SelectedPacketByteViewKind::llc);
         expect_parent(*ipv4, SelectedPacketByteViewKind::snap);
         expect_parent(*udp, SelectedPacketByteViewKind::ipv4_payload);
-        PFL_REQUIRE(ethernet->payload_range.has_value());
+        PFL_REQUIRE(ieee8023->declared_length.has_value());
+        PFL_REQUIRE(ieee8023->payload_range.has_value());
         PFL_REQUIRE(llc->payload_range.has_value());
         PFL_REQUIRE(snap->payload_range.has_value());
-        PFL_EXPECT(llc->offset == ethernet->payload_range->offset);
+        PFL_EXPECT(ieee8023->offset == 0U);
+        PFL_EXPECT(ieee8023->payload_range->offset == 14U);
+        PFL_EXPECT(llc->offset == ieee8023->payload_range->offset);
         PFL_EXPECT(snap->offset == llc->payload_range->offset);
         PFL_EXPECT(ipv4->offset == snap->payload_range->offset);
+        PFL_EXPECT(ieee8023->captured_length == ieee8023->payload_range->offset + ieee8023->payload_range->captured_length);
+        PFL_EXPECT(*ieee8023->declared_length == ieee8023->payload_range->offset + *ieee8023->payload_range->declared_length);
         PFL_EXPECT(llc->captured_length <= bytes.size() - llc->offset);
         PFL_EXPECT(snap->captured_length <= bytes.size() - snap->offset);
 
+        const auto ieee8023_materialized = require_materialized_view(presentation, ieee8023->id, bytes);
         const auto llc_materialized = require_materialized_view(presentation, llc->id, bytes);
         const auto snap_materialized = require_materialized_view(presentation, snap->id, bytes);
+        PFL_REQUIRE(ieee8023_materialized.bytes.size() >= 14U);
         PFL_REQUIRE(llc_materialized.bytes.size() >= 3U);
         PFL_REQUIRE(snap_materialized.bytes.size() >= 5U);
+        PFL_EXPECT(ieee8023_materialized.bytes[12] == 0x00U);
         PFL_EXPECT(llc_materialized.bytes[0] == 0xAAU);
         PFL_EXPECT(llc_materialized.bytes[1] == 0xAAU);
         PFL_EXPECT(llc_materialized.bytes[2] == 0x03U);
@@ -1055,6 +1068,44 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/llc_snap/10_llc_non_snap_ipx_like.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* ieee8023 = require_view(presentation, SelectedPacketByteViewKind::ieee8023_payload);
+        const auto* llc = require_view(presentation, SelectedPacketByteViewKind::llc);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::snap) == nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ipv4_payload) == nullptr);
+        expect_parent(*ieee8023, SelectedPacketByteViewKind::frame);
+        expect_parent(*llc, SelectedPacketByteViewKind::ieee8023_payload);
+        PFL_REQUIRE(ieee8023->payload_range.has_value());
+        PFL_REQUIRE(llc->payload_range.has_value());
+        PFL_EXPECT(llc->offset == ieee8023->payload_range->offset);
+        const auto llc_materialized = require_materialized_view(presentation, llc->id, bytes);
+        PFL_REQUIRE(llc_materialized.bytes.size() >= 3U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/llc_snap/20_llc_snap_padding_after_declared_payload.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* ieee8023 = require_view(presentation, SelectedPacketByteViewKind::ieee8023_payload);
+        const auto* llc = require_view(presentation, SelectedPacketByteViewKind::llc);
+        PFL_REQUIRE(ieee8023->declared_length.has_value());
+        PFL_REQUIRE(ieee8023->payload_range.has_value());
+        PFL_EXPECT(ieee8023->captured_length == *ieee8023->declared_length);
+        PFL_EXPECT(bytes.size() > ieee8023->captured_length);
+        PFL_EXPECT(ieee8023->payload_range->offset == llc->offset);
+        const auto ieee8023_materialized = require_materialized_view(presentation, ieee8023->id, bytes);
+        PFL_EXPECT(ieee8023_materialized.bytes.size() == ieee8023->captured_length);
+    }
+
+    {
+        CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/pppoe/02_pppoe_session_ipv4_udp.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto bytes = session.read_packet_data(packet);
@@ -1062,31 +1113,77 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
         const auto* ethernet = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
         const auto* pppoe = require_view(presentation, SelectedPacketByteViewKind::pppoe);
+        const auto* ppp = require_view(presentation, SelectedPacketByteViewKind::ppp);
         const auto* ipv4 = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
         const auto* udp = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
         const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
 
         PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::pppoe) == 1U);
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::ppp) == 1U);
         PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
             return descriptor.stable_id == "pppoe:0:0" && descriptor.label == "PPPoE Packet";
         }));
+        PFL_EXPECT(std::any_of(descriptors.begin(), descriptors.end(), [](const auto& descriptor) {
+            return descriptor.stable_id == "ppp:0:0" && descriptor.label == "PPP Packet";
+        }));
         expect_parent(*pppoe, SelectedPacketByteViewKind::ethernet_payload);
-        expect_parent(*ipv4, SelectedPacketByteViewKind::pppoe);
+        expect_parent(*ppp, SelectedPacketByteViewKind::pppoe);
+        expect_parent(*ipv4, SelectedPacketByteViewKind::ppp);
         expect_parent(*udp, SelectedPacketByteViewKind::ipv4_payload);
         PFL_REQUIRE(ethernet->payload_range.has_value());
         PFL_REQUIRE(pppoe->payload_range.has_value());
+        PFL_REQUIRE(ppp->payload_range.has_value());
         PFL_EXPECT(pppoe->offset == ethernet->payload_range->offset);
         PFL_EXPECT(pppoe->payload_range->offset == pppoe->offset + 6U);
-        PFL_EXPECT(ipv4->offset == pppoe->offset + 8U);
+        PFL_EXPECT(ppp->offset == pppoe->payload_range->offset);
+        PFL_EXPECT(ppp->payload_range->offset == ppp->offset + 2U);
+        PFL_EXPECT(ipv4->offset == ppp->payload_range->offset);
+        PFL_EXPECT(ppp->captured_length == pppoe->payload_range->captured_length);
+        PFL_EXPECT(ppp->declared_length == pppoe->payload_range->declared_length);
         PFL_EXPECT(pppoe->captured_length <= bytes.size() - pppoe->offset);
 
         const auto pppoe_materialized = require_materialized_view(presentation, pppoe->id, bytes);
+        const auto ppp_materialized = require_materialized_view(presentation, ppp->id, bytes);
         PFL_REQUIRE(pppoe_materialized.bytes.size() >= 8U);
+        PFL_REQUIRE(ppp_materialized.bytes.size() >= 2U);
         for (std::size_t index = 0U; index < 6U; ++index) {
             PFL_EXPECT(pppoe_materialized.bytes[index] == bytes[pppoe->offset + index]);
         }
         PFL_EXPECT(pppoe_materialized.bytes[6] == 0x00U);
         PFL_EXPECT(pppoe_materialized.bytes[7] == 0x21U);
+        PFL_EXPECT(ppp_materialized.bytes[0] == 0x00U);
+        PFL_EXPECT(ppp_materialized.bytes[1] == 0x21U);
+        expect_hex_prefix(
+            presentation,
+            ppp->id,
+            bytes,
+            {0x45U, 0x00U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/pppoe/04_pppoe_session_ipv6_udp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+
+        const auto* ppp = require_view(presentation, SelectedPacketByteViewKind::ppp);
+        const auto* ipv6 = require_view(presentation, SelectedPacketByteViewKind::ipv6_payload);
+        const auto* udp = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*ppp, SelectedPacketByteViewKind::pppoe);
+        expect_parent(*ipv6, SelectedPacketByteViewKind::ppp);
+        expect_parent(*udp, SelectedPacketByteViewKind::ipv6_payload);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/pppoe/08_pppoe_discovery_padi.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto presentation = require_presentation(session, packet);
+
+        PFL_REQUIRE(find_view(presentation, SelectedPacketByteViewKind::pppoe) != nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ppp) == nullptr);
     }
 
     {

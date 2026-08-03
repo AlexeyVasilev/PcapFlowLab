@@ -476,7 +476,7 @@ Current Packet Details direction note:
 
 - `Summary / Bytes / Protocol` is now the shared packet-details tab shape for Qt and the experimental Tauri UI;
 - the removed `Raw` tab is represented by the `Frame` byte view;
-- the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
+- the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
 - the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
 - complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
 - Stream Item Details tabs remain unchanged in this pass and continue to use their existing payload/protocol surfaces.
@@ -535,7 +535,7 @@ Bytes should show one selected bounded byte view at a time.
 Expected semantics:
 
 - `Frame` replaces the old `Raw` packet preview;
-- the selector order now represents decoded protocol-layer units such as `Frame`, `Ethernet II Frame`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
+- the selector order now represents decoded protocol-layer units such as `Frame`, `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPPoE Packet`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
 - complete unit means protocol header plus bounded protocol payload;
 - stable identity belongs to the protocol layer, not to the currently displayed range mode;
 - `Frame` and the decoded link-layer unit may intentionally coexist even when both cover the same captured bytes;
@@ -544,7 +544,11 @@ Expected semantics:
 - when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
 - packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
 - packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
-- whole-unit packet-backed carrier descriptors include their own protocol header, including `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, `VXLAN Packet`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`;
+- whole-unit packet-backed carrier descriptors include their own protocol header, including `IEEE 802.3 Frame`, `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, `PPP Packet`, `VXLAN Packet`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`;
+- `IEEE 802.3 Frame` is selected from authoritative decode metadata rather than inferred in the UI layer; its whole-unit range begins at destination MAC, includes the 2-byte Length field, includes exactly the declared MAC client data extent, and excludes trailing MAC padding beyond the declared length; its payload-only range begins at LLC DSAP when present;
+- LLC/SNAP hierarchy is explicit when the decode path classifies the link layer as 802.3: `Frame -> IEEE 802.3 Frame -> LLC PDU -> SNAP PDU -> carried child`, while non-SNAP LLC remains `Frame -> IEEE 802.3 Frame -> LLC PDU`;
+- PPPoE Session packet bytes now layer as `PPPoE Packet -> PPP Packet -> carried child` when the decode layer has an authoritative PPP Protocol field and bounded PPP information field; `PPP Packet` includes the PPP Protocol field in whole-unit mode and its payload-only range begins after the parsed Protocol field;
+- PPPoE Discovery packets remain `PPPoE Packet` only and do not manufacture a false `PPP Packet` child;
 - `802.1Q Encapsulation` whole-unit materialization begins at the VLAN TPID, includes TPID, TCI, the encapsulated EtherType/length field, and the complete bounded carried payload; its optional payload-only mode begins at the authoritative carried-protocol boundary;
 - when a separate payload-only range remains meaningful, it stays an explicitly separate descriptor rather than being mislabeled as a whole packet;
 - record-layer TLS over TCP now layers as `TCP Segment -> TLS Record -> TLS Handshake Message` when the current bounded TLS parser confirms ownership;
@@ -578,7 +582,9 @@ Backend note for the current migration stage:
   - one bounded reconstructed TLS-record owner when existing selected-packet TLS analysis already reconstructs a contributing TCP TLS record;
 - descriptors carry stable non-localized protocol-layer identities, explicit parent relationships, one primary complete-unit range, and an optional payload-only range only where that second range is already authoritative; they do not retain per-view byte buffers or preformatted text;
 - materialization and hex formatting happen on demand for one selected view at a time;
-- the current pass covers protocol-unit defaults for Frame, Ethernet II, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- the current pass covers protocol-unit defaults for Frame, Ethernet II, IEEE 802.3, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, PPP, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet II, inner IEEE 802.3, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- current PPP Packet support is limited to the already-authoritative PPPoE decode path with a 2-byte PPP Protocol field; Protocol Field Compression is not guessed in the presentation layer;
+- Linux cooked SLL/SLL2 packet-byte units remain deferred in the current contract pass because the inspected packet-details model does not yet publish authoritative cooked-header whole-unit and payload ranges for byte-view materialization;
 - semantic child layers may intentionally overlap their parent transport or carrier range when the child unit is independently authoritative, including `UDP Datagram -> DNS Message`, `TCP Segment -> TLS Record`, `TLS Record -> TLS Handshake Message`, and `CRYPTO Frame Data -> TLS Handshake Message`;
 - overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier unit and the decoded child unit;
 - duplicate suppression applies only to semantically equivalent descriptors; plain IP-in-IP does not manufacture an extra tunnel-payload view when only the nested IP payloads are authoritative;

@@ -3261,8 +3261,8 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
                 details.ethernet.payload_range = make_packet_byte_range(
                     detail::kEthernetHeaderSize,
                     llc_snap.payload_end - detail::kEthernetHeaderSize,
-                    std::nullopt,
-                    false
+                    std::optional<std::size_t> {view.protocol_type},
+                    llc_snap.payload_length_exceeds_captured
                 );
             }
 
@@ -3778,6 +3778,19 @@ std::optional<PacketDetails> decode_packet_details(
         }
 
         details.pppoe.ppp_protocol = detail::read_be16(packet_bytes, payload_offset);
+        details.pppoe.ppp_protocol_field_length = static_cast<std::uint8_t>(detail::kPppProtocolFieldSize);
+        details.pppoe.ppp_unit_range = make_packet_byte_range(
+            payload_offset,
+            logical_payload_length,
+            declared_payload_length,
+            payload_bounds->declared_exceeds_captured
+        );
+        details.pppoe.ppp_payload_range = make_packet_byte_range(
+            payload_offset + detail::kPppProtocolFieldSize,
+            logical_payload_length - detail::kPppProtocolFieldSize,
+            declared_payload_length - detail::kPppProtocolFieldSize,
+            payload_bounds->declared_exceeds_captured
+        );
 
         if (details.pppoe.version != 1U ||
             details.pppoe.type != 1U ||

@@ -544,6 +544,79 @@ void expect_frontend_adapter_selected_flow_packet_byte_views() {
     PFL_EXPECT(tcp_payload.status_text.find("Available:") != std::string::npos);
 }
 
+void expect_frontend_adapter_ieee8023_packet_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/llc_snap/02_llc_snap_ipv4_udp.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto unrecognized = adapter.get_unrecognized_packets(0U, 4U);
+    PFL_REQUIRE(unrecognized.packets.size() == 1U);
+    const auto& packet = unrecognized.packets[0];
+
+    const auto details = adapter.get_unrecognized_packet_details(packet.packet_index);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "IEEE 802.3 Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "Ethernet II Frame") == labels.end());
+
+    const auto* ieee8023_descriptor = find_packet_byte_view_descriptor(details, "ieee8023:0:0");
+    const auto* llc_descriptor = find_packet_byte_view_descriptor(details, "llc:0:0");
+    const auto* snap_descriptor = find_packet_byte_view_descriptor(details, "snap:0:0");
+    PFL_REQUIRE(ieee8023_descriptor != nullptr);
+    PFL_REQUIRE(llc_descriptor != nullptr);
+    PFL_REQUIRE(snap_descriptor != nullptr);
+    PFL_EXPECT(ieee8023_descriptor->parent_stable_id == std::optional<std::string> {"frame:0:0"});
+    PFL_EXPECT(llc_descriptor->parent_stable_id == std::optional<std::string> {"ieee8023:0:0"});
+    PFL_EXPECT(snap_descriptor->parent_stable_id == std::optional<std::string> {"llc:0:0"});
+    PFL_EXPECT(ieee8023_descriptor->supports_payload_only);
+    PFL_REQUIRE(ieee8023_descriptor->payload_available_length.has_value());
+}
+
+void expect_frontend_adapter_pppoe_ppp_packet_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/pppoe/02_pppoe_session_ipv4_udp.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+
+    const auto* pppoe_descriptor = find_packet_byte_view_descriptor(details, "pppoe:0:0");
+    const auto* ppp_descriptor = find_packet_byte_view_descriptor(details, "ppp:0:0");
+    const auto* ipv4_descriptor = find_packet_byte_view_descriptor(details, "ipv4:0:0");
+    PFL_REQUIRE(pppoe_descriptor != nullptr);
+    PFL_REQUIRE(ppp_descriptor != nullptr);
+    PFL_REQUIRE(ipv4_descriptor != nullptr);
+    PFL_EXPECT(pppoe_descriptor->parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
+    PFL_EXPECT(ppp_descriptor->parent_stable_id == std::optional<std::string> {"pppoe:0:0"});
+    PFL_EXPECT(ipv4_descriptor->parent_stable_id == std::optional<std::string> {"ppp:0:0"});
+    PFL_EXPECT(ppp_descriptor->label == "PPP Packet");
+    PFL_EXPECT(ppp_descriptor->supports_payload_only);
+    PFL_REQUIRE(ppp_descriptor->payload_available_length.has_value());
+
+    const auto ppp_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "ppp:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(ppp_content.available);
+    PFL_EXPECT(ppp_content.label == "PPP Packet");
+    PFL_EXPECT(ppp_content.formatted_text.find("00 21") != std::string::npos);
+}
+
 void expect_frontend_adapter_nested_gtpu_data_byte_view() {
     FrontendSessionAdapter adapter {};
     const auto open_result = adapter.open_capture(fixture_path("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap"));
@@ -828,6 +901,8 @@ void run_flow_hints_real_fixtures_tests() {
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
     expect_frontend_adapter_selected_flow_packet_byte_views();
+    expect_frontend_adapter_ieee8023_packet_byte_view();
+    expect_frontend_adapter_pppoe_ppp_packet_byte_view();
     expect_frontend_adapter_nested_gtpu_data_byte_view();
     expect_frontend_adapter_vxlan_packet_byte_view();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");

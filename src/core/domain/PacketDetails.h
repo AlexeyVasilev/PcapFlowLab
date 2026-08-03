@@ -330,6 +330,7 @@ struct PppoeSessionDetails {
     std::uint16_t session_id {0};
     std::uint16_t payload_length {0};
     std::uint16_t ppp_protocol {0};
+    std::uint8_t ppp_protocol_field_length {0};
     bool is_discovery {false};
     bool header_truncated {false};
     bool protocol_field_truncated {false};
@@ -339,6 +340,8 @@ struct PppoeSessionDetails {
     std::size_t captured_payload_length {0};
     std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> payload_range {};
+    std::optional<PacketByteRange> ppp_unit_range {};
+    std::optional<PacketByteRange> ppp_payload_range {};
     std::vector<PppoeTagDetails> discovery_tags {};
     bool discovery_tag_header_truncated {false};
     bool discovery_tag_value_truncated {false};
