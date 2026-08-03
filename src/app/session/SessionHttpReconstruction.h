@@ -25,6 +25,7 @@ struct HttpStreamPresentationItem {
     StreamMaterializationStability stability {StreamMaterializationStability::stable};
     std::string payload_hex_text {};
     std::string protocol_text {};
+    HttpStreamItemSummaryDetails summary {};
 };
 
 struct HttpDirectionalStreamPresentation {

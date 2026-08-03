@@ -425,87 +425,13 @@ std::string format_stream_source_packets_text_for_test(
     return out.str();
 }
 
-bool stream_item_uses_packet_fallback_for_test(const StreamItemRow& row) {
-    return row.payload_hex_text.empty() && row.protocol_text.empty() && row.packet_indices.size() == 1U;
-}
-
-std::string stream_item_frames_hint_text_for_test(const StreamItemRow& row) {
-    if (row.protocol_text.empty()) {
-        return {};
-    }
-
-    std::vector<std::string> hints {};
-    const auto extract_line_value = [&](const std::string& marker) -> std::string {
-        const auto marker_index = row.protocol_text.find(marker);
-        if (marker_index == std::string::npos) {
-            return {};
-        }
-
-        const auto line_start = marker_index + marker.size();
-        const auto line_end = row.protocol_text.find('\n', line_start);
-        auto value = row.protocol_text.substr(
-            line_start,
-            line_end == std::string::npos ? std::string::npos : (line_end - line_start)
-        );
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-            value.erase(value.begin());
-        }
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-            value.pop_back();
-        }
-        return value;
-    };
-
-    const auto append_normalized_values = [&](const std::string& value) {
-        std::stringstream stream {value};
-        std::string part {};
-        while (std::getline(stream, part, ',')) {
-            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front())) != 0) {
-                part.erase(part.begin());
-            }
-            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back())) != 0) {
-                part.pop_back();
-            }
-            if (part == "Protected Payload") {
-                part = "Protected payload";
-            }
-            if (part.empty() || part == "Packet Type: Initial" || part == "Initial") {
-                continue;
-            }
-            if (std::find(hints.begin(), hints.end(), part) == hints.end()) {
-                hints.push_back(part);
-            }
-        }
-    };
-
-    append_normalized_values(extract_line_value("Frame Presence:"));
-    append_normalized_values(extract_line_value("Packet Type:"));
-    append_normalized_values(extract_line_value("Additional Packet Types:"));
-
-    if (hints.empty()) {
-        return {};
-    }
-
-    std::ostringstream out {};
-    out << "Frames: ";
-    for (std::size_t index = 0U; index < hints.size(); ++index) {
-        if (index != 0U) {
-            out << ", ";
-        }
-        out << hints[index];
-    }
-    return out.str();
-}
-
 std::vector<session_detail::PacketSummaryLayer> build_stream_summary_layers(
     const StreamItemRow& row,
     const std::vector<PacketRow>& packet_rows
 ) {
     return session_detail::build_stream_item_summary_layers(
         row,
-        format_stream_source_packets_text_for_test(row, build_flow_packet_numbers(packet_rows)),
-        stream_item_uses_packet_fallback_for_test(row) ? "Packet fallback" : "Stream item",
-        stream_item_frames_hint_text_for_test(row)
+        format_stream_source_packets_text_for_test(row, build_flow_packet_numbers(packet_rows))
     );
 }
 
@@ -889,6 +815,36 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_http_request_rows[0].protocol_text.find("Method: GET") != std::string::npos);
     PFL_EXPECT(split_http_request_rows[0].protocol_text.find("Path: /split") != std::string::npos);
     PFL_EXPECT(split_http_request_rows[0].protocol_text.find("Host: split.example") != std::string::npos);
+    PFL_REQUIRE(split_http_request_rows[0].http_summary.has_value());
+    PFL_EXPECT(split_http_request_rows[0].semantic_family == StreamItemSemanticFamily::http);
+    PFL_EXPECT(split_http_request_rows[0].http_summary->semantic_kind == HttpStreamItemSemanticKind::request);
+    const auto split_http_request_packets = split_http_request_session.list_flow_packets(0);
+    const auto split_http_request_summary = build_stream_summary_layers(
+        split_http_request_rows[0],
+        split_http_request_packets
+    );
+    const auto* split_http_request_item_layer = find_top_level_summary_layer(split_http_request_summary, "stream_item");
+    const auto* split_http_request_http_layer = find_top_level_summary_layer(split_http_request_summary, "http");
+    PFL_REQUIRE(split_http_request_item_layer != nullptr);
+    PFL_REQUIRE(split_http_request_http_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*split_http_request_item_layer, "State") == "Complete");
+    PFL_EXPECT(require_summary_field_value(*split_http_request_item_layer, "Assembly") == "Reassembled");
+    PFL_EXPECT(require_summary_field_value(*split_http_request_http_layer, "Method") == "GET");
+    PFL_EXPECT(require_summary_field_value(*split_http_request_http_layer, "Target") == "/split");
+    PFL_EXPECT(require_summary_field_value(*split_http_request_http_layer, "Version") == "HTTP/1.1");
+    auto relabeled_http_request = split_http_request_rows[0];
+    relabeled_http_request.label = "not-used-for-http-summary";
+    relabeled_http_request.protocol_text = "synthetic protocol text should not drive HTTP summary";
+    const auto relabeled_http_request_summary = build_stream_summary_layers(
+        relabeled_http_request,
+        split_http_request_packets
+    );
+    const auto* relabeled_http_request_http_layer =
+        find_top_level_summary_layer(relabeled_http_request_summary, "http");
+    PFL_REQUIRE(relabeled_http_request_http_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*relabeled_http_request_http_layer, "Method") == "GET");
+    PFL_EXPECT(require_summary_field_value(*relabeled_http_request_http_layer, "Target") == "/split");
+    PFL_EXPECT(require_summary_field_value(*relabeled_http_request_http_layer, "Version") == "HTTP/1.1");
 
     constexpr std::string_view split_http_response_text =
         "HTTP/1.1 200 OK\r\n"
@@ -929,6 +885,17 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Reason: OK") != std::string::npos);
     PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Content-Type: text/plain") != std::string::npos);
     PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Content-Length: 5") != std::string::npos);
+    PFL_REQUIRE(split_http_response_rows[0].http_summary.has_value());
+    PFL_EXPECT(split_http_response_rows[0].http_summary->semantic_kind == HttpStreamItemSemanticKind::response);
+    const auto split_http_response_summary = build_stream_summary_layers(
+        split_http_response_rows[0],
+        split_http_response_session.list_flow_packets(0)
+    );
+    const auto* split_http_response_http_layer = find_top_level_summary_layer(split_http_response_summary, "http");
+    PFL_REQUIRE(split_http_response_http_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*split_http_response_http_layer, "Status Code") == "200");
+    PFL_EXPECT(require_summary_field_value(*split_http_response_http_layer, "Reason") == "OK");
+    PFL_EXPECT(require_summary_field_value(*split_http_response_http_layer, "Version") == "HTTP/1.1");
 
     constexpr std::string_view http_request_one_text =
         "GET /one HTTP/1.1\r\n"
@@ -1012,6 +979,18 @@ void run_stream_query_tests() {
     PFL_EXPECT(http_partial_rows[1].packet_indices == expected_http_split_packet_indices);
     PFL_EXPECT(http_partial_rows[1].protocol_text.find("complete HTTP header block") != std::string::npos);
     PFL_EXPECT(http_partial_rows[1].protocol_text.find("Message Type: Request") == std::string::npos);
+    PFL_REQUIRE(http_partial_rows[1].http_summary.has_value());
+    PFL_EXPECT(http_partial_rows[1].http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload);
+    const auto http_partial_summary = build_stream_summary_layers(
+        http_partial_rows[1],
+        http_partial_session.list_flow_packets(0)
+    );
+    const auto* http_partial_item_layer = find_top_level_summary_layer(http_partial_summary, "stream_item");
+    const auto* http_partial_http_layer = find_top_level_summary_layer(http_partial_summary, "http");
+    PFL_REQUIRE(http_partial_item_layer != nullptr);
+    PFL_REQUIRE(http_partial_http_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*http_partial_item_layer, "State") == "Window-incomplete partial payload");
+    PFL_EXPECT(require_summary_field_value(*http_partial_http_layer, "Status") == "Window-incomplete partial payload");
 
     PFL_EXPECT(tls_multi_session.open_capture(tls_multi_path, fast_options));
     const auto tls_multi_summary_before = tls_multi_session.summary();
@@ -1169,6 +1148,19 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_gap_rows[1].protocol_text.find("Semantic parsing stopped for this direction") != std::string::npos);
     PFL_EXPECT(tls_gap_rows[2].protocol_text.find("Later bytes are shown conservatively") != std::string::npos);
     PFL_EXPECT(tls_gap_rows[2].packet_indices == std::vector<std::uint64_t> {1U});
+    PFL_EXPECT(tls_gap_rows[1].semantic_family == StreamItemSemanticFamily::tls);
+    PFL_EXPECT(tls_gap_rows[2].semantic_family == StreamItemSemanticFamily::tls);
+    PFL_EXPECT(tls_gap_rows[1].tls_semantic_kind == TlsStreamItemSemanticKind::gap);
+    PFL_EXPECT(tls_gap_rows[2].tls_semantic_kind == TlsStreamItemSemanticKind::gap);
+    const auto tls_gap_packet_rows = tls_gap_session.list_flow_packets(0);
+    const auto tls_gap_summary = build_stream_summary_layers(tls_gap_rows[1], tls_gap_packet_rows);
+    const auto tls_gap_followup_summary = build_stream_summary_layers(tls_gap_rows[2], tls_gap_packet_rows);
+    const auto* tls_gap_layer = find_top_level_summary_layer(tls_gap_summary, "tls");
+    const auto* tls_gap_followup_layer = find_top_level_summary_layer(tls_gap_followup_summary, "tls");
+    PFL_REQUIRE(tls_gap_layer != nullptr);
+    PFL_REQUIRE(tls_gap_followup_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*tls_gap_layer, "Status") == "Synthetic gap");
+    PFL_EXPECT(require_summary_field_value(*tls_gap_followup_layer, "Status") == "Conservative after TCP gap");
     const auto tls_gap_info = tls_gap_session.selected_flow_stream_context_info();
     PFL_REQUIRE(tls_gap_info.has_value());
     PFL_EXPECT(tls_gap_info->committed_stable_row_count == tls_gap_rows.size());
@@ -1208,6 +1200,28 @@ void run_stream_query_tests() {
     PFL_EXPECT(http_gap_rows[1].protocol_text.find("Semantic parsing stopped for this direction") != std::string::npos);
     PFL_EXPECT(http_gap_rows[2].protocol_text.find("Later bytes are shown conservatively") != std::string::npos);
     PFL_EXPECT(http_gap_rows[2].packet_indices == std::vector<std::uint64_t> {1U});
+    PFL_REQUIRE(http_gap_rows[1].http_summary.has_value());
+    PFL_REQUIRE(http_gap_rows[2].http_summary.has_value());
+    PFL_EXPECT(http_gap_rows[1].http_summary->semantic_kind == HttpStreamItemSemanticKind::gap);
+    PFL_EXPECT(http_gap_rows[2].http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload);
+    const auto http_gap_packet_rows = http_gap_session.list_flow_packets(0);
+    const auto http_gap_summary = build_stream_summary_layers(http_gap_rows[1], http_gap_packet_rows);
+    const auto http_gap_followup_summary = build_stream_summary_layers(http_gap_rows[2], http_gap_packet_rows);
+    const auto* http_gap_layer = find_top_level_summary_layer(http_gap_summary, "http");
+    const auto* http_gap_followup_layer = find_top_level_summary_layer(http_gap_followup_summary, "http");
+    PFL_REQUIRE(http_gap_layer != nullptr);
+    PFL_REQUIRE(http_gap_followup_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*http_gap_layer, "Status") == "Synthetic gap");
+    PFL_EXPECT(require_summary_field_value(*http_gap_followup_layer, "Status") == "Partial payload");
+    PFL_EXPECT(require_summary_field_value(*http_gap_followup_layer, "Diagnostic") ==
+        "Earlier TCP bytes are missing, so later bytes are shown conservatively.");
+    auto relabeled_http_gap = http_gap_rows[1];
+    relabeled_http_gap.label = "not-used-for-gap-summary";
+    relabeled_http_gap.protocol_text = "protocol text should not choose gap semantics";
+    const auto relabeled_http_gap_summary = build_stream_summary_layers(relabeled_http_gap, http_gap_packet_rows);
+    const auto* relabeled_http_gap_layer = find_top_level_summary_layer(relabeled_http_gap_summary, "http");
+    PFL_REQUIRE(relabeled_http_gap_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*relabeled_http_gap_layer, "Status") == "Synthetic gap");
     const auto http_gap_info = http_gap_session.selected_flow_stream_context_info();
     PFL_REQUIRE(http_gap_info.has_value());
     PFL_EXPECT(http_gap_info->committed_stable_row_count == http_gap_rows.size());
@@ -2113,6 +2127,8 @@ void run_stream_query_tests() {
         PFL_REQUIRE(stream_tls_layer != nullptr);
         PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Label") == "TLS ClientHello");
         PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Size") == "517 bytes");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "State") == "Complete");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Assembly") == "Packet-local");
         PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Source packet") == "#1");
         PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Stream item");
         PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Length") == "512");
@@ -2235,6 +2251,16 @@ void run_stream_query_tests() {
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "SNI:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "ALPN:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Supported Versions:");
+        auto relabeled_tls_row = rows[0];
+        relabeled_tls_row.label = "not-used-for-tls-summary";
+        relabeled_tls_row.protocol_text = "synthetic protocol text should not choose tls semantics";
+        relabeled_tls_row.summary_payload_bytes.clear();
+        relabeled_tls_row.payload_hex_text.clear();
+        const auto relabeled_tls_summary = build_stream_summary_layers(relabeled_tls_row, packet_rows);
+        const auto* relabeled_tls_layer = find_top_level_summary_layer(relabeled_tls_summary, "tls");
+        PFL_REQUIRE(relabeled_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*relabeled_tls_layer, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*relabeled_tls_layer, "SNI") == "auth.split.io");
     }
 
     {
@@ -3212,11 +3238,23 @@ void run_stream_query_tests() {
             PFL_EXPECT(row.tls_semantic_kind == TlsStreamItemSemanticKind::none);
             PFL_EXPECT(row.protocol_text.empty());
             PFL_EXPECT(row.payload_hex_text.empty());
+            PFL_EXPECT(row.semantic_family == StreamItemSemanticFamily::generic);
+            PFL_REQUIRE(row.generic_summary.has_value());
+            PFL_EXPECT(row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::udp_payload);
+            const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0));
+            const auto* generic_layer = find_top_level_summary_layer(summary_layers, "stream_payload");
+            PFL_REQUIRE(generic_layer != nullptr);
+            PFL_EXPECT(require_summary_field_value(*generic_layer, "Kind") == "UDP payload");
+            auto relabeled_row = row;
+            relabeled_row.label = "not-used-for-generic-summary";
+            const auto relabeled_summary = build_stream_summary_layers(relabeled_row, session.list_flow_packets(0));
+            const auto* relabeled_generic_layer = find_top_level_summary_layer(relabeled_summary, "stream_payload");
+            PFL_REQUIRE(relabeled_generic_layer != nullptr);
+            PFL_EXPECT(require_summary_field_value(*relabeled_generic_layer, "Kind") == "UDP payload");
         }
     }
 
     {
-        HexDumpService hex_dump_service {};
         const auto payload = make_tls_handshake_record(0x02U, {0xAAU, 0xBBU, 0xCCU});
         const StreamItemRow row {
             .stream_item_index = 1U,
@@ -3225,10 +3263,23 @@ void run_stream_query_tests() {
             .byte_count = static_cast<std::uint32_t>(payload.size()),
             .packet_count = 1U,
             .packet_indices = {0U},
-            .summary_payload_bytes = payload,
-            .payload_hex_text = hex_dump_service.format(payload),
+            .semantic_family = StreamItemSemanticFamily::tls,
+            .summary_payload_bytes = {},
+            .payload_hex_text = {},
             .protocol_text = "synthetic protocol text should not choose semantics",
             .tls_semantic_kind = TlsStreamItemSemanticKind::encrypted_handshake,
+            .tls_summary_records = {
+                TlsRecordModel {
+                    .content_type = 22U,
+                    .content_type_kind = TlsRecordContentTypeKind::handshake,
+                    .legacy_version = 0x0303U,
+                    .declared_payload_length = payload.size() - 5U,
+                    .total_size = payload.size(),
+                    .available_bytes = payload.size(),
+                    .status = TlsRecordStatus::complete,
+                    .handshake_payload_kind = TlsHandshakePayloadKind::encrypted_opaque,
+                }
+            },
             .tls_initial_parser_context = {
                 .semantic_state = TlsInspectionSemanticState::post_change_cipher_spec,
             },
@@ -3236,8 +3287,7 @@ void run_stream_query_tests() {
 
         const auto summary_layers = session_detail::build_stream_item_summary_layers(
             row,
-            "packet #1",
-            "Stream item"
+            "packet #1"
         );
         const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
         PFL_REQUIRE(tls_layer != nullptr);
@@ -3308,6 +3358,8 @@ void run_stream_query_tests() {
         PFL_REQUIRE(tls_layer != nullptr);
         PFL_EXPECT(find_top_level_summary_layers(summary_layers, "tls").size() == 1U);
         PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Label") == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "State") == "Complete");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Assembly") == "Packet-local");
         PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Stream item");
         PFL_EXPECT(require_summary_field_value(*quic_layer, "Packet Type") == "Initial");
         PFL_EXPECT(require_summary_field_value(*quic_layer, "Frame Presence") == "CRYPTO");
@@ -3318,6 +3370,17 @@ void run_stream_query_tests() {
         PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
         PFL_EXPECT(require_summary_field_value(*tls_layer, "SNI") == "bag.itunes.apple.com");
         PFL_EXPECT(find_summary_field(*tls_layer, "Selected Cipher Suite") == nullptr);
+        auto relabeled_quic_row = *quic_row;
+        relabeled_quic_row.label = "not-used-for-quic-summary";
+        relabeled_quic_row.protocol_text = "synthetic protocol text should not choose quic semantics";
+        const auto relabeled_quic_summary = build_stream_summary_layers(relabeled_quic_row, packet_rows);
+        const auto* relabeled_quic_layer = find_top_level_summary_layer(relabeled_quic_summary, "quic");
+        const auto* relabeled_tls_layer = find_top_level_summary_layer(relabeled_quic_summary, "tls");
+        PFL_REQUIRE(relabeled_quic_layer != nullptr);
+        PFL_REQUIRE(relabeled_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*relabeled_quic_layer, "Packet Type") == "Initial");
+        PFL_EXPECT(require_summary_field_value(*relabeled_quic_layer, "Frame Presence") == "CRYPTO");
+        PFL_EXPECT(require_summary_field_value(*relabeled_tls_layer, "Handshake Type") == "ClientHello");
     }
 
     {
@@ -4680,6 +4743,13 @@ void run_stream_query_tests() {
             PFL_EXPECT(!starts_with(row.label, "TLS"));
             PFL_EXPECT(row.protocol_text.empty());
             PFL_EXPECT(row.payload_hex_text.empty());
+            PFL_EXPECT(row.semantic_family == StreamItemSemanticFamily::generic);
+            PFL_REQUIRE(row.generic_summary.has_value());
+            PFL_EXPECT(row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::tcp_payload);
+            const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0));
+            const auto* generic_layer = find_top_level_summary_layer(summary_layers, "stream_payload");
+            PFL_REQUIRE(generic_layer != nullptr);
+            PFL_EXPECT(require_summary_field_value(*generic_layer, "Kind") == "TCP payload");
         }
         for (const auto& row : bounded_rows) {
             PFL_EXPECT(row.label == "TCP Payload");
@@ -4739,6 +4809,21 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].summary_text.find("Message: ARP Request") != std::string::npos);
         PFL_EXPECT(rows[0].payload_hex_text.find("00 01 08 00 06 04 00 01") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Protocol: ARP (Address Resolution Protocol)") != std::string::npos);
+        PFL_EXPECT(rows[0].semantic_family == StreamItemSemanticFamily::arp);
+        PFL_REQUIRE(rows[0].arp_summary.has_value());
+        const auto arp_summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* arp_layer = find_top_level_summary_layer(arp_summary_layers, "arp");
+        PFL_REQUIRE(arp_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*arp_layer, "Message") == "ARP Request");
+        PFL_EXPECT(require_summary_field_value(*arp_layer, "Sender Protocol Address") == "10.10.12.2");
+        PFL_EXPECT(require_summary_field_value(*arp_layer, "Target Protocol Address") == "10.10.12.1");
+        auto relabeled_arp_row = rows[0];
+        relabeled_arp_row.label = "not-used-for-arp-summary";
+        relabeled_arp_row.protocol_text = "synthetic protocol text should not choose arp semantics";
+        const auto relabeled_arp_summary = build_stream_summary_layers(relabeled_arp_row, session.list_flow_packets(0));
+        const auto* relabeled_arp_layer = find_top_level_summary_layer(relabeled_arp_summary, "arp");
+        PFL_REQUIRE(relabeled_arp_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*relabeled_arp_layer, "Message") == "ARP Request");
     }
 
     {

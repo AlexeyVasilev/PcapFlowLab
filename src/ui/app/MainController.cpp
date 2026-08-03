@@ -1263,62 +1263,11 @@ bool stream_item_uses_packet_fallback(const StreamItemRow& item) {
 }
 
 QString stream_item_details_source(const StreamItemRow& item) {
-    return stream_item_uses_packet_fallback(item)
-        ? QStringLiteral("Packet fallback")
-        : QStringLiteral("Stream item");
+    return QString::fromStdString(session_detail::stream_item_details_source_text(item));
 }
 
 QString stream_item_header_primary_text(const StreamItemRow& item) {
     return QString::fromStdString(item.label);
-}
-
-QString stream_item_frames_hint_text(const StreamItemRow& item) {
-    const auto protocolText = QString::fromStdString(item.protocol_text);
-    if (protocolText.isEmpty()) {
-        return {};
-    }
-
-    QStringList hints {};
-
-    const auto extractLineValue = [&](const QString& marker) -> QString {
-        const auto markerIndex = protocolText.indexOf(marker);
-        if (markerIndex < 0) {
-            return {};
-        }
-
-        const auto lineStart = markerIndex + marker.size();
-        auto lineEnd = protocolText.indexOf(QLatin1Char('\n'), lineStart);
-        if (lineEnd < 0) {
-            lineEnd = protocolText.size();
-        }
-        return protocolText.mid(lineStart, lineEnd - lineStart).trimmed();
-    };
-
-    const auto appendNormalizedValues = [&](const QString& text) {
-        for (const auto& rawPart : text.split(QStringLiteral(","), Qt::SkipEmptyParts)) {
-            auto part = rawPart.trimmed();
-            if (part.compare(QStringLiteral("Protected Payload"), Qt::CaseInsensitive) == 0) {
-                part = QStringLiteral("Protected payload");
-            }
-            if (part.compare(QStringLiteral("Packet Type: Initial"), Qt::CaseInsensitive) == 0 ||
-                part.compare(QStringLiteral("Initial"), Qt::CaseInsensitive) == 0) {
-                continue;
-            }
-            if (!part.isEmpty() && !hints.contains(part)) {
-                hints.push_back(part);
-            }
-        }
-    };
-
-    appendNormalizedValues(extractLineValue(QStringLiteral("Frame Presence:")));
-    appendNormalizedValues(extractLineValue(QStringLiteral("Packet Type:")));
-    appendNormalizedValues(extractLineValue(QStringLiteral("Additional Packet Types:")));
-
-    if (hints.isEmpty()) {
-        return {};
-    }
-
-    return QStringLiteral("Frames: %1").arg(hints.join(QStringLiteral(", ")));
 }
 
 QString stream_item_header_secondary_text(
@@ -1334,8 +1283,10 @@ QString stream_item_header_badge_text(const StreamItemRow& item) {
     if (item.has_constricted_contribution) {
         return QStringLiteral("Constricted");
     }
-    const auto label = QString::fromStdString(item.label);
-    if (label.contains(QStringLiteral("partial"), Qt::CaseInsensitive)) {
+    if (item.tls_semantic_kind == TlsStreamItemSemanticKind::partial_record ||
+        item.tls_semantic_kind == TlsStreamItemSemanticKind::partial_payload ||
+        (item.http_summary.has_value() && item.http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload) ||
+        item.materialization_stability == StreamMaterializationStability::window_incomplete) {
         return QStringLiteral("Partial");
     }
     if (stream_item_uses_packet_fallback(item)) {
@@ -1981,9 +1932,6 @@ QString buildStreamItemSummary(
         QStringLiteral("Details source: %1").arg(stream_item_details_source(item)),
     };
 
-    if (const auto framesHint = stream_item_frames_hint_text(item); !framesHint.isEmpty()) {
-        lines.insert(2, framesHint);
-    }
     if (const auto constrictedLines = stream_item_constricted_summary_lines(item); !constrictedLines.isEmpty()) {
         lines.push_back(QString {});
         lines.append(constrictedLines);
@@ -6103,9 +6051,7 @@ void MainController::reloadSelectedStreamDetails() {
     packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
         session_detail::build_stream_item_summary_layers(
             *itemIt,
-            format_stream_source_packets(*itemIt, current_flow_packet_numbers_).toStdString(),
-            stream_item_details_source(*itemIt).toStdString(),
-            stream_item_frames_hint_text(*itemIt).toStdString()
+            format_stream_source_packets(*itemIt, current_flow_packet_numbers_).toStdString()
         )
     ));
     packet_details_model_.clearPacketBytePresentation();

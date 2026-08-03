@@ -24,6 +24,7 @@ struct ParsedHttpHeaderBlock {
     std::size_t size {0U};
     std::string label {};
     std::string protocol_text {};
+    HttpStreamItemSummaryDetails summary {};
 };
 
 bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
@@ -405,6 +406,12 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
                 ? "HTTP Request"
                 : ("HTTP " + method_text + " " + path_text),
             .protocol_text = text.str(),
+            .summary = HttpStreamItemSummaryDetails {
+                .semantic_kind = HttpStreamItemSemanticKind::request,
+                .method = method_text,
+                .target = path_text,
+                .version = std::string {version},
+            },
         };
     }
 
@@ -452,12 +459,19 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
         }
 
         const auto code_text = std::string {code};
+        const auto status_code = static_cast<std::uint16_t>(std::stoi(code_text));
         return ParsedHttpHeaderBlock {
             .size = http_message_size(payload_text, offset, *header_size, headers_text),
             .label = code_text.empty()
                 ? "HTTP Response"
                 : (reason_text.empty() ? ("HTTP " + code_text) : ("HTTP " + code_text + " " + reason_text)),
             .protocol_text = text.str(),
+            .summary = HttpStreamItemSummaryDetails {
+                .semantic_kind = HttpStreamItemSemanticKind::response,
+                .version = std::string {version},
+                .status_code = status_code,
+                .reason_phrase = reason_text,
+            },
         };
     }
 
@@ -674,6 +688,10 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                     .stability = StreamMaterializationStability::window_incomplete,
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = limited_quality_http_protocol_text(),
+                    .summary = HttpStreamItemSummaryDetails {
+                        .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
+                        .diagnostic = "Window ended before a complete HTTP header block was available.",
+                    },
                     },
                     logical_item_count,
                     skip_item_count,
@@ -697,6 +715,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .packet_indices = consume_reassembled_packet_indices(*chunks, block_bytes.size(), chunk_index, chunk_offset),
             .payload_hex_text = hex_dump_service.format(block_bytes),
             .protocol_text = parsed->protocol_text,
+            .summary = parsed->summary,
             },
             logical_item_count,
             skip_item_count,
@@ -723,6 +742,10 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                         .stability = StreamMaterializationStability::window_incomplete,
                         .payload_hex_text = hex_dump_service.format(trailing),
                         .protocol_text = limited_quality_http_protocol_text(),
+                        .summary = HttpStreamItemSummaryDetails {
+                            .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
+                            .diagnostic = "A later HTTP message boundary was not available in the loaded reassembly window.",
+                        },
                         },
                         logical_item_count,
                         skip_item_count,
@@ -752,6 +775,10 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .packet_indices = std::vector<std::uint64_t> {result->first_gap_packet_index},
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("HTTP"),
+            .summary = HttpStreamItemSummaryDetails {
+                .semantic_kind = HttpStreamItemSemanticKind::gap,
+                .diagnostic = "Earlier TCP bytes are missing, so later HTTP bytes are shown conservatively.",
+            },
             },
             logical_item_count,
             skip_item_count,

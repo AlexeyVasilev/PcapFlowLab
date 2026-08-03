@@ -126,11 +126,19 @@ Packet Details reflect packet truth and packet bytes.
 
 Stream Item Details describe the selected stream item.
 
-- `Summary`: compact item metadata and source ownership.
+- `Summary`: compact structured item metadata and source ownership.
 - `Item Data`: exact bytes owned by the selected semantic stream item when one authoritative owner exists.
 - `Protocol`: richer protocol-specific interpretation of the stream item and attached semantics.
 
 Stream Item Details reflect semantic-item truth, which may be reassembled and may not be packet-identical.
+
+Summary-specific rules:
+
+- Stream Item Summary is model-driven and frontend-neutral.
+- Stream Item Summary semantics must come from authoritative stream-item model fields retained by selected-flow construction.
+- Display labels and Protocol text may remain visible for bubbles, tabs, and debug surfaces, but they are not semantic sources for Stream Item Summary.
+- Item Data remains the byte-ownership surface and must stay separate from Summary semantics.
+- Protocol remains the richer text/debug surface until its remaining useful fields are either migrated or intentionally deferred.
 
 ### 8.3 Stream Item Data Backend Contract
 
@@ -175,6 +183,7 @@ TLS rules:
 - Protocol details for alerts should include `Alert Level` and `Alert Description` when reliably parsed.
 - TLS stream items may be reassembled across multiple packets.
 - Partial TLS behavior remains conservative and may fall back to partial labels.
+- TLS Stream Item Summary is driven by retained TLS semantic kind, parser context, and retained structured record models rather than by reparsing Stream labels or Protocol text.
 
 ### 9.2 HTTP
 
@@ -185,6 +194,7 @@ HTTP selected-flow presentation is message-oriented when reliable header structu
 - Source packet ownership must reflect the contributing packet set.
 - Partial or incomplete HTTP data should fall back conservatively.
 - HTTP body handling remains bounded and practical, not a general body-reconstruction subsystem.
+- HTTP Stream Item Summary is driven by retained HTTP semantic kind and retained request/response fields such as method, target, version, status code, reason phrase, and honest reconstruction diagnostics rather than by label text.
 
 ### 9.3 QUIC
 
@@ -203,6 +213,7 @@ QUIC selected-flow presentation uses a bounded shell-aware model.
 - QUIC stream item size should reflect semantic item size, not whole UDP packet size.
 - QUIC details may include attached TLS-over-CRYPTO details when reliably derived from bounded available bytes.
 - This is not full QUIC session reconstruction, decryption, or HTTP/3 parsing.
+- QUIC Stream Item Summary is driven by retained QUIC packet/frame/handshake presentation models rather than by parsing display labels such as `QUIC Initial: CRYPTO`.
 
 ### 9.4 Generic Fallback Behavior
 
@@ -212,6 +223,7 @@ When stronger protocol semantics are not reliably available, selected-flow analy
 - UDP fallback label: `UDP Payload`
 - Generic fallback is preferable to guessed protocol semantics.
 - Packet truth and stream truth may differ: a packet can be protocol-rich while stream contribution remains generic or partial.
+- Synthetic gap and conservative post-gap rows must retain explicit structured state rather than depending on displayed titles that happen to contain `Gap` or `partial`.
 
 ## 10. Reliability Principles
 

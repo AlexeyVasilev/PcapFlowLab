@@ -4672,11 +4672,22 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(
     return layers;
 }
 
+std::vector<PacketSummaryLayer> build_tls_summary_layers_from_records(
+    std::span<const TlsRecordModel> records
+) {
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(records.size());
+    for (const auto& record : records) {
+        if (const auto layer = build_tls_summary_layer(record); layer.has_value()) {
+            layers.push_back(*layer);
+        }
+    }
+    return layers;
+}
+
 struct TlsStreamSummaryContext {
     bool is_tls {false};
     bool allow_structured_summary {false};
-    bool force_encrypted_handshake_records {false};
-    bool force_encrypted_alert_records {false};
     std::optional<std::string_view> partial_status_text {};
 };
 
@@ -4695,13 +4706,11 @@ TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKi
         return TlsStreamSummaryContext {
             .is_tls = true,
             .allow_structured_summary = true,
-            .force_encrypted_alert_records = true,
         };
     case TlsStreamItemSemanticKind::encrypted_handshake:
         return TlsStreamSummaryContext {
             .is_tls = true,
             .allow_structured_summary = true,
-            .force_encrypted_handshake_records = true,
         };
     case TlsStreamItemSemanticKind::partial_record:
         return TlsStreamSummaryContext {
@@ -4723,6 +4732,89 @@ TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKi
     }
 }
 
+bool stream_item_uses_packet_fallback(const StreamItemRow& row) {
+    return row.payload_hex_text.empty() && row.protocol_text.empty() && row.packet_indices.size() == 1U;
+}
+
+std::string stream_item_state_text(const StreamItemRow& row) {
+    if (row.has_constricted_contribution) {
+        return "Constricted";
+    }
+
+    if (row.semantic_family == StreamItemSemanticFamily::synthetic) {
+        return "Synthetic gap";
+    }
+
+    if (row.http_summary.has_value()) {
+        switch (row.http_summary->semantic_kind) {
+        case HttpStreamItemSemanticKind::gap:
+            return "Synthetic gap";
+        case HttpStreamItemSemanticKind::partial_payload:
+            return row.materialization_stability == StreamMaterializationStability::window_incomplete
+                ? "Window-incomplete partial payload"
+                : "Partial payload";
+        case HttpStreamItemSemanticKind::request:
+        case HttpStreamItemSemanticKind::response:
+            break;
+        case HttpStreamItemSemanticKind::none:
+        default:
+            break;
+        }
+    }
+
+    switch (row.tls_semantic_kind) {
+    case TlsStreamItemSemanticKind::gap:
+        return row.byte_count == 0U ? "Synthetic gap" : "Conservative after TCP gap";
+    case TlsStreamItemSemanticKind::partial_record:
+        return "Partial record";
+    case TlsStreamItemSemanticKind::partial_payload:
+        return "Partial payload";
+    default:
+        break;
+    }
+
+    if (row.arp_summary.has_value()) {
+        if (row.arp_summary->fixed_header_truncated || row.arp_summary->address_section_truncated) {
+            return "Truncated";
+        }
+        return "Complete";
+    }
+
+    if (row.quic_stream_presentation.has_value()) {
+        const auto& packet = row.quic_stream_presentation->packet;
+        if (packet.shell_type == QuicPresentationShellType::initial &&
+            !packet.has_authenticated_initial_plaintext &&
+            packet.frames.empty() &&
+            packet.tls_handshakes.empty()) {
+            return "Opaque / failed decryption";
+        }
+    }
+
+    if (row.generic_summary.has_value() && !row.generic_summary->diagnostic.empty()) {
+        return "Conservative after TCP gap";
+    }
+
+    switch (row.materialization_stability) {
+    case StreamMaterializationStability::window_incomplete:
+        return "Window-incomplete";
+    case StreamMaterializationStability::pagination_lookahead:
+        return "Pagination lookahead";
+    case StreamMaterializationStability::stable:
+    default:
+        return "Complete";
+    }
+}
+
+std::string stream_item_assembly_text(const StreamItemRow& row) {
+    return row.packet_count > 1U ? "Reassembled" : "Packet-local";
+}
+
+std::string stream_item_details_source_text_impl(const StreamItemRow& row) {
+    return stream_item_uses_packet_fallback(row)
+        ? "Packet fallback"
+        : "Stream item";
+}
+
 std::optional<PacketSummaryLayer> build_tls_partial_stream_summary_layer(const StreamItemRow& row) {
     const auto context = tls_stream_summary_context(row.tls_semantic_kind);
     if (!context.partial_status_text.has_value()) {
@@ -4741,9 +4833,37 @@ std::optional<PacketSummaryLayer> build_tls_partial_stream_summary_layer(const S
     };
 }
 
+std::optional<PacketSummaryLayer> build_tls_gap_stream_summary_layer(const StreamItemRow& row) {
+    if (row.tls_semantic_kind != TlsStreamItemSemanticKind::gap) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Status", row.byte_count == 0U ? "Synthetic gap" : "Conservative after TCP gap"),
+    };
+    if (row.byte_count > 0U) {
+        fields.push_back(make_summary_field("Available Bytes", std::to_string(row.byte_count)));
+    }
+    fields.push_back(make_summary_field(
+        "Diagnostic",
+        "Earlier TCP bytes are missing, so later TLS bytes are shown conservatively."
+    ));
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = row.label.empty() ? std::string {"TLS"} : row.label,
+        .fields = std::move(fields),
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
 std::optional<PacketSummaryLayer> build_conservative_tls_stream_summary_layer(const StreamItemRow& row) {
     if (const auto partial_layer = build_tls_partial_stream_summary_layer(row); partial_layer.has_value()) {
         return partial_layer;
+    }
+    if (const auto gap_layer = build_tls_gap_stream_summary_layer(row); gap_layer.has_value()) {
+        return gap_layer;
     }
 
     if (!row.has_constricted_contribution) {
@@ -4772,25 +4892,160 @@ std::pair<std::string, std::string> stream_source_packets_field(std::string_view
     return {"Source packets", std::string {source_packets_text}};
 }
 
+std::string format_http_status_code(const std::uint16_t status_code) {
+    return std::to_string(status_code);
+}
+
+std::optional<PacketSummaryLayer> build_http_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.http_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& summary = *row.http_summary;
+    std::vector<PacketSummaryField> fields {};
+    std::string title = row.label.empty() ? std::string {"HTTP"} : row.label;
+
+    switch (summary.semantic_kind) {
+    case HttpStreamItemSemanticKind::request:
+        title = "HTTP Request";
+        fields.push_back(make_summary_field("Method", summary.method));
+        fields.push_back(make_summary_field("Target", summary.target));
+        fields.push_back(make_summary_field("Version", summary.version));
+        break;
+    case HttpStreamItemSemanticKind::response:
+        title = "HTTP Response";
+        fields.push_back(make_summary_field("Version", summary.version));
+        if (summary.status_code.has_value()) {
+            fields.push_back(make_summary_field("Status Code", format_http_status_code(*summary.status_code)));
+        }
+        if (!summary.reason_phrase.empty()) {
+            fields.push_back(make_summary_field("Reason", summary.reason_phrase));
+        }
+        break;
+    case HttpStreamItemSemanticKind::partial_payload:
+        title = "HTTP Payload";
+        break;
+    case HttpStreamItemSemanticKind::gap:
+        title = "HTTP Gap";
+        break;
+    case HttpStreamItemSemanticKind::none:
+    default:
+        break;
+    }
+
+    fields.push_back(make_summary_field("Available Bytes", std::to_string(row.byte_count)));
+    fields.push_back(make_summary_field("Status", stream_item_state_text(row)));
+    if (!summary.diagnostic.empty()) {
+        fields.push_back(make_summary_field("Diagnostic", summary.diagnostic));
+    }
+
+    return PacketSummaryLayer {
+        .id = "http",
+        .title = std::move(title),
+        .fields = std::move(fields),
+        .warning = summary.semantic_kind == HttpStreamItemSemanticKind::gap ||
+            summary.semantic_kind == HttpStreamItemSemanticKind::partial_payload,
+        .marker_text = (summary.semantic_kind == HttpStreamItemSemanticKind::gap ||
+            summary.semantic_kind == HttpStreamItemSemanticKind::partial_payload)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
+std::optional<PacketSummaryLayer> build_arp_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.arp_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& summary = *row.arp_summary;
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Message", summary.title),
+    };
+    if (!summary.detail.empty()) {
+        fields.push_back(make_summary_field("Detail", summary.detail));
+    }
+    fields.push_back(make_summary_field("Sender MAC Address", summary.sender_hardware_address));
+    fields.push_back(make_summary_field("Sender Protocol Address", summary.sender_protocol_address));
+    fields.push_back(make_summary_field("Target MAC Address", summary.target_hardware_address));
+    fields.push_back(make_summary_field("Target Protocol Address", summary.target_protocol_address));
+    fields.push_back(make_summary_field("Status", stream_item_state_text(row)));
+
+    return PacketSummaryLayer {
+        .id = "arp",
+        .title = summary.title.empty() ? std::string {"ARP"} : summary.title,
+        .fields = std::move(fields),
+        .warning = summary.fixed_header_truncated || summary.address_section_truncated,
+        .marker_text = (summary.fixed_header_truncated || summary.address_section_truncated)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
+std::optional<PacketSummaryLayer> build_generic_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.generic_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& summary = *row.generic_summary;
+    std::string title = row.label.empty() ? std::string {"Payload"} : row.label;
+    std::string kind_text = "Payload";
+    switch (summary.semantic_kind) {
+    case GenericStreamItemSemanticKind::tcp_payload:
+        title = "TCP Payload";
+        kind_text = "TCP payload";
+        break;
+    case GenericStreamItemSemanticKind::udp_payload:
+        title = "UDP Payload";
+        kind_text = "UDP payload";
+        break;
+    case GenericStreamItemSemanticKind::payload:
+        title = "Payload";
+        kind_text = "Payload";
+        break;
+    case GenericStreamItemSemanticKind::gap:
+        title = "TCP Gap";
+        kind_text = "Synthetic gap";
+        break;
+    case GenericStreamItemSemanticKind::none:
+    default:
+        break;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Kind", kind_text),
+        make_summary_field("Available Bytes", std::to_string(row.byte_count)),
+        make_summary_field("Status", stream_item_state_text(row)),
+    };
+    if (!summary.diagnostic.empty()) {
+        fields.push_back(make_summary_field("Diagnostic", summary.diagnostic));
+    }
+
+    return PacketSummaryLayer {
+        .id = "stream_payload",
+        .title = std::move(title),
+        .fields = std::move(fields),
+        .warning = summary.semantic_kind == GenericStreamItemSemanticKind::gap || !summary.diagnostic.empty(),
+        .marker_text = (summary.semantic_kind == GenericStreamItemSemanticKind::gap || !summary.diagnostic.empty())
+            ? "Warning"
+            : std::string {},
+    };
+}
+
 PacketSummaryLayer build_stream_item_metadata_layer(
     const StreamItemRow& row,
     std::string_view source_packets_text,
-    std::string_view details_source_text,
-    std::string_view frames_hint_text,
     const std::size_t structured_tls_record_count
 ) {
     auto fields = std::vector<PacketSummaryField> {
         make_summary_field("Label", row.label),
         make_summary_field("Size", format_byte_count(row.byte_count)),
+        make_summary_field("State", stream_item_state_text(row)),
+        make_summary_field("Assembly", stream_item_assembly_text(row)),
     };
-
-    if (!frames_hint_text.empty()) {
-        fields.push_back(make_summary_field("Frames", std::string {frames_hint_text}));
-    }
 
     const auto [source_label, source_value] = stream_source_packets_field(source_packets_text);
     fields.push_back(make_summary_field(source_label, source_value));
-    fields.push_back(make_summary_field("Details source", std::string {details_source_text}));
+    fields.push_back(make_summary_field("Details source", stream_item_details_source_text_impl(row)));
 
     if (structured_tls_record_count > 1U) {
         fields.push_back(make_summary_field("Structured TLS Records", std::to_string(structured_tls_record_count)));
@@ -5623,11 +5878,13 @@ std::vector<std::string> build_basic_summary_lines(const PacketDetails& details)
     return lines;
 }
 
+std::string stream_item_details_source_text(const StreamItemRow& row) {
+    return stream_item_details_source_text_impl(row);
+}
+
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     const StreamItemRow& row,
-    std::string_view source_packets_text,
-    std::string_view details_source_text,
-    std::string_view frames_hint_text
+    std::string_view source_packets_text
 ) {
     if (row.quic_stream_presentation.has_value()) {
         const auto& quic_item = *row.quic_stream_presentation;
@@ -5636,8 +5893,6 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
         layers.push_back(build_stream_item_metadata_layer(
             row,
             source_packets_text,
-            details_source_text,
-            frames_hint_text,
             0U
         ));
         const auto quic_layers = build_quic_summary_layers_for_packets(
@@ -5656,13 +5911,10 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
         context.is_tls &&
         context.allow_structured_summary &&
         !row.has_constricted_contribution &&
-        !row.summary_payload_bytes.empty();
+        !row.tls_summary_records.empty();
     if (can_parse_structured_tls) {
-        tls_layers = build_tls_summary_layers_impl(
-            std::span<const std::uint8_t>(row.summary_payload_bytes.data(), row.summary_payload_bytes.size()),
-            row.tls_initial_parser_context,
-            context.force_encrypted_handshake_records,
-            context.force_encrypted_alert_records
+        tls_layers = build_tls_summary_layers_from_records(
+            std::span<const TlsRecordModel>(row.tls_summary_records.data(), row.tls_summary_records.size())
         );
     }
 
@@ -5678,12 +5930,20 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     layers.push_back(build_stream_item_metadata_layer(
         row,
         source_packets_text,
-        details_source_text,
-        frames_hint_text,
         tls_layers.size()
     ));
     for (auto& tls_layer : tls_layers) {
         layers.push_back(std::move(tls_layer));
+    }
+
+    if (tls_layers.empty()) {
+        if (const auto http_layer = build_http_stream_summary_layer(row); http_layer.has_value()) {
+            layers.push_back(*http_layer);
+        } else if (const auto arp_layer = build_arp_stream_summary_layer(row); arp_layer.has_value()) {
+            layers.push_back(*arp_layer);
+        } else if (const auto generic_layer = build_generic_stream_summary_layer(row); generic_layer.has_value()) {
+            layers.push_back(*generic_layer);
+        }
     }
 
     apply_default_summary_layer_expansion(layers);

@@ -117,11 +117,10 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers(
     bool force_encrypted_alert_records = false
 );
 PacketSummaryLayer build_tls_reassembled_metadata_layer(const TlsSelectedPacketRecordContext& context);
+std::string stream_item_details_source_text(const StreamItemRow& row);
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     const StreamItemRow& row,
-    std::string_view source_packets_text,
-    std::string_view details_source_text,
-    std::string_view frames_hint_text = {}
+    std::string_view source_packets_text
 );
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
     const PacketDetails& details,

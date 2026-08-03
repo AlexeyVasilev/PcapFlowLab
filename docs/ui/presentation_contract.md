@@ -480,6 +480,7 @@ Current Packet Details direction note:
 - the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
 - complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
 - Stream Item Details now use `Summary / Item Data / Protocol`, where `Item Data` is selected-row-only and is backed by one bounded selected-item materialization.
+- Stream Item Details Summary is intended to be a frontend-neutral mapping from retained structured stream-item semantics; labels and Protocol text may still be displayed, but they are not semantic authorities for Summary.
 
 Qt also supports stream-item details in the same right-hand panel. That is noted separately below as a cross-cutting selection question.
 
@@ -683,6 +684,16 @@ Based on current Qt stream presentation, each stream item should expose:
   - exact selected-item bytes when authoritative;
   - explicit unavailable / synthetic / stale state otherwise;
   - no protocol-level byte selector hierarchy.
+
+Summary-specific contract notes:
+
+- Stream Item Summary is the primary structured inspection surface for selected stream items.
+- Summary must be produced from retained stream-item model fields, not by reparsing Stream labels, Protocol text, or formatted byte strings.
+- HTTP stream rows may keep display labels such as `HTTP Request` or `HTTP Gap`, but Summary semantics come from retained HTTP request/response/partial/gap metadata.
+- TLS stream rows may keep display labels such as `TLS ClientHello`, but Summary semantics come from retained TLS semantic kind, parser context, and retained structured TLS record models.
+- QUIC stream rows may keep display labels such as `QUIC Initial: CRYPTO`, but Summary semantics come from retained QUIC packet/frame/TLS-handshake presentation models.
+- Generic and synthetic rows must expose explicit structured kind/state for payload, partial, or gap behavior rather than relying on label wording.
+- `Item Data` remains the byte-ownership surface, while `Protocol` remains the richer text/debug surface during the current parity stage.
 
 Qt currently renders source-packet references in a compact user-facing form such as:
 

@@ -727,77 +727,7 @@ bool stream_item_uses_packet_fallback(const StreamItemRow& row) {
 }
 
 std::string stream_item_details_source_text(const StreamItemRow& row) {
-    return stream_item_uses_packet_fallback(row)
-        ? "Packet fallback"
-        : "Stream item";
-}
-
-std::string stream_item_frames_hint_text(const StreamItemRow& row) {
-    if (row.protocol_text.empty()) {
-        return {};
-    }
-
-    std::vector<std::string> hints {};
-    auto extract_line_value = [&](const std::string& marker) -> std::string {
-        const auto marker_index = row.protocol_text.find(marker);
-        if (marker_index == std::string::npos) {
-            return {};
-        }
-
-        const auto line_start = marker_index + marker.size();
-        const auto line_end = row.protocol_text.find('\n', line_start);
-        auto value = row.protocol_text.substr(
-            line_start,
-            line_end == std::string::npos ? std::string::npos : (line_end - line_start)
-        );
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-            value.erase(value.begin());
-        }
-        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-            value.pop_back();
-        }
-        return value;
-    };
-
-    auto append_normalized_values = [&](const std::string& value) {
-        std::stringstream stream {value};
-        std::string part {};
-        while (std::getline(stream, part, ',')) {
-            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front())) != 0) {
-                part.erase(part.begin());
-            }
-            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back())) != 0) {
-                part.pop_back();
-            }
-            if (part == "Protected Payload") {
-                part = "Protected payload";
-            }
-            if (part.empty() || part == "Packet Type: Initial" || part == "Initial") {
-                continue;
-            }
-            if (std::find(hints.begin(), hints.end(), part) == hints.end()) {
-                hints.push_back(part);
-            }
-        }
-    };
-
-    append_normalized_values(extract_line_value("Frame Presence:"));
-    append_normalized_values(extract_line_value("Packet Type:"));
-    append_normalized_values(extract_line_value("Additional Packet Types:"));
-
-    if (hints.empty()) {
-        return {};
-    }
-
-    std::ostringstream out {};
-    out << "Frames: ";
-    for (std::size_t index = 0; index < hints.size(); ++index) {
-        if (index != 0U) {
-            out << ", ";
-        }
-        out << hints[index];
-    }
-    return out.str();
+    return session_detail::stream_item_details_source_text(row);
 }
 
 std::string stream_item_header_secondary_text(
@@ -815,12 +745,10 @@ std::string stream_item_header_badge_text(const StreamItemRow& row) {
     if (row.has_constricted_contribution) {
         return "Constricted";
     }
-
-    std::string lower_label = row.label;
-    std::transform(lower_label.begin(), lower_label.end(), lower_label.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    if (lower_label.find("partial") != std::string::npos) {
+    if (row.tls_semantic_kind == TlsStreamItemSemanticKind::partial_record ||
+        row.tls_semantic_kind == TlsStreamItemSemanticKind::partial_payload ||
+        (row.http_summary.has_value() && row.http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload) ||
+        row.materialization_stability == StreamMaterializationStability::window_incomplete) {
         return "Partial";
     }
     if (stream_item_uses_packet_fallback(row)) {
@@ -944,10 +872,6 @@ std::string build_stream_item_summary_text(
         "Details source: " + stream_item_details_source_text(row),
     };
 
-    if (const auto frames_hint = stream_item_frames_hint_text(row); !frames_hint.empty()) {
-        lines.insert(lines.begin() + 2, frames_hint);
-    }
-
     if (!row.constricted_contribution_notes.empty()) {
         lines.push_back({});
         if (row.constricted_contribution_notes.size() == 1U) {
@@ -983,9 +907,7 @@ std::vector<session_detail::PacketSummaryLayer> build_stream_item_summary_layers
 ) {
     return session_detail::build_stream_item_summary_layers(
         row,
-        format_stream_source_packets_text(row, flow_packet_numbers),
-        stream_item_details_source_text(row),
-        stream_item_frames_hint_text(row)
+        format_stream_source_packets_text(row, flow_packet_numbers)
     );
 }
 
