@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "app/session/SessionFormatting.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
 #include "app/session/SessionQuicPresentation.h"
@@ -46,6 +47,7 @@ enum class SelectedPacketByteViewKind : std::uint8_t {
     icmp,
     icmpv6,
     igmp,
+    data,
     effective_transport_payload,
     inner_ethernet_payload,
     inner_vlan_payload,
@@ -137,6 +139,7 @@ struct SelectedPacketByteViewDescriptor {
 struct SelectedPacketByteBuildOptions {
     std::span<const std::uint8_t> packet_bytes {};
     std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<PacketDataPresentation> packet_data {};
     TlsInspectionParserContext tls_initial_parser_context {};
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
     std::optional<QuicPresentationResult> quic_presentation {};

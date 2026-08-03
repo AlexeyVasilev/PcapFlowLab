@@ -551,6 +551,11 @@ Expected semantics:
 - QUIC never invents a `TLS Record` layer: TLS over QUIC exposes only `TLS Handshake Message`;
 - when one TLS handshake maps unambiguously to one CRYPTO data range, QUIC may layer as `CRYPTO Frame Data -> TLS Handshake Message`;
 - when one TLS handshake spans multiple CRYPTO contributions, QUIC uses one bounded reconstructed `QUIC CRYPTO Stream (Reassembled)` owner attached to the selected Initial context and attaches the TLS handshake there rather than to one arbitrary frame; when one selected Initial packet owns the required contiguous prefix it may remain under the decrypted Initial plaintext, otherwise it may hang from the owning Initial packet context;
+- when Summary classifies the effective terminal TCP or UDP application payload as unclaimed `Data`, Packet Details Bytes exposes exactly one `Data` descriptor as a semantic child of that same effective terminal transport;
+- `Data` materializes the complete available packet-local unclaimed application payload from captured packet bytes, while Summary keeps its separate bounded preview;
+- nested ownership remains terminal-transport-first: inner TCP or UDP `Data` suppresses any outer tunnel-carrier `Data`, and recognized DNS, TLS, QUIC, HTTP, or other supported child ownership suppresses `Data` entirely;
+- `Data` does not expose a second payload-only mode because the whole unit is already the value itself, and zero-length payloads do not produce a `Data` descriptor;
+- `Data` keeps one stable `data` identity per selected packet rather than deriving identity from a display label or preview text;
 - the selector uses backend-provided stable ids and backend-provided descriptor order;
 - only one selected view is materialized/formatted at a time;
 - frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
@@ -586,6 +591,8 @@ Backend note for the current migration stage:
   - captured QUIC envelope ranges as children of the captured `UDP Datagram`;
   - captured QUIC Initial protected-payload ranges only when the packet-number length and packet end are authoritative;
   - one derived `QUIC Initial Decrypted Payload` owner with child `QUIC Frame` and `CRYPTO Frame Data` ranges when authenticated Initial decryption succeeds;
+- selected-packet byte inspection now also exposes one packet-backed `Data` descriptor when `prepare_selected_packet_summary(...)` has already classified the effective terminal application payload as complete, authoritative, and unclaimed by a supported child protocol;
+- that `Data` descriptor reuses the same `PacketDataPresentation` ownership decision and the same effective transport payload provenance already used by Summary, keeps a stable `data` identity, and never falls back to the 32-byte Summary preview as its byte owner;
 - QUIC envelope offsets retained by the byte-presentation layer are rebased exactly once from UDP-payload-relative provenance to captured-frame-relative byte offsets;
 - the captured `QUIC Initial Protected Payload` contract starts immediately after the unprotected packet-number field and currently includes the AEAD authentication tag because that is the authoritative encrypted-payload extent already exposed by the selected-packet QUIC code path;
 - derived QUIC frame offsets are relative to the decrypted Initial plaintext owner, while `CRYPTO` stream offsets remain logical QUIC metadata and are not reused as plaintext byte offsets;

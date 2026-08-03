@@ -544,6 +544,54 @@ void expect_frontend_adapter_selected_flow_packet_byte_views() {
     PFL_EXPECT(tcp_payload.status_text.find("Available:") != std::string::npos);
 }
 
+void expect_frontend_adapter_nested_gtpu_data_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::count(labels.begin(), labels.end(), "Data") == 1);
+
+    const auto* data_descriptor = find_packet_byte_view_descriptor(details, "data:0:0");
+    PFL_REQUIRE(data_descriptor != nullptr);
+    PFL_EXPECT(data_descriptor->label == "Data");
+    PFL_EXPECT(data_descriptor->parent_stable_id == std::optional<std::string> {"inner_udp:0:0"});
+    PFL_EXPECT(data_descriptor->owner_kind == "captured_packet");
+    PFL_EXPECT(data_descriptor->role == "protocol_unit");
+    PFL_EXPECT(data_descriptor->assembly_kind == "packet_local");
+    PFL_EXPECT(data_descriptor->available_length == 48U);
+    PFL_EXPECT(data_descriptor->declared_length == std::optional<std::uint32_t> {48U});
+    PFL_EXPECT(data_descriptor->state == "complete");
+    PFL_EXPECT(!data_descriptor->supports_payload_only);
+
+    const auto data_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "data:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(data_content.available);
+    PFL_EXPECT(data_content.stable_id == "data:0:0");
+    PFL_EXPECT(data_content.label == "Data");
+    PFL_EXPECT(data_content.mode == "whole_unit");
+    PFL_EXPECT(data_content.available_length == 48U);
+    PFL_EXPECT(data_content.declared_length == std::optional<std::uint32_t> {48U});
+    PFL_EXPECT(data_content.state == "complete");
+    PFL_EXPECT(data_content.formatted_text.find("49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41") != std::string::npos);
+}
+
 void expect_bounded_tls_selected_flow_service_hint_query() {
     CaptureSession session {};
     PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap")));
@@ -730,6 +778,7 @@ void run_flow_hints_real_fixtures_tests() {
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
     expect_frontend_adapter_selected_flow_packet_byte_views();
+    expect_frontend_adapter_nested_gtpu_data_byte_view();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
     expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views();
     expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views();

@@ -84,6 +84,7 @@ SelectedPacketBytePresentation require_flow_aware_presentation(CaptureSession& s
         session_detail::SelectedPacketByteBuildOptions {
             .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
             .flow_packet_index = packet_summary_preparation.flow_packet_index,
+            .packet_data = packet_summary_preparation.packet_data,
             .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
             .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
             .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
@@ -367,6 +368,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
             session_detail::SelectedPacketByteRangeMode::payload_only
         );
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::effective_transport_payload) == nullptr);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* tcp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*tcp_data, SelectedPacketByteViewKind::tcp_payload);
+        PFL_EXPECT(tcp_data->captured_length == 4U);
+        PFL_EXPECT(!tcp_data->payload_range.has_value());
+        expect_ascii_prefix(flow_aware_presentation, tcp_data->id, bytes, "ABCD");
     }
 
     {
@@ -449,6 +457,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(materialized.bytes[1] == 0x07U);
         PFL_EXPECT(materialized.bytes[2] == 0x01U);
         PFL_EXPECT(materialized.bytes[3] == 0x00U);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::data) == nullptr);
     }
 
     {
@@ -490,9 +501,43 @@ void run_selected_packet_byte_presentation_tests_impl() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(path));
         const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
         PFL_REQUIRE(require_view(presentation, SelectedPacketByteViewKind::udp_payload) != nullptr);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*udp_data, SelectedPacketByteViewKind::udp_payload);
+        PFL_EXPECT(udp_data->captured_length == 15U);
+        PFL_EXPECT(!udp_data->payload_range.has_value());
+        expect_ascii_prefix(flow_aware_presentation, udp_data->id, bytes, "not-dns-payload");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_search_bsdp_data.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 2, 1, 3),
+                    ipv4(10, 2, 1, 4),
+                    68,
+                    67,
+                    bytes_payload("SEARCH BSDP/0.1"))
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*udp_data, SelectedPacketByteViewKind::udp_payload);
+        PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::dns_message) == nullptr);
+        PFL_EXPECT(find_view_in_scope(flow_aware_presentation, SelectedPacketByteViewKind::quic_initial_packet, 0U) == nullptr);
+        expect_ascii_prefix(flow_aware_presentation, udp_data->id, bytes, "SEARCH BSDP/0.1");
     }
 
     {
@@ -634,6 +679,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(whole_handshake.bytes[0] == 0x01U);
         PFL_EXPECT(handshake_payload.bytes[0] == 0x03U);
         PFL_EXPECT(handshake_payload.bytes[1] == 0x03U);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::data) == nullptr);
     }
 
     {
@@ -723,6 +771,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto presentation = require_presentation(session, packet);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tls_record) == nullptr);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tls_handshake) == nullptr);
+
+        const auto bytes = session.read_packet_data(packet);
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* data_view = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*data_view, SelectedPacketByteViewKind::tcp_payload);
+        PFL_EXPECT(data_view->captured_length == 5U);
+        expect_materialized_view_aliases_owner_bytes(flow_aware_presentation, data_view->id, bytes);
     }
 
     {
@@ -890,6 +945,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
             "INNER-UDP-DATA",
             session_detail::SelectedPacketByteRangeMode::payload_only
         );
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*udp_data, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_EXPECT(udp_data->captured_length == 48U);
+        PFL_EXPECT(!udp_data->payload_range.has_value());
+        expect_ascii_prefix(flow_aware_presentation, udp_data->id, bytes, "INNER-UDP-DATA");
     }
 
     {
@@ -915,6 +977,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
             "INNER-TCP-DATA",
             session_detail::SelectedPacketByteRangeMode::payload_only
         );
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* tcp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*tcp_data, SelectedPacketByteViewKind::inner_tcp_payload);
+        PFL_EXPECT(tcp_data->captured_length == 48U);
+        PFL_EXPECT(!tcp_data->payload_range.has_value());
+        expect_ascii_prefix(flow_aware_presentation, tcp_data->id, bytes, "INNER-TCP-DATA");
     }
 
     {
@@ -928,6 +997,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
         PFL_EXPECT(!inner_tcp->payload_range.has_value());
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tcp_payload) == nullptr);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::data) == nullptr);
     }
 
     {
@@ -944,6 +1016,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
         expect_parent(*mpls_payload, SelectedPacketByteViewKind::gre_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::mpls_payload, 0U);
         expect_parent(*inner_udp, SelectedPacketByteViewKind::inner_ipv4_payload);
+
+        const auto bytes = session.read_packet_data(packet);
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*udp_data, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_EXPECT(!udp_data->payload_range.has_value());
+        expect_materialized_view_aliases_owner_bytes(flow_aware_presentation, udp_data->id, bytes);
     }
 
     {
@@ -1043,6 +1122,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
         expect_parent(*ah_payload, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::ah_payload);
         expect_parent(*inner_udp, SelectedPacketByteViewKind::inner_ipv4_payload);
+
+        const auto bytes = session.read_packet_data(packet);
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
+        expect_parent(*udp_data, SelectedPacketByteViewKind::inner_udp_payload);
+        PFL_EXPECT(udp_data->captured_length == 4U);
+        expect_materialized_view_aliases_owner_bytes(flow_aware_presentation, udp_data->id, bytes);
     }
 
     {
@@ -1056,6 +1142,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         expect_parent(*ah_payload, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*inner_ipv6, SelectedPacketByteViewKind::ah_payload);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload) == nullptr);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::data) == nullptr);
     }
 
     {
@@ -1154,6 +1243,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(tls_handshake_materialized.bytes[0] == 0x01U);
         PFL_EXPECT(crypto_data->quic_crypto_stream_offset.has_value());
         PFL_EXPECT(find_view_in_scope(presentation, SelectedPacketByteViewKind::tls_record, 0U) == nullptr);
+
+        const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
+        PFL_EXPECT(find_view(flow_aware_presentation, SelectedPacketByteViewKind::data) == nullptr);
     }
 
     {

@@ -3293,6 +3293,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!gtpu_inner_udp_layer.isEmpty());
     UI_EXPECT(!gtpu_data_layer.isEmpty());
     UI_EXPECT(find_summary_field_value(gtpu_data_layer, QStringLiteral("Data Length")) == QStringLiteral("48 bytes"));
+    UI_EXPECT(packet_byte_view_labels(gtpu_nested_data_details_model).count(QStringLiteral("Data")) == 1);
+    gtpu_nested_data_controller.selectPacketByteView(QStringLiteral("data:0:0"));
+    UI_EXPECT(gtpu_nested_data_details_model->selectedPacketByteViewId() == QStringLiteral("data:0:0"));
+    UI_EXPECT(gtpu_nested_data_details_model->selectedPacketByteViewStatusText().contains(QStringLiteral("Available: 48 bytes")));
+    UI_EXPECT(gtpu_nested_data_details_model->selectedPacketByteViewText().contains(
+        QStringLiteral("49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41")));
 
     const auto split_tls_fixture_capture_path =
         std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_1_3_split_client_hello_10.pcap";

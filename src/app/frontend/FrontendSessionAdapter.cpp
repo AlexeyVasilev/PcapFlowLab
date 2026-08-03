@@ -3252,6 +3252,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             session_detail::SelectedPacketByteBuildOptions {
                 .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
                 .flow_packet_index = packet_summary_preparation->flow_packet_index,
+                .packet_data = packet_summary_preparation->packet_data,
                 .tls_initial_parser_context = packet_summary_preparation->tls_initial_parser_context,
                 .reconstructed_tls_records = std::move(packet_summary_preparation->reconstructed_tls_records),
                 .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
@@ -3352,6 +3353,7 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
         session_detail::SelectedPacketByteBuildOptions {
             .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
             .flow_packet_index = packet_summary_preparation.flow_packet_index,
+            .packet_data = packet_summary_preparation.packet_data,
             .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
             .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
             .quic_presentation = std::move(packet_summary_preparation.quic_presentation),

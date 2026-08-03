@@ -205,6 +205,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
         return "icmpv6";
     case SelectedPacketByteViewKind::igmp:
         return "igmp";
+    case SelectedPacketByteViewKind::data:
+        return "data";
     case SelectedPacketByteViewKind::effective_transport_payload:
         return "effective_transport_payload";
     case SelectedPacketByteViewKind::inner_ethernet_payload:
@@ -283,6 +285,7 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"icmp", SelectedPacketByteViewKind::icmp},
         {"icmpv6", SelectedPacketByteViewKind::icmpv6},
         {"igmp", SelectedPacketByteViewKind::igmp},
+        {"data", SelectedPacketByteViewKind::data},
         {"effective_transport_payload", SelectedPacketByteViewKind::effective_transport_payload},
         {"inner_ethernet", SelectedPacketByteViewKind::inner_ethernet_payload},
         {"inner_vlan", SelectedPacketByteViewKind::inner_vlan_payload},
@@ -375,6 +378,8 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
         return "ICMPv6 Message";
     case SelectedPacketByteViewKind::igmp:
         return "IGMP Message";
+    case SelectedPacketByteViewKind::data:
+        return "Data";
     case SelectedPacketByteViewKind::effective_transport_payload:
         return "Transport Payload";
     case SelectedPacketByteViewKind::inner_ethernet_payload:
@@ -1243,6 +1248,97 @@ std::optional<SelectedPacketByteViewId> append_top_level_transport_branch(
     }
 
     return parent_id;
+}
+
+std::optional<SelectedPacketByteViewId> find_last_view_id(
+    const std::vector<SelectedPacketByteViewDescriptor>& views,
+    const SelectedPacketByteViewKind kind
+) {
+    for (auto it = views.rbegin(); it != views.rend(); ++it) {
+        if (it->id.kind == kind) {
+            return it->id;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<SelectedPacketByteViewId> resolve_packet_data_parent_id(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteBuildOptions& options,
+    const std::optional<SelectedPacketByteViewId>& outer_tcp_id,
+    const std::optional<SelectedPacketByteViewId>& outer_udp_id
+) {
+    if (!options.packet_data.has_value()) {
+        return std::nullopt;
+    }
+
+    switch (options.packet_data->placement) {
+    case PacketDataPlacement::after_tcp:
+        return outer_tcp_id.has_value()
+            ? outer_tcp_id
+            : find_last_view_id(presentation.views, SelectedPacketByteViewKind::tcp_payload);
+    case PacketDataPlacement::after_udp:
+        return outer_udp_id.has_value()
+            ? outer_udp_id
+            : find_last_view_id(presentation.views, SelectedPacketByteViewKind::udp_payload);
+    case PacketDataPlacement::after_inner_tcp:
+        return find_last_view_id(presentation.views, SelectedPacketByteViewKind::inner_tcp_payload);
+    case PacketDataPlacement::after_inner_udp:
+        return find_last_view_id(presentation.views, SelectedPacketByteViewKind::inner_udp_payload);
+    case PacketDataPlacement::none:
+    default:
+        return std::nullopt;
+    }
+}
+
+void append_packet_data_view(
+    SelectedPacketBytePresentation& presentation,
+    const PacketDetails& details,
+    const SelectedPacketByteBuildOptions& options,
+    const std::optional<SelectedPacketByteViewId>& outer_tcp_id,
+    const std::optional<SelectedPacketByteViewId>& outer_udp_id
+) {
+    if (!options.packet_data.has_value() ||
+        !details.effective_transport_payload.has_value()) {
+        return;
+    }
+
+    const auto& packet_data = *options.packet_data;
+    if (packet_data.role != PacketDataRole::transport_payload ||
+        packet_data.disposition != TransportPayloadDisposition::unclaimed_data ||
+        packet_data.transport == PacketDataTransportKind::unknown ||
+        packet_data.captured_length == 0U) {
+        return;
+    }
+
+    const auto parent_id = resolve_packet_data_parent_id(
+        presentation,
+        options,
+        outer_tcp_id,
+        outer_udp_id
+    );
+    if (!parent_id.has_value()) {
+        return;
+    }
+
+    const auto& effective_payload = *details.effective_transport_payload;
+    append_view(
+        presentation.views,
+        parent_id,
+        kCapturedPacketOwnerId,
+        SelectedPacketByteOwnerKind::captured_packet,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteAssemblyKind::packet_local,
+        SelectedPacketByteViewKind::data,
+        0U,
+        presentation.owner_captured_length,
+        effective_payload.payload_offset,
+        packet_data.declared_length_reliable
+            ? std::optional<std::uint32_t> {packet_data.declared_length}
+            : std::nullopt,
+        packet_data.captured_length,
+        effective_payload.payload_truncated
+    );
 }
 
 void append_overlay_payload_branches(
@@ -2646,6 +2742,14 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             }
         }
     }
+
+    append_packet_data_view(
+        presentation,
+        details,
+        options,
+        outer_tcp_id,
+        outer_udp_id
+    );
 
     return presentation;
 }
