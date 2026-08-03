@@ -242,17 +242,19 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
     case SelectedPacketByteViewKind::inner_sctp_payload:
         return "inner_sctp";
     case SelectedPacketByteViewKind::gre_payload:
-        return "gre_payload";
+        return "gre";
     case SelectedPacketByteViewKind::eoip_payload:
-        return "eoip_payload";
+        return "eoip";
     case SelectedPacketByteViewKind::vxlan_payload:
         return "vxlan";
     case SelectedPacketByteViewKind::geneve_payload:
-        return "geneve_payload";
+        return "geneve";
     case SelectedPacketByteViewKind::gtpu_payload:
-        return "gtpu_payload";
+        return "gtpu";
     case SelectedPacketByteViewKind::ah_payload:
-        return "ah_payload";
+        return "ah";
+    case SelectedPacketByteViewKind::esp:
+        return "esp";
     case SelectedPacketByteViewKind::esp_protected_payload:
         return "esp_protected_payload";
     case SelectedPacketByteViewKind::quic_initial_packet:
@@ -316,13 +318,19 @@ std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_
         {"inner_tcp", SelectedPacketByteViewKind::inner_tcp_payload},
         {"inner_udp", SelectedPacketByteViewKind::inner_udp_payload},
         {"inner_sctp", SelectedPacketByteViewKind::inner_sctp_payload},
+        {"gre", SelectedPacketByteViewKind::gre_payload},
         {"gre_payload", SelectedPacketByteViewKind::gre_payload},
+        {"eoip", SelectedPacketByteViewKind::eoip_payload},
         {"eoip_payload", SelectedPacketByteViewKind::eoip_payload},
         {"vxlan", SelectedPacketByteViewKind::vxlan_payload},
         {"vxlan_payload", SelectedPacketByteViewKind::vxlan_payload},
+        {"geneve", SelectedPacketByteViewKind::geneve_payload},
         {"geneve_payload", SelectedPacketByteViewKind::geneve_payload},
+        {"gtpu", SelectedPacketByteViewKind::gtpu_payload},
         {"gtpu_payload", SelectedPacketByteViewKind::gtpu_payload},
+        {"ah", SelectedPacketByteViewKind::ah_payload},
         {"ah_payload", SelectedPacketByteViewKind::ah_payload},
+        {"esp", SelectedPacketByteViewKind::esp},
         {"esp_protected_payload", SelectedPacketByteViewKind::esp_protected_payload},
         {"quic_initial_packet", SelectedPacketByteViewKind::quic_initial_packet},
         {"quic_zero_rtt_packet", SelectedPacketByteViewKind::quic_zero_rtt_packet},
@@ -442,19 +450,31 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
             ? "Inner SCTP Packet"
             : "Inner SCTP Payload";
     case SelectedPacketByteViewKind::gre_payload:
-        return "GRE Payload";
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "GRE Packet"
+            : "GRE Payload";
     case SelectedPacketByteViewKind::eoip_payload:
-        return "EoIP Payload";
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "EoIP Packet"
+            : "EoIP Payload";
     case SelectedPacketByteViewKind::vxlan_payload:
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "VXLAN Packet"
             : "VXLAN Payload";
     case SelectedPacketByteViewKind::geneve_payload:
-        return "Geneve Payload";
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "Geneve Packet"
+            : "Geneve Payload";
     case SelectedPacketByteViewKind::gtpu_payload:
-        return "GTP-U Payload";
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "GTP-U Message"
+            : "GTP-U Payload";
     case SelectedPacketByteViewKind::ah_payload:
-        return "AH Payload";
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "AH Packet"
+            : "AH Payload";
+    case SelectedPacketByteViewKind::esp:
+        return "ESP Packet";
     case SelectedPacketByteViewKind::esp_protected_payload:
         return "ESP Protected Payload";
     case SelectedPacketByteViewKind::quic_initial_packet:
@@ -1541,16 +1561,21 @@ void append_overlay_payload_branches(
     const std::optional<PacketByteRange>& outer_ip_range,
     const std::optional<SelectedPacketByteViewId>& outer_udp_id
 ) {
-    if (details.has_ah && details.ah.payload_range.has_value() && outer_ip_id.has_value()) {
-        const auto ah_id = append_payload_fallback_view(
+    if (details.has_ah &&
+        details.ah.unit_range.has_value() &&
+        details.ah.payload_range.has_value() &&
+        outer_ip_id.has_value()) {
+        const auto ah_id = append_protocol_unit_view(
             views,
             outer_ip_id,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
             SelectedPacketByteViewKind::ah_payload,
             0U,
             owner_captured_length,
-            *details.ah.payload_range
+            *details.ah.unit_range,
+            details.ah.payload_range
         );
         if (details.ah.has_inner_packet && details.ah.inner_packet != nullptr) {
             append_inner_network_branch(
@@ -1572,18 +1597,23 @@ void append_overlay_payload_branches(
         return;
     }
 
-    if (details.has_gre && details.gre.payload_range.has_value() && outer_ip_id.has_value()) {
-        const auto gre_id = append_payload_fallback_view(
+    if (details.has_gre &&
+        details.gre.unit_range.has_value() &&
+        details.gre.payload_range.has_value() &&
+        outer_ip_id.has_value()) {
+        const auto gre_id = append_protocol_unit_view(
             views,
             outer_ip_id,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
             details.gre.is_eoip
                 ? SelectedPacketByteViewKind::eoip_payload
                 : SelectedPacketByteViewKind::gre_payload,
             0U,
             owner_captured_length,
-            *details.gre.payload_range
+            *details.gre.unit_range,
+            details.gre.payload_range
         );
         if (details.gre.has_inner_packet && details.gre.inner_packet != nullptr) {
             append_inner_ethernet_branch(*details.gre.inner_packet, views, owner_captured_length, gre_id);
@@ -1591,10 +1621,25 @@ void append_overlay_payload_branches(
         return;
     }
 
-    if (details.has_esp && details.esp.protected_payload_range.has_value() && outer_ip_id.has_value()) {
-        append_payload_fallback_view(
+    if (details.has_esp &&
+        details.esp.unit_range.has_value() &&
+        details.esp.protected_payload_range.has_value() &&
+        outer_ip_id.has_value()) {
+        const auto esp_id = append_protocol_unit_view(
             views,
             outer_ip_id,
+            kCapturedPacketOwnerId,
+            SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
+            SelectedPacketByteViewKind::esp,
+            0U,
+            owner_captured_length,
+            *details.esp.unit_range,
+            details.esp.protected_payload_range
+        );
+        append_payload_fallback_view(
+            views,
+            esp_id,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
             SelectedPacketByteViewKind::esp_protected_payload,
@@ -1605,16 +1650,21 @@ void append_overlay_payload_branches(
         return;
     }
 
-    if (details.has_gtpu && details.gtpu.payload_range.has_value() && outer_udp_id.has_value()) {
-        const auto gtpu_id = append_payload_fallback_view(
+    if (details.has_gtpu &&
+        details.gtpu.unit_range.has_value() &&
+        details.gtpu.payload_range.has_value() &&
+        outer_udp_id.has_value()) {
+        const auto gtpu_id = append_protocol_unit_view(
             views,
             outer_udp_id,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
             SelectedPacketByteViewKind::gtpu_payload,
             0U,
             owner_captured_length,
-            *details.gtpu.payload_range
+            *details.gtpu.unit_range,
+            details.gtpu.payload_range
         );
         if (details.gtpu.has_inner_packet && details.gtpu.inner_packet != nullptr) {
             append_inner_network_branch(
@@ -1650,16 +1700,21 @@ void append_overlay_payload_branches(
         return;
     }
 
-    if (details.has_geneve && details.geneve.payload_range.has_value() && outer_udp_id.has_value()) {
-        const auto geneve_id = append_payload_fallback_view(
+    if (details.has_geneve &&
+        details.geneve.unit_range.has_value() &&
+        details.geneve.payload_range.has_value() &&
+        outer_udp_id.has_value()) {
+        const auto geneve_id = append_protocol_unit_view(
             views,
             outer_udp_id,
             kCapturedPacketOwnerId,
             SelectedPacketByteOwnerKind::captured_packet,
+            SelectedPacketByteViewRole::protocol_unit,
             SelectedPacketByteViewKind::geneve_payload,
             0U,
             owner_captured_length,
-            *details.geneve.payload_range
+            *details.geneve.unit_range,
+            details.geneve.payload_range
         );
         if (details.geneve.has_inner_packet && details.geneve.inner_packet != nullptr) {
             append_inner_ethernet_branch(*details.geneve.inner_packet, views, owner_captured_length, geneve_id);

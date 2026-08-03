@@ -478,7 +478,7 @@ Current Packet Details direction note:
 - the removed `Raw` tab is represented by the `Frame` byte view;
 - the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
 - the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
-- temporary payload-only fallback entries remain explicit for nested carriers whose complete unit boundary is not yet authoritative, for example `GTP-U Payload`, `GRE Payload`, `Geneve Payload`, or `CRYPTO Frame Data`;
+- complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
 - Stream Item Details tabs remain unchanged in this pass and continue to use their existing payload/protocol surfaces.
 
 Qt also supports stream-item details in the same right-hand panel. That is noted separately below as a cross-cutting selection question.
@@ -544,7 +544,8 @@ Expected semantics:
 - when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
 - packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
 - packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
-- whole-unit packet-backed carrier descriptors include their own protocol header, including `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, and `VXLAN Packet`;
+- whole-unit packet-backed carrier descriptors include their own protocol header, including `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, `VXLAN Packet`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`;
+- `802.1Q Encapsulation` whole-unit materialization begins at the VLAN TPID, includes TPID, TCI, the encapsulated EtherType/length field, and the complete bounded carried payload; its optional payload-only mode begins at the authoritative carried-protocol boundary;
 - when a separate payload-only range remains meaningful, it stays an explicitly separate descriptor rather than being mislabeled as a whole packet;
 - record-layer TLS over TCP now layers as `TCP Segment -> TLS Record -> TLS Handshake Message` when the current bounded TLS parser confirms ownership;
 - packet-local byte views keep their normal label and do not carry a `Reassembled` suffix;
@@ -581,7 +582,8 @@ Backend note for the current migration stage:
 - semantic child layers may intentionally overlap their parent transport or carrier range when the child unit is independently authoritative, including `UDP Datagram -> DNS Message`, `TCP Segment -> TLS Record`, `TLS Record -> TLS Handshake Message`, and `CRYPTO Frame Data -> TLS Handshake Message`;
 - overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier unit and the decoded child unit;
 - duplicate suppression applies only to semantically equivalent descriptors; plain IP-in-IP does not manufacture an extra tunnel-payload view when only the nested IP payloads are authoritative;
-- temporary payload-only fallback descriptors remain explicit for nested carriers whose full unit boundary is not yet carried authoritatively by packet details, rather than being mislabeled as complete packets; the current explicit fallbacks still include tunnel-carrier views such as `GRE Payload`, `EoIP Payload`, `GTP-U Payload`, `Geneve Payload`, `AH Payload`, `ESP Protected Payload`, and derived value views such as `CRYPTO Frame Data`;
+- packet-backed nested carrier descriptors now use complete-unit selectors with optional payload-only materialization on the same stable id, rather than exposing misleading primary payload-only selectors; the remaining explicit value-oriented payload child views are `ESP Protected Payload`, `QUIC Initial Protected Payload`, and derived value views such as `CRYPTO Frame Data`;
+- `ESP Packet` remains opaque and owns one child `ESP Protected Payload`; the child excludes SPI and Sequence Number and remains the explicit value-oriented protected-range selector;
 - selected-packet TLS byte views reuse the same bounded selected-packet TLS analysis already used by Summary rather than running a second independent full-flow reconstruction pass;
 - selected TCP packet policy is contribution-based: a selected packet shows only TLS records and handshake messages to which that packet contributes, and split TLS records use a bounded reconstructed owner instead of fabricating a fake contiguous captured range inside one packet;
 - packet-local TLS records keep packet-backed ownership and normal labels, while split TLS records and their handshake children surface `Reassembled` plus contributing TCP-segment count from structured reconstruction metadata rather than from inferred lengths;

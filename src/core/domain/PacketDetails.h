@@ -182,6 +182,7 @@ struct GeneveDetails {
     std::uint16_t protocol_type {0};
     bool protocol_type_supported {false};
     std::uint32_t vni {0};
+    std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
@@ -215,6 +216,7 @@ struct GtpuDetails {
     bool extension_headers_truncated {false};
     std::size_t extension_headers_skipped_bytes {0};
     bool unknown_inner_payload {false};
+    std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> payload_range {};
     bool has_inner_packet {false};
     std::shared_ptr<GtpuInnerPacketDetails> inner_packet {};
@@ -249,6 +251,7 @@ struct GreDetails {
     std::uint32_t sequence_number {0};
     bool protocol_type_supported {false};
     bool unknown_inner_payload {false};
+    std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
@@ -268,6 +271,7 @@ struct EspDetails {
     std::uint32_t spi {0};
     std::uint32_t sequence_number {0};
     std::size_t opaque_payload_length {0};
+    std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> protected_payload_range {};
 };
 
@@ -285,6 +289,7 @@ struct AhDetails {
     std::size_t header_length {0};
     std::size_t icv_length {0};
     std::size_t available_icv_bytes {0};
+    std::optional<PacketByteRange> unit_range {};
     std::optional<PacketByteRange> payload_range {};
     bool has_inner_packet {false};
     std::shared_ptr<AhInnerPacketDetails> inner_packet {};

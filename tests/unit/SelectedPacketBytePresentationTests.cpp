@@ -269,6 +269,20 @@ void expect_ascii_prefix(
     }
 }
 
+void expect_hex_prefix(
+    const SelectedPacketBytePresentation& presentation,
+    const SelectedPacketByteViewId& id,
+    const std::vector<std::uint8_t>& owner_bytes,
+    const std::vector<std::uint8_t>& expected_prefix,
+    const session_detail::SelectedPacketByteRangeMode mode = session_detail::SelectedPacketByteRangeMode::whole_unit
+) {
+    const auto materialized = require_materialized_view(presentation, id, owner_bytes, mode);
+    PFL_REQUIRE(materialized.bytes.size() >= expected_prefix.size());
+    for (std::size_t index = 0U; index < expected_prefix.size(); ++index) {
+        PFL_EXPECT(materialized.bytes[index] == expected_prefix[index]);
+    }
+}
+
 std::vector<std::string> collect_labels(const SelectedPacketBytePresentation& presentation) {
     const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
     std::vector<std::string> labels {};
@@ -601,9 +615,43 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vlan/01_vlan_ipv4_tcp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+        const auto labels = collect_labels(presentation);
+
+        const auto* vlan = require_view(presentation, SelectedPacketByteViewKind::vlan_payload);
+        const auto* ipv4 = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "802.1Q Encapsulation") != labels.end());
+        expect_parent(*vlan, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*ipv4, SelectedPacketByteViewKind::vlan_payload);
+        PFL_REQUIRE(vlan->payload_range.has_value());
+        PFL_EXPECT(vlan->offset == 14U);
+        PFL_EXPECT(vlan->payload_range->offset == 18U);
+        expect_hex_prefix(
+            presentation,
+            vlan->id,
+            bytes,
+            {0x81U, 0x00U, 0x00U, 0x64U, 0x08U, 0x00U}
+        );
+        expect_hex_prefix(
+            presentation,
+            vlan->id,
+            bytes,
+            {0x45U, 0x00U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+        PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::vlan_payload) == 1U);
+    }
+
+    {
+        CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vlan/05_qinq_ipv4_udp.pcap")));
         const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
+        const auto labels = collect_labels(presentation);
 
         const std::vector<std::string> expected_labels {
             "Frame",
@@ -614,8 +662,36 @@ void run_selected_packet_byte_presentation_tests_impl() {
             "UDP Datagram",
         };
         PFL_EXPECT(collect_labels(presentation) == expected_labels);
-        expect_parent(*require_view(presentation, SelectedPacketByteViewKind::vlan_payload, 0U), SelectedPacketByteViewKind::ethernet_payload);
-        expect_parent(*require_view(presentation, SelectedPacketByteViewKind::vlan_payload, 1U), SelectedPacketByteViewKind::vlan_payload, 0U);
+        const auto* outer_vlan = require_view(presentation, SelectedPacketByteViewKind::vlan_payload, 0U);
+        const auto* inner_vlan = require_view(presentation, SelectedPacketByteViewKind::vlan_payload, 1U);
+        const auto* ipv4 = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*outer_vlan, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*inner_vlan, SelectedPacketByteViewKind::vlan_payload, 0U);
+        expect_parent(*ipv4, SelectedPacketByteViewKind::vlan_payload, 1U);
+        PFL_REQUIRE(outer_vlan->payload_range.has_value());
+        PFL_REQUIRE(inner_vlan->payload_range.has_value());
+        PFL_EXPECT(outer_vlan->offset == 14U);
+        PFL_EXPECT(inner_vlan->offset == 18U);
+        PFL_EXPECT(inner_vlan->payload_range->offset == 22U);
+        expect_hex_prefix(
+            presentation,
+            outer_vlan->id,
+            bytes,
+            {0x88U, 0xA8U, 0x00U, 0xC8U, 0x81U, 0x00U}
+        );
+        expect_hex_prefix(
+            presentation,
+            inner_vlan->id,
+            bytes,
+            {0x81U, 0x00U, 0x00U, 0xC9U, 0x08U, 0x00U}
+        );
+        expect_hex_prefix(
+            presentation,
+            inner_vlan->id,
+            bytes,
+            {0x45U, 0x00U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
     }
 
     {
@@ -1049,8 +1125,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto packet = require_packet(session, 0U);
         const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
+        const auto labels = collect_labels(presentation);
 
-        const auto* gtpu_payload = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
+        const auto* gtpu_message = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_udp = require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload);
         PFL_EXPECT(require_kind_index(presentation, SelectedPacketByteViewKind::udp_payload) <
@@ -1059,10 +1136,26 @@ void run_selected_packet_byte_presentation_tests_impl() {
             require_kind_index(presentation, SelectedPacketByteViewKind::inner_ipv4_payload));
         PFL_EXPECT(require_kind_index(presentation, SelectedPacketByteViewKind::inner_ipv4_payload) <
             require_kind_index(presentation, SelectedPacketByteViewKind::inner_udp_payload));
-        expect_parent(*gtpu_payload, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*gtpu_message, SelectedPacketByteViewKind::udp_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::gtpu_payload);
         expect_parent(*inner_udp, SelectedPacketByteViewKind::inner_ipv4_payload);
-        PFL_EXPECT(gtpu_payload->offset == inner_ipv4->offset);
+        PFL_REQUIRE(gtpu_message->payload_range.has_value());
+        PFL_EXPECT(gtpu_message->captured_length > gtpu_message->payload_range->captured_length);
+        PFL_EXPECT(gtpu_message->payload_range->offset == inner_ipv4->offset);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "GTP-U Payload") == labels.end());
+        expect_hex_prefix(
+            presentation,
+            gtpu_message->id,
+            bytes,
+            {0x30U, 0xFFU, 0x00U, 0x4CU}
+        );
+        expect_hex_prefix(
+            presentation,
+            gtpu_message->id,
+            bytes,
+            {0x45U, 0x00U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
         PFL_EXPECT(inner_udp->captured_length > 48U);
         PFL_REQUIRE(inner_udp->payload_range.has_value());
         PFL_EXPECT(inner_udp->payload_range->captured_length == 48U);
@@ -1089,12 +1182,14 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* gtpu_payload = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
+        const auto* gtpu_message = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
-        expect_parent(*gtpu_payload, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*gtpu_message, SelectedPacketByteViewKind::udp_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::gtpu_payload);
         expect_parent(*inner_tcp, SelectedPacketByteViewKind::inner_ipv4_payload);
+        PFL_REQUIRE(gtpu_message->payload_range.has_value());
+        PFL_EXPECT(gtpu_message->payload_range->offset == inner_ipv4->offset);
         PFL_EXPECT(inner_tcp->captured_length > 48U);
         PFL_REQUIRE(inner_tcp->payload_range.has_value());
         PFL_EXPECT(inner_tcp->payload_range->captured_length == 48U);
@@ -1119,9 +1214,12 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/34_gtpu_inner_ipv4_tcp_ack_only.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
+        const auto labels = collect_labels(presentation);
 
-        PFL_REQUIRE(find_view(presentation, SelectedPacketByteViewKind::gtpu_payload) != nullptr);
+        const auto* gtpu_message = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
         PFL_REQUIRE(find_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload) != nullptr);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "GTP-U Message") != labels.end());
+        PFL_REQUIRE(gtpu_message->payload_range.has_value());
         const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
         PFL_EXPECT(!inner_tcp->payload_range.has_value());
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::tcp_payload) == nullptr);
@@ -1136,16 +1234,33 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* gre_payload = require_view(presentation, SelectedPacketByteViewKind::gre_payload);
+        const auto bytes = session.read_packet_data(packet);
+        const auto labels = collect_labels(presentation);
+        const auto* gre_packet = require_view(presentation, SelectedPacketByteViewKind::gre_payload);
         const auto* mpls_payload = require_view(presentation, SelectedPacketByteViewKind::mpls_payload, 0U);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_udp = require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload);
-        expect_parent(*gre_payload, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*gre_packet, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*mpls_payload, SelectedPacketByteViewKind::gre_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::mpls_payload, 0U);
         expect_parent(*inner_udp, SelectedPacketByteViewKind::inner_ipv4_payload);
+        PFL_REQUIRE(gre_packet->payload_range.has_value());
+        PFL_EXPECT(gre_packet->payload_range->offset == mpls_payload->offset);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "GRE Payload") == labels.end());
+        expect_hex_prefix(
+            presentation,
+            gre_packet->id,
+            bytes,
+            {0x00U, 0x00U, 0x88U, 0x47U}
+        );
+        expect_hex_prefix(
+            presentation,
+            gre_packet->id,
+            bytes,
+            {0x03U, 0xE9U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
 
-        const auto bytes = session.read_packet_data(packet);
         const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
         const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
         expect_parent(*udp_data, SelectedPacketByteViewKind::inner_udp_payload);
@@ -1159,17 +1274,34 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* eoip_payload = require_view(presentation, SelectedPacketByteViewKind::eoip_payload);
+        const auto bytes = session.read_packet_data(packet);
+        const auto labels = collect_labels(presentation);
+        const auto* eoip_packet = require_view(presentation, SelectedPacketByteViewKind::eoip_payload);
         const auto* inner_ethernet = require_view(presentation, SelectedPacketByteViewKind::inner_ethernet_payload);
         const auto* inner_vlan = require_view(presentation, SelectedPacketByteViewKind::inner_vlan_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_udp = require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload);
-        expect_parent(*eoip_payload, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*eoip_packet, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*inner_ethernet, SelectedPacketByteViewKind::eoip_payload);
         expect_parent(*inner_vlan, SelectedPacketByteViewKind::inner_ethernet_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::inner_vlan_payload);
         expect_parent(*inner_udp, SelectedPacketByteViewKind::inner_ipv4_payload);
-        PFL_EXPECT(eoip_payload->offset == inner_ethernet->offset);
+        PFL_REQUIRE(eoip_packet->payload_range.has_value());
+        PFL_EXPECT(eoip_packet->payload_range->offset == inner_ethernet->offset);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "EoIP Payload") == labels.end());
+        expect_hex_prefix(
+            presentation,
+            eoip_packet->id,
+            bytes,
+            {0x20U, 0x01U, 0x64U, 0x00U}
+        );
+        expect_hex_prefix(
+            presentation,
+            eoip_packet->id,
+            bytes,
+            {0x81U, 0x02U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
     }
 
     {
@@ -1209,15 +1341,32 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* geneve_payload = require_view(presentation, SelectedPacketByteViewKind::geneve_payload);
+        const auto bytes = session.read_packet_data(packet);
+        const auto labels = collect_labels(presentation);
+        const auto* geneve_packet = require_view(presentation, SelectedPacketByteViewKind::geneve_payload);
         const auto* inner_ethernet = require_view(presentation, SelectedPacketByteViewKind::inner_ethernet_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_tcp = require_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload);
-        expect_parent(*geneve_payload, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*geneve_packet, SelectedPacketByteViewKind::udp_payload);
         expect_parent(*inner_ethernet, SelectedPacketByteViewKind::geneve_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::inner_ethernet_payload);
         expect_parent(*inner_tcp, SelectedPacketByteViewKind::inner_ipv4_payload);
-        PFL_EXPECT(geneve_payload->offset == inner_ethernet->offset);
+        PFL_REQUIRE(geneve_packet->payload_range.has_value());
+        PFL_EXPECT(geneve_packet->payload_range->offset == inner_ethernet->offset);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "Geneve Payload") == labels.end());
+        expect_hex_prefix(
+            presentation,
+            geneve_packet->id,
+            bytes,
+            {0x02U, 0x00U, 0x65U, 0x58U}
+        );
+        expect_hex_prefix(
+            presentation,
+            geneve_packet->id,
+            bytes,
+            {0x51U, 0x02U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
     }
 
     {
@@ -1242,10 +1391,10 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* gtpu_payload = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
+        const auto* gtpu_message = require_view(presentation, SelectedPacketByteViewKind::gtpu_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_sctp = require_view(presentation, SelectedPacketByteViewKind::inner_sctp_payload);
-        expect_parent(*gtpu_payload, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*gtpu_message, SelectedPacketByteViewKind::udp_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::gtpu_payload);
         expect_parent(*inner_sctp, SelectedPacketByteViewKind::inner_ipv4_payload);
     }
@@ -1254,16 +1403,33 @@ void run_selected_packet_byte_presentation_tests_impl() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/ah/12_ipv4_ah_inner_ipv4_udp.pcap")));
         const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
+        const auto labels = collect_labels(presentation);
 
-        const auto* ah_payload = require_view(presentation, SelectedPacketByteViewKind::ah_payload);
+        const auto* ah_packet = require_view(presentation, SelectedPacketByteViewKind::ah_payload);
         const auto* inner_ipv4 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
         const auto* inner_udp = require_view(presentation, SelectedPacketByteViewKind::inner_udp_payload);
-        expect_parent(*ah_payload, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*ah_packet, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*inner_ipv4, SelectedPacketByteViewKind::ah_payload);
         expect_parent(*inner_udp, SelectedPacketByteViewKind::inner_ipv4_payload);
+        PFL_REQUIRE(ah_packet->payload_range.has_value());
+        PFL_EXPECT(ah_packet->payload_range->offset == inner_ipv4->offset);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "AH Payload") == labels.end());
+        expect_hex_prefix(
+            presentation,
+            ah_packet->id,
+            bytes,
+            {0x04U, 0x04U, 0x00U, 0x00U}
+        );
+        expect_hex_prefix(
+            presentation,
+            ah_packet->id,
+            bytes,
+            {0x45U, 0x00U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
 
-        const auto bytes = session.read_packet_data(packet);
         const auto flow_aware_presentation = require_flow_aware_presentation(session, packet);
         const auto* udp_data = require_view(flow_aware_presentation, SelectedPacketByteViewKind::data);
         expect_parent(*udp_data, SelectedPacketByteViewKind::inner_udp_payload);
@@ -1277,9 +1443,9 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* ah_payload = require_view(presentation, SelectedPacketByteViewKind::ah_payload);
+        const auto* ah_packet = require_view(presentation, SelectedPacketByteViewKind::ah_payload);
         const auto* inner_ipv6 = require_view(presentation, SelectedPacketByteViewKind::inner_ipv6_payload);
-        expect_parent(*ah_payload, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*ah_packet, SelectedPacketByteViewKind::ipv4_payload);
         expect_parent(*inner_ipv6, SelectedPacketByteViewKind::ah_payload);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload) == nullptr);
 
@@ -1291,10 +1457,29 @@ void run_selected_packet_byte_presentation_tests_impl() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/esp/01_ipv4_esp_basic.pcap")));
         const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
+        const auto labels = collect_labels(presentation);
 
+        const auto* esp_packet = require_view(presentation, SelectedPacketByteViewKind::esp);
         const auto* esp_payload = require_view(presentation, SelectedPacketByteViewKind::esp_protected_payload);
-        expect_parent(*esp_payload, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*esp_packet, SelectedPacketByteViewKind::ipv4_payload);
+        expect_parent(*esp_payload, SelectedPacketByteViewKind::esp);
+        PFL_REQUIRE(esp_packet->payload_range.has_value());
+        PFL_EXPECT(esp_packet->payload_range->offset == esp_payload->offset);
+        PFL_EXPECT(std::find(labels.begin(), labels.end(), "ESP Packet") != labels.end());
+        expect_hex_prefix(
+            presentation,
+            esp_packet->id,
+            bytes,
+            {0x01U, 0x02U, 0x03U, 0x04U, 0x00U, 0x00U, 0x00U, 0x01U}
+        );
+        expect_hex_prefix(
+            presentation,
+            esp_payload->id,
+            bytes,
+            {0x05U, 0x06U, 0x07U, 0x08U}
+        );
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_ipv4_payload) == nullptr);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_udp_payload) == nullptr);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::inner_tcp_payload) == nullptr);

@@ -1138,6 +1138,14 @@ void populate_esp_details(
     }
     if (available_header_bytes >= 8U) {
         details.esp.sequence_number = detail::read_be32(packet_bytes, esp_offset + 4U);
+        details.esp.unit_range = make_packet_byte_range(
+            esp_offset,
+            bounded_packet_end > esp_offset ? (bounded_packet_end - esp_offset) : 0U,
+            packet_end > esp_offset
+                ? std::optional<std::size_t> {packet_end - esp_offset}
+                : std::optional<std::size_t> {},
+            packet_end > bounded_packet_end
+        );
         const auto payload_offset = esp_offset + detail::kEspBaseHeaderSize;
         details.esp.opaque_payload_length = bounded_packet_end > payload_offset
             ? (bounded_packet_end - payload_offset)
@@ -1210,6 +1218,14 @@ void populate_ah_details(
         return;
     }
     details.ah.available_icv_bytes = details.ah.icv_length;
+    details.ah.unit_range = make_packet_byte_range(
+        ah_offset,
+        bounded_packet_end > ah_offset ? (bounded_packet_end - ah_offset) : 0U,
+        packet_end > ah_offset
+            ? std::optional<std::size_t> {packet_end - ah_offset}
+            : std::optional<std::size_t> {},
+        packet_end > bounded_packet_end
+    );
 }
 
 struct InnerTransportPayloadLengths {
@@ -1682,6 +1698,15 @@ void populate_geneve_details(
     details.geneve.protocol_type_supported = geneve.protocol_type == detail::kGeneveProtocolTypeEthernet;
     details.geneve.vni = geneve.vni;
     if (geneve.bounded_packet_end.has_value() &&
+        *geneve.bounded_packet_end > geneve_offset) {
+        details.geneve.unit_range = make_packet_byte_range(
+            geneve_offset,
+            *geneve.bounded_packet_end - geneve_offset,
+            std::nullopt,
+            false
+        );
+    }
+    if (geneve.bounded_packet_end.has_value() &&
         *geneve.bounded_packet_end > geneve.inner_payload_offset) {
         details.geneve.payload_range = make_packet_byte_range(
             geneve.inner_payload_offset,
@@ -1852,6 +1877,13 @@ void populate_lenient_geneve_details(
         return;
     }
 
+    details.geneve.unit_range = make_packet_byte_range(
+        geneve_offset,
+        bounded_payload_end - geneve_offset,
+        std::nullopt,
+        false
+    );
+
     const auto inner_ethernet_offset = geneve_offset + header_length;
     if (bounded_payload_end <= inner_ethernet_offset) {
         details.geneve.has_inner_ethernet = true;
@@ -1860,6 +1892,13 @@ void populate_lenient_geneve_details(
         populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
         return;
     }
+
+    details.geneve.payload_range = make_packet_byte_range(
+        inner_ethernet_offset,
+        bounded_payload_end - inner_ethernet_offset,
+        std::nullopt,
+        false
+    );
 
     const auto inner_payload_length = bounded_payload_end - inner_ethernet_offset;
     if (inner_payload_length < detail::kEthernetHeaderSize) {
@@ -2342,6 +2381,21 @@ void populate_ah_payload_details(
     const std::size_t nominal_packet_end,
     PacketDetails& details
 ) {
+    if (!details.ah.unit_range.has_value()) {
+        details.ah.unit_range = make_packet_byte_range(
+            ah_payload_offset >= details.ah.header_length
+                ? (ah_payload_offset - details.ah.header_length)
+                : 0U,
+            packet_end >= ah_payload_offset && ah_payload_offset >= details.ah.header_length
+                ? (packet_end - (ah_payload_offset - details.ah.header_length))
+                : 0U,
+            nominal_packet_end >= ah_payload_offset && ah_payload_offset >= details.ah.header_length
+                ? std::optional<std::size_t> {nominal_packet_end - (ah_payload_offset - details.ah.header_length)}
+                : std::optional<std::size_t> {},
+            nominal_packet_end > packet_end
+        );
+    }
+
     if (packet_end > ah_payload_offset) {
         details.ah.payload_range = make_packet_byte_range(
             ah_payload_offset,
@@ -2707,6 +2761,15 @@ void populate_lenient_gre_details(
         if (const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, bounded_payload_end, true);
             gre.has_value()) {
             if (gre->bounded_packet_end.has_value() &&
+                *gre->bounded_packet_end > gre_offset) {
+                details.gre.unit_range = make_packet_byte_range(
+                    gre_offset,
+                    *gre->bounded_packet_end - gre_offset,
+                    std::nullopt,
+                    false
+                );
+            }
+            if (gre->bounded_packet_end.has_value() &&
                 *gre->bounded_packet_end > gre->payload_offset) {
                 details.gre.payload_range = make_packet_byte_range(
                     gre->payload_offset,
@@ -2794,6 +2857,15 @@ void populate_lenient_gre_details(
     }
 
     if (gre->bounded_packet_end.has_value() &&
+        *gre->bounded_packet_end > gre_offset) {
+        details.gre.unit_range = make_packet_byte_range(
+            gre_offset,
+            *gre->bounded_packet_end - gre_offset,
+            std::nullopt,
+            false
+        );
+    }
+    if (gre->bounded_packet_end.has_value() &&
         *gre->bounded_packet_end > gre->payload_offset) {
         details.gre.payload_range = make_packet_byte_range(
             gre->payload_offset,
@@ -2878,6 +2950,14 @@ void populate_lenient_gtpu_details(
 
     const auto declared_payload_end = gtpu_offset + detail::kGtpuBaseHeaderSize + static_cast<std::size_t>(details.gtpu.length);
     const auto logical_payload_end = std::min(declared_payload_end, bounded_payload_end);
+    details.gtpu.unit_range = make_packet_byte_range(
+        gtpu_offset,
+        logical_payload_end > gtpu_offset ? (logical_payload_end - gtpu_offset) : 0U,
+        declared_payload_end > gtpu_offset
+            ? std::optional<std::size_t> {declared_payload_end - gtpu_offset}
+            : std::optional<std::size_t> {},
+        declared_payload_end > bounded_payload_end
+    );
     auto cursor = gtpu_offset + detail::kGtpuBaseHeaderSize;
 
     if (details.gtpu.has_optional_fields) {

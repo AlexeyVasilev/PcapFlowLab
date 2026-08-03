@@ -66,6 +66,7 @@ enum class SelectedPacketByteViewKind : std::uint8_t {
     geneve_payload,
     gtpu_payload,
     ah_payload,
+    esp,
     esp_protected_payload,
     quic_initial_packet,
     quic_zero_rtt_packet,

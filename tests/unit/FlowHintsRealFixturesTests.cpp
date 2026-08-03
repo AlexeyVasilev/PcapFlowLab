@@ -563,6 +563,14 @@ void expect_frontend_adapter_nested_gtpu_data_byte_view() {
     PFL_EXPECT(details.details_available);
     const auto labels = packet_byte_view_labels(details);
     PFL_EXPECT(std::count(labels.begin(), labels.end(), "Data") == 1);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "GTP-U Message") != labels.end());
+
+    const auto* gtpu_descriptor = find_packet_byte_view_descriptor(details, "gtpu:0:0");
+    PFL_REQUIRE(gtpu_descriptor != nullptr);
+    PFL_EXPECT(gtpu_descriptor->label == "GTP-U Message");
+    PFL_EXPECT(gtpu_descriptor->parent_stable_id == std::optional<std::string> {"udp:0:0"});
+    PFL_EXPECT(gtpu_descriptor->supports_payload_only);
+    PFL_REQUIRE(gtpu_descriptor->payload_available_length.has_value());
 
     const auto* data_descriptor = find_packet_byte_view_descriptor(details, "data:0:0");
     PFL_REQUIRE(data_descriptor != nullptr);
