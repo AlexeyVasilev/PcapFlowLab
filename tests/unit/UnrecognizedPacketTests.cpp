@@ -68,7 +68,6 @@ void run_unrecognized_packet_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         PFL_EXPECT(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "warnings");
@@ -115,7 +114,10 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(details.has_capture);
         PFL_EXPECT(details.packet_found);
         PFL_EXPECT(details.details_available);
-        PFL_EXPECT(details.raw_preview_available);
+        PFL_EXPECT(!details.byte_view_descriptors.empty());
+        PFL_EXPECT(details.selected_byte_view.available);
+        PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
+        PFL_EXPECT(details.selected_byte_view.formatted_text.find("00000000") != std::string::npos);
         PFL_EXPECT(!details.summary_layers.empty());
         PFL_EXPECT(details.summary_layers.front().id == "warnings");
         PFL_EXPECT(!details.summary_layers.front().title.empty());

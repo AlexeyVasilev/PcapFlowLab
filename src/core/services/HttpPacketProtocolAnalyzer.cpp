@@ -151,20 +151,7 @@ std::optional<std::string> extract_host_header(const std::string_view headers) {
     return std::nullopt;
 }
 
-}  // namespace
-
-std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes) const {
-    return analyze(packet_bytes, kLinkTypeEthernet);
-}
-
-std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
-    PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
-    if (payload_bytes.empty()) {
-        return std::nullopt;
-    }
-
-    const auto payload_text = bytes_as_text(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()));
+std::optional<HttpPacketMessageView> parse_http_message(const std::string_view payload_text) {
     const auto headers_end = header_block_end(payload_text);
     if (headers_end == std::string_view::npos) {
         return std::nullopt;
@@ -176,9 +163,6 @@ std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const s
     if (first_line.empty()) {
         return std::nullopt;
     }
-
-    std::ostringstream text {};
-    text << "HTTP\n";
 
     if (looks_like_http_request(first_line)) {
         const auto method_end = first_line.find(' ');
@@ -210,18 +194,13 @@ std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const s
             }
         }
 
-        text << "  Message Type: Request\n"
-             << "  Method: " << method << "\n"
-             << "  Path: " << path << "\n"
-             << "  Version: " << version;
-
-        const auto host = extract_host_header(headers.substr(next_line_offset(headers, first_line_end)));
-        if (host.has_value()) {
-            text << "\n"
-                 << "  Host: " << *host;
-        }
-
-        return text.str();
+        return HttpPacketMessageView {
+            .message_type = HttpPacketMessageType::request,
+            .method = std::string(method),
+            .path = std::string(path),
+            .version = std::string(version),
+            .host = extract_host_header(headers.substr(next_line_offset(headers, first_line_end))).value_or(std::string {}),
+        };
     }
 
     if (looks_like_http_response(first_line)) {
@@ -243,17 +222,79 @@ std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const s
             }
         }
 
-        text << "  Message Type: Response\n"
-             << "  Version: " << version << "\n"
-             << "  Status Code: " << code;
-
+        auto reason = std::string {};
         const auto reason_start = code_start + 3U;
         if (reason_start < first_line.size() && first_line[reason_start] == ' ') {
-            const auto reason = trim_ascii(first_line.substr(reason_start + 1U));
-            if (!reason.empty()) {
-                text << "\n"
-                     << "  Reason: " << reason;
-            }
+            reason = trim_ascii(first_line.substr(reason_start + 1U));
+        }
+
+        return HttpPacketMessageView {
+            .message_type = HttpPacketMessageType::response,
+            .version = std::string(version),
+            .status_code = std::string(code),
+            .reason = std::move(reason),
+        };
+    }
+
+    return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<HttpPacketMessageView> HttpPacketProtocolAnalyzer::inspect_message(
+    std::span<const std::uint8_t> packet_bytes
+) const {
+    return inspect_message(packet_bytes, kLinkTypeEthernet);
+}
+
+std::optional<HttpPacketMessageView> HttpPacketProtocolAnalyzer::inspect_message(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type
+) const {
+    PacketPayloadService payload_service {};
+    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
+    if (payload_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    return parse_http_message(bytes_as_text(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())));
+}
+
+std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes) const {
+    return analyze(packet_bytes, kLinkTypeEthernet);
+}
+
+std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
+    const auto message = inspect_message(packet_bytes, data_link_type);
+    if (!message.has_value()) {
+        return std::nullopt;
+    }
+
+    std::ostringstream text {};
+    text << "HTTP\n";
+
+    if (message->message_type == HttpPacketMessageType::request) {
+        text << "  Message Type: Request\n"
+             << "  Method: " << message->method << "\n"
+             << "  Path: " << message->path << "\n"
+             << "  Version: " << message->version;
+
+        if (!message->host.empty()) {
+            text << "\n"
+                 << "  Host: " << message->host;
+        }
+
+        return text.str();
+    }
+
+    if (message->message_type == HttpPacketMessageType::response) {
+        text << "  Message Type: Response\n"
+             << "  Version: " << message->version << "\n"
+             << "  Status Code: " << message->status_code;
+
+        if (!message->reason.empty()) {
+            text << "\n"
+                 << "  Reason: " << message->reason;
         }
 
         return text.str();

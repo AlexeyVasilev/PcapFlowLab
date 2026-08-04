@@ -211,7 +211,7 @@ These are the initial stabilization decisions for future follow-up work.
 - Visual styling remains frontend-only.
 - Filtering and sorting can remain frontend-side for now, but should operate over documented DTO fields.
 - Selection and reset semantics are part of the shared presentation contract.
-- Raw and payload previews must remain bounded and must carry truncated / unavailable / no-payload state explicitly.
+- Packet Details byte inspection must remain bounded, selected-view-only, and must carry unavailable / partial / truncated state explicitly.
 - Stream remains selected-flow-only, on-demand, bounded, ephemeral, and not persisted.
 - Analysis remains reference behavior for now, not a frozen shared DTO contract.
 
@@ -469,10 +469,17 @@ Qt currently models the right-hand inspector as a tabbed details surface. That s
 ### Expected sections / tabs
 
 - Summary
-- Raw
-- Payload
-  - protocol-specific payload labels may be used when already available, for example `UDP Payload`
-- Protocol
+- Bytes
+
+Current Packet Details direction note:
+
+- `Summary / Bytes` is now the shared packet-details tab shape for Qt and the experimental Tauri UI;
+- the removed `Raw` tab is represented by the `Frame` byte view;
+- the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
+- the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
+- complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
+- Stream Item Details now use `Summary / Item Data`, where `Item Data` is selected-row-only and is backed by one bounded selected-item materialization.
+- Stream Item Details Summary is intended to be a frontend-neutral mapping from retained structured stream-item semantics; labels and retained protocol text may still exist elsewhere, but they are not semantic authorities for Summary.
 
 Qt also supports stream-item details in the same right-hand panel. That is noted separately below as a cross-cutting selection question.
 
@@ -514,48 +521,102 @@ Current direction note:
 - tunnel-carrier UDP does not independently emit generic `data` when a supported child tunnel owns those bytes, and unsupported tunnel bodies remain deferred rather than being reparsed inside the Summary layer builder;
 - an inner TCP ACK-only packet with zero terminal application payload must not emit `data`;
 - TLS ownership for selected-packet Summary must validate the bounded record header, must not treat zero-length Handshake / Alert / ChangeCipherSpec headers as TLS-owned, and should suppress `data` for zero-length ApplicationData only when the selected-packet path already has confirmed TLS context;
-- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in Raw / TCP Payload / UDP Payload tabs, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
+- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in the Packet Details `Bytes` tab through `Frame` and protocol-level payload views, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
 - selected-packet QUIC preparation may also retain one bounded decrypted Initial plaintext artifact for future byte-level inspection, but that artifact stays packet-local, is not copied into Stream rows, and is not used as the semantic source of truth for current Summary layers;
 - recognized encrypted or opaque protocol payload remains owned by that protocol and must not fall back to generic `data`;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
-- the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.
+- Packet Details no longer expose a visible Protocol tab, and selected-stream rows no longer retain formatted `protocol_text`; explicit formatter/debug APIs may remain where they are intentionally used outside Stream row retention.
+- Packet Details Summary now treats packet-local DNS and HTTP fields as authoritative structured input and must not rebuild those Summary fields by reparsing formatted protocol text.
+- DHCP/BOOTP remains deferred in this stage because the current packet model still lacks one shared structured message view for Packet Details Summary.
 
-### Raw
+### Bytes
 
-Raw should show a bounded raw packet byte preview.
-
-Expected semantics:
-
-- bounded preview only;
-- hex/ascii-oriented presentation;
-- no unbounded byte loading;
-- source-unavailable state in index-only / no-source mode;
-- no stale bytes after flow/packet/open changes.
-
-If the backend returns formatted preview text, frontends may render that faithfully rather than reformat it aggressively.
-
-### Payload
-
-Payload should show a bounded transport payload preview.
+Bytes should show one selected bounded byte view at a time.
 
 Expected semantics:
 
-- preview can be empty when the packet has no transport payload;
-- preview can be truncated;
-- preview can be unavailable when source bytes are unavailable;
-- no unbounded payload loading;
-- protocol-specific payload tab label may be used when existing inspection paths already provide it.
+- `Frame` replaces the old `Raw` packet preview;
+- the selector order now represents decoded protocol-layer units such as `Frame`, `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPPoE Packet`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
+- complete unit means protocol header plus bounded protocol payload;
+- stable identity belongs to the protocol layer, not to the currently displayed range mode;
+- `Frame` and the decoded link-layer unit may intentionally coexist even when both cover the same captured bytes;
+- the current UI always materializes `whole_unit`;
+- a future UI pass may add `Whole Unit | Payload Only` without changing descriptor identities;
+- when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
+- packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
+- packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
+- whole-unit packet-backed carrier descriptors include their own protocol header, including `IEEE 802.3 Frame`, `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, `PPP Packet`, `VXLAN Packet`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`;
+- `IEEE 802.3 Frame` is selected from authoritative decode metadata rather than inferred in the UI layer; its whole-unit range begins at destination MAC, includes the 2-byte Length field, includes exactly the declared MAC client data extent, and excludes trailing MAC padding beyond the declared length; its payload-only range begins at LLC DSAP when present;
+- LLC/SNAP hierarchy is explicit when the decode path classifies the link layer as 802.3: `Frame -> IEEE 802.3 Frame -> LLC PDU -> SNAP PDU -> carried child`, while non-SNAP LLC remains `Frame -> IEEE 802.3 Frame -> LLC PDU`;
+- PPPoE Session packet bytes now layer as `PPPoE Packet -> PPP Packet -> carried child` when the decode layer has an authoritative PPP Protocol field and bounded PPP information field; `PPP Packet` includes the PPP Protocol field in whole-unit mode and its payload-only range begins after the parsed Protocol field;
+- PPPoE Discovery packets remain `PPPoE Packet` only and do not manufacture a false `PPP Packet` child;
+- `802.1Q Encapsulation` whole-unit materialization begins at the VLAN TPID, includes TPID, TCI, the encapsulated EtherType/length field, and the complete bounded carried payload; its optional payload-only mode begins at the authoritative carried-protocol boundary;
+- when a separate payload-only range remains meaningful, it stays an explicitly separate descriptor rather than being mislabeled as a whole packet;
+- record-layer TLS over TCP now layers as `TCP Segment -> TLS Record -> TLS Handshake Message` when the current bounded TLS parser confirms ownership;
+- packet-local byte views keep their normal label and do not carry a `Reassembled` suffix;
+- byte views backed by bounded reconstructed owners keep one stable descriptor identity and surface `Reassembled` through structured assembly metadata and the display label;
+- record-layer TLS over TCP may therefore appear either as packet-local `TCP Segment -> TLS Record -> TLS Handshake Message` or, when multiple contributing TCP segments are required, as `TLS Handshake Record (Reassembled)` with a reassembled handshake child;
+- QUIC never invents a `TLS Record` layer: TLS over QUIC exposes only `TLS Handshake Message`;
+- when one TLS handshake maps unambiguously to one CRYPTO data range, QUIC may layer as `CRYPTO Frame Data -> TLS Handshake Message`;
+- when one TLS handshake spans multiple CRYPTO contributions, QUIC uses one bounded reconstructed `QUIC CRYPTO Stream (Reassembled)` owner attached to the selected Initial context and attaches the TLS handshake there rather than to one arbitrary frame; when one selected Initial packet owns the required contiguous prefix it may remain under the decrypted Initial plaintext, otherwise it may hang from the owning Initial packet context;
+- when Summary classifies the effective terminal TCP or UDP application payload as unclaimed `Data`, Packet Details Bytes exposes exactly one `Data` descriptor as a semantic child of that same effective terminal transport;
+- `Data` materializes the complete available packet-local unclaimed application payload from captured packet bytes, while Summary keeps its separate bounded preview;
+- nested ownership remains terminal-transport-first: inner TCP or UDP `Data` suppresses any outer tunnel-carrier `Data`, and recognized DNS, TLS, QUIC, HTTP, or other supported child ownership suppresses `Data` entirely;
+- `Data` does not expose a second payload-only mode because the whole unit is already the value itself, and zero-length payloads do not produce a `Data` descriptor;
+- `Data` keeps one stable `data` identity per selected packet rather than deriving identity from a display label or preview text;
+- the selector uses backend-provided stable ids and backend-provided descriptor order;
+- only one selected view is materialized/formatted at a time;
+- frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
+- when the preserved id is unavailable, frontends fall back to `Frame`, then to the first available descriptor;
+- frontends do not reconstruct hierarchy, ranges, or identities from offsets or display labels;
+- formatted hex/ascii text remains bounded and deterministic;
+- source-unavailable state remains explicit in index-only / no-source mode;
+- no stale bytes remain visible after packet/open/selection changes.
 
-### Protocol
+Backend note for the current migration stage:
 
-Protocol should show the currently available protocol details text/summary for the selected packet.
-
-Expected semantics:
-
-- current protocol-specific details text only;
-- no implication that new deep protocol analysis must be added;
-- clear `no protocol details` / unavailable state when appropriate.
+- selected-packet byte inspection now has a separate backend descriptor layer that is independent from Summary and Protocol presentation;
+- the current pass now supports four owner kinds:
+  - captured packet bytes loaded on demand through `CaptureSession::read_packet_data(...)`;
+  - one selected-packet QUIC Initial plaintext owner when authenticated Initial decryption succeeds on the existing bounded QUIC path;
+  - one bounded QUIC CRYPTO-prefix owner when existing QUIC/TLS handshake semantics already authorize a logical TLS handshake range that spans CRYPTO contributions;
+  - one bounded reconstructed TLS-record owner when existing selected-packet TLS analysis already reconstructs a contributing TCP TLS record;
+- descriptors carry stable non-localized protocol-layer identities, explicit parent relationships, one primary complete-unit range, and an optional payload-only range only where that second range is already authoritative; they do not retain per-view byte buffers or preformatted text;
+- materialization and hex formatting happen on demand for one selected view at a time;
+- the current pass covers protocol-unit defaults for Frame, Ethernet II, IEEE 802.3, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, PPP, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet II, inner IEEE 802.3, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- current PPP Packet support is limited to the already-authoritative PPPoE decode path with a 2-byte PPP Protocol field; Protocol Field Compression is not guessed in the presentation layer;
+- Linux cooked SLL/SLL2 packet-byte units remain deferred in the current contract pass because the inspected packet-details model does not yet publish authoritative cooked-header whole-unit and payload ranges for byte-view materialization;
+- semantic child layers may intentionally overlap their parent transport or carrier range when the child unit is independently authoritative, including `UDP Datagram -> DNS Message`, `TCP Segment -> TLS Record`, `TLS Record -> TLS Handshake Message`, and `CRYPTO Frame Data -> TLS Handshake Message`;
+- overlapping parent and child ranges are expected because nested encapsulations intentionally retain both the carrier unit and the decoded child unit;
+- duplicate suppression applies only to semantically equivalent descriptors; plain IP-in-IP does not manufacture an extra tunnel-payload view when only the nested IP payloads are authoritative;
+- packet-backed nested carrier descriptors now use complete-unit selectors with optional payload-only materialization on the same stable id, rather than exposing misleading primary payload-only selectors; the remaining explicit value-oriented payload child views are `ESP Protected Payload`, `QUIC Initial Protected Payload`, and derived value views such as `CRYPTO Frame Data`;
+- `ESP Packet` remains opaque and owns one child `ESP Protected Payload`; the child excludes SPI and Sequence Number and remains the explicit value-oriented protected-range selector;
+- selected-packet TLS byte views reuse the same bounded selected-packet TLS analysis already used by Summary rather than running a second independent full-flow reconstruction pass;
+- selected TCP packet policy is contribution-based: a selected packet shows only TLS records and handshake messages to which that packet contributes, and split TLS records use a bounded reconstructed owner instead of fabricating a fake contiguous captured range inside one packet;
+- packet-local TLS records keep packet-backed ownership and normal labels, while split TLS records and their handshake children surface `Reassembled` plus contributing TCP-segment count from structured reconstruction metadata rather than from inferred lengths;
+- complete packet-local TLS records use captured packet bytes directly, while split or bounded reconstructed TLS records and their handshake children use one reconstructed owner plus child ranges into that owner rather than per-record or per-handshake byte copies;
+- encrypted or opaque TLS records such as `ApplicationData` remain TLS records even when no plaintext handshake child exists;
+- when current metadata confirms TLS ownership but only a bounded partial TCP fragment is available, the descriptor remains the narrowest honest TLS unit, such as `TLS Record Fragment`, with complete/partial/truncated state derived from structured TLS lengths;
+- DNS and TLS byte views remain packet-details-only in this stage; stream-item byte owners and stream-item application-unit byte selectors remain deferred;
+- selected-packet QUIC byte inspection now also exposes:
+  - captured QUIC envelope ranges as children of the captured `UDP Datagram`;
+  - captured QUIC Initial protected-payload ranges only when the packet-number length and packet end are authoritative;
+  - one derived `QUIC Initial Decrypted Payload` owner with child `QUIC Frame` and `CRYPTO Frame Data` ranges when authenticated Initial decryption succeeds;
+- selected-packet byte inspection now also exposes one packet-backed `Data` descriptor when `prepare_selected_packet_summary(...)` has already classified the effective terminal application payload as complete, authoritative, and unclaimed by a supported child protocol;
+- that `Data` descriptor reuses the same `PacketDataPresentation` ownership decision and the same effective transport payload provenance already used by Summary, keeps a stable `data` identity, and never falls back to the 32-byte Summary preview as its byte owner;
+- QUIC envelope offsets retained by the byte-presentation layer are rebased exactly once from UDP-payload-relative provenance to captured-frame-relative byte offsets;
+- the captured `QUIC Initial Protected Payload` contract starts immediately after the unprotected packet-number field and currently includes the AEAD authentication tag because that is the authoritative encrypted-payload extent already exposed by the selected-packet QUIC code path;
+- derived QUIC frame offsets are relative to the decrypted Initial plaintext owner, while `CRYPTO` stream offsets remain logical QUIC metadata and are not reused as plaintext byte offsets;
+- `CRYPTO Frame Data` views exclude the frame type and encoded offset/length varints and expose only the CRYPTO frame value bytes;
+- QUIC TLS handshake views inherit their range from the same structured QUIC/TLS handshake model already used by Packet Summary; when one handshake spans multiple CRYPTO contributions, one bounded `QUIC CRYPTO Stream` descriptor becomes the handshake parent, may be attached either under the decrypted Initial plaintext or under the owning Initial packet context, and carries reassembled assembly metadata such as contributing CRYPTO-frame count;
+- QUIC does not synthesize a TLS record header or record owner, and failed Initial decryption must not fabricate QUIC frame, `CRYPTO Frame Data`, `QUIC CRYPTO Stream`, or TLS handshake byte ownership;
+- coalesced QUIC UDP datagrams retain one descriptor identity per envelope; derived Initial plaintext belongs only to its owning envelope and is never attached to neighboring `0-RTT`, `Handshake`, or `Protected payload` envelopes;
+- failed Initial decryption may still retain the captured QUIC packet view and, when header-protection removal established an authoritative boundary, the captured protected-payload view, but it must not fabricate derived plaintext, QUIC frame, `CRYPTO Frame Data`, `QUIC CRYPTO Stream`, or TLS byte ownership;
+- the retained QUIC Initial plaintext owner reuses the existing selected-packet QUIC plaintext artifact and is not copied into a second complete buffer solely for byte presentation;
+- captured and derived owners are intentionally transparent to the UI once the selector has chosen a stable id;
+- application protocols still deferred from Packet Details Bytes in this stage include packet-local HTTP message units and DHCP/BOOTP message units, because current packet presentation does not yet expose a single shared authoritative application-unit byte range for those protocols.
+- Stream Item Details tabs remain unchanged in this pass; stream-item byte owners, packet-spanning HTTP message byte units, and long-lived QUIC derived owners remain deferred.
 
 ### Packet details state model
 
@@ -608,6 +669,22 @@ Based on current Qt stream presentation, each stream item should expose:
 - contributing packet count;
 - source packet reference summary;
 - constricted / quality indicator when present.
+- selected-item-only Item Data through the details surface:
+  - exact selected-item bytes when authoritative;
+  - explicit unavailable / synthetic / stale state otherwise;
+  - no protocol-level byte selector hierarchy.
+
+Summary-specific contract notes:
+
+- Stream Item Summary is the primary structured inspection surface for selected stream items.
+- Summary must be produced from retained stream-item model fields, not by reparsing Stream labels, Protocol text, or formatted byte strings.
+- Stream labels themselves should also be constructed from retained structured stream-item semantics rather than by parsing formatted protocol text.
+- HTTP stream rows may keep display labels such as `HTTP Request` or `HTTP Gap`, but Summary semantics come from retained HTTP request/response/partial/gap metadata.
+- TLS stream rows may keep display labels such as `TLS ClientHello`, but Summary semantics come from retained TLS semantic kind, parser context, and retained structured TLS record models.
+- QUIC stream rows may keep display labels such as `QUIC Initial: CRYPTO`, but Summary semantics come from retained QUIC packet/frame/TLS-handshake presentation models.
+- Generic and synthetic rows must expose explicit structured kind/state for payload, partial, or gap behavior rather than relying on label wording.
+- `Item Data` remains the byte-ownership surface, and its availability, ownership, packet-local versus reassembled status, and source/provenance selection must come from retained structured stream-item semantics rather than from formatted protocol text.
+- `StreamItemRow::protocol_text` is no longer retained. Flow-list `FlowRow::protocol_text` remains a separate live user-facing field outside the selected-stream-item semantic contract, and the Flows Protocol column remains unchanged.
 
 Qt currently renders source-packet references in a compact user-facing form such as:
 
@@ -854,7 +931,7 @@ The contract does not require every frontend to expose every action immediately.
 | Inspector | protocol details text | frontend-neutral DTO | stable | shared product text is acceptable here | keep deep analysis out of scope |
 | Stream | stream item rows | frontend-neutral DTO | candidate | align with current Qt-visible stream fields | refine source-packet-reference structure |
 | Stream | stream load-more / boundedness | app/session + frontend-neutral DTO | stable | bounded selected-flow-only semantics are shared | expose packet-window metadata consistently |
-| Stream | stream item details | frontend-neutral DTO | deferred | do not freeze yet | revisit after packet inspector DTO stabilizes |
+| Stream | stream item details | frontend-neutral DTO | active | `Summary / Item Data` backed by one selected-item materialization only; formatted protocol text is not retained per row | keep byte ownership in backend; avoid per-row eager text |
 | Statistics | counters | app/session + frontend-neutral DTO | stable | structured counters first | keep frontend formatting local |
 | Statistics | grouping / labels | frontend rendering or optional shared display semantics | needs decision | do not force into core | revisit after CLI requirements are clearer |
 | Analysis | analysis workspace | app/session + frontend-specific presentation | deferred | treat Qt as reference behavior | revisit after flows/packets/details/stream stabilize |

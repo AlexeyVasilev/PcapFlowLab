@@ -27,14 +27,20 @@ Each Stream row is represented as a `StreamItemRow`.
 
 - `stream_item_index`: 1-based item order within the current materialized Stream result.
 - `direction_text`: `A→B` or `B→A`, based on canonical flow direction.
-- `label`: user-facing classification such as `TLS ClientHello`, `HTTP 200 OK`, `TCP Payload`, or `UDP Payload`.
+- `label`: user-facing classification such as `TLS ClientHello`, `HTTP 200 OK`, `TCP Payload`, or `UDP Payload`, derived from retained structured stream-item semantics rather than by parsing formatted protocol text.
 - `byte_count`: byte size of the item payload represented by the row.
 - `packet_count`: number of packets contributing bytes to the item.
 - `packet_indices`: contributing packet indices in capture order.
-- `payload_hex_text`: optional formatted payload preview for item-level details.
-- `protocol_text`: optional protocol-oriented details text for item-level details.
+- item-level payload bytes are not retained as preformatted hex text in `StreamItemRow`.
 
 The model is intentionally narrow. A Stream item is a presentation artifact for the selected flow, not a protocol object with lifecycle outside the current view.
+
+Formatted protocol-oriented text is no longer retained in `StreamItemRow`.
+
+- Stream labels, Summary, and Item Data ownership come from structured retained semantics.
+- Explicit formatter/debug APIs may still exist where they are intentionally consumed outside Stream row retention.
+- Stream Item Data hex formatting is produced on demand from authoritative owned bytes when that ownership exists.
+- `FlowRow::protocol_text` remains live and unchanged for the flow list and related behavior.
 
 ## Stream materialization
 

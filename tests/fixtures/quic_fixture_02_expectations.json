@@ -188,7 +188,6 @@
       "count": 2,
       "tls_semantic": "ClientHello",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO", "TLS Handshake Type: ClientHello"],
       "detail_forbidden_substrings": ["ServerHello"]
     },
@@ -200,7 +199,6 @@
       "count": 1,
       "tls_semantic": "ClientHello",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO", "TLS Handshake Type: ClientHello"],
       "detail_forbidden_substrings": ["ServerHello"]
     },
@@ -212,7 +210,6 @@
       "count": 1,
       "tls_semantic": "ClientHello",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "CRYPTO", "TLS Handshake Type: ClientHello"],
       "detail_forbidden_substrings": ["ServerHello"]
     },
@@ -224,7 +221,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["0-RTT"],
       "detail_forbidden_substrings": ["ServerHello"]
     },
@@ -236,7 +232,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["0-RTT"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -248,7 +243,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["0-RTT"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -260,7 +254,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["0-RTT"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -272,7 +265,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["0-RTT"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -284,7 +276,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["0-RTT"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -296,7 +287,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -308,7 +298,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -320,7 +309,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK, PADDING"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -332,7 +320,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK, PADDING"],
       "detail_forbidden_substrings": ["TLS Handshake Type:"]
     },
@@ -344,7 +331,6 @@
       "count": 1,
       "tls_semantic": "ServerHello",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO, PADDING", "TLS Handshake Type: ServerHello", "Selected TLS Version:", "Selected Cipher Suite:"],
       "detail_forbidden_substrings": ["ClientHello", "SNI:"]
     },
@@ -356,7 +342,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Handshake"]
     },
     {
@@ -367,7 +352,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Protected Payload"]
     },
     {
@@ -378,7 +362,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Protected Payload"]
     },
     {
@@ -389,7 +372,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["ACK"]
     },
     {
@@ -400,7 +382,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Handshake"]
     },
     {
@@ -411,7 +392,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Protected Payload"]
     },
     {
@@ -422,7 +402,6 @@
       "count": 1,
       "tls_semantic": "none",
       "expects_protocol_text": true,
-      "expects_payload_hex_text": true,
       "detail_required_substrings": ["Protected Payload"]
     }
   ],
@@ -456,3 +435,4 @@
     {"kind": "exact_label", "value": "UDP Payload"}
   ]
 }
+

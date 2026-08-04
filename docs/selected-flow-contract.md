@@ -115,30 +115,61 @@ Current reliability rules:
 
 Packet Details describe the selected packet.
 
-- `Summary`: packet summary and packet-specific metadata.
-- `Raw`: raw packet hex view.
-- `TCP Payload` / `UDP Payload`: transport payload bytes for packet-level context.
-- `Protocol`: protocol-specific interpretation of the selected packet bytes when analyzable.
+- `Summary`: the structured packet inspection surface for packet-specific metadata.
+- `Bytes`: protocol-unit and selected derived byte views for the selected packet.
+- Current UI surface: `Summary` and `Bytes`.
 
 Packet Details reflect packet truth and packet bytes.
+
+Current visibility rules:
+
+- there is no visible `Protocol` tab;
+- there are no visible `Raw` or transport-specific `TCP Payload` / `UDP Payload` tabs;
+- Stream Item Details use `Summary` and `Item Data`.
+- Packet `Bytes` availability is explicit; a selected byte view may be valid even when its formatted text is empty, for example when an authoritative selected range has zero available bytes.
 
 ### 8.2 Stream Item Details
 
 Stream Item Details describe the selected stream item.
 
-- `Summary`: compact item metadata and source ownership.
-- `Item Payload`: payload/content of the semantic stream item where applicable.
-- `UDP Payload`: current payload tab name for QUIC stream items, because the payload view remains transport-oriented.
-- `Protocol`: richer protocol-specific interpretation of the stream item and attached semantics.
+- `Summary`: compact structured item metadata and source ownership.
+- `Item Data`: exact bytes owned by the selected semantic stream item when one authoritative owner exists.
+- Current UI surface: `Summary` and `Item Data`.
 
 Stream Item Details reflect semantic-item truth, which may be reassembled and may not be packet-identical.
 
-Contextual payload tab naming currently in effect:
+Summary-specific rules:
 
-- Packet details on TCP packets: `TCP Payload`
-- Packet details on UDP packets: `UDP Payload`
-- Stream item details on TLS/HTTP stream items: `Item Payload`
-- Stream item details on QUIC stream items: `UDP Payload`
+- Stream Item Summary is model-driven and frontend-neutral.
+- Stream Item Summary semantics must come from authoritative stream-item model fields retained by selected-flow construction.
+- Display labels may remain visible in bubbles or internal debug-oriented surfaces, but they must be built from retained structured stream-item semantics rather than by reparsing retained formatted text.
+- Stream Item Summary semantics come from retained structured stream-item fields; formatted protocol text is no longer stored in `StreamItemRow`.
+- Item Data remains the byte-ownership surface and must stay separate from Summary semantics.
+- Explicit formatter/debug APIs may still exist where they are intentionally consumed outside Stream row retention.
+- Flow-level `FlowRow::protocol_text` remains a separate live field for the flow list and related flow-scoped behavior; the Flows Protocol column is unchanged.
+
+### 8.3 Stream Item Data Backend Contract
+
+Selected-flow backend now also supports a presentation-neutral Item Data model for one selected stream item.
+
+- Item Data represents only the selected stream item's own bytes.
+- Item Data does not expose a packet-style protocol-level selector hierarchy.
+- One selected item has zero or one Item Data owner.
+- The owner is resolved on demand from either:
+  - an exact captured packet range; or
+  - bounded retained/reconstructed item bytes for that selected item.
+- Packet-backed Item Data uses only authoritative retained packet ranges or retained owned bytes; it never locates offsets by searching packet contents for a matching byte sequence.
+- Synthetic rows such as gap markers expose no Item Data.
+- Bounded selected-flow packet/item limits still apply; the Item Data API must not read beyond the currently requested stream window.
+- Item Data materialization and hex formatting are selected-item-only operations; no eager per-row byte copies or preformatted dumps are retained for the whole stream result.
+- Qt and Tauri now surface this contract through `Summary / Item Data` stream-item tabs.
+- Packet Details now use `Summary / Bytes`.
+- The Item Data view is selected-row-only and does not expose a packet-style selector hierarchy.
+- Item Data ownership, availability, and packet-local versus reassembled status must come from retained structured stream-item semantics and provenance, not from formatted protocol text.
+
+Current limitation:
+
+- HTTP stream rows still expose structured Summary, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
 
 ## 9. Protocol-Specific Selected-Flow Rules
 
@@ -162,6 +193,7 @@ TLS rules:
 - Protocol details for alerts should include `Alert Level` and `Alert Description` when reliably parsed.
 - TLS stream items may be reassembled across multiple packets.
 - Partial TLS behavior remains conservative and may fall back to partial labels.
+- TLS Stream Item Summary is driven by retained TLS semantic kind, parser context, and retained structured record models rather than by reparsing Stream labels or Protocol text.
 
 ### 9.2 HTTP
 
@@ -172,6 +204,7 @@ HTTP selected-flow presentation is message-oriented when reliable header structu
 - Source packet ownership must reflect the contributing packet set.
 - Partial or incomplete HTTP data should fall back conservatively.
 - HTTP body handling remains bounded and practical, not a general body-reconstruction subsystem.
+- HTTP Stream Item Summary is driven by retained HTTP semantic kind and retained request/response fields such as method, target, version, status code, reason phrase, and honest reconstruction diagnostics rather than by label text.
 
 ### 9.3 QUIC
 
@@ -190,6 +223,7 @@ QUIC selected-flow presentation uses a bounded shell-aware model.
 - QUIC stream item size should reflect semantic item size, not whole UDP packet size.
 - QUIC details may include attached TLS-over-CRYPTO details when reliably derived from bounded available bytes.
 - This is not full QUIC session reconstruction, decryption, or HTTP/3 parsing.
+- QUIC Stream Item Summary is driven by retained QUIC packet/frame/handshake presentation models rather than by parsing display labels such as `QUIC Initial: CRYPTO`.
 
 ### 9.4 Generic Fallback Behavior
 
@@ -199,6 +233,7 @@ When stronger protocol semantics are not reliably available, selected-flow analy
 - UDP fallback label: `UDP Payload`
 - Generic fallback is preferable to guessed protocol semantics.
 - Packet truth and stream truth may differ: a packet can be protocol-rich while stream contribution remains generic or partial.
+- Synthetic gap and conservative post-gap rows must retain explicit structured state rather than depending on displayed titles that happen to contain `Gap` or `partial`.
 
 ## 10. Reliability Principles
 

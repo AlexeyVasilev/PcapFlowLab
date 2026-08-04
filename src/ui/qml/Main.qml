@@ -1056,6 +1056,7 @@ ApplicationWindow {
                 selectedPacketIndex: mainController.selectedPacketIndex
                 selectedStreamItemIndex: mainController.selectedStreamItemIndex
                 packetDetailsModel: mainController.packetDetailsModel
+                packetDetailsController: mainController
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
                 }

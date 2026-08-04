@@ -1278,6 +1278,65 @@ std::optional<std::vector<std::uint8_t>> QuicInitialParser::decrypt_initial_plai
     );
 }
 
+std::optional<QuicInitialProtectedPayloadProvenance> QuicInitialParser::inspect_initial_protected_payload_provenance(
+    std::span<const std::uint8_t> udp_payload,
+    const bool use_server_initial_secret,
+    std::span<const std::uint8_t> initial_secret_connection_id_override
+) const {
+    const auto header = parse_client_initial_header(udp_payload);
+    if (!header.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto initial_secret_connection_id = !initial_secret_connection_id_override.empty()
+        ? initial_secret_connection_id_override
+        : header->destination_connection_id;
+    if (initial_secret_connection_id.empty()) {
+        return std::nullopt;
+    }
+
+    const auto version_params = quic_initial_version_params(header->version);
+    if (!version_params.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto initial_secret = hkdf_extract(version_params->initial_salt, initial_secret_connection_id);
+    if (!initial_secret.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto directional_initial_secret = hkdf_expand_label(
+        *initial_secret,
+        use_server_initial_secret ? "server in" : "client in",
+        kQuicInitialSecretSize
+    );
+    if (!directional_initial_secret.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto hp = hkdf_expand_label(*directional_initial_secret, version_params->hp_label, kQuicAes128KeySize);
+    if (!hp.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto unprotected_header = remove_initial_header_protection(udp_payload, *header, *hp);
+    if (!unprotected_header.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto protected_payload_offset = header->packet_number_offset + unprotected_header->packet_number_length;
+    if (protected_payload_offset + kQuicTagSize > header->packet_end) {
+        return std::nullopt;
+    }
+
+    return QuicInitialProtectedPayloadProvenance {
+        .packet_number_length = unprotected_header->packet_number_length,
+        .protected_payload_offset = protected_payload_offset,
+        .protected_payload_length = header->packet_end - protected_payload_offset,
+        .includes_authentication_tag = true,
+    };
+}
+
 std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::uint8_t> udp_payload) const {
     const auto plaintext = decrypt_initial_plaintext_with_perspective(udp_payload, false);
     if (!plaintext.has_value()) {

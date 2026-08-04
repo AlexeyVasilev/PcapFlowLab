@@ -279,6 +279,159 @@ std::string packet_summary_layer_json(const pfl::session_detail::PacketSummaryLa
     return out.str();
 }
 
+std::string packet_byte_view_descriptor_json(const pfl::FrontendPacketDetailsDto::PacketByteViewDescriptor& descriptor) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(descriptor.stable_id) << ','
+        << "\"label\":" << json_string(descriptor.label) << ','
+        << "\"parent_stable_id\":";
+    if (descriptor.parent_stable_id.has_value()) {
+        out << json_string(*descriptor.parent_stable_id);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"depth\":" << descriptor.depth << ','
+        << "\"owner_kind\":" << json_string(descriptor.owner_kind) << ','
+        << "\"role\":" << json_string(descriptor.role) << ','
+        << "\"assembly_kind\":" << json_string(descriptor.assembly_kind) << ','
+        << "\"available_length\":" << descriptor.available_length << ','
+        << "\"declared_length\":";
+    if (descriptor.declared_length.has_value()) {
+        out << *descriptor.declared_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"state\":" << json_string(descriptor.state) << ','
+        << "\"supports_payload_only\":" << bool_json(descriptor.supports_payload_only) << ','
+        << "\"payload_available_length\":";
+    if (descriptor.payload_available_length.has_value()) {
+        out << *descriptor.payload_available_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"payload_declared_length\":";
+    if (descriptor.payload_declared_length.has_value()) {
+        out << *descriptor.payload_declared_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"payload_state\":";
+    if (descriptor.payload_state.has_value()) {
+        out << json_string(*descriptor.payload_state);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_count\":";
+    if (descriptor.contributing_unit_count.has_value()) {
+        out << *descriptor.contributing_unit_count;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_kind\":";
+    if (descriptor.contributing_unit_kind.has_value()) {
+        out << json_string(*descriptor.contributing_unit_kind);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"quic_crypto_stream_offset\":";
+    if (descriptor.quic_crypto_stream_offset.has_value()) {
+        out << *descriptor.quic_crypto_stream_offset;
+    } else {
+        out << "null";
+    }
+    out << '}';
+    return out.str();
+}
+
+std::string packet_byte_view_content_json(const pfl::FrontendPacketDetailsDto::PacketByteViewContent& content) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"available\":" << bool_json(content.available) << ','
+        << "\"stable_id\":" << json_string(content.stable_id) << ','
+        << "\"label\":" << json_string(content.label) << ','
+        << "\"mode\":" << json_string(content.mode) << ','
+        << "\"assembly_kind\":" << json_string(content.assembly_kind) << ','
+        << "\"available_length\":" << content.available_length << ','
+        << "\"declared_length\":";
+    if (content.declared_length.has_value()) {
+        out << *content.declared_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"state\":" << json_string(content.state) << ','
+        << "\"contributing_unit_count\":";
+    if (content.contributing_unit_count.has_value()) {
+        out << *content.contributing_unit_count;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_kind\":";
+    if (content.contributing_unit_kind.has_value()) {
+        out << json_string(*content.contributing_unit_kind);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"status_text\":" << json_string(content.status_text) << ','
+        << "\"formatted_text\":" << json_string(content.formatted_text) << ','
+        << "\"unavailable_text\":" << json_string(content.unavailable_text)
+        << '}';
+    return out.str();
+}
+
+std::string stream_item_data_json(const pfl::FrontendStreamItemDto::StreamItemDataDto& item_data) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"available\":" << bool_json(item_data.available) << ','
+        << "\"semantic_kind\":" << json_string(item_data.semantic_kind) << ','
+        << "\"source_kind\":" << json_string(item_data.source_kind) << ','
+        << "\"state\":" << json_string(item_data.state) << ','
+        << "\"assembly_kind\":" << json_string(item_data.assembly_kind) << ','
+        << "\"available_length\":" << item_data.available_length << ','
+        << "\"declared_length\":";
+    if (item_data.declared_length.has_value()) {
+        out << *item_data.declared_length;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_kind\":";
+    if (item_data.contributing_unit_kind.has_value()) {
+        out << json_string(*item_data.contributing_unit_kind);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"contributing_unit_count\":";
+    if (item_data.contributing_unit_count.has_value()) {
+        out << *item_data.contributing_unit_count;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"logical_offset\":";
+    if (item_data.logical_offset.has_value()) {
+        out << *item_data.logical_offset;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"status_text\":" << json_string(item_data.status_text) << ','
+        << "\"formatted_text\":" << json_string(item_data.formatted_text) << ','
+        << "\"unavailable_text\":" << json_string(item_data.unavailable_text)
+        << '}';
+    return out.str();
+}
+
 std::string open_result_json(const pfl::FrontendOpenResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -706,17 +859,11 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
         << "\"packet_found\":" << bool_json(details.packet_found) << ','
         << "\"source_capture_accessible\":" << bool_json(details.source_capture_accessible) << ','
         << "\"details_available\":" << bool_json(details.details_available) << ','
-        << "\"raw_preview_available\":" << bool_json(details.raw_preview_available) << ','
-        << "\"raw_preview_truncated\":" << bool_json(details.raw_preview_truncated) << ','
-        << "\"payload_preview_available\":" << bool_json(details.payload_preview_available) << ','
-        << "\"payload_preview_truncated\":" << bool_json(details.payload_preview_truncated) << ','
-        << "\"payload_preview_no_payload\":" << bool_json(details.payload_preview_no_payload) << ','
         << "\"checksum_validation_enabled\":" << bool_json(details.checksum_validation_enabled) << ','
         << "\"flow_index\":" << details.flow_index << ','
         << "\"packet_index\":" << details.packet_index << ','
         << "\"details_title\":" << json_string(details.details_title) << ','
         << "\"summary_text\":" << json_string(details.summary_text) << ','
-        << "\"payload_tab_title\":" << json_string(details.payload_tab_title) << ','
         << "\"timestamp_text\":" << json_string(details.timestamp_text) << ','
         << "\"captured_length\":" << details.captured_length << ','
         << "\"original_length\":" << details.original_length << ','
@@ -736,11 +883,17 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
     }
 
     out << "],"
-        << "\"protocol_details_text\":" << json_string(details.protocol_details_text) << ','
-        << "\"raw_preview_text\":" << json_string(details.raw_preview_text) << ','
-        << "\"raw_preview_unavailable_text\":" << json_string(details.raw_preview_unavailable_text) << ','
-        << "\"payload_preview_text\":" << json_string(details.payload_preview_text) << ','
-        << "\"payload_preview_unavailable_text\":" << json_string(details.payload_preview_unavailable_text) << ','
+        << "\"byte_view_descriptors\":[";
+
+    for (std::size_t index = 0; index < details.byte_view_descriptors.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_byte_view_descriptor_json(details.byte_view_descriptors[index]);
+    }
+
+    out << "],"
+        << "\"selected_byte_view\":" << packet_byte_view_content_json(details.selected_byte_view) << ','
         << "\"checksum_summary_lines\":[";
 
     for (std::size_t index = 0; index < details.checksum_summary_lines.size(); ++index) {
@@ -963,10 +1116,10 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     }
 
     out << "],"
+        << "\"stream_item_data\":" << stream_item_data_json(item.stream_item_data) << ','
         << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
         << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
         << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
-        << "\"protocol_details_text\":" << json_string(item.protocol_details_text) << ','
         << "\"constricted_contribution_notes\":[";
 
     for (std::size_t note_index = 0; note_index < item.constricted_contribution_notes.size(); ++note_index) {
@@ -1013,21 +1166,26 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
 [[nodiscard]] pfl::FrontendStreamItemDto unavailable_stream_item(const std::uint64_t stream_item_index = 0U) {
     pfl::FrontendStreamItemDto item {};
     item.stream_item_index = stream_item_index;
-    item.payload_tab_title = "Payload";
+    item.payload_tab_title = "Item Data";
+    item.stream_item_data.status_text = std::string {kAdapterUnavailableText};
+    item.stream_item_data.unavailable_text = std::string {kAdapterUnavailableText};
     item.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
-    item.protocol_details_text = std::string {kAdapterUnavailableText};
     return item;
 }
 
 [[nodiscard]] pfl::FrontendPacketDetailsDto unavailable_packet_details() {
     pfl::FrontendPacketDetailsDto details {};
     details.details_title = "Packet Details";
-    details.payload_tab_title = "Payload";
-    details.raw_preview_unavailable_text = std::string {kAdapterUnavailableText};
-    details.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
+    details.selected_byte_view.unavailable_text = std::string {kAdapterUnavailableText};
     details.unavailable_text = std::string {kAdapterUnavailableText};
     details.error_text = std::string {kAdapterUnavailableText};
     return details;
+}
+
+[[nodiscard]] pfl::FrontendPacketDetailsDto::PacketByteViewContent unavailable_packet_byte_view_content() {
+    pfl::FrontendPacketDetailsDto::PacketByteViewContent content {};
+    content.unavailable_text = std::string {kAdapterUnavailableText};
+    return content;
 }
 
 [[nodiscard]] pfl::FrontendSelectedFlowAnalysisDto unavailable_selected_flow_analysis() {
@@ -1409,6 +1567,26 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     )));
 }
 
+char* pfl_frontend_session_adapter_get_selected_flow_packet_byte_view_content_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint64_t packet_index,
+    const char* stable_id_utf8,
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
+) {
+    if (handle == nullptr) {
+        return make_c_string(packet_byte_view_content_json(unavailable_packet_byte_view_content()));
+    }
+
+    const std::string stable_id = stable_id_utf8 != nullptr ? std::string {stable_id_utf8} : std::string {};
+    return make_c_string(packet_byte_view_content_json(handle->adapter.get_selected_flow_packet_byte_view_content(
+        packet_index,
+        stable_id,
+        flow_packet_index,
+        loaded_packet_window_count
+    )));
+}
+
 char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint64_t packet_index
@@ -1418,6 +1596,21 @@ char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
     }
 
     return make_c_string(packet_details_json(handle->adapter.get_unrecognized_packet_details(packet_index)));
+}
+
+char* pfl_frontend_session_adapter_get_unrecognized_packet_byte_view_content_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint64_t packet_index,
+    const char* stable_id_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string(packet_byte_view_content_json(unavailable_packet_byte_view_content()));
+    }
+
+    const std::string stable_id = stable_id_utf8 != nullptr ? std::string {stable_id_utf8} : std::string {};
+    return make_c_string(packet_byte_view_content_json(
+        handle->adapter.get_unrecognized_packet_byte_view_content(packet_index, stable_id)
+    ));
 }
 
 char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle) {

@@ -9,8 +9,6 @@
 
 #include "app/session/CaptureSession.h"
 #include "core/reassembly/ReassemblyTypes.h"
-#include "core/services/HexDumpService.h"
-
 namespace pfl::session_detail {
 
 namespace {
@@ -23,12 +21,8 @@ struct ReassembledPayloadChunk {
 struct ParsedHttpHeaderBlock {
     std::size_t size {0U};
     std::string label {};
-    std::string protocol_text {};
+    HttpStreamItemSummaryDetails summary {};
 };
-
-bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
-    return text.find(needle) != std::string_view::npos;
-}
 
 std::string_view bytes_as_text(std::span<const std::uint8_t> bytes) {
     return std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
@@ -69,24 +63,6 @@ std::string trim_ascii(const std::string_view value) {
 
 bool is_http_token_char(const char value) noexcept {
     return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '-' || value == '_' || value == '.' || value == '/';
-}
-
-bool is_plausible_host_char(const char value) noexcept {
-    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '.' || value == '-' || value == '_';
-}
-
-bool is_plausible_host(const std::string_view value) noexcept {
-    if (value.empty()) {
-        return false;
-    }
-
-    for (const auto character : value) {
-        if (!is_plausible_host_char(character)) {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 std::size_t http_line_end(const std::string_view text, const std::size_t offset) noexcept {
@@ -148,32 +124,6 @@ bool looks_like_http_request_line(const std::string_view line) noexcept {
 
 bool looks_like_http_response_line(const std::string_view line) noexcept {
     return line.starts_with("HTTP/1.");
-}
-
-std::optional<std::string> extract_http_host_header(const std::string_view headers) {
-    std::size_t offset = 0U;
-    while (offset < headers.size()) {
-        const auto end = http_line_end(headers, offset);
-        const auto line = headers.substr(offset, ((end == std::string_view::npos) ? headers.size() : end) - offset);
-        if (line.empty()) {
-            break;
-        }
-
-        if (starts_with_ascii_case_insensitive(line, "Host:")) {
-            const auto host = trim_ascii(line.substr(5U));
-            if (is_plausible_host(host)) {
-                return host;
-            }
-            return std::nullopt;
-        }
-
-        if (end == std::string_view::npos) {
-            break;
-        }
-        offset = http_next_line_offset(headers, end);
-    }
-
-    return std::nullopt;
 }
 
 std::optional<std::string> extract_http_header_value(
@@ -353,9 +303,6 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
     }
     const auto headers_text = header_text.substr(http_next_line_offset(header_text, first_line_end));
 
-    std::ostringstream text {};
-    text << "HTTP\n";
-
     if (looks_like_http_request_line(first_line)) {
         const auto method_end = first_line.find(' ');
         if (method_end == std::string_view::npos) {
@@ -386,25 +333,18 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
             }
         }
 
-        text << "  Message Type: Request\n"
-             << "  Method: " << method << "\n"
-             << "  Path: " << path << "\n"
-             << "  Version: " << version;
-
-        const auto host = extract_http_host_header(headers_text);
-        if (host.has_value()) {
-            text << "\n"
-                 << "  Host: " << *host;
-        }
-
         const auto method_text = std::string {method};
         const auto path_text = std::string {path};
+        const auto summary = HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::request,
+            .method = method_text,
+            .target = path_text,
+            .version = std::string {version},
+        };
         return ParsedHttpHeaderBlock {
             .size = http_message_size(payload_text, offset, *header_size, headers_text),
-            .label = method_text.empty() || path_text.empty()
-                ? "HTTP Request"
-                : ("HTTP " + method_text + " " + path_text),
-            .protocol_text = text.str(),
+            .label = http_stream_label_from_summary(summary),
+            .summary = summary,
         };
     }
 
@@ -427,65 +367,31 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
             }
         }
 
-        text << "  Message Type: Response\n"
-             << "  Version: " << version << "\n"
-             << "  Status Code: " << code;
-
         std::string reason_text {};
         const auto reason_start = code_start + 3U;
         if (reason_start < first_line.size() && first_line[reason_start] == ' ') {
             const auto reason = trim_ascii(first_line.substr(reason_start + 1U));
             if (!reason.empty()) {
                 reason_text = reason;
-                text << "\n"
-                     << "  Reason: " << reason;
             }
         }
 
-        if (const auto content_type = extract_http_header_value(headers_text, "Content-Type"); content_type.has_value()) {
-            text << "\n"
-                 << "  Content-Type: " << *content_type;
-        }
-        if (const auto content_length = extract_http_header_value(headers_text, "Content-Length"); content_length.has_value()) {
-            text << "\n"
-                 << "  Content-Length: " << *content_length;
-        }
-
         const auto code_text = std::string {code};
+        const auto status_code = static_cast<std::uint16_t>(std::stoi(code_text));
+        const auto summary = HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::response,
+            .version = std::string {version},
+            .status_code = status_code,
+            .reason_phrase = reason_text,
+        };
         return ParsedHttpHeaderBlock {
             .size = http_message_size(payload_text, offset, *header_size, headers_text),
-            .label = code_text.empty()
-                ? "HTTP Response"
-                : (reason_text.empty() ? ("HTTP " + code_text) : ("HTTP " + code_text + " " + reason_text)),
-            .protocol_text = text.str(),
+            .label = http_stream_label_from_summary(summary),
+            .summary = summary,
         };
     }
 
     return std::nullopt;
-}
-
-std::optional<std::string_view> find_protocol_detail_value(
-    const std::string_view protocol_text,
-    const std::string_view key
-) noexcept {
-    const auto marker = std::string {"  "} + std::string {key} + ": ";
-    const auto marker_pos = protocol_text.find(marker);
-    if (marker_pos == std::string_view::npos) {
-        return std::nullopt;
-    }
-
-    const auto value_start = marker_pos + marker.size();
-    const auto value_end = protocol_text.find('\n', value_start);
-    const auto value = protocol_text.substr(value_start, (value_end == std::string_view::npos) ? (protocol_text.size() - value_start) : (value_end - value_start));
-    if (value.empty()) {
-        return std::nullopt;
-    }
-
-    return value;
-}
-
-std::string limited_quality_http_protocol_text() {
-    return "HTTP\n  Reassembled bytes do not contain a complete HTTP header block in this direction.";
 }
 
 std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_chunks(
@@ -553,10 +459,6 @@ std::vector<std::uint64_t> consume_reassembled_packet_indices(
     return packet_indices;
 }
 
-std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
-    return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
-}
-
 bool append_bounded_http_item(
     HttpDirectionalStreamPresentation& presentation,
     HttpStreamPresentationItem item,
@@ -573,29 +475,29 @@ bool append_bounded_http_item(
 
 }  // namespace
 
-std::string http_stream_label_from_protocol_text(const std::string_view protocol_text) {
-    if (contains_text(protocol_text, "Message Type: Request")) {
-        const auto method = find_protocol_detail_value(protocol_text, "Method");
-        const auto path = find_protocol_detail_value(protocol_text, "Path");
-        if (method.has_value() && path.has_value()) {
-            return "HTTP " + std::string {*method} + " " + std::string {*path};
+std::string http_stream_label_from_summary(const HttpStreamItemSummaryDetails& summary) {
+    switch (summary.semantic_kind) {
+    case HttpStreamItemSemanticKind::request:
+        if (!summary.method.empty() && !summary.target.empty()) {
+            return "HTTP " + summary.method + " " + summary.target;
         }
         return "HTTP Request";
-    }
-
-    if (contains_text(protocol_text, "Message Type: Response")) {
-        const auto status_code = find_protocol_detail_value(protocol_text, "Status Code");
-        const auto reason = find_protocol_detail_value(protocol_text, "Reason");
-        if (status_code.has_value()) {
-            if (reason.has_value()) {
-                return "HTTP " + std::string {*status_code} + " " + std::string {*reason};
-            }
-            return "HTTP " + std::string {*status_code};
+    case HttpStreamItemSemanticKind::response:
+        if (summary.status_code.has_value()) {
+            const auto code = std::to_string(*summary.status_code);
+            return summary.reason_phrase.empty()
+                ? "HTTP " + code
+                : "HTTP " + code + " " + summary.reason_phrase;
         }
         return "HTTP Response";
+    case HttpStreamItemSemanticKind::partial_payload:
+        return "HTTP Payload (partial)";
+    case HttpStreamItemSemanticKind::gap:
+        return "HTTP Gap";
+    case HttpStreamItemSemanticKind::none:
+    default:
+        return "HTTP Payload";
     }
-
-    return "HTTP Payload";
 }
 
 HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
@@ -649,7 +551,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
         return presentation;
     }
 
-    HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
     std::size_t chunk_index = 0U;
     std::size_t chunk_offset = 0U;
@@ -672,8 +573,10 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                     .byte_count = trailing.size(),
                     .packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset),
                     .stability = StreamMaterializationStability::window_incomplete,
-                    .payload_hex_text = hex_dump_service.format(trailing),
-                    .protocol_text = limited_quality_http_protocol_text(),
+                    .summary = HttpStreamItemSummaryDetails {
+                        .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
+                        .diagnostic = "Window ended before a complete HTTP header block was available.",
+                    },
                     },
                     logical_item_count,
                     skip_item_count,
@@ -695,8 +598,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .label = parsed->label,
             .byte_count = block_bytes.size(),
             .packet_indices = consume_reassembled_packet_indices(*chunks, block_bytes.size(), chunk_index, chunk_offset),
-            .payload_hex_text = hex_dump_service.format(block_bytes),
-            .protocol_text = parsed->protocol_text,
+            .summary = parsed->summary,
             },
             logical_item_count,
             skip_item_count,
@@ -721,8 +623,10 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                         .byte_count = trailing.size(),
                         .packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset),
                         .stability = StreamMaterializationStability::window_incomplete,
-                        .payload_hex_text = hex_dump_service.format(trailing),
-                        .protocol_text = limited_quality_http_protocol_text(),
+                        .summary = HttpStreamItemSummaryDetails {
+                            .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
+                            .diagnostic = "A later HTTP message boundary was not available in the loaded reassembly window.",
+                        },
                         },
                         logical_item_count,
                         skip_item_count,
@@ -750,8 +654,10 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .label = "HTTP Gap",
             .byte_count = 0U,
             .packet_indices = std::vector<std::uint64_t> {result->first_gap_packet_index},
-            .payload_hex_text = {},
-            .protocol_text = tcp_gap_protocol_text("HTTP"),
+            .summary = HttpStreamItemSummaryDetails {
+                .semantic_kind = HttpStreamItemSemanticKind::gap,
+                .diagnostic = "Earlier TCP bytes are missing, so later HTTP bytes are shown conservatively.",
+            },
             },
             logical_item_count,
             skip_item_count,
@@ -761,7 +667,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = result->first_gap_packet_index;
         presentation.fallback_label = "HTTP Payload";
-        presentation.fallback_protocol_text = tcp_gap_protocol_text("HTTP");
     }
 
     return presentation;

@@ -376,7 +376,6 @@ PacketSummaryOptions SelectedPacketSummaryPreparation::make_options() const {
     options.transport_payload_length = transport_payload_length;
     options.original_transport_payload_length = original_transport_payload_length;
     options.transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size());
-    options.protocol_details_text = protocol_details_text;
     options.checksum_summary_lines = checksum_summary_lines;
     options.checksum_warning_lines = checksum_warning_lines;
     options.packet_data_preview_bytes = std::span<const std::uint8_t>(packet_data_preview.data(), packet_data_preview.size());
@@ -395,7 +394,6 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     const std::optional<std::size_t> flow_index,
     const std::optional<std::uint64_t> flow_packet_index,
     const std::optional<std::size_t> loaded_packet_window_count,
-    std::string protocol_details_text,
     const std::optional<std::uint32_t> transport_payload_length,
     const std::optional<std::uint32_t> original_transport_payload_length,
     std::vector<std::string> checksum_summary_lines,
@@ -431,7 +429,6 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
         .transport_payload_length = transport_payload_length,
         .original_transport_payload_length = original_transport_payload_length,
         .transport_payload = std::move(transport_payload),
-        .protocol_details_text = std::move(protocol_details_text),
         .checksum_summary_lines = std::move(checksum_summary_lines),
         .checksum_warning_lines = std::move(checksum_warning_lines),
         .packet_data_preview = {},

@@ -348,8 +348,7 @@ session_detail::SelectedPacketSummaryPreparation prepare_selected_packet_summary
     const PacketRef& packet,
     const std::optional<std::size_t> flow_index,
     const std::optional<std::uint64_t> flow_packet_index,
-    const std::optional<std::size_t> loaded_packet_window_count,
-    std::string protocol_details_text
+    const std::optional<std::size_t> loaded_packet_window_count
 ) {
     const auto payload_lengths = resolve_selected_packet_transport_payload_lengths(session, packet);
     return session_detail::prepare_selected_packet_summary(
@@ -359,7 +358,6 @@ session_detail::SelectedPacketSummaryPreparation prepare_selected_packet_summary
         flow_index,
         flow_packet_index,
         loaded_packet_window_count,
-        std::move(protocol_details_text),
         payload_lengths.captured_transport_payload_length,
         payload_lengths.original_transport_payload_length
     );
@@ -381,8 +379,7 @@ SelectedPacketSummaryResult build_selected_packet_summary(
         packet,
         flow_index,
         flow_packet_index,
-        loaded_packet_window_count,
-        session.read_packet_protocol_details_text(packet)
+        loaded_packet_window_count
     );
 
     auto summary_layers = session_detail::build_packet_summary_layers(
@@ -468,8 +465,7 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
         packet,
         flow_context.flow_index,
         flow_context.flow_packet_index,
-        flow_context.loaded_packet_window_count,
-        session.read_packet_protocol_details_text(packet)
+        flow_context.loaded_packet_window_count
     );
     return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
 }
@@ -478,8 +474,7 @@ std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers
     CaptureSession& session,
     const std::size_t flow_index,
     const std::uint64_t packet_index,
-    const std::size_t loaded_packet_window_count = 64U,
-    const std::string& protocol_details_text_override = {}
+    const std::size_t loaded_packet_window_count = 64U
 ) {
     const auto packet = require_packet(session, packet_index);
     const auto details = session.read_packet_details(packet);
@@ -493,11 +488,7 @@ std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers
         packet,
         flow_index,
         internal_flow_packet_index,
-        loaded_packet_window_count,
-        protocol_details_text_override.empty()
-            ? session.derive_quic_protocol_text_for_packet(flow_index, packet.packet_index)
-                .value_or(session.read_packet_protocol_details_text(packet))
-            : protocol_details_text_override
+        loaded_packet_window_count
     );
     return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
 }
@@ -642,7 +633,6 @@ void run_packet_details_tests() {
             .flow_packet_index = 3U,
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_REQUIRE(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "frame");
@@ -774,7 +764,6 @@ void run_packet_details_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_REQUIRE(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[0].id == "frame");
@@ -835,7 +824,6 @@ void run_packet_details_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
         PFL_REQUIRE(tcp_layer != nullptr);
@@ -1005,13 +993,31 @@ void run_packet_details_tests() {
     }
 
     {
-        const auto summary_layers = build_fixture_summary_layers("parsing/dns/dns_request_1.pcap");
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_dns);
+        PFL_EXPECT(!details->has_http);
+        PFL_EXPECT(!details->dns.is_response);
+        PFL_EXPECT(details->dns.query_name == "gsp85-ssl.ls.apple.com");
+        PFL_EXPECT(details->dns.query_type == 65U);
+        const auto summary_layers = build_flow_packet_summary_layers(
+            session,
+            0U,
+            0U,
+            64U
+        );
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
         PFL_EXPECT(!summary_layers[summary_layers.size() - 2U].expanded_by_default);
         PFL_EXPECT(summary_layers.back().id == "dns");
         PFL_EXPECT(summary_layers.back().expanded_by_default);
         PFL_EXPECT(summary_layers.back().title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Message Type") == "Query");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "QName") == "gsp85-ssl.ls.apple.com");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "QType") == "HTTPS (65)");
         PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
@@ -1046,7 +1052,7 @@ void run_packet_details_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {}));
-        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U, 64U, std::string {});
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U, 64U);
         PFL_EXPECT(summary_layers.size() >= 5U);
         const auto* udp_layer = find_summary_layer(summary_layers, "udp");
         const auto quic_layers = find_summary_layers(summary_layers, "quic");
@@ -1288,7 +1294,7 @@ void run_packet_details_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_constricted_1.pcap"), CaptureImportOptions {}));
-        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U, 30U, std::string {});
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U, 30U);
         const auto quic_layers = find_summary_layers(summary_layers, "quic");
         PFL_REQUIRE(!quic_layers.empty());
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
@@ -1786,7 +1792,6 @@ void run_packet_details_tests() {
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload4.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload4.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload4.data(), transport_payload4.size()),
-            .protocol_details_text = session.read_packet_protocol_details_text(packet4),
             .reconstructed_tls_records = reconstructed_tls_records4,
         });
 
@@ -1857,7 +1862,6 @@ void run_packet_details_tests() {
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload5.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload5.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload5.data(), transport_payload5.size()),
-            .protocol_details_text = session.read_packet_protocol_details_text(packet5),
             .reconstructed_tls_records = reconstructed_tls_records5,
         });
         const auto tls_layers5 = find_summary_layers(summary_layers5, "tls");
@@ -2373,7 +2377,6 @@ void run_packet_details_tests() {
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
     }
@@ -2396,7 +2399,6 @@ void run_packet_details_tests() {
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
     }
@@ -2419,7 +2421,6 @@ void run_packet_details_tests() {
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* tls_layer = find_summary_layer(summary_layers, "tls");
         PFL_REQUIRE(tls_layer != nullptr);
@@ -2456,7 +2457,6 @@ void run_packet_details_tests() {
             .transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .original_transport_payload_length = static_cast<std::uint32_t>(transport_payload.size()),
             .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(find_summary_layer(summary_layers, "tls") == nullptr);
     }
@@ -2582,11 +2582,29 @@ void run_packet_details_tests() {
     }
 
     {
-        const auto summary_layers = build_fixture_summary_layers("parsing/http/http_get_1.pcap");
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_http);
+        PFL_EXPECT(!details->has_dns);
+        PFL_EXPECT(details->http.message_type == HttpMessageType::request);
+        PFL_EXPECT(details->http.method == "GET");
+        PFL_EXPECT(details->http.host == "www.kresla-darom.ru");
+        const auto summary_layers = build_flow_packet_summary_layers(
+            session,
+            0U,
+            0U,
+            64U
+        );
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "tcp");
         PFL_EXPECT(summary_layers.back().id == "http");
         PFL_EXPECT(summary_layers.back().title.find("Hypertext Transfer Protocol") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Message Type") == "Request");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Method") == "GET");
+        PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Host") == "www.kresla-darom.ru");
         PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
@@ -2760,8 +2778,7 @@ void run_packet_details_tests() {
             packet,
             0U,
             0U,
-            1U,
-            session.read_packet_protocol_details_text(packet)
+            1U
         );
         PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
         PFL_EXPECT(packet_summary_preparation.packet_data->disposition ==
@@ -2819,8 +2836,7 @@ void run_packet_details_tests() {
             packet,
             flow_context.flow_index,
             flow_context.flow_packet_index,
-            flow_context.loaded_packet_window_count,
-            session.read_packet_protocol_details_text(packet)
+            flow_context.loaded_packet_window_count
         );
         PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
         PFL_EXPECT(packet_summary_preparation.packet_data->disposition ==
@@ -2881,8 +2897,7 @@ void run_packet_details_tests() {
             packet,
             flow_context.flow_index,
             flow_context.flow_packet_index,
-            flow_context.loaded_packet_window_count,
-            session.read_packet_protocol_details_text(packet)
+            flow_context.loaded_packet_window_count
         );
         PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
         PFL_EXPECT(packet_summary_preparation.packet_data->disposition ==
@@ -2920,8 +2935,7 @@ void run_packet_details_tests() {
             packet,
             flow_context.flow_index,
             flow_context.flow_packet_index,
-            flow_context.loaded_packet_window_count,
-            session.read_packet_protocol_details_text(packet)
+            flow_context.loaded_packet_window_count
         );
         PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
         PFL_EXPECT(packet_summary_preparation.packet_data->captured_length == 0U);
@@ -2948,7 +2962,6 @@ void run_packet_details_tests() {
             flow_context.flow_index,
             flow_context.flow_packet_index,
             flow_context.loaded_packet_window_count,
-            session.read_packet_protocol_details_text(packet),
             std::optional<std::uint32_t> {packet.payload_length},
             std::optional<std::uint32_t> {packet.payload_length}
         );
@@ -3084,7 +3097,6 @@ void run_packet_details_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 4U,
             .original_transport_payload_length = 7U,
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* udp_layer = find_summary_layer(summary_layers, "udp");
         PFL_REQUIRE(udp_layer != nullptr);
@@ -3119,7 +3131,6 @@ void run_packet_details_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 4U,
             .original_transport_payload_length = 7U,
-            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
         PFL_REQUIRE(tcp_layer != nullptr);
@@ -3163,7 +3174,6 @@ void run_packet_details_tests() {
         PFL_EXPECT(!details->arp.address_section_truncated);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
             return layer.id == "arp";
@@ -3302,7 +3312,6 @@ void run_packet_details_tests() {
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_icmp);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "ipv4");
@@ -3328,7 +3337,6 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->ipv6.traffic_class == 0U);
         PFL_EXPECT(details->ipv6.flow_label == 0U);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "ipv6");

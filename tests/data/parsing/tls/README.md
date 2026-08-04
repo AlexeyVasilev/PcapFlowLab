@@ -1959,7 +1959,7 @@ This is now partially adopted in production presentation: packet-local Summary a
 
 The current code still has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and legacy stream record construction feeding the selected-item Summary adapter. `src/app/session/SessionFormatting.cpp` no longer derives TLS Summary fields by reparsing Protocol text, and Packet/Stream Summary now share the same TLS field mapping.
 
-Current migration limitation: selected Stream Item Summary still decodes the existing `payload_hex_text` on demand because stream rows do not yet expose direct logical TLS bytes separately from the legacy presentation path. Partial and constricted items therefore fall back to conservative metadata-only TLS Summary fields instead of fabricated record semantics.
+Current migration limitation: selected Stream Item Summary no longer depends on retained per-row hex text. It uses retained structured TLS records when available and otherwise falls back conservatively to metadata-only TLS Summary fields instead of fabricated record semantics.
 
 Suggested narrow internal model:
 

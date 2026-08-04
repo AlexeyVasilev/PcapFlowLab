@@ -53,11 +53,10 @@ std::optional<PacketDetails> decode_fixture_packet_details_best_effort(const Raw
 std::vector<session_detail::PacketSummaryLayer> build_summary_layers(
     const PacketDetails& details,
     const PacketRef& packet,
-    const std::string& protocol_details_text = {}
+    const std::string& /*protocol_details_text*/ = {}
 ) {
     session_detail::PacketSummaryOptions options {};
     options.source_capture_accessible = true;
-    options.protocol_details_text = protocol_details_text;
     return session_detail::build_packet_summary_layers(details, packet, options);
 }
 

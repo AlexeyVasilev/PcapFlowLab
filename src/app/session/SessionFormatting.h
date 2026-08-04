@@ -83,7 +83,6 @@ struct PacketSummaryOptions {
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::span<const std::uint8_t> transport_payload_bytes {};
-    std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
     std::span<const std::uint8_t> packet_data_preview_bytes {};
@@ -117,11 +116,11 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers(
     bool force_encrypted_alert_records = false
 );
 PacketSummaryLayer build_tls_reassembled_metadata_layer(const TlsSelectedPacketRecordContext& context);
+bool stream_item_uses_packet_fallback(const StreamItemRow& row);
+std::string stream_item_details_source_text(const StreamItemRow& row);
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     const StreamItemRow& row,
-    std::string_view source_packets_text,
-    std::string_view details_source_text,
-    std::string_view frames_hint_text = {}
+    std::string_view source_packets_text
 );
 std::vector<PacketSummaryLayer> build_packet_summary_layers(
     const PacketDetails& details,

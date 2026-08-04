@@ -140,6 +140,8 @@
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
     packetDetailsTab: "summary",
+    packetDetailsSelectedByteViewStableId: "",
+    packetDetailsByteViewLoading: false,
     packetSummaryExpansionProfiles: new Map(),
     wiresharkFilterStatusText: "",
     wiresharkFilterStatusKind: "neutral",
@@ -148,6 +150,7 @@
     packetRequestToken: 0,
     streamRequestToken: 0,
     streamDetailsRequestToken: 0,
+    packetDetailsByteViewRequestToken: 0,
     analysisRequestToken: 0,
     diagnosticsPacketRequestOffset: 0,
     diagnosticsPacketRequestLimit: packetPageSize,
@@ -274,15 +277,11 @@
     streamInspectorView: document.getElementById("streamInspectorView"),
     packetDetailsTabButtons: Array.from(document.querySelectorAll("[data-packet-details-tab]")),
     packetDetailsTabPanels: Array.from(document.querySelectorAll(".packet-details-tab-panel")),
-    packetDetailsPayloadTabButton: document.getElementById("packetDetailsPayloadTabButton"),
     packetDetailsStateText: document.getElementById("packetDetailsStateText"),
     packetDetailsSummary: document.getElementById("packetDetailsSummary"),
-    packetDetailsRawStateText: document.getElementById("packetDetailsRawStateText"),
-    packetDetailsRawText: document.getElementById("packetDetailsRawText"),
-    packetDetailsPayloadStateText: document.getElementById("packetDetailsPayloadStateText"),
-    packetDetailsProtocolText: document.getElementById("packetDetailsProtocolText"),
-    packetDetailsProtocolStateText: document.getElementById("packetDetailsProtocolStateText"),
-    packetDetailsPayloadText: document.getElementById("packetDetailsPayloadText"),
+    packetDetailsByteViewSelector: document.getElementById("packetDetailsByteViewSelector"),
+    packetDetailsBytesStateText: document.getElementById("packetDetailsBytesStateText"),
+    packetDetailsBytesText: document.getElementById("packetDetailsBytesText"),
     streamDetailsStateText: document.getElementById("streamDetailsStateText"),
     streamDetailsHeaderCard: document.getElementById("streamDetailsHeaderCard"),
     streamDetailsHeaderPrimary: document.getElementById("streamDetailsHeaderPrimary"),
@@ -290,12 +289,10 @@
     streamDetailsHeaderBadge: document.getElementById("streamDetailsHeaderBadge"),
     streamDetailsTabButtons: Array.from(document.querySelectorAll("[data-stream-details-tab]")),
     streamDetailsTabPanels: Array.from(document.querySelectorAll("[data-stream-details-panel]")),
-    streamDetailsPayloadTabButton: document.getElementById("streamDetailsPayloadTabButton"),
+    streamDetailsItemDataTabButton: document.getElementById("streamDetailsItemDataTabButton"),
     streamDetailsSummaryText: document.getElementById("streamDetailsSummaryText"),
-    streamDetailsPayloadStateText: document.getElementById("streamDetailsPayloadStateText"),
-    streamDetailsPayloadText: document.getElementById("streamDetailsPayloadText"),
-    streamDetailsProtocolStateText: document.getElementById("streamDetailsProtocolStateText"),
-    streamDetailsProtocolText: document.getElementById("streamDetailsProtocolText"),
+    streamDetailsItemDataStateText: document.getElementById("streamDetailsItemDataStateText"),
+    streamDetailsItemDataText: document.getElementById("streamDetailsItemDataText"),
     analysisFlowMeta: document.getElementById("analysisFlowMeta"),
     analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
     analysisFlowTableViewport: document.getElementById("analysisFlowTableViewport"),
@@ -1091,12 +1088,8 @@
     clearHtml(elements.analysisBurstIdleSummary);
     clearHtml(elements.analysisPacketSizeHistogramRows);
     clearHtml(elements.analysisInterArrivalHistogramRows);
-    clearText(elements.packetDetailsRawText);
-    clearText(elements.packetDetailsPayloadText);
-    clearText(elements.packetDetailsProtocolText);
-    clearText(elements.packetDetailsRawStateText);
-    clearText(elements.packetDetailsPayloadStateText);
-    clearText(elements.packetDetailsProtocolStateText);
+    clearText(elements.packetDetailsBytesText);
+    clearText(elements.packetDetailsBytesStateText);
     clearText(elements.packetDetailsStateText);
     clearText(elements.streamDetailsStateText);
     clearText(elements.streamDetailsSourcePacketsText);
@@ -1959,6 +1952,8 @@
     state.packetDetails = null;
     state.packetDetailsState = "idle";
     state.packetDetailsErrorText = "";
+    state.packetDetailsSelectedByteViewStableId = "";
+    state.packetDetailsByteViewLoading = false;
   }
 
   function clearStream() {
@@ -2593,13 +2588,12 @@
 
   function clearPacketDetailsDom() {
     elements.packetDetailsSummary && (elements.packetDetailsSummary.innerHTML = "");
-    elements.packetDetailsRawText && (elements.packetDetailsRawText.textContent = "");
-    elements.packetDetailsPayloadText && (elements.packetDetailsPayloadText.textContent = "");
-    elements.packetDetailsProtocolText && (elements.packetDetailsProtocolText.textContent = "");
-    elements.packetDetailsRawStateText && (elements.packetDetailsRawStateText.textContent = "");
-    elements.packetDetailsPayloadStateText && (elements.packetDetailsPayloadStateText.textContent = "");
-    elements.packetDetailsProtocolStateText && (elements.packetDetailsProtocolStateText.textContent = "");
+    elements.packetDetailsBytesText && (elements.packetDetailsBytesText.textContent = "");
+    elements.packetDetailsBytesStateText && (elements.packetDetailsBytesStateText.textContent = "");
     elements.packetDetailsStateText && (elements.packetDetailsStateText.textContent = "");
+    if (elements.packetDetailsByteViewSelector) {
+      elements.packetDetailsByteViewSelector.innerHTML = "";
+    }
   }
 
   function clearStreamDetailsDom() {
@@ -2709,6 +2703,8 @@
   }
 
   function renderPacketDetailsTabs() {
+    state.packetDetailsTab = normalizePacketDetailsTab(state.packetDetailsTab);
+
     for (const button of elements.packetDetailsTabButtons) {
       button.classList.toggle("active", button.dataset.packetDetailsTab === state.packetDetailsTab);
     }
@@ -2716,6 +2712,30 @@
     for (const panel of elements.packetDetailsTabPanels) {
       panel.classList.toggle("active", panel.dataset.packetDetailsPanel === state.packetDetailsTab);
     }
+  }
+
+  function normalizePacketDetailsTab(tab) {
+    return tab === "bytes" ? "bytes" : "summary";
+  }
+
+  function normalizeStreamDetailsTab(tab) {
+    return tab === "item-data" ? "item-data" : "summary";
+  }
+
+  function packetByteViewDescriptors(details) {
+    return Array.isArray(details?.byte_view_descriptors) ? details.byte_view_descriptors : [];
+  }
+
+  function packetByteViewDisplayLabel(descriptor) {
+    const label = String(descriptor?.label || "");
+    const rawDepth = Number(descriptor?.depth ?? 0);
+    const depth = Number.isFinite(rawDepth) ? Math.max(0, Math.trunc(rawDepth)) : 0;
+    const indentUnit = "\u00A0\u00A0";
+    return `${indentUnit.repeat(depth)}${label}`;
+  }
+
+  function packetByteViewExists(details, stableId) {
+    return packetByteViewDescriptors(details).some((descriptor) => descriptor?.stable_id === stableId);
   }
 
   function activeSourceSessionDisplayText() {
@@ -3498,21 +3518,19 @@
   }
 
   function renderStreamDetails() {
+    state.streamDetailsTab = normalizeStreamDetailsTab(state.streamDetailsTab);
+
     elements.streamDetailsStateText.className = "status-text";
     elements.streamDetailsStateText.classList.add("is-hidden");
-    elements.streamDetailsPayloadStateText.className = "status-text compact-status-text";
-    elements.streamDetailsProtocolStateText.className = "status-text compact-status-text";
+    elements.streamDetailsItemDataStateText.className = "status-text compact-status-text";
     elements.streamDetailsHeaderPrimary.textContent = "Select a stream item to inspect details.";
     elements.streamDetailsHeaderSecondary.textContent = "";
     elements.streamDetailsHeaderBadge.textContent = "";
     elements.streamDetailsHeaderBadge.classList.add("is-hidden");
     elements.streamDetailsSummaryText.textContent = "Select a stream item to inspect details.";
-    elements.streamDetailsPayloadStateText.textContent = "";
-    elements.streamDetailsProtocolStateText.textContent = "";
-    elements.streamDetailsPayloadText.textContent = "Select a stream item to inspect details.";
-    elements.streamDetailsProtocolText.textContent = "Select a stream item to inspect details.";
-    elements.streamDetailsPayloadText.classList.remove("is-muted");
-    elements.streamDetailsProtocolText.classList.remove("is-muted");
+    elements.streamDetailsItemDataStateText.textContent = "";
+    elements.streamDetailsItemDataText.textContent = "Select a stream item to inspect details.";
+    elements.streamDetailsItemDataText.classList.remove("is-muted");
 
     for (const button of elements.streamDetailsTabButtons) {
       const active = button.dataset.streamDetailsTab === state.streamDetailsTab;
@@ -3532,8 +3550,7 @@
       elements.streamDetailsStateText.classList.remove("is-hidden");
       elements.streamDetailsStateText.textContent = "Loading stream items...";
       elements.streamDetailsSummaryText.textContent = "Loading stream items...";
-      elements.streamDetailsPayloadText.textContent = "Loading stream items...";
-      elements.streamDetailsProtocolText.textContent = "Loading stream items...";
+      elements.streamDetailsItemDataText.textContent = "Loading stream items...";
       return;
     }
 
@@ -3544,14 +3561,10 @@
       elements.streamDetailsStateText.textContent = state.streamErrorText || "Failed to load stream items.";
       elements.streamDetailsStateText.classList.add("is-error");
       elements.streamDetailsSummaryText.textContent = "Stream item details are unavailable because the stream request failed.";
-      elements.streamDetailsPayloadStateText.textContent = "Payload preview unavailable.";
-      elements.streamDetailsProtocolStateText.textContent = "Protocol details unavailable.";
-      elements.streamDetailsPayloadStateText.classList.add("is-error");
-      elements.streamDetailsProtocolStateText.classList.add("is-error");
-      elements.streamDetailsPayloadText.textContent = "Stream payload is unavailable because the stream request failed.";
-      elements.streamDetailsProtocolText.textContent = "Stream protocol details are unavailable because the stream request failed.";
-      elements.streamDetailsPayloadText.classList.add("is-muted");
-      elements.streamDetailsProtocolText.classList.add("is-muted");
+      elements.streamDetailsItemDataStateText.textContent = "Item data unavailable.";
+      elements.streamDetailsItemDataStateText.classList.add("is-error");
+      elements.streamDetailsItemDataText.textContent = "Stream item data is unavailable because the stream request failed.";
+      elements.streamDetailsItemDataText.classList.add("is-muted");
       return;
     }
 
@@ -3562,14 +3575,10 @@
       elements.streamDetailsStateText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
       elements.streamDetailsStateText.classList.add("is-error");
       elements.streamDetailsSummaryText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
-      elements.streamDetailsPayloadStateText.textContent = state.streamUnavailableText || "Stream payload is unavailable.";
-      elements.streamDetailsProtocolStateText.textContent = state.streamUnavailableText || "Stream protocol details are unavailable.";
-      elements.streamDetailsPayloadStateText.classList.add("is-error");
-      elements.streamDetailsProtocolStateText.classList.add("is-error");
-      elements.streamDetailsPayloadText.textContent = state.streamUnavailableText || "Stream payload is unavailable.";
-      elements.streamDetailsProtocolText.textContent = state.streamUnavailableText || "Stream protocol details are unavailable.";
-      elements.streamDetailsPayloadText.classList.add("is-muted");
-      elements.streamDetailsProtocolText.classList.add("is-muted");
+      elements.streamDetailsItemDataStateText.textContent = state.streamUnavailableText || "Stream item data is unavailable.";
+      elements.streamDetailsItemDataStateText.classList.add("is-error");
+      elements.streamDetailsItemDataText.textContent = state.streamUnavailableText || "Stream item data is unavailable.";
+      elements.streamDetailsItemDataText.classList.add("is-muted");
       return;
     }
 
@@ -3577,14 +3586,13 @@
       elements.packetDetailsTitle.textContent = "Stream Item Details";
       elements.packetDetailsMeta.textContent = "";
       elements.streamDetailsStateText.textContent = "";
-      elements.streamDetailsPayloadText.textContent = "Select a stream item to inspect details.";
-      elements.streamDetailsProtocolText.textContent = "Select a stream item to inspect details.";
-      elements.streamDetailsPayloadText.classList.add("is-muted");
-      elements.streamDetailsProtocolText.classList.add("is-muted");
+      elements.streamDetailsItemDataText.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsItemDataText.classList.add("is-muted");
       return;
     }
 
     const item = state.selectedStreamItemDetails || state.selectedStreamItem;
+    const itemData = item.stream_item_data || {};
     elements.packetDetailsTitle.textContent = "Stream Item Details";
     elements.packetDetailsMeta.textContent = "";
     elements.streamDetailsStateText.textContent = "";
@@ -3593,16 +3601,13 @@
     elements.streamDetailsHeaderBadge.textContent = item.badge_text || "";
     elements.streamDetailsHeaderBadge.classList.toggle("is-hidden", String(item.badge_text || "").trim().length === 0);
     elements.streamDetailsHeaderBadge.classList.toggle("is-warning", String(item.badge_text || "").trim() === "Constricted");
-    elements.streamDetailsPayloadTabButton.textContent = item.payload_tab_title || "Payload";
+    elements.streamDetailsItemDataTabButton.textContent = "Item Data";
     renderStreamItemSummary(elements.streamDetailsSummaryText, item);
 
     if (state.streamDetailsState === "loading") {
-      elements.streamDetailsPayloadStateText.textContent = "Loading payload details...";
-      elements.streamDetailsProtocolStateText.textContent = "Loading protocol details...";
-      elements.streamDetailsPayloadText.textContent = "Loading payload details...";
-      elements.streamDetailsProtocolText.textContent = "Loading protocol details...";
-      elements.streamDetailsPayloadText.classList.add("is-muted");
-      elements.streamDetailsProtocolText.classList.add("is-muted");
+      elements.streamDetailsItemDataStateText.textContent = "Loading item data...";
+      elements.streamDetailsItemDataText.textContent = "Loading item data...";
+      elements.streamDetailsItemDataText.classList.add("is-muted");
       return;
     }
 
@@ -3612,22 +3617,16 @@
       elements.streamDetailsStateText.textContent = state.streamDetailsErrorText;
     }
 
-    if (item.payload_preview_text) {
-      elements.streamDetailsPayloadText.textContent = item.payload_preview_text;
-    } else {
-      elements.streamDetailsPayloadStateText.textContent = item.payload_preview_unavailable_text || "Payload is not available for this stream item.";
-      elements.streamDetailsPayloadStateText.classList.add("is-error");
-      elements.streamDetailsPayloadText.textContent = item.payload_preview_unavailable_text || "Payload is not available for this stream item.";
-      elements.streamDetailsPayloadText.classList.add("is-muted");
+    elements.streamDetailsItemDataStateText.textContent = itemData.status_text || "";
+    if (itemData.available === false && itemData.state && itemData.state !== "synthetic") {
+      elements.streamDetailsItemDataStateText.classList.add("is-error");
     }
 
-    if (item.protocol_details_text) {
-      elements.streamDetailsProtocolText.textContent = item.protocol_details_text;
+    if (itemData.formatted_text) {
+      elements.streamDetailsItemDataText.textContent = itemData.formatted_text;
     } else {
-      elements.streamDetailsProtocolStateText.textContent = "Protocol details are not available for this stream item.";
-      elements.streamDetailsProtocolStateText.classList.add("is-error");
-      elements.streamDetailsProtocolText.textContent = "Protocol details are not available for this stream item.";
-      elements.streamDetailsProtocolText.classList.add("is-muted");
+      elements.streamDetailsItemDataText.textContent = "";
+      elements.streamDetailsItemDataText.classList.add("is-muted");
     }
   }
 
@@ -3909,45 +3908,41 @@
   function renderPacketDetails() {
     const details = state.packetDetails;
     const packetDetailsTitle = String(details?.details_title || "Selected Packet Details");
-    const payloadTabTitle = String(details?.payload_tab_title || "Payload");
 
     elements.packetDetailsTitle.textContent = packetDetailsTitle;
-    elements.packetDetailsPayloadTabButton.textContent = payloadTabTitle;
     elements.packetDetailsStateText.className = "status-text";
-    elements.packetDetailsRawStateText.className = "status-text compact-status-text";
-    elements.packetDetailsPayloadStateText.className = "status-text compact-status-text";
-    elements.packetDetailsProtocolStateText.className = "status-text compact-status-text";
+    elements.packetDetailsBytesStateText.className = "status-text compact-status-text";
     elements.packetDetailsSummary.innerHTML = "";
-    elements.packetDetailsRawStateText.textContent = "";
-    elements.packetDetailsPayloadStateText.textContent = "";
-    elements.packetDetailsProtocolStateText.textContent = "";
-    elements.packetDetailsRawText.classList.remove("is-muted");
-    elements.packetDetailsPayloadText.classList.remove("is-muted");
-    elements.packetDetailsProtocolText.classList.remove("is-muted");
+    elements.packetDetailsBytesStateText.textContent = "";
+    elements.packetDetailsBytesText.classList.remove("is-muted");
+
+    const descriptors = packetByteViewDescriptors(details);
+    elements.packetDetailsByteViewSelector.innerHTML = descriptors
+      .map((descriptor) => {
+        const stableId = String(descriptor?.stable_id || "");
+        const selected = stableId === String(state.packetDetailsSelectedByteViewStableId || "")
+          ? " selected"
+          : "";
+        return `<option value="${escapeHtml(stableId)}"${selected}>${escapeHtml(packetByteViewDisplayLabel(descriptor))}</option>`;
+      })
+      .join("");
+    elements.packetDetailsByteViewSelector.disabled = descriptors.length === 0 || state.packetDetailsByteViewLoading;
 
     if (state.packetDetailsState === "loading") {
       elements.packetDetailsMeta.textContent = state.selectedPacketIndex == null
         ? "Loading packet details..."
         : `Loading details for packet ${state.selectedPacketIndex}...`;
       elements.packetDetailsStateText.textContent = "Loading packet details...";
-      elements.packetDetailsRawStateText.textContent = "Loading raw bytes...";
-      elements.packetDetailsPayloadStateText.textContent = "Loading payload bytes...";
-      elements.packetDetailsProtocolStateText.textContent = "Loading protocol details...";
-      elements.packetDetailsRawText.textContent = "Loading packet details...";
-      elements.packetDetailsProtocolText.textContent = "Loading packet details...";
-      elements.packetDetailsPayloadText.textContent = "Loading packet details...";
+      elements.packetDetailsBytesStateText.textContent = "Loading byte views...";
+      elements.packetDetailsBytesText.textContent = "Loading packet details...";
       return;
     }
 
     if (state.selectedPacketRow == null) {
       elements.packetDetailsMeta.textContent = "Select a packet to inspect details.";
       elements.packetDetailsStateText.textContent = "";
-      elements.packetDetailsRawText.textContent = "No packet selected.";
-      elements.packetDetailsProtocolText.textContent = "No packet selected.";
-      elements.packetDetailsPayloadText.textContent = "No packet selected.";
-      elements.packetDetailsRawText.classList.add("is-muted");
-      elements.packetDetailsProtocolText.classList.add("is-muted");
-      elements.packetDetailsPayloadText.classList.add("is-muted");
+      elements.packetDetailsBytesText.textContent = "No packet selected.";
+      elements.packetDetailsBytesText.classList.add("is-muted");
       return;
     }
 
@@ -3959,32 +3954,12 @@
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;
       elements.packetDetailsStateText.textContent = state.packetDetailsErrorText || "Failed to load packet details.";
       elements.packetDetailsStateText.classList.add("is-error");
-      elements.packetDetailsRawStateText.textContent = "Raw bytes unavailable.";
-      elements.packetDetailsPayloadStateText.textContent = "Payload bytes unavailable.";
-      elements.packetDetailsProtocolStateText.textContent = "Protocol details unavailable.";
-      elements.packetDetailsRawStateText.classList.add("is-error");
-      elements.packetDetailsPayloadStateText.classList.add("is-error");
-      elements.packetDetailsProtocolStateText.classList.add("is-error");
-      elements.packetDetailsRawText.textContent = "Raw packet bytes are unavailable because the backend request failed.";
-      elements.packetDetailsProtocolText.textContent = "Packet details are unavailable because the backend request failed.";
-      elements.packetDetailsPayloadText.textContent = "Packet payload bytes are unavailable because the backend request failed.";
-      elements.packetDetailsRawText.classList.add("is-muted");
-      elements.packetDetailsProtocolText.classList.add("is-muted");
-      elements.packetDetailsPayloadText.classList.add("is-muted");
+      elements.packetDetailsBytesStateText.textContent = "Byte views unavailable.";
+      elements.packetDetailsBytesStateText.classList.add("is-error");
+      elements.packetDetailsBytesText.textContent = "Packet byte views are unavailable because the backend request failed.";
+      elements.packetDetailsBytesText.classList.add("is-muted");
       return;
     }
-
-    const explicitProtocolText = String(details?.protocol_details_text || "").trim();
-    const protocolSections = explicitProtocolText
-      ? [explicitProtocolText]
-      : [
-          details?.link_summary_text,
-          details?.network_summary_text,
-          details?.transport_summary_text,
-        ].filter((value) => value && value.trim().length > 0);
-    const protocolText = protocolSections.length > 0
-      ? protocolSections.join("\n\n")
-      : "No additional protocol details are available for this packet.";
 
     if (state.packetDetailsState === "unavailable") {
       const unavailableText = details?.unavailable_text
@@ -3994,61 +3969,36 @@
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} metadata loaded, byte-backed details unavailable.`;
       elements.packetDetailsStateText.textContent = unavailableText;
       elements.packetDetailsStateText.classList.add("is-error");
-      elements.packetDetailsRawStateText.textContent = details?.raw_preview_unavailable_text || unavailableText;
-      elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || unavailableText;
-      elements.packetDetailsProtocolStateText.textContent = unavailableText;
-      elements.packetDetailsRawStateText.classList.add("is-error");
-      elements.packetDetailsPayloadStateText.classList.add("is-error");
-      elements.packetDetailsProtocolStateText.classList.add("is-error");
-      elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || unavailableText;
-      elements.packetDetailsProtocolText.textContent = details?.protocol_details_text || "Byte-backed protocol details are unavailable.";
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "Packet payload bytes are unavailable.";
-      elements.packetDetailsRawText.classList.add("is-muted");
-      if (!details?.protocol_details_text) {
-        elements.packetDetailsProtocolText.classList.add("is-muted");
-      }
-      elements.packetDetailsPayloadText.classList.add("is-muted");
+      elements.packetDetailsBytesStateText.textContent = details?.selected_byte_view?.unavailable_text || unavailableText;
+      elements.packetDetailsBytesStateText.classList.add("is-error");
+      elements.packetDetailsBytesText.textContent = details?.selected_byte_view?.unavailable_text || unavailableText;
+      elements.packetDetailsBytesText.classList.add("is-muted");
       return;
     }
 
-    const rawLoaded = Boolean(details?.raw_preview_available);
-    const payloadLoaded = Boolean(details?.payload_preview_available);
     const selectedFlowRowNumber = Number(selectedPacket?.row_number);
     elements.packetDetailsMeta.textContent = Number.isFinite(selectedFlowRowNumber) && selectedFlowRowNumber > 0
       ? `Flow packet ${selectedFlowRowNumber} details loaded.`
       : "Packet details loaded.";
     elements.packetDetailsStateText.textContent = "";
-    elements.packetDetailsProtocolStateText.textContent = protocolSections.length > 0
-      ? "Protocol details loaded."
-      : "No additional protocol details are available.";
-    elements.packetDetailsProtocolText.textContent = protocolText;
-    if (protocolSections.length === 0) {
-      elements.packetDetailsProtocolText.classList.add("is-muted");
-    }
 
-    if (rawLoaded) {
-      elements.packetDetailsRawStateText.textContent = "Raw bytes loaded.";
-      elements.packetDetailsRawText.textContent = details?.raw_preview_text || "";
+    const selectedByteView = details?.selected_byte_view || null;
+    if (state.packetDetailsByteViewLoading) {
+      elements.packetDetailsBytesStateText.textContent = "Loading selected byte view...";
+      elements.packetDetailsBytesText.textContent = "Loading selected byte view...";
+    } else if (selectedByteView?.available) {
+      elements.packetDetailsBytesStateText.textContent = selectedByteView?.status_text || "Byte view loaded.";
+      elements.packetDetailsBytesText.textContent = selectedByteView?.formatted_text || "";
+    } else if (descriptors.length === 0) {
+      elements.packetDetailsBytesStateText.textContent = "No byte views are available for this packet.";
+      elements.packetDetailsBytesStateText.classList.add("is-error");
+      elements.packetDetailsBytesText.textContent = "No byte views are available for this packet.";
+      elements.packetDetailsBytesText.classList.add("is-muted");
     } else {
-      elements.packetDetailsRawStateText.textContent = details?.raw_preview_unavailable_text || "Raw bytes are unavailable.";
-      elements.packetDetailsRawStateText.classList.add("is-error");
-      elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || "Raw bytes are unavailable.";
-      elements.packetDetailsRawText.classList.add("is-muted");
-    }
-
-    if (payloadLoaded) {
-      elements.packetDetailsPayloadStateText.textContent = "Payload bytes loaded.";
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_text || "";
-    } else if (details?.payload_preview_no_payload) {
-      elements.packetDetailsPayloadStateText.textContent = "No payload is available for this packet.";
-      elements.packetDetailsPayloadStateText.classList.add("is-error");
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No transport payload is available for this packet.";
-      elements.packetDetailsPayloadText.classList.add("is-muted");
-    } else {
-      elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || "No payload bytes are available.";
-      elements.packetDetailsPayloadStateText.classList.add("is-error");
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No payload bytes are available.";
-      elements.packetDetailsPayloadText.classList.add("is-muted");
+      elements.packetDetailsBytesStateText.textContent = selectedByteView?.unavailable_text || "The selected byte view is unavailable for this packet.";
+      elements.packetDetailsBytesStateText.classList.add("is-error");
+      elements.packetDetailsBytesText.textContent = selectedByteView?.unavailable_text || "The selected byte view is unavailable for this packet.";
+      elements.packetDetailsBytesText.classList.add("is-muted");
     }
   }
 
@@ -5101,6 +5051,7 @@
     state.packetDetailsState = "loading";
     state.packetDetailsErrorText = "";
     state.packetDetails = null;
+    state.packetDetailsByteViewLoading = false;
     render();
 
     try {
@@ -5117,6 +5068,32 @@
       state.sourceAvailability = sourceAvailability;
 
       state.packetDetails = details;
+      const preferredStableId = state.packetDetailsSelectedByteViewStableId;
+      const defaultStableId = String(details?.selected_byte_view?.stable_id || "");
+
+      if (preferredStableId && packetByteViewExists(details, preferredStableId) && preferredStableId !== defaultStableId) {
+        const selectedByteView = state.unrecognizedPacketsSelected
+          ? await invoke("get_unrecognized_packet_byte_view_content", {
+            packet_index: state.selectedPacketIndex,
+            stable_id: preferredStableId,
+          })
+          : await invoke("get_selected_flow_packet_byte_view_content", {
+            packet_index: state.selectedPacketIndex,
+            stable_id: preferredStableId,
+            flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
+            loaded_packet_window_count: Number(state.packets.length),
+          });
+        state.packetDetails = {
+          ...(details || {}),
+          selected_byte_view: selectedByteView,
+        };
+      }
+
+      const resolvedStableId = packetByteViewExists(state.packetDetails, preferredStableId)
+        ? preferredStableId
+        : String(state.packetDetails?.selected_byte_view?.stable_id || "");
+      state.packetDetailsSelectedByteViewStableId = resolvedStableId;
+
       if (details?.error_text) {
         state.packetDetailsState = "error";
         state.packetDetailsErrorText = details.error_text;
@@ -5125,8 +5102,6 @@
         state.packetDetailsState = "unavailable";
       } else if (!sourceAvailability.byte_backed_inspection_available && !details?.details_available) {
         state.packetDetailsState = "unavailable";
-      } else if (details?.unavailable_text && !details?.payload_preview_available) {
-        state.packetDetailsState = "loaded";
       } else {
         state.packetDetailsState = "loaded";
       }
@@ -5138,6 +5113,96 @@
     }
 
     render();
+  }
+
+  async function selectPacketByteView(stableId) {
+    if (!stableId || state.selectedPacketIndex == null || state.packetDetailsState !== "loaded") {
+      return;
+    }
+
+    state.packetDetailsSelectedByteViewStableId = stableId;
+    state.packetDetailsByteViewLoading = true;
+    if (state.packetDetails) {
+      state.packetDetails = {
+        ...state.packetDetails,
+        selected_byte_view: {
+          ...(state.packetDetails.selected_byte_view || {}),
+          available: false,
+          stable_id: stableId,
+          label: "",
+          status_text: "Loading selected byte view...",
+          formatted_text: "",
+          unavailable_text: "",
+        },
+      };
+    }
+    render();
+
+    const requestToken = ++state.packetDetailsByteViewRequestToken;
+    const selectedPacketIndex = state.selectedPacketIndex;
+
+    try {
+      const content = state.unrecognizedPacketsSelected
+        ? await invoke("get_unrecognized_packet_byte_view_content", {
+          packet_index: selectedPacketIndex,
+          stable_id: stableId,
+        })
+        : await invoke("get_selected_flow_packet_byte_view_content", {
+          packet_index: selectedPacketIndex,
+          stable_id: stableId,
+          flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
+          loaded_packet_window_count: Number(state.packets.length),
+        });
+
+      if (
+        requestToken !== state.packetDetailsByteViewRequestToken
+        || state.selectedPacketIndex !== selectedPacketIndex
+        || state.packetDetailsSelectedByteViewStableId !== stableId
+      ) {
+        return;
+      }
+
+      if (state.packetDetails) {
+        state.packetDetails = {
+          ...state.packetDetails,
+          selected_byte_view: content,
+        };
+      }
+    } catch (error) {
+      if (
+        requestToken !== state.packetDetailsByteViewRequestToken
+        || state.selectedPacketIndex !== selectedPacketIndex
+        || state.packetDetailsSelectedByteViewStableId !== stableId
+      ) {
+        return;
+      }
+
+      if (state.packetDetails) {
+        state.packetDetails = {
+          ...state.packetDetails,
+          selected_byte_view: {
+            available: false,
+            stable_id: stableId,
+            label: "",
+            available_length: 0,
+            declared_length: null,
+            state: "",
+            status_text: "Selected byte view unavailable.",
+            formatted_text: "",
+            unavailable_text: `Failed to load byte view: ${String(error)}`,
+          },
+        };
+      }
+      setStatus(`Failed to load byte view: ${String(error)}`, "error");
+    } finally {
+      if (
+        requestToken === state.packetDetailsByteViewRequestToken
+        && state.selectedPacketIndex === selectedPacketIndex
+      ) {
+        state.packetDetailsByteViewLoading = false;
+      }
+      render();
+    }
   }
 
   async function selectFlow(flowIndex) {
@@ -6498,13 +6563,20 @@
   }
   for (const button of elements.packetDetailsTabButtons) {
     button.addEventListener("click", () => {
-      state.packetDetailsTab = button.dataset.packetDetailsTab || "summary";
+      state.packetDetailsTab = normalizePacketDetailsTab(button.dataset.packetDetailsTab || "summary");
       render();
     });
   }
+  elements.packetDetailsByteViewSelector?.addEventListener("change", () => {
+    const stableId = String(elements.packetDetailsByteViewSelector.value || "");
+    if (!stableId) {
+      return;
+    }
+    void selectPacketByteView(stableId);
+  });
   for (const button of elements.streamDetailsTabButtons) {
     button.addEventListener("click", () => {
-      state.streamDetailsTab = button.dataset.streamDetailsTab || "summary";
+      state.streamDetailsTab = normalizeStreamDetailsTab(button.dataset.streamDetailsTab || "summary");
       render();
     });
   }

@@ -8,7 +8,8 @@ bool PacketDetails::empty() const noexcept {
            !has_gtpu && !has_gre && !has_ah && !has_esp &&
            !has_inner_ethernet && !has_unknown_inner_ethernet_payload &&
            !has_pppoe && !has_arp && !has_ipv4 && !has_ipv6 && !has_ip_encapsulation &&
-           !has_tcp && !has_udp && !has_sctp && !has_icmp && !has_icmpv6 && !has_igmp;
+           !has_tcp && !has_udp && !has_sctp && !has_icmp && !has_icmpv6 && !has_igmp &&
+           !has_dns && !has_http;
 }
 
 }  // namespace pfl

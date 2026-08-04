@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -725,6 +725,25 @@ fn get_selected_flow_packet_details(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_selected_flow_packet_byte_view_content(
+    state: State<'_, Mutex<AdapterState>>,
+    packet_index: u64,
+    stable_id: String,
+    flow_packet_index: u64,
+    loaded_packet_window_count: u64,
+) -> Result<PacketByteViewContentDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_selected_flow_packet_byte_view_content(
+        packet_index,
+        &stable_id,
+        flow_packet_index,
+        loaded_packet_window_count,
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_unrecognized_packet_details(
     state: State<'_, Mutex<AdapterState>>,
     packet_index: u64,
@@ -733,6 +752,20 @@ fn get_unrecognized_packet_details(
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
     state.adapter.get_unrecognized_packet_details(packet_index)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_unrecognized_packet_byte_view_content(
+    state: State<'_, Mutex<AdapterState>>,
+    packet_index: u64,
+    stable_id: String,
+) -> Result<PacketByteViewContentDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .get_unrecognized_packet_byte_view_content(packet_index, &stable_id)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -921,7 +954,9 @@ pub fn run() {
             get_selected_flow_stream,
             get_selected_flow_stream_item_details,
             get_selected_flow_packet_details,
+            get_selected_flow_packet_byte_view_content,
             get_unrecognized_packet_details,
+            get_unrecognized_packet_byte_view_content,
             get_selected_flow_analysis,
             export_selected_flow_analysis_sequence_csv
         ])

@@ -9,6 +9,13 @@
 
 namespace pfl {
 
+struct QuicInitialProtectedPayloadProvenance {
+    std::size_t packet_number_length {0U};
+    std::size_t protected_payload_offset {0U};
+    std::size_t protected_payload_length {0U};
+    bool includes_authentication_tag {true};
+};
+
 class QuicInitialParser {
 public:
     static constexpr std::size_t kMaxInitialPackets = 3U;
@@ -35,6 +42,11 @@ public:
         std::span<const std::uint8_t> udp_payload,
         bool use_server_initial_secret,
         std::span<const std::uint8_t> initial_secret_connection_id_override
+    ) const;
+    [[nodiscard]] std::optional<QuicInitialProtectedPayloadProvenance> inspect_initial_protected_payload_provenance(
+        std::span<const std::uint8_t> udp_payload,
+        bool use_server_initial_secret,
+        std::span<const std::uint8_t> initial_secret_connection_id_override = {}
     ) const;
 
     // Decrypted Initial payload helper used by bounded multi-packet assembly tests.

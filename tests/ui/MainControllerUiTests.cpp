@@ -166,6 +166,74 @@ std::vector<std::uint8_t> bytes_payload(std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+QStringList packet_byte_view_labels(pfl::PacketDetailsViewModel* model) {
+    QStringList labels {};
+    if (model == nullptr) {
+        return labels;
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    labels.reserve(static_cast<qsizetype>(descriptors.size()));
+    for (const auto& descriptor_variant : descriptors) {
+        const auto descriptor = descriptor_variant.toMap();
+        labels.push_back(descriptor.value(QStringLiteral("label")).toString());
+    }
+    return labels;
+}
+
+bool packet_byte_view_label_starts_with(
+    pfl::PacketDetailsViewModel* model,
+    const QString& prefix
+) {
+    if (model == nullptr) {
+        return false;
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    return std::any_of(descriptors.begin(), descriptors.end(), [&](const QVariant& descriptor_variant) {
+        const auto descriptor = descriptor_variant.toMap();
+        return descriptor.value(QStringLiteral("label")).toString().startsWith(prefix);
+    });
+}
+
+QString find_packet_byte_view_stable_id_by_label_prefix(
+    pfl::PacketDetailsViewModel* model,
+    const QString& prefix
+) {
+    if (model == nullptr) {
+        return {};
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    for (const auto& descriptor_variant : descriptors) {
+        const auto descriptor = descriptor_variant.toMap();
+        if (descriptor.value(QStringLiteral("label")).toString().startsWith(prefix)) {
+            return descriptor.value(QStringLiteral("stableId")).toString();
+        }
+    }
+
+    return {};
+}
+
+QVariantMap find_packet_byte_view_descriptor(
+    pfl::PacketDetailsViewModel* model,
+    const QString& stable_id
+) {
+    if (model == nullptr) {
+        return {};
+    }
+
+    const auto descriptors = model->packetByteViewDescriptors();
+    for (const auto& descriptor_variant : descriptors) {
+        const auto descriptor = descriptor_variant.toMap();
+        if (descriptor.value(QStringLiteral("stableId")).toString() == stable_id) {
+            return descriptor;
+        }
+    }
+
+    return {};
+}
+
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -411,6 +479,31 @@ QObject* named_object(QObject* root, const char* objectName) {
     return root->findChild<QObject*>(QString::fromLatin1(objectName));
 }
 
+QStringList direct_child_tab_button_texts(QObject* root, const char* objectName) {
+    QStringList labels {};
+    auto* container = named_object(root, objectName);
+    if (container == nullptr) {
+        return labels;
+    }
+
+    const auto children = container->findChildren<QObject*>(QString {}, Qt::FindDirectChildrenOnly);
+    for (auto* child : children) {
+        if (child == nullptr) {
+            continue;
+        }
+
+        const auto text = child->property("text");
+        if (text.isValid()) {
+            const auto label = text.toString();
+            if (!label.isEmpty()) {
+                labels.push_back(label);
+            }
+        }
+    }
+
+    return labels;
+}
+
 QString packet_size_bucket_label(const std::uint32_t captured_length) {
     if (captured_length <= 63U) {
         return QStringLiteral("0-63");
@@ -619,6 +712,54 @@ QString find_summary_field_value(const QVariantMap& layer, const QString& label)
     return {};
 }
 
+void append_summary_layer_search_text(QStringList& lines, const QVariantMap& layer) {
+    const auto layer_id = layer.value(QStringLiteral("id")).toString();
+    const auto title = layer.value(QStringLiteral("title")).toString();
+    if (!title.isEmpty()) {
+        lines.push_back(title);
+    }
+
+    const auto fields = layer.value(QStringLiteral("fields")).toList();
+    for (const auto& value : fields) {
+        const auto field = value.toMap();
+        const auto label = field.value(QStringLiteral("label")).toString();
+        const auto field_value = field.value(QStringLiteral("value")).toString();
+        if (!label.isEmpty() && !field_value.isEmpty()) {
+            lines.push_back(QStringLiteral("%1: %2").arg(label, field_value));
+            if (layer_id == QStringLiteral("tls")) {
+                lines.push_back(QStringLiteral("TLS %1: %2").arg(label, field_value));
+            }
+        } else if (!label.isEmpty()) {
+            lines.push_back(label);
+        } else if (!field_value.isEmpty()) {
+            lines.push_back(field_value);
+        }
+    }
+
+    const auto children = layer.value(QStringLiteral("children")).toList();
+    for (const auto& child_value : children) {
+        append_summary_layer_search_text(lines, child_value.toMap());
+    }
+}
+
+QString summary_layers_search_text(const QVariantList& layers) {
+    QStringList lines {};
+    for (const auto& value : layers) {
+        append_summary_layer_search_text(lines, value.toMap());
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString combined_details_search_text(pfl::PacketDetailsViewModel* model) {
+    QStringList lines {};
+    lines.push_back(model->summaryText());
+    const auto layer_text = summary_layers_search_text(model->summaryLayers());
+    if (!layer_text.isEmpty()) {
+        lines.push_back(layer_text);
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
 std::filesystem::path ui_test_root() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
 }
@@ -763,9 +904,9 @@ void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::
         controller.setSelectedPacketIndex(packet_number - 1U);
         UI_EXPECT(details_model->detailsTitle() == QStringLiteral("Packet Details"));
 
-        const auto protocol_text = details_model->protocolText();
-        UI_EXPECT(text_contains_required_fragments(protocol_text, packet_expectation.value(QStringLiteral("detail_required_substrings")).toArray()));
-        UI_EXPECT(text_omits_forbidden_fragments(protocol_text, packet_expectation.value(QStringLiteral("detail_forbidden_substrings")).toArray()));
+        const auto summary_text = combined_details_search_text(details_model);
+        UI_EXPECT(text_contains_required_fragments(summary_text, packet_expectation.value(QStringLiteral("detail_required_substrings")).toArray()));
+        UI_EXPECT(text_omits_forbidden_fragments(summary_text, packet_expectation.value(QStringLiteral("detail_forbidden_substrings")).toArray()));
     }
 
     const auto stream_rows = session.list_flow_stream_items(0);
@@ -803,12 +944,6 @@ void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::
 
         for (const auto* row : matches) {
             UI_REQUIRE(row != nullptr);
-            UI_EXPECT(row->protocol_text.empty() == !stream_expectation.value(QStringLiteral("expects_protocol_text")).toBool());
-            UI_EXPECT(row->payload_hex_text.empty() == !stream_expectation.value(QStringLiteral("expects_payload_hex_text")).toBool());
-
-            const auto protocol_text = QString::fromStdString(row->protocol_text);
-            UI_EXPECT(text_contains_required_fragments(protocol_text, stream_expectation.value(QStringLiteral("detail_required_substrings")).toArray()));
-            UI_EXPECT(text_omits_forbidden_fragments(protocol_text, stream_expectation.value(QStringLiteral("detail_forbidden_substrings")).toArray()));
         }
     }
 
@@ -2052,12 +2187,55 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_details_model != nullptr);
     UI_EXPECT(quic_packet_model->rowCount() >= 1);
     quic_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(wait_until(app, [&]() {
+        const auto labels = packet_byte_view_labels(quic_details_model);
+        const auto quic_layer = find_top_level_summary_layer(quic_details_model->summaryLayers(), QStringLiteral("quic"));
+        const auto tls_layer = find_top_level_summary_layer(quic_details_model->summaryLayers(), QStringLiteral("tls"));
+        return quic_details_model->detailsTitle() == QStringLiteral("Packet Details") &&
+            !quic_layer.isEmpty() &&
+            !tls_layer.isEmpty() &&
+            find_summary_field_value(quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial") &&
+            find_summary_field_value(tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello") &&
+            labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")) &&
+            packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("CRYPTO Frame")) &&
+            packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("TLS Handshake Message, ClientHello"));
+    }));
     UI_EXPECT(quic_details_model->detailsTitle() == QStringLiteral("Packet Details"));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("QUIC")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("bag.itunes.apple.com")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Cipher Suites:")));
+    const auto quic_packet_layers = quic_details_model->summaryLayers();
+    const auto quic_packet_quic_layer = find_top_level_summary_layer(quic_packet_layers, QStringLiteral("quic"));
+    const auto quic_packet_tls_layer = find_top_level_summary_layer(quic_packet_layers, QStringLiteral("tls"));
+    UI_EXPECT(!quic_packet_quic_layer.isEmpty());
+    UI_EXPECT(!quic_packet_tls_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(quic_packet_quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial"));
+    UI_EXPECT(find_summary_field_value(quic_packet_tls_layer, QStringLiteral("SNI")) == QStringLiteral("bag.itunes.apple.com"));
+    UI_EXPECT(find_summary_field_value(quic_packet_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Packet")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Protected Payload")));
+    UI_EXPECT(packet_byte_view_labels(quic_details_model).contains(QStringLiteral("QUIC Initial Decrypted Payload")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_details_model, QStringLiteral("TLS Handshake Message, ClientHello")));
+    UI_EXPECT(!packet_byte_view_labels(quic_details_model).contains(QStringLiteral("TLS Handshake Record")));
+    const auto quic_crypto_data_view_id = find_packet_byte_view_stable_id_by_label_prefix(
+        quic_details_model,
+        QStringLiteral("CRYPTO Frame Data")
+    );
+    UI_EXPECT(!quic_crypto_data_view_id.isEmpty());
+    quic_controller.selectPacketByteView(quic_crypto_data_view_id);
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_details_model->selectedPacketByteViewId() == quic_crypto_data_view_id;
+    }));
+    UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("03 03")));
+    const auto quic_tls_handshake_view_id = find_packet_byte_view_stable_id_by_label_prefix(
+        quic_details_model,
+        QStringLiteral("TLS Handshake Message, ClientHello")
+    );
+    UI_EXPECT(!quic_tls_handshake_view_id.isEmpty());
+    quic_controller.selectPacketByteView(quic_tls_handshake_view_id);
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_details_model->selectedPacketByteViewId() == quic_tls_handshake_view_id;
+    }));
+    UI_EXPECT(quic_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
 
     quic_controller.setFlowDetailsTabIndex(1);
     UI_EXPECT(quic_stream_model->rowCount() >= 1);
@@ -2078,12 +2256,107 @@ int main(int argc, char* argv[]) {
     ).toULongLong();
     quic_controller.setSelectedStreamItemIndex(quic_stream_item_index);
     UI_EXPECT(quic_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("QUIC")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("bag.itunes.apple.com")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
-    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Cipher Suites:")));
-    UI_EXPECT(quic_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
+
+    const auto quic_multi_crypto_fixture_path =
+        std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_example_2.pcap";
+    MainController quic_multi_crypto_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_multi_crypto_controller, quic_multi_crypto_fixture_path));
+    auto* quic_multi_crypto_flow_model = qobject_cast<FlowListModel*>(quic_multi_crypto_controller.flowModel());
+    auto* quic_multi_crypto_details_model =
+        qobject_cast<PacketDetailsViewModel*>(quic_multi_crypto_controller.packetDetailsModel());
+    UI_EXPECT(quic_multi_crypto_flow_model != nullptr);
+    UI_EXPECT(quic_multi_crypto_details_model != nullptr);
+    UI_EXPECT(quic_multi_crypto_flow_model->rowCount() == 1);
+    quic_multi_crypto_controller.setSelectedFlowIndex(0);
+    quic_multi_crypto_controller.setSelectedPacketIndex(2);
+    UI_EXPECT(wait_until(app, [&]() {
+        const auto labels = packet_byte_view_labels(quic_multi_crypto_details_model);
+        return !quic_multi_crypto_details_model->summaryLayers().isEmpty() &&
+            labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")) &&
+            packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("CRYPTO Frame")) &&
+            packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("TLS Handshake Message, ClientHello"));
+    }));
+    UI_EXPECT(!quic_multi_crypto_details_model->summaryLayers().isEmpty());
+    const auto quic_multi_crypto_labels = packet_byte_view_labels(quic_multi_crypto_details_model);
+    const auto quic_multi_crypto_quic_layer =
+        find_top_level_summary_layer(quic_multi_crypto_details_model->summaryLayers(), QStringLiteral("quic"));
+    const auto quic_multi_crypto_tls_layer =
+        find_top_level_summary_layer(quic_multi_crypto_details_model->summaryLayers(), QStringLiteral("tls"));
+    UI_EXPECT(quic_multi_crypto_labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_crypto_details_model, QStringLiteral("TLS Handshake Message, ClientHello")));
+    UI_EXPECT(!quic_multi_crypto_labels.contains(QStringLiteral("TLS Handshake Record")));
+    const auto quic_multi_crypto_handshake_view_id = find_packet_byte_view_stable_id_by_label_prefix(
+        quic_multi_crypto_details_model,
+        QStringLiteral("TLS Handshake Message, ClientHello")
+    );
+    UI_EXPECT(!quic_multi_crypto_handshake_view_id.isEmpty());
+    quic_multi_crypto_controller.selectPacketByteView(quic_multi_crypto_handshake_view_id);
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_multi_crypto_details_model->selectedPacketByteViewId() == quic_multi_crypto_handshake_view_id;
+    }));
+    UI_EXPECT(quic_multi_crypto_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
+    UI_EXPECT(!quic_multi_crypto_quic_layer.isEmpty());
+    UI_EXPECT(!quic_multi_crypto_tls_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(quic_multi_crypto_quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial"));
+    UI_EXPECT(find_summary_field_value(quic_multi_crypto_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
+    UI_EXPECT(quic_multi_crypto_details_model->payloadTabTitle() == QStringLiteral("Payload"));
+
+    MainController quic_multi_packet_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_multi_packet_controller, quic_multi_crypto_fixture_path));
+    auto* quic_multi_packet_flow_model = qobject_cast<FlowListModel*>(quic_multi_packet_controller.flowModel());
+    auto* quic_multi_packet_details_model =
+        qobject_cast<PacketDetailsViewModel*>(quic_multi_packet_controller.packetDetailsModel());
+    UI_EXPECT(quic_multi_packet_flow_model != nullptr);
+    UI_EXPECT(quic_multi_packet_details_model != nullptr);
+    UI_EXPECT(quic_multi_packet_flow_model->rowCount() == 1);
+    quic_multi_packet_controller.setSelectedFlowIndex(0);
+    quic_multi_packet_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(wait_until(app, [&]() {
+        const auto labels = packet_byte_view_labels(quic_multi_packet_details_model);
+        const auto tls_layer = find_top_level_summary_layer(
+            quic_multi_packet_details_model->summaryLayers(),
+            QStringLiteral("tls")
+        );
+        return !quic_multi_packet_details_model->summaryLayers().isEmpty() &&
+            !tls_layer.isEmpty() &&
+            find_summary_field_value(tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello") &&
+            labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame Data")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("QUIC CRYPTO Stream")) &&
+            packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("TLS Handshake Message, ClientHello"));
+    }));
+    const auto quic_multi_packet_labels = packet_byte_view_labels(quic_multi_packet_details_model);
+    UI_EXPECT(quic_multi_packet_labels.contains(QStringLiteral("QUIC Initial Decrypted Payload")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("CRYPTO Frame Data")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("QUIC CRYPTO Stream")));
+    UI_EXPECT(packet_byte_view_label_starts_with(quic_multi_packet_details_model, QStringLiteral("TLS Handshake Message, ClientHello")));
+    UI_EXPECT(!quic_multi_packet_labels.contains(QStringLiteral("TLS Handshake Record")));
+    quic_multi_packet_controller.selectPacketByteView(QStringLiteral("quic_crypto_stream:0:0"));
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_multi_packet_details_model->selectedPacketByteViewId() == QStringLiteral("quic_crypto_stream:0:0") &&
+            quic_multi_packet_details_model->selectedPacketByteViewStatusText().contains(
+                QStringLiteral("Reassembled from 4 CRYPTO frames"));
+    }));
+    quic_multi_packet_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(wait_until(app, [&]() {
+        return quic_multi_packet_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0") &&
+            quic_multi_packet_details_model->selectedPacketByteViewStatusText().contains(
+                QStringLiteral("Reassembled from 4 CRYPTO frames"));
+    }));
+    UI_EXPECT(quic_multi_packet_details_model->selectedPacketByteViewText().contains(QStringLiteral("01 00")));
+    const auto quic_multi_packet_quic_layer =
+        find_top_level_summary_layer(quic_multi_packet_details_model->summaryLayers(), QStringLiteral("quic"));
+    const auto quic_multi_packet_tls_layer =
+        find_top_level_summary_layer(quic_multi_packet_details_model->summaryLayers(), QStringLiteral("tls"));
+    UI_EXPECT(!quic_multi_packet_quic_layer.isEmpty());
+    UI_EXPECT(!quic_multi_packet_tls_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(quic_multi_packet_quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial"));
+    UI_EXPECT(find_summary_field_value(quic_multi_packet_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
+    UI_EXPECT(quic_multi_packet_details_model->payloadTabTitle() == QStringLiteral("Payload"));
 
     const auto quic_youtube_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_test_2.pcap";
     MainController quic_youtube_controller {};
@@ -2101,9 +2374,15 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_youtube_flow_model->data(quic_youtube_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
 
     quic_youtube_controller.setSelectedPacketIndex(0);
-    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
-    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("www.youtube.com")));
-    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+    const auto quic_youtube_packet_quic_layer =
+        find_top_level_summary_layer(quic_youtube_details_model->summaryLayers(), QStringLiteral("quic"));
+    const auto quic_youtube_packet_tls_layer =
+        find_top_level_summary_layer(quic_youtube_details_model->summaryLayers(), QStringLiteral("tls"));
+    UI_EXPECT(!quic_youtube_packet_quic_layer.isEmpty());
+    UI_EXPECT(!quic_youtube_packet_tls_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(quic_youtube_packet_quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial"));
+    UI_EXPECT(find_summary_field_value(quic_youtube_packet_tls_layer, QStringLiteral("SNI")) == QStringLiteral("www.youtube.com"));
+    UI_EXPECT(find_summary_field_value(quic_youtube_packet_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
 
     quic_youtube_controller.setFlowDetailsTabIndex(1);
     const int quic_youtube_initial_row = find_quic_initial_like_row(quic_youtube_stream_model);
@@ -2113,9 +2392,15 @@ int main(int argc, char* argv[]) {
         StreamListModel::StreamItemIndexRole
     ).toULongLong();
     quic_youtube_controller.setSelectedStreamItemIndex(quic_youtube_stream_item_index);
-    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
-    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("www.youtube.com")));
-    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+    const auto quic_youtube_stream_quic_layer =
+        find_top_level_summary_layer(quic_youtube_details_model->summaryLayers(), QStringLiteral("quic"));
+    const auto quic_youtube_stream_tls_layer =
+        find_top_level_summary_layer(quic_youtube_details_model->summaryLayers(), QStringLiteral("tls"));
+    UI_EXPECT(!quic_youtube_stream_quic_layer.isEmpty());
+    UI_EXPECT(!quic_youtube_stream_tls_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(quic_youtube_stream_quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial"));
+    UI_EXPECT(find_summary_field_value(quic_youtube_stream_tls_layer, QStringLiteral("SNI")) == QStringLiteral("www.youtube.com"));
+    UI_EXPECT(find_summary_field_value(quic_youtube_stream_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
 
     const auto quic_tiktok_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_test_3.pcap";
     MainController quic_tiktok_controller {};
@@ -2137,9 +2422,15 @@ int main(int argc, char* argv[]) {
         StreamListModel::StreamItemIndexRole
     ).toULongLong();
     quic_tiktok_controller.setSelectedStreamItemIndex(quic_tiktok_stream_item_index);
-    UI_EXPECT(quic_tiktok_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
-    UI_EXPECT(quic_tiktok_details_model->protocolText().contains(QStringLiteral("log22-normal-useast1a.tiktokv.com")));
-    UI_EXPECT(quic_tiktok_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+    const auto quic_tiktok_quic_layer =
+        find_top_level_summary_layer(quic_tiktok_details_model->summaryLayers(), QStringLiteral("quic"));
+    const auto quic_tiktok_tls_layer =
+        find_top_level_summary_layer(quic_tiktok_details_model->summaryLayers(), QStringLiteral("tls"));
+    UI_EXPECT(!quic_tiktok_quic_layer.isEmpty());
+    UI_EXPECT(!quic_tiktok_tls_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(quic_tiktok_quic_layer, QStringLiteral("Packet Type")) == QStringLiteral("Initial"));
+    UI_EXPECT(find_summary_field_value(quic_tiktok_tls_layer, QStringLiteral("SNI")) == QStringLiteral("log22-normal-useast1a.tiktokv.com"));
+    UI_EXPECT(find_summary_field_value(quic_tiktok_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
     controller.setFlowFilterText(QStringLiteral("ui.example"));
     UI_EXPECT(flow_model->rowCount() == 1);
     UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("HTTP"));
@@ -2242,8 +2533,102 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model->hasPacket());
     UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
     UI_EXPECT(!details_model->summaryLayers().isEmpty());
-    UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
-    UI_EXPECT(!details_model->protocolText().isEmpty());
+    const auto expected_packet_byte_labels = QStringList {
+        QStringLiteral("Frame"),
+        QStringLiteral("Ethernet II Frame"),
+        QStringLiteral("IPv4 Packet"),
+        QStringLiteral("TCP Segment"),
+    };
+    UI_EXPECT(packet_byte_view_labels(details_model) == expected_packet_byte_labels);
+    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
+    controller.selectPacketByteView(QStringLiteral("tcp:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("47 45 54 20 2f")));
+    const auto byte_view_selection_capture_path = write_temp_pcap(
+        "pfl_ui_packet_byte_view_selection.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 45000, 80, bytes_payload("payload-a"), 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet(
+                ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 45000, 80)},
+        })
+    );
+
+    MainController byte_view_selection_controller {};
+    UI_EXPECT(open_capture_and_wait(app, byte_view_selection_controller, byte_view_selection_capture_path));
+    auto* byte_view_selection_flow_model = qobject_cast<FlowListModel*>(byte_view_selection_controller.flowModel());
+    auto* byte_view_selection_packet_model = qobject_cast<PacketListModel*>(byte_view_selection_controller.packetModel());
+    auto* byte_view_selection_details_model =
+        qobject_cast<PacketDetailsViewModel*>(byte_view_selection_controller.packetDetailsModel());
+    UI_EXPECT(byte_view_selection_flow_model != nullptr);
+    UI_EXPECT(byte_view_selection_packet_model != nullptr);
+    UI_EXPECT(byte_view_selection_details_model != nullptr);
+    UI_EXPECT(byte_view_selection_flow_model->rowCount() == 1);
+
+    byte_view_selection_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(byte_view_selection_packet_model->rowCount() == 2);
+
+    const auto first_byte_view_packet_index = byte_view_selection_packet_model->data(
+        byte_view_selection_packet_model->index(0, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    const auto second_byte_view_packet_index = byte_view_selection_packet_model->data(
+        byte_view_selection_packet_model->index(1, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+
+    byte_view_selection_controller.setSelectedPacketIndex(first_byte_view_packet_index);
+    byte_view_selection_controller.selectPacketByteView(QStringLiteral("ipv4:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4:0:0"));
+
+    byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("ipv4:0:0"));
+    UI_EXPECT(packet_byte_view_labels(byte_view_selection_details_model).contains(QStringLiteral("TCP Segment")));
+
+    byte_view_selection_controller.setSelectedPacketIndex(first_byte_view_packet_index);
+    byte_view_selection_controller.selectPacketByteView(QStringLiteral("tcp:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
+
+    byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewAvailable());
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
+
+    const auto vxlan_byte_view_capture_path =
+        std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "vxlan" /
+        "13_vxlan_inner_vlan_ipv4_tcp.pcap";
+    MainController vxlan_byte_view_controller {};
+    UI_EXPECT(open_capture_and_wait(app, vxlan_byte_view_controller, vxlan_byte_view_capture_path));
+    auto* vxlan_byte_view_flow_model = qobject_cast<FlowListModel*>(vxlan_byte_view_controller.flowModel());
+    auto* vxlan_byte_view_details_model =
+        qobject_cast<PacketDetailsViewModel*>(vxlan_byte_view_controller.packetDetailsModel());
+    UI_EXPECT(vxlan_byte_view_flow_model != nullptr);
+    UI_EXPECT(vxlan_byte_view_details_model != nullptr);
+    UI_EXPECT(vxlan_byte_view_flow_model->rowCount() == 1);
+    vxlan_byte_view_controller.setSelectedFlowIndex(0);
+    vxlan_byte_view_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(wait_until(app, [&]() {
+        return packet_byte_view_labels(vxlan_byte_view_details_model).contains(QStringLiteral("VXLAN Packet")) &&
+            packet_byte_view_labels(vxlan_byte_view_details_model).contains(QStringLiteral("Inner Ethernet II Frame"));
+    }));
+    const auto vxlan_descriptor =
+        find_packet_byte_view_descriptor(vxlan_byte_view_details_model, QStringLiteral("vxlan:0:0"));
+    const auto inner_ethernet_descriptor =
+        find_packet_byte_view_descriptor(vxlan_byte_view_details_model, QStringLiteral("inner_ethernet:0:0"));
+    UI_EXPECT(!vxlan_descriptor.isEmpty());
+    UI_EXPECT(!inner_ethernet_descriptor.isEmpty());
+    UI_EXPECT(vxlan_descriptor.value(QStringLiteral("label")).toString() == QStringLiteral("VXLAN Packet"));
+    UI_EXPECT(vxlan_descriptor.value(QStringLiteral("parentStableId")).toString() == QStringLiteral("udp:0:0"));
+    UI_EXPECT(vxlan_descriptor.value(QStringLiteral("availableLength")).toULongLong() ==
+        inner_ethernet_descriptor.value(QStringLiteral("availableLength")).toULongLong() + 8ULL);
+    vxlan_byte_view_controller.selectPacketByteView(QStringLiteral("vxlan:0:0"));
+    UI_EXPECT(wait_until(app, [&]() {
+        return vxlan_byte_view_details_model->selectedPacketByteViewId() == QStringLiteral("vxlan:0:0") &&
+            vxlan_byte_view_details_model->selectedPacketByteViewAvailableLength() ==
+                vxlan_descriptor.value(QStringLiteral("availableLength")).toULongLong() &&
+            !vxlan_byte_view_details_model->selectedPacketByteViewText().isEmpty();
+    }));
 
     controller.setCurrentTabIndex(2);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));
@@ -2253,7 +2638,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.selectedFlowIndex() == -1);
     UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(details_model->payloadText().isEmpty());
+    UI_EXPECT(!details_model->selectedPacketByteViewAvailable());
+    UI_EXPECT(details_model->selectedPacketByteViewText().isEmpty());
+    UI_EXPECT(details_model->packetByteViewDescriptors().isEmpty());
     UI_EXPECT(flow_model->rowCount() == 1);
 
     controller.setCurrentTabIndex(2);
@@ -2334,6 +2721,129 @@ int main(int argc, char* argv[]) {
         flow_table.object->setProperty("showProtocolPathColumn", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
+    });
+
+    run_ui_section("packet_details_tabs_protocol_removed", [&]() {
+        auto packet_details_pane = load_qml_component("src/ui/qml/components/PacketDetailsPane.qml", "PacketDetailsPane");
+        PacketDetailsViewModel packet_model {};
+        packet_model.setPacketDetailsText(QStringLiteral("Packet number in file: 1"));
+        packet_model.setPacketBytePresentation(
+            {},
+            QStringLiteral("frame:0:0"),
+            QStringLiteral("Frame"),
+            true,
+            QStringLiteral("complete"),
+            0U,
+            {},
+            QStringLiteral("Byte view loaded."),
+            QStringLiteral("00000000")
+        );
+        packet_details_pane.object->setProperty("packetDetailsModel", QVariant::fromValue(static_cast<QObject*>(&packet_model)));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        const auto expected_packet_tab_labels = QStringList {
+            QStringLiteral("Summary"),
+            QStringLiteral("Bytes")
+        };
+        UI_EXPECT(direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsPacketTabs"
+        ) == expected_packet_tab_labels);
+        UI_EXPECT(!direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsPacketTabs"
+        ).contains(QStringLiteral("Protocol")));
+
+        auto* packet_tabs = named_object(packet_details_pane.object.get(), "packetDetailsPacketTabs");
+        UI_REQUIRE(packet_tabs != nullptr);
+        packet_tabs->setProperty("currentIndex", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(packet_tabs->property("currentIndex").toInt() == 0);
+    });
+
+    run_ui_section("packet_details_zero_length_byte_view_availability", [&]() {
+        PacketDetailsViewModel packet_model {};
+        packet_model.setPacketDetailsText(QStringLiteral("Packet number in file: 1"));
+        packet_model.setPacketBytePresentation(
+            {
+                QVariantMap {
+                    {QStringLiteral("stableId"), QStringLiteral("tcp:0:0")},
+                    {QStringLiteral("label"), QStringLiteral("TCP Segment")},
+                    {QStringLiteral("depth"), 0},
+                    {QStringLiteral("availableLength"), 0},
+                    {QStringLiteral("supportsPayloadOnly"), true},
+                }
+            },
+            QStringLiteral("tcp:0:0"),
+            QStringLiteral("TCP Segment"),
+            true,
+            QStringLiteral("complete"),
+            0U,
+            QVariant::fromValue(0U),
+            QStringLiteral("Available: 0 bytes"),
+            {}
+        );
+
+        UI_EXPECT(packet_model.selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
+        UI_EXPECT(packet_model.selectedPacketByteViewAvailable());
+        UI_EXPECT(packet_model.selectedPacketByteViewAvailableLength() == 0U);
+        UI_EXPECT(packet_model.selectedPacketByteViewText().isEmpty());
+
+        packet_model.clearPacketBytePresentation();
+        UI_EXPECT(packet_model.selectedPacketByteViewId().isEmpty());
+        UI_EXPECT(!packet_model.selectedPacketByteViewAvailable());
+        UI_EXPECT(packet_model.selectedPacketByteViewText().isEmpty());
+    });
+
+    run_ui_section("stream_item_details_tabs_protocol_removed", [&]() {
+        auto packet_details_pane = load_qml_component("src/ui/qml/components/PacketDetailsPane.qml", "PacketDetailsPane");
+        PacketDetailsViewModel stream_item_model {};
+        stream_item_model.setPacketDetailsText(QStringLiteral("Label: HTTP GET /"));
+        stream_item_model.setDetailsTitle(QStringLiteral("Stream Item Details"));
+        stream_item_model.setStreamItemPresentation(
+            QStringLiteral("HTTP GET /"),
+            QStringLiteral("Source packet: #1"),
+            {}
+        );
+        stream_item_model.setPayloadTabTitle(QStringLiteral("Item Data"));
+        stream_item_model.setStreamItemDataPresentation(
+            false,
+            QStringLiteral("http_message"),
+            QStringLiteral("unavailable"),
+            QStringLiteral("synthetic"),
+            QStringLiteral("packet_local"),
+            0U,
+            {},
+            {},
+            {},
+            {},
+            QStringLiteral("Item data unavailable."),
+            {}
+        );
+        packet_details_pane.object->setProperty(
+            "packetDetailsModel",
+            QVariant::fromValue(static_cast<QObject*>(&stream_item_model))
+        );
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        const auto expected_stream_tab_labels = QStringList {
+            QStringLiteral("Summary"),
+            QStringLiteral("Item Data")
+        };
+        UI_EXPECT(direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsStreamTabs"
+        ) == expected_stream_tab_labels);
+        UI_EXPECT(!direct_child_tab_button_texts(
+            packet_details_pane.object.get(),
+            "packetDetailsStreamTabs"
+        ).contains(QStringLiteral("Protocol")));
+
+        auto* stream_tabs = named_object(packet_details_pane.object.get(), "packetDetailsStreamTabs");
+        UI_REQUIRE(stream_tabs != nullptr);
+        stream_tabs->setProperty("currentIndex", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(stream_tabs->property("currentIndex").toInt() == 0);
     });
 
     const auto protocol_path_capture_path = write_temp_pcap(
@@ -2816,18 +3326,22 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: HTTP GET /")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
-    UI_EXPECT(stream_details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
-    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Item Payload"));
-    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("HTTP")));
-    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Method: GET")));
-    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Path: /")));
-    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Host:")));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(!stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(stream_details_model->streamItemDataText().isEmpty());
+    UI_EXPECT(stream_details_model->streamItemDataStatusText().contains(QStringLiteral("Item data unavailable")));
+    const auto http_stream_layers = stream_details_model->summaryLayers();
+    const auto http_stream_layer = find_top_level_summary_layer(http_stream_layers, QStringLiteral("http"));
+    UI_EXPECT(!http_stream_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(http_stream_layer, QStringLiteral("Method")) == QStringLiteral("GET"));
+    UI_EXPECT(find_summary_field_value(http_stream_layer, QStringLiteral("Target")) == QStringLiteral("/"));
 
     stream_controller.setSelectedPacketIndex(0);
     UI_EXPECT(stream_controller.selectedPacketIndex() == 0U);
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Packet Details"));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
-    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("TCP Payload"));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Payload"));
+    UI_EXPECT(stream_details_model->streamItemDataText().isEmpty());
 
     stream_controller.setSelectedFlowIndex(dns_stream_flow_index);
     UI_EXPECT(stream_model->rowCount() == 1);
@@ -2840,7 +3354,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(dns_packet_model->rowCount() == 1);
     const auto dns_packet_index = dns_packet_model->data(dns_packet_model->index(0, 0), PacketListModel::PacketIndexRole).toULongLong();
     stream_controller.setSelectedPacketIndex(dns_packet_index);
-    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Payload"));
+    UI_EXPECT(packet_byte_view_labels(stream_details_model).contains(QStringLiteral("DNS Message")));
+    stream_controller.selectPacketByteView(QStringLiteral("dns:0:0"));
+    UI_EXPECT(stream_details_model->selectedPacketByteViewId() == QStringLiteral("dns:0:0"));
+    UI_EXPECT(stream_details_model->selectedPacketByteViewText().contains(QStringLiteral("12 34 01 00")));
 
     stream_controller.setSelectedFlowIndex(-1);
     UI_EXPECT(stream_model->rowCount() == 0);
@@ -2866,10 +3384,15 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Message: ARP Request")));
     UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Who has 10.10.12.1? Tell 10.10.12.2")));
     UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
-    UI_EXPECT(arp_stream_details_model->payloadTabTitle() == QStringLiteral("ARP Payload"));
-    UI_EXPECT(arp_stream_details_model->payloadText().contains(QStringLiteral("00 01 08 00 06 04 00 01")));
-    UI_EXPECT(arp_stream_details_model->protocolText().contains(QStringLiteral("Protocol: ARP (Address Resolution Protocol)")));
-    UI_EXPECT(arp_stream_details_model->protocolText().contains(QStringLiteral("Opcode: request (1)")));
+    UI_EXPECT(arp_stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(arp_stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(arp_stream_details_model->streamItemDataStatusText().contains(QStringLiteral("Packet-backed")));
+    UI_EXPECT(arp_stream_details_model->streamItemDataText().contains(QStringLiteral("00 01 08 00 06 04 00 01")));
+    const auto arp_stream_layers = arp_stream_details_model->summaryLayers();
+    const auto arp_stream_layer = find_top_level_summary_layer(arp_stream_layers, QStringLiteral("arp"));
+    UI_EXPECT(!arp_stream_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(arp_stream_layer, QStringLiteral("Message")) == QStringLiteral("ARP Request"));
+    UI_EXPECT(find_summary_field_value(arp_stream_layer, QStringLiteral("Detail")) == QStringLiteral("Who has 10.10.12.1? Tell 10.10.12.2"));
 
     const auto split_tls_record = make_tls_handshake_record(0x02U, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06});
     const auto split_tls_payload_a = std::vector<std::uint8_t>(split_tls_record.begin(), split_tls_record.begin() + 7);
@@ -2906,7 +3429,10 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_summary_field_value(split_tls_item_layer, QStringLiteral("Source packets")) == QStringLiteral("#1,#2"));
     UI_EXPECT(find_summary_field_value(split_tls_record_layer, QStringLiteral("Record Type")) == QStringLiteral("Handshake"));
     UI_EXPECT(find_summary_field_value(split_tls_record_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ServerHello"));
-    UI_EXPECT(split_tls_details_model->payloadTabTitle() == QStringLiteral("Item Payload"));
+    UI_EXPECT(split_tls_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(split_tls_details_model->streamItemDataAvailable());
+    UI_EXPECT(split_tls_details_model->streamItemDataStatusText().contains(QStringLiteral("Reassembled from 2 TCP segments")));
+    UI_EXPECT(split_tls_details_model->streamItemDataText().contains(QStringLiteral("16 03 03 00 0a 02 00 00 06")));
 
     const auto tls_constricted_stream_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
     MainController tls_constricted_stream_controller {};
@@ -2993,10 +3519,6 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Available Bytes")) == QStringLiteral("3061"));
     UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Record Type")).isEmpty());
     UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Record Length")).isEmpty());
-    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
-    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Length: 3056")));
-    UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));
-    UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #7: captured 66 / original 332 bytes.")));
 
     const auto tls_constricted_single_item_index = tls_constricted_stream_model->data(
         tls_constricted_stream_model->index(6, 0),
@@ -3012,7 +3534,6 @@ int main(int argc, char* argv[]) {
     ).toULongLong();
     tls_constricted_stream_controller.setSelectedStreamItemIndex(tls_constricted_packet_fourteen_item_index);
     UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #14: captured 66 / original 145 bytes.")));
-    UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #14: captured 66 / original 145 bytes.")));
 
     tls_constricted_stream_controller.sendSelectedFlowToAnalysis();
     UI_EXPECT(wait_until(app, [&tls_constricted_stream_controller]() {
@@ -3034,8 +3555,16 @@ int main(int argc, char* argv[]) {
     tls_details_controller.setSelectedPacketIndex(0);
     auto* tls_details_model = qobject_cast<PacketDetailsViewModel*>(tls_details_controller.packetDetailsModel());
     UI_EXPECT(tls_details_model != nullptr);
-    UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("TLS")));
-    UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
+    const auto tls_packet_layers = tls_details_model->summaryLayers();
+    const auto tls_packet_layer = find_top_level_summary_layer(tls_packet_layers, QStringLiteral("tls"));
+    UI_EXPECT(!tls_packet_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(tls_packet_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
+    UI_EXPECT(find_summary_field_value(tls_packet_layer, QStringLiteral("SNI")) == QStringLiteral("auth.split.io"));
+    UI_EXPECT(packet_byte_view_labels(tls_details_model).contains(QStringLiteral("TLS Handshake Record")));
+    UI_EXPECT(packet_byte_view_labels(tls_details_model).contains(QStringLiteral("TLS Handshake Message, ClientHello")));
+    tls_details_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(tls_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(tls_details_model->selectedPacketByteViewText().contains(QStringLiteral("03 03")));
 
     const auto gtpu_nested_data_fixture_path =
         ui_test_root() / "data" / "parsing" / "gtpu" / "32_gtpu_inner_ipv4_udp_data.pcap";
@@ -3055,6 +3584,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!gtpu_inner_udp_layer.isEmpty());
     UI_EXPECT(!gtpu_data_layer.isEmpty());
     UI_EXPECT(find_summary_field_value(gtpu_data_layer, QStringLiteral("Data Length")) == QStringLiteral("48 bytes"));
+    UI_EXPECT(packet_byte_view_labels(gtpu_nested_data_details_model).count(QStringLiteral("Data")) == 1);
+    gtpu_nested_data_controller.selectPacketByteView(QStringLiteral("data:0:0"));
+    UI_EXPECT(gtpu_nested_data_details_model->selectedPacketByteViewId() == QStringLiteral("data:0:0"));
+    UI_EXPECT(gtpu_nested_data_details_model->selectedPacketByteViewStatusText().contains(QStringLiteral("Available: 48 bytes")));
+    UI_EXPECT(gtpu_nested_data_details_model->selectedPacketByteViewText().contains(
+        QStringLiteral("49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41")));
 
     const auto split_tls_fixture_capture_path =
         std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_1_3_split_client_hello_10.pcap";
@@ -3112,6 +3647,14 @@ int main(int argc, char* argv[]) {
         QStringLiteral("Continues in a later loaded packet"));
     UI_EXPECT(find_summary_field_value(split_tls_packet4_reassembled_layer, QStringLiteral("Contributing Flow Packets")) ==
         QStringLiteral("4, 5"));
+    UI_EXPECT(packet_byte_view_labels(split_tls_packet_details_model).contains(
+        QStringLiteral("TLS Handshake Record (Reassembled)")));
+    UI_EXPECT(packet_byte_view_labels(split_tls_packet_details_model).contains(
+        QStringLiteral("TLS Handshake Message, ClientHello (Reassembled)")));
+    split_tls_packet_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(split_tls_packet_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(split_tls_packet_details_model->selectedPacketByteViewStatusText().contains(
+        QStringLiteral("Reassembled from 2 TCP segments")));
 
     split_tls_packet_controller.setSelectedPacketIndex(split_tls_packet5_index);
     UI_EXPECT(!split_tls_packet_details_model->summaryLayers().isEmpty());
@@ -3125,6 +3668,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_summary_field_value(split_tls_packet5_tls_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ClientHello"));
     UI_EXPECT(find_summary_field_value(split_tls_packet5_tls_layer, QStringLiteral("SNI")) ==
         QStringLiteral("www.youtube.com"));
+    UI_EXPECT(packet_byte_view_labels(split_tls_packet_details_model).contains(
+        QStringLiteral("TLS Handshake Record (Reassembled)")));
+    UI_EXPECT(packet_byte_view_labels(split_tls_packet_details_model).contains(
+        QStringLiteral("TLS Handshake Message, ClientHello (Reassembled)")));
+    split_tls_packet_controller.selectPacketByteView(QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(split_tls_packet_details_model->selectedPacketByteViewId() == QStringLiteral("tls_handshake:0:0"));
+    UI_EXPECT(split_tls_packet_details_model->selectedPacketByteViewStatusText().contains(
+        QStringLiteral("Reassembled from 2 TCP segments")));
 
     const auto full_truncated_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(172, 16, 0, 1), ipv4(172, 16, 0, 2), 34567, 8080, make_http_request_payload(), 0x18);
@@ -3361,7 +3912,8 @@ int main(int argc, char* argv[]) {
     ).toULongLong();
     quic_constricted_controller.setSelectedStreamItemIndex(quic_constricted_stream_item_index);
     UI_EXPECT(quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #13 contributed 32 / 69 bytes")));
-    UI_EXPECT(quic_constricted_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
+    UI_EXPECT(quic_constricted_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(quic_constricted_details_model->streamItemDataStatusText().contains(QStringLiteral("Available:")));
 
     const auto ipv6_quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "ipv6_quic_constricted_1.pcap";
     MainController ipv6_quic_constricted_controller {};
@@ -3487,7 +4039,8 @@ int main(int argc, char* argv[]) {
     ).toULongLong();
     ipv6_quic_constricted_controller.setSelectedStreamItemIndex(ipv6_quic_stream_item_index);
     UI_EXPECT(ipv6_quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #8 contributed 32 / 80 bytes")));
-    UI_EXPECT(ipv6_quic_constricted_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
+    UI_EXPECT(ipv6_quic_constricted_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
+    UI_EXPECT(ipv6_quic_constricted_details_model->streamItemDataStatusText().contains(QStringLiteral("Available:")));
 
     const auto tls_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
     MainController tls_constricted_controller {};
@@ -3695,8 +4248,6 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_tls_constricted_details_model->summaryText().contains(QStringLiteral("Source packet: #16")));
     UI_EXPECT(ipv6_tls_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #16 contributed 8 / 58 bytes")));
     UI_EXPECT(ipv6_tls_constricted_details_model->summaryText().contains(QStringLiteral("Constricted packet #16: captured 100 / original 150 bytes.")));
-    UI_EXPECT(ipv6_tls_constricted_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
-    UI_EXPECT(!ipv6_tls_constricted_details_model->protocolText().contains(QStringLiteral("Constricted packet #16: captured 100 / original 150 bytes.")));
 
     const auto ipv6_tls_strong_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv6_tls_strong_constrict_1.pcap";
     MainController ipv6_tls_strong_constricted_controller {};
@@ -3900,8 +4451,6 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#9 contributed 8 / 2416 bytes")));
     UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#10 contributed 8 / 2416 bytes")));
     UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#14 contributed 8 / 458 bytes")));
-    UI_EXPECT(ipv6_tls_strong_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
-    UI_EXPECT(ipv6_tls_strong_details_model->protocolText().contains(QStringLiteral("Record Length: 6480")));
 
     const auto fragmented_packet = make_ethernet_ipv4_fragment_packet(
         ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 6, 0x2000U, {0x16, 0x03, 0x03, 0x00, 0x10});

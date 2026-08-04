@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace pfl {
@@ -14,6 +15,14 @@ enum class NetworkAddressFamily : std::uint8_t {
     ipv6
 };
 
+// Packet-relative byte range using selected captured-frame coordinates.
+struct PacketByteRange {
+    std::uint32_t offset {0};
+    std::optional<std::uint32_t> declared_length {};
+    std::uint32_t captured_length {0};
+    bool truncated {false};
+};
+
 struct EthernetDetails {
     std::array<std::uint8_t, 6> src_mac {};
     std::array<std::uint8_t, 6> dst_mac {};
@@ -22,6 +31,7 @@ struct EthernetDetails {
     std::size_t trailer_length {0};
     std::vector<std::uint8_t> trailer_preview {};
     bool trailer_preview_truncated {false};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct LlcDetails {
@@ -36,6 +46,7 @@ struct LlcDetails {
     std::size_t payload_length {0};
     std::vector<std::uint8_t> payload_preview {};
     bool payload_preview_truncated {false};
+    std::optional<PacketByteRange> unit_range {};
 };
 
 struct SnapDetails {
@@ -45,6 +56,7 @@ struct SnapDetails {
     std::size_t payload_length {0};
     std::vector<std::uint8_t> payload_preview {};
     bool payload_preview_truncated {false};
+    std::optional<PacketByteRange> unit_range {};
 };
 
 struct VlanTagDetails {
@@ -74,6 +86,7 @@ struct InnerEthernetDetails {
     bool uses_length_field {false};
     std::uint8_t available_header_bytes {0};
     bool header_truncated {false};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct PbbDetails {
@@ -85,6 +98,7 @@ struct PbbDetails {
     bool nca {false};
     std::uint8_t reserved {0};
     std::uint32_t isid {0};
+    std::optional<PacketByteRange> unit_range {};
 };
 
 struct MacsecDetails {
@@ -144,6 +158,8 @@ struct VxlanDetails {
     bool invalid_header {false};
     bool reserved_bits_non_zero {false};
     std::uint32_t vni {0};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
     bool has_inner_packet {false};
@@ -167,6 +183,8 @@ struct GeneveDetails {
     std::uint16_t protocol_type {0};
     bool protocol_type_supported {false};
     std::uint32_t vni {0};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
     bool has_inner_packet {false};
@@ -199,6 +217,8 @@ struct GtpuDetails {
     bool extension_headers_truncated {false};
     std::size_t extension_headers_skipped_bytes {0};
     bool unknown_inner_payload {false};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_packet {false};
     std::shared_ptr<GtpuInnerPacketDetails> inner_packet {};
 };
@@ -232,6 +252,8 @@ struct GreDetails {
     std::uint32_t sequence_number {0};
     bool protocol_type_supported {false};
     bool unknown_inner_payload {false};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
     bool inner_vlan_truncated {false};
@@ -250,6 +272,8 @@ struct EspDetails {
     std::uint32_t spi {0};
     std::uint32_t sequence_number {0};
     std::size_t opaque_payload_length {0};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> protected_payload_range {};
 };
 
 struct AhDetails {
@@ -266,6 +290,8 @@ struct AhDetails {
     std::size_t header_length {0};
     std::size_t icv_length {0};
     std::size_t available_icv_bytes {0};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
     bool has_inner_packet {false};
     std::shared_ptr<AhInnerPacketDetails> inner_packet {};
 };
@@ -305,6 +331,7 @@ struct PppoeSessionDetails {
     std::uint16_t session_id {0};
     std::uint16_t payload_length {0};
     std::uint16_t ppp_protocol {0};
+    std::uint8_t ppp_protocol_field_length {0};
     bool is_discovery {false};
     bool header_truncated {false};
     bool protocol_field_truncated {false};
@@ -312,6 +339,10 @@ struct PppoeSessionDetails {
     bool declared_payload_exceeds_captured {false};
     bool captured_payload_exceeds_declared {false};
     std::size_t captured_payload_length {0};
+    std::optional<PacketByteRange> unit_range {};
+    std::optional<PacketByteRange> payload_range {};
+    std::optional<PacketByteRange> ppp_unit_range {};
+    std::optional<PacketByteRange> ppp_payload_range {};
     std::vector<PppoeTagDetails> discovery_tags {};
     bool discovery_tag_header_truncated {false};
     bool discovery_tag_value_truncated {false};
@@ -356,6 +387,7 @@ struct IPv4Details {
     bool header_truncated {false};
     bool options_truncated {false};
     bool total_length_invalid {false};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct IPv6Details {
@@ -366,6 +398,7 @@ struct IPv6Details {
     std::uint8_t hop_limit {0};
     std::uint32_t flow_label {0};
     std::uint16_t payload_length {0};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct TcpDetails {
@@ -409,6 +442,7 @@ struct SctpDetails {
     std::uint16_t stream_identifier {0};
     std::uint16_t stream_sequence_number {0};
     std::uint32_t ppid {0};
+    std::optional<PacketByteRange> payload_range {};
 };
 
 struct IcmpDetails {
@@ -452,6 +486,8 @@ struct EffectiveTransportPayloadDetails {
 };
 
 struct VxlanInnerPacketDetails {
+    bool has_inner_ethernet {false};
+    InnerEthernetDetails inner_ethernet {};
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
     bool has_llc {false};
@@ -471,6 +507,8 @@ struct VxlanInnerPacketDetails {
 };
 
 struct GeneveInnerPacketDetails {
+    bool has_inner_ethernet {false};
+    InnerEthernetDetails inner_ethernet {};
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
     bool has_llc {false};
@@ -563,6 +601,7 @@ struct GreInnerPacketDetails {
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     std::vector<MplsLabelDetails> mpls_labels {};
+    std::optional<PacketByteRange> mpls_payload_range {};
     bool has_mpls_pseudowire_control_word {false};
     MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
     bool has_unknown_inner_ethernet_payload {false};
@@ -595,11 +634,36 @@ struct IgmpDetails {
     bool header_truncated {false};
 };
 
+struct DnsDetails {
+    bool is_response {false};
+    std::uint16_t transaction_id {0};
+    std::uint16_t query_type {0};
+    std::optional<std::uint8_t> response_code {};
+    std::string query_name {};
+};
+
+enum class HttpMessageType : std::uint8_t {
+    unknown,
+    request,
+    response,
+};
+
+struct HttpDetails {
+    HttpMessageType message_type {HttpMessageType::unknown};
+    std::string method {};
+    std::string path {};
+    std::string version {};
+    std::string host {};
+    std::string status_code {};
+    std::string reason_phrase {};
+};
+
 struct PacketDetails {
     std::uint64_t packet_index {0};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
     bool ipv4_bounds_from_captured_bytes {false};
+    std::optional<PacketByteRange> mpls_payload_range {};
 
     bool has_ethernet {false};
     EthernetDetails ethernet {};
@@ -679,6 +743,12 @@ struct PacketDetails {
 
     bool has_igmp {false};
     IgmpDetails igmp {};
+
+    bool has_dns {false};
+    DnsDetails dns {};
+
+    bool has_http {false};
+    HttpDetails http {};
 
     [[nodiscard]] bool empty() const noexcept;
 };

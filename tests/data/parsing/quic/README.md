@@ -9,6 +9,10 @@ These fixtures currently support:
   not from reparsing formatted `protocol_text`;
 - structured Stream Item Summary layers built from the structured QUIC and TLS
   models already retained by the selected-flow Stream path;
+- selected-packet byte inspection for captured QUIC envelopes, authoritative
+  Initial protected-payload ranges, decrypted Initial plaintext, plaintext
+  QUIC frame ranges, and CRYPTO frame value ranges where the bounded QUIC path
+  already provides authoritative provenance;
 - shell-aware QUIC packet semantics;
 - bounded `Initial` CRYPTO to TLS handoff for Packet Details Summary;
 - bounded `Initial` CRYPTO to TLS handoff for Stream Item Summary on existing
@@ -27,7 +31,13 @@ Repository-wide interpretation rules confirmed by these fixtures:
 
 - shell-aware semantic labels are authoritative;
 - one captured UDP packet may map to multiple QUIC semantic objects;
+- one captured UDP packet may map to multiple QUIC byte-view envelope owners;
 - one captured UDP packet may map to multiple selected-flow Stream items;
+- decrypted Initial plaintext remains selected-packet-only, does not create
+  Stream byte retention, and is not duplicated into a second complete owner
+  buffer solely for byte presentation;
+- `CRYPTO Data` byte views expose only CRYPTO frame value bytes; they do not
+  expose the frame type or the encoded CRYPTO offset/length varints;
 - packet-level `PADDING` does not require a standalone Stream item;
 - packet-level QUIC frame presence and Stream item generation are different
   contracts.
@@ -85,6 +95,12 @@ Repository-wide interpretation rules confirmed by these fixtures:
 - Initial decryption behavior:
   - bounded client `CRYPTO` reassembly exposes `ClientHello`;
   - bounded server `CRYPTO` reassembly exposes `ServerHello`;
+  - selected-packet byte inspection now distinguishes:
+    - early contributing client `Initial` packets that need one bounded
+      cross-packet `QUIC CRYPTO Stream (Reassembled)` owner before exposing
+      `TLS Handshake Message, ClientHello (Reassembled)`;
+    - later/coalesced client `Initial` packet views that still expose the same
+      structured `ClientHello` contract with no synthetic TLS record;
   - pure `0-RTT` packets remain opaque QUIC packet summaries without false TLS.
 - TLS semantics:
   - `ClientHello` stays attached to the `Initial` shell, not to `0-RTT`;
@@ -106,6 +122,10 @@ Repository-wide interpretation rules confirmed by these fixtures:
 - QUIC version: current tests expect QUIC classification on UDP/443.
 - Initial decryption behavior:
   - bounded `Initial` payload parsing exposes TLS over `CRYPTO`.
+  - selected-packet byte inspection exposes the captured `Initial` envelope,
+    the authoritative protected-payload range, one derived decrypted Initial
+    owner, one plaintext `CRYPTO` frame range, and one nested `CRYPTO Data`
+    range.
 - TLS semantics:
   - `ClientHello`;
   - `SNI` present.
@@ -178,6 +198,10 @@ Repository-wide interpretation rules confirmed by these fixtures:
   - `Initial`.
 - Initial decryption behavior:
   - packet 8 exposes `ACK` only when packet-number handling is correct.
+  - selected-packet byte inspection exposes the captured `Initial` envelope,
+    the authoritative protected-payload range, one derived decrypted Initial
+    owner, and one plaintext `ACK` frame range with no fabricated `CRYPTO`
+    value view.
 - TLS semantics:
   - none.
 - Useful for:
@@ -195,6 +219,9 @@ Repository-wide interpretation rules confirmed by these fixtures:
 - Initial decryption behavior:
   - intentionally wrong packet number keeps the result conservative;
   - packet 8 must not fabricate `ACK` semantics.
+  - selected-packet byte inspection must not fabricate decrypted Initial
+    plaintext, plaintext QUIC frame ranges, `CRYPTO Data`, or TLS byte
+    ownership.
 - TLS semantics:
   - none.
 - Useful for:

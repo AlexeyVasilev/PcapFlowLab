@@ -111,6 +111,8 @@ add_library(
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
+    src/app/session/SelectedPacketBytePresentation.cpp
+    src/app/session/SelectedStreamItemDataPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SelectedPacketSummaryPreparation.cpp
     src/app/session/SessionFlowHelpers.cpp
@@ -375,6 +377,8 @@ if(BUILD_TESTING)
         tests/unit/FlowAnalysisTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/SelectedPacketBytePresentationTests.cpp
+        tests/unit/SelectedStreamItemDataPresentationTests.cpp
         tests/unit/PacketPayloadTests.cpp
         tests/unit/PacketProtocolDetailsTests.cpp
         tests/unit/TlsInspectionParserTests.cpp

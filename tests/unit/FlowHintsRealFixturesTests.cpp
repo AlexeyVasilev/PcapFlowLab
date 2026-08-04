@@ -81,6 +81,29 @@ const session_detail::PacketSummaryLayer* find_summary_layer(
     return nullptr;
 }
 
+std::vector<std::string> packet_byte_view_labels(const FrontendPacketDetailsDto& details) {
+    std::vector<std::string> labels {};
+    labels.reserve(details.byte_view_descriptors.size());
+    for (const auto& descriptor : details.byte_view_descriptors) {
+        labels.push_back(descriptor.label);
+    }
+    return labels;
+}
+
+const FrontendPacketDetailsDto::PacketByteViewDescriptor* find_packet_byte_view_descriptor(
+    const FrontendPacketDetailsDto& details,
+    const std::string& stable_id
+) {
+    const auto it = std::find_if(
+        details.byte_view_descriptors.begin(),
+        details.byte_view_descriptors.end(),
+        [&](const FrontendPacketDetailsDto::PacketByteViewDescriptor& descriptor) {
+            return descriptor.stable_id == stable_id;
+        }
+    );
+    return it == details.byte_view_descriptors.end() ? nullptr : &(*it);
+}
+
 const session_detail::PacketSummaryField* find_summary_field(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& label
@@ -298,6 +321,398 @@ void expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_reassembled, "Completion Flow Packet") == "5");
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "Handshake Type") == "ClientHello");
     PFL_EXPECT(require_summary_field_value(*packet5_loaded_tls, "SNI") == "www.youtube.com");
+
+    const auto packet3_details = adapter.get_selected_flow_packet_details(
+        packets.packets[2].packet_index,
+        packets.packets[2].row_number,
+        5U
+    );
+    PFL_EXPECT(packet3_details.error_text.empty());
+    const auto packet3_labels = packet_byte_view_labels(packet3_details);
+    const auto packet4_labels = packet_byte_view_labels(details4_loaded);
+    const auto packet5_labels = packet_byte_view_labels(details5_loaded);
+    PFL_EXPECT(std::find(
+        packet3_labels.begin(),
+        packet3_labels.end(),
+        "TLS Handshake Record (Reassembled)") == packet3_labels.end());
+    PFL_EXPECT(std::find(
+        packet4_labels.begin(),
+        packet4_labels.end(),
+        "TLS Handshake Record (Reassembled)") != packet4_labels.end());
+    PFL_EXPECT(std::find(
+        packet5_labels.begin(),
+        packet5_labels.end(),
+        "TLS Handshake Message, ClientHello (Reassembled)") != packet5_labels.end());
+
+    const auto* packet4_record_descriptor = find_packet_byte_view_descriptor(details4_loaded, "tls_record:0:0");
+    const auto* packet5_handshake_descriptor = find_packet_byte_view_descriptor(details5_loaded, "tls_handshake:0:0");
+    PFL_REQUIRE(packet4_record_descriptor != nullptr);
+    PFL_REQUIRE(packet5_handshake_descriptor != nullptr);
+    PFL_EXPECT(packet4_record_descriptor->owner_kind == "tls_reconstructed_record");
+    PFL_EXPECT(packet4_record_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(packet4_record_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(packet4_record_descriptor->contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+    PFL_EXPECT(packet5_handshake_descriptor->owner_kind == "tls_reconstructed_record");
+    PFL_EXPECT(packet5_handshake_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(packet5_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(packet5_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+
+    const auto packet5_handshake_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet5.packet_index,
+        "tls_handshake:0:0",
+        packet5.row_number,
+        5U
+    );
+    PFL_EXPECT(packet5_handshake_content.available);
+    PFL_EXPECT(packet5_handshake_content.assembly_kind == "reassembled");
+    PFL_EXPECT(packet5_handshake_content.contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(packet5_handshake_content.contributing_unit_kind == std::optional<std::string> {"tcp_segment"});
+    PFL_EXPECT(packet5_handshake_content.status_text.find("Reassembled from 2 TCP segments") != std::string::npos);
+}
+
+void expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 3U);
+    PFL_REQUIRE(packets.packets.size() >= 3U);
+    const auto& packet3 = packets.packets[2];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet3.packet_index, packet3.row_number, 3U);
+    PFL_EXPECT(details.error_text.empty());
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC Initial Decrypted Payload") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame Data") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC CRYPTO Stream (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Record") == labels.end());
+
+    const auto* crypto_stream_descriptor = find_packet_byte_view_descriptor(details, "quic_crypto_stream:0:0");
+    const auto* tls_handshake_descriptor = find_packet_byte_view_descriptor(details, "tls_handshake:0:0");
+    PFL_REQUIRE(crypto_stream_descriptor != nullptr);
+    PFL_REQUIRE(tls_handshake_descriptor != nullptr);
+    PFL_EXPECT(crypto_stream_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(crypto_stream_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(crypto_stream_descriptor->parent_stable_id == std::optional<std::string> {"quic_initial_plaintext:0:0"});
+    PFL_EXPECT(tls_handshake_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(tls_handshake_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(tls_handshake_descriptor->parent_stable_id == std::optional<std::string> {"quic_crypto_stream:0:0"});
+
+    const auto handshake_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet3.packet_index,
+        "tls_handshake:0:0",
+        packet3.row_number,
+        3U
+    );
+    PFL_EXPECT(handshake_content.available);
+    PFL_EXPECT(handshake_content.assembly_kind == "reassembled");
+    PFL_EXPECT(handshake_content.contributing_unit_count == std::optional<std::uint32_t> {2U});
+    PFL_EXPECT(handshake_content.contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(handshake_content.status_text.find("Reassembled from 2 CRYPTO frames") != std::string::npos);
+    PFL_EXPECT(handshake_content.formatted_text.find("01 00") != std::string::npos);
+}
+
+void expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/quic/quic_example_2.pcap"));
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 3U);
+    PFL_REQUIRE(packets.packets.size() >= 1U);
+    const auto& packet1 = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet1.packet_index, packet1.row_number, 3U);
+    PFL_EXPECT(details.error_text.empty());
+    const auto* tls_layer = find_summary_layer(details.summary_layers, "tls");
+    PFL_REQUIRE(tls_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
+
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC Initial Decrypted Payload") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "CRYPTO Frame Data") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "QUIC CRYPTO Stream (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Message, ClientHello (Reassembled)") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "TLS Handshake Record") == labels.end());
+
+    const auto* crypto_stream_descriptor = find_packet_byte_view_descriptor(details, "quic_crypto_stream:0:0");
+    const auto* tls_handshake_descriptor = find_packet_byte_view_descriptor(details, "tls_handshake:0:0");
+    PFL_REQUIRE(crypto_stream_descriptor != nullptr);
+    PFL_REQUIRE(tls_handshake_descriptor != nullptr);
+    PFL_EXPECT(crypto_stream_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(crypto_stream_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_count == std::optional<std::uint32_t> {4U});
+    PFL_EXPECT(crypto_stream_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(crypto_stream_descriptor->parent_stable_id == std::optional<std::string> {"quic_initial_packet:0:0"});
+    PFL_EXPECT(tls_handshake_descriptor->owner_kind == "quic_crypto_prefix");
+    PFL_EXPECT(tls_handshake_descriptor->assembly_kind == "reassembled");
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_count == std::optional<std::uint32_t> {4U});
+    PFL_EXPECT(tls_handshake_descriptor->contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(tls_handshake_descriptor->parent_stable_id == std::optional<std::string> {"quic_crypto_stream:0:0"});
+
+    const auto handshake_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet1.packet_index,
+        "tls_handshake:0:0",
+        packet1.row_number,
+        3U
+    );
+    PFL_EXPECT(handshake_content.available);
+    PFL_EXPECT(handshake_content.assembly_kind == "reassembled");
+    PFL_EXPECT(handshake_content.contributing_unit_count == std::optional<std::uint32_t> {4U});
+    PFL_EXPECT(handshake_content.contributing_unit_kind == std::optional<std::string> {"quic_crypto_frame"});
+    PFL_EXPECT(handshake_content.status_text.find("Reassembled from 4 CRYPTO frames") != std::string::npos);
+    PFL_EXPECT(handshake_content.formatted_text.find("01 00") != std::string::npos);
+}
+
+void expect_frontend_adapter_selected_flow_packet_byte_views() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+
+    const auto& packet = packets.packets[0];
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+    PFL_EXPECT(details.selected_byte_view.available);
+    PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
+    PFL_EXPECT(details.selected_byte_view.label == "Frame");
+    PFL_EXPECT(details.selected_byte_view.mode == "whole_unit");
+    PFL_EXPECT(details.selected_byte_view.formatted_text.find("00000000") != std::string::npos);
+
+    const std::vector<std::string> expected_labels {
+        "Frame",
+        "Ethernet II Frame",
+        "IPv4 Packet",
+        "TCP Segment",
+    };
+    PFL_EXPECT(packet_byte_view_labels(details) == expected_labels);
+    PFL_REQUIRE(details.byte_view_descriptors.size() == 4U);
+    PFL_EXPECT(details.byte_view_descriptors[0].stable_id == "frame:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[1].stable_id == "ethernet:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[2].stable_id == "ipv4:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[3].stable_id == "tcp:0:0");
+    PFL_EXPECT(!details.byte_view_descriptors[0].parent_stable_id.has_value());
+    PFL_EXPECT(details.byte_view_descriptors[1].parent_stable_id == std::optional<std::string> {"frame:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[2].parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[3].parent_stable_id == std::optional<std::string> {"ipv4:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[0].owner_kind == "captured_packet");
+    PFL_EXPECT(details.byte_view_descriptors[3].owner_kind == "captured_packet");
+    PFL_EXPECT(details.byte_view_descriptors[0].role == "protocol_unit");
+    PFL_EXPECT(details.byte_view_descriptors[1].role == "protocol_unit");
+    PFL_EXPECT(details.byte_view_descriptors[2].role == "protocol_unit");
+    PFL_EXPECT(details.byte_view_descriptors[3].role == "protocol_unit");
+    PFL_EXPECT(!details.byte_view_descriptors[0].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[1].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[2].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[3].supports_payload_only);
+    PFL_REQUIRE(details.byte_view_descriptors[3].payload_available_length.has_value());
+
+    const auto tcp_payload = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "tcp:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(tcp_payload.available);
+    PFL_EXPECT(tcp_payload.stable_id == "tcp:0:0");
+    PFL_EXPECT(tcp_payload.mode == "whole_unit");
+    PFL_EXPECT(tcp_payload.formatted_text.find("47 45 54 20 2f") != std::string::npos);
+    PFL_EXPECT(tcp_payload.status_text.find("Available:") != std::string::npos);
+}
+
+void expect_frontend_adapter_ieee8023_packet_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/llc_snap/02_llc_snap_ipv4_udp.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto unrecognized = adapter.get_unrecognized_packets(0U, 4U);
+    PFL_REQUIRE(unrecognized.packets.size() == 1U);
+    const auto& packet = unrecognized.packets[0];
+
+    const auto details = adapter.get_unrecognized_packet_details(packet.packet_index);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "IEEE 802.3 Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "Ethernet II Frame") == labels.end());
+
+    const auto* ieee8023_descriptor = find_packet_byte_view_descriptor(details, "ieee8023:0:0");
+    const auto* llc_descriptor = find_packet_byte_view_descriptor(details, "llc:0:0");
+    const auto* snap_descriptor = find_packet_byte_view_descriptor(details, "snap:0:0");
+    PFL_REQUIRE(ieee8023_descriptor != nullptr);
+    PFL_REQUIRE(llc_descriptor != nullptr);
+    PFL_REQUIRE(snap_descriptor != nullptr);
+    PFL_EXPECT(ieee8023_descriptor->parent_stable_id == std::optional<std::string> {"frame:0:0"});
+    PFL_EXPECT(llc_descriptor->parent_stable_id == std::optional<std::string> {"ieee8023:0:0"});
+    PFL_EXPECT(snap_descriptor->parent_stable_id == std::optional<std::string> {"llc:0:0"});
+    PFL_EXPECT(ieee8023_descriptor->supports_payload_only);
+    PFL_REQUIRE(ieee8023_descriptor->payload_available_length.has_value());
+}
+
+void expect_frontend_adapter_pppoe_ppp_packet_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/pppoe/02_pppoe_session_ipv4_udp.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+
+    const auto* pppoe_descriptor = find_packet_byte_view_descriptor(details, "pppoe:0:0");
+    const auto* ppp_descriptor = find_packet_byte_view_descriptor(details, "ppp:0:0");
+    const auto* ipv4_descriptor = find_packet_byte_view_descriptor(details, "ipv4:0:0");
+    PFL_REQUIRE(pppoe_descriptor != nullptr);
+    PFL_REQUIRE(ppp_descriptor != nullptr);
+    PFL_REQUIRE(ipv4_descriptor != nullptr);
+    PFL_EXPECT(pppoe_descriptor->parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
+    PFL_EXPECT(ppp_descriptor->parent_stable_id == std::optional<std::string> {"pppoe:0:0"});
+    PFL_EXPECT(ipv4_descriptor->parent_stable_id == std::optional<std::string> {"ppp:0:0"});
+    PFL_EXPECT(ppp_descriptor->label == "PPP Packet");
+    PFL_EXPECT(ppp_descriptor->supports_payload_only);
+    PFL_REQUIRE(ppp_descriptor->payload_available_length.has_value());
+
+    const auto ppp_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "ppp:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(ppp_content.available);
+    PFL_EXPECT(ppp_content.label == "PPP Packet");
+    PFL_EXPECT(ppp_content.formatted_text.find("00 21") != std::string::npos);
+}
+
+void expect_frontend_adapter_nested_gtpu_data_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/gtpu/32_gtpu_inner_ipv4_udp_data.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::count(labels.begin(), labels.end(), "Data") == 1);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "GTP-U Message") != labels.end());
+
+    const auto* gtpu_descriptor = find_packet_byte_view_descriptor(details, "gtpu:0:0");
+    PFL_REQUIRE(gtpu_descriptor != nullptr);
+    PFL_EXPECT(gtpu_descriptor->label == "GTP-U Message");
+    PFL_EXPECT(gtpu_descriptor->parent_stable_id == std::optional<std::string> {"udp:0:0"});
+    PFL_EXPECT(gtpu_descriptor->supports_payload_only);
+    PFL_REQUIRE(gtpu_descriptor->payload_available_length.has_value());
+
+    const auto* data_descriptor = find_packet_byte_view_descriptor(details, "data:0:0");
+    PFL_REQUIRE(data_descriptor != nullptr);
+    PFL_EXPECT(data_descriptor->label == "Data");
+    PFL_EXPECT(data_descriptor->parent_stable_id == std::optional<std::string> {"inner_udp:0:0"});
+    PFL_EXPECT(data_descriptor->owner_kind == "captured_packet");
+    PFL_EXPECT(data_descriptor->role == "protocol_unit");
+    PFL_EXPECT(data_descriptor->assembly_kind == "packet_local");
+    PFL_EXPECT(data_descriptor->available_length == 48U);
+    PFL_EXPECT(data_descriptor->declared_length == std::optional<std::uint32_t> {48U});
+    PFL_EXPECT(data_descriptor->state == "complete");
+    PFL_EXPECT(!data_descriptor->supports_payload_only);
+
+    const auto data_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "data:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(data_content.available);
+    PFL_EXPECT(data_content.stable_id == "data:0:0");
+    PFL_EXPECT(data_content.label == "Data");
+    PFL_EXPECT(data_content.mode == "whole_unit");
+    PFL_EXPECT(data_content.available_length == 48U);
+    PFL_EXPECT(data_content.declared_length == std::optional<std::uint32_t> {48U});
+    PFL_EXPECT(data_content.state == "complete");
+    PFL_EXPECT(data_content.formatted_text.find("49 4e 4e 45 52 2d 55 44 50 2d 44 41 54 41") != std::string::npos);
+}
+
+void expect_frontend_adapter_vxlan_packet_byte_view() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/vxlan/13_vxlan_inner_vlan_ipv4_tcp.pcap"));
+    PFL_REQUIRE(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(adapter.select_flow(flows[0].flow_index).selected);
+
+    const auto packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(packets.packets.size() == 1U);
+    const auto& packet = packets.packets[0];
+
+    const auto details = adapter.get_selected_flow_packet_details(packet.packet_index, packet.row_number, 1U);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(details.details_available);
+
+    const auto* vxlan_descriptor = find_packet_byte_view_descriptor(details, "vxlan:0:0");
+    const auto* inner_ethernet_descriptor = find_packet_byte_view_descriptor(details, "inner_ethernet:0:0");
+    PFL_REQUIRE(vxlan_descriptor != nullptr);
+    PFL_REQUIRE(inner_ethernet_descriptor != nullptr);
+    PFL_EXPECT(vxlan_descriptor->label == "VXLAN Packet");
+    PFL_EXPECT(vxlan_descriptor->parent_stable_id == std::optional<std::string> {"udp:0:0"});
+    PFL_EXPECT(vxlan_descriptor->available_length == inner_ethernet_descriptor->available_length + 8U);
+    PFL_EXPECT(vxlan_descriptor->supports_payload_only);
+    PFL_EXPECT(vxlan_descriptor->payload_available_length == std::optional<std::uint32_t> {inner_ethernet_descriptor->available_length});
+
+    const auto vxlan_content = adapter.get_selected_flow_packet_byte_view_content(
+        packet.packet_index,
+        "vxlan:0:0",
+        packet.row_number,
+        1U
+    );
+    PFL_EXPECT(vxlan_content.available);
+    PFL_EXPECT(vxlan_content.stable_id == "vxlan:0:0");
+    PFL_EXPECT(vxlan_content.label == "VXLAN Packet");
+    PFL_EXPECT(vxlan_content.mode == "whole_unit");
+    PFL_EXPECT(vxlan_content.available_length == vxlan_descriptor->available_length);
+    PFL_EXPECT(!vxlan_content.formatted_text.empty());
 }
 
 void expect_bounded_tls_selected_flow_service_hint_query() {
@@ -485,7 +900,14 @@ void run_flow_hints_real_fixtures_tests() {
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
+    expect_frontend_adapter_selected_flow_packet_byte_views();
+    expect_frontend_adapter_ieee8023_packet_byte_view();
+    expect_frontend_adapter_pppoe_ppp_packet_byte_view();
+    expect_frontend_adapter_nested_gtpu_data_byte_view();
+    expect_frontend_adapter_vxlan_packet_byte_view();
     expect_frontend_adapter_selected_flow_packet_details_use_bounded_tls_window("parsing/tls/tls_1_3_split_client_hello_10.pcap");
+    expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views();
+    expect_frontend_adapter_selected_flow_quic_reassembled_tls_byte_views();
     expect_bounded_tls_selected_flow_service_hint_query();
     expect_non_client_hello_tls_selected_flow_service_hint_queries_return_empty();
     expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_explicit_window();

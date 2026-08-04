@@ -70,7 +70,17 @@ public:
         std::uint64_t flow_packet_index = 0U,
         std::uint64_t loaded_packet_window_count = 0U
     );
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent get_selected_flow_packet_byte_view_content(
+        std::uint64_t packet_index,
+        const std::string& stable_id,
+        std::uint64_t flow_packet_index = 0U,
+        std::uint64_t loaded_packet_window_count = 0U
+    );
     [[nodiscard]] FrontendPacketDetailsDto get_unrecognized_packet_details(std::uint64_t packet_index);
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent get_unrecognized_packet_byte_view_content(
+        std::uint64_t packet_index,
+        const std::string& stable_id
+    );
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path
@@ -103,11 +113,19 @@ private:
         std::optional<std::uint64_t> flow_packet_index,
         std::optional<std::size_t> loaded_packet_window_count = std::nullopt
     );
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_packet_byte_view_content(
+        const PacketRef& packet,
+        const std::string& stable_id,
+        std::optional<std::uint64_t> flow_packet_index = {},
+        std::optional<std::size_t> loaded_packet_window_count = {}
+    );
     [[nodiscard]] static AnalysisSettings to_analysis_settings(const FrontendSettingsDto& settings) noexcept;
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(
         const StreamItemRow& row,
         const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
-        bool include_details
+        bool include_details,
+        std::size_t max_packets_to_scan = 0U,
+        std::size_t limit = 0U
     ) const;
     void join_finished_open_worker();
     void cancel_and_join_open_worker();

@@ -1,10 +1,12 @@
 ﻿#include "ui/app/MainController.h"
 
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
@@ -20,7 +22,6 @@
 #include <QCoreApplication>
 #include <QFileDialog>
 #include <QGuiApplication>
-#include <QRegularExpression>
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
@@ -1061,20 +1062,164 @@ PacketChecksumSections build_packet_checksum_sections(
     return sections;
 }
 
-QString buildPayloadText(const PacketDetails& details, const std::string& payloadHexDump) {
-    if (!payloadHexDump.empty()) {
-        return QString::fromStdString(payloadHexDump);
-    }
-
-    if (details.has_tcp || details.has_udp) {
-        return QStringLiteral("No transport payload");
-    }
-
-    return QStringLiteral("Transport payload not available for this packet");
+QString format_byte_count_text(const qulonglong count) {
+    return QStringLiteral("%1 %2")
+        .arg(count)
+        .arg(count == 1U ? QStringLiteral("byte") : QStringLiteral("bytes"));
 }
 
-QString packet_payload_tab_title(const PacketDetails& details) {
-    return QString::fromStdString(session_detail::packet_payload_tab_title(details));
+QString packet_byte_view_state_text(const QString& state) {
+    if (state == QStringLiteral("complete")) {
+        return QStringLiteral("Complete");
+    }
+    if (state == QStringLiteral("partial")) {
+        return QStringLiteral("Partial");
+    }
+    if (state == QStringLiteral("truncated")) {
+        return QStringLiteral("Truncated");
+    }
+    return QStringLiteral("Unavailable");
+}
+
+QString packet_byte_view_contributing_unit_text(const QString& unit_kind, const qulonglong count) {
+    if (unit_kind == QStringLiteral("tcp_segment")) {
+        return count == 1ULL ? QStringLiteral("TCP segment") : QStringLiteral("TCP segments");
+    }
+    if (unit_kind == QStringLiteral("quic_crypto_frame")) {
+        return count == 1ULL ? QStringLiteral("CRYPTO frame") : QStringLiteral("CRYPTO frames");
+    }
+    return count == 1ULL ? QStringLiteral("unit") : QStringLiteral("units");
+}
+
+QString packet_byte_view_status_text(
+    const QString& state,
+    const QString& assembly_kind,
+    const QVariant& contributing_unit_count,
+    const QVariant& contributing_unit_kind,
+    const qulonglong available_length,
+    const QVariant& declared_length
+) {
+    QString status = packet_byte_view_state_text(state);
+    if (assembly_kind == QStringLiteral("reassembled")) {
+        status += QStringLiteral(" • Reassembled");
+        if (contributing_unit_count.isValid() && contributing_unit_kind.isValid()) {
+            const auto count = contributing_unit_count.toULongLong();
+            status += QStringLiteral(" from %1 %2")
+                .arg(count)
+                .arg(packet_byte_view_contributing_unit_text(contributing_unit_kind.toString(), count));
+        }
+    }
+    status += QStringLiteral(" • Available: ") + format_byte_count_text(available_length);
+    if (declared_length.isValid()) {
+        status += QStringLiteral(" • Declared: ") + format_byte_count_text(declared_length.toULongLong());
+    }
+    return status;
+}
+
+QVariant optional_length_variant(const std::optional<std::uint32_t>& value) {
+    return value.has_value()
+        ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*value))
+        : QVariant {};
+}
+
+QVariant optional_length_variant(const std::optional<std::uint64_t>& value) {
+    return value.has_value()
+        ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*value))
+        : QVariant {};
+}
+
+QVariantList packet_byte_view_descriptors_to_variant_list(
+    const std::vector<session_detail::SelectedPacketByteViewPresentationDescriptor>& descriptors
+) {
+    QVariantList items {};
+    items.reserve(static_cast<qsizetype>(descriptors.size()));
+    for (const auto& descriptor : descriptors) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("stableId"), QString::fromStdString(descriptor.stable_id));
+        item.insert(QStringLiteral("label"), QString::fromStdString(descriptor.label));
+        item.insert(QStringLiteral("depth"), static_cast<int>(descriptor.depth));
+        item.insert(QStringLiteral("ownerKind"), QString::fromStdString(descriptor.owner_kind));
+        item.insert(QStringLiteral("role"), QString::fromStdString(descriptor.role));
+        item.insert(QStringLiteral("assemblyKind"), QString::fromStdString(descriptor.assembly_kind));
+        item.insert(QStringLiteral("availableLength"), QVariant::fromValue<qulonglong>(descriptor.available_length));
+        item.insert(QStringLiteral("declaredLength"), optional_length_variant(descriptor.declared_length));
+        item.insert(QStringLiteral("state"), QString::fromStdString(descriptor.state));
+        item.insert(QStringLiteral("supportsPayloadOnly"), descriptor.supports_payload_only);
+        item.insert(QStringLiteral("payloadAvailableLength"), optional_length_variant(descriptor.payload_available_length));
+        item.insert(QStringLiteral("payloadDeclaredLength"), optional_length_variant(descriptor.payload_declared_length));
+        if (descriptor.payload_state.has_value()) {
+            item.insert(QStringLiteral("payloadState"), QString::fromStdString(*descriptor.payload_state));
+        }
+        item.insert(QStringLiteral("contributingUnitCount"), optional_length_variant(descriptor.contributing_unit_count));
+        if (descriptor.contributing_unit_kind.has_value()) {
+            item.insert(QStringLiteral("contributingUnitKind"), QString::fromStdString(*descriptor.contributing_unit_kind));
+        }
+        item.insert(QStringLiteral("statusText"), packet_byte_view_status_text(
+            QString::fromStdString(descriptor.state),
+            QString::fromStdString(descriptor.assembly_kind),
+            optional_length_variant(descriptor.contributing_unit_count),
+            descriptor.contributing_unit_kind.has_value()
+                ? QVariant(QString::fromStdString(*descriptor.contributing_unit_kind))
+                : QVariant {},
+            descriptor.available_length,
+            optional_length_variant(descriptor.declared_length)
+        ));
+        if (descriptor.parent_stable_id.has_value()) {
+            item.insert(QStringLiteral("parentStableId"), QString::fromStdString(*descriptor.parent_stable_id));
+        }
+        if (descriptor.quic_crypto_stream_offset.has_value()) {
+            item.insert(
+                QStringLiteral("quicCryptoStreamOffset"),
+                QVariant::fromValue<qulonglong>(*descriptor.quic_crypto_stream_offset)
+            );
+        }
+        items.push_back(item);
+    }
+    return items;
+}
+
+std::optional<session_detail::SelectedPacketByteViewId> resolve_selected_packet_byte_view_id(
+    const std::vector<session_detail::SelectedPacketByteViewPresentationDescriptor>& descriptors,
+    const QString& preferred_stable_id
+) {
+    auto find_by_stable_id = [&](const QString& stable_id) -> std::optional<session_detail::SelectedPacketByteViewId> {
+        if (stable_id.isEmpty()) {
+            return std::nullopt;
+        }
+        const auto stable_id_std = stable_id.toStdString();
+        const auto it = std::find_if(
+            descriptors.begin(),
+            descriptors.end(),
+            [&](const session_detail::SelectedPacketByteViewPresentationDescriptor& descriptor) {
+                return descriptor.stable_id == stable_id_std;
+            }
+        );
+        if (it == descriptors.end()) {
+            return std::nullopt;
+        }
+        return session_detail::parse_selected_packet_byte_view_stable_id(it->stable_id);
+    };
+
+    if (const auto preferred = find_by_stable_id(preferred_stable_id); preferred.has_value()) {
+        return preferred;
+    }
+
+    const auto frame_it = std::find_if(
+        descriptors.begin(),
+        descriptors.end(),
+        [](const session_detail::SelectedPacketByteViewPresentationDescriptor& descriptor) {
+            return descriptor.stable_id == "frame:0:0";
+        }
+    );
+    if (frame_it != descriptors.end()) {
+        return session_detail::parse_selected_packet_byte_view_stable_id(frame_it->stable_id);
+    }
+
+    if (!descriptors.empty()) {
+        return session_detail::parse_selected_packet_byte_view_stable_id(descriptors.front().stable_id);
+    }
+
+    return std::nullopt;
 }
 
 QString format_stream_source_packets(
@@ -1112,67 +1257,12 @@ QString format_stream_source_packets(
         : QStringLiteral("packets %1").arg(values.join(QStringLiteral(",")));
 }
 
-bool stream_item_uses_packet_fallback(const StreamItemRow& item) {
-    return item.payload_hex_text.empty() && item.protocol_text.empty() && item.packet_indices.size() == 1U;
-}
-
 QString stream_item_details_source(const StreamItemRow& item) {
-    return stream_item_uses_packet_fallback(item)
-        ? QStringLiteral("Packet fallback")
-        : QStringLiteral("Stream item");
+    return QString::fromStdString(session_detail::stream_item_details_source_text(item));
 }
 
 QString stream_item_header_primary_text(const StreamItemRow& item) {
     return QString::fromStdString(item.label);
-}
-
-QString stream_item_frames_hint_text(const StreamItemRow& item) {
-    const auto protocolText = QString::fromStdString(item.protocol_text);
-    if (protocolText.isEmpty()) {
-        return {};
-    }
-
-    QStringList hints {};
-
-    const auto extractLineValue = [&](const QString& marker) -> QString {
-        const auto markerIndex = protocolText.indexOf(marker);
-        if (markerIndex < 0) {
-            return {};
-        }
-
-        const auto lineStart = markerIndex + marker.size();
-        auto lineEnd = protocolText.indexOf(QLatin1Char('\n'), lineStart);
-        if (lineEnd < 0) {
-            lineEnd = protocolText.size();
-        }
-        return protocolText.mid(lineStart, lineEnd - lineStart).trimmed();
-    };
-
-    const auto appendNormalizedValues = [&](const QString& text) {
-        for (const auto& rawPart : text.split(QStringLiteral(","), Qt::SkipEmptyParts)) {
-            auto part = rawPart.trimmed();
-            if (part.compare(QStringLiteral("Protected Payload"), Qt::CaseInsensitive) == 0) {
-                part = QStringLiteral("Protected payload");
-            }
-            if (part.compare(QStringLiteral("Packet Type: Initial"), Qt::CaseInsensitive) == 0 ||
-                part.compare(QStringLiteral("Initial"), Qt::CaseInsensitive) == 0) {
-                continue;
-            }
-            if (!part.isEmpty() && !hints.contains(part)) {
-                hints.push_back(part);
-            }
-        }
-    };
-
-    appendNormalizedValues(extractLineValue(QStringLiteral("Frame Presence:")));
-    appendNormalizedValues(extractLineValue(QStringLiteral("Packet Type:")));
-    appendNormalizedValues(extractLineValue(QStringLiteral("Additional Packet Types:")));
-
-    if (hints.isEmpty()) {
-        return {};
-    }
-
-    return QStringLiteral("Frames: %1").arg(hints.join(QStringLiteral(", ")));
 }
 
 QString stream_item_header_secondary_text(
@@ -1188,11 +1278,13 @@ QString stream_item_header_badge_text(const StreamItemRow& item) {
     if (item.has_constricted_contribution) {
         return QStringLiteral("Constricted");
     }
-    const auto label = QString::fromStdString(item.label);
-    if (label.contains(QStringLiteral("partial"), Qt::CaseInsensitive)) {
+    if (item.tls_semantic_kind == TlsStreamItemSemanticKind::partial_record ||
+        item.tls_semantic_kind == TlsStreamItemSemanticKind::partial_payload ||
+        (item.http_summary.has_value() && item.http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload) ||
+        item.materialization_stability == StreamMaterializationStability::window_incomplete) {
         return QStringLiteral("Partial");
     }
-    if (stream_item_uses_packet_fallback(item)) {
+    if (session_detail::stream_item_uses_packet_fallback(item)) {
         return QStringLiteral("Packet fallback");
     }
     if (item.packet_count > 1U) {
@@ -1226,47 +1318,12 @@ QStringList stream_item_constricted_summary_lines(const StreamItemRow& item) {
     return lines;
 }
 
-bool is_quic_stream_item_label(const QString& label) {
-    return label.startsWith(QStringLiteral("QUIC ")) ||
-           label == QStringLiteral("QUIC Initial: ACK") ||
-           label == QStringLiteral("QUIC Initial: CRYPTO") ||
-           label == QStringLiteral("ACK") ||
-           label == QStringLiteral("CRYPTO") ||
-           label == QStringLiteral("0-RTT") ||
-           label == QStringLiteral("Handshake") ||
-           label == QStringLiteral("Protected payload");
+QString stream_item_data_tab_title() {
+    return QStringLiteral("Item Data");
 }
 
-QString stream_item_payload_tab_title(const StreamItemRow& item) {
-    const auto label = QString::fromStdString(item.label);
-    const auto protocolText = QString::fromStdString(item.protocol_text);
-
-    if (protocolText.startsWith(QStringLiteral("Protocol: ARP"))) {
-        return QStringLiteral("ARP Payload");
-    }
-
-    if (is_quic_stream_item_label(label) || protocolText.startsWith(QStringLiteral("QUIC"))) {
-        return QStringLiteral("UDP Payload");
-    }
-
-    if (label.startsWith(QStringLiteral("TLS ")) ||
-        label.startsWith(QStringLiteral("HTTP ")) ||
-        label == QStringLiteral("HTTP Request") ||
-        label == QStringLiteral("HTTP Response") ||
-        protocolText.startsWith(QStringLiteral("TLS")) ||
-        protocolText.startsWith(QStringLiteral("HTTP"))) {
-        return QStringLiteral("Item Payload");
-    }
-
-    return QStringLiteral("Payload");
-}
-
-QString stream_payload_unavailable_text() {
-    return QStringLiteral("Payload is not available for this stream item.");
-}
-
-QString stream_protocol_unavailable_text() {
-    return QStringLiteral("Protocol details are not available for this stream item.");
+QString stream_item_data_materialization_failure_text() {
+    return QStringLiteral("Item data unavailable • Failed to materialize the selected item bytes.");
 }
 
 QString source_capture_unavailable_status_text() {
@@ -1277,19 +1334,11 @@ QString source_capture_unavailable_packet_summary_text() {
     return QStringLiteral(
         "Original source capture unavailable.\n\n"
         "Byte-backed packet details are unavailable for this session.\n\n"
-        "Reattach the original capture file to inspect raw bytes, payload, and protocol details.");
+        "Reattach the original capture file to inspect packet byte views and protocol details.");
 }
 
 QString source_capture_unavailable_packet_raw_text() {
     return QStringLiteral("Raw packet bytes are unavailable because the original source capture cannot be read.");
-}
-
-QString source_capture_unavailable_packet_payload_text() {
-    return QStringLiteral("Packet payload is unavailable because the original source capture cannot be read.");
-}
-
-QString source_capture_unavailable_packet_protocol_text() {
-    return QStringLiteral("Byte-backed protocol details are unavailable because the original source capture cannot be read.");
 }
 
 QString source_capture_unavailable_stream_summary_text() {
@@ -1298,19 +1347,6 @@ QString source_capture_unavailable_stream_summary_text() {
         "Stream reconstruction requires source packet bytes.\n\n"
         "Reattach the original capture file to inspect stream items and stream-backed details.");
 }
-
-QString source_capture_unavailable_stream_payload_text() {
-    return QStringLiteral("Stream payload is unavailable because the original source capture cannot be read.");
-}
-
-QString source_capture_unavailable_stream_protocol_text() {
-    return QStringLiteral("Stream protocol details are unavailable because the original source capture cannot be read.");
-}
-
-struct ProtocolField {
-    QString label {};
-    QString value {};
-};
 
 QVariantMap packet_summary_field_to_variant_map(const session_detail::PacketSummaryField& field) {
     QVariantMap map {};
@@ -1350,341 +1386,6 @@ QVariantList packet_summary_layers_to_variant_list(const std::vector<session_det
         result.push_back(packet_summary_layer_to_variant_map(layer));
     }
     return result;
-}
-
-std::vector<ProtocolField> parse_protocol_fields(const QStringList& lines, const qsizetype start_index = 0) {
-    std::vector<ProtocolField> fields {};
-    for (auto index = std::max<qsizetype>(0, start_index); index < lines.size(); ++index) {
-        const auto trimmed = lines.at(index).trimmed();
-        if (trimmed.isEmpty()) {
-            continue;
-        }
-
-        const auto separatorIndex = trimmed.indexOf(QStringLiteral(":"));
-        if (separatorIndex < 0) {
-            fields.push_back(ProtocolField {
-                .label = trimmed,
-                .value = {},
-            });
-            continue;
-        }
-
-        fields.push_back(ProtocolField {
-            .label = trimmed.left(separatorIndex).trimmed(),
-            .value = trimmed.mid(separatorIndex + 1).trimmed(),
-        });
-    }
-
-    return fields;
-}
-
-std::vector<ProtocolField> take_protocol_fields(
-    std::vector<ProtocolField>& fields,
-    const QStringList& ordered_labels
-) {
-    std::vector<ProtocolField> taken {};
-    for (const auto& label : ordered_labels) {
-        const auto it = std::find_if(fields.begin(), fields.end(), [&](const ProtocolField& field) {
-            return field.label == label;
-        });
-        if (it == fields.end()) {
-            continue;
-        }
-
-        taken.push_back(*it);
-        fields.erase(it);
-    }
-
-    return taken;
-}
-
-QStringList wrap_protocol_value(const QString& value, const int max_line_length = 76) {
-    if (!value.contains(QStringLiteral(", "))) {
-        return {value};
-    }
-
-    const auto parts = value.split(QStringLiteral(", "), Qt::SkipEmptyParts);
-    QStringList lines {};
-    QString currentLine {};
-    for (const auto& part : parts) {
-        if (currentLine.isEmpty()) {
-            currentLine = part;
-            continue;
-        }
-
-        if (currentLine.size() + 2 + part.size() <= max_line_length) {
-            currentLine += QStringLiteral(", ") + part;
-            continue;
-        }
-
-        lines.push_back(currentLine);
-        currentLine = part;
-    }
-
-    if (!currentLine.isEmpty()) {
-        lines.push_back(currentLine);
-    }
-
-    return lines;
-}
-
-void append_protocol_field_lines(
-    QStringList& lines,
-    const ProtocolField& field,
-    const QStringList& multiline_labels = {}
-) {
-    if (field.label.isEmpty()) {
-        return;
-    }
-
-    const bool multiline = multiline_labels.contains(field.label) ||
-        (field.value.size() > 72 && field.value.contains(QStringLiteral(", ")));
-
-    if (field.value.isEmpty()) {
-        lines.push_back(QStringLiteral("  %1").arg(field.label));
-        return;
-    }
-
-    if (!multiline) {
-        lines.push_back(QStringLiteral("  %1: %2").arg(field.label, field.value));
-        return;
-    }
-
-    lines.push_back(QStringLiteral("  %1:").arg(field.label));
-    for (const auto& valueLine : wrap_protocol_value(field.value)) {
-        lines.push_back(QStringLiteral("    %1").arg(valueLine));
-    }
-}
-
-void append_protocol_section(
-    QStringList& lines,
-    const QString& title,
-    const std::vector<ProtocolField>& fields,
-    const QStringList& multiline_labels = {}
-) {
-    if (fields.empty()) {
-        return;
-    }
-
-    if (!lines.isEmpty()) {
-        lines.push_back({});
-    }
-
-    lines.push_back(title);
-    for (const auto& field : fields) {
-        append_protocol_field_lines(lines, field, multiline_labels);
-    }
-}
-
-QString format_tls_protocol_text_from_fields(
-    std::vector<ProtocolField> fields,
-    const QString& title
-) {
-    const auto handshakeTypeIt = std::find_if(fields.begin(), fields.end(), [](const ProtocolField& field) {
-        return field.label == QStringLiteral("TLS Handshake Type");
-    });
-    const auto handshakeType = handshakeTypeIt != fields.end() ? handshakeTypeIt->value : QString {};
-
-    QStringList coreOrder {
-        QStringLiteral("TLS Handshake Type"),
-    };
-    QStringList negotiationOrder {};
-
-    if (handshakeType == QStringLiteral("ClientHello")) {
-        coreOrder << QStringLiteral("SNI")
-                  << QStringLiteral("ALPN")
-                  << QStringLiteral("Supported Versions");
-        negotiationOrder << QStringLiteral("Cipher Suites")
-                         << QStringLiteral("Extensions");
-    } else if (handshakeType == QStringLiteral("ServerHello")) {
-        coreOrder << QStringLiteral("Selected TLS Version")
-                  << QStringLiteral("Selected Cipher Suite");
-        negotiationOrder << QStringLiteral("Extensions");
-    } else {
-        coreOrder << QStringLiteral("Selected TLS Version")
-                  << QStringLiteral("Selected Cipher Suite")
-                  << QStringLiteral("SNI")
-                  << QStringLiteral("ALPN")
-                  << QStringLiteral("Supported Versions");
-        negotiationOrder << QStringLiteral("Cipher Suites")
-                         << QStringLiteral("Extensions");
-    }
-
-    auto coreFields = take_protocol_fields(fields, coreOrder);
-    auto negotiationFields = take_protocol_fields(fields, negotiationOrder);
-
-    QStringList lines {};
-    append_protocol_section(lines, title, coreFields);
-    append_protocol_section(
-        lines,
-        QStringLiteral("Negotiation"),
-        negotiationFields,
-        {QStringLiteral("Cipher Suites"), QStringLiteral("Extensions"), QStringLiteral("Supported Versions"), QStringLiteral("ALPN")}
-    );
-    append_protocol_section(lines, QStringLiteral("Structure"), fields);
-    if (!lines.isEmpty() && lines.front() != title) {
-        lines.push_front(title);
-    }
-    return lines.join(QLatin1Char('\n'));
-}
-
-QString format_http_protocol_text(const QString& protocol_text) {
-    const auto lines = protocol_text.split(QLatin1Char('\n'));
-    if (lines.isEmpty() || lines.front().trimmed() != QStringLiteral("HTTP")) {
-        return protocol_text;
-    }
-
-    auto fields = parse_protocol_fields(lines, 1);
-    if (fields.empty()) {
-        return protocol_text;
-    }
-
-    auto mainFields = take_protocol_fields(fields, {
-        QStringLiteral("Message Type"),
-        QStringLiteral("Method"),
-        QStringLiteral("Path"),
-        QStringLiteral("Status Code"),
-        QStringLiteral("Reason"),
-        QStringLiteral("Version")
-    });
-    auto headerFields = take_protocol_fields(fields, {
-        QStringLiteral("Host"),
-        QStringLiteral("Content-Type"),
-        QStringLiteral("Content-Length")
-    });
-
-    QStringList formatted {};
-    append_protocol_section(formatted, QStringLiteral("HTTP"), mainFields);
-    append_protocol_section(formatted, QStringLiteral("Headers"), headerFields);
-    append_protocol_section(formatted, QStringLiteral("Details"), fields);
-    if (!formatted.isEmpty() && formatted.front() != QStringLiteral("HTTP")) {
-        formatted.push_front(QStringLiteral("HTTP"));
-    }
-    return formatted.join(QLatin1Char('\n'));
-}
-
-QString format_tls_protocol_text(const QString& protocol_text) {
-    const auto lines = protocol_text.split(QLatin1Char('\n'));
-    if (lines.isEmpty() || lines.front().trimmed() != QStringLiteral("TLS")) {
-        return protocol_text;
-    }
-
-    auto fields = parse_protocol_fields(lines, 1);
-    if (fields.empty()) {
-        return protocol_text;
-    }
-
-    return format_tls_protocol_text_from_fields(std::move(fields), QStringLiteral("TLS"));
-}
-
-QString format_quic_protocol_text(const QString& protocol_text) {
-    if (!protocol_text.startsWith(QStringLiteral("QUIC"))) {
-        return protocol_text;
-    }
-
-    qsizetype tlsBlockIndex = protocol_text.indexOf(QStringLiteral("\n  SNI: "));
-    const auto handshakeIndex = protocol_text.indexOf(QStringLiteral("\n  TLS Handshake Type: "));
-    if (tlsBlockIndex < 0 || (handshakeIndex >= 0 && handshakeIndex < tlsBlockIndex)) {
-        tlsBlockIndex = handshakeIndex;
-    }
-
-    const auto quicBlock = tlsBlockIndex < 0 ? protocol_text : protocol_text.left(tlsBlockIndex);
-    const auto quicLines = quicBlock.split(QLatin1Char('\n'));
-    auto quicFields = parse_protocol_fields(quicLines, 1);
-
-    QStringList formatted {};
-    append_protocol_section(formatted, QStringLiteral("QUIC"), take_protocol_fields(quicFields, {
-        QStringLiteral("Packet Type"),
-        QStringLiteral("Additional Packet Types"),
-        QStringLiteral("Header Form"),
-        QStringLiteral("Version"),
-        QStringLiteral("Supported Versions"),
-        QStringLiteral("Frame Presence")
-    }), {QStringLiteral("Supported Versions")});
-    append_protocol_section(formatted, QStringLiteral("Connection IDs"), take_protocol_fields(quicFields, {
-        QStringLiteral("Destination Connection ID Length"),
-        QStringLiteral("Destination Connection ID"),
-        QStringLiteral("Source Connection ID Length"),
-        QStringLiteral("Source Connection ID")
-    }));
-    append_protocol_section(formatted, QStringLiteral("Details"), quicFields);
-
-    if (tlsBlockIndex >= 0) {
-        auto tlsFields = parse_protocol_fields(protocol_text.mid(tlsBlockIndex + 1).split(QLatin1Char('\n')));
-        if (!tlsFields.empty()) {
-            const auto tlsText = format_tls_protocol_text_from_fields(std::move(tlsFields), QStringLiteral("TLS over CRYPTO"));
-            if (!tlsText.isEmpty()) {
-                if (!formatted.isEmpty()) {
-                    formatted.push_back({});
-                }
-                formatted << tlsText.split(QLatin1Char('\n'));
-            }
-        }
-    }
-
-    if (!formatted.isEmpty() && formatted.front() != QStringLiteral("QUIC")) {
-        formatted.push_front(QStringLiteral("QUIC"));
-    }
-    return formatted.isEmpty() ? protocol_text : formatted.join(QLatin1Char('\n'));
-}
-
-QString normalize_stream_protocol_text(const QString& protocol_text) {
-    if (protocol_text.isEmpty()) {
-        return stream_protocol_unavailable_text();
-    }
-
-    QString text = protocol_text;
-    text.replace(QRegularExpression(QStringLiteral("Frame Presence:\\s*")), QStringLiteral("Frame Presence: "));
-    text = format_quic_protocol_text(text);
-    text = format_tls_protocol_text(text);
-    text = format_http_protocol_text(text);
-    return text;
-}
-
-bool is_quic_protocol_text(const QString& protocol_text) {
-    return protocol_text.contains(QStringLiteral("QUIC"));
-}
-
-QString selected_flow_quic_protocol_text_for_packet(
-    CaptureSession& session,
-    const int selected_flow_index,
-    const std::uint64_t packet_index,
-    const QString& protocol_text
-) {
-    if (selected_flow_index < 0 || !is_quic_protocol_text(protocol_text)) {
-        return protocol_text;
-    }
-
-    const auto context_text = session.derive_quic_protocol_text_for_packet(
-        static_cast<std::size_t>(selected_flow_index),
-        packet_index
-    );
-    if (!context_text.has_value() || context_text->empty()) {
-        return protocol_text;
-    }
-
-    return QString::fromStdString(*context_text);
-}
-
-QString selected_flow_quic_protocol_text_for_stream_item(
-    CaptureSession& session,
-    const int selected_flow_index,
-    const StreamItemRow& item,
-    const QString& protocol_text
-) {
-    if (selected_flow_index < 0 || !is_quic_protocol_text(protocol_text)) {
-        return protocol_text;
-    }
-
-    const auto context_text = session.derive_quic_protocol_text_for_packet_context(
-        static_cast<std::size_t>(selected_flow_index),
-        item.packet_indices
-    );
-    if (!context_text.has_value() || context_text->empty()) {
-        return protocol_text;
-    }
-
-    return QString::fromStdString(*context_text);
 }
 
 QString format_duration_us(const std::uint64_t duration_us) {
@@ -1874,9 +1575,6 @@ QString buildStreamItemSummary(
         QStringLiteral("Details source: %1").arg(stream_item_details_source(item)),
     };
 
-    if (const auto framesHint = stream_item_frames_hint_text(item); !framesHint.isEmpty()) {
-        lines.insert(2, framesHint);
-    }
     if (const auto constrictedLines = stream_item_constricted_summary_lines(item); !constrictedLines.isEmpty()) {
         lines.push_back(QString {});
         lines.append(constrictedLines);
@@ -4529,6 +4227,7 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
 
     selected_packet_index_ = packetIndex;
     if (selected_packet_index_ == kInvalidPacketSelection) {
+        selected_packet_byte_view_stable_id_.clear();
         if (details_selection_context_ == DetailsSelectionContext::packet) {
             details_selection_context_ = DetailsSelectionContext::none;
             packet_details_model_.clear();
@@ -4541,6 +4240,118 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     reloadSelectedPacketDetails();
     emit selectedPacketIndexChanged();
 
+}
+
+void MainController::selectPacketByteView(const QString& stableId) {
+    if (stableId.isEmpty()) {
+        return;
+    }
+    if (details_selection_context_ != DetailsSelectionContext::packet || selected_packet_index_ == kInvalidPacketSelection) {
+        return;
+    }
+    if (selected_packet_byte_view_stable_id_ == stableId) {
+        return;
+    }
+
+    selected_packet_byte_view_stable_id_ = stableId;
+    refreshSelectedPacketByteView();
+}
+
+void MainController::refreshSelectedPacketByteView() {
+    if (details_selection_context_ != DetailsSelectionContext::packet || selected_packet_index_ == kInvalidPacketSelection) {
+        return;
+    }
+
+    const auto packet = session_.find_packet(static_cast<std::uint64_t>(selected_packet_index_));
+    if (!packet.has_value() || !ensureSourceCaptureAvailable()) {
+        return;
+    }
+
+    const auto packet_bytes = session_.read_packet_data(*packet);
+    const auto details = session_.read_packet_details(*packet);
+    if (packet_bytes.empty() || !details.has_value()) {
+        packet_details_model_.clearPacketBytePresentation();
+        selected_packet_byte_view_stable_id_.clear();
+        return;
+    }
+
+    const auto payload_lengths = resolve_transport_payload_lengths(
+        *details,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        *packet
+    );
+    const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+        const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+        if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+            return std::nullopt;
+        }
+        return it->second - 1U;
+    }();
+    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        session_,
+        *details,
+        *packet,
+        selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
+        flow_packet_index,
+        loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
+        payload_lengths.real_payload_length,
+        payload_lengths.original_payload_length
+    );
+    auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+        *details,
+        *packet,
+        session_detail::SelectedPacketByteBuildOptions {
+            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            .flow_packet_index = packet_summary_preparation.flow_packet_index,
+            .packet_data = packet_summary_preparation.packet_data,
+            .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
+            .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
+            .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
+        }
+    );
+
+    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
+    const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
+    if (!selected_view_id.has_value()) {
+        packet_details_model_.clearPacketBytePresentation();
+        selected_packet_byte_view_stable_id_.clear();
+        return;
+    }
+
+    HexDumpService hex_dump_service {};
+    const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
+        packet_byte_presentation,
+        *selected_view_id,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        hex_dump_service
+    );
+    if (!packet_byte_content.has_value()) {
+        packet_details_model_.clearPacketBytePresentation();
+        selected_packet_byte_view_stable_id_.clear();
+        return;
+    }
+
+    selected_packet_byte_view_stable_id_ = QString::fromStdString(packet_byte_content->stable_id);
+    packet_details_model_.setPacketBytePresentation(
+        packet_byte_view_descriptors_to_variant_list(byte_descriptors),
+        QString::fromStdString(packet_byte_content->stable_id),
+        QString::fromStdString(packet_byte_content->label),
+        true,
+        QString::fromStdString(packet_byte_content->state),
+        packet_byte_content->available_length,
+        optional_length_variant(packet_byte_content->declared_length),
+        packet_byte_view_status_text(
+            QString::fromStdString(packet_byte_content->state),
+            QString::fromStdString(packet_byte_content->assembly_kind),
+            optional_length_variant(packet_byte_content->contributing_unit_count),
+            packet_byte_content->contributing_unit_kind.has_value()
+                ? QVariant(QString::fromStdString(*packet_byte_content->contributing_unit_kind))
+                : QVariant {},
+            packet_byte_content->available_length,
+            optional_length_variant(packet_byte_content->declared_length)
+        ),
+        QString::fromStdString(packet_byte_content->formatted_text)
+    );
 }
 
 void MainController::selectUnrecognizedPackets() {
@@ -4697,10 +4508,22 @@ void MainController::showSourceUnavailablePacketDetailsPlaceholder() {
     packet_details_model_.clearStreamItemPresentation();
     packet_details_model_.setPacketDetailsText(source_capture_unavailable_packet_summary_text());
     packet_details_model_.setSummaryLayers({});
-    packet_details_model_.setHexText(source_capture_unavailable_packet_raw_text());
+    packet_details_model_.setPacketBytePresentation(
+        {},
+        {},
+        {},
+        false,
+        {},
+        0U,
+        {},
+        QStringLiteral("Byte-backed packet details unavailable."),
+        source_capture_unavailable_packet_raw_text()
+    );
+    packet_details_model_.setHexText({});
+    packet_details_model_.clearStreamItemDataPresentation();
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
-    packet_details_model_.setPayloadText(source_capture_unavailable_packet_payload_text());
-    packet_details_model_.setProtocolText(source_capture_unavailable_packet_protocol_text());
+    packet_details_model_.setPayloadText({});
+    selected_packet_byte_view_stable_id_.clear();
 }
 
 void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
@@ -4708,10 +4531,24 @@ void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
     packet_details_model_.clearStreamItemPresentation();
     packet_details_model_.setPacketDetailsText(source_capture_unavailable_stream_summary_text());
     packet_details_model_.setSummaryLayers({});
+    packet_details_model_.clearPacketBytePresentation();
     packet_details_model_.setHexText({});
-    packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
-    packet_details_model_.setPayloadText(source_capture_unavailable_stream_payload_text());
-    packet_details_model_.setProtocolText(source_capture_unavailable_stream_protocol_text());
+    packet_details_model_.setPayloadTabTitle(stream_item_data_tab_title());
+    packet_details_model_.setPayloadText({});
+    packet_details_model_.setStreamItemDataPresentation(
+        false,
+        {},
+        QStringLiteral("unavailable"),
+        QStringLiteral("unavailable"),
+        {},
+        0U,
+        {},
+        {},
+        {},
+        {},
+        QStringLiteral("Item data unavailable • The original source capture cannot be read."),
+        {}
+    );
 }
 
 void MainController::prepareSelectedFlowTcpContributionState(const std::size_t maxPacketsToScan) {
@@ -5690,14 +5527,6 @@ void MainController::reloadSelectedPacketDetails() {
     }
 
     const auto details = session_.read_packet_details(*packet);
-    const auto hexDump = session_.read_packet_hex_dump(*packet);
-    const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-    const auto protocolText = selected_flow_quic_protocol_text_for_packet(
-        session_,
-        selected_flow_index_,
-        packet->packet_index,
-        QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
-    );
     const auto packetBytes = session_.read_packet_data(*packet);
     PacketChecksumSections checksum_sections {};
     if (details.has_value() && validate_selected_packet_checksums_) {
@@ -5708,7 +5537,9 @@ void MainController::reloadSelectedPacketDetails() {
         );
     }
 
-    packet_details_model_.setHexText(QString::fromStdString(hexDump));
+    packet_details_model_.setHexText({});
+
+    std::optional<session_detail::SelectedPacketSummaryPreparation> packet_summary_preparation {};
 
     if (details.has_value()) {
         const auto payload_lengths = resolve_transport_payload_lengths(
@@ -5723,14 +5554,13 @@ void MainController::reloadSelectedPacketDetails() {
             }
             return it->second - 1U;
         }();
-        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+        packet_summary_preparation = session_detail::prepare_selected_packet_summary(
             session_,
             *details,
             *packet,
             selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
             flow_packet_index,
             loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
-            protocolText.toStdString(),
             payload_lengths.real_payload_length,
             payload_lengths.original_payload_length,
             [&]() {
@@ -5752,22 +5582,73 @@ void MainController::reloadSelectedPacketDetails() {
         );
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation.make_options())
+            session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation->make_options())
         ));
-        packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
-        packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
     } else {
         packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, checksum_sections));
         packet_details_model_.setSummaryLayers({});
-        packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
-        packet_details_model_.setPayloadText(
-            !payloadHexDump.empty()
-                ? QString::fromStdString(payloadHexDump)
-                : QStringLiteral("Transport payload not available for this packet")
-        );
     }
 
-    packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
+    if (details.has_value() && packet_summary_preparation.has_value()) {
+        auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            *packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+                .flow_packet_index = packet_summary_preparation->flow_packet_index,
+                .packet_data = packet_summary_preparation->packet_data,
+                .tls_initial_parser_context = packet_summary_preparation->tls_initial_parser_context,
+                .reconstructed_tls_records = std::move(packet_summary_preparation->reconstructed_tls_records),
+                .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
+            }
+        );
+        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
+        const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
+        if (selected_view_id.has_value()) {
+            HexDumpService hex_dump_service {};
+            if (const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
+                    packet_byte_presentation,
+                    *selected_view_id,
+                    std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+                    hex_dump_service);
+                packet_byte_content.has_value()) {
+                selected_packet_byte_view_stable_id_ = QString::fromStdString(packet_byte_content->stable_id);
+                packet_details_model_.setPacketBytePresentation(
+                    packet_byte_view_descriptors_to_variant_list(byte_descriptors),
+                    QString::fromStdString(packet_byte_content->stable_id),
+                    QString::fromStdString(packet_byte_content->label),
+                    true,
+                    QString::fromStdString(packet_byte_content->state),
+                    packet_byte_content->available_length,
+                    optional_length_variant(packet_byte_content->declared_length),
+                    packet_byte_view_status_text(
+                        QString::fromStdString(packet_byte_content->state),
+                        QString::fromStdString(packet_byte_content->assembly_kind),
+                        optional_length_variant(packet_byte_content->contributing_unit_count),
+                        packet_byte_content->contributing_unit_kind.has_value()
+                            ? QVariant(QString::fromStdString(*packet_byte_content->contributing_unit_kind))
+                            : QVariant {},
+                        packet_byte_content->available_length,
+                        optional_length_variant(packet_byte_content->declared_length)
+                    ),
+                    QString::fromStdString(packet_byte_content->formatted_text)
+                );
+            } else {
+                packet_details_model_.clearPacketBytePresentation();
+                selected_packet_byte_view_stable_id_.clear();
+            }
+        } else {
+            packet_details_model_.clearPacketBytePresentation();
+            selected_packet_byte_view_stable_id_.clear();
+        }
+    } else {
+        packet_details_model_.clearPacketBytePresentation();
+        selected_packet_byte_view_stable_id_.clear();
+    }
+
+    packet_details_model_.clearStreamItemDataPresentation();
+    packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
+    packet_details_model_.setPayloadText({});
 }
 
 void MainController::reloadSelectedStreamDetails() {
@@ -5798,57 +5679,63 @@ void MainController::reloadSelectedStreamDetails() {
     packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
         session_detail::build_stream_item_summary_layers(
             *itemIt,
-            format_stream_source_packets(*itemIt, current_flow_packet_numbers_).toStdString(),
-            stream_item_details_source(*itemIt).toStdString(),
-            stream_item_frames_hint_text(*itemIt).toStdString()
+            format_stream_source_packets(*itemIt, current_flow_packet_numbers_).toStdString()
         )
     ));
-    packet_details_model_.setPayloadTabTitle(stream_item_payload_tab_title(*itemIt));
-
-    if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {
-        packet_details_model_.setHexText({});
-        packet_details_model_.setPayloadText(
-            itemIt->payload_hex_text.empty()
-                ? stream_payload_unavailable_text()
-                : QString::fromStdString(itemIt->payload_hex_text)
-        );
-        const auto protocolText = itemIt->protocol_text.empty()
-            ? stream_protocol_unavailable_text()
-            : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
-        packet_details_model_.setProtocolText(
-            normalize_stream_protocol_text(
-                selected_flow_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
-            )
-        );
-        return;
-    }
-
-    if (itemIt->packet_indices.size() == 1U) {
-        const auto packet = session_.find_packet(itemIt->packet_indices.front());
-        if (packet.has_value()) {
-            const auto hexDump = session_.read_packet_hex_dump(*packet);
-            const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-            const auto protocolText = selected_flow_quic_protocol_text_for_packet(
-                session_,
-                selected_flow_index_,
-                packet->packet_index,
-                QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
-            );
-
-            packet_details_model_.setHexText(QString::fromStdString(hexDump));
-            if (!payloadHexDump.empty()) {
-                packet_details_model_.setPayloadText(QString::fromStdString(payloadHexDump));
-            } else {
-                packet_details_model_.setPayloadText(stream_payload_unavailable_text());
-            }
-            packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
-            return;
-        }
-    }
-
+    packet_details_model_.clearPacketBytePresentation();
     packet_details_model_.setHexText({});
-    packet_details_model_.setPayloadText(stream_payload_unavailable_text());
-    packet_details_model_.setProtocolText(stream_protocol_unavailable_text());
+    packet_details_model_.setPayloadTabTitle(stream_item_data_tab_title());
+    packet_details_model_.clearStreamItemDataPresentation();
+
+    const auto flow_index = static_cast<std::size_t>(selected_flow_index_);
+    const auto packet_window_count = stream_packet_window_count_;
+    const auto item_limit = loaded_stream_item_count_ > 0U
+        ? loaded_stream_item_count_
+        : current_stream_items_.size();
+    const auto presentation = session_.derive_selected_flow_stream_item_data(
+        flow_index,
+        packet_window_count,
+        item_limit,
+        itemIt->stream_item_index
+    );
+    const auto formatted_text = session_.format_selected_flow_stream_item_data_hex_dump(
+        flow_index,
+        packet_window_count,
+        item_limit,
+        itemIt->stream_item_index
+    );
+    const auto item_data_available = formatted_text.has_value();
+    const auto item_data_requires_materialization = presentation.source_kind != session_detail::StreamItemDataSourceKind::unavailable &&
+        presentation.state != session_detail::StreamItemDataState::synthetic;
+    const auto item_data_status_text = item_data_available || !item_data_requires_materialization
+        ? QString::fromStdString(session_detail::format_selected_stream_item_data_status_text(presentation))
+        : stream_item_data_materialization_failure_text();
+    packet_details_model_.setStreamItemDataPresentation(
+        item_data_available,
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.semantic_kind
+                : session_detail::StreamItemDataSemanticKind::other)),
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.source_kind
+                : session_detail::StreamItemDataSourceKind::unavailable)),
+        QString::fromStdString(session_detail::to_string(
+            item_data_available || !item_data_requires_materialization
+                ? presentation.state
+                : session_detail::StreamItemDataState::unavailable)),
+        QString::fromStdString(session_detail::to_string(presentation.assembly_kind)),
+        item_data_available ? presentation.available_length : 0U,
+        optional_length_variant(presentation.declared_length),
+        optional_length_variant(presentation.contributing_unit_count),
+        presentation.contributing_unit_kind.has_value()
+            ? QString::fromStdString(session_detail::to_string(*presentation.contributing_unit_kind))
+            : QString {},
+        optional_length_variant(presentation.quic_crypto_stream_offset),
+        item_data_status_text,
+        formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {}
+    );
+    packet_details_model_.setPayloadText(formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {});
 }
 
 void MainController::reloadActiveDetails() {

@@ -29,8 +29,7 @@ struct TlsStreamPresentationItem {
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
     std::vector<std::uint8_t> summary_payload_bytes {};
-    std::string payload_hex_text {};
-    std::string protocol_text {};
+    std::vector<TlsRecordModel> summary_records {};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     TlsInspectionParserContext initial_parser_context {};
     TlsInspectionParserContext final_parser_context {};
@@ -63,7 +62,6 @@ struct TlsStreamScannerPendingRecordState {
     std::string label {};
     std::size_t total_byte_count {0U};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
-    std::string protocol_text {};
     TlsInspectionParserContext initial_parser_context {};
     std::uint64_t first_packet_index {0};
     std::uint64_t first_flow_packet_index {0};
@@ -129,7 +127,6 @@ struct TlsDirectionalStreamPresentation {
     bool explicit_gap_item_emitted {false};
     std::uint64_t first_gap_packet_index {0};
     std::string fallback_label {};
-    std::string fallback_protocol_text {};
     std::set<std::uint64_t> covered_packet_indices {};
     std::vector<TlsStreamPresentationItem> items {};
 };
@@ -227,8 +224,6 @@ std::optional<std::string> derive_tls_service_hint_for_loaded_flow_prefix(
     std::size_t flow_index,
     std::size_t loaded_packet_window_count
 );
-
-std::string tls_stream_label_from_protocol_text(std::string_view protocol_text);
 
 }  // namespace session_detail
 }  // namespace pfl

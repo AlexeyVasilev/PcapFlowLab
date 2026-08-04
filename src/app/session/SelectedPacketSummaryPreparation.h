@@ -20,7 +20,6 @@ struct SelectedPacketSummaryPreparation {
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::vector<std::uint8_t> transport_payload {};
-    std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
     std::vector<std::uint8_t> packet_data_preview {};
@@ -43,7 +42,6 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     std::optional<std::size_t> flow_index,
     std::optional<std::uint64_t> flow_packet_index,
     std::optional<std::size_t> loaded_packet_window_count,
-    std::string protocol_details_text,
     std::optional<std::uint32_t> transport_payload_length = {},
     std::optional<std::uint32_t> original_transport_payload_length = {},
     std::vector<std::string> checksum_summary_lines = {},

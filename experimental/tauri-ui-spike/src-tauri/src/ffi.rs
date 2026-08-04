@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -136,9 +136,21 @@ extern "C" {
         flow_packet_index: u64,
         loaded_packet_window_count: u64,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_selected_flow_packet_byte_view_content_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        packet_index: u64,
+        stable_id_utf8: *const c_char,
+        flow_packet_index: u64,
+        loaded_packet_window_count: u64,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         packet_index: u64,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_unrecognized_packet_byte_view_content_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        packet_index: u64,
+        stable_id_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_analysis_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -454,6 +466,27 @@ impl CppFrontendSessionAdapter {
         parse_json_owned::<PacketDetailsDto>(json)
     }
 
+    pub fn get_selected_flow_packet_byte_view_content(
+        &self,
+        packet_index: u64,
+        stable_id: &str,
+        flow_packet_index: u64,
+        loaded_packet_window_count: u64,
+    ) -> Result<PacketByteViewContentDto, String> {
+        let stable_id = CString::new(stable_id)
+            .map_err(|_| "Stable byte-view id contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_selected_flow_packet_byte_view_content_json(
+                self.handle,
+                packet_index,
+                stable_id.as_ptr(),
+                flow_packet_index,
+                loaded_packet_window_count,
+            )
+        };
+        parse_json_owned::<PacketByteViewContentDto>(json)
+    }
+
     pub fn get_unrecognized_packet_details(
         &self,
         packet_index: u64,
@@ -462,6 +495,23 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_get_unrecognized_packet_details_json(self.handle, packet_index)
         };
         parse_json_owned::<PacketDetailsDto>(json)
+    }
+
+    pub fn get_unrecognized_packet_byte_view_content(
+        &self,
+        packet_index: u64,
+        stable_id: &str,
+    ) -> Result<PacketByteViewContentDto, String> {
+        let stable_id = CString::new(stable_id)
+            .map_err(|_| "Stable byte-view id contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_unrecognized_packet_byte_view_content_json(
+                self.handle,
+                packet_index,
+                stable_id.as_ptr(),
+            )
+        };
+        parse_json_owned::<PacketByteViewContentDto>(json)
     }
 
     pub fn get_selected_flow_analysis(&self) -> Result<SelectedFlowAnalysisDto, String> {

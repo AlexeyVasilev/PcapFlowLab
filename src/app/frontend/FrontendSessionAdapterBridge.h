@@ -105,9 +105,21 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     std::uint64_t flow_packet_index,
     std::uint64_t loaded_packet_window_count
 );
+char* pfl_frontend_session_adapter_get_selected_flow_packet_byte_view_content_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint64_t packet_index,
+    const char* stable_id_utf8,
+    std::uint64_t flow_packet_index,
+    std::uint64_t loaded_packet_window_count
+);
 char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint64_t packet_index
+);
+char* pfl_frontend_session_adapter_get_unrecognized_packet_byte_view_content_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint64_t packet_index,
+    const char* stable_id_utf8
 );
 char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_export_selected_flow_analysis_sequence_csv_json(

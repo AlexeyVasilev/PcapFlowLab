@@ -96,6 +96,58 @@ enum class StreamMaterializationStability : std::uint8_t {
     pagination_lookahead,
 };
 
+enum class StreamItemSemanticFamily : std::uint8_t {
+    generic = 0,
+    http,
+    tls,
+    quic,
+    arp,
+    synthetic,
+    other,
+};
+
+enum class GenericStreamItemSemanticKind : std::uint8_t {
+    none = 0,
+    tcp_payload,
+    udp_payload,
+    payload,
+    gap,
+};
+
+enum class HttpStreamItemSemanticKind : std::uint8_t {
+    none = 0,
+    request,
+    response,
+    partial_payload,
+    gap,
+};
+
+struct GenericStreamItemSummaryDetails {
+    GenericStreamItemSemanticKind semantic_kind {GenericStreamItemSemanticKind::none};
+    std::string diagnostic {};
+};
+
+struct HttpStreamItemSummaryDetails {
+    HttpStreamItemSemanticKind semantic_kind {HttpStreamItemSemanticKind::none};
+    std::string method {};
+    std::string target {};
+    std::string version {};
+    std::optional<std::uint16_t> status_code {};
+    std::string reason_phrase {};
+    std::string diagnostic {};
+};
+
+struct ArpStreamItemSummaryDetails {
+    std::string title {};
+    std::string detail {};
+    std::string sender_hardware_address {};
+    std::string sender_protocol_address {};
+    std::string target_hardware_address {};
+    std::string target_protocol_address {};
+    bool fixed_header_truncated {false};
+    bool address_section_truncated {false};
+};
+
 struct StreamItemRow {
     std::uint64_t stream_item_index {0};
     std::string direction_text {};
@@ -103,14 +155,18 @@ struct StreamItemRow {
     std::uint32_t byte_count {0};
     std::uint32_t packet_count {0};
     std::vector<std::uint64_t> packet_indices {};
+    StreamMaterializationStability materialization_stability {StreamMaterializationStability::stable};
+    StreamItemSemanticFamily semantic_family {StreamItemSemanticFamily::generic};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
     std::string summary_text {};
     std::vector<std::uint8_t> summary_payload_bytes {};
-    std::string payload_hex_text {};
-    std::string protocol_text {};
+    std::optional<GenericStreamItemSummaryDetails> generic_summary {};
+    std::optional<HttpStreamItemSummaryDetails> http_summary {};
+    std::optional<ArpStreamItemSummaryDetails> arp_summary {};
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
+    std::vector<TlsRecordModel> tls_summary_records {};
     TlsInspectionParserContext tls_initial_parser_context {};
     TlsInspectionParserContext tls_final_parser_context {};
     std::optional<session_detail::QuicStreamItemPresentation> quic_stream_presentation {};

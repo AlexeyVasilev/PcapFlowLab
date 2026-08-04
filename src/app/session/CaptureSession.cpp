@@ -1,6 +1,7 @@
 ﻿#include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionOpenHelpers.h"
@@ -12,6 +13,7 @@
 #include <cassert>
 #include <chrono>
 #include <array>
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -62,7 +64,6 @@ using session_detail::build_tls_stream_items_from_reassembly;
 using session_detail::format_endpoint;
 using session_detail::format_ipv4_address;
 using session_detail::format_ipv6_address;
-using session_detail::http_stream_label_from_protocol_text;
 using session_detail::format_packet_timestamp;
 using session_detail::format_tcp_flags_text;
 using session_detail::list_connections;
@@ -83,8 +84,6 @@ using session_detail::total_bytes;
 
 using session_detail::format_quic_presentation_enrichment;
 using session_detail::format_quic_presentation_protocol_text;
-using session_detail::tls_stream_label_from_protocol_text;
-
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 constexpr std::string_view kFragmentedProtocolDetailsMessage = "Protocol details are unavailable for fragmented packets until reassembly is implemented.";
@@ -130,10 +129,6 @@ struct StreamPacketCandidate {
     ProtocolId protocol {ProtocolId::unknown};
 };
 
-bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
-    return text.find(needle) != std::string_view::npos;
-}
-
 std::string fallback_stream_label(const ProtocolId protocol) {
     switch (protocol) {
     case ProtocolId::tcp:
@@ -145,6 +140,99 @@ std::string fallback_stream_label(const ProtocolId protocol) {
     }
 }
 
+GenericStreamItemSummaryDetails generic_stream_summary_for_protocol(
+    const ProtocolId protocol,
+    const std::string& diagnostic = {}
+) {
+    switch (protocol) {
+    case ProtocolId::tcp:
+        return GenericStreamItemSummaryDetails {
+            .semantic_kind = GenericStreamItemSemanticKind::tcp_payload,
+            .diagnostic = diagnostic,
+        };
+    case ProtocolId::udp:
+        return GenericStreamItemSummaryDetails {
+            .semantic_kind = GenericStreamItemSemanticKind::udp_payload,
+            .diagnostic = diagnostic,
+        };
+    default:
+        return GenericStreamItemSummaryDetails {
+            .semantic_kind = GenericStreamItemSemanticKind::payload,
+            .diagnostic = diagnostic,
+        };
+    }
+}
+
+std::string conservative_gap_diagnostic() {
+    return "Earlier TCP bytes are missing, so later bytes are shown conservatively.";
+}
+
+std::optional<HttpStreamItemSummaryDetails> make_http_stream_summary_from_packet_details(
+    const HttpDetails& details
+) {
+    switch (details.message_type) {
+    case HttpMessageType::request:
+        return HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::request,
+            .method = details.method,
+            .target = details.path,
+            .version = details.version,
+        };
+    case HttpMessageType::response: {
+        std::optional<std::uint16_t> status_code {};
+        if (!details.status_code.empty() &&
+            std::all_of(details.status_code.begin(), details.status_code.end(), [](const char character) {
+                return std::isdigit(static_cast<unsigned char>(character)) != 0;
+            })) {
+            status_code = static_cast<std::uint16_t>(std::stoi(details.status_code));
+        }
+        return HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::response,
+            .version = details.version,
+            .status_code = status_code,
+            .reason_phrase = details.reason_phrase,
+        };
+    }
+    case HttpMessageType::unknown:
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string dns_stream_label(const DnsDetails& details) {
+    return details.is_response ? "DNS Response" : "DNS Query";
+}
+
+struct PacketLocalStreamClassification {
+    std::string label {};
+    std::optional<HttpStreamItemSummaryDetails> http_summary {};
+};
+
+PacketLocalStreamClassification classify_packet_local_stream_item(
+    const PacketDetails& details,
+    const ProtocolId protocol
+) {
+    if (protocol == ProtocolId::tcp && details.has_http) {
+        const auto http_summary = make_http_stream_summary_from_packet_details(details.http);
+        if (http_summary.has_value()) {
+            return PacketLocalStreamClassification {
+                .label = session_detail::http_stream_label_from_summary(*http_summary),
+                .http_summary = http_summary,
+            };
+        }
+    }
+
+    if (protocol == ProtocolId::udp && details.has_dns) {
+        return PacketLocalStreamClassification {
+            .label = dns_stream_label(details.dns),
+        };
+    }
+
+    return PacketLocalStreamClassification {
+        .label = fallback_stream_label(protocol),
+    };
+}
+
 StreamItemRow make_stream_item_row(
     const std::uint64_t stream_item_index,
     const std::string_view direction_text,
@@ -153,12 +241,11 @@ StreamItemRow make_stream_item_row(
     const std::vector<std::uint64_t>& packet_indices,
     const std::string& summary_text = {},
     const std::vector<std::uint8_t>& summary_payload_bytes = {},
-    const std::string& payload_hex_text = {},
-    const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
     const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
+    const std::vector<TlsRecordModel>& tls_summary_records = {},
     const TlsInspectionParserContext tls_initial_parser_context = {},
     const TlsInspectionParserContext tls_final_parser_context = {},
     const std::optional<session_detail::QuicStreamItemPresentation>& quic_stream_presentation = {}
@@ -175,9 +262,8 @@ StreamItemRow make_stream_item_row(
         .constricted_packet_notes = constricted_packet_notes,
         .summary_text = summary_text,
         .summary_payload_bytes = summary_payload_bytes,
-        .payload_hex_text = payload_hex_text,
-        .protocol_text = protocol_text,
         .tls_semantic_kind = tls_semantic_kind,
+        .tls_summary_records = tls_summary_records,
         .tls_initial_parser_context = tls_initial_parser_context,
         .tls_final_parser_context = tls_final_parser_context,
         .quic_stream_presentation = quic_stream_presentation,
@@ -192,12 +278,11 @@ StreamItemRow make_stream_item_row(
     const PacketRef& packet,
     const std::string& summary_text = {},
     const std::vector<std::uint8_t>& summary_payload_bytes = {},
-    const std::string& payload_hex_text = {},
-    const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
     const TlsStreamItemSemanticKind tls_semantic_kind = TlsStreamItemSemanticKind::none,
+    const std::vector<TlsRecordModel>& tls_summary_records = {},
     const TlsInspectionParserContext tls_initial_parser_context = {},
     const TlsInspectionParserContext tls_final_parser_context = {},
     const std::optional<session_detail::QuicStreamItemPresentation>& quic_stream_presentation = {}
@@ -210,12 +295,11 @@ StreamItemRow make_stream_item_row(
         std::vector<std::uint64_t> {packet.packet_index},
         summary_text,
         summary_payload_bytes,
-        payload_hex_text,
-        protocol_text,
         has_constricted_contribution,
         constricted_contribution_notes,
         constricted_packet_notes,
         tls_semantic_kind,
+        tls_summary_records,
         tls_initial_parser_context,
         tls_final_parser_context,
         quic_stream_presentation
@@ -238,24 +322,26 @@ bool append_tls_stream_items(
     }
 
     for (const auto& item : presentation.items) {
+        auto row = make_stream_item_row(
+            0U,
+            candidate.direction_text,
+            item.label,
+            item.byte_count,
+            item.packet_indices,
+            {},
+            item.summary_payload_bytes,
+            item.has_constricted_contribution,
+            item.constricted_contribution_notes,
+            item.constricted_packet_notes,
+            item.semantic_kind,
+            item.summary_records,
+            item.initial_parser_context,
+            item.final_parser_context
+        );
+        row.materialization_stability = item.stability;
+        row.semantic_family = StreamItemSemanticFamily::tls;
         rows.push_back(BuiltStreamRow {
-            .row = make_stream_item_row(
-                0U,
-                candidate.direction_text,
-                item.label,
-                item.byte_count,
-                item.packet_indices,
-                {},
-                item.summary_payload_bytes,
-                item.payload_hex_text,
-                item.protocol_text,
-                item.has_constricted_contribution,
-                item.constricted_contribution_notes,
-                item.constricted_packet_notes,
-                item.semantic_kind,
-                item.initial_parser_context,
-                item.final_parser_context
-            ),
+            .row = std::move(row),
             .stability = item.stability,
         });
     }
@@ -263,16 +349,12 @@ bool append_tls_stream_items(
     return true;
 }
 
-std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
-    return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
-}
-
 struct DirectionalStreamPolicy {
     bool used_reassembly {false};
     bool explicit_gap_item_emitted {false};
     std::uint64_t first_gap_packet_index {0};
     std::string fallback_label {};
-    std::string fallback_protocol_text {};
+    StreamItemSemanticFamily fallback_family {StreamItemSemanticFamily::generic};
     std::set<std::uint64_t> covered_packet_indices {};
 };
 
@@ -321,24 +403,26 @@ BuiltStreamRow make_stream_item_row_from_tls_scanned_row(
     const session_detail::TlsScannedStreamRow& row,
     const StreamMaterializationStability stability
 ) {
+    auto stream_row = make_stream_item_row(
+        0U,
+        direction_text,
+        row.item.label,
+        row.item.byte_count,
+        row.item.packet_indices,
+        {},
+        row.item.summary_payload_bytes,
+        row.item.has_constricted_contribution,
+        row.item.constricted_contribution_notes,
+        row.item.constricted_packet_notes,
+        row.item.semantic_kind,
+        row.item.summary_records,
+        row.item.initial_parser_context,
+        row.item.final_parser_context
+    );
+    stream_row.materialization_stability = stability;
+    stream_row.semantic_family = StreamItemSemanticFamily::tls;
     return BuiltStreamRow {
-        .row = make_stream_item_row(
-            0U,
-            direction_text,
-            row.item.label,
-            row.item.byte_count,
-            row.item.packet_indices,
-            {},
-            row.item.summary_payload_bytes,
-            row.item.payload_hex_text,
-            row.item.protocol_text,
-            row.item.has_constricted_contribution,
-            row.item.constricted_contribution_notes,
-            row.item.constricted_packet_notes,
-            row.item.semantic_kind,
-            row.item.initial_parser_context,
-            row.item.final_parser_context
-        ),
+        .row = std::move(stream_row),
         .stability = stability,
     };
 }
@@ -391,8 +475,8 @@ void merge_directional_policy(
     if (policy.fallback_label.empty()) {
         policy.fallback_label = presentation.fallback_label;
     }
-    if (policy.fallback_protocol_text.empty()) {
-        policy.fallback_protocol_text = presentation.fallback_protocol_text;
+    if (policy.fallback_family == StreamItemSemanticFamily::generic) {
+        policy.fallback_family = StreamItemSemanticFamily::tls;
     }
     policy.covered_packet_indices.insert(
         presentation.covered_packet_indices.begin(),
@@ -449,8 +533,8 @@ void merge_directional_policy(
     if (policy.fallback_label.empty()) {
         policy.fallback_label = presentation.fallback_label;
     }
-    if (policy.fallback_protocol_text.empty()) {
-        policy.fallback_protocol_text = presentation.fallback_protocol_text;
+    if (policy.fallback_family == StreamItemSemanticFamily::generic) {
+        policy.fallback_family = StreamItemSemanticFamily::http;
     }
     policy.covered_packet_indices.insert(
         presentation.covered_packet_indices.begin(),
@@ -462,24 +546,26 @@ BuiltStreamRow make_stream_item_row_from_tls_presentation(
     const std::string_view direction_text,
     const session_detail::TlsStreamPresentationItem& item
 ) {
+    auto row = make_stream_item_row(
+        0U,
+        direction_text,
+        item.label,
+        item.byte_count,
+        item.packet_indices,
+        {},
+        item.summary_payload_bytes,
+        item.has_constricted_contribution,
+        item.constricted_contribution_notes,
+        item.constricted_packet_notes,
+        item.semantic_kind,
+        item.summary_records,
+        item.initial_parser_context,
+        item.final_parser_context
+    );
+    row.materialization_stability = item.stability;
+    row.semantic_family = StreamItemSemanticFamily::tls;
     return BuiltStreamRow {
-        .row = make_stream_item_row(
-            0U,
-            direction_text,
-            item.label,
-            item.byte_count,
-            item.packet_indices,
-            {},
-            item.summary_payload_bytes,
-            item.payload_hex_text,
-            item.protocol_text,
-            item.has_constricted_contribution,
-            item.constricted_contribution_notes,
-            item.constricted_packet_notes,
-            item.semantic_kind,
-            item.initial_parser_context,
-            item.final_parser_context
-        ),
+        .row = std::move(row),
         .stability = item.stability,
     };
 }
@@ -488,18 +574,20 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
     const std::string_view direction_text,
     const session_detail::HttpStreamPresentationItem& item
 ) {
+    auto row = make_stream_item_row(
+        0U,
+        direction_text,
+        item.label,
+        item.byte_count,
+        item.packet_indices,
+        {},
+        {}
+    );
+    row.materialization_stability = item.stability;
+    row.semantic_family = StreamItemSemanticFamily::http;
+    row.http_summary = item.summary;
     return BuiltStreamRow {
-        .row = make_stream_item_row(
-            0U,
-            direction_text,
-            item.label,
-            item.byte_count,
-            item.packet_indices,
-            {},
-            {},
-            item.payload_hex_text,
-            item.protocol_text
-        ),
+        .row = std::move(row),
         .stability = item.stability,
     };
 }
@@ -570,7 +658,6 @@ DirectionalStreamPolicy append_http_stream_items_from_reassembly(
     policy.explicit_gap_item_emitted = presentation.explicit_gap_item_emitted;
     policy.first_gap_packet_index = presentation.first_gap_packet_index;
     policy.fallback_label = presentation.fallback_label;
-    policy.fallback_protocol_text = presentation.fallback_protocol_text;
     policy.covered_packet_indices = presentation.covered_packet_indices;
     return policy;
 }
@@ -593,48 +680,9 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
     policy.explicit_gap_item_emitted = presentation.explicit_gap_item_emitted;
     policy.first_gap_packet_index = presentation.first_gap_packet_index;
     policy.fallback_label = presentation.fallback_label;
-    policy.fallback_protocol_text = presentation.fallback_protocol_text;
     policy.covered_packet_indices = presentation.covered_packet_indices;
 
     return policy;
-}
-
-std::string classify_stream_label(
-    const std::vector<std::uint8_t>& packet_bytes,
-    const std::uint32_t data_link_type,
-    const ProtocolId protocol
-) {
-    if (protocol == ProtocolId::tcp) {
-        TlsPacketProtocolAnalyzer tls_analyzer {};
-        if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
-            return tls_stream_label_from_protocol_text(*tls_details);
-        }
-
-        HttpPacketProtocolAnalyzer http_analyzer {};
-        if (const auto http_details = http_analyzer.analyze(packet_bytes, data_link_type); http_details.has_value()) {
-            return http_stream_label_from_protocol_text(*http_details);
-        }
-
-        return fallback_stream_label(protocol);
-    }
-
-    if (protocol == ProtocolId::udp) {
-        DnsPacketProtocolAnalyzer dns_analyzer {};
-        if (const auto dns_details = dns_analyzer.analyze(packet_bytes, data_link_type); dns_details.has_value()) {
-            const auto text = std::string_view(*dns_details);
-            if (contains_text(text, "Message Type: Query")) {
-                return "DNS Query";
-            }
-            if (contains_text(text, "Message Type: Response")) {
-                return "DNS Response";
-            }
-            return "DNS Payload";
-        }
-
-        return fallback_stream_label(protocol);
-    }
-
-    return fallback_stream_label(protocol);
 }
 
 std::optional<PacketRef> find_packet_in_connection(const ConnectionV4& connection, std::uint64_t packet_index) {
@@ -663,6 +711,27 @@ std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connectio
     for (const auto& packet : connection.flow_b.packets) {
         if (packet.packet_index == packet_index) {
             return packet;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::size_t> find_quic_flow_index_for_packet(
+    const std::vector<ListedConnectionRef>& connections,
+    const AnalysisSettings& analysis_settings,
+    const std::uint64_t packet_index
+) {
+    for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
+        if (effective_protocol_hint(connections[flow_index], analysis_settings) != FlowProtocolHint::quic) {
+            continue;
+        }
+
+        const bool found_packet = connections[flow_index].family == FlowAddressFamily::ipv4
+            ? find_packet_in_connection(*connections[flow_index].ipv4, packet_index).has_value()
+            : find_packet_in_connection(*connections[flow_index].ipv6, packet_index).has_value();
+        if (found_packet) {
+            return flow_index;
         }
     }
 
@@ -720,7 +789,6 @@ bool append_quic_stream_items_for_packet(
     const std::string_view direction_text,
     std::span<const std::uint8_t> payload_span,
     const bool quic_stream_confirmed,
-    HexDumpService& hex_dump_service,
     std::span<const std::uint8_t> initial_secret_connection_id
 ) {
     // Stream-level QUIC labeling requires a confirmed QUIC flow in the scanned
@@ -743,28 +811,29 @@ bool append_quic_stream_items_for_packet(
         return false;
     }
 
-    const auto packet_hex_dump = hex_dump_service.format(payload_span);
     bool emitted_any = false;
     for (const auto& item : presentation.items) {
+        auto row = make_stream_item_row(
+            0U,
+            direction_text,
+            item.label,
+            item.byte_count,
+            packet,
+            {},
+            {},
+            item.has_constricted_contribution,
+            item.constricted_contribution_notes,
+            {},
+            TlsStreamItemSemanticKind::none,
+            {},
+            {},
+            {},
+            item.structured_presentation
+        );
+        row.materialization_stability = StreamMaterializationStability::stable;
+        row.semantic_family = StreamItemSemanticFamily::quic;
         rows.push_back(BuiltStreamRow {
-            .row = make_stream_item_row(
-                0U,
-                direction_text,
-                item.label,
-                item.byte_count,
-                packet,
-                {},
-                {},
-                packet_hex_dump,
-                item.protocol_text,
-                item.has_constricted_contribution,
-                item.constricted_contribution_notes,
-                {},
-                TlsStreamItemSemanticKind::none,
-                {},
-                {},
-                item.structured_presentation
-            ),
+            .row = std::move(row),
             .stability = StreamMaterializationStability::stable,
         });
         emitted_any = true;
@@ -782,6 +851,32 @@ std::string join_summary_lines(const std::vector<std::string>& lines) {
         out << lines[index];
     }
     return out.str();
+}
+
+ArpStreamItemSummaryDetails make_arp_stream_summary_details(const PacketDetails& details) {
+    const auto presentation = session_detail::describe_arp_packet(details);
+    return ArpStreamItemSummaryDetails {
+        .title = presentation.has_value() ? presentation->title : std::string {"ARP"},
+        .detail = presentation.has_value() ? presentation->detail : std::string {},
+        .sender_hardware_address = session_detail::format_arp_hardware_address(std::span<const std::uint8_t>(
+            details.arp.sender_hardware_address.data(),
+            details.arp.sender_hardware_address.size())),
+        .sender_protocol_address = session_detail::format_arp_protocol_address(
+            details.arp.protocol_type,
+            std::span<const std::uint8_t>(
+                details.arp.sender_protocol_address.data(),
+                details.arp.sender_protocol_address.size())),
+        .target_hardware_address = session_detail::format_arp_hardware_address(std::span<const std::uint8_t>(
+            details.arp.target_hardware_address.data(),
+            details.arp.target_hardware_address.size())),
+        .target_protocol_address = session_detail::format_arp_protocol_address(
+            details.arp.protocol_type,
+            std::span<const std::uint8_t>(
+                details.arp.target_protocol_address.data(),
+                details.arp.target_protocol_address.size())),
+        .fixed_header_truncated = details.arp.fixed_header_truncated,
+        .address_section_truncated = details.arp.address_section_truncated,
+    };
 }
 
 enum class StreamPrefixPrecheckResult : std::uint8_t {
@@ -1294,24 +1389,24 @@ bool append_arp_stream_item_for_packet(
 
     const auto presentation = session_detail::describe_arp_packet(*details);
     const auto summary_lines = session_detail::build_basic_summary_lines(*details);
-    const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
 
     PacketPayloadService payload_service {};
     const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
-    HexDumpService hex_dump_service {};
 
+    auto row = make_stream_item_row(
+        0U,
+        direction_text,
+        presentation.has_value() && !presentation->detail.empty() ? presentation->detail : std::string {"ARP"},
+        payload_bytes.size(),
+        packet,
+        join_summary_lines(summary_lines),
+        {}
+    );
+    row.materialization_stability = StreamMaterializationStability::stable;
+    row.semantic_family = StreamItemSemanticFamily::arp;
+    row.arp_summary = make_arp_stream_summary_details(*details);
     rows.push_back(BuiltStreamRow {
-        .row = make_stream_item_row(
-            0U,
-            direction_text,
-            presentation.has_value() && !presentation->detail.empty() ? presentation->detail : std::string {"ARP"},
-            payload_bytes.size(),
-            packet,
-            join_summary_lines(summary_lines),
-            {},
-            hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
-            protocol_text
-        ),
+        .row = std::move(row),
         .stability = StreamMaterializationStability::stable,
     });
     return true;
@@ -1331,7 +1426,6 @@ void append_connection_stream_items_bounded(
     const DirectionalStreamPolicy& direction_policy_a,
     const DirectionalStreamPolicy& direction_policy_b
 ) {
-    HexDumpService hex_dump_service {};
     constexpr std::uint16_t kQuicCandidatePort = 443U;
     const bool uses_quic_candidate_port = flow_protocol == ProtocolId::udp &&
         (connection.flow_a.key.src_port == kQuicCandidatePort || connection.flow_a.key.dst_port == kQuicCandidatePort);
@@ -1418,26 +1512,40 @@ void append_connection_stream_items_bounded(
         const bool direction_tainted_by_gap = gap_packet_index.has_value() && packet.packet_index >= *gap_packet_index;
 
         if (direction_tainted_by_gap && !gap_item_emitted) {
-            const auto gap_label = direction_policy.fallback_label == "HTTP Payload"
+            const auto gap_label = direction_policy.fallback_family == StreamItemSemanticFamily::http
                 ? std::string {"HTTP Gap"}
-                : direction_policy.fallback_label == "TLS Payload"
+                : direction_policy.fallback_family == StreamItemSemanticFamily::tls
                     ? std::string {"TLS Gap"}
                     : std::string {"TCP Gap"};
-            const auto gap_protocol = !direction_policy.fallback_protocol_text.empty()
-                ? direction_policy.fallback_protocol_text
-                : tcp_gap_protocol_text("TCP");
+            auto gap_row = make_stream_item_row(
+                0U,
+                direction_text,
+                gap_label,
+                0U,
+                packet,
+                {},
+                {},
+                {}
+            );
+            gap_row.materialization_stability = StreamMaterializationStability::stable;
+            if (direction_policy.fallback_family == StreamItemSemanticFamily::http) {
+                gap_row.semantic_family = StreamItemSemanticFamily::http;
+                gap_row.http_summary = HttpStreamItemSummaryDetails {
+                    .semantic_kind = HttpStreamItemSemanticKind::gap,
+                    .diagnostic = conservative_gap_diagnostic(),
+                };
+            } else if (direction_policy.fallback_family == StreamItemSemanticFamily::tls) {
+                gap_row.semantic_family = StreamItemSemanticFamily::tls;
+                gap_row.tls_semantic_kind = TlsStreamItemSemanticKind::gap;
+            } else {
+                gap_row.semantic_family = StreamItemSemanticFamily::synthetic;
+                gap_row.generic_summary = GenericStreamItemSummaryDetails {
+                    .semantic_kind = GenericStreamItemSemanticKind::gap,
+                    .diagnostic = conservative_gap_diagnostic(),
+                };
+            }
             rows.push_back(BuiltStreamRow {
-                .row = make_stream_item_row(
-                    0U,
-                    direction_text,
-                    gap_label,
-                    0U,
-                    packet,
-                    {},
-                    {},
-                    {},
-                    gap_protocol
-                ),
+                .row = std::move(gap_row),
                 .stability = StreamMaterializationStability::stable,
             });
             gap_item_emitted = true;
@@ -1460,14 +1568,13 @@ void append_connection_stream_items_bounded(
                     flow_index,
                     connection.flow_a.key,
                     bounded_direction_packets,
-                    packet,
-                    direction_text,
-                    payload_span,
-                    quic_stream_confirmed,
-                    hex_dump_service,
-                    quic_initial_secret_connection_id.has_value()
-                        ? std::span<const std::uint8_t>(
-                            quic_initial_secret_connection_id->data(),
+                packet,
+                direction_text,
+                payload_span,
+                quic_stream_confirmed,
+                quic_initial_secret_connection_id.has_value()
+                    ? std::span<const std::uint8_t>(
+                        quic_initial_secret_connection_id->data(),
                             quic_initial_secret_connection_id->size())
                         : std::span<const std::uint8_t> {}
                 )
@@ -1481,7 +1588,6 @@ void append_connection_stream_items_bounded(
                     direction_text,
                     payload_span,
                     quic_stream_confirmed,
-                    hex_dump_service,
                     quic_initial_secret_connection_id.has_value()
                         ? std::span<const std::uint8_t>(
                             quic_initial_secret_connection_id->data(),
@@ -1495,32 +1601,61 @@ void append_connection_stream_items_bounded(
         }
 
         std::string label = fallback_stream_label(flow_protocol);
-        std::string protocol_text {};
+        std::optional<HttpStreamItemSummaryDetails> http_summary {};
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
             }
-            protocol_text = !direction_policy.fallback_protocol_text.empty()
-                ? direction_policy.fallback_protocol_text
-                : tcp_gap_protocol_text("TCP");
         } else if (!trimmed_tcp_payload) {
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
-                label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol);
+                PacketDetailsService details_service {};
+                if (const auto details = details_service.decode(packet_bytes, packet); details.has_value()) {
+                    const auto classification = classify_packet_local_stream_item(*details, flow_protocol);
+                    label = classification.label;
+                    http_summary = classification.http_summary;
+                }
+            }
+        }
+        auto row = make_stream_item_row(
+            0U,
+            direction_text,
+            label,
+            payload_span.size(),
+            packet,
+            {},
+            {},
+            {}
+        );
+        row.materialization_stability = StreamMaterializationStability::stable;
+        if (direction_tainted_by_gap) {
+            if (direction_policy.fallback_family == StreamItemSemanticFamily::http) {
+                row.semantic_family = StreamItemSemanticFamily::http;
+                row.http_summary = HttpStreamItemSummaryDetails {
+                    .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
+                    .diagnostic = conservative_gap_diagnostic(),
+                };
+            } else if (direction_policy.fallback_family == StreamItemSemanticFamily::tls) {
+                row.semantic_family = StreamItemSemanticFamily::tls;
+                row.tls_semantic_kind = TlsStreamItemSemanticKind::gap;
+            } else {
+                row.semantic_family = StreamItemSemanticFamily::generic;
+                row.generic_summary = generic_stream_summary_for_protocol(
+                    flow_protocol,
+                    conservative_gap_diagnostic()
+                );
+            }
+        } else {
+            if (http_summary.has_value()) {
+                row.semantic_family = StreamItemSemanticFamily::http;
+                row.http_summary = std::move(http_summary);
+            } else {
+                row.semantic_family = StreamItemSemanticFamily::generic;
+                row.generic_summary = generic_stream_summary_for_protocol(flow_protocol);
             }
         }
         rows.push_back(BuiltStreamRow {
-            .row = make_stream_item_row(
-                0U,
-                direction_text,
-                label,
-                payload_span.size(),
-                packet,
-                {},
-                {},
-                {},
-                protocol_text
-            ),
+            .row = std::move(row),
             .stability = StreamMaterializationStability::stable,
         });
     }
@@ -3371,6 +3506,220 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
 
     PacketDetailsService service {};
     return service.decode_best_effort(bytes, packet);
+}
+
+std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
+    const PacketRef& packet
+) const {
+    const auto details = read_packet_details(packet);
+    if (!details.has_value()) {
+        return std::nullopt;
+    }
+    const auto packet_bytes = read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    const auto& connections = listed_connections();
+    const auto quic_flow_index = find_quic_flow_index_for_packet(connections, analysis_settings_, packet.packet_index);
+    auto quic_presentation = quic_flow_index.has_value()
+        ? derive_quic_presentation_for_packet(*quic_flow_index, packet.packet_index)
+        : std::optional<session_detail::QuicPresentationResult> {};
+
+    return session_detail::build_selected_packet_byte_presentation(
+        *details,
+        packet,
+        session_detail::SelectedPacketByteBuildOptions {
+            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            .quic_presentation = std::move(quic_presentation),
+        }
+    );
+}
+
+session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto make_unavailable =
+        [&](const session_detail::StreamItemDataState state, std::string reason) {
+            return session_detail::SelectedStreamItemDataPresentation {
+                .stream_item_index = stream_item_index,
+                .semantic_kind = session_detail::StreamItemDataSemanticKind::other,
+                .source_kind = session_detail::StreamItemDataSourceKind::unavailable,
+                .state = state,
+                .assembly_kind = session_detail::StreamItemDataAssemblyKind::packet_local,
+                .available_length = 0U,
+                .declared_length = std::nullopt,
+                .captured_packet_range = std::nullopt,
+                .contributing_unit_count = std::nullopt,
+                .contributing_unit_kind = std::nullopt,
+                .quic_crypto_stream_offset = std::nullopt,
+                .owned_bytes = {},
+                .unavailable_reason = std::move(reason),
+            };
+        };
+
+    if (stream_item_index == 0U) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "Stream item index 0 is invalid."
+        );
+    }
+    if (limit == 0U || max_packets_to_scan == 0U) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "Selected stream item data requires non-zero packet and item bounds."
+        );
+    }
+    if (!has_source_capture()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "Selected stream item data requires source capture bytes."
+        );
+    }
+
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The selected flow index is outside the current listed-connection range."
+        );
+    }
+    const auto flow_protocol = protocol_id(connections[flow_index]);
+
+    static_cast<void>(list_flow_stream_items_for_packet_prefix(flow_index, max_packets_to_scan, limit));
+
+    if (!selected_flow_stream_context_.has_value() || !selected_flow_stream_context_->valid) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The bounded selected-flow stream context is unavailable."
+        );
+    }
+
+    const auto& context = *selected_flow_stream_context_;
+    if (context.flow_index != flow_index ||
+        context.rows.size() != context.intra_packet_ordinals.size() ||
+        context.rows.size() != context.stability_codes.size()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The bounded selected-flow stream context is incompatible with this request."
+        );
+    }
+
+    const auto row_it = std::find_if(context.rows.begin(), context.rows.end(), [&](const StreamItemRow& row) {
+        return row.stream_item_index == stream_item_index;
+    });
+    if (row_it == context.rows.end()) {
+        return make_unavailable(
+            session_detail::StreamItemDataState::unavailable,
+            "The selected stream item is stale or outside the requested bounded stream window."
+        );
+    }
+
+    const auto row_index = static_cast<std::size_t>(std::distance(context.rows.begin(), row_it));
+    return session_detail::derive_selected_stream_item_data_presentation(
+        *this,
+        flow_index,
+        flow_protocol,
+        *row_it,
+        decode_stream_stability(context.stability_codes[row_index]),
+        context.intra_packet_ordinals[row_index]
+    );
+}
+
+std::optional<std::vector<std::uint8_t>> CaptureSession::materialize_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto presentation = derive_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+
+    if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
+        if (!presentation.captured_packet_range.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet = find_packet(presentation.captured_packet_range->packet_index);
+        if (!packet.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_bytes = read_packet_data(*packet);
+        if (packet_bytes.empty()) {
+            return std::nullopt;
+        }
+        return session_detail::materialize_selected_stream_item_data(
+            presentation,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size())
+        );
+    }
+
+    return session_detail::materialize_selected_stream_item_data(presentation, {});
+}
+
+std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data_hex_dump(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto presentation = derive_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+    HexDumpService service {};
+
+    if (presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range) {
+        if (!presentation.captured_packet_range.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet = find_packet(presentation.captured_packet_range->packet_index);
+        if (!packet.has_value()) {
+            return std::nullopt;
+        }
+        const auto packet_bytes = read_packet_data(*packet);
+        if (packet_bytes.empty()) {
+            return std::nullopt;
+        }
+        return session_detail::format_selected_stream_item_data_hex_dump(
+            presentation,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            service
+        );
+    }
+
+    return session_detail::format_selected_stream_item_data_hex_dump(presentation, {}, service);
+}
+
+std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_dump(
+    const PacketRef& packet,
+    const session_detail::SelectedPacketByteViewId& id
+) const {
+    const auto presentation = derive_selected_packet_byte_presentation(packet);
+    if (!presentation.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        return std::nullopt;
+    }
+
+    HexDumpService service {};
+    return session_detail::format_selected_packet_byte_view_hex_dump(
+        *presentation,
+        id,
+        std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+        service
+    );
 }
 
 std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const {
