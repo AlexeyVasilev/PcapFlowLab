@@ -2728,8 +2728,10 @@
 
   function packetByteViewDisplayLabel(descriptor) {
     const label = String(descriptor?.label || "");
-    const depth = Number(descriptor?.depth || 0);
-    return `${"  ".repeat(Math.max(0, depth))}${label}`;
+    const rawDepth = Number(descriptor?.depth ?? 0);
+    const depth = Number.isFinite(rawDepth) ? Math.max(0, Math.trunc(rawDepth)) : 0;
+    const indentUnit = "\u00A0\u00A0";
+    return `${indentUnit.repeat(depth)}${label}`;
   }
 
   function packetByteViewExists(details, stableId) {

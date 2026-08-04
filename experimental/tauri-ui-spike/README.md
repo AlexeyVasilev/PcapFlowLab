@@ -159,6 +159,7 @@ Implemented slice:
 - The initial selected-flow packet batch is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
 - Clicking a packet row loads packet details and a bounded selected packet-byte view when byte-backed inspection is available.
+- The Packet Details `Bytes` selector keeps the native HTML `<select>` and now renders descriptor hierarchy with lightweight non-breaking-space indentation derived from shared descriptor depth metadata.
 - Selected Packet Details use the explicit browser Packet-list window only; opening Stream or loading more Stream items does not widen the bounded packet-details reconstruction window.
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of looking like standalone buttons.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
