@@ -301,7 +301,6 @@ struct FrontendStreamItemDto {
     std::string payload_tab_title {};
     std::string payload_preview_text {};
     std::string payload_preview_unavailable_text {};
-    std::string protocol_details_text {};
 };
 
 struct FrontendSelectedFlowStreamResult {
@@ -381,7 +380,6 @@ struct FrontendPacketDetailsDto {
     };
     std::vector<PacketByteViewDescriptor> byte_view_descriptors {};
     PacketByteViewContent selected_byte_view {};
-    std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
     std::string unavailable_text {};

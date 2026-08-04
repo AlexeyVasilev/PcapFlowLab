@@ -894,7 +894,6 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
 
     out << "],"
         << "\"selected_byte_view\":" << packet_byte_view_content_json(details.selected_byte_view) << ','
-        << "\"protocol_details_text\":" << json_string(details.protocol_details_text) << ','
         << "\"checksum_summary_lines\":[";
 
     for (std::size_t index = 0; index < details.checksum_summary_lines.size(); ++index) {
@@ -1121,7 +1120,6 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
         << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
         << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
         << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
-        << "\"protocol_details_text\":" << json_string(item.protocol_details_text) << ','
         << "\"constricted_contribution_notes\":[";
 
     for (std::size_t note_index = 0; note_index < item.constricted_contribution_notes.size(); ++note_index) {
@@ -1172,7 +1170,6 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     item.stream_item_data.status_text = std::string {kAdapterUnavailableText};
     item.stream_item_data.unavailable_text = std::string {kAdapterUnavailableText};
     item.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
-    item.protocol_details_text = std::string {kAdapterUnavailableText};
     return item;
 }
 

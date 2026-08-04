@@ -764,10 +764,6 @@ std::string stream_item_payload_tab_title() {
     return "Item Data";
 }
 
-std::string stream_protocol_unavailable_text() {
-    return "Protocol details are not available for this stream item.";
-}
-
 FrontendStreamItemDto::StreamItemDataDto build_frontend_stream_item_data(
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -909,37 +905,6 @@ std::vector<session_detail::PacketSummaryLayer> build_stream_item_summary_layers
         row,
         format_stream_source_packets_text(row, flow_packet_numbers)
     );
-}
-
-std::string frontend_stream_protocol_text(
-    const CaptureSession& session,
-    const std::size_t flow_index,
-    const StreamItemRow& row
-) {
-    if (!row.protocol_text.empty()) {
-        if (row.protocol_text.find("QUIC") != std::string::npos) {
-            if (const auto context_text = session.derive_quic_protocol_text_for_packet_context(flow_index, row.packet_indices);
-                context_text.has_value() && !context_text->empty()) {
-                return *context_text;
-            }
-        }
-        return row.protocol_text;
-    }
-
-    if (row.packet_indices.size() == 1U) {
-        if (const auto packet = session.find_packet(row.packet_indices.front()); packet.has_value()) {
-            auto protocol_text = session.read_packet_protocol_details_text(*packet);
-            if (protocol_text.find("QUIC") != std::string::npos) {
-                if (const auto context_text = session.derive_quic_protocol_text_for_packet(flow_index, packet->packet_index);
-                    context_text.has_value() && !context_text->empty()) {
-                    protocol_text = *context_text;
-                }
-            }
-            return protocol_text.empty() ? stream_protocol_unavailable_text() : protocol_text;
-        }
-    }
-
-    return stream_protocol_unavailable_text();
 }
 
 std::string frontend_packet_protocol_text(
@@ -2663,7 +2628,6 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
             .payload_tab_title = std::move(payload_tab_title),
             .payload_preview_text = {},
             .payload_preview_unavailable_text = {},
-            .protocol_details_text = {},
         });
     }
     return result;
@@ -2683,7 +2647,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
         result.stream_item_data.status_text = "Item data unavailable • No selected flow is active.";
         result.stream_item_data.unavailable_text = "No selected flow is active.";
         result.payload_preview_unavailable_text = result.stream_item_data.status_text;
-        result.protocol_details_text = stream_protocol_unavailable_text();
         return result;
     }
 
@@ -2693,7 +2656,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
         result.stream_item_data.unavailable_text =
             "The original source capture cannot be read.";
         result.payload_preview_unavailable_text = result.stream_item_data.status_text;
-        result.protocol_details_text = stream_protocol_unavailable_text();
         return result;
     }
 
@@ -2705,7 +2667,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
         result.stream_item_data.unavailable_text =
             "The selected stream window is empty.";
         result.payload_preview_unavailable_text = result.stream_item_data.status_text;
-        result.protocol_details_text = stream_protocol_unavailable_text();
         return result;
     }
 
@@ -2737,7 +2698,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
             stream_item_index
         );
         result.payload_preview_unavailable_text = result.stream_item_data.status_text;
-        result.protocol_details_text = stream_protocol_unavailable_text();
         result.payload_tab_title = stream_item_payload_tab_title();
     }
     return result;
@@ -3165,7 +3125,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     const auto details = session_.read_packet_details(packet);
     const auto packet_bytes = session_.read_packet_data(packet);
     PacketChecksumSections checksum_sections {};
-    result.protocol_details_text = frontend_packet_protocol_text(session_, flow_index, packet);
+    const auto protocol_details_text = frontend_packet_protocol_text(session_, flow_index, packet);
 
     if (details.has_value() && result.checksum_validation_enabled) {
         checksum_sections =
@@ -3190,7 +3150,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             flow_index,
             internal_flow_packet_index,
             loaded_packet_window_count,
-            result.protocol_details_text,
+            protocol_details_text,
             captured_transport_payload_length,
             original_transport_payload_length,
             result.checksum_summary_lines,
@@ -3509,9 +3469,6 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
             include_details && !stream_item_data.available
                 ? stream_item_data.status_text
                 : std::string {},
-        .protocol_details_text = include_details
-            ? frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row)
-            : std::string {},
     };
 }
 

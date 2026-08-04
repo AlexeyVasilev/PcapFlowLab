@@ -339,7 +339,6 @@ pub struct StreamItemDto {
     pub payload_tab_title: String,
     pub payload_preview_text: String,
     pub payload_preview_unavailable_text: String,
-    pub protocol_details_text: String,
     pub constricted_contribution_notes: Vec<String>,
     pub constricted_packet_notes: Vec<String>,
 }
@@ -429,7 +428,6 @@ pub struct PacketDetailsDto {
     pub summary_layers: Vec<PacketSummaryLayerDto>,
     pub byte_view_descriptors: Vec<PacketByteViewDescriptorDto>,
     pub selected_byte_view: PacketByteViewContentDto,
-    pub protocol_details_text: String,
     pub checksum_summary_lines: Vec<String>,
     pub checksum_warning_lines: Vec<String>,
     pub unavailable_text: String,
