@@ -74,7 +74,6 @@ SelectedPacketBytePresentation require_flow_aware_presentation(CaptureSession& s
         flow_index,
         flow_packet_index,
         loaded_packet_window_count,
-        session.read_packet_protocol_details_text(packet),
         std::optional<std::uint32_t> {packet.payload_length},
         session_detail::derive_original_transport_payload_length_from_headers(session, packet)
     );

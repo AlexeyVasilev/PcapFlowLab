@@ -907,24 +907,6 @@ std::vector<session_detail::PacketSummaryLayer> build_stream_item_summary_layers
     );
 }
 
-std::string frontend_packet_protocol_text(
-    const CaptureSession& session,
-    const std::optional<std::size_t> flow_index,
-    const PacketRef& packet
-) {
-    auto protocol_text = session.read_packet_protocol_details_text(packet);
-    if (!flow_index.has_value() || protocol_text.find("QUIC") == std::string::npos) {
-        return protocol_text;
-    }
-
-    if (const auto context_text = session.derive_quic_protocol_text_for_packet(*flow_index, packet.packet_index);
-        context_text.has_value() && !context_text->empty()) {
-        return *context_text;
-    }
-
-    return protocol_text;
-}
-
 std::string format_byte_count_text(const std::size_t count) {
     return std::to_string(count) + (count == 1U ? " byte" : " bytes");
 }
@@ -3125,8 +3107,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     const auto details = session_.read_packet_details(packet);
     const auto packet_bytes = session_.read_packet_data(packet);
     PacketChecksumSections checksum_sections {};
-    const auto protocol_details_text = frontend_packet_protocol_text(session_, flow_index, packet);
-
     if (details.has_value() && result.checksum_validation_enabled) {
         checksum_sections =
             build_packet_checksum_sections(*details, packet, std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
@@ -3150,7 +3130,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             flow_index,
             internal_flow_packet_index,
             loaded_packet_window_count,
-            protocol_details_text,
             captured_transport_payload_length,
             original_transport_payload_length,
             result.checksum_summary_lines,
@@ -3268,7 +3247,6 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
         selected_flow_index_,
         internal_flow_packet_index,
         loaded_packet_window_count,
-        frontend_packet_protocol_text(session_, selected_flow_index_, packet),
         captured_transport_payload_length,
         original_transport_payload_length
     );

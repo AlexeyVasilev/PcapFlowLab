@@ -711,7 +711,6 @@ void expect_ah_selected_packet_summary_payload_lengths() {
             .source_capture_accessible = true,
             .transport_payload_length = std::optional<std::uint32_t> {packet->payload_length},
             .original_transport_payload_length = original_payload_length,
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
 
         const auto* frame_layer = find_top_level_layer(summary_layers, "frame");
@@ -786,7 +785,6 @@ void expect_ah_tunnel_mode_selected_packet_effective_payload_lengths() {
             .source_capture_accessible = true,
             .transport_payload_length = std::optional<std::uint32_t> {packet->payload_length},
             .original_transport_payload_length = original_payload_length,
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         const auto* inner_transport_layer = find_top_level_layer(summary_layers, test_case.transport_layer_id);
         PFL_REQUIRE(inner_transport_layer != nullptr);
@@ -982,7 +980,6 @@ void expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths() {
             .source_capture_accessible = true,
             .transport_payload_length = captured_payload_length,
             .original_transport_payload_length = original_payload_length,
-            .protocol_details_text = session.read_packet_protocol_details_text(*packet),
         });
         const auto* udp_layer = find_top_level_layer(summary_layers, "udp");
         PFL_REQUIRE(udp_layer != nullptr);

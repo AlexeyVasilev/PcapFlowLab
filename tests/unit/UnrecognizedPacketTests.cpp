@@ -68,7 +68,6 @@ void run_unrecognized_packet_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
-            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         PFL_EXPECT(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "warnings");

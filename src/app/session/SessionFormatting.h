@@ -83,7 +83,6 @@ struct PacketSummaryOptions {
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::span<const std::uint8_t> transport_payload_bytes {};
-    std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
     std::span<const std::uint8_t> packet_data_preview_bytes {};

@@ -1392,31 +1392,6 @@ QVariantList packet_summary_layers_to_variant_list(const std::vector<session_det
     return result;
 }
 
-bool is_quic_protocol_text(const QString& protocol_text) {
-    return protocol_text.contains(QStringLiteral("QUIC"));
-}
-
-QString selected_flow_quic_protocol_text_for_packet(
-    CaptureSession& session,
-    const int selected_flow_index,
-    const std::uint64_t packet_index,
-    const QString& protocol_text
-) {
-    if (selected_flow_index < 0 || !is_quic_protocol_text(protocol_text)) {
-        return protocol_text;
-    }
-
-    const auto context_text = session.derive_quic_protocol_text_for_packet(
-        static_cast<std::size_t>(selected_flow_index),
-        packet_index
-    );
-    if (!context_text.has_value() || context_text->empty()) {
-        return protocol_text;
-    }
-
-    return QString::fromStdString(*context_text);
-}
-
 QString format_duration_us(const std::uint64_t duration_us) {
     if (duration_us == 0U) {
         return QStringLiteral("0 us");
@@ -4304,12 +4279,6 @@ void MainController::refreshSelectedPacketByteView() {
         return;
     }
 
-    const auto protocol_text = selected_flow_quic_protocol_text_for_packet(
-        session_,
-        selected_flow_index_,
-        packet->packet_index,
-        QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
-    );
     const auto payload_lengths = resolve_transport_payload_lengths(
         *details,
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
@@ -4329,7 +4298,6 @@ void MainController::refreshSelectedPacketByteView() {
         selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
         flow_packet_index,
         loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
-        protocol_text.toStdString(),
         payload_lengths.real_payload_length,
         payload_lengths.original_payload_length
     );
@@ -5561,12 +5529,6 @@ void MainController::reloadSelectedPacketDetails() {
     }
 
     const auto details = session_.read_packet_details(*packet);
-    const auto protocolText = selected_flow_quic_protocol_text_for_packet(
-        session_,
-        selected_flow_index_,
-        packet->packet_index,
-        QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
-    );
     const auto packetBytes = session_.read_packet_data(*packet);
     PacketChecksumSections checksum_sections {};
     if (details.has_value() && validate_selected_packet_checksums_) {
@@ -5601,7 +5563,6 @@ void MainController::reloadSelectedPacketDetails() {
             selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
             flow_packet_index,
             loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
-            protocolText.toStdString(),
             payload_lengths.real_payload_length,
             payload_lengths.original_payload_length,
             [&]() {
