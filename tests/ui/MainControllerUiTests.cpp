@@ -2592,6 +2592,7 @@ int main(int argc, char* argv[]) {
 
     byte_view_selection_controller.setSelectedPacketIndex(second_byte_view_packet_index);
     UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
+    UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewAvailable());
     UI_EXPECT(byte_view_selection_details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
 
     const auto vxlan_byte_view_capture_path =
@@ -2637,6 +2638,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.selectedFlowIndex() == -1);
     UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
+    UI_EXPECT(!details_model->selectedPacketByteViewAvailable());
     UI_EXPECT(details_model->selectedPacketByteViewText().isEmpty());
     UI_EXPECT(details_model->packetByteViewDescriptors().isEmpty());
     UI_EXPECT(flow_model->rowCount() == 1);
@@ -2729,6 +2731,7 @@ int main(int argc, char* argv[]) {
             {},
             QStringLiteral("frame:0:0"),
             QStringLiteral("Frame"),
+            true,
             QStringLiteral("complete"),
             0U,
             {},
@@ -2756,6 +2759,40 @@ int main(int argc, char* argv[]) {
         packet_tabs->setProperty("currentIndex", 2);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(packet_tabs->property("currentIndex").toInt() == 0);
+    });
+
+    run_ui_section("packet_details_zero_length_byte_view_availability", [&]() {
+        PacketDetailsViewModel packet_model {};
+        packet_model.setPacketDetailsText(QStringLiteral("Packet number in file: 1"));
+        packet_model.setPacketBytePresentation(
+            {
+                QVariantMap {
+                    {QStringLiteral("stableId"), QStringLiteral("tcp:0:0")},
+                    {QStringLiteral("label"), QStringLiteral("TCP Segment")},
+                    {QStringLiteral("depth"), 0},
+                    {QStringLiteral("availableLength"), 0},
+                    {QStringLiteral("supportsPayloadOnly"), true},
+                }
+            },
+            QStringLiteral("tcp:0:0"),
+            QStringLiteral("TCP Segment"),
+            true,
+            QStringLiteral("complete"),
+            0U,
+            QVariant::fromValue(0U),
+            QStringLiteral("Available: 0 bytes"),
+            {}
+        );
+
+        UI_EXPECT(packet_model.selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
+        UI_EXPECT(packet_model.selectedPacketByteViewAvailable());
+        UI_EXPECT(packet_model.selectedPacketByteViewAvailableLength() == 0U);
+        UI_EXPECT(packet_model.selectedPacketByteViewText().isEmpty());
+
+        packet_model.clearPacketBytePresentation();
+        UI_EXPECT(packet_model.selectedPacketByteViewId().isEmpty());
+        UI_EXPECT(!packet_model.selectedPacketByteViewAvailable());
+        UI_EXPECT(packet_model.selectedPacketByteViewText().isEmpty());
     });
 
     run_ui_section("stream_item_details_tabs_protocol_removed", [&]() {

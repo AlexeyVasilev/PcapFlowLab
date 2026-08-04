@@ -1936,6 +1936,7 @@ void run_stream_query_tests() {
         );
         PFL_REQUIRE(end_result.stable_rows.size() == 1U);
         PFL_EXPECT(!end_result.provisional_row.has_value());
+        PFL_EXPECT(end_result.stable_rows[0].item.stability == StreamMaterializationStability::stable);
         PFL_EXPECT(end_result.stable_rows[0].item.label.find("(partial)") != std::string::npos);
     }
 

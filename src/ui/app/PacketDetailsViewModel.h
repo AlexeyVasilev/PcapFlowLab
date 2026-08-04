@@ -19,6 +19,7 @@ class PacketDetailsViewModel final : public QObject {
     Q_PROPERTY(QVariantList packetByteViewDescriptors READ packetByteViewDescriptors NOTIFY changed)
     Q_PROPERTY(QString selectedPacketByteViewId READ selectedPacketByteViewId NOTIFY changed)
     Q_PROPERTY(QString selectedPacketByteViewLabel READ selectedPacketByteViewLabel NOTIFY changed)
+    Q_PROPERTY(bool selectedPacketByteViewAvailable READ selectedPacketByteViewAvailable NOTIFY changed)
     Q_PROPERTY(QString selectedPacketByteViewState READ selectedPacketByteViewState NOTIFY changed)
     Q_PROPERTY(qulonglong selectedPacketByteViewAvailableLength READ selectedPacketByteViewAvailableLength NOTIFY changed)
     Q_PROPERTY(QVariant selectedPacketByteViewDeclaredLength READ selectedPacketByteViewDeclaredLength NOTIFY changed)
@@ -54,6 +55,7 @@ public:
     [[nodiscard]] const QVariantList& packetByteViewDescriptors() const noexcept;
     [[nodiscard]] const QString& selectedPacketByteViewId() const noexcept;
     [[nodiscard]] const QString& selectedPacketByteViewLabel() const noexcept;
+    [[nodiscard]] bool selectedPacketByteViewAvailable() const noexcept;
     [[nodiscard]] const QString& selectedPacketByteViewState() const noexcept;
     [[nodiscard]] qulonglong selectedPacketByteViewAvailableLength() const noexcept;
     [[nodiscard]] const QVariant& selectedPacketByteViewDeclaredLength() const noexcept;
@@ -86,6 +88,7 @@ public:
         const QVariantList& descriptors,
         const QString& selectedId,
         const QString& selectedLabel,
+        bool selectedAvailable,
         const QString& selectedState,
         qulonglong selectedAvailableLength,
         const QVariant& selectedDeclaredLength,
@@ -125,6 +128,7 @@ private:
                        const QVariantList& newPacketByteViewDescriptors,
                        const QString& newSelectedPacketByteViewId,
                        const QString& newSelectedPacketByteViewLabel,
+                       bool newSelectedPacketByteViewAvailable,
                        const QString& newSelectedPacketByteViewState,
                        qulonglong newSelectedPacketByteViewAvailableLength,
                        const QVariant& newSelectedPacketByteViewDeclaredLength,
@@ -157,6 +161,7 @@ private:
     QVariantList packet_byte_view_descriptors_ {};
     QString selected_packet_byte_view_id_ {};
     QString selected_packet_byte_view_label_ {};
+    bool selected_packet_byte_view_available_ {false};
     QString selected_packet_byte_view_state_ {};
     qulonglong selected_packet_byte_view_available_length_ {0U};
     QVariant selected_packet_byte_view_declared_length_ {};

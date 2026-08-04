@@ -1817,16 +1817,9 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
     maybe_initialize_tls_scanner_pending_record(state);
 
     if (finish_mode == TlsStreamScannerFinishMode::flow_end) {
-        const bool stable_constricted = std::any_of(
-            state.buffered_contributions.begin(),
-            state.buffered_contributions.end(),
-            [](const TlsStreamScannerBufferedContribution& contribution) {
-                return contribution.packet_captured_length < contribution.packet_original_length;
-            }
-        );
         const auto partial_row = make_tls_stream_scanner_partial_row(
             state,
-            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::stable
+            StreamMaterializationStability::stable
         );
         if (partial_row.has_value() && output.stable_rows.size() < max_finalized_items) {
             output.stable_rows.push_back(*partial_row);

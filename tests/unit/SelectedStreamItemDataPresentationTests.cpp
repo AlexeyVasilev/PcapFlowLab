@@ -244,6 +244,125 @@ void run_selected_stream_item_data_presentation_tests() {
     }
 
     {
+        const auto repeated_header_payload = std::vector<std::uint8_t> {0x45U, 0x00U, 0x00U, 0x2cU};
+        const auto path = write_temp_pcap(
+            "pfl_stream_item_data_repeated_header_bytes.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 91, 0, 1),
+                    ipv4(10, 91, 0, 2),
+                    47000,
+                    80,
+                    repeated_header_payload,
+                    0x18
+                )
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto& row = rows.front();
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 8U, row.stream_item_index);
+        PFL_EXPECT(presentation.semantic_kind == session_detail::StreamItemDataSemanticKind::tcp_payload);
+        PFL_REQUIRE(presentation.captured_packet_range.has_value());
+        PFL_EXPECT(presentation.captured_packet_range->offset == 54U);
+        PFL_EXPECT(presentation.captured_packet_range->offset != 14U);
+        const auto packet = session.find_packet(row.packet_indices.front());
+        PFL_REQUIRE(packet.has_value());
+        PFL_EXPECT(
+            presentation.captured_packet_range->offset + presentation.captured_packet_range->available_length ==
+            packet->captured_length);
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            8U,
+            row.stream_item_index
+        );
+        PFL_EXPECT(materialized == repeated_header_payload);
+
+        auto missing_provenance_row = row;
+        missing_provenance_row.packet_indices.clear();
+        const auto missing_provenance = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            missing_provenance_row,
+            row.materialization_stability,
+            0U
+        );
+        PFL_EXPECT(missing_provenance.source_kind == session_detail::StreamItemDataSourceKind::unavailable);
+        PFL_EXPECT(missing_provenance.unavailable_reason.find("not packet-backed") != std::string::npos);
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_stream_item_data_trim_prefix_overlap.pcap",
+            make_classic_pcap({
+                {
+                    100U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                        ipv4(10, 92, 0, 1),
+                        ipv4(10, 92, 0, 2),
+                        47001,
+                        80,
+                        make_text_bytes("ABCD"),
+                        1000U,
+                        0U
+                    )
+                },
+                {
+                    200U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                        ipv4(10, 92, 0, 1),
+                        ipv4(10, 92, 0, 2),
+                        47001,
+                        80,
+                        make_text_bytes("CDEF"),
+                        1002U,
+                        0U
+                    )
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        const auto* row = find_stream_row_by_label_and_packets(rows, "TCP Payload", {1U});
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(session.selected_flow_tcp_payload_trim_prefix_bytes(0U, 1U) == 2U);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 8U, row->stream_item_index);
+        PFL_REQUIRE(presentation.captured_packet_range.has_value());
+        PFL_EXPECT(presentation.captured_packet_range->offset == 56U);
+        PFL_EXPECT(presentation.captured_packet_range->available_length == 2U);
+        PFL_EXPECT(presentation.captured_packet_range->declared_length == std::optional<std::uint32_t> {2U});
+
+        const auto packet = session.find_packet(1U);
+        PFL_REQUIRE(packet.has_value());
+        PFL_EXPECT(
+            presentation.captured_packet_range->offset + presentation.captured_packet_range->available_length ==
+            packet->captured_length);
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            8U,
+            row->stream_item_index
+        );
+        PFL_EXPECT(materialized == make_text_bytes("EF"));
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), fast_options()));
 
@@ -626,6 +745,10 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_REQUIRE(rows[0].arp_summary.has_value());
 
         const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 8U, rows[0].stream_item_index);
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range);
+        PFL_REQUIRE(presentation.captured_packet_range.has_value());
+        PFL_EXPECT(presentation.captured_packet_range->offset == 14U);
+        PFL_EXPECT(presentation.captured_packet_range->available_length == rows[0].byte_count);
         auto relabeled_row = rows[0];
         relabeled_row.label = "synthetic label should not choose ARP item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(

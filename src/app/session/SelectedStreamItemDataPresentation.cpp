@@ -9,6 +9,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionTlsPresentation.h"
+#include "core/decode/PacketDecodeSupport.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
 
@@ -174,21 +175,40 @@ std::optional<std::uint32_t> packet_local_tls_offset(
         return std::nullopt;
     }
 
-    const auto packet_bytes = session.read_packet_data(packet);
-    if (packet_bytes.empty()) {
+    const auto details = session.read_packet_details(packet);
+    if (!details.has_value() || !details->effective_transport_payload.has_value()) {
         return std::nullopt;
     }
 
-    PacketPayloadService payload_service {};
-    const auto payload_view = payload_service.extract_transport_payload_view(
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        packet.data_link_type
-    );
-    if (!payload_view.found || payload_offset > std::numeric_limits<std::uint32_t>::max()) {
+    const auto payload_base_offset = static_cast<std::size_t>(details->effective_transport_payload->payload_offset);
+    if (payload_offset > std::numeric_limits<std::uint32_t>::max() ||
+        payload_base_offset > std::numeric_limits<std::uint32_t>::max() - payload_offset) {
         return std::nullopt;
     }
 
-    return static_cast<std::uint32_t>(payload_view.offset + payload_offset);
+    return static_cast<std::uint32_t>(payload_base_offset + payload_offset);
+}
+
+std::optional<StreamItemCapturedPacketRange> make_captured_packet_range(
+    const PacketRef& packet,
+    const std::size_t captured_packet_size,
+    const std::size_t offset,
+    const std::size_t available_length,
+    const std::optional<std::uint32_t> declared_length
+) {
+    if (offset > captured_packet_size ||
+        available_length > captured_packet_size - offset ||
+        offset > std::numeric_limits<std::uint32_t>::max() ||
+        available_length > std::numeric_limits<std::uint32_t>::max()) {
+        return std::nullopt;
+    }
+
+    return StreamItemCapturedPacketRange {
+        .packet_index = packet.packet_index,
+        .offset = static_cast<std::uint32_t>(offset),
+        .available_length = static_cast<std::uint32_t>(available_length),
+        .declared_length = declared_length,
+    };
 }
 
 std::optional<StreamItemCapturedPacketRange> make_transport_packet_range(
@@ -203,46 +223,29 @@ std::optional<StreamItemCapturedPacketRange> make_transport_packet_range(
         return std::nullopt;
     }
 
-    PacketPayloadService payload_service {};
-    const auto payload_view = payload_service.extract_transport_payload_view(
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        packet.data_link_type
+    const auto details = session.read_packet_details(packet);
+    if (!details.has_value() || !details->effective_transport_payload.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto& effective_payload = *details->effective_transport_payload;
+    if (payload_offset > effective_payload.captured_payload_length ||
+        available_length > effective_payload.captured_payload_length - payload_offset) {
+        return std::nullopt;
+    }
+
+    const auto absolute_offset = static_cast<std::size_t>(effective_payload.payload_offset) + payload_offset;
+    if (absolute_offset < payload_offset) {
+        return std::nullopt;
+    }
+
+    return make_captured_packet_range(
+        packet,
+        packet_bytes.size(),
+        absolute_offset,
+        available_length,
+        declared_length
     );
-    if (!payload_view.found ||
-        payload_offset > payload_view.length ||
-        available_length > payload_view.length - payload_offset ||
-        payload_view.offset + payload_offset > std::numeric_limits<std::uint32_t>::max() ||
-        available_length > std::numeric_limits<std::uint32_t>::max()) {
-        return std::nullopt;
-    }
-
-    return StreamItemCapturedPacketRange {
-        .packet_index = packet.packet_index,
-        .offset = static_cast<std::uint32_t>(payload_view.offset + payload_offset),
-        .available_length = static_cast<std::uint32_t>(available_length),
-        .declared_length = declared_length,
-    };
-}
-
-std::optional<std::uint32_t> find_payload_offset_in_packet(
-    std::span<const std::uint8_t> packet_bytes,
-    std::span<const std::uint8_t> payload_bytes
-) {
-    if (payload_bytes.empty() || payload_bytes.size() > packet_bytes.size()) {
-        return std::nullopt;
-    }
-
-    const auto it = std::search(packet_bytes.begin(), packet_bytes.end(), payload_bytes.begin(), payload_bytes.end());
-    if (it == packet_bytes.end()) {
-        return std::nullopt;
-    }
-
-    const auto offset = static_cast<std::size_t>(std::distance(packet_bytes.begin(), it));
-    if (offset > std::numeric_limits<std::uint32_t>::max()) {
-        return std::nullopt;
-    }
-
-    return static_cast<std::uint32_t>(offset);
 }
 
 SelectedStreamItemDataPresentation build_tls_presentation(
@@ -526,11 +529,22 @@ SelectedStreamItemDataPresentation build_tcp_payload_presentation(
         );
     }
 
+    const auto details = session.read_packet_details(*packet);
+    if (!details.has_value() || !details->effective_transport_payload.has_value()) {
+        return make_unavailable_presentation(
+            row.stream_item_index,
+            StreamItemDataSemanticKind::tcp_payload,
+            StreamItemDataState::unavailable,
+            "The TCP payload range could not be resolved from the selected-flow packet cache."
+        );
+    }
+
+    const auto& effective_payload = *details->effective_transport_payload;
     const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet->packet_index);
-    const auto original_length = derive_original_transport_payload_length_from_headers(session, *packet);
-    const auto declared_length = original_length.has_value() && *original_length >= trim_prefix_bytes
+    const auto declared_length = effective_payload.declared_payload_length.has_value() &&
+            *effective_payload.declared_payload_length >= trim_prefix_bytes
         ? std::optional<std::uint32_t> {
-            static_cast<std::uint32_t>(*original_length - trim_prefix_bytes)}
+            static_cast<std::uint32_t>(*effective_payload.declared_payload_length - trim_prefix_bytes)}
         : std::nullopt;
     const auto packet_range = make_transport_packet_range(
         session,
@@ -548,7 +562,8 @@ SelectedStreamItemDataPresentation build_tcp_payload_presentation(
         );
     }
 
-    const auto state = declared_length.has_value() && *declared_length > row.byte_count
+    const auto state = effective_payload.payload_truncated ||
+            (declared_length.has_value() && *declared_length > row.byte_count)
         ? StreamItemDataState::truncated
         : StreamItemDataState::complete;
     return SelectedStreamItemDataPresentation {
@@ -603,71 +618,95 @@ SelectedStreamItemDataPresentation build_packet_payload_presentation(
         );
     }
 
-    PacketPayloadService payload_service {};
-    const auto transport_view = payload_service.extract_transport_payload_view(
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        packet->data_link_type
-    );
-    if (transport_view.found && transport_view.length >= row.byte_count) {
-        const auto original_length = derive_original_transport_payload_length_from_headers(session, *packet);
-        const auto declared_length = original_length.has_value()
-            ? std::optional<std::uint32_t> {*original_length}
-            : std::optional<std::uint32_t> {};
-        const auto state = declared_length.has_value() && *declared_length > row.byte_count
-            ? StreamItemDataState::truncated
-            : StreamItemDataState::complete;
-        return SelectedStreamItemDataPresentation {
-            .stream_item_index = row.stream_item_index,
-            .semantic_kind = StreamItemDataSemanticKind::opaque_payload,
-            .source_kind = StreamItemDataSourceKind::captured_packet_range,
-            .state = state,
-            .assembly_kind = StreamItemDataAssemblyKind::packet_local,
-            .available_length = static_cast<std::uint32_t>(row.byte_count),
-            .declared_length = declared_length,
-            .captured_packet_range = StreamItemCapturedPacketRange {
-                .packet_index = packet->packet_index,
-                .offset = static_cast<std::uint32_t>(transport_view.offset),
-                .available_length = static_cast<std::uint32_t>(row.byte_count),
-                .declared_length = declared_length,
-            },
-            .contributing_unit_count = std::nullopt,
-            .contributing_unit_kind = std::nullopt,
-            .quic_crypto_stream_offset = std::nullopt,
-            .owned_bytes = {},
-            .unavailable_reason = {},
-        };
+    const auto details = session.read_packet_details(*packet);
+    if (details.has_value() && details->effective_transport_payload.has_value()) {
+        const auto& effective_payload = *details->effective_transport_payload;
+        if (row.byte_count <= effective_payload.captured_payload_length) {
+            const auto declared_length = effective_payload.declared_payload_length.has_value()
+                ? std::optional<std::uint32_t> {*effective_payload.declared_payload_length}
+                : std::optional<std::uint32_t> {};
+            const auto packet_range = make_transport_packet_range(
+                session,
+                *packet,
+                0U,
+                row.byte_count,
+                declared_length
+            );
+            if (packet_range.has_value()) {
+                const auto state = effective_payload.payload_truncated ||
+                        (declared_length.has_value() && *declared_length > row.byte_count)
+                    ? StreamItemDataState::truncated
+                    : StreamItemDataState::complete;
+                return SelectedStreamItemDataPresentation {
+                    .stream_item_index = row.stream_item_index,
+                    .semantic_kind = StreamItemDataSemanticKind::opaque_payload,
+                    .source_kind = StreamItemDataSourceKind::captured_packet_range,
+                    .state = state,
+                    .assembly_kind = StreamItemDataAssemblyKind::packet_local,
+                    .available_length = packet_range->available_length,
+                    .declared_length = packet_range->declared_length,
+                    .captured_packet_range = packet_range,
+                    .contributing_unit_count = std::nullopt,
+                    .contributing_unit_kind = std::nullopt,
+                    .quic_crypto_stream_offset = std::nullopt,
+                    .owned_bytes = {},
+                    .unavailable_reason = {},
+                };
+            }
+        }
     }
 
-    const auto payload_bytes = payload_service.extract_packet_details_payload(
+    const auto network = detail::parse_network_payload(
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         packet->data_link_type
     );
-    if (payload_bytes.size() >= row.byte_count) {
-        if (const auto offset = find_payload_offset_in_packet(
-                std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-                std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())
-            );
-            offset.has_value()) {
-            return SelectedStreamItemDataPresentation {
-                .stream_item_index = row.stream_item_index,
-                .semantic_kind = StreamItemDataSemanticKind::other,
-                .source_kind = StreamItemDataSourceKind::captured_packet_range,
-                .state = StreamItemDataState::complete,
-                .assembly_kind = StreamItemDataAssemblyKind::packet_local,
-                .available_length = static_cast<std::uint32_t>(row.byte_count),
-                .declared_length = std::optional<std::uint32_t> {static_cast<std::uint32_t>(row.byte_count)},
-                .captured_packet_range = StreamItemCapturedPacketRange {
-                    .packet_index = packet->packet_index,
-                    .offset = *offset,
-                    .available_length = static_cast<std::uint32_t>(row.byte_count),
-                    .declared_length = std::optional<std::uint32_t> {static_cast<std::uint32_t>(row.byte_count)},
-                },
-                .contributing_unit_count = std::nullopt,
-                .contributing_unit_kind = std::nullopt,
-                .quic_crypto_stream_offset = std::nullopt,
-                .owned_bytes = {},
-                .unavailable_reason = {},
-            };
+    if (row.arp_summary.has_value() &&
+        network.has_value() &&
+        network->protocol_type == detail::kEtherTypeArp) {
+        const auto bounded_bytes = network->bounded_packet_end.has_value()
+            ? std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()).first(
+                std::min(*network->bounded_packet_end, packet_bytes.size()))
+            : std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size());
+        if (bounded_bytes.size() > network->payload_offset) {
+            const auto available_length = bounded_bytes.size() - network->payload_offset;
+            std::optional<std::uint32_t> declared_length {};
+            if (available_length >= 8U) {
+                const auto hardware_size = static_cast<std::size_t>(bounded_bytes[network->payload_offset + 4U]);
+                const auto protocol_size = static_cast<std::size_t>(bounded_bytes[network->payload_offset + 5U]);
+                const auto declared_length_size = 8U + (2U * hardware_size) + (2U * protocol_size);
+                if (declared_length_size <= std::numeric_limits<std::uint32_t>::max()) {
+                    declared_length = static_cast<std::uint32_t>(declared_length_size);
+                }
+            }
+            if (row.byte_count <= available_length) {
+                const auto packet_range = make_captured_packet_range(
+                    *packet,
+                    packet_bytes.size(),
+                    network->payload_offset,
+                    row.byte_count,
+                    declared_length
+                );
+                if (packet_range.has_value()) {
+                    const auto state = declared_length.has_value() && *declared_length > row.byte_count
+                        ? StreamItemDataState::truncated
+                        : StreamItemDataState::complete;
+                    return SelectedStreamItemDataPresentation {
+                        .stream_item_index = row.stream_item_index,
+                        .semantic_kind = StreamItemDataSemanticKind::other,
+                        .source_kind = StreamItemDataSourceKind::captured_packet_range,
+                        .state = state,
+                        .assembly_kind = StreamItemDataAssemblyKind::packet_local,
+                        .available_length = packet_range->available_length,
+                        .declared_length = packet_range->declared_length,
+                        .captured_packet_range = packet_range,
+                        .contributing_unit_count = std::nullopt,
+                        .contributing_unit_kind = std::nullopt,
+                        .quic_crypto_stream_offset = std::nullopt,
+                        .owned_bytes = {},
+                        .unavailable_reason = {},
+                    };
+                }
+            }
         }
     }
 

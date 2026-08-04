@@ -1053,11 +1053,13 @@ Frame {
                         Layout.fillHeight: true
                         monospace: true
                         viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                            ? (root.packetDetailsModel.selectedPacketByteViewText.length > 0
+                            ? (root.packetDetailsModel.selectedPacketByteViewAvailable
                                 ? root.packetDetailsModel.selectedPacketByteViewText
-                                : (root.packetByteViews().length > 0
+                                : (root.packetDetailsModel.selectedPacketByteViewText.length > 0
+                                    ? root.packetDetailsModel.selectedPacketByteViewText
+                                    : (root.packetByteViews().length > 0
                                     ? "Selected byte view is unavailable."
-                                    : "No byte views are available for this packet."))
+                                    : "No byte views are available for this packet.")))
                             : root.emptyText()
                     }
                 }

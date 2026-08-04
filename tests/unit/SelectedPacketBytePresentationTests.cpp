@@ -13,6 +13,7 @@
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
+#include "core/services/HexDumpService.h"
 
 namespace pfl::tests {
 
@@ -401,6 +402,52 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(tcp_data->captured_length == 4U);
         PFL_EXPECT(!tcp_data->payload_range.has_value());
         expect_ascii_prefix(flow_aware_presentation, tcp_data->id, bytes, "ABCD");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_selected_packet_byte_zero_length_payload_only.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 1, 1, 1),
+                    ipv4(10, 1, 1, 2),
+                    23456,
+                    443
+                )
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(path));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+        const auto* tcp_payload = require_view(presentation, SelectedPacketByteViewKind::tcp_payload);
+        PFL_REQUIRE(tcp_payload->payload_range.has_value());
+        PFL_EXPECT(tcp_payload->payload_range->captured_length == 0U);
+
+        const auto materialized = session_detail::materialize_selected_packet_byte_view(
+            presentation,
+            tcp_payload->id,
+            std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+        PFL_REQUIRE(materialized.has_value());
+        PFL_EXPECT(materialized->bytes.empty());
+
+        HexDumpService hex_dump_service {};
+        const auto content = session_detail::format_selected_packet_byte_view_content(
+            presentation,
+            tcp_payload->id,
+            std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+            hex_dump_service,
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+        PFL_REQUIRE(content.has_value());
+        PFL_EXPECT(content->stable_id == "tcp:0:0");
+        PFL_EXPECT(content->available_length == 0U);
+        PFL_EXPECT(content->formatted_text.empty());
     }
 
     {

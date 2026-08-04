@@ -2956,8 +2956,6 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_sele
     const std::uint64_t flow_packet_index,
     const std::uint64_t loaded_packet_window_count
 ) {
-    static_cast<void>(loaded_packet_window_count);
-
     if (!session_.has_capture()) {
         return FrontendPacketDetailsDto::PacketByteViewContent {
             .available = false,

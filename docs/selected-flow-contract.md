@@ -126,6 +126,7 @@ Current visibility rules:
 - there is no visible `Protocol` tab;
 - there are no visible `Raw` or transport-specific `TCP Payload` / `UDP Payload` tabs;
 - Stream Item Details use `Summary` and `Item Data`.
+- Packet `Bytes` availability is explicit; a selected byte view may be valid even when its formatted text is empty, for example when an authoritative selected range has zero available bytes.
 
 ### 8.2 Stream Item Details
 
@@ -157,6 +158,7 @@ Selected-flow backend now also supports a presentation-neutral Item Data model f
 - The owner is resolved on demand from either:
   - an exact captured packet range; or
   - bounded retained/reconstructed item bytes for that selected item.
+- Packet-backed Item Data uses only authoritative retained packet ranges or retained owned bytes; it never locates offsets by searching packet contents for a matching byte sequence.
 - Synthetic rows such as gap markers expose no Item Data.
 - Bounded selected-flow packet/item limits still apply; the Item Data API must not read beyond the currently requested stream window.
 - Item Data materialization and hex formatting are selected-item-only operations; no eager per-row byte copies or preformatted dumps are retained for the whole stream result.
