@@ -4732,8 +4732,14 @@ TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKi
     }
 }
 
-bool stream_item_uses_packet_fallback(const StreamItemRow& row) {
-    return row.payload_hex_text.empty() && row.protocol_text.empty() && row.packet_indices.size() == 1U;
+bool stream_item_uses_packet_fallback_impl(const StreamItemRow& row) {
+    return row.packet_indices.size() == 1U &&
+        row.semantic_family == StreamItemSemanticFamily::generic &&
+        row.generic_summary.has_value() &&
+        row.generic_summary->diagnostic.empty() &&
+        (row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::tcp_payload ||
+            row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::udp_payload ||
+            row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::payload);
 }
 
 std::string stream_item_state_text(const StreamItemRow& row) {
@@ -4810,7 +4816,7 @@ std::string stream_item_assembly_text(const StreamItemRow& row) {
 }
 
 std::string stream_item_details_source_text_impl(const StreamItemRow& row) {
-    return stream_item_uses_packet_fallback(row)
+    return stream_item_uses_packet_fallback_impl(row)
         ? "Packet fallback"
         : "Stream item";
 }
@@ -5880,6 +5886,10 @@ std::vector<std::string> build_basic_summary_lines(const PacketDetails& details)
 
 std::string stream_item_details_source_text(const StreamItemRow& row) {
     return stream_item_details_source_text_impl(row);
+}
+
+bool stream_item_uses_packet_fallback(const StreamItemRow& row) {
+    return stream_item_uses_packet_fallback_impl(row);
 }
 
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(

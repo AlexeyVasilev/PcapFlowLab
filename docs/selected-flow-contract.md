@@ -136,9 +136,11 @@ Summary-specific rules:
 
 - Stream Item Summary is model-driven and frontend-neutral.
 - Stream Item Summary semantics must come from authoritative stream-item model fields retained by selected-flow construction.
-- Display labels and retained protocol text may remain visible in bubbles or internal debug-oriented surfaces, but they are not semantic sources for Stream Item Summary.
+- Display labels may remain visible in bubbles or internal debug-oriented surfaces, but they must be built from retained structured stream-item semantics rather than by reparsing retained formatted text.
+- Retained `StreamItemRow::protocol_text` may remain available for parity/debug output, but it is not a semantic source for Stream Item Summary.
 - Item Data remains the byte-ownership surface and must stay separate from Summary semantics.
 - Retained protocol text remains an internal richer text/debug surface until its remaining useful fields are either migrated or intentionally deferred.
+- Flow-level `FlowRow::protocol_text` remains a separate live field for the flow list and related flow-scoped behavior; it is not the same contract as per-stream-item retained protocol text.
 
 ### 8.3 Stream Item Data Backend Contract
 
@@ -156,6 +158,7 @@ Selected-flow backend now also supports a presentation-neutral Item Data model f
 - Qt and Tauri now surface this contract through `Summary / Item Data` stream-item tabs.
 - Packet Details now use `Summary / Bytes`.
 - The Item Data view is selected-row-only and does not expose a packet-style selector hierarchy.
+- Item Data ownership, availability, and packet-local versus reassembled status must come from retained structured stream-item semantics and provenance, not from `StreamItemRow::protocol_text`.
 
 Current limitation:
 

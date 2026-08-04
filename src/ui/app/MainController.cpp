@@ -1257,10 +1257,6 @@ QString format_stream_source_packets(
         : QStringLiteral("packets %1").arg(values.join(QStringLiteral(",")));
 }
 
-bool stream_item_uses_packet_fallback(const StreamItemRow& item) {
-    return item.payload_hex_text.empty() && item.protocol_text.empty() && item.packet_indices.size() == 1U;
-}
-
 QString stream_item_details_source(const StreamItemRow& item) {
     return QString::fromStdString(session_detail::stream_item_details_source_text(item));
 }
@@ -1288,7 +1284,7 @@ QString stream_item_header_badge_text(const StreamItemRow& item) {
         item.materialization_stability == StreamMaterializationStability::window_incomplete) {
         return QStringLiteral("Partial");
     }
-    if (stream_item_uses_packet_fallback(item)) {
+    if (session_detail::stream_item_uses_packet_fallback(item)) {
         return QStringLiteral("Packet fallback");
     }
     if (item.packet_count > 1U) {

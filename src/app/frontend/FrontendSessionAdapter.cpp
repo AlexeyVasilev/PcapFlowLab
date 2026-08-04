@@ -722,10 +722,6 @@ std::string format_stream_source_packets_text(
     return out.str();
 }
 
-bool stream_item_uses_packet_fallback(const StreamItemRow& row) {
-    return row.payload_hex_text.empty() && row.protocol_text.empty() && row.packet_indices.size() == 1U;
-}
-
 std::string stream_item_details_source_text(const StreamItemRow& row) {
     return session_detail::stream_item_details_source_text(row);
 }
@@ -751,7 +747,7 @@ std::string stream_item_header_badge_text(const StreamItemRow& row) {
         row.materialization_stability == StreamMaterializationStability::window_incomplete) {
         return "Partial";
     }
-    if (stream_item_uses_packet_fallback(row)) {
+    if (session_detail::stream_item_uses_packet_fallback(row)) {
         return "Packet fallback";
     }
     if (row.packet_count > 1U) {

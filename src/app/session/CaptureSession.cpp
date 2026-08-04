@@ -13,6 +13,7 @@
 #include <cassert>
 #include <chrono>
 #include <array>
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -63,7 +64,6 @@ using session_detail::build_tls_stream_items_from_reassembly;
 using session_detail::format_endpoint;
 using session_detail::format_ipv4_address;
 using session_detail::format_ipv6_address;
-using session_detail::http_stream_label_from_protocol_text;
 using session_detail::format_packet_timestamp;
 using session_detail::format_tcp_flags_text;
 using session_detail::list_connections;
@@ -84,8 +84,6 @@ using session_detail::total_bytes;
 
 using session_detail::format_quic_presentation_enrichment;
 using session_detail::format_quic_presentation_protocol_text;
-using session_detail::tls_stream_label_from_protocol_text;
-
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 constexpr std::string_view kFragmentedProtocolDetailsMessage = "Protocol details are unavailable for fragmented packets until reassembly is implemented.";
@@ -131,10 +129,6 @@ struct StreamPacketCandidate {
     ProtocolId protocol {ProtocolId::unknown};
 };
 
-bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
-    return text.find(needle) != std::string_view::npos;
-}
-
 std::string fallback_stream_label(const ProtocolId protocol) {
     switch (protocol) {
     case ProtocolId::tcp:
@@ -171,6 +165,72 @@ GenericStreamItemSummaryDetails generic_stream_summary_for_protocol(
 
 std::string conservative_gap_diagnostic() {
     return "Earlier TCP bytes are missing, so later bytes are shown conservatively.";
+}
+
+std::optional<HttpStreamItemSummaryDetails> make_http_stream_summary_from_packet_details(
+    const HttpDetails& details
+) {
+    switch (details.message_type) {
+    case HttpMessageType::request:
+        return HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::request,
+            .method = details.method,
+            .target = details.path,
+            .version = details.version,
+        };
+    case HttpMessageType::response: {
+        std::optional<std::uint16_t> status_code {};
+        if (!details.status_code.empty() &&
+            std::all_of(details.status_code.begin(), details.status_code.end(), [](const char character) {
+                return std::isdigit(static_cast<unsigned char>(character)) != 0;
+            })) {
+            status_code = static_cast<std::uint16_t>(std::stoi(details.status_code));
+        }
+        return HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::response,
+            .version = details.version,
+            .status_code = status_code,
+            .reason_phrase = details.reason_phrase,
+        };
+    }
+    case HttpMessageType::unknown:
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string dns_stream_label(const DnsDetails& details) {
+    return details.is_response ? "DNS Response" : "DNS Query";
+}
+
+struct PacketLocalStreamClassification {
+    std::string label {};
+    std::optional<HttpStreamItemSummaryDetails> http_summary {};
+};
+
+PacketLocalStreamClassification classify_packet_local_stream_item(
+    const PacketDetails& details,
+    const ProtocolId protocol
+) {
+    if (protocol == ProtocolId::tcp && details.has_http) {
+        const auto http_summary = make_http_stream_summary_from_packet_details(details.http);
+        if (http_summary.has_value()) {
+            return PacketLocalStreamClassification {
+                .label = session_detail::http_stream_label_from_summary(*http_summary),
+                .http_summary = http_summary,
+            };
+        }
+    }
+
+    if (protocol == ProtocolId::udp && details.has_dns) {
+        return PacketLocalStreamClassification {
+            .label = dns_stream_label(details.dns),
+        };
+    }
+
+    return PacketLocalStreamClassification {
+        .label = fallback_stream_label(protocol),
+    };
 }
 
 StreamItemRow make_stream_item_row(
@@ -652,44 +712,6 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
     policy.covered_packet_indices = presentation.covered_packet_indices;
 
     return policy;
-}
-
-std::string classify_stream_label(
-    const std::vector<std::uint8_t>& packet_bytes,
-    const std::uint32_t data_link_type,
-    const ProtocolId protocol
-) {
-    if (protocol == ProtocolId::tcp) {
-        TlsPacketProtocolAnalyzer tls_analyzer {};
-        if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
-            return tls_stream_label_from_protocol_text(*tls_details);
-        }
-
-        HttpPacketProtocolAnalyzer http_analyzer {};
-        if (const auto http_details = http_analyzer.analyze(packet_bytes, data_link_type); http_details.has_value()) {
-            return http_stream_label_from_protocol_text(*http_details);
-        }
-
-        return fallback_stream_label(protocol);
-    }
-
-    if (protocol == ProtocolId::udp) {
-        DnsPacketProtocolAnalyzer dns_analyzer {};
-        if (const auto dns_details = dns_analyzer.analyze(packet_bytes, data_link_type); dns_details.has_value()) {
-            const auto text = std::string_view(*dns_details);
-            if (contains_text(text, "Message Type: Query")) {
-                return "DNS Query";
-            }
-            if (contains_text(text, "Message Type: Response")) {
-                return "DNS Response";
-            }
-            return "DNS Payload";
-        }
-
-        return fallback_stream_label(protocol);
-    }
-
-    return fallback_stream_label(protocol);
 }
 
 std::optional<PacketRef> find_packet_in_connection(const ConnectionV4& connection, std::uint64_t packet_index) {
@@ -1624,6 +1646,7 @@ void append_connection_stream_items_bounded(
 
         std::string label = fallback_stream_label(flow_protocol);
         std::string protocol_text {};
+        std::optional<HttpStreamItemSummaryDetails> http_summary {};
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
@@ -1634,7 +1657,12 @@ void append_connection_stream_items_bounded(
         } else if (!trimmed_tcp_payload) {
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
-                label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol);
+                PacketDetailsService details_service {};
+                if (const auto details = details_service.decode(packet_bytes, packet); details.has_value()) {
+                    const auto classification = classify_packet_local_stream_item(*details, flow_protocol);
+                    label = classification.label;
+                    http_summary = classification.http_summary;
+                }
             }
         }
         auto row = make_stream_item_row(
@@ -1667,8 +1695,13 @@ void append_connection_stream_items_bounded(
                 );
             }
         } else {
-            row.semantic_family = StreamItemSemanticFamily::generic;
-            row.generic_summary = generic_stream_summary_for_protocol(flow_protocol);
+            if (http_summary.has_value()) {
+                row.semantic_family = StreamItemSemanticFamily::http;
+                row.http_summary = std::move(http_summary);
+            } else {
+                row.semantic_family = StreamItemSemanticFamily::generic;
+                row.generic_summary = generic_stream_summary_for_protocol(flow_protocol);
+            }
         }
         rows.push_back(BuiltStreamRow {
             .row = std::move(row),

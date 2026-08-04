@@ -169,6 +169,7 @@ void populate_application_protocol_details(
             .version = http->version,
             .host = http->host,
             .status_code = http->status_code,
+            .reason_phrase = http->reason,
         };
     }
 }

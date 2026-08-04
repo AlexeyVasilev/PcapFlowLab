@@ -21,10 +21,6 @@ namespace {
 
 constexpr std::size_t kTlsRecordHeaderSize = 5U;
 
-bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
-    return text.find(needle) != std::string_view::npos;
-}
-
 std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) noexcept {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
                                       static_cast<std::uint16_t>(bytes[offset + 1U]));
@@ -1897,57 +1893,6 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
     }
 
     return output;
-}
-
-std::string tls_stream_label_from_protocol_text(const std::string_view protocol_text) {
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 17> handshake_labels {{
-        {"Handshake Type: HelloRequest", "TLS HelloRequest"},
-        {"Handshake Type: ClientHello", "TLS ClientHello"},
-        {"Handshake Type: ServerHello", "TLS ServerHello"},
-        {"Handshake Type: NewSessionTicket", "TLS NewSessionTicket"},
-        {"Handshake Type: EndOfEarlyData", "TLS EndOfEarlyData"},
-        {"Handshake Type: EncryptedExtensions", "TLS EncryptedExtensions"},
-        {"Handshake Type: Certificate", "TLS Certificate"},
-        {"Handshake Type: ServerKeyExchange", "TLS ServerKeyExchange"},
-        {"Handshake Type: CertificateRequest", "TLS CertificateRequest"},
-        {"Handshake Type: ServerHelloDone", "TLS ServerHelloDone"},
-        {"Handshake Type: CertificateVerify", "TLS CertificateVerify"},
-        {"Handshake Type: ClientKeyExchange", "TLS ClientKeyExchange"},
-        {"Handshake Type: Finished", "TLS Finished"},
-        {"Handshake Type: CertificateURL", "TLS CertificateURL"},
-        {"Handshake Type: CertificateStatus", "TLS CertificateStatus"},
-        {"Handshake Type: KeyUpdate", "TLS KeyUpdate"},
-        {"Handshake Type: CompressedCertificate", "TLS CompressedCertificate"},
-    }};
-
-    for (const auto& [marker, label] : handshake_labels) {
-        if (contains_text(protocol_text, marker)) {
-            return std::string {label};
-        }
-    }
-
-    if (contains_text(protocol_text, "Handshake Type: SupplementalData")) {
-        return "TLS SupplementalData";
-    }
-    if (contains_text(protocol_text, "Handshake Type: MessageHash")) {
-        return "TLS MessageHash";
-    }
-    if (contains_text(protocol_text, "Record Type: ChangeCipherSpec")) {
-        return "TLS ChangeCipherSpec";
-    }
-    if (contains_text(protocol_text, "Record Type: Alert")) {
-        return "TLS Alert";
-    }
-    if (contains_text(protocol_text, "Payload Interpretation: Encrypted/opaque handshake payload")) {
-        return "TLS Encrypted Handshake Message";
-    }
-    if (contains_text(protocol_text, "Record Type: ApplicationData")) {
-        return "TLS AppData";
-    }
-    if (contains_text(protocol_text, "Record Type: Handshake")) {
-        return "TLS Handshake";
-    }
-    return "TLS Payload";
 }
 
 TlsPacketStreamPresentation build_tls_stream_items_for_packet(

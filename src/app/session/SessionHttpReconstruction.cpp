@@ -27,10 +27,6 @@ struct ParsedHttpHeaderBlock {
     HttpStreamItemSummaryDetails summary {};
 };
 
-bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
-    return text.find(needle) != std::string_view::npos;
-}
-
 std::string_view bytes_as_text(std::span<const std::uint8_t> bytes) {
     return std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
@@ -400,18 +396,17 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
 
         const auto method_text = std::string {method};
         const auto path_text = std::string {path};
+        const auto summary = HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::request,
+            .method = method_text,
+            .target = path_text,
+            .version = std::string {version},
+        };
         return ParsedHttpHeaderBlock {
             .size = http_message_size(payload_text, offset, *header_size, headers_text),
-            .label = method_text.empty() || path_text.empty()
-                ? "HTTP Request"
-                : ("HTTP " + method_text + " " + path_text),
+            .label = http_stream_label_from_summary(summary),
             .protocol_text = text.str(),
-            .summary = HttpStreamItemSummaryDetails {
-                .semantic_kind = HttpStreamItemSemanticKind::request,
-                .method = method_text,
-                .target = path_text,
-                .version = std::string {version},
-            },
+            .summary = summary,
         };
     }
 
@@ -460,42 +455,21 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
 
         const auto code_text = std::string {code};
         const auto status_code = static_cast<std::uint16_t>(std::stoi(code_text));
+        const auto summary = HttpStreamItemSummaryDetails {
+            .semantic_kind = HttpStreamItemSemanticKind::response,
+            .version = std::string {version},
+            .status_code = status_code,
+            .reason_phrase = reason_text,
+        };
         return ParsedHttpHeaderBlock {
             .size = http_message_size(payload_text, offset, *header_size, headers_text),
-            .label = code_text.empty()
-                ? "HTTP Response"
-                : (reason_text.empty() ? ("HTTP " + code_text) : ("HTTP " + code_text + " " + reason_text)),
+            .label = http_stream_label_from_summary(summary),
             .protocol_text = text.str(),
-            .summary = HttpStreamItemSummaryDetails {
-                .semantic_kind = HttpStreamItemSemanticKind::response,
-                .version = std::string {version},
-                .status_code = status_code,
-                .reason_phrase = reason_text,
-            },
+            .summary = summary,
         };
     }
 
     return std::nullopt;
-}
-
-std::optional<std::string_view> find_protocol_detail_value(
-    const std::string_view protocol_text,
-    const std::string_view key
-) noexcept {
-    const auto marker = std::string {"  "} + std::string {key} + ": ";
-    const auto marker_pos = protocol_text.find(marker);
-    if (marker_pos == std::string_view::npos) {
-        return std::nullopt;
-    }
-
-    const auto value_start = marker_pos + marker.size();
-    const auto value_end = protocol_text.find('\n', value_start);
-    const auto value = protocol_text.substr(value_start, (value_end == std::string_view::npos) ? (protocol_text.size() - value_start) : (value_end - value_start));
-    if (value.empty()) {
-        return std::nullopt;
-    }
-
-    return value;
 }
 
 std::string limited_quality_http_protocol_text() {
@@ -587,29 +561,29 @@ bool append_bounded_http_item(
 
 }  // namespace
 
-std::string http_stream_label_from_protocol_text(const std::string_view protocol_text) {
-    if (contains_text(protocol_text, "Message Type: Request")) {
-        const auto method = find_protocol_detail_value(protocol_text, "Method");
-        const auto path = find_protocol_detail_value(protocol_text, "Path");
-        if (method.has_value() && path.has_value()) {
-            return "HTTP " + std::string {*method} + " " + std::string {*path};
+std::string http_stream_label_from_summary(const HttpStreamItemSummaryDetails& summary) {
+    switch (summary.semantic_kind) {
+    case HttpStreamItemSemanticKind::request:
+        if (!summary.method.empty() && !summary.target.empty()) {
+            return "HTTP " + summary.method + " " + summary.target;
         }
         return "HTTP Request";
-    }
-
-    if (contains_text(protocol_text, "Message Type: Response")) {
-        const auto status_code = find_protocol_detail_value(protocol_text, "Status Code");
-        const auto reason = find_protocol_detail_value(protocol_text, "Reason");
-        if (status_code.has_value()) {
-            if (reason.has_value()) {
-                return "HTTP " + std::string {*status_code} + " " + std::string {*reason};
-            }
-            return "HTTP " + std::string {*status_code};
+    case HttpStreamItemSemanticKind::response:
+        if (summary.status_code.has_value()) {
+            const auto code = std::to_string(*summary.status_code);
+            return summary.reason_phrase.empty()
+                ? "HTTP " + code
+                : "HTTP " + code + " " + summary.reason_phrase;
         }
         return "HTTP Response";
+    case HttpStreamItemSemanticKind::partial_payload:
+        return "HTTP Payload (partial)";
+    case HttpStreamItemSemanticKind::gap:
+        return "HTTP Gap";
+    case HttpStreamItemSemanticKind::none:
+    default:
+        return "HTTP Payload";
     }
-
-    return "HTTP Payload";
 }
 
 HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(

@@ -116,6 +116,7 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers(
     bool force_encrypted_alert_records = false
 );
 PacketSummaryLayer build_tls_reassembled_metadata_layer(const TlsSelectedPacketRecordContext& context);
+bool stream_item_uses_packet_fallback(const StreamItemRow& row);
 std::string stream_item_details_source_text(const StreamItemRow& row);
 std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     const StreamItemRow& row,

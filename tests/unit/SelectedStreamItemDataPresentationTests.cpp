@@ -164,6 +164,31 @@ void expect_hex_dump_matches(
     PFL_EXPECT(*hex_dump == service.format(std::span<const std::uint8_t>(expected_bytes.data(), expected_bytes.size())));
 }
 
+void expect_same_stream_item_data_presentation(
+    const session_detail::SelectedStreamItemDataPresentation& actual,
+    const session_detail::SelectedStreamItemDataPresentation& expected
+) {
+    PFL_EXPECT(actual.stream_item_index == expected.stream_item_index);
+    PFL_EXPECT(actual.semantic_kind == expected.semantic_kind);
+    PFL_EXPECT(actual.source_kind == expected.source_kind);
+    PFL_EXPECT(actual.state == expected.state);
+    PFL_EXPECT(actual.assembly_kind == expected.assembly_kind);
+    PFL_EXPECT(actual.available_length == expected.available_length);
+    PFL_EXPECT(actual.declared_length == expected.declared_length);
+    PFL_EXPECT(actual.contributing_unit_count == expected.contributing_unit_count);
+    PFL_EXPECT(actual.contributing_unit_kind == expected.contributing_unit_kind);
+    PFL_EXPECT(actual.quic_crypto_stream_offset == expected.quic_crypto_stream_offset);
+    PFL_EXPECT(actual.owned_bytes == expected.owned_bytes);
+    PFL_EXPECT(actual.unavailable_reason == expected.unavailable_reason);
+    PFL_EXPECT(actual.captured_packet_range.has_value() == expected.captured_packet_range.has_value());
+    if (actual.captured_packet_range.has_value() && expected.captured_packet_range.has_value()) {
+        PFL_EXPECT(actual.captured_packet_range->packet_index == expected.captured_packet_range->packet_index);
+        PFL_EXPECT(actual.captured_packet_range->offset == expected.captured_packet_range->offset);
+        PFL_EXPECT(actual.captured_packet_range->available_length == expected.captured_packet_range->available_length);
+        PFL_EXPECT(actual.captured_packet_range->declared_length == expected.captured_packet_range->declared_length);
+    }
+}
+
 }  // namespace
 
 void run_selected_stream_item_data_presentation_tests() {
@@ -204,6 +229,18 @@ void run_selected_stream_item_data_presentation_tests() {
         );
         PFL_EXPECT(materialized == expected_bytes);
         expect_hex_dump_matches(session, 0U, 30U, 32U, row.stream_item_index, expected_bytes);
+
+        auto relabeled_row = row;
+        relabeled_row.protocol_text = "synthetic protocol text should not choose generic TCP item data";
+        const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            relabeled_row,
+            row.materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
 
     {
@@ -220,6 +257,18 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(!presentation.unavailable_reason.empty());
         PFL_EXPECT(!session.materialize_selected_flow_stream_item_data(0U, 30U, 16U, row->stream_item_index).has_value());
         PFL_EXPECT(!session.format_selected_flow_stream_item_data_hex_dump(0U, 30U, 16U, row->stream_item_index).has_value());
+
+        auto relabeled_row = *row;
+        relabeled_row.protocol_text = "synthetic protocol text should not choose HTTP item data";
+        const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            relabeled_row,
+            row->materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
 
     {
@@ -290,6 +339,18 @@ void run_selected_stream_item_data_presentation_tests() {
             row->stream_item_index
         );
         PFL_EXPECT(materialized == row->summary_payload_bytes);
+
+        auto relabeled_row = *row;
+        relabeled_row.protocol_text = "synthetic protocol text should not choose TLS item data";
+        const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            relabeled_row,
+            row->materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
 
     {
@@ -322,6 +383,18 @@ void run_selected_stream_item_data_presentation_tests() {
             row->stream_item_index
         );
         PFL_EXPECT(materialized == row->summary_payload_bytes);
+
+        auto relabeled_row = *row;
+        relabeled_row.protocol_text = "synthetic protocol text should not choose reassembled TLS item data";
+        const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            relabeled_row,
+            row->materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
 
     {
@@ -370,6 +443,18 @@ void run_selected_stream_item_data_presentation_tests() {
             row->stream_item_index
         );
         PFL_EXPECT(materialized.size() == row->byte_count);
+
+        auto relabeled_row = *row;
+        relabeled_row.protocol_text = "synthetic protocol text should not choose QUIC item data";
+        const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::udp,
+            relabeled_row,
+            row->materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
 
     {
@@ -518,6 +603,40 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::synthetic);
         PFL_EXPECT(!session.materialize_selected_flow_stream_item_data(0U, 2U, 10U, gap_row->stream_item_index).has_value());
         PFL_EXPECT(!session.format_selected_flow_stream_item_data_hex_dump(0U, 2U, 10U, gap_row->stream_item_index).has_value());
+
+        auto relabeled_gap_row = *gap_row;
+        relabeled_gap_row.protocol_text = "synthetic protocol text should not choose HTTP gap item data";
+        const auto relabeled_gap_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::tcp,
+            relabeled_gap_row,
+            gap_row->materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_gap_presentation, presentation);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/01_arp_request_ipv4.pcap"), fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 8U);
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_REQUIRE(rows[0].arp_summary.has_value());
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 8U, rows[0].stream_item_index);
+        auto relabeled_row = rows[0];
+        relabeled_row.protocol_text = "synthetic protocol text should not choose ARP item data";
+        const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
+            session,
+            0U,
+            ProtocolId::arp,
+            relabeled_row,
+            rows[0].materialization_stability,
+            0U
+        );
+        expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
 
     {

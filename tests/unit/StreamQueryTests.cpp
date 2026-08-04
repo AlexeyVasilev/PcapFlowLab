@@ -4748,8 +4748,21 @@ void run_stream_query_tests() {
             PFL_EXPECT(row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::tcp_payload);
             const auto summary_layers = build_stream_summary_layers(row, session.list_flow_packets(0));
             const auto* generic_layer = find_top_level_summary_layer(summary_layers, "stream_payload");
+            const auto* stream_item_layer = find_top_level_summary_layer(summary_layers, "stream_item");
             PFL_REQUIRE(generic_layer != nullptr);
+            PFL_REQUIRE(stream_item_layer != nullptr);
             PFL_EXPECT(require_summary_field_value(*generic_layer, "Kind") == "TCP payload");
+            PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Packet fallback");
+            auto relabeled_row = row;
+            relabeled_row.protocol_text = "synthetic protocol text should not choose packet fallback semantics";
+            relabeled_row.payload_hex_text = "00 01";
+            const auto relabeled_summary = build_stream_summary_layers(relabeled_row, session.list_flow_packets(0));
+            const auto* relabeled_generic_layer = find_top_level_summary_layer(relabeled_summary, "stream_payload");
+            const auto* relabeled_stream_item_layer = find_top_level_summary_layer(relabeled_summary, "stream_item");
+            PFL_REQUIRE(relabeled_generic_layer != nullptr);
+            PFL_REQUIRE(relabeled_stream_item_layer != nullptr);
+            PFL_EXPECT(require_summary_field_value(*relabeled_generic_layer, "Kind") == "TCP payload");
+            PFL_EXPECT(require_summary_field_value(*relabeled_stream_item_layer, "Details source") == "Packet fallback");
         }
         for (const auto& row : bounded_rows) {
             PFL_EXPECT(row.label == "TCP Payload");

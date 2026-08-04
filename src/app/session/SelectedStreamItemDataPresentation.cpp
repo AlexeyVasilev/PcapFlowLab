@@ -96,17 +96,19 @@ bool is_quic_frame_semantic(const QuicStreamItemSemanticKind semantic_kind) noex
         semantic_kind == QuicStreamItemSemanticKind::initial_crypto;
 }
 
-bool is_unstructured_tcp_row(const StreamItemRow& row) noexcept {
-    return row.tls_semantic_kind == TlsStreamItemSemanticKind::none &&
-        !row.quic_stream_presentation.has_value() &&
-        row.protocol_text.empty() &&
-        row.payload_hex_text.empty();
+bool is_structured_http_row(const StreamItemRow& row) noexcept {
+    return row.http_summary.has_value();
 }
 
-bool is_http_like_tcp_row(const StreamItemRow& row) noexcept {
-    return row.tls_semantic_kind == TlsStreamItemSemanticKind::none &&
+bool is_packet_backed_tcp_payload_row(const StreamItemRow& row) noexcept {
+    return row.semantic_family == StreamItemSemanticFamily::generic &&
+        row.generic_summary.has_value() &&
+        row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::tcp_payload &&
+        row.generic_summary->diagnostic.empty() &&
+        row.tls_semantic_kind == TlsStreamItemSemanticKind::none &&
+        !row.http_summary.has_value() &&
         !row.quic_stream_presentation.has_value() &&
-        (!row.protocol_text.empty() || !row.payload_hex_text.empty());
+        !row.arp_summary.has_value();
 }
 
 std::optional<std::uint32_t> tls_declared_length(std::span<const std::uint8_t> bytes) noexcept {
@@ -818,7 +820,7 @@ SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation
     if (row.byte_count == 0U) {
         const auto semantic_kind = row.tls_semantic_kind == TlsStreamItemSemanticKind::gap
             ? StreamItemDataSemanticKind::tls_record
-            : (flow_protocol == ProtocolId::tcp && is_http_like_tcp_row(row)
+            : (is_structured_http_row(row)
                 ? StreamItemDataSemanticKind::http_message
                 : StreamItemDataSemanticKind::other);
         return make_unavailable_presentation(
@@ -842,12 +844,16 @@ SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation
         }
     }
 
-    if (flow_protocol == ProtocolId::tcp && is_http_like_tcp_row(row)) {
+    if (is_structured_http_row(row)) {
         return build_http_presentation(row, stability);
     }
 
-    if (flow_protocol == ProtocolId::tcp && is_unstructured_tcp_row(row)) {
+    if (flow_protocol == ProtocolId::tcp && is_packet_backed_tcp_payload_row(row)) {
         return build_tcp_payload_presentation(session, flow_index, row);
+    }
+
+    if (row.arp_summary.has_value()) {
+        return build_packet_payload_presentation(session, flow_index, row);
     }
 
     return build_packet_payload_presentation(session, flow_index, row);

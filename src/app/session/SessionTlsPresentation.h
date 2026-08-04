@@ -229,7 +229,5 @@ std::optional<std::string> derive_tls_service_hint_for_loaded_flow_prefix(
     std::size_t loaded_packet_window_count
 );
 
-std::string tls_stream_label_from_protocol_text(std::string_view protocol_text);
-
 }  // namespace session_detail
 }  // namespace pfl

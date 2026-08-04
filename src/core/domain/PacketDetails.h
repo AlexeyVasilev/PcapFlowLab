@@ -655,6 +655,7 @@ struct HttpDetails {
     std::string version {};
     std::string host {};
     std::string status_code {};
+    std::string reason_phrase {};
 };
 
 struct PacketDetails {

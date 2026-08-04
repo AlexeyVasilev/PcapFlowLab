@@ -678,11 +678,13 @@ Summary-specific contract notes:
 
 - Stream Item Summary is the primary structured inspection surface for selected stream items.
 - Summary must be produced from retained stream-item model fields, not by reparsing Stream labels, Protocol text, or formatted byte strings.
+- Stream labels themselves should also be constructed from retained structured stream-item semantics rather than by parsing formatted `protocol_text`.
 - HTTP stream rows may keep display labels such as `HTTP Request` or `HTTP Gap`, but Summary semantics come from retained HTTP request/response/partial/gap metadata.
 - TLS stream rows may keep display labels such as `TLS ClientHello`, but Summary semantics come from retained TLS semantic kind, parser context, and retained structured TLS record models.
 - QUIC stream rows may keep display labels such as `QUIC Initial: CRYPTO`, but Summary semantics come from retained QUIC packet/frame/TLS-handshake presentation models.
 - Generic and synthetic rows must expose explicit structured kind/state for payload, partial, or gap behavior rather than relying on label wording.
-- `Item Data` remains the byte-ownership surface, while retained `protocol_text` remains an internal richer text/debug surface during the current parity stage.
+- `Item Data` remains the byte-ownership surface, and its availability, ownership, packet-local versus reassembled status, and source/provenance selection must come from retained structured stream-item semantics rather than from `protocol_text`.
+- Retained `StreamItemRow::protocol_text` remains an internal richer text/debug surface during the current parity stage, while flow-list `FlowRow::protocol_text` remains a separate live user-facing field outside the selected-stream-item semantic contract.
 
 Qt currently renders source-packet references in a compact user-facing form such as:
 
