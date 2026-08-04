@@ -115,12 +115,17 @@ Current reliability rules:
 
 Packet Details describe the selected packet.
 
-- `Summary`: packet summary and packet-specific metadata.
-- `Raw`: raw packet hex view.
-- `TCP Payload` / `UDP Payload`: transport payload bytes for packet-level context.
+- `Summary`: the structured packet inspection surface for packet-specific metadata.
+- `Bytes`: protocol-unit and selected derived byte views for the selected packet.
 - Current UI surface: `Summary` and `Bytes`.
 
 Packet Details reflect packet truth and packet bytes.
+
+Current visibility rules:
+
+- there is no visible `Protocol` tab;
+- there are no visible `Raw` or transport-specific `TCP Payload` / `UDP Payload` tabs;
+- Stream Item Details use `Summary` and `Item Data`.
 
 ### 8.2 Stream Item Details
 
