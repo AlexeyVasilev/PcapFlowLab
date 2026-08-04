@@ -198,6 +198,21 @@ The `Statistics` tab now supports:
   - top endpoints
   - top ports
 
+Backend/API note:
+
+- the visible Statistics UI is still overview-driven in this pass
+- no collapsible Statistics controls are exposed yet
+- the shared backend now also provides dedicated typed requests for:
+  - Flows by Packet Count
+  - Detected Protocol Hints
+  - QUIC and TLS
+  - Top Endpoints and Ports
+- these section requests are intended for future lazy loading and use
+  per-capture backend caching where appropriate
+- the current overview DTO intentionally continues to duplicate these values
+  during the migration
+- Protocol Path remains on its separate lazy request/cache path
+
 ## Current Analysis capability
 
 The `Analysis` tab now supports a first selected-flow-only, on-demand analysis workspace:

@@ -29,6 +29,13 @@ char* pfl_frontend_session_adapter_save_index_json(
     const char* path_utf8
 );
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_protocol_hint_statistics_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_quic_tls_statistics_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::size_t limit
+);
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     PflFrontendSessionAdapterHandle* handle,

@@ -187,6 +187,45 @@ pub struct TopPortDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowPacketCountHistogramBucketDto {
+    pub bucket_id: String,
+    pub label: String,
+    pub lower_bound_inclusive: u64,
+    pub upper_bound_inclusive: Option<u64>,
+    pub flow_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowPacketCountHistogramDto {
+    pub has_capture: bool,
+    pub total_flow_count: u64,
+    pub maximum_bucket_flow_count: u64,
+    pub excluded_zero_packet_flow_count: u64,
+    pub buckets: Vec<FlowPacketCountHistogramBucketDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolHintStatisticsDto {
+    pub has_capture: bool,
+    pub protocol_hints: Vec<ProtocolHintStatsDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuicTlsStatisticsDto {
+    pub has_capture: bool,
+    pub quic_recognition: QuicRecognitionDto,
+    pub tls_recognition: TlsRecognitionDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopEndpointPortStatisticsDto {
+    pub has_capture: bool,
+    pub limit: usize,
+    pub top_endpoints: Vec<TopEndpointDto>,
+    pub top_ports: Vec<TopPortDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolPathStatsDto {
     pub node_id: u64,
     pub parent_node_id: u64,

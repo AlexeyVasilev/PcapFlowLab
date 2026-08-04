@@ -778,6 +778,11 @@ Qt currently shows a detected-protocol-hints table with:
 - captured bytes;
 - original bytes.
 
+This section now also has a dedicated backend/frontend-neutral request path for
+future section-scoped loading. The current overview DTO still carries the same
+rows temporarily so existing Qt and Tauri statistics shells do not change
+during the migration.
+
 ### QUIC and TLS summary
 
 Qt also exposes protocol-specific summary sections for:
@@ -795,6 +800,12 @@ Qt also exposes protocol-specific summary sections for:
   - TLS 1.3 count;
   - unknown-version count.
 
+The shared backend now also exposes a dedicated typed `QUIC and TLS` section
+request that returns the two recognition models together while keeping them
+semantically independent. One side may be empty without invalidating the
+other. The current overview DTO still duplicates these values temporarily for
+compatibility.
+
 ### Top talkers
 
 Qt currently exposes top-talker panels:
@@ -809,6 +820,64 @@ Each panel shows:
 - byte count.
 
 These panels also support drill-down actions from statistics into flow filtering/navigation.
+
+The shared backend now also exposes a dedicated typed request for `Top
+Endpoints and Ports`. It reuses the existing bounded top-summary aggregation,
+keeps the current limit/order semantics, and may reuse a per-capture cache for
+the requested limit. The current overview DTO still duplicates these rows
+temporarily for compatibility.
+
+### Flows by Packet Count
+
+The shared backend now defines a presentation-neutral histogram for `Flows by
+Packet Count`.
+
+Semantic contract:
+
+- the authoritative source is the finalized listed-flow packet count restored
+  by capture import and index load;
+- packet count is per flow across both directions;
+- calculation is `O(number of listed flows)` with fixed-size bucket storage;
+- the model carries `total_flow_count`, `maximum_bucket_flow_count`, and
+  ordered semantic buckets;
+- each bucket carries a stable bucket id plus inclusive lower/upper bounds and
+  the number of flows in that range;
+- display labels are derived later by the frontend-neutral adapter rather than
+  being the semantic source of truth.
+
+Exact ordered buckets:
+
+- `1`
+- `2`
+- `3-5`
+- `6-10`
+- `11-25`
+- `26-50`
+- `51-100`
+- `101-250`
+- `251-500`
+- `501-1000`
+- `1001-5000`
+- `5001+`
+
+Normal listed flows do not use a zero-packet bucket. If a listed zero-packet
+flow is encountered, it is excluded from the normal bucket totals and counted
+separately through an explicit diagnostic counter so the main histogram remains
+production-safe and semantically honest.
+
+### Section-scoped loading direction
+
+The future Statistics surface keeps overview cards plus transport/family
+Protocol Summary always visible, while these sections are now prepared for
+independent typed requests and per-capture backend caching:
+
+- Flows by Packet Count
+- Detected Protocol Hints
+- QUIC and TLS
+- Top Endpoints and Ports
+
+`Protocol Path` remains a separate independently mode-cached lazy request path
+rather than being folded into a generic statistics job framework.
 
 ### Statistics state expectations
 

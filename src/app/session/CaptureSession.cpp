@@ -2160,7 +2160,11 @@ void CaptureSession::reset_runtime_state() noexcept {
     selected_flow_tcp_prefix_context_.reset();
     selected_flow_stream_context_.reset();
     listed_connections_cache_.reset();
+    protocol_summary_cache_.reset();
+    flow_packet_count_histogram_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_tls_summary_cache_.reset();
+    top_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     selected_flow_stream_context_generation_ = 0U;
 }
@@ -2200,7 +2204,11 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
     swap(selected_flow_packet_cache_, other.selected_flow_packet_cache_);
     swap(selected_flow_tcp_prefix_context_, other.selected_flow_tcp_prefix_context_);
     swap(listed_connections_cache_, other.listed_connections_cache_);
+    swap(protocol_summary_cache_, other.protocol_summary_cache_);
+    swap(flow_packet_count_histogram_cache_, other.flow_packet_count_histogram_cache_);
     swap(protocol_path_summary_cache_, other.protocol_path_summary_cache_);
+    swap(quic_tls_summary_cache_, other.quic_tls_summary_cache_);
+    swap(top_summary_cache_, other.top_summary_cache_);
     swap(selected_flow_tcp_payload_suppression_, other.selected_flow_tcp_payload_suppression_);
 }
 
@@ -2267,7 +2275,11 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     listed_connections_cache_.reset();
+    protocol_summary_cache_.reset();
+    flow_packet_count_histogram_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_tls_summary_cache_.reset();
+    top_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
@@ -2374,7 +2386,11 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     listed_connections_cache_.reset();
+    protocol_summary_cache_.reset();
+    flow_packet_count_histogram_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_tls_summary_cache_.reset();
+    top_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 
     if (validate_capture_source(source_info_)) {
@@ -2481,6 +2497,10 @@ const CaptureSummary& CaptureSession::summary() const noexcept {
 }
 
 CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
+    if (protocol_summary_cache_.has_value()) {
+        return *protocol_summary_cache_;
+    }
+
     CaptureProtocolSummary summary {};
 
     for (const auto& connection : listed_connections()) {
@@ -2562,7 +2582,20 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
         }
     }
 
+    protocol_summary_cache_ = summary;
     return summary;
+}
+
+FlowPacketCountHistogram CaptureSession::flow_packet_count_histogram() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    if (!flow_packet_count_histogram_cache_.has_value()) {
+        flow_packet_count_histogram_cache_ = session_detail::build_flow_packet_count_histogram(listed_connections());
+    }
+
+    return *flow_packet_count_histogram_cache_;
 }
 
 CaptureProtocolPathSummary CaptureSession::protocol_path_summary(const ProtocolPathStatisticsMode mode) const {
@@ -2625,7 +2658,11 @@ void CaptureSession::clear_runtime_caches_after_transfer() noexcept {
     selected_flow_tcp_prefix_context_.reset();
     selected_flow_stream_context_.reset();
     listed_connections_cache_.reset();
+    protocol_summary_cache_.reset();
+    flow_packet_count_histogram_cache_.reset();
     protocol_path_summary_cache_.fill(std::nullopt);
+    quic_tls_summary_cache_.reset();
+    top_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     selected_flow_stream_context_generation_ = 0U;
 }
@@ -2635,83 +2672,70 @@ void CaptureSession::set_analysis_settings(const AnalysisSettings& settings) noe
         analysis_settings_.use_possible_tls_quic != settings.use_possible_tls_quic) {
         selected_flow_stream_context_.reset();
     }
+    if (analysis_settings_.use_possible_tls_quic != settings.use_possible_tls_quic) {
+        protocol_summary_cache_.reset();
+    }
     analysis_settings_ = settings;
 }
 
-QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
-    QuicRecognitionStats stats {};
+CaptureQuicTlsSummary CaptureSession::quic_tls_summary() const noexcept {
+    if (quic_tls_summary_cache_.has_value()) {
+        return *quic_tls_summary_cache_;
+    }
+
+    CaptureQuicTlsSummary summary {};
 
     const auto& connections = listed_connections();
     for (const auto& connection : connections) {
         const auto protocol_hint = (connection.family == FlowAddressFamily::ipv4)
             ? connection.ipv4->protocol_hint
             : connection.ipv6->protocol_hint;
-        if (protocol_hint != FlowProtocolHint::quic) {
+        if (protocol_hint == FlowProtocolHint::quic) {
+            ++summary.quic.total_flows;
+
+            const auto& service_hint = (connection.family == FlowAddressFamily::ipv4)
+                ? connection.ipv4->service_hint
+                : connection.ipv6->service_hint;
+            if (service_hint.empty()) {
+                ++summary.quic.without_sni;
+            } else {
+                ++summary.quic.with_sni;
+            }
+
+            const auto version_hint = (connection.family == FlowAddressFamily::ipv4)
+                ? connection.ipv4->quic_version
+                : connection.ipv6->quic_version;
+            switch (version_hint) {
+            case QuicVersionHint::v1:
+                ++summary.quic.version_v1;
+                break;
+            case QuicVersionHint::draft29:
+                ++summary.quic.version_draft29;
+                break;
+            case QuicVersionHint::v2:
+                ++summary.quic.version_v2;
+                break;
+            case QuicVersionHint::unknown:
+            default:
+                ++summary.quic.version_unknown;
+                break;
+            }
             continue;
         }
 
-        ++stats.total_flows;
-
-        const auto& service_hint = (connection.family == FlowAddressFamily::ipv4)
-            ? connection.ipv4->service_hint
-            : connection.ipv6->service_hint;
-        if (service_hint.empty()) {
-            ++stats.without_sni;
-        } else {
-            ++stats.with_sni;
-        }
-
-        const auto version_hint = (connection.family == FlowAddressFamily::ipv4)
-            ? connection.ipv4->quic_version
-            : connection.ipv6->quic_version;
-        switch (version_hint) {
-        case QuicVersionHint::v1:
-            ++stats.version_v1;
-            break;
-        case QuicVersionHint::draft29:
-            ++stats.version_draft29;
-            break;
-        case QuicVersionHint::v2:
-            ++stats.version_v2;
-            break;
-        case QuicVersionHint::unknown:
-        default:
-            ++stats.version_unknown;
-            break;
-        }
-    }
-
-#ifndef NDEBUG
-    const auto sni_sum = stats.with_sni + stats.without_sni;
-    const auto version_sum = stats.version_v1 + stats.version_draft29 + stats.version_v2 + stats.version_unknown;
-    assert(sni_sum == stats.total_flows);
-    assert(version_sum == stats.total_flows);
-#endif
-
-    return stats;
-}
-
-TlsRecognitionStats CaptureSession::tls_recognition_stats() const noexcept {
-    TlsRecognitionStats stats {};
-
-    const auto& connections = listed_connections();
-    for (const auto& connection : connections) {
-        const auto protocol_hint = (connection.family == FlowAddressFamily::ipv4)
-            ? connection.ipv4->protocol_hint
-            : connection.ipv6->protocol_hint;
         if (protocol_hint != FlowProtocolHint::tls) {
             continue;
         }
 
-        ++stats.total_flows;
+        ++summary.tls.total_flows;
 
         const auto& service_hint = (connection.family == FlowAddressFamily::ipv4)
             ? connection.ipv4->service_hint
             : connection.ipv6->service_hint;
         if (service_hint.empty()) {
-            ++stats.without_sni;
+            ++summary.tls.without_sni;
         } else {
-            ++stats.with_sni;
+            ++summary.tls.with_sni;
         }
 
         const auto version_hint = (connection.family == FlowAddressFamily::ipv4)
@@ -2719,29 +2743,48 @@ TlsRecognitionStats CaptureSession::tls_recognition_stats() const noexcept {
             : connection.ipv6->tls_version;
         switch (version_hint) {
         case TlsVersionHint::tls12:
-            ++stats.version_tls12;
+            ++summary.tls.version_tls12;
             break;
         case TlsVersionHint::tls13:
-            ++stats.version_tls13;
+            ++summary.tls.version_tls13;
             break;
         case TlsVersionHint::unknown:
         default:
-            ++stats.version_unknown;
+            ++summary.tls.version_unknown;
             break;
         }
     }
 
 #ifndef NDEBUG
-    const auto sni_sum = stats.with_sni + stats.without_sni;
-    const auto version_sum = stats.version_tls12 + stats.version_tls13 + stats.version_unknown;
-    assert(sni_sum == stats.total_flows);
-    assert(version_sum == stats.total_flows);
+    const auto quic_sni_sum = summary.quic.with_sni + summary.quic.without_sni;
+    const auto quic_version_sum =
+        summary.quic.version_v1 + summary.quic.version_draft29 + summary.quic.version_v2 + summary.quic.version_unknown;
+    assert(quic_sni_sum == summary.quic.total_flows);
+    assert(quic_version_sum == summary.quic.total_flows);
+
+    const auto tls_sni_sum = summary.tls.with_sni + summary.tls.without_sni;
+    const auto tls_version_sum = summary.tls.version_tls12 + summary.tls.version_tls13 + summary.tls.version_unknown;
+    assert(tls_sni_sum == summary.tls.total_flows);
+    assert(tls_version_sum == summary.tls.total_flows);
 #endif
 
-    return stats;
+    quic_tls_summary_cache_ = summary;
+    return summary;
+}
+
+QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
+    return quic_tls_summary().quic;
+}
+
+TlsRecognitionStats CaptureSession::tls_recognition_stats() const noexcept {
+    return quic_tls_summary().tls;
 }
 
 CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
+    if (top_summary_cache_.has_value() && top_summary_cache_->limit == limit) {
+        return top_summary_cache_->summary;
+    }
+
     std::map<std::string, TopEndpointRow> endpoints {};
     std::map<std::uint16_t, TopPortRow> ports {};
 
@@ -2832,6 +2875,10 @@ CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
         summary.ports_by_bytes.resize(limit);
     }
 
+    top_summary_cache_ = CachedTopSummary {
+        .limit = limit,
+        .summary = summary,
+    };
     return summary;
 }
 

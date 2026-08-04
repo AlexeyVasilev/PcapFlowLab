@@ -407,6 +407,7 @@ if(BUILD_TESTING)
         tests/unit/StreamQueryTests.cpp
         tests/unit/ProtocolSummaryTests.cpp
         tests/unit/TopSummaryTests.cpp
+        tests/unit/StatisticsSectionTests.cpp
         tests/unit/VlanTests.cpp
         tests/unit/ExportTests.cpp
         tests/unit/PcapNgTests.cpp
@@ -426,6 +427,7 @@ if(BUILD_TESTING)
         tests/unit/FlowHintsRealFixturesTests.cpp
         tests/unit/ProtocolRecognitionStatsTests.cpp
         tests/unit/UnrecognizedPacketTests.cpp
+        src/app/frontend/FrontendSessionAdapterBridge.cpp
     )
 
     target_link_libraries(

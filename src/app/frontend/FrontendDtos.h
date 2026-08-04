@@ -145,6 +145,40 @@ struct FrontendTopPortDto {
     std::uint64_t total_bytes {0};
 };
 
+struct FrontendFlowPacketCountHistogramBucketDto {
+    std::string bucket_id {};
+    std::string label {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+};
+
+struct FrontendFlowPacketCountHistogramDto {
+    bool has_capture {false};
+    std::uint64_t total_flow_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t excluded_zero_packet_flow_count {0};
+    std::vector<FrontendFlowPacketCountHistogramBucketDto> buckets {};
+};
+
+struct FrontendProtocolHintStatisticsDto {
+    bool has_capture {false};
+    std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
+};
+
+struct FrontendQuicTlsStatisticsDto {
+    bool has_capture {false};
+    QuicRecognitionStats quic_recognition {};
+    TlsRecognitionStats tls_recognition {};
+};
+
+struct FrontendTopEndpointPortStatisticsDto {
+    bool has_capture {false};
+    std::size_t limit {0};
+    std::vector<FrontendTopEndpointDto> top_endpoints {};
+    std::vector<FrontendTopPortDto> top_ports {};
+};
+
 struct FrontendProtocolPathStatsDto {
     std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
     std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};

@@ -63,6 +63,7 @@ void run_query_tests();
 void run_stream_query_tests();
 void run_protocol_summary_tests();
 void run_top_summary_tests();
+void run_statistics_section_tests();
 void run_vlan_tests();
 void run_export_tests();
 void run_pcapng_tests();
@@ -208,6 +209,7 @@ int main() {
         {"stream_query", pfl::tests::run_stream_query_tests},
         {"protocol_summary", pfl::tests::run_protocol_summary_tests},
         {"top_summary", pfl::tests::run_top_summary_tests},
+        {"statistics_sections", pfl::tests::run_statistics_section_tests},
         {"vlan", pfl::tests::run_vlan_tests},
         {"export", pfl::tests::run_export_tests},
         {"pcapng", pfl::tests::run_pcapng_tests},

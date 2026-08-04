@@ -125,6 +125,27 @@ struct PrefixStepKeyHash {
     }
 };
 
+struct FlowPacketCountHistogramBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountHistogramBucketDefinitions {{
+    {"packets_1", 1U, 1U},
+    {"packets_2", 2U, 2U},
+    {"packets_3_5", 3U, 5U},
+    {"packets_6_10", 6U, 10U},
+    {"packets_11_25", 11U, 25U},
+    {"packets_26_50", 26U, 50U},
+    {"packets_51_100", 51U, 100U},
+    {"packets_101_250", 101U, 250U},
+    {"packets_251_500", 251U, 500U},
+    {"packets_501_1000", 501U, 1000U},
+    {"packets_1001_5000", 1001U, 5000U},
+    {"packets_5001_plus", 5001U, std::nullopt},
+}};
+
 std::string group_integer_part(std::string text) {
     const auto sign_offset = !text.empty() && text.front() == '-' ? std::size_t {1} : std::size_t {0};
     const auto decimal_pos = text.find('.');
@@ -281,6 +302,20 @@ void append_protocol_path_statistics_rows(
     }
 }
 
+std::size_t flow_packet_count_histogram_bucket_index(const std::uint64_t packet_count_value) noexcept {
+    for (std::size_t index = 0U; index < kFlowPacketCountHistogramBucketDefinitions.size(); ++index) {
+        const auto& bucket = kFlowPacketCountHistogramBucketDefinitions[index];
+        if (packet_count_value < bucket.lower_bound_inclusive) {
+            continue;
+        }
+        if (!bucket.upper_bound_inclusive.has_value() || packet_count_value <= *bucket.upper_bound_inclusive) {
+            return index;
+        }
+    }
+
+    return kFlowPacketCountHistogramBucketDefinitions.size() - 1U;
+}
+
 }  // namespace
 
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
@@ -424,6 +459,37 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };
+}
+
+FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections) {
+    FlowPacketCountHistogram histogram {};
+    histogram.buckets.reserve(kFlowPacketCountHistogramBucketDefinitions.size());
+    for (const auto& definition : kFlowPacketCountHistogramBucketDefinitions) {
+        histogram.buckets.push_back(FlowPacketCountHistogramBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+            .flow_count = 0U,
+        });
+    }
+
+    for (const auto& connection : connections) {
+        const auto packets_for_flow = packet_count(connection);
+        if (packets_for_flow == 0U) {
+            ++histogram.excluded_zero_packet_flow_count;
+            continue;
+        }
+
+        const auto bucket_index = flow_packet_count_histogram_bucket_index(packets_for_flow);
+        ++histogram.buckets[bucket_index].flow_count;
+        ++histogram.total_flow_count;
+    }
+
+    for (const auto& bucket : histogram.buckets) {
+        histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
+    }
+
+    return histogram;
 }
 
 CaptureProtocolPathSummary build_protocol_path_summary(

@@ -250,6 +250,39 @@ std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary
     return rows;
 }
 
+std::string flow_packet_count_histogram_bucket_label(const FlowPacketCountHistogramBucket& bucket) {
+    if (!bucket.upper_bound_inclusive.has_value()) {
+        return std::to_string(bucket.lower_bound_inclusive) + '+';
+    }
+    if (bucket.lower_bound_inclusive == *bucket.upper_bound_inclusive) {
+        return std::to_string(bucket.lower_bound_inclusive);
+    }
+    return std::to_string(bucket.lower_bound_inclusive) + '-' + std::to_string(*bucket.upper_bound_inclusive);
+}
+
+FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
+    const FlowPacketCountHistogram& histogram
+) {
+    FrontendFlowPacketCountHistogramDto dto {};
+    dto.has_capture = true;
+    dto.total_flow_count = histogram.total_flow_count;
+    dto.maximum_bucket_flow_count = histogram.maximum_bucket_flow_count;
+    dto.excluded_zero_packet_flow_count = histogram.excluded_zero_packet_flow_count;
+    dto.buckets.reserve(histogram.buckets.size());
+
+    for (const auto& bucket : histogram.buckets) {
+        dto.buckets.push_back(FrontendFlowPacketCountHistogramBucketDto {
+            .bucket_id = bucket.stable_id,
+            .label = flow_packet_count_histogram_bucket_label(bucket),
+            .lower_bound_inclusive = bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = bucket.upper_bound_inclusive,
+            .flow_count = bucket.flow_count,
+        });
+    }
+
+    return dto;
+}
+
 std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const CaptureProtocolPathSummary& summary) {
     std::vector<FrontendProtocolPathStatsDto> rows {};
     rows.reserve(summary.rows.size());
@@ -2300,6 +2333,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
+    const auto quic_tls_summary = session_.quic_tls_summary();
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = session_.summary(),
@@ -2312,13 +2346,59 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
             : std::nullopt,
         .protocol_summary = protocol_summary,
-        .quic_recognition = session_.quic_recognition_stats(),
-        .tls_recognition = session_.tls_recognition_stats(),
+        .quic_recognition = quic_tls_summary.quic,
+        .tls_recognition = quic_tls_summary.tls,
         .protocol_hints = build_protocol_hint_stats(protocol_summary),
         .top_endpoints = build_top_endpoints(top_summary),
         .top_ports = build_top_ports(top_summary),
         .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
         .protocol_path_presentations = std::move(protocol_path_presentations),
+    };
+}
+
+FrontendFlowPacketCountHistogramDto FrontendSessionAdapter::get_flow_packet_count_histogram() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_flow_packet_count_histogram_dto(session_.flow_packet_count_histogram());
+}
+
+FrontendProtocolHintStatisticsDto FrontendSessionAdapter::get_protocol_hint_statistics() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    FrontendProtocolHintStatisticsDto dto {};
+    dto.has_capture = true;
+    dto.protocol_hints = build_protocol_hint_stats(session_.protocol_summary());
+    return dto;
+}
+
+FrontendQuicTlsStatisticsDto FrontendSessionAdapter::get_quic_tls_statistics() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    const auto summary = session_.quic_tls_summary();
+    return FrontendQuicTlsStatisticsDto {
+        .has_capture = true,
+        .quic_recognition = summary.quic,
+        .tls_recognition = summary.tls,
+    };
+}
+
+FrontendTopEndpointPortStatisticsDto FrontendSessionAdapter::get_top_endpoint_port_statistics(const std::size_t limit) const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    const auto summary = session_.top_summary(limit);
+    return FrontendTopEndpointPortStatisticsDto {
+        .has_capture = true,
+        .limit = limit,
+        .top_endpoints = build_top_endpoints(summary),
+        .top_ports = build_top_ports(summary),
     };
 }
 

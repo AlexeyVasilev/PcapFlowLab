@@ -170,6 +170,7 @@ public:
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
+    [[nodiscard]] FlowPacketCountHistogram flow_packet_count_histogram() const;
     [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(
         ProtocolPathStatisticsMode mode = ProtocolPathStatisticsMode::kind_overview
     ) const;
@@ -180,6 +181,7 @@ public:
     void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
+    [[nodiscard]] CaptureQuicTlsSummary quic_tls_summary() const noexcept;
     [[nodiscard]] QuicRecognitionStats quic_recognition_stats() const noexcept;
     [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
@@ -430,6 +432,11 @@ private:
         bool has_pagination_lookahead {false};
     };
 
+    struct CachedTopSummary {
+        std::size_t limit {0};
+        CaptureTopSummary summary {};
+    };
+
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
     [[nodiscard]] SelectedFlowTcpPrefixResolution prepare_selected_flow_tcp_prefix_context(
@@ -471,7 +478,11 @@ private:
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
     mutable std::optional<SelectedFlowStreamContext> selected_flow_stream_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
+    mutable std::optional<CaptureProtocolSummary> protocol_summary_cache_ {};
+    mutable std::optional<FlowPacketCountHistogram> flow_packet_count_histogram_cache_ {};
     mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
+    mutable std::optional<CaptureQuicTlsSummary> quic_tls_summary_cache_ {};
+    mutable std::optional<CachedTopSummary> top_summary_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
     mutable std::uint64_t selected_flow_stream_context_generation_ {0};
 };

@@ -556,6 +556,159 @@ std::string smart_export_result_json(const pfl::FrontendSmartExportResult& resul
     return out.str();
 }
 
+std::string protocol_hint_stats_row_json(const pfl::FrontendProtocolHintStatsDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"group\":" << json_string(row.group) << ','
+        << "\"protocol_label\":" << json_string(row.protocol_label) << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"captured_bytes\":" << row.captured_bytes << ','
+        << "\"original_bytes\":" << row.original_bytes
+        << '}';
+    return out.str();
+}
+
+std::string top_endpoint_json(const pfl::FrontendTopEndpointDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"endpoint_label\":" << json_string(row.endpoint_label) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"total_bytes\":" << row.total_bytes
+        << '}';
+    return out.str();
+}
+
+std::string top_port_json(const pfl::FrontendTopPortDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"port\":" << row.port << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"total_bytes\":" << row.total_bytes
+        << '}';
+    return out.str();
+}
+
+std::string quic_recognition_json(const pfl::QuicRecognitionStats& summary) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"total_flows\":" << summary.total_flows << ','
+        << "\"with_sni\":" << summary.with_sni << ','
+        << "\"without_sni\":" << summary.without_sni << ','
+        << "\"version_v1\":" << summary.version_v1 << ','
+        << "\"version_draft29\":" << summary.version_draft29 << ','
+        << "\"version_v2\":" << summary.version_v2 << ','
+        << "\"version_unknown\":" << summary.version_unknown
+        << '}';
+    return out.str();
+}
+
+std::string tls_recognition_json(const pfl::TlsRecognitionStats& summary) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"total_flows\":" << summary.total_flows << ','
+        << "\"with_sni\":" << summary.with_sni << ','
+        << "\"without_sni\":" << summary.without_sni << ','
+        << "\"version_tls12\":" << summary.version_tls12 << ','
+        << "\"version_tls13\":" << summary.version_tls13 << ','
+        << "\"version_unknown\":" << summary.version_unknown
+        << '}';
+    return out.str();
+}
+
+std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacketCountHistogramBucketDto& bucket) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"bucket_id\":" << json_string(bucket.bucket_id) << ','
+        << "\"label\":" << json_string(bucket.label) << ','
+        << "\"lower_bound_inclusive\":" << bucket.lower_bound_inclusive << ','
+        << "\"upper_bound_inclusive\":";
+    if (bucket.upper_bound_inclusive.has_value()) {
+        out << *bucket.upper_bound_inclusive;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"flow_count\":" << bucket.flow_count
+        << '}';
+    return out.str();
+}
+
+std::string flow_packet_count_histogram_json(const pfl::FrontendFlowPacketCountHistogramDto& histogram) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(histogram.has_capture) << ','
+        << "\"total_flow_count\":" << histogram.total_flow_count << ','
+        << "\"maximum_bucket_flow_count\":" << histogram.maximum_bucket_flow_count << ','
+        << "\"excluded_zero_packet_flow_count\":" << histogram.excluded_zero_packet_flow_count << ','
+        << "\"buckets\":[";
+
+    for (std::size_t index = 0; index < histogram.buckets.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << flow_packet_count_histogram_bucket_json(histogram.buckets[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string protocol_hint_statistics_json(const pfl::FrontendProtocolHintStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"protocol_hints\":[";
+
+    for (std::size_t index = 0; index < statistics.protocol_hints.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_hint_stats_row_json(statistics.protocol_hints[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string quic_tls_statistics_json(const pfl::FrontendQuicTlsStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"quic_recognition\":" << quic_recognition_json(statistics.quic_recognition) << ','
+        << "\"tls_recognition\":" << tls_recognition_json(statistics.tls_recognition)
+        << '}';
+    return out.str();
+}
+
+std::string top_endpoint_port_statistics_json(const pfl::FrontendTopEndpointPortStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"limit\":" << statistics.limit << ','
+        << "\"top_endpoints\":[";
+
+    for (std::size_t index = 0; index < statistics.top_endpoints.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << top_endpoint_json(statistics.top_endpoints[index]);
+    }
+
+    out << "],"
+        << "\"top_ports\":[";
+
+    for (std::size_t index = 0; index < statistics.top_ports.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << top_port_json(statistics.top_ports[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
 std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     std::ostringstream out {};
     out << '{'
@@ -1148,6 +1301,22 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     return pfl::FrontendOverviewDto {};
 }
 
+[[nodiscard]] pfl::FrontendFlowPacketCountHistogramDto unavailable_flow_packet_count_histogram() {
+    return pfl::FrontendFlowPacketCountHistogramDto {};
+}
+
+[[nodiscard]] pfl::FrontendProtocolHintStatisticsDto unavailable_protocol_hint_statistics() {
+    return pfl::FrontendProtocolHintStatisticsDto {};
+}
+
+[[nodiscard]] pfl::FrontendQuicTlsStatisticsDto unavailable_quic_tls_statistics() {
+    return pfl::FrontendQuicTlsStatisticsDto {};
+}
+
+[[nodiscard]] pfl::FrontendTopEndpointPortStatisticsDto unavailable_top_endpoint_port_statistics() {
+    return pfl::FrontendTopEndpointPortStatisticsDto {};
+}
+
 [[nodiscard]] pfl::FrontendSelectedFlowPacketsResult unavailable_selected_flow_packets() {
     return pfl::FrontendSelectedFlowPacketsResult {};
 }
@@ -1281,6 +1450,41 @@ char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHa
     }
 
     return make_c_string(settings_json(handle->adapter.get_settings()));
+}
+
+char* pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(flow_packet_count_histogram_json(unavailable_flow_packet_count_histogram()));
+    }
+
+    return make_c_string(flow_packet_count_histogram_json(handle->adapter.get_flow_packet_count_histogram()));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_hint_statistics_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(protocol_hint_statistics_json(unavailable_protocol_hint_statistics()));
+    }
+
+    return make_c_string(protocol_hint_statistics_json(handle->adapter.get_protocol_hint_statistics()));
+}
+
+char* pfl_frontend_session_adapter_get_quic_tls_statistics_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(quic_tls_statistics_json(unavailable_quic_tls_statistics()));
+    }
+
+    return make_c_string(quic_tls_statistics_json(handle->adapter.get_quic_tls_statistics()));
+}
+
+char* pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::size_t limit
+) {
+    if (handle == nullptr) {
+        return make_c_string(top_endpoint_port_statistics_json(unavailable_top_endpoint_port_statistics()));
+    }
+
+    return make_c_string(top_endpoint_port_statistics_json(handle->adapter.get_top_endpoint_port_statistics(limit)));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle) {
