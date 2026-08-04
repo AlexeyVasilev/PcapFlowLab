@@ -27,6 +27,15 @@
 
 - Protocol statistics and protocol-distribution reporting have been expanded.
 - `Possible TLS` and `Possible QUIC` are tracked as separate weak-hint buckets.
+- Qt now keeps only the overview cards plus the transport/family Protocol Summary always visible.
+- Qt optional Statistics sections are now independent collapsible panels:
+  - `Flows by Packet Count`
+  - `Protocol Path Tree`
+  - `Detected Protocol Hints`
+  - `QUIC and TLS`
+  - `Top Endpoints and Ports`
+- For each capture, those optional Qt sections start collapsed, request data on first expansion only, and reuse the per-capture cached result on collapse/reopen or Statistics-tab revisit.
+- Opening a new capture resets the optional Qt section expansion and visible result state; the Tauri Statistics shell remains on its transitional eager overview path for now.
 
 ## UI
 

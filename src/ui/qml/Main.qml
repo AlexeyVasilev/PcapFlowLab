@@ -1195,6 +1195,7 @@ ApplicationWindow {
 
             StatisticsPane {
                 hasCapture: mainController.hasCapture
+                statisticsSectionsResetToken: mainController.statisticsSectionsResetToken
                 packetCount: mainController.packetCount
                 flowCount: mainController.flowCount
                 capturedBytes: mainController.capturedBytes
@@ -1226,6 +1227,22 @@ ApplicationWindow {
                 unrecognizedStatsPacketCount: mainController.unrecognizedStatsPacketCount
                 unrecognizedStatsCapturedBytes: mainController.unrecognizedStatsCapturedBytes
                 unrecognizedStatsOriginalBytes: mainController.unrecognizedStatsOriginalBytes
+                flowPacketHistogramState: mainController.flowPacketHistogramState
+                flowPacketHistogramStatusText: mainController.flowPacketHistogramStatusText
+                flowPacketHistogramSummaryText: mainController.flowPacketHistogramSummaryText
+                flowPacketHistogramTotalFlowCount: mainController.flowPacketHistogramTotalFlowCount
+                flowPacketHistogramMaximumBucketFlowCount: mainController.flowPacketHistogramMaximumBucketFlowCount
+                flowPacketHistogramExcludedZeroPacketFlowCount: mainController.flowPacketHistogramExcludedZeroPacketFlowCount
+                flowPacketHistogramRows: mainController.flowPacketHistogramRows
+                protocolHintsSectionState: mainController.protocolHintsSectionState
+                protocolHintsSectionStatusText: mainController.protocolHintsSectionStatusText
+                protocolHintDistribution: mainController.protocolHintDistribution
+                protocolPathSectionState: mainController.protocolPathSectionState
+                protocolPathSectionStatusText: mainController.protocolPathSectionStatusText
+                protocolPathStatsModel: mainController.protocolPathStatsModel
+                statisticsMode: mainController.statisticsMode
+                quicTlsSectionState: mainController.quicTlsSectionState
+                quicTlsSectionStatusText: mainController.quicTlsSectionStatusText
                 quicTotalFlows: mainController.quicTotalFlows
                 quicWithSni: mainController.quicWithSni
                 quicWithoutSni: mainController.quicWithoutSni
@@ -1237,11 +1254,10 @@ ApplicationWindow {
                 tlsWithSni: mainController.tlsWithSni
                 tlsWithoutSni: mainController.tlsWithoutSni
                 tlsVersion12: mainController.tlsVersion12
-                    tlsVersion13: mainController.tlsVersion13
-                    tlsVersionUnknown: mainController.tlsVersionUnknown
-                    protocolHintDistribution: mainController.protocolHintDistribution
-                    protocolPathStatsModel: mainController.protocolPathStatsModel
-                    statisticsMode: mainController.statisticsMode
+                tlsVersion13: mainController.tlsVersion13
+                tlsVersionUnknown: mainController.tlsVersionUnknown
+                topEndpointPortSectionState: mainController.topEndpointPortSectionState
+                topEndpointPortSectionStatusText: mainController.topEndpointPortSectionStatusText
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {
@@ -1255,6 +1271,9 @@ ApplicationWindow {
                 }
                 onShowFlowsRequested: function() {
                     mainController.showSelectedProtocolPathFlows()
+                }
+                onStatisticsSectionExpandedChanged: function(section, expanded) {
+                    mainController.setStatisticsSectionExpanded(section, expanded)
                 }
             }
         }

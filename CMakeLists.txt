@@ -231,6 +231,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/SummaryBar.qml
                 src/ui/qml/components/FlowWorkspacePane.qml
                 src/ui/qml/components/StatisticsPane.qml
+                src/ui/qml/components/CollapsibleStatisticsSection.qml
                 src/ui/qml/components/ProtocolStatsPane.qml
                 src/ui/qml/components/TopTalkersPane.qml
                 src/ui/qml/components/FlowTable.qml

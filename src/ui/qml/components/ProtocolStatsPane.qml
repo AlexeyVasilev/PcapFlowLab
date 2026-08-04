@@ -4,8 +4,6 @@ import QtQuick.Layouts
 
 Frame {
     id: root
-    implicitHeight: contentLayout.implicitHeight + 20
-    clip: true
 
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
@@ -34,27 +32,7 @@ Frame {
     property var unrecognizedStatsPacketCount: 0
     property var unrecognizedStatsCapturedBytes: 0
     property var unrecognizedStatsOriginalBytes: 0
-    property var quicTotalFlows: 0
-    property var quicWithSni: 0
-    property var quicWithoutSni: 0
-    property var quicVersionV1: 0
-    property var quicVersionDraft29: 0
-    property var quicVersionV2: 0
-    property var quicVersionUnknown: 0
-    property var tlsTotalFlows: 0
-    property var tlsWithSni: 0
-    property var tlsWithoutSni: 0
-    property var tlsVersion12: 0
-    property var tlsVersion13: 0
-    property var tlsVersionUnknown: 0
-    property var protocolHintDistribution: []
-    property var protocolPathStatistics: []
-    property var protocolPathStatsModel: null
-    property int statisticsMode: 0
     property bool hasCapture: false
-
-    signal statisticsModeChangedByUser(int mode)
-    signal showFlowsRequested()
 
     readonly property int tableRowHeight: 26
     readonly property int tableHeaderHeight: 28
@@ -68,22 +46,12 @@ Frame {
     readonly property int transportOriginalColumnWidth: 126
     readonly property int transportTableWidth: transportNameColumnWidth + transportFlowsColumnWidth + transportPacketsColumnWidth + transportCapturedColumnWidth + transportOriginalColumnWidth + (tableColumnSpacing * 4) + (tablePadding * 2)
 
-    readonly property int hintGroupColumnWidth: 92
-    readonly property int hintProtocolColumnWidth: 180
-    readonly property int hintFlowsColumnWidth: 110
-    readonly property int hintPacketsColumnWidth: 118
-    readonly property int hintCapturedColumnWidth: 118
-    readonly property int hintOriginalColumnWidth: 118
-    readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintCapturedColumnWidth + hintOriginalColumnWidth + (tableColumnSpacing * 5) + (tablePadding * 2)
-    readonly property int pathTreeLabelColumnWidth: 420
-    readonly property int pathTreeFlowsColumnWidth: 138
-    readonly property int pathTreePacketsColumnWidth: 150
-    readonly property int pathTreeOriginalColumnWidth: 150
-    readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + pathTreeOriginalColumnWidth + (tableColumnSpacing * 3) + (tablePadding * 2)
-    readonly property int pathTreeViewportMaxHeight: 420
-    readonly property int pathTreeIndentWidth: 18
-    readonly property int pathTreeExpanderWidth: 16
-    readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
+    readonly property int familyNameColumnWidth: 92
+    readonly property int familyFlowsColumnWidth: 118
+    readonly property int familyPacketsColumnWidth: 126
+    readonly property int familyCapturedColumnWidth: 126
+    readonly property int familyOriginalColumnWidth: 126
+    readonly property int familyTableWidth: familyNameColumnWidth + familyFlowsColumnWidth + familyPacketsColumnWidth + familyCapturedColumnWidth + familyOriginalColumnWidth + (tableColumnSpacing * 4) + (tablePadding * 2)
 
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
@@ -111,77 +79,6 @@ Frame {
         }
 
         return numberText + " " + units[unitIndex]
-    }
-
-    function formatShare(part, total) {
-        const numericPart = Number(part || 0)
-        const numericTotal = Number(total || 0)
-        if (numericPart <= 0 || numericTotal <= 0)
-            return "0%"
-
-        const percent = (numericPart * 100.0) / numericTotal
-        if (percent < 0.01)
-            return "<0.01%"
-        if (percent < 1.0)
-            return percent.toFixed(2) + "%"
-        return Math.round(percent) + "%"
-    }
-
-    function formatFlowPercentageAndCount(part, total) {
-        if (Number(part || 0) <= 0 || Number(total || 0) <= 0)
-            return "0% (0 flows)"
-        return formatShare(part, total) + " (" + groupInteger(part) + " flows)"
-    }
-
-    function totalHintFlows() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["flows"] || 0
-        return total
-    }
-
-    function totalHintPackets() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["packets"] || 0
-        return total
-    }
-
-    function totalHintCapturedBytes() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["capturedBytes"] || 0
-        return total
-    }
-
-    function totalHintOriginalBytes() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["originalBytes"] || 0
-        return total
-    }
-
-    function formatHintCell(value, total, isBytes) {
-        const formattedValue = isBytes ? formatBytes(value) : groupInteger(value)
-        return formattedValue + " (" + formatShare(value, total) + ")"
-    }
-
-    function protocolPathLabel(row) {
-        const compact = (row && row["compactText"]) ? row["compactText"] : ""
-        const full = (row && row["pathText"]) ? row["pathText"] : ""
-        return compact.length > 0 ? compact : full
     }
 
     function totalTransportFlows() {
@@ -216,27 +113,11 @@ Frame {
         return Number(ipv4OriginalBytes || 0) + Number(ipv6OriginalBytes || 0)
     }
 
-    function hasUnrecognizedPacketStatistics() {
-        return Number(root.unrecognizedStatsPacketCount || 0) > 0
-    }
-
-    function protocolHintGroup(title) {
-        if (title === "Possible TLS" || title === "Possible QUIC")
-            return "Possible"
-        if (title === "Unknown")
-            return "Unknown"
-        return "Confirmed"
-    }
-
     component SectionFrame: Frame {
-        id: sectionFrame
-
         default property alias sectionContent: sectionLayout.data
 
         Layout.fillWidth: true
-        implicitHeight: sectionLayout.implicitHeight + 20
         padding: 0
-        clip: true
 
         background: Rectangle {
             color: "#ffffff"
@@ -248,55 +129,7 @@ Frame {
             id: sectionLayout
             anchors.fill: parent
             anchors.margins: 10
-            spacing: 6
-        }
-    }
-
-    component CompactMetricLabel: Label {
-        Layout.fillWidth: true
-        color: "#334155"
-        wrapMode: Text.NoWrap
-        elide: Text.ElideRight
-    }
-
-    component ProtocolPathModeButton: Button {
-        checkable: true
-        leftPadding: 12
-        rightPadding: 12
-        implicitWidth: Math.max(120, implicitContentWidth + leftPadding + rightPadding)
-        implicitHeight: 28
-    }
-
-    component ProtocolPathPrimaryActionButton: Button {
-        implicitHeight: 30
-        leftPadding: 14
-        rightPadding: 14
-
-        contentItem: Label {
-            text: parent.text
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            font.pixelSize: 12
-            font.bold: true
-            color: parent.enabled ? "#166534" : "#94a3b8"
-        }
-
-        background: Rectangle {
-            radius: 6
-            color: parent.enabled
-                ? (parent.down ? "#dcfce7" : (parent.hovered ? "#f0fdf4" : "#ffffff"))
-                : "#f8fafc"
-            border.color: parent.enabled ? "#86efac" : "#e2e8f0"
-            border.width: 1
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: 4
-                radius: 6
-                color: parent.parent.enabled ? "#22c55e" : "#cbd5e1"
-            }
+            spacing: 8
         }
     }
 
@@ -451,295 +284,9 @@ Frame {
         }
     }
 
-    component ThreeColumnHeader: Rectangle {
-        required property string firstTitle
-        required property string secondTitle
-        required property string thirdTitle
-        required property int firstWidth
-        required property int secondWidth
-        required property int thirdWidth
-        required property int tableWidth
-
-        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
-        height: root.tableHeaderHeight
-        radius: 4
-        color: "#f8fafc"
-        border.color: "#e2e8f0"
-
-        Item {
-            anchors.fill: parent
-            anchors.leftMargin: root.tablePadding
-            anchors.rightMargin: root.tablePadding
-
-            Label {
-                x: 0
-                width: parent.parent.firstWidth
-                anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.firstTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing
-                width: parent.parent.secondWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.secondTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
-                width: parent.parent.thirdWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.thirdTitle
-                font.bold: true
-                color: "#334155"
-            }
-        }
-    }
-
-    component FourColumnHeader: Rectangle {
-        required property string firstTitle
-        required property string secondTitle
-        required property string thirdTitle
-        required property string fourthTitle
-        required property int firstWidth
-        required property int secondWidth
-        required property int thirdWidth
-        required property int fourthWidth
-        required property int tableWidth
-
-        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
-        height: root.tableHeaderHeight
-        radius: 4
-        color: "#f8fafc"
-        border.color: "#e2e8f0"
-
-        Item {
-            anchors.fill: parent
-            anchors.leftMargin: root.tablePadding
-            anchors.rightMargin: root.tablePadding
-
-            Label {
-                x: 0
-                width: parent.parent.firstWidth
-                anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.firstTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing
-                width: parent.parent.secondWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.secondTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
-                width: parent.parent.thirdWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.thirdTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
-                width: parent.parent.fourthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.fourthTitle
-                font.bold: true
-                color: "#334155"
-            }
-        }
-    }
-
-    component SixColumnHeader: Rectangle {
-        required property string firstTitle
-        required property string secondTitle
-        required property string thirdTitle
-        required property string fourthTitle
-        required property string fifthTitle
-        required property string sixthTitle
-        required property int firstWidth
-        required property int secondWidth
-        required property int thirdWidth
-        required property int fourthWidth
-        required property int fifthWidth
-        required property int sixthWidth
-        required property int tableWidth
-
-        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
-        height: root.tableHeaderHeight
-        radius: 4
-        color: "#f8fafc"
-        border.color: "#e2e8f0"
-
-        Item {
-            anchors.fill: parent
-            anchors.leftMargin: root.tablePadding
-            anchors.rightMargin: root.tablePadding
-
-            Label {
-                x: 0
-                width: parent.parent.firstWidth
-                anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.firstTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing
-                width: parent.parent.secondWidth
-                anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.secondTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
-                width: parent.parent.thirdWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.thirdTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
-                width: parent.parent.fourthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.fourthTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
-                width: parent.parent.fifthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.fifthTitle
-                font.bold: true
-                color: "#334155"
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing + parent.parent.fifthWidth + root.tableColumnSpacing
-                width: parent.parent.sixthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.sixthTitle
-                font.bold: true
-                color: "#334155"
-            }
-        }
-    }
-
-    component SixColumnRow: Rectangle {
-        required property string firstText
-        required property string secondText
-        required property string thirdText
-        required property string fourthText
-        required property string fifthText
-        required property string sixthText
-        required property int firstWidth
-        required property int secondWidth
-        required property int thirdWidth
-        required property int fourthWidth
-        required property int fifthWidth
-        required property int sixthWidth
-        required property int tableWidth
-        required property int rowIndex
-        required property color firstColor
-        required property color secondColor
-
-        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
-        height: root.tableRowHeight
-        radius: 4
-        color: rowIndex % 2 === 0 ? "transparent" : "#f8fafc"
-
-        Item {
-            anchors.fill: parent
-            anchors.leftMargin: root.tablePadding
-            anchors.rightMargin: root.tablePadding
-
-            Label {
-                x: 0
-                width: parent.parent.firstWidth
-                anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.firstText
-                color: parent.parent.firstColor
-                elide: Text.ElideRight
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing
-                width: parent.parent.secondWidth
-                anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.secondText
-                color: parent.parent.secondColor
-                elide: Text.ElideRight
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
-                width: parent.parent.thirdWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.thirdText
-                color: "#334155"
-                elide: Text.ElideLeft
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
-                width: parent.parent.fourthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.fourthText
-                color: "#334155"
-                elide: Text.ElideLeft
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
-                width: parent.parent.fifthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.fifthText
-                color: "#334155"
-                elide: Text.ElideLeft
-            }
-
-            Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing + parent.parent.fifthWidth + root.tableColumnSpacing
-                width: parent.parent.sixthWidth
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: parent.parent.sixthText
-                color: "#334155"
-                elide: Text.ElideLeft
-            }
-        }
-    }
-
     padding: 0
+    clip: true
+
     background: Rectangle {
         color: "#f8fafc"
         border.color: "#d8dee9"
@@ -748,701 +295,160 @@ Frame {
 
     ColumnLayout {
         id: contentLayout
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.fill: parent
         anchors.margins: 10
         spacing: 10
 
         Label {
             text: "Protocol Summary"
+            font.pixelSize: 18
             font.bold: true
-            font.pixelSize: 17
-        }
-
-        SectionFrame {
-            FiveColumnHeader {
-                firstTitle: "Transport"
-                secondTitle: "Flows"
-                thirdTitle: "Packets"
-                fourthTitle: "Captured"
-                fifthTitle: "Original"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-            }
-
-            FiveColumnRow {
-                firstText: "TCP"
-                secondText: root.hasCapture ? root.formatHintCell(root.tcpFlowCount || 0, root.totalTransportFlows(), false) : "-"
-                thirdText: root.hasCapture ? root.formatHintCell(root.tcpPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.tcpCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
-                fifthText: root.hasCapture ? root.formatHintCell(root.tcpOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-                rowIndex: 0
-                firstColor: "#0f172a"
-            }
-
-            FiveColumnRow {
-                firstText: "UDP"
-                secondText: root.hasCapture ? root.formatHintCell(root.udpFlowCount || 0, root.totalTransportFlows(), false) : "-"
-                thirdText: root.hasCapture ? root.formatHintCell(root.udpPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.udpCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
-                fifthText: root.hasCapture ? root.formatHintCell(root.udpOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-                rowIndex: 1
-                firstColor: "#0f172a"
-            }
-
-            FiveColumnRow {
-                firstText: "SCTP"
-                secondText: root.hasCapture ? root.formatHintCell(root.sctpFlowCount || 0, root.totalTransportFlows(), false) : "-"
-                thirdText: root.hasCapture ? root.formatHintCell(root.sctpPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.sctpCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
-                fifthText: root.hasCapture ? root.formatHintCell(root.sctpOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-                rowIndex: 2
-                firstColor: "#0f172a"
-            }
-
-            FiveColumnRow {
-                firstText: "Other"
-                secondText: root.hasCapture ? root.formatHintCell(root.otherFlowCount || 0, root.totalTransportFlows(), false) : "-"
-                thirdText: root.hasCapture ? root.formatHintCell(root.otherPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.otherCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
-                fifthText: root.hasCapture ? root.formatHintCell(root.otherOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-                rowIndex: 3
-                firstColor: "#0f172a"
-            }
-        }
-
-        SectionFrame {
-            FiveColumnHeader {
-                firstTitle: "Family"
-                secondTitle: "Flows"
-                thirdTitle: "Packets"
-                fourthTitle: "Captured"
-                fifthTitle: "Original"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-            }
-
-            FiveColumnRow {
-                firstText: "IPv4"
-                secondText: root.hasCapture ? root.formatHintCell(root.ipv4FlowCount || 0, root.totalIpFlows(), false) : "-"
-                thirdText: root.hasCapture ? root.formatHintCell(root.ipv4PacketCount || 0, root.totalIpPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.ipv4CapturedBytes || 0, root.totalIpCapturedBytes(), true) : "-"
-                fifthText: root.hasCapture ? root.formatHintCell(root.ipv4OriginalBytes || 0, root.totalIpOriginalBytes(), true) : "-"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-                rowIndex: 0
-                firstColor: "#0f172a"
-            }
-
-            FiveColumnRow {
-                firstText: "IPv6"
-                secondText: root.hasCapture ? root.formatHintCell(root.ipv6FlowCount || 0, root.totalIpFlows(), false) : "-"
-                thirdText: root.hasCapture ? root.formatHintCell(root.ipv6PacketCount || 0, root.totalIpPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.ipv6CapturedBytes || 0, root.totalIpCapturedBytes(), true) : "-"
-                fifthText: root.hasCapture ? root.formatHintCell(root.ipv6OriginalBytes || 0, root.totalIpOriginalBytes(), true) : "-"
-                firstWidth: root.transportNameColumnWidth
-                secondWidth: root.transportFlowsColumnWidth
-                thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportCapturedColumnWidth
-                fifthWidth: root.transportOriginalColumnWidth
-                tableWidth: root.transportTableWidth
-                rowIndex: 1
-                firstColor: "#0f172a"
-            }
-        }
-
-        SectionFrame {
-            visible: root.hasUnrecognizedPacketStatistics()
-
-            Label {
-                text: "Unrecognized Packets"
-                font.bold: true
-            }
-
-            Label {
-                text: "Packets that could not be assigned to a flow"
-                color: "#64748b"
-                font.pixelSize: 12
-            }
-
-            ThreeColumnHeader {
-                firstTitle: "Packets"
-                secondTitle: "Captured Bytes"
-                thirdTitle: "Original Bytes"
-                firstWidth: 180
-                secondWidth: 180
-                thirdWidth: 180
-                tableWidth: (180 * 3) + (root.tableColumnSpacing * 2) + (root.tablePadding * 2)
-            }
-
-            Rectangle {
-                width: Math.min((180 * 3) + (root.tableColumnSpacing * 2) + (root.tablePadding * 2), parent ? parent.width : (180 * 3))
-                height: root.tableRowHeight
-                radius: 4
-                color: "transparent"
-
-                Item {
-                    anchors.fill: parent
-                    anchors.leftMargin: root.tablePadding
-                    anchors.rightMargin: root.tablePadding
-
-                    Label {
-                        x: 0
-                        width: 180
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: root.groupInteger(root.unrecognizedStatsPacketCount || 0)
-                        color: "#0f172a"
-                        font.bold: true
-                    }
-
-                    Label {
-                        x: 180 + root.tableColumnSpacing
-                        width: 180
-                        anchors.verticalCenter: parent.verticalCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: root.formatBytes(root.unrecognizedStatsCapturedBytes || 0)
-                        color: "#334155"
-                    }
-
-                    Label {
-                        x: 180 + root.tableColumnSpacing + 180 + root.tableColumnSpacing
-                        width: 180
-                        anchors.verticalCenter: parent.verticalCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: root.formatBytes(root.unrecognizedStatsOriginalBytes || 0)
-                        color: "#334155"
-                    }
-                }
-            }
-        }
-
-        SectionFrame {
-            Label {
-                text: "Detected Protocol Hints"
-                font.bold: true
-            }
-
-            SixColumnHeader {
-                firstTitle: "Group"
-                secondTitle: "Protocol"
-                thirdTitle: "Flows"
-                fourthTitle: "Packets"
-                fifthTitle: "Captured"
-                sixthTitle: "Original"
-                firstWidth: root.hintGroupColumnWidth
-                secondWidth: root.hintProtocolColumnWidth
-                thirdWidth: root.hintFlowsColumnWidth
-                fourthWidth: root.hintPacketsColumnWidth
-                fifthWidth: root.hintCapturedColumnWidth
-                sixthWidth: root.hintOriginalColumnWidth
-                tableWidth: root.hintTableWidth
-            }
-
-            Repeater {
-                model: root.protocolHintDistribution
-
-                delegate: Rectangle {
-                    width: Math.min(root.hintTableWidth, parent ? parent.width : root.hintTableWidth)
-                    height: root.tableRowHeight
-                    radius: 4
-                    color: index % 2 === 0 ? "transparent" : "#f8fafc"
-
-                    Item {
-                        anchors.fill: parent
-                        anchors.leftMargin: root.tablePadding
-                        anchors.rightMargin: root.tablePadding
-
-                        Label {
-                            x: 0
-                            width: root.hintGroupColumnWidth
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.protocolHintGroup(modelData["title"] || "")
-                            color: "#64748b"
-                            elide: Text.ElideRight
-                        }
-
-                        Label {
-                            x: root.hintGroupColumnWidth + root.tableColumnSpacing
-                            width: root.hintProtocolColumnWidth
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData["title"] || ""
-                            color: "#0f172a"
-                            elide: Text.ElideRight
-                        }
-
-                        Label {
-                            x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing
-                            width: root.hintFlowsColumnWidth
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.hasCapture
-                                ? root.formatHintCell(modelData["flows"] || 0, root.totalHintFlows(), false)
-                                : "-"
-                            color: "#334155"
-                            elide: Text.ElideLeft
-                        }
-
-                        Label {
-                            x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing
-                            width: root.hintPacketsColumnWidth
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.hasCapture
-                                ? root.formatHintCell(modelData["packets"] || 0, root.totalHintPackets(), false)
-                                : "-"
-                            color: "#334155"
-                            elide: Text.ElideLeft
-                        }
-
-                        Label {
-                            x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing
-                            width: root.hintCapturedColumnWidth
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.hasCapture
-                                ? root.formatHintCell(modelData["capturedBytes"] || 0, root.totalHintCapturedBytes(), true)
-                                : "-"
-                            color: "#334155"
-                            elide: Text.ElideLeft
-                        }
-
-                        Label {
-                            x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing + root.hintCapturedColumnWidth + root.tableColumnSpacing
-                            width: root.hintOriginalColumnWidth
-                            anchors.verticalCenter: parent.verticalCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.hasCapture
-                                ? root.formatHintCell(modelData["originalBytes"] || 0, root.totalHintOriginalBytes(), true)
-                                : "-"
-                            color: "#334155"
-                            elide: Text.ElideLeft
-                        }
-                    }
-                }
-            }
-        }
-
-        SectionFrame {
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-
-                Label {
-                    text: "Protocol Path Tree"
-                    font.bold: true
-                }
-
-                ProtocolPathPrimaryActionButton {
-                    objectName: "protocolPathShowFlowsButton"
-                    text: "Show flows"
-                    enabled: root.hasCapture
-                        && root.protocolPathStatsModel
-                        && root.protocolPathStatsModel.hasSelectedNode
-                        && root.protocolPathStatsModel.selectedNodeFlowCount > 0
-                    onClicked: root.showFlowsRequested()
-                }
-
-                Label {
-                    text: "Mode"
-                    color: "#475569"
-                }
-
-                Rectangle {
-                    color: "#f8fafc"
-                    border.color: "#cbd5e1"
-                    radius: 6
-                    implicitHeight: protocolPathStatsModeLayout.implicitHeight + 4
-                    implicitWidth: protocolPathStatsModeLayout.implicitWidth + 8
-
-                    RowLayout {
-                        id: protocolPathStatsModeLayout
-                        anchors.fill: parent
-                        anchors.margins: 2
-                        spacing: 2
-
-                        ButtonGroup {
-                            id: protocolPathStatsModeGroup
-                        }
-
-                        ProtocolPathModeButton {
-                            objectName: "protocolPathStatsModeKindOverviewButton"
-                            text: "Kind overview"
-                            checked: root.statisticsMode === 0
-                            ButtonGroup.group: protocolPathStatsModeGroup
-                            onClicked: {
-                                if (root.statisticsMode !== 0) {
-                                    root.statisticsModeChangedByUser(0)
-                                }
-                            }
-                        }
-
-                        ProtocolPathModeButton {
-                            objectName: "protocolPathStatsModeIdentityTreeButton"
-                            text: "Identity tree"
-                            checked: root.statisticsMode === 1
-                            ButtonGroup.group: protocolPathStatsModeGroup
-                            onClicked: {
-                                if (root.statisticsMode !== 1) {
-                                    root.statisticsModeChangedByUser(1)
-                                }
-                            }
-                        }
-
-                        ProtocolPathModeButton {
-                            objectName: "protocolPathStatsModeTerminalPathsButton"
-                            text: "Terminal paths"
-                            checked: root.statisticsMode === 2
-                            ButtonGroup.group: protocolPathStatsModeGroup
-                            onClicked: {
-                                if (root.statisticsMode !== 2) {
-                                    root.statisticsModeChangedByUser(2)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                Button {
-                    text: "Expand all"
-                    visible: root.statisticsMode !== 2
-                    enabled: visible && root.protocolPathStatsModel && root.protocolPathStatsModel.canExpand() && root.protocolPathStatsModel.rowCount() > 0
-                    onClicked: root.protocolPathStatsModel.expandAll()
-                }
-
-                Button {
-                    text: "Collapse all"
-                    visible: root.statisticsMode !== 2
-                    enabled: visible && root.protocolPathStatsModel && root.protocolPathStatsModel.canExpand() && root.protocolPathStatsModel.rowCount() > 0
-                    onClicked: root.protocolPathStatsModel.collapseAll()
-                }
-            }
-
-            FourColumnHeader {
-                firstTitle: root.protocolPathPrimaryColumnTitle
-                secondTitle: "Flows"
-                thirdTitle: "Packets"
-                fourthTitle: "Original Bytes"
-                firstWidth: root.pathTreeLabelColumnWidth
-                secondWidth: root.pathTreeFlowsColumnWidth
-                thirdWidth: root.pathTreePacketsColumnWidth
-                fourthWidth: root.pathTreeOriginalColumnWidth
-                tableWidth: root.pathTreeTableWidth
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                visible: root.hasCapture && root.protocolPathStatsModel && protocolPathListView.count > 0
-                implicitHeight: {
-                    const measuredContentHeight = protocolPathListView.contentHeight
-                    const fallbackContentHeight = protocolPathListView.count * root.tableRowHeight
-                    const contentDrivenHeight = (measuredContentHeight > 0 ? measuredContentHeight : fallbackContentHeight) + 2
-                    return Math.min(root.pathTreeViewportMaxHeight, Math.max(root.tableRowHeight + 2, contentDrivenHeight))
-                }
-                Layout.preferredHeight: implicitHeight
-                color: "#ffffff"
-                border.color: "#e2e8f0"
-                radius: 6
-                clip: true
-
-                ListView {
-                    id: protocolPathListView
-                    objectName: "protocolPathListView"
-                    anchors.fill: parent
-                    anchors.margins: 1
-                    clip: true
-                    model: root.protocolPathStatsModel
-                    boundsBehavior: Flickable.StopAtBounds
-                    reuseItems: true
-                    cacheBuffer: root.tableRowHeight * 12
-
-                    ScrollBar.vertical: ScrollBar {
-                        policy: protocolPathListView.contentHeight > protocolPathListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                    }
-
-                    delegate: Rectangle {
-                        required property string layerText
-                        required property string pathText
-                        required property string compactText
-                        required property var nodeId
-                        required property var parentNodeId
-                        required property int depth
-                        required property bool hasChildren
-                        required property bool expanded
-                        required property bool canExpand
-                        required property var flowCount
-                        required property var packetCount
-                        required property var originalByteCount
-                        required property string flowCountText
-                        required property string packetCountText
-                        required property string originalByteCountText
-                        required property int rowIndex
-                        required property string tooltipText
-                        required property bool selected
-
-                        width: protocolPathListView.width
-                        height: root.tableRowHeight
-                        color: selected
-                            ? "#e0f2fe"
-                            : (rowIndex % 2 === 0 ? "transparent" : "#f8fafc")
-
-                        Item {
-                            anchors.fill: parent
-                            anchors.leftMargin: root.tablePadding
-                            anchors.rightMargin: root.tablePadding
-
-                            Label {
-                                id: protocolPathIndentSpacer
-                                x: 0
-                                width: Math.max(0, depth) * root.pathTreeIndentWidth
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: width > 0
-                            }
-
-                            Item {
-                                x: Math.max(0, depth) * root.pathTreeIndentWidth
-                                width: root.pathTreeExpanderWidth
-                                height: parent.height
-
-                                Label {
-                                    anchors.centerIn: parent
-                                    visible: hasChildren && canExpand
-                                    text: expanded ? "\u25BC" : "\u25B6"
-                                    color: "#475569"
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: hasChildren && canExpand
-                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: protocolPathListView.model.toggleExpanded(nodeId)
-                                }
-                            }
-
-                            Label {
-                                id: protocolPathLabel
-                                x: (Math.max(0, depth) * root.pathTreeIndentWidth) + root.pathTreeExpanderWidth + 4
-                                width: Math.max(0, root.pathTreeLabelColumnWidth - x)
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: layerText
-                                color: "#0f172a"
-                                elide: Text.ElideRight
-
-                                ToolTip.visible: protocolPathHoverHandler.hovered && tooltipText.length > 0 && implicitWidth > width + 1
-                                ToolTip.text: tooltipText
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                anchors.leftMargin: (Math.max(0, depth) * root.pathTreeIndentWidth) + root.pathTreeExpanderWidth
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: protocolPathListView.model.selectNode(nodeId)
-                            }
-
-                            HoverHandler {
-                                id: protocolPathHoverHandler
-                            }
-
-                            Label {
-                                x: root.pathTreeLabelColumnWidth + root.tableColumnSpacing
-                                width: root.pathTreeFlowsColumnWidth
-                                anchors.verticalCenter: parent.verticalCenter
-                                horizontalAlignment: Text.AlignRight
-                                text: root.hasCapture ? flowCountText : "-"
-                                color: "#334155"
-                                elide: Text.ElideLeft
-                            }
-
-                            Label {
-                                x: root.pathTreeLabelColumnWidth + root.tableColumnSpacing + root.pathTreeFlowsColumnWidth + root.tableColumnSpacing
-                                width: root.pathTreePacketsColumnWidth
-                                anchors.verticalCenter: parent.verticalCenter
-                                horizontalAlignment: Text.AlignRight
-                                text: root.hasCapture ? packetCountText : "-"
-                                color: "#334155"
-                                elide: Text.ElideLeft
-                            }
-
-                            Label {
-                                x: root.pathTreeLabelColumnWidth + root.tableColumnSpacing + root.pathTreeFlowsColumnWidth + root.tableColumnSpacing + root.pathTreePacketsColumnWidth + root.tableColumnSpacing
-                                width: root.pathTreeOriginalColumnWidth
-                                anchors.verticalCenter: parent.verticalCenter
-                                horizontalAlignment: Text.AlignRight
-                                text: root.hasCapture ? originalByteCountText : "-"
-                                color: "#334155"
-                                elide: Text.ElideLeft
-                            }
-                        }
-                    }
-                }
-            }
-
-            Label {
-                visible: root.hasCapture && (!root.protocolPathStatsModel || root.protocolPathStatsModel.rowCount() === 0)
-                text: "No protocol-path statistics are available for this capture."
-                color: "#64748b"
-            }
-
-            Label {
-                visible: !root.hasCapture
-                text: "Open a capture or index to load protocol-path statistics."
-                color: "#64748b"
-            }
+            color: "#0f172a"
         }
 
         RowLayout {
-            id: quicTlsRow
             Layout.fillWidth: true
             spacing: 10
 
             SectionFrame {
-                id: quicSection
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
 
                 Label {
-                    text: "QUIC"
+                    text: "Transport"
                     font.bold: true
+                    font.pixelSize: 16
                 }
 
-                CompactMetricLabel {
-                    text: root.hasCapture ? "Flows: " + root.groupInteger(root.quicTotalFlows) : "Flows: -"
+                FiveColumnHeader {
+                    firstTitle: "Protocol"
+                    secondTitle: "Flows"
+                    thirdTitle: "Packets"
+                    fourthTitle: "Captured"
+                    fifthTitle: "Original"
+                    firstWidth: root.transportNameColumnWidth
+                    secondWidth: root.transportFlowsColumnWidth
+                    thirdWidth: root.transportPacketsColumnWidth
+                    fourthWidth: root.transportCapturedColumnWidth
+                    fifthWidth: root.transportOriginalColumnWidth
+                    tableWidth: root.transportTableWidth
                 }
 
-                Label {
-                    text: "Initial recognising (flow-based)"
-                    font.bold: true
-                    font.pixelSize: 12
-                    color: "#475569"
-                }
+                Repeater {
+                    model: [
+                        { rowIndex: 0, name: "TCP", flows: root.tcpFlowCount, packets: root.tcpPacketCount, captured: root.tcpCapturedBytes, original: root.tcpOriginalBytes },
+                        { rowIndex: 1, name: "UDP", flows: root.udpFlowCount, packets: root.udpPacketCount, captured: root.udpCapturedBytes, original: root.udpOriginalBytes },
+                        { rowIndex: 2, name: "SCTP", flows: root.sctpFlowCount, packets: root.sctpPacketCount, captured: root.sctpCapturedBytes, original: root.sctpOriginalBytes },
+                        { rowIndex: 3, name: "Other", flows: root.otherFlowCount, packets: root.otherPacketCount, captured: root.otherCapturedBytes, original: root.otherOriginalBytes }
+                    ]
 
-                CompactMetricLabel {
-                    text: root.hasCapture
-                        ? "Recognised Initial: " + root.formatFlowPercentageAndCount(root.quicWithSni, root.quicTotalFlows)
-                        : "Recognised Initial: -"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture
-                        ? "Unrecognised: " + root.formatFlowPercentageAndCount(root.quicWithoutSni, root.quicTotalFlows)
-                        : "Unrecognised: -"
-                }
-
-                Label {
-                    text: "Version"
-                    font.bold: true
-                    font.pixelSize: 12
-                    color: "#475569"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture ? "v1: " + root.groupInteger(root.quicVersionV1) : "v1: -"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture ? "draft-29: " + root.groupInteger(root.quicVersionDraft29) : "draft-29: -"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture ? "v2: " + root.groupInteger(root.quicVersionV2) : "v2: -"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture ? "Version unavailable: " + root.groupInteger(root.quicVersionUnknown) : "Version unavailable: -"
+                    delegate: FiveColumnRow {
+                        required property var modelData
+                        firstText: modelData.name
+                        secondText: root.hasCapture ? root.groupInteger(modelData.flows) : "-"
+                        thirdText: root.hasCapture ? root.groupInteger(modelData.packets) : "-"
+                        fourthText: root.hasCapture ? root.formatBytes(modelData.captured) : "-"
+                        fifthText: root.hasCapture ? root.formatBytes(modelData.original) : "-"
+                        firstWidth: root.transportNameColumnWidth
+                        secondWidth: root.transportFlowsColumnWidth
+                        thirdWidth: root.transportPacketsColumnWidth
+                        fourthWidth: root.transportCapturedColumnWidth
+                        fifthWidth: root.transportOriginalColumnWidth
+                        tableWidth: root.transportTableWidth
+                        rowIndex: modelData.rowIndex
+                        firstColor: "#0f172a"
+                    }
                 }
             }
 
             SectionFrame {
-                id: tlsSection
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
 
                 Label {
-                    text: "TLS"
+                    text: "Family"
                     font.bold: true
+                    font.pixelSize: 16
                 }
 
-                CompactMetricLabel {
-                    text: root.hasCapture ? "Flows: " + root.groupInteger(root.tlsTotalFlows) : "Flows: -"
+                FiveColumnHeader {
+                    firstTitle: "Family"
+                    secondTitle: "Flows"
+                    thirdTitle: "Packets"
+                    fourthTitle: "Captured"
+                    fifthTitle: "Original"
+                    firstWidth: root.familyNameColumnWidth
+                    secondWidth: root.familyFlowsColumnWidth
+                    thirdWidth: root.familyPacketsColumnWidth
+                    fourthWidth: root.familyCapturedColumnWidth
+                    fifthWidth: root.familyOriginalColumnWidth
+                    tableWidth: root.familyTableWidth
+                }
+
+                Repeater {
+                    model: [
+                        { rowIndex: 0, name: "IPv4", flows: root.ipv4FlowCount, packets: root.ipv4PacketCount, captured: root.ipv4CapturedBytes, original: root.ipv4OriginalBytes },
+                        { rowIndex: 1, name: "IPv6", flows: root.ipv6FlowCount, packets: root.ipv6PacketCount, captured: root.ipv6CapturedBytes, original: root.ipv6OriginalBytes }
+                    ]
+
+                    delegate: FiveColumnRow {
+                        required property var modelData
+                        firstText: modelData.name
+                        secondText: root.hasCapture ? root.groupInteger(modelData.flows) : "-"
+                        thirdText: root.hasCapture ? root.groupInteger(modelData.packets) : "-"
+                        fourthText: root.hasCapture ? root.formatBytes(modelData.captured) : "-"
+                        fifthText: root.hasCapture ? root.formatBytes(modelData.original) : "-"
+                        firstWidth: root.familyNameColumnWidth
+                        secondWidth: root.familyFlowsColumnWidth
+                        thirdWidth: root.familyPacketsColumnWidth
+                        fourthWidth: root.familyCapturedColumnWidth
+                        fifthWidth: root.familyOriginalColumnWidth
+                        tableWidth: root.familyTableWidth
+                        rowIndex: modelData.rowIndex
+                        firstColor: "#0f172a"
+                    }
+                }
+            }
+        }
+
+        Frame {
+            Layout.fillWidth: true
+            visible: root.hasCapture && Number(root.unrecognizedStatsPacketCount || 0) > 0
+            padding: 0
+
+            background: Rectangle {
+                color: "#ffffff"
+                border.color: "#d8dee9"
+                radius: 6
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 16
+
+                Label {
+                    text: "Unrecognized Packets"
+                    font.bold: true
+                    color: "#0f172a"
                 }
 
                 Label {
-                    text: "SNI (flow-based)"
-                    font.bold: true
-                    font.pixelSize: 12
-                    color: "#475569"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture
-                        ? "With SNI: " + root.formatFlowPercentageAndCount(root.tlsWithSni, root.tlsTotalFlows)
-                        : "With SNI: -"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture
-                        ? "Without SNI: " + root.formatFlowPercentageAndCount(root.tlsWithoutSni, root.tlsTotalFlows)
-                        : "Without SNI: -"
+                    text: "Packets: " + root.groupInteger(root.unrecognizedStatsPacketCount)
+                    color: "#334155"
                 }
 
                 Label {
-                    text: "Version"
-                    font.bold: true
-                    font.pixelSize: 12
-                    color: "#475569"
+                    text: "Captured: " + root.formatBytes(root.unrecognizedStatsCapturedBytes)
+                    color: "#334155"
                 }
 
-                CompactMetricLabel {
-                    text: root.hasCapture ? "TLS 1.2: " + root.groupInteger(root.tlsVersion12) : "TLS 1.2: -"
+                Label {
+                    text: "Original: " + root.formatBytes(root.unrecognizedStatsOriginalBytes)
+                    color: "#334155"
                 }
 
-                CompactMetricLabel {
-                    text: root.hasCapture ? "TLS 1.3: " + root.groupInteger(root.tlsVersion13) : "TLS 1.3: -"
-                }
-
-                CompactMetricLabel {
-                    text: root.hasCapture ? "Version unavailable: " + root.groupInteger(root.tlsVersionUnknown) : "Version unavailable: -"
-                }
+                Item { Layout.fillWidth: true }
             }
         }
     }

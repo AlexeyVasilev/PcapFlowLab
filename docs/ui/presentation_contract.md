@@ -766,7 +766,9 @@ Current Qt protocol statistics show:
 
 ### Protocol-hint summary
 
-Qt currently shows a detected-protocol-hints table with:
+Qt now exposes the detected-protocol-hints table as an optional collapsible
+Statistics section rather than an always-visible panel. The table itself keeps
+the same row semantics:
 
 - group:
   - Confirmed;
@@ -785,7 +787,8 @@ during the migration.
 
 ### QUIC and TLS summary
 
-Qt also exposes protocol-specific summary sections for:
+Qt now exposes `QUIC and TLS` as one optional collapsible Statistics section
+containing two side-by-side cards. The card contents remain protocol-specific:
 
 - QUIC:
   - total flows;
@@ -808,7 +811,8 @@ compatibility.
 
 ### Top talkers
 
-Qt currently exposes top-talker panels:
+Qt now exposes `Top Endpoints and Ports` as one optional collapsible
+Statistics section containing the existing two top-talker panels:
 
 - Top Endpoints
 - Top Ports
@@ -867,17 +871,33 @@ production-safe and semantically honest.
 
 ### Section-scoped loading direction
 
-The future Statistics surface keeps overview cards plus transport/family
-Protocol Summary always visible, while these sections are now prepared for
-independent typed requests and per-capture backend caching:
+Qt now keeps only the overview cards plus the transport/family Protocol Summary
+always visible. These sections are optional, independently collapsible, and
+loaded through typed per-capture requests:
 
 - Flows by Packet Count
+- Protocol Path Tree
 - Detected Protocol Hints
 - QUIC and TLS
 - Top Endpoints and Ports
 
-`Protocol Path` remains a separate independently mode-cached lazy request path
-rather than being folded into a generic statistics job framework.
+Request contract for the Qt Statistics tab:
+
+- a section request may start only when a capture is loaded, the Statistics tab
+  is active, the section is expanded, and the section is still
+  `not_requested` for the current capture;
+- first expansion loads once for the current capture;
+- collapse/reopen and Statistics-tab leave/return reuse the already prepared
+  result;
+- opening or closing a capture resets optional-section expansion, visible
+  section state, and section request state to `not_requested`.
+
+`Protocol Path` remains a separate independently mode-cached lazy request path.
+Qt keeps the current mode selector plus `Show flows`, `Expand all`, and
+`Collapse all` controls inside that collapsible section. Switching modes while
+the section is collapsed defers the request until the section is expanded
+again; switching modes while expanded reuses an existing mode cache or loads
+that mode once.
 
 ### Statistics state expectations
 

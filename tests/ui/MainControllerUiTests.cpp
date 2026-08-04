@@ -43,6 +43,7 @@
 #include "ui/app/PacketListModel.h"
 #include "ui/app/ProtocolPathStatsModel.h"
 #include "ui/app/StreamListModel.h"
+#include "ui/app/TopSummaryListModel.h"
 
 namespace {
 
@@ -679,6 +680,17 @@ QVariantMap find_protocol_distribution_row(const QVariantList& rows, const QStri
     for (const auto& value : rows) {
         const auto row = value.toMap();
         if (row.value(QStringLiteral("title")).toString() == title) {
+            return row;
+        }
+    }
+
+    return {};
+}
+
+QVariantMap find_flow_packet_histogram_row(const QVariantList& rows, const QString& label) {
+    for (const auto& value : rows) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("label")).toString() == label) {
             return row;
         }
     }
@@ -2853,6 +2865,166 @@ int main(int argc, char* argv[]) {
         })
     );
 
+    const int histogram_section = static_cast<int>(MainController::StatisticsOptionalSection::flow_packet_histogram);
+    const int protocol_path_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_path);
+    const int protocol_hints_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_hints);
+    const int quic_tls_section = static_cast<int>(MainController::StatisticsOptionalSection::quic_tls);
+    const int top_endpoints_ports_section = static_cast<int>(MainController::StatisticsOptionalSection::top_endpoints_ports);
+    const int section_not_requested = static_cast<int>(MainController::StatisticsSectionRequestState::not_requested);
+    const int section_ready = static_cast<int>(MainController::StatisticsSectionRequestState::ready);
+
+    run_ui_section("statistics_sections_lazy_loading", [&]() {
+        auto statistics_pane = load_qml_component("src/ui/qml/components/StatisticsPane.qml", "StatisticsPane");
+        statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
+        statistics_pane.object->setProperty("protocolPathExpanded", true);
+        statistics_pane.object->setProperty("protocolHintsExpanded", true);
+        statistics_pane.object->setProperty("quicTlsExpanded", true);
+        statistics_pane.object->setProperty("topEndpointsPortsExpanded", true);
+        statistics_pane.object->setProperty("statisticsSectionsResetToken", 1);
+        UI_EXPECT(!statistics_pane.object->property("flowPacketHistogramExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("protocolPathExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("protocolHintsExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("quicTlsExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("topEndpointsPortsExpanded").toBool());
+
+        statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
+        statistics_pane.object->setProperty("flowPacketHistogramState", section_ready);
+        statistics_pane.object->setProperty("flowPacketHistogramExcludedZeroPacketFlowCount", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(statistics_pane.object.get(), "flowPacketHistogramExcludedZeroPacketLabel"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramExcludedZeroPacketLabel")->property("text").toString()
+            == QStringLiteral("Excluded zero-packet flows: 2"));
+
+        const auto histogram_capture_path = write_temp_pcap(
+            "pfl_ui_flow_packet_histogram_sections.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 1), ipv4(10, 40, 0, 2), 44001, 443)},
+                {200, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 3), ipv4(10, 40, 0, 4), 44002, 443)},
+                {300, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 3), ipv4(10, 40, 0, 4), 44002, 443)},
+                {400, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 5), ipv4(10, 40, 0, 6), 44003, 443)},
+                {500, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 5), ipv4(10, 40, 0, 6), 44003, 443)},
+                {600, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 5), ipv4(10, 40, 0, 6), 44003, 443)},
+                {700, make_ethernet_ipv4_tcp_packet(ipv4(10, 40, 0, 5), ipv4(10, 40, 0, 6), 44003, 443)},
+            })
+        );
+
+        MainController histogram_controller {};
+        UI_EXPECT(open_capture_and_wait(app, histogram_controller, histogram_capture_path));
+        UI_EXPECT(histogram_controller.currentTabIndex() == 0);
+        UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.protocolPathSectionState() == section_not_requested);
+        UI_EXPECT(histogram_controller.protocolHintsSectionState() == section_not_requested);
+        UI_EXPECT(histogram_controller.quicTlsSectionState() == section_not_requested);
+        UI_EXPECT(histogram_controller.topEndpointPortSectionState() == section_not_requested);
+
+        histogram_controller.setCurrentTabIndex(2);
+        UI_EXPECT(histogram_controller.currentTabIndex() == 2);
+        UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_not_requested);
+        UI_EXPECT(histogram_controller.protocolPathSectionState() == section_not_requested);
+        UI_EXPECT(histogram_controller.protocolHintsSectionState() == section_not_requested);
+        UI_EXPECT(histogram_controller.quicTlsSectionState() == section_not_requested);
+        UI_EXPECT(histogram_controller.topEndpointPortSectionState() == section_not_requested);
+
+        histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
+        UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_ready);
+        UI_EXPECT(histogram_controller.flowPacketHistogramTotalFlowCount() == 3U);
+        UI_EXPECT(histogram_controller.flowPacketHistogramMaximumBucketFlowCount() == 1U);
+        UI_EXPECT(histogram_controller.flowPacketHistogramExcludedZeroPacketFlowCount() == 0U);
+        const auto histogram_rows = histogram_controller.flowPacketHistogramRows();
+        UI_EXPECT(histogram_rows.size() == 12);
+        UI_EXPECT(histogram_rows[0].toMap().value(QStringLiteral("label")).toString() == QStringLiteral("1"));
+        UI_EXPECT(histogram_rows[1].toMap().value(QStringLiteral("label")).toString() == QStringLiteral("2"));
+        UI_EXPECT(histogram_rows[2].toMap().value(QStringLiteral("label")).toString() == QStringLiteral("3-5"));
+        UI_EXPECT(histogram_rows[11].toMap().value(QStringLiteral("label")).toString() == QStringLiteral("5001+"));
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("2")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("flowCount")).toULongLong() == 1U);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
+
+        histogram_controller.setStatisticsSectionExpanded(histogram_section, false);
+        UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_ready);
+        histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
+        UI_EXPECT(histogram_controller.flowPacketHistogramRows() == histogram_rows);
+
+        MainController deferred_histogram_controller {};
+        UI_EXPECT(open_capture_and_wait(app, deferred_histogram_controller, histogram_capture_path));
+        deferred_histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
+        UI_EXPECT(deferred_histogram_controller.flowPacketHistogramState() == section_not_requested);
+        deferred_histogram_controller.setCurrentTabIndex(2);
+        UI_EXPECT(deferred_histogram_controller.flowPacketHistogramState() == section_ready);
+
+        MainController quic_tls_controller {};
+        const auto tls_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "tls_1_2_badssl_baseline_14.pcap";
+        UI_EXPECT(open_capture_and_wait(app, quic_tls_controller, tls_fixture_path));
+        quic_tls_controller.setCurrentTabIndex(2);
+        UI_EXPECT(quic_tls_controller.quicTlsSectionState() == section_not_requested);
+        quic_tls_controller.setStatisticsSectionExpanded(quic_tls_section, true);
+        UI_EXPECT(quic_tls_controller.quicTlsSectionState() == section_ready);
+        UI_EXPECT(quic_tls_controller.quicTotalFlows() == 0U);
+        UI_EXPECT(quic_tls_controller.tlsTotalFlows() > 0U);
+        quic_tls_controller.setStatisticsSectionExpanded(quic_tls_section, false);
+        quic_tls_controller.setStatisticsSectionExpanded(quic_tls_section, true);
+        UI_EXPECT(quic_tls_controller.quicTlsSectionState() == section_ready);
+
+        const auto top_talkers_capture_path = write_temp_pcap(
+            "pfl_ui_top_talkers_sections.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 1), ipv4(10, 41, 1, 1), 45001, 80)},
+                {110, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 2), ipv4(10, 41, 1, 2), 45002, 80)},
+                {120, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 3), ipv4(10, 41, 1, 3), 45003, 80)},
+                {130, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 4), ipv4(10, 41, 1, 4), 45004, 80)},
+                {140, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 5), ipv4(10, 41, 1, 5), 45005, 80)},
+                {150, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 6), ipv4(10, 41, 1, 6), 45006, 80)},
+                {160, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 7), ipv4(10, 41, 1, 7), 45007, 80)},
+                {170, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 8), ipv4(10, 41, 1, 8), 45008, 80)},
+                {180, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 9), ipv4(10, 41, 1, 9), 45009, 80)},
+                {190, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 10), ipv4(10, 41, 1, 10), 45010, 80)},
+                {200, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 11), ipv4(10, 41, 1, 11), 45011, 80)},
+                {210, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 12), ipv4(10, 41, 1, 12), 45012, 80)},
+                {220, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 13), ipv4(10, 41, 1, 13), 45013, 80)},
+                {230, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 14), ipv4(10, 41, 1, 14), 45014, 80)},
+                {240, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 15), ipv4(10, 41, 1, 15), 45015, 80)},
+                {250, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 16), ipv4(10, 41, 1, 16), 45016, 80)},
+                {260, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 17), ipv4(10, 41, 1, 17), 45017, 80)},
+                {270, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 18), ipv4(10, 41, 1, 18), 45018, 80)},
+                {280, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 19), ipv4(10, 41, 1, 19), 45019, 80)},
+                {290, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 20), ipv4(10, 41, 1, 20), 45020, 80)},
+                {300, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 21), ipv4(10, 41, 1, 21), 45021, 80)},
+                {310, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 22), ipv4(10, 41, 1, 22), 45022, 80)},
+                {320, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 23), ipv4(10, 41, 1, 23), 45023, 80)},
+                {330, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 24), ipv4(10, 41, 1, 24), 45024, 80)},
+                {340, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 25), ipv4(10, 41, 1, 25), 45025, 80)},
+                {350, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 26), ipv4(10, 41, 1, 26), 45026, 80)},
+                {360, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 27), ipv4(10, 41, 1, 27), 45027, 80)},
+                {370, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 28), ipv4(10, 41, 1, 28), 45028, 80)},
+                {380, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 29), ipv4(10, 41, 1, 29), 45029, 80)},
+                {390, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 30), ipv4(10, 41, 1, 30), 45030, 80)},
+                {400, make_ethernet_ipv4_tcp_packet(ipv4(10, 41, 0, 31), ipv4(10, 41, 1, 31), 45031, 80)},
+            })
+        );
+
+        MainController top_talkers_controller {};
+        UI_EXPECT(open_capture_and_wait(app, top_talkers_controller, top_talkers_capture_path));
+        top_talkers_controller.setCurrentTabIndex(2);
+        auto* top_endpoints_model = qobject_cast<TopSummaryListModel*>(top_talkers_controller.topEndpointsModel());
+        auto* top_ports_model = qobject_cast<TopSummaryListModel*>(top_talkers_controller.topPortsModel());
+        UI_REQUIRE(top_endpoints_model != nullptr);
+        UI_REQUIRE(top_ports_model != nullptr);
+        UI_EXPECT(top_talkers_controller.topEndpointPortSectionState() == section_not_requested);
+        UI_EXPECT(top_endpoints_model->rowCount() == 0);
+        UI_EXPECT(top_ports_model->rowCount() == 0);
+        top_talkers_controller.setStatisticsSectionExpanded(top_endpoints_ports_section, true);
+        UI_EXPECT(top_talkers_controller.topEndpointPortSectionState() == section_ready);
+        UI_EXPECT(top_endpoints_model->rowCount() > 0);
+        UI_EXPECT(top_ports_model->rowCount() > 0);
+
+        UI_EXPECT(open_capture_and_wait(app, top_talkers_controller, protocol_path_capture_path));
+        UI_EXPECT(top_talkers_controller.topEndpointPortSectionState() == section_not_requested);
+        UI_EXPECT(top_endpoints_model->rowCount() == 0);
+        UI_EXPECT(top_ports_model->rowCount() == 0);
+    });
+
     MainController protocol_path_controller {};
     UI_EXPECT(open_capture_and_wait(app, protocol_path_controller, protocol_path_capture_path));
     auto* protocol_path_flow_model = qobject_cast<FlowListModel*>(protocol_path_controller.flowModel());
@@ -2871,8 +3043,11 @@ int main(int argc, char* argv[]) {
     {
         auto* protocol_path_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_controller.protocolPathStatsModel());
         UI_EXPECT(protocol_path_stats_model != nullptr);
+        protocol_path_controller.setCurrentTabIndex(2);
+        UI_EXPECT(protocol_path_controller.protocolPathSectionState() == section_not_requested);
         UI_EXPECT(protocol_path_stats_model->rowCount() == 0);
-        protocol_path_controller.ensureProtocolPathStatisticsLoaded();
+        protocol_path_controller.setStatisticsSectionExpanded(protocol_path_section, true);
+        UI_EXPECT(protocol_path_controller.protocolPathSectionState() == section_ready);
         const auto protocol_path_rows = protocol_path_controller.protocolPathStatistics();
         UI_EXPECT(protocol_path_stats_model->rowCount() == count_protocol_path_root_rows(protocol_path_rows));
         const auto first_row = protocol_path_stats_model->index(0, 0);
@@ -2899,17 +3074,25 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_mode_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_mode_controller.protocolPathStatsModel());
     UI_EXPECT(protocol_path_mode_stats_model != nullptr);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 0);
+    protocol_path_mode_controller.setCurrentTabIndex(2);
+    UI_EXPECT(protocol_path_mode_controller.protocolPathSectionState() == section_not_requested);
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
-    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
-    const auto kind_overview_rows = protocol_path_mode_controller.protocolPathStatistics();
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
+    protocol_path_mode_controller.setStatisticsMode(1);
+    UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 1);
+    UI_EXPECT(protocol_path_mode_controller.protocolPathSectionState() == section_not_requested);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+
+    protocol_path_mode_controller.setStatisticsSectionExpanded(protocol_path_section, true);
+    UI_EXPECT(protocol_path_mode_controller.protocolPathSectionState() == section_ready);
+    const auto identity_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == identity_rows.size());
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
-        QStringLiteral("EthernetII")) >= 0);
-    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
-        protocol_path_mode_stats_model,
-        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) < 0);
-    UI_EXPECT(protocol_path_mode_stats_model->canExpand());
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) >= 0);
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
 
     const auto root_row = protocol_path_mode_stats_model->index(0, 0);
     UI_EXPECT(root_row.isValid());
@@ -2921,35 +3104,14 @@ int main(int argc, char* argv[]) {
 
     protocol_path_mode_stats_model->toggleExpanded(root_node_id);
     UI_EXPECT(protocol_path_mode_stats_model->data(protocol_path_mode_stats_model->index(0, 0), ProtocolPathStatsModel::ExpandedRole).toBool());
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() > count_protocol_path_root_rows(kind_overview_rows));
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() > count_protocol_path_root_rows(identity_rows));
 
-    protocol_path_mode_stats_model->collapseAll();
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
-
-    protocol_path_mode_stats_model->expandAll();
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == kind_overview_rows.size());
-    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
-        protocol_path_mode_stats_model,
-        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
-
-    protocol_path_mode_controller.setStatisticsMode(1);
-    UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 1);
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
-    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
-    const auto identity_rows = protocol_path_mode_controller.protocolPathStatistics();
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
-    protocol_path_mode_stats_model->expandAll();
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == identity_rows.size());
-    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
-        protocol_path_mode_stats_model,
-        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) >= 0);
     protocol_path_mode_stats_model->collapseAll();
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
 
     protocol_path_mode_controller.setStatisticsMode(2);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 2);
-    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
-    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
+    UI_EXPECT(protocol_path_mode_controller.protocolPathSectionState() == section_ready);
     const auto terminal_rows = protocol_path_mode_controller.protocolPathStatistics();
     UI_EXPECT(!protocol_path_mode_stats_model->canExpand());
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
@@ -2969,19 +3131,33 @@ int main(int argc, char* argv[]) {
     protocol_path_mode_stats_model->expandAll();
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
 
+    protocol_path_mode_controller.setStatisticsSectionExpanded(protocol_path_section, false);
+    protocol_path_mode_controller.setStatisticsMode(0);
+    UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 0);
+    UI_EXPECT(protocol_path_mode_controller.protocolPathSectionState() == section_not_requested);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.setStatisticsSectionExpanded(protocol_path_section, true);
+    UI_EXPECT(protocol_path_mode_controller.protocolPathSectionState() == section_ready);
+    const auto kind_overview_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == kind_overview_rows.size());
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
+
     MainController protocol_path_filter_controller {};
     UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_mode_capture_path));
     auto* protocol_path_filter_flow_model = qobject_cast<FlowListModel*>(protocol_path_filter_controller.flowModel());
     auto* protocol_path_filter_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_filter_controller.protocolPathStatsModel());
     UI_REQUIRE(protocol_path_filter_flow_model != nullptr);
     UI_REQUIRE(protocol_path_filter_stats_model != nullptr);
-    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
+    protocol_path_filter_controller.setCurrentTabIndex(2);
+    protocol_path_filter_controller.setStatisticsSectionExpanded(protocol_path_section, true);
     UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 2);
     UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
 
     protocol_path_filter_controller.setStatisticsMode(1);
-    UI_EXPECT(protocol_path_filter_stats_model->rowCount() == 0);
-    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
     protocol_path_filter_stats_model->expandAll();
     const auto identity_vni_100_row = find_protocol_path_stats_row_by_path_text(
         protocol_path_filter_stats_model,
@@ -3008,8 +3184,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT((protocol_path_filter_flow_model->visibleFlowIndices() == std::vector<int> {0}));
 
     protocol_path_filter_controller.setStatisticsMode(2);
-    UI_EXPECT(protocol_path_filter_stats_model->rowCount() == 0);
-    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
+    protocol_path_filter_controller.setCurrentTabIndex(2);
     const auto terminal_vni_100_row = find_protocol_path_stats_row_by_path_text(
         protocol_path_filter_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP")
@@ -3034,11 +3209,11 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_and_text_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_and_text_controller.protocolPathStatsModel());
     UI_REQUIRE(protocol_path_and_text_flow_model != nullptr);
     UI_REQUIRE(protocol_path_and_text_stats_model != nullptr);
-    protocol_path_and_text_controller.ensureProtocolPathStatisticsLoaded();
+    protocol_path_and_text_controller.setCurrentTabIndex(2);
+    protocol_path_and_text_controller.setStatisticsSectionExpanded(protocol_path_section, true);
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
 
     protocol_path_and_text_controller.setStatisticsMode(0);
-    protocol_path_and_text_controller.ensureProtocolPathStatisticsLoaded();
     protocol_path_and_text_stats_model->expandAll();
     const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
         protocol_path_and_text_stats_model,
@@ -3097,20 +3272,22 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(possible_hint_flow_model->rowCount() == 3);
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) < 0);
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) < 0);
-    auto possible_tls_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible TLS"));
-    auto possible_quic_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible QUIC"));
-    auto unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
-    UI_EXPECT(possible_tls_row.value(QStringLiteral("flows")).toULongLong() == 0U);
-    UI_EXPECT(possible_quic_row.value(QStringLiteral("flows")).toULongLong() == 0U);
-    UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
+    UI_EXPECT(possible_hint_controller.protocolHintsSectionState() == section_not_requested);
+    UI_EXPECT(possible_hint_controller.protocolHintDistribution().isEmpty());
 
     possible_hint_controller.setUsePossibleTlsQuic(true);
     UI_EXPECT(possible_hint_controller.usePossibleTlsQuic());
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) >= 0);
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) >= 0);
-    possible_tls_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible TLS"));
-    possible_quic_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible QUIC"));
-    unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
+    UI_EXPECT(possible_hint_controller.protocolHintDistribution().isEmpty());
+
+    possible_hint_controller.setCurrentTabIndex(2);
+    UI_EXPECT(possible_hint_controller.protocolHintsSectionState() == section_not_requested);
+    possible_hint_controller.setStatisticsSectionExpanded(protocol_hints_section, true);
+    UI_EXPECT(possible_hint_controller.protocolHintsSectionState() == section_ready);
+    auto possible_tls_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible TLS"));
+    auto possible_quic_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible QUIC"));
+    auto unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
     UI_EXPECT(possible_tls_row.value(QStringLiteral("flows")).toULongLong() == 1U);
     UI_EXPECT(possible_quic_row.value(QStringLiteral("flows")).toULongLong() == 1U);
     UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 1U);
@@ -3119,6 +3296,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!possible_hint_controller.usePossibleTlsQuic());
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) < 0);
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) < 0);
+    UI_EXPECT(possible_hint_controller.protocolHintsSectionState() == section_ready);
     unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
     UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
 

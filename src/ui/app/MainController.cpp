@@ -53,6 +53,7 @@ constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
 constexpr int kProtocolPathStatisticsModeKindOverview = 0;
 constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
 constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
+constexpr std::size_t kTopSummaryLimit = 5U;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
@@ -201,6 +202,64 @@ QString formatCaptureStorageSummaryText(const CaptureStorageSummary& summary) {
         .arg(summary.approx_protocol_path_layer_payload_bytes);
     lines << QStringLiteral("Notes: estimates exclude allocator, hash-node, and transient UI/frontend copy overhead.");
     return lines.join(QLatin1Char('\n'));
+}
+
+QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary& summary) {
+    auto make_row = [](const char* label, const ProtocolStats& stats) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("title"), QString::fromUtf8(label));
+        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(stats.flow_count));
+        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(stats.packet_count));
+        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(stats.captured_bytes));
+        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(stats.original_bytes));
+        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.original_bytes));
+        return row;
+    };
+
+    QVariantList rows {};
+    rows.reserve(13);
+    rows.push_back(make_row("HTTP", summary.hint_http));
+    rows.push_back(make_row("TLS", summary.hint_tls));
+    rows.push_back(make_row("Possible TLS", summary.hint_possible_tls));
+    rows.push_back(make_row("DNS", summary.hint_dns));
+    rows.push_back(make_row("QUIC", summary.hint_quic));
+    rows.push_back(make_row("Possible QUIC", summary.hint_possible_quic));
+    rows.push_back(make_row("SSH", summary.hint_ssh));
+    rows.push_back(make_row("STUN", summary.hint_stun));
+    rows.push_back(make_row("BitTorrent", summary.hint_bittorrent));
+    rows.push_back(make_row("Mail protocols", summary.hint_mail_protocols));
+    rows.push_back(make_row("DHCP", summary.hint_dhcp));
+    rows.push_back(make_row("mDNS", summary.hint_mdns));
+    rows.push_back(make_row("Unknown", summary.hint_unknown));
+    return rows;
+}
+
+QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& histogram) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(histogram.buckets.size()));
+
+    const auto max_flow_count = histogram.maximum_bucket_flow_count;
+    for (const auto& bucket : histogram.buckets) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketId"), QString::fromStdString(bucket.stable_id));
+        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
+            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
+            : QVariant {});
+        row.insert(QStringLiteral("label"), bucket.upper_bound_inclusive.has_value()
+            ? (*bucket.upper_bound_inclusive == bucket.lower_bound_inclusive
+                ? QString::number(bucket.lower_bound_inclusive)
+                : QStringLiteral("%1-%2").arg(bucket.lower_bound_inclusive).arg(*bucket.upper_bound_inclusive))
+            : QStringLiteral("%1+").arg(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(bucket.flow_count));
+        row.insert(QStringLiteral("normalizedFraction"),
+            max_flow_count > 0U
+                ? static_cast<double>(bucket.flow_count) / static_cast<double>(max_flow_count)
+                : 0.0);
+        rows.push_back(row);
+    }
+
+    return rows;
 }
 
 QString selected_flow_service_hint(const FlowListModel& flow_model, const int selected_flow_index) {
@@ -2682,34 +2741,58 @@ qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
 }
 
-QVariantList MainController::protocolHintDistribution() const {
-    auto makeRow = [](const char* label, const ProtocolStats& stats) {
-        QVariantMap row {};
-        row.insert(QStringLiteral("title"), QString::fromUtf8(label));
-        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(stats.flow_count));
-        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(stats.packet_count));
-        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(stats.captured_bytes));
-        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(stats.original_bytes));
-        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.original_bytes));
-        return row;
-    };
+int MainController::statisticsSectionsResetToken() const noexcept {
+    return statistics_sections_reset_token_;
+}
 
-    QVariantList rows {};
-    rows.reserve(13);
-    rows.push_back(makeRow("HTTP", protocol_summary_.hint_http));
-    rows.push_back(makeRow("TLS", protocol_summary_.hint_tls));
-    rows.push_back(makeRow("Possible TLS", protocol_summary_.hint_possible_tls));
-    rows.push_back(makeRow("DNS", protocol_summary_.hint_dns));
-    rows.push_back(makeRow("QUIC", protocol_summary_.hint_quic));
-    rows.push_back(makeRow("Possible QUIC", protocol_summary_.hint_possible_quic));
-    rows.push_back(makeRow("SSH", protocol_summary_.hint_ssh));
-    rows.push_back(makeRow("STUN", protocol_summary_.hint_stun));
-    rows.push_back(makeRow("BitTorrent", protocol_summary_.hint_bittorrent));
-    rows.push_back(makeRow("Mail protocols", protocol_summary_.hint_mail_protocols));
-    rows.push_back(makeRow("DHCP", protocol_summary_.hint_dhcp));
-    rows.push_back(makeRow("mDNS", protocol_summary_.hint_mdns));
-    rows.push_back(makeRow("Unknown", protocol_summary_.hint_unknown));
-    return rows;
+int MainController::flowPacketHistogramState() const noexcept {
+    return static_cast<int>(flow_packet_histogram_state_);
+}
+
+QString MainController::flowPacketHistogramStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::flow_packet_histogram);
+}
+
+QString MainController::flowPacketHistogramSummaryText() const {
+    return flow_packet_count_histogram_.total_flow_count > 0U
+        ? QStringLiteral("%1 flows").arg(flow_packet_count_histogram_.total_flow_count)
+        : QString {};
+}
+
+qulonglong MainController::flowPacketHistogramTotalFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_packet_count_histogram_.total_flow_count);
+}
+
+qulonglong MainController::flowPacketHistogramMaximumBucketFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_packet_count_histogram_.maximum_bucket_flow_count);
+}
+
+qulonglong MainController::flowPacketHistogramExcludedZeroPacketFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_packet_count_histogram_.excluded_zero_packet_flow_count);
+}
+
+QVariantList MainController::flowPacketHistogramRows() const {
+    return flow_packet_histogram_rows_;
+}
+
+int MainController::protocolHintsSectionState() const noexcept {
+    return static_cast<int>(protocol_hints_section_state_);
+}
+
+QString MainController::protocolHintsSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::protocol_hints);
+}
+
+QVariantList MainController::protocolHintDistribution() const {
+    return protocol_hint_distribution_;
+}
+
+int MainController::protocolPathSectionState() const noexcept {
+    return static_cast<int>(protocol_path_section_state_);
+}
+
+QString MainController::protocolPathSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::protocol_path);
 }
 
 QVariantList MainController::protocolPathStatistics() const {
@@ -2877,6 +2960,14 @@ qulonglong MainController::unrecognizedStatsOriginalBytes() const noexcept {
     return static_cast<qulonglong>(unrecognized_packet_statistics_.original_bytes);
 }
 
+int MainController::quicTlsSectionState() const noexcept {
+    return static_cast<int>(quic_tls_section_state_);
+}
+
+QString MainController::quicTlsSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::quic_tls);
+}
+
 qulonglong MainController::quicTotalFlows() const noexcept {
     return static_cast<qulonglong>(quic_recognition_stats_.total_flows);
 }
@@ -2927,6 +3018,14 @@ qulonglong MainController::tlsVersion13() const noexcept {
 
 qulonglong MainController::tlsVersionUnknown() const noexcept {
     return static_cast<qulonglong>(tls_recognition_stats_.version_unknown);
+}
+
+int MainController::topEndpointPortSectionState() const noexcept {
+    return static_cast<int>(top_endpoints_ports_section_state_);
+}
+
+QString MainController::topEndpointPortSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::top_endpoints_ports);
 }
 
 int MainController::statisticsMode() const noexcept {
@@ -3974,20 +4073,266 @@ void MainController::showSelectedProtocolPathFlows() {
     emit protocolPathFlowFilterChanged();
 }
 
-void MainController::ensureProtocolPathStatisticsLoaded() {
+void MainController::setStatisticsSectionState(
+    const StatisticsOptionalSection section,
+    const StatisticsSectionRequestState state,
+    QString errorText
+) {
+    switch (section) {
+    case StatisticsOptionalSection::flow_packet_histogram:
+        flow_packet_histogram_state_ = state;
+        flow_packet_histogram_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::protocol_path:
+        protocol_path_section_state_ = state;
+        protocol_path_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::protocol_hints:
+        protocol_hints_section_state_ = state;
+        protocol_hints_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::quic_tls:
+        quic_tls_section_state_ = state;
+        quic_tls_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::top_endpoints_ports:
+        top_endpoints_ports_section_state_ = state;
+        top_endpoints_ports_error_text_ = std::move(errorText);
+        break;
+    }
+}
+
+QString MainController::statisticsSectionStatusText(const StatisticsOptionalSection section) const {
+    StatisticsSectionRequestState state {StatisticsSectionRequestState::not_requested};
+    QString error_text {};
+
+    switch (section) {
+    case StatisticsOptionalSection::flow_packet_histogram:
+        state = flow_packet_histogram_state_;
+        error_text = flow_packet_histogram_error_text_;
+        break;
+    case StatisticsOptionalSection::protocol_path:
+        state = protocol_path_section_state_;
+        error_text = protocol_path_error_text_;
+        break;
+    case StatisticsOptionalSection::protocol_hints:
+        state = protocol_hints_section_state_;
+        error_text = protocol_hints_error_text_;
+        break;
+    case StatisticsOptionalSection::quic_tls:
+        state = quic_tls_section_state_;
+        error_text = quic_tls_error_text_;
+        break;
+    case StatisticsOptionalSection::top_endpoints_ports:
+        state = top_endpoints_ports_section_state_;
+        error_text = top_endpoints_ports_error_text_;
+        break;
+    }
+
+    switch (state) {
+    case StatisticsSectionRequestState::loading:
+        return QStringLiteral("Calculating...");
+    case StatisticsSectionRequestState::unavailable:
+        return QStringLiteral("Statistics are unavailable for this capture.");
+    case StatisticsSectionRequestState::error:
+        return error_text.isEmpty() ? QStringLiteral("Failed to calculate this section.") : error_text;
+    case StatisticsSectionRequestState::not_requested:
+    case StatisticsSectionRequestState::ready:
+        return {};
+    }
+
+    return {};
+}
+
+void MainController::resetStatisticsSectionState(const bool emitResetToken) {
+    flow_packet_histogram_expanded_ = false;
+    protocol_path_section_expanded_ = false;
+    protocol_hints_section_expanded_ = false;
+    quic_tls_section_expanded_ = false;
+    top_endpoints_ports_section_expanded_ = false;
+
+    flow_packet_count_histogram_ = {};
+    flow_packet_histogram_rows_.clear();
+    protocol_hint_distribution_.clear();
+    protocol_path_summary_ = {};
+    protocol_path_stats_model_.clear();
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    quic_recognition_stats_ = {};
+    tls_recognition_stats_ = {};
+    top_endpoints_model_.clear();
+    top_ports_model_.clear();
+
+    setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::not_requested);
+
+    if (emitResetToken) {
+        ++statistics_sections_reset_token_;
+        emit statisticsSectionsResetTokenChanged();
+    }
+}
+
+void MainController::ensureFlowPacketHistogramLoaded() {
+    if (!flow_packet_histogram_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
     if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (flow_packet_histogram_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    flow_packet_count_histogram_ = session_.flow_packet_count_histogram();
+    flow_packet_histogram_rows_ = build_flow_packet_histogram_rows(flow_packet_count_histogram_);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureProtocolHintsLoaded() {
+    if (!protocol_hints_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureProtocolPathStatisticsLoaded() {
+    ensureProtocolPathSectionLoaded();
+}
+
+void MainController::ensureProtocolPathSectionLoaded() {
+    if (!protocol_path_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
         return;
     }
 
     const auto current_mode = protocol_path_statistics_mode_from_int(statistics_mode_);
-    if (loaded_protocol_path_statistics_mode_ == statistics_mode_) {
+    if (protocol_path_section_state_ == StatisticsSectionRequestState::ready &&
+        loaded_protocol_path_statistics_mode_ == statistics_mode_) {
         return;
     }
 
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::loading);
+    emit stateChanged();
     protocol_path_summary_ = session_.protocol_path_summary(current_mode);
     protocol_path_stats_model_.refresh(protocol_path_summary_);
     loaded_protocol_path_statistics_mode_ = statistics_mode_;
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::ready);
     emit stateChanged();
+}
+
+void MainController::ensureQuicTlsSectionLoaded() {
+    if (!quic_tls_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (quic_tls_section_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    const auto summary = session_.quic_tls_summary();
+    quic_recognition_stats_ = summary.quic;
+    tls_recognition_stats_ = summary.tls;
+    setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureTopEndpointsAndPortsSectionLoaded() {
+    if (!top_endpoints_ports_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (top_endpoints_ports_section_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    refreshTopSummaryModels();
+    setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::maybeLoadExpandedStatisticsSections() {
+    ensureFlowPacketHistogramLoaded();
+    ensureProtocolPathSectionLoaded();
+    ensureProtocolHintsLoaded();
+    ensureQuicTlsSectionLoaded();
+    ensureTopEndpointsAndPortsSectionLoaded();
+}
+
+void MainController::setStatisticsSectionExpanded(const int section, const bool expanded) {
+    const auto normalized_section = static_cast<StatisticsOptionalSection>(section);
+    switch (normalized_section) {
+    case StatisticsOptionalSection::flow_packet_histogram:
+        flow_packet_histogram_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::protocol_path:
+        protocol_path_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::protocol_hints:
+        protocol_hints_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::quic_tls:
+        quic_tls_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::top_endpoints_ports:
+        top_endpoints_ports_section_expanded_ = expanded;
+        break;
+    }
+
+    if (expanded) {
+        maybeLoadExpandedStatisticsSections();
+    }
 }
 
 void MainController::clearProtocolPathFlowFilter() {
@@ -4065,11 +4410,11 @@ void MainController::setStatisticsMode(const int mode) {
     loaded_protocol_path_statistics_mode_ = -1;
     protocol_path_stats_model_.clear();
     protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
-    if (session_.has_capture() && current_tab_index_ == kStatsTabIndex) {
-        ensureProtocolPathStatisticsLoaded();
-    } else {
-        emit stateChanged();
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
+    if (session_.has_capture() && current_tab_index_ == kStatsTabIndex && protocol_path_section_expanded_) {
+        ensureProtocolPathSectionLoaded();
     }
+    emit stateChanged();
     emit statisticsModeChanged();
 }
 
@@ -4092,6 +4437,9 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
+        if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
+            protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
+        }
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
         }
@@ -4155,7 +4503,7 @@ void MainController::setCurrentTabIndex(const int index) {
         }
     }
     if (current_tab_index_ == kStatsTabIndex) {
-        ensureProtocolPathStatisticsLoaded();
+        maybeLoadExpandedStatisticsSections();
     }
     emit currentTabIndexChanged();
 }
@@ -5002,12 +5350,8 @@ void MainController::resetLoadedState() {
     session_ = {};
     protocol_summary_ = {};
     unrecognized_packet_statistics_ = {};
-    protocol_path_summary_ = {};
-    loaded_protocol_path_statistics_mode_ = -1;
-    protocol_path_stats_model_.clear();
+    resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
-    quic_recognition_stats_ = {};
-    tls_recognition_stats_ = {};
     flow_model_.clear();
     flow_model_.resetViewState();
     packet_model_.clear();
@@ -5048,25 +5392,19 @@ void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
     unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
-    protocol_path_summary_ = {};
-    loaded_protocol_path_statistics_mode_ = -1;
-    protocol_path_stats_model_.clear();
-    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
-    quic_recognition_stats_ = session_.quic_recognition_stats();
-    tls_recognition_stats_ = session_.tls_recognition_stats();
     // Clear any selected-flow state from the previous capture before publishing
     // the new flow list, so re-selecting flow 0 after a reload always refreshes.
     clearFlowSelection();
     flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
-    refreshTopSummaryModels();
-    if (current_tab_index_ == kStatsTabIndex) {
-        ensureProtocolPathStatisticsLoaded();
-    }
     setOpenErrorText({});
     setStatusText({});
+    if (current_tab_index_ == kStatsTabIndex) {
+        maybeLoadExpandedStatisticsSections();
+    }
     emit stateChanged();
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
@@ -5080,7 +5418,7 @@ void MainController::refreshTopSummaryModels() {
         return;
     }
 
-    const auto top = session_.top_summary();
+    const auto top = session_.top_summary(kTopSummaryLimit);
     top_endpoints_model_.refreshEndpoints(top.endpoints_by_bytes);
     top_ports_model_.refreshPorts(top.ports_by_bytes);
 }
