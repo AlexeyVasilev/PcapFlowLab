@@ -241,7 +241,6 @@ StreamItemRow make_stream_item_row(
     const std::vector<std::uint64_t>& packet_indices,
     const std::string& summary_text = {},
     const std::vector<std::uint8_t>& summary_payload_bytes = {},
-    const std::string& payload_hex_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
@@ -263,7 +262,6 @@ StreamItemRow make_stream_item_row(
         .constricted_packet_notes = constricted_packet_notes,
         .summary_text = summary_text,
         .summary_payload_bytes = summary_payload_bytes,
-        .payload_hex_text = payload_hex_text,
         .tls_semantic_kind = tls_semantic_kind,
         .tls_summary_records = tls_summary_records,
         .tls_initial_parser_context = tls_initial_parser_context,
@@ -280,7 +278,6 @@ StreamItemRow make_stream_item_row(
     const PacketRef& packet,
     const std::string& summary_text = {},
     const std::vector<std::uint8_t>& summary_payload_bytes = {},
-    const std::string& payload_hex_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
@@ -298,7 +295,6 @@ StreamItemRow make_stream_item_row(
         std::vector<std::uint64_t> {packet.packet_index},
         summary_text,
         summary_payload_bytes,
-        payload_hex_text,
         has_constricted_contribution,
         constricted_contribution_notes,
         constricted_packet_notes,
@@ -334,7 +330,6 @@ bool append_tls_stream_items(
             item.packet_indices,
             {},
             item.summary_payload_bytes,
-            item.payload_hex_text,
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             item.constricted_packet_notes,
@@ -416,7 +411,6 @@ BuiltStreamRow make_stream_item_row_from_tls_scanned_row(
         row.item.packet_indices,
         {},
         row.item.summary_payload_bytes,
-        row.item.payload_hex_text,
         row.item.has_constricted_contribution,
         row.item.constricted_contribution_notes,
         row.item.constricted_packet_notes,
@@ -560,7 +554,6 @@ BuiltStreamRow make_stream_item_row_from_tls_presentation(
         item.packet_indices,
         {},
         item.summary_payload_bytes,
-        item.payload_hex_text,
         item.has_constricted_contribution,
         item.constricted_contribution_notes,
         item.constricted_packet_notes,
@@ -588,8 +581,7 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
         item.byte_count,
         item.packet_indices,
         {},
-        {},
-        item.payload_hex_text
+        {}
     );
     row.materialization_stability = item.stability;
     row.semantic_family = StreamItemSemanticFamily::http;
@@ -797,7 +789,6 @@ bool append_quic_stream_items_for_packet(
     const std::string_view direction_text,
     std::span<const std::uint8_t> payload_span,
     const bool quic_stream_confirmed,
-    HexDumpService& hex_dump_service,
     std::span<const std::uint8_t> initial_secret_connection_id
 ) {
     // Stream-level QUIC labeling requires a confirmed QUIC flow in the scanned
@@ -820,7 +811,6 @@ bool append_quic_stream_items_for_packet(
         return false;
     }
 
-    const auto packet_hex_dump = hex_dump_service.format(payload_span);
     bool emitted_any = false;
     for (const auto& item : presentation.items) {
         auto row = make_stream_item_row(
@@ -831,7 +821,6 @@ bool append_quic_stream_items_for_packet(
             packet,
             {},
             {},
-            packet_hex_dump,
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             {},
@@ -1403,7 +1392,6 @@ bool append_arp_stream_item_for_packet(
 
     PacketPayloadService payload_service {};
     const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
-    HexDumpService hex_dump_service {};
 
     auto row = make_stream_item_row(
         0U,
@@ -1412,8 +1400,7 @@ bool append_arp_stream_item_for_packet(
         payload_bytes.size(),
         packet,
         join_summary_lines(summary_lines),
-        {},
-        hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()))
+        {}
     );
     row.materialization_stability = StreamMaterializationStability::stable;
     row.semantic_family = StreamItemSemanticFamily::arp;
@@ -1439,7 +1426,6 @@ void append_connection_stream_items_bounded(
     const DirectionalStreamPolicy& direction_policy_a,
     const DirectionalStreamPolicy& direction_policy_b
 ) {
-    HexDumpService hex_dump_service {};
     constexpr std::uint16_t kQuicCandidatePort = 443U;
     const bool uses_quic_candidate_port = flow_protocol == ProtocolId::udp &&
         (connection.flow_a.key.src_port == kQuicCandidatePort || connection.flow_a.key.dst_port == kQuicCandidatePort);
@@ -1582,14 +1568,13 @@ void append_connection_stream_items_bounded(
                     flow_index,
                     connection.flow_a.key,
                     bounded_direction_packets,
-                    packet,
-                    direction_text,
-                    payload_span,
-                    quic_stream_confirmed,
-                    hex_dump_service,
-                    quic_initial_secret_connection_id.has_value()
-                        ? std::span<const std::uint8_t>(
-                            quic_initial_secret_connection_id->data(),
+                packet,
+                direction_text,
+                payload_span,
+                quic_stream_confirmed,
+                quic_initial_secret_connection_id.has_value()
+                    ? std::span<const std::uint8_t>(
+                        quic_initial_secret_connection_id->data(),
                             quic_initial_secret_connection_id->size())
                         : std::span<const std::uint8_t> {}
                 )
@@ -1603,7 +1588,6 @@ void append_connection_stream_items_bounded(
                     direction_text,
                     payload_span,
                     quic_stream_confirmed,
-                    hex_dump_service,
                     quic_initial_secret_connection_id.has_value()
                         ? std::span<const std::uint8_t>(
                             quic_initial_secret_connection_id->data(),

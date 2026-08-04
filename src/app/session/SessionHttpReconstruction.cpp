@@ -9,8 +9,6 @@
 
 #include "app/session/CaptureSession.h"
 #include "core/reassembly/ReassemblyTypes.h"
-#include "core/services/HexDumpService.h"
-
 namespace pfl::session_detail {
 
 namespace {
@@ -553,7 +551,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
         return presentation;
     }
 
-    HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
     std::size_t chunk_index = 0U;
     std::size_t chunk_offset = 0U;
@@ -576,7 +573,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                     .byte_count = trailing.size(),
                     .packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset),
                     .stability = StreamMaterializationStability::window_incomplete,
-                    .payload_hex_text = hex_dump_service.format(trailing),
                     .summary = HttpStreamItemSummaryDetails {
                         .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
                         .diagnostic = "Window ended before a complete HTTP header block was available.",
@@ -602,7 +598,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .label = parsed->label,
             .byte_count = block_bytes.size(),
             .packet_indices = consume_reassembled_packet_indices(*chunks, block_bytes.size(), chunk_index, chunk_offset),
-            .payload_hex_text = hex_dump_service.format(block_bytes),
             .summary = parsed->summary,
             },
             logical_item_count,
@@ -628,7 +623,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                         .byte_count = trailing.size(),
                         .packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset),
                         .stability = StreamMaterializationStability::window_incomplete,
-                        .payload_hex_text = hex_dump_service.format(trailing),
                         .summary = HttpStreamItemSummaryDetails {
                             .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
                             .diagnostic = "A later HTTP message boundary was not available in the loaded reassembly window.",
@@ -660,7 +654,6 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .label = "HTTP Gap",
             .byte_count = 0U,
             .packet_indices = std::vector<std::uint64_t> {result->first_gap_packet_index},
-            .payload_hex_text = {},
             .summary = HttpStreamItemSummaryDetails {
                 .semantic_kind = HttpStreamItemSemanticKind::gap,
                 .diagnostic = "Earlier TCP bytes are missing, so later HTTP bytes are shown conservatively.",

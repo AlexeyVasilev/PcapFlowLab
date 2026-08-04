@@ -11,7 +11,7 @@ The baseline should focus on robust assertions:
 - expected key labels
 - packet count vs multi-packet behavior
 - generic vs protocol-aware classification
-- presence or absence of `payload_hex_text`
+- presence or absence of authoritative structured Summary or Item Data ownership
 - details-panel fallback behavior for single-packet generic items
 
 It should avoid brittle full-text snapshots of the entire Stream or details panes.
@@ -33,7 +33,7 @@ Baseline expectations:
   - stronger current expectation: `HTTP GET /`
 - item is complete, not partial
 - `packet_count == 1`
-- `payload_hex_text` is present
+- Stream Item Summary is protocol-aware
 - Stream Item Details should use the item-level texts, not packet fallback
 
 ### HTTP response
@@ -51,7 +51,7 @@ Baseline expectations:
   - stronger current expectation: includes status code / reason
 - item is complete, not partial
 - `packet_count == 1`
-- `payload_hex_text` is present
+- Stream Item Summary is protocol-aware
 - Stream Item Details should use the item-level texts
 
 ### DNS query
@@ -105,7 +105,7 @@ Baseline expectations:
   - stronger current expectation: `TLS ClientHello`
 - item is complete, not partial
 - `packet_count == 1`
-- `payload_hex_text` is present
+- Stream Item Summary is TLS-aware
 - Stream Item Details should use item-level text, not packet fallback
 
 ### TLS single-packet ServerHello
@@ -125,7 +125,7 @@ Baseline expectations:
   - stronger current expectation: `TLS ServerHello`
 - item is complete, not partial
 - `packet_count == 1`
-- `payload_hex_text` is present
+- Stream Item Summary is TLS-aware
 
 ### QUIC flow that remains generic UDP in Stream
 
@@ -223,7 +223,7 @@ These tests define observable Stream behavior, not exact internal reconstruction
 - Assertions focus on labels, protocol-awareness, and partial vs complete behavior
 - Exact byte-level reconstruction is out of scope
 - no DNS-specific or QUIC-specific labels appear
-- item-level `payload_hex_text` remains empty
+- no protocol-aware Stream item should be fabricated
 
 ### Generic TCP payload
 
@@ -236,7 +236,7 @@ Baseline expectations:
 - one or more TCP Stream items
 - every item label is `TCP Payload`
 - no HTTP-specific or TLS-specific labels appear
-- item-level `payload_hex_text` remains empty
+- no protocol-aware Stream item should be fabricated
 
 ### TLS partial tail
 
@@ -330,7 +330,7 @@ Prefer assertions like these:
 - row count is small and explicit
 - labels match a narrow expected set
 - `packet_count` is `1` or `2` as intended
-- `payload_hex_text.empty()` presence checks where that preview remains part of the contract
+- structured Summary and Item Data ownership checks where byte presentation is part of the contract
 - details fallback behavior is checked by category, not full snapshots
 
 Avoid:
@@ -355,7 +355,7 @@ Contract note:
 
 - Stream rows now retain structured semantics only for visible presentation.
 - Formatted Stream protocol text is no longer stored in `StreamItemRow`.
-- `payload_hex_text` remains temporarily and is scheduled for separate cleanup.
+- Stream rows retain structured semantics and provenance, while formatted Item Data is produced on demand.
 - Flow-level `FlowRow::protocol_text` remains live and unchanged.
 
 Additional repository fixtures now cover:

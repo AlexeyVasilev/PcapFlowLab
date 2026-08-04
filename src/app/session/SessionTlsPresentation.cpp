@@ -12,7 +12,6 @@
 #include "app/session/CaptureSession.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/reassembly/ReassemblyTypes.h"
-#include "core/services/HexDumpService.h"
 #include "core/services/TlsInspectionParser.h"
 
 namespace pfl::session_detail {
@@ -1639,8 +1638,7 @@ TlsScannedStreamRow make_tls_scanned_stream_row(
 
 std::optional<TlsScannedStreamRow> make_tls_stream_scanner_partial_row(
     const TlsStreamScannerState& state,
-    const StreamMaterializationStability stability,
-    HexDumpService& hex_dump_service
+    const StreamMaterializationStability stability
 ) {
     if (state.buffered_contributions.empty()) {
         return std::nullopt;
@@ -1696,7 +1694,6 @@ std::optional<TlsScannedStreamRow> make_tls_stream_scanner_partial_row(
             .constricted_packet_notes = std::move(constricted_packet_notes),
             .summary_payload_bytes = captured_bytes,
             .summary_records = {},
-            .payload_hex_text = hex_dump_service.format(captured_bytes),
             .semantic_kind = record_fragment
                 ? TlsStreamItemSemanticKind::partial_record
                 : TlsStreamItemSemanticKind::partial_payload,
@@ -1749,7 +1746,6 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
         return output;
     }
 
-    HexDumpService hex_dump_service {};
     while (output.stable_rows.size() < max_finalized_items) {
         if (state.buffered_contributions.empty()) {
             state.pending_record.reset();
@@ -1793,7 +1789,6 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
             .constricted_packet_notes = std::move(consumed.constricted_packet_notes),
             .summary_payload_bytes = consumed.captured_bytes,
             .summary_records = inspection.has_value() ? std::move(inspection->records) : std::vector<TlsRecordModel> {},
-            .payload_hex_text = hex_dump_service.format(consumed.captured_bytes),
             .semantic_kind = finalized_semantic_kind,
             .initial_parser_context = state.pending_record->initial_parser_context,
             .final_parser_context = final_parser_context,
@@ -1831,8 +1826,7 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
         );
         const auto partial_row = make_tls_stream_scanner_partial_row(
             state,
-            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::stable,
-            hex_dump_service
+            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::stable
         );
         if (partial_row.has_value() && output.stable_rows.size() < max_finalized_items) {
             output.stable_rows.push_back(*partial_row);
@@ -1855,8 +1849,7 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
         );
         const auto partial_row = make_tls_stream_scanner_partial_row(
             state,
-            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::window_incomplete,
-            hex_dump_service
+            stable_constricted ? StreamMaterializationStability::stable : StreamMaterializationStability::window_incomplete
         );
         if (partial_row.has_value()) {
             if (stable_constricted) {
@@ -1887,7 +1880,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
     }
 
     presentation.handled = true;
-    HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
     bool post_change_cipher_spec = false;
     TlsInspectionParserContext parser_context {
@@ -1904,7 +1896,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                     .packet_indices = {packet_index},
                     .summary_payload_bytes = std::vector<std::uint8_t>(trailing.begin(), trailing.end()),
                     .summary_records = {},
-                    .payload_hex_text = hex_dump_service.format(trailing),
                     .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
                     .initial_parser_context = parser_context,
                     .final_parser_context = parser_context,
@@ -1922,7 +1913,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                 .packet_indices = {packet_index},
                 .summary_payload_bytes = std::vector<std::uint8_t>(trailing.begin(), trailing.end()),
                 .summary_records = {},
-                .payload_hex_text = hex_dump_service.format(trailing),
                 .semantic_kind = TlsStreamItemSemanticKind::partial_record,
                 .initial_parser_context = parser_context,
                 .final_parser_context = parser_context,
@@ -1942,7 +1932,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
             .packet_indices = {packet_index},
             .summary_payload_bytes = std::vector<std::uint8_t>(record_bytes.begin(), record_bytes.end()),
             .summary_records = inspection.has_value() ? std::move(inspection->records) : std::vector<TlsRecordModel> {},
-            .payload_hex_text = hex_dump_service.format(record_bytes),
             .semantic_kind = semantic_kind,
             .initial_parser_context = parser_context,
             .final_parser_context = final_parser_context,
@@ -2078,7 +2067,6 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
             .byte_count = 0U,
             .packet_indices = {result->first_gap_packet_index},
             .summary_records = {},
-            .payload_hex_text = {},
             .semantic_kind = TlsStreamItemSemanticKind::gap,
             },
             logical_item_count,
@@ -2127,7 +2115,6 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .byte_count = 0U,
             .packet_indices = {*gap_packet_index},
             .summary_records = {},
-            .payload_hex_text = {},
             .semantic_kind = TlsStreamItemSemanticKind::gap,
             },
             logical_item_count,

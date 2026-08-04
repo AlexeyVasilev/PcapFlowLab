@@ -30,7 +30,6 @@ struct TlsStreamPresentationItem {
     std::vector<std::string> constricted_packet_notes {};
     std::vector<std::uint8_t> summary_payload_bytes {};
     std::vector<TlsRecordModel> summary_records {};
-    std::string payload_hex_text {};
     TlsStreamItemSemanticKind semantic_kind {TlsStreamItemSemanticKind::none};
     TlsInspectionParserContext initial_parser_context {};
     TlsInspectionParserContext final_parser_context {};

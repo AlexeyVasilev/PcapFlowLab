@@ -31,7 +31,7 @@ Each Stream row is represented as a `StreamItemRow`.
 - `byte_count`: byte size of the item payload represented by the row.
 - `packet_count`: number of packets contributing bytes to the item.
 - `packet_indices`: contributing packet indices in capture order.
-- `payload_hex_text`: optional formatted payload preview for item-level details.
+- item-level payload bytes are not retained as preformatted hex text in `StreamItemRow`.
 
 The model is intentionally narrow. A Stream item is a presentation artifact for the selected flow, not a protocol object with lifecycle outside the current view.
 
@@ -39,7 +39,7 @@ Formatted protocol-oriented text is no longer retained in `StreamItemRow`.
 
 - Stream labels, Summary, and Item Data ownership come from structured retained semantics.
 - Explicit formatter/debug APIs may still exist where they are intentionally consumed outside Stream row retention.
-- `payload_hex_text` remains temporarily for a separate cleanup pass.
+- Stream Item Data hex formatting is produced on demand from authoritative owned bytes when that ownership exists.
 - `FlowRow::protocol_text` remains live and unchanged for the flow list and related behavior.
 
 ## Stream materialization

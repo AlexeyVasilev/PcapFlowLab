@@ -23,7 +23,6 @@ struct HttpStreamPresentationItem {
     std::size_t byte_count {0U};
     std::vector<std::uint64_t> packet_indices {};
     StreamMaterializationStability stability {StreamMaterializationStability::stable};
-    std::string payload_hex_text {};
     HttpStreamItemSummaryDetails summary {};
 };
 

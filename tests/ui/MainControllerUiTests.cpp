@@ -944,7 +944,6 @@ void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::
 
         for (const auto* row : matches) {
             UI_REQUIRE(row != nullptr);
-            UI_EXPECT(row->payload_hex_text.empty() == !stream_expectation.value(QStringLiteral("expects_payload_hex_text")).toBool());
         }
     }
 

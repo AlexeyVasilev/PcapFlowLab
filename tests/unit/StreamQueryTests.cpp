@@ -16,7 +16,6 @@
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
-#include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
@@ -299,7 +298,6 @@ void expect_matching_stream_row_prefix(
         PFL_EXPECT(actual[index].constricted_contribution_notes == expected[index].constricted_contribution_notes);
         PFL_EXPECT(actual[index].constricted_packet_notes == expected[index].constricted_packet_notes);
         PFL_EXPECT(actual[index].summary_text == expected[index].summary_text);
-        PFL_EXPECT(actual[index].payload_hex_text == expected[index].payload_hex_text);
         PFL_EXPECT(actual[index].tls_semantic_kind == expected[index].tls_semantic_kind);
     }
 }
@@ -947,8 +945,6 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_multi_rows[1].packet_count == 1);
     PFL_EXPECT(tls_multi_rows[0].packet_indices == std::vector<std::uint64_t> {0});
     PFL_EXPECT(tls_multi_rows[1].packet_indices == std::vector<std::uint64_t> {0});
-    PFL_EXPECT(!tls_multi_rows[0].payload_hex_text.empty());
-    PFL_EXPECT(!tls_multi_rows[1].payload_hex_text.empty());
     PFL_EXPECT(tls_multi_session.summary().packet_count == tls_multi_summary_before.packet_count);
     PFL_EXPECT(tls_multi_session.summary().flow_count == tls_multi_summary_before.flow_count);
     PFL_EXPECT(tls_multi_session.summary().total_bytes == tls_multi_summary_before.total_bytes);
@@ -1023,7 +1019,6 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_tls_rows[0].packet_count == 2);
     const auto expected_split_packet_indices = std::vector<std::uint64_t> {0, 1};
     PFL_EXPECT(split_tls_rows[0].packet_indices == expected_split_packet_indices);
-    PFL_EXPECT(!split_tls_rows[0].payload_hex_text.empty());
 
     const auto split_app_data_record = make_tls_record(0x17U, 0x0303U, {0xDEU, 0xADU, 0xBEU, 0xEFU, 0x11U, 0x22U});
     const auto split_app_payload_a = std::vector<std::uint8_t>(
@@ -1054,7 +1049,6 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_app_rows[0].byte_count == split_app_data_record.size());
     PFL_EXPECT(split_app_rows[0].packet_count == 2);
     PFL_EXPECT(split_app_rows[0].packet_indices == expected_split_packet_indices);
-    PFL_EXPECT(!split_app_rows[0].payload_hex_text.empty());
 
     const auto tls_gap_app_data = make_tls_record(0x17U, 0x0303U, {0xAAU, 0xBBU, 0xCCU, 0xDDU});
     const auto tls_gap_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
@@ -1395,7 +1389,6 @@ void run_stream_query_tests() {
             PFL_EXPECT(repeated_rows[index].direction_text == full_rows[index].direction_text);
             PFL_EXPECT(repeated_rows[index].byte_count == full_rows[index].byte_count);
             PFL_EXPECT(repeated_rows[index].packet_indices == full_rows[index].packet_indices);
-            PFL_EXPECT(repeated_rows[index].payload_hex_text == full_rows[index].payload_hex_text);
         }
 
         const auto context_info_after_first = session.selected_flow_stream_context_info();
@@ -1783,7 +1776,6 @@ void run_stream_query_tests() {
             PFL_EXPECT(second_pass.stable_rows[0].item.label == one_shot.stable_rows[0].item.label);
             PFL_EXPECT(second_pass.stable_rows[0].item.byte_count == one_shot.stable_rows[0].item.byte_count);
             PFL_EXPECT(second_pass.stable_rows[0].item.packet_indices == one_shot.stable_rows[0].item.packet_indices);
-            PFL_EXPECT(second_pass.stable_rows[0].item.payload_hex_text == one_shot.stable_rows[0].item.payload_hex_text);
             PFL_EXPECT(second_pass.stable_rows[0].item.semantic_kind == one_shot.stable_rows[0].item.semantic_kind);
         }
     }
@@ -1993,9 +1985,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(client_hello != nullptr);
         PFL_EXPECT(server_hello != nullptr);
         PFL_EXPECT(change_cipher_spec != nullptr);
-        PFL_EXPECT(!client_hello->payload_hex_text.empty());
-        PFL_EXPECT(!server_hello->payload_hex_text.empty());
-        PFL_EXPECT(!change_cipher_spec->payload_hex_text.empty());
         PFL_EXPECT(std::none_of(bounded_rows.begin(), bounded_rows.end(), [](const StreamItemRow& row) {
             return starts_with(row.label, "HTTP");
         }));
@@ -2004,7 +1993,6 @@ void run_stream_query_tests() {
             return row.label == "TLS AppData" || row.label == "TLS Payload";
         });
         PFL_EXPECT(data_like_it != rows.end());
-        PFL_EXPECT(!data_like_it->payload_hex_text.empty());
     }
 
     {
@@ -2024,7 +2012,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
         PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake);
-        PFL_EXPECT(!rows[0].payload_hex_text.empty());
         const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
         const auto* stream_item_layer = find_top_level_summary_layer(stream_summary_layers, "stream_item");
         const auto* stream_tls_layer = find_top_level_summary_layer(stream_summary_layers, "tls");
@@ -2150,7 +2137,6 @@ void run_stream_query_tests() {
         auto relabeled_tls_row = rows[0];
         relabeled_tls_row.label = "not-used-for-tls-summary";
         relabeled_tls_row.summary_payload_bytes.clear();
-        relabeled_tls_row.payload_hex_text.clear();
         const auto relabeled_tls_summary = build_stream_summary_layers(relabeled_tls_row, packet_rows);
         const auto* relabeled_tls_layer = find_top_level_summary_layer(relabeled_tls_summary, "tls");
         PFL_REQUIRE(relabeled_tls_layer != nullptr);
@@ -2174,7 +2160,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].packet_count == 1U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
-        PFL_EXPECT(!rows[0].payload_hex_text.empty());
         const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
         const auto* stream_tls_layer = find_top_level_summary_layer(stream_summary_layers, "tls");
         PFL_REQUIRE(stream_tls_layer != nullptr);
@@ -2309,7 +2294,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
         PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake);
-        PFL_EXPECT(!rows[0].payload_hex_text.empty());
         const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
         const auto* stream_tls_layer = find_top_level_summary_layer(stream_summary_layers, "tls");
         PFL_REQUIRE(stream_tls_layer != nullptr);
@@ -3060,7 +3044,6 @@ void run_stream_query_tests() {
             PFL_EXPECT(!starts_with(row.label, "DNS"));
             PFL_EXPECT(!starts_with(row.label, "QUIC"));
             PFL_EXPECT(row.tls_semantic_kind == TlsStreamItemSemanticKind::none);
-            PFL_EXPECT(row.payload_hex_text.empty());
             PFL_EXPECT(row.semantic_family == StreamItemSemanticFamily::generic);
             PFL_REQUIRE(row.generic_summary.has_value());
             PFL_EXPECT(row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::udp_payload);
@@ -3088,7 +3071,6 @@ void run_stream_query_tests() {
             .packet_indices = {0U},
             .semantic_family = StreamItemSemanticFamily::tls,
             .summary_payload_bytes = {},
-            .payload_hex_text = {},
             .tls_semantic_kind = TlsStreamItemSemanticKind::encrypted_handshake,
             .tls_summary_records = {
                 TlsRecordModel {
@@ -3134,7 +3116,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(tls_like_udp_rows.size() == 1U);
         PFL_EXPECT(tls_like_udp_rows[0].label == "UDP Payload");
         PFL_EXPECT(!starts_with(tls_like_udp_rows[0].label, "TLS"));
-        PFL_EXPECT(tls_like_udp_rows[0].payload_hex_text.empty());
 
         constexpr std::string_view http_like_udp_text =
             "GET /udp HTTP/1.1\r\n"
@@ -3154,7 +3135,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(http_like_udp_rows.size() == 1U);
         PFL_EXPECT(http_like_udp_rows[0].label == "UDP Payload");
         PFL_EXPECT(!starts_with(http_like_udp_rows[0].label, "HTTP"));
-        PFL_EXPECT(http_like_udp_rows[0].payload_hex_text.empty());
     }
 
     {
@@ -3305,7 +3285,7 @@ void run_stream_query_tests() {
             return row.label == "QUIC Initial: CRYPTO";
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return row.label != "UDP Payload" && !row.payload_hex_text.empty();
+            return row.label != "UDP Payload";
         }));
     }
 
@@ -3316,7 +3296,6 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "Handshake");
-        PFL_EXPECT(!rows[0].payload_hex_text.empty());
 
         const auto packet_rows = session.list_flow_packets(0);
         const auto summary_layers = build_stream_summary_layers(rows[0], packet_rows);
@@ -3334,7 +3313,6 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "UDP Payload");
-        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {
@@ -3356,7 +3334,6 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "UDP Payload");
-        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {
@@ -3373,7 +3350,6 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "UDP Payload");
-        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {
@@ -3390,7 +3366,6 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "UDP Payload");
-        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {
@@ -3564,7 +3539,6 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "UDP Payload");
-        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {
@@ -3588,7 +3562,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows.size() == 2U);
         PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
         PFL_EXPECT(rows[1].label == "Protected payload");
-        PFL_EXPECT(!rows[1].payload_hex_text.empty());
     }
 
     {
@@ -3604,11 +3577,9 @@ void run_stream_query_tests() {
         for (const auto& row : rows) {
             if (starts_with(row.label, "HTTP GET")) {
                 ++request_count;
-                PFL_EXPECT(!row.payload_hex_text.empty());
             }
             if (starts_with(row.label, "HTTP 200")) {
                 ++response_count;
-                PFL_EXPECT(!row.payload_hex_text.empty());
                 if (row.packet_count > 1U) {
                     saw_multi_packet_http_response = true;
                 }
@@ -4519,7 +4490,6 @@ void run_stream_query_tests() {
             PFL_EXPECT(row.label == "TCP Payload");
             PFL_EXPECT(!starts_with(row.label, "HTTP"));
             PFL_EXPECT(!starts_with(row.label, "TLS"));
-            PFL_EXPECT(row.payload_hex_text.empty());
             PFL_EXPECT(row.semantic_family == StreamItemSemanticFamily::generic);
             PFL_REQUIRE(row.generic_summary.has_value());
             PFL_EXPECT(row.generic_summary->semantic_kind == GenericStreamItemSemanticKind::tcp_payload);
@@ -4531,7 +4501,6 @@ void run_stream_query_tests() {
             PFL_EXPECT(require_summary_field_value(*generic_layer, "Kind") == "TCP payload");
             PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Packet fallback");
             auto relabeled_row = row;
-            relabeled_row.payload_hex_text = "00 01";
             const auto relabeled_summary = build_stream_summary_layers(relabeled_row, session.list_flow_packets(0));
             const auto* relabeled_generic_layer = find_top_level_summary_layer(relabeled_summary, "stream_payload");
             const auto* relabeled_stream_item_layer = find_top_level_summary_layer(relabeled_summary, "stream_item");
@@ -4596,7 +4565,6 @@ void run_stream_query_tests() {
         PFL_EXPECT(!rows[0].direction_text.empty());
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
         PFL_EXPECT(rows[0].summary_text.find("Message: ARP Request") != std::string::npos);
-        PFL_EXPECT(rows[0].payload_hex_text.find("00 01 08 00 06 04 00 01") != std::string::npos);
         PFL_EXPECT(rows[0].semantic_family == StreamItemSemanticFamily::arp);
         PFL_REQUIRE(rows[0].arp_summary.has_value());
         const auto arp_summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
@@ -4660,8 +4628,6 @@ void run_stream_query_tests() {
 
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].payload_hex_text.find("00 01 08 00 06 04 00 01") != std::string::npos);
-        PFL_EXPECT(rows[0].payload_hex_text.find("00000020") == std::string::npos);
     }
 
     {
