@@ -39,7 +39,6 @@ class PacketDetailsViewModel final : public QObject {
     Q_PROPERTY(QVariant streamItemDataLogicalOffset READ streamItemDataLogicalOffset NOTIFY changed)
     Q_PROPERTY(QString streamItemDataStatusText READ streamItemDataStatusText NOTIFY changed)
     Q_PROPERTY(QString streamItemDataText READ streamItemDataText NOTIFY changed)
-    Q_PROPERTY(QString protocolText READ protocolText NOTIFY changed)
 
 public:
     explicit PacketDetailsViewModel(QObject* parent = nullptr);
@@ -75,7 +74,6 @@ public:
     [[nodiscard]] const QVariant& streamItemDataLogicalOffset() const noexcept;
     [[nodiscard]] const QString& streamItemDataStatusText() const noexcept;
     [[nodiscard]] const QString& streamItemDataText() const noexcept;
-    [[nodiscard]] const QString& protocolText() const noexcept;
 
     void clear();
     void setDetailsTitle(const QString& text);
@@ -112,8 +110,6 @@ public:
         const QString& statusText,
         const QString& formattedText
     );
-    void setProtocolText(const QString& text);
-
 signals:
     void changed();
 
@@ -148,8 +144,7 @@ private:
                        const QString& newStreamItemDataContributingUnitKind,
                        const QVariant& newStreamItemDataLogicalOffset,
                        const QString& newStreamItemDataStatusText,
-                       const QString& newStreamItemDataText,
-                       const QString& newProtocolText);
+                       const QString& newStreamItemDataText);
 
     bool has_packet_ {false};
     bool stream_item_details_ {false};
@@ -182,7 +177,6 @@ private:
     QVariant stream_item_data_logical_offset_ {};
     QString stream_item_data_status_text_ {};
     QString stream_item_data_text_ {};
-    QString protocol_text_ {};
 };
 
 }  // namespace pfl

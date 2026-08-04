@@ -22,7 +22,6 @@
 #include <QCoreApplication>
 #include <QFileDialog>
 #include <QGuiApplication>
-#include <QRegularExpression>
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
@@ -1331,10 +1330,6 @@ QString stream_item_data_materialization_failure_text() {
     return QStringLiteral("Item data unavailable • Failed to materialize the selected item bytes.");
 }
 
-QString stream_protocol_unavailable_text() {
-    return QStringLiteral("Protocol details are not available for this stream item.");
-}
-
 QString source_capture_unavailable_status_text() {
     return QStringLiteral("Original source capture is unavailable. Metadata views remain available, but raw bytes, stream reconstruction, and flow export are disabled.");
 }
@@ -1350,25 +1345,12 @@ QString source_capture_unavailable_packet_raw_text() {
     return QStringLiteral("Raw packet bytes are unavailable because the original source capture cannot be read.");
 }
 
-QString source_capture_unavailable_packet_protocol_text() {
-    return QStringLiteral("Byte-backed protocol details are unavailable because the original source capture cannot be read.");
-}
-
 QString source_capture_unavailable_stream_summary_text() {
     return QStringLiteral(
         "Original source capture unavailable.\n\n"
         "Stream reconstruction requires source packet bytes.\n\n"
         "Reattach the original capture file to inspect stream items and stream-backed details.");
 }
-
-QString source_capture_unavailable_stream_protocol_text() {
-    return QStringLiteral("Stream protocol details are unavailable because the original source capture cannot be read.");
-}
-
-struct ProtocolField {
-    QString label {};
-    QString value {};
-};
 
 QVariantMap packet_summary_field_to_variant_map(const session_detail::PacketSummaryField& field) {
     QVariantMap map {};
@@ -1410,295 +1392,6 @@ QVariantList packet_summary_layers_to_variant_list(const std::vector<session_det
     return result;
 }
 
-std::vector<ProtocolField> parse_protocol_fields(const QStringList& lines, const qsizetype start_index = 0) {
-    std::vector<ProtocolField> fields {};
-    for (auto index = std::max<qsizetype>(0, start_index); index < lines.size(); ++index) {
-        const auto trimmed = lines.at(index).trimmed();
-        if (trimmed.isEmpty()) {
-            continue;
-        }
-
-        const auto separatorIndex = trimmed.indexOf(QStringLiteral(":"));
-        if (separatorIndex < 0) {
-            fields.push_back(ProtocolField {
-                .label = trimmed,
-                .value = {},
-            });
-            continue;
-        }
-
-        fields.push_back(ProtocolField {
-            .label = trimmed.left(separatorIndex).trimmed(),
-            .value = trimmed.mid(separatorIndex + 1).trimmed(),
-        });
-    }
-
-    return fields;
-}
-
-std::vector<ProtocolField> take_protocol_fields(
-    std::vector<ProtocolField>& fields,
-    const QStringList& ordered_labels
-) {
-    std::vector<ProtocolField> taken {};
-    for (const auto& label : ordered_labels) {
-        const auto it = std::find_if(fields.begin(), fields.end(), [&](const ProtocolField& field) {
-            return field.label == label;
-        });
-        if (it == fields.end()) {
-            continue;
-        }
-
-        taken.push_back(*it);
-        fields.erase(it);
-    }
-
-    return taken;
-}
-
-QStringList wrap_protocol_value(const QString& value, const int max_line_length = 76) {
-    if (!value.contains(QStringLiteral(", "))) {
-        return {value};
-    }
-
-    const auto parts = value.split(QStringLiteral(", "), Qt::SkipEmptyParts);
-    QStringList lines {};
-    QString currentLine {};
-    for (const auto& part : parts) {
-        if (currentLine.isEmpty()) {
-            currentLine = part;
-            continue;
-        }
-
-        if (currentLine.size() + 2 + part.size() <= max_line_length) {
-            currentLine += QStringLiteral(", ") + part;
-            continue;
-        }
-
-        lines.push_back(currentLine);
-        currentLine = part;
-    }
-
-    if (!currentLine.isEmpty()) {
-        lines.push_back(currentLine);
-    }
-
-    return lines;
-}
-
-void append_protocol_field_lines(
-    QStringList& lines,
-    const ProtocolField& field,
-    const QStringList& multiline_labels = {}
-) {
-    if (field.label.isEmpty()) {
-        return;
-    }
-
-    const bool multiline = multiline_labels.contains(field.label) ||
-        (field.value.size() > 72 && field.value.contains(QStringLiteral(", ")));
-
-    if (field.value.isEmpty()) {
-        lines.push_back(QStringLiteral("  %1").arg(field.label));
-        return;
-    }
-
-    if (!multiline) {
-        lines.push_back(QStringLiteral("  %1: %2").arg(field.label, field.value));
-        return;
-    }
-
-    lines.push_back(QStringLiteral("  %1:").arg(field.label));
-    for (const auto& valueLine : wrap_protocol_value(field.value)) {
-        lines.push_back(QStringLiteral("    %1").arg(valueLine));
-    }
-}
-
-void append_protocol_section(
-    QStringList& lines,
-    const QString& title,
-    const std::vector<ProtocolField>& fields,
-    const QStringList& multiline_labels = {}
-) {
-    if (fields.empty()) {
-        return;
-    }
-
-    if (!lines.isEmpty()) {
-        lines.push_back({});
-    }
-
-    lines.push_back(title);
-    for (const auto& field : fields) {
-        append_protocol_field_lines(lines, field, multiline_labels);
-    }
-}
-
-QString format_tls_protocol_text_from_fields(
-    std::vector<ProtocolField> fields,
-    const QString& title
-) {
-    const auto handshakeTypeIt = std::find_if(fields.begin(), fields.end(), [](const ProtocolField& field) {
-        return field.label == QStringLiteral("TLS Handshake Type");
-    });
-    const auto handshakeType = handshakeTypeIt != fields.end() ? handshakeTypeIt->value : QString {};
-
-    QStringList coreOrder {
-        QStringLiteral("TLS Handshake Type"),
-    };
-    QStringList negotiationOrder {};
-
-    if (handshakeType == QStringLiteral("ClientHello")) {
-        coreOrder << QStringLiteral("SNI")
-                  << QStringLiteral("ALPN")
-                  << QStringLiteral("Supported Versions");
-        negotiationOrder << QStringLiteral("Cipher Suites")
-                         << QStringLiteral("Extensions");
-    } else if (handshakeType == QStringLiteral("ServerHello")) {
-        coreOrder << QStringLiteral("Selected TLS Version")
-                  << QStringLiteral("Selected Cipher Suite");
-        negotiationOrder << QStringLiteral("Extensions");
-    } else {
-        coreOrder << QStringLiteral("Selected TLS Version")
-                  << QStringLiteral("Selected Cipher Suite")
-                  << QStringLiteral("SNI")
-                  << QStringLiteral("ALPN")
-                  << QStringLiteral("Supported Versions");
-        negotiationOrder << QStringLiteral("Cipher Suites")
-                         << QStringLiteral("Extensions");
-    }
-
-    auto coreFields = take_protocol_fields(fields, coreOrder);
-    auto negotiationFields = take_protocol_fields(fields, negotiationOrder);
-
-    QStringList lines {};
-    append_protocol_section(lines, title, coreFields);
-    append_protocol_section(
-        lines,
-        QStringLiteral("Negotiation"),
-        negotiationFields,
-        {QStringLiteral("Cipher Suites"), QStringLiteral("Extensions"), QStringLiteral("Supported Versions"), QStringLiteral("ALPN")}
-    );
-    append_protocol_section(lines, QStringLiteral("Structure"), fields);
-    if (!lines.isEmpty() && lines.front() != title) {
-        lines.push_front(title);
-    }
-    return lines.join(QLatin1Char('\n'));
-}
-
-QString format_http_protocol_text(const QString& protocol_text) {
-    const auto lines = protocol_text.split(QLatin1Char('\n'));
-    if (lines.isEmpty() || lines.front().trimmed() != QStringLiteral("HTTP")) {
-        return protocol_text;
-    }
-
-    auto fields = parse_protocol_fields(lines, 1);
-    if (fields.empty()) {
-        return protocol_text;
-    }
-
-    auto mainFields = take_protocol_fields(fields, {
-        QStringLiteral("Message Type"),
-        QStringLiteral("Method"),
-        QStringLiteral("Path"),
-        QStringLiteral("Status Code"),
-        QStringLiteral("Reason"),
-        QStringLiteral("Version")
-    });
-    auto headerFields = take_protocol_fields(fields, {
-        QStringLiteral("Host"),
-        QStringLiteral("Content-Type"),
-        QStringLiteral("Content-Length")
-    });
-
-    QStringList formatted {};
-    append_protocol_section(formatted, QStringLiteral("HTTP"), mainFields);
-    append_protocol_section(formatted, QStringLiteral("Headers"), headerFields);
-    append_protocol_section(formatted, QStringLiteral("Details"), fields);
-    if (!formatted.isEmpty() && formatted.front() != QStringLiteral("HTTP")) {
-        formatted.push_front(QStringLiteral("HTTP"));
-    }
-    return formatted.join(QLatin1Char('\n'));
-}
-
-QString format_tls_protocol_text(const QString& protocol_text) {
-    const auto lines = protocol_text.split(QLatin1Char('\n'));
-    if (lines.isEmpty() || lines.front().trimmed() != QStringLiteral("TLS")) {
-        return protocol_text;
-    }
-
-    auto fields = parse_protocol_fields(lines, 1);
-    if (fields.empty()) {
-        return protocol_text;
-    }
-
-    return format_tls_protocol_text_from_fields(std::move(fields), QStringLiteral("TLS"));
-}
-
-QString format_quic_protocol_text(const QString& protocol_text) {
-    if (!protocol_text.startsWith(QStringLiteral("QUIC"))) {
-        return protocol_text;
-    }
-
-    qsizetype tlsBlockIndex = protocol_text.indexOf(QStringLiteral("\n  SNI: "));
-    const auto handshakeIndex = protocol_text.indexOf(QStringLiteral("\n  TLS Handshake Type: "));
-    if (tlsBlockIndex < 0 || (handshakeIndex >= 0 && handshakeIndex < tlsBlockIndex)) {
-        tlsBlockIndex = handshakeIndex;
-    }
-
-    const auto quicBlock = tlsBlockIndex < 0 ? protocol_text : protocol_text.left(tlsBlockIndex);
-    const auto quicLines = quicBlock.split(QLatin1Char('\n'));
-    auto quicFields = parse_protocol_fields(quicLines, 1);
-
-    QStringList formatted {};
-    append_protocol_section(formatted, QStringLiteral("QUIC"), take_protocol_fields(quicFields, {
-        QStringLiteral("Packet Type"),
-        QStringLiteral("Additional Packet Types"),
-        QStringLiteral("Header Form"),
-        QStringLiteral("Version"),
-        QStringLiteral("Supported Versions"),
-        QStringLiteral("Frame Presence")
-    }), {QStringLiteral("Supported Versions")});
-    append_protocol_section(formatted, QStringLiteral("Connection IDs"), take_protocol_fields(quicFields, {
-        QStringLiteral("Destination Connection ID Length"),
-        QStringLiteral("Destination Connection ID"),
-        QStringLiteral("Source Connection ID Length"),
-        QStringLiteral("Source Connection ID")
-    }));
-    append_protocol_section(formatted, QStringLiteral("Details"), quicFields);
-
-    if (tlsBlockIndex >= 0) {
-        auto tlsFields = parse_protocol_fields(protocol_text.mid(tlsBlockIndex + 1).split(QLatin1Char('\n')));
-        if (!tlsFields.empty()) {
-            const auto tlsText = format_tls_protocol_text_from_fields(std::move(tlsFields), QStringLiteral("TLS over CRYPTO"));
-            if (!tlsText.isEmpty()) {
-                if (!formatted.isEmpty()) {
-                    formatted.push_back({});
-                }
-                formatted << tlsText.split(QLatin1Char('\n'));
-            }
-        }
-    }
-
-    if (!formatted.isEmpty() && formatted.front() != QStringLiteral("QUIC")) {
-        formatted.push_front(QStringLiteral("QUIC"));
-    }
-    return formatted.isEmpty() ? protocol_text : formatted.join(QLatin1Char('\n'));
-}
-
-QString normalize_stream_protocol_text(const QString& protocol_text) {
-    if (protocol_text.isEmpty()) {
-        return stream_protocol_unavailable_text();
-    }
-
-    QString text = protocol_text;
-    text.replace(QRegularExpression(QStringLiteral("Frame Presence:\\s*")), QStringLiteral("Frame Presence: "));
-    text = format_quic_protocol_text(text);
-    text = format_tls_protocol_text(text);
-    text = format_http_protocol_text(text);
-    return text;
-}
-
 bool is_quic_protocol_text(const QString& protocol_text) {
     return protocol_text.contains(QStringLiteral("QUIC"));
 }
@@ -1716,27 +1409,6 @@ QString selected_flow_quic_protocol_text_for_packet(
     const auto context_text = session.derive_quic_protocol_text_for_packet(
         static_cast<std::size_t>(selected_flow_index),
         packet_index
-    );
-    if (!context_text.has_value() || context_text->empty()) {
-        return protocol_text;
-    }
-
-    return QString::fromStdString(*context_text);
-}
-
-QString selected_flow_quic_protocol_text_for_stream_item(
-    CaptureSession& session,
-    const int selected_flow_index,
-    const StreamItemRow& item,
-    const QString& protocol_text
-) {
-    if (selected_flow_index < 0 || !is_quic_protocol_text(protocol_text)) {
-        return protocol_text;
-    }
-
-    const auto context_text = session.derive_quic_protocol_text_for_packet_context(
-        static_cast<std::size_t>(selected_flow_index),
-        item.packet_indices
     );
     if (!context_text.has_value() || context_text->empty()) {
         return protocol_text;
@@ -4885,7 +4557,6 @@ void MainController::showSourceUnavailablePacketDetailsPlaceholder() {
     packet_details_model_.clearStreamItemDataPresentation();
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
     packet_details_model_.setPayloadText({});
-    packet_details_model_.setProtocolText(source_capture_unavailable_packet_protocol_text());
     selected_packet_byte_view_stable_id_.clear();
 }
 
@@ -4912,7 +4583,6 @@ void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
         QStringLiteral("Item data unavailable • The original source capture cannot be read."),
         {}
     );
-    packet_details_model_.setProtocolText(source_capture_unavailable_stream_protocol_text());
 }
 
 void MainController::prepareSelectedFlowTcpContributionState(const std::size_t maxPacketsToScan) {
@@ -6019,8 +5689,6 @@ void MainController::reloadSelectedPacketDetails() {
     packet_details_model_.clearStreamItemDataPresentation();
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
     packet_details_model_.setPayloadText({});
-
-    packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
 }
 
 void MainController::reloadSelectedStreamDetails() {
@@ -6108,15 +5776,6 @@ void MainController::reloadSelectedStreamDetails() {
         formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {}
     );
     packet_details_model_.setPayloadText(formatted_text.has_value() ? QString::fromStdString(*formatted_text) : QString {});
-
-    const auto protocolText = itemIt->protocol_text.empty()
-        ? stream_protocol_unavailable_text()
-        : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
-    packet_details_model_.setProtocolText(
-        normalize_stream_protocol_text(
-            selected_flow_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
-        )
-    );
 }
 
 void MainController::reloadActiveDetails() {
