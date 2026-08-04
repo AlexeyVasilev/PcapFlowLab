@@ -136,7 +136,6 @@ struct QuicStreamPacketItem {
     std::size_t byte_count {0};
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
-    std::string protocol_text {};
     std::optional<QuicStreamItemPresentation> structured_presentation {};
 };
 

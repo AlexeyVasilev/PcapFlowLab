@@ -526,7 +526,7 @@ Current direction note:
 - recognized encrypted or opaque protocol payload remains owned by that protocol and must not fall back to generic `data`;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
-- retained `protocol_text` remains available internally for later dead-code audit, but Packet Details no longer expose a visible Protocol tab.
+- Packet Details no longer expose a visible Protocol tab, and selected-stream rows no longer retain formatted `protocol_text`; explicit formatter/debug APIs may remain where they are intentionally used outside Stream row retention.
 - Packet Details Summary now treats packet-local DNS and HTTP fields as authoritative structured input and must not rebuild those Summary fields by reparsing formatted protocol text.
 - DHCP/BOOTP remains deferred in this stage because the current packet model still lacks one shared structured message view for Packet Details Summary.
 
@@ -678,13 +678,13 @@ Summary-specific contract notes:
 
 - Stream Item Summary is the primary structured inspection surface for selected stream items.
 - Summary must be produced from retained stream-item model fields, not by reparsing Stream labels, Protocol text, or formatted byte strings.
-- Stream labels themselves should also be constructed from retained structured stream-item semantics rather than by parsing formatted `protocol_text`.
+- Stream labels themselves should also be constructed from retained structured stream-item semantics rather than by parsing formatted protocol text.
 - HTTP stream rows may keep display labels such as `HTTP Request` or `HTTP Gap`, but Summary semantics come from retained HTTP request/response/partial/gap metadata.
 - TLS stream rows may keep display labels such as `TLS ClientHello`, but Summary semantics come from retained TLS semantic kind, parser context, and retained structured TLS record models.
 - QUIC stream rows may keep display labels such as `QUIC Initial: CRYPTO`, but Summary semantics come from retained QUIC packet/frame/TLS-handshake presentation models.
 - Generic and synthetic rows must expose explicit structured kind/state for payload, partial, or gap behavior rather than relying on label wording.
-- `Item Data` remains the byte-ownership surface, and its availability, ownership, packet-local versus reassembled status, and source/provenance selection must come from retained structured stream-item semantics rather than from `protocol_text`.
-- Retained `StreamItemRow::protocol_text` remains an internal richer text/debug surface during the current parity stage, while flow-list `FlowRow::protocol_text` remains a separate live user-facing field outside the selected-stream-item semantic contract.
+- `Item Data` remains the byte-ownership surface, and its availability, ownership, packet-local versus reassembled status, and source/provenance selection must come from retained structured stream-item semantics rather than from formatted protocol text.
+- `StreamItemRow::protocol_text` is no longer retained. Flow-list `FlowRow::protocol_text` remains a separate live user-facing field outside the selected-stream-item semantic contract, and the Flows Protocol column remains unchanged.
 
 Qt currently renders source-packet references in a compact user-facing form such as:
 
@@ -931,7 +931,7 @@ The contract does not require every frontend to expose every action immediately.
 | Inspector | protocol details text | frontend-neutral DTO | stable | shared product text is acceptable here | keep deep analysis out of scope |
 | Stream | stream item rows | frontend-neutral DTO | candidate | align with current Qt-visible stream fields | refine source-packet-reference structure |
 | Stream | stream load-more / boundedness | app/session + frontend-neutral DTO | stable | bounded selected-flow-only semantics are shared | expose packet-window metadata consistently |
-| Stream | stream item details | frontend-neutral DTO | active | `Summary / Item Data` backed by one selected-item materialization only; retained `protocol_text` stays internal for later audit | keep byte ownership in backend; avoid per-row eager text |
+| Stream | stream item details | frontend-neutral DTO | active | `Summary / Item Data` backed by one selected-item materialization only; formatted protocol text is not retained per row | keep byte ownership in backend; avoid per-row eager text |
 | Statistics | counters | app/session + frontend-neutral DTO | stable | structured counters first | keep frontend formatting local |
 | Statistics | grouping / labels | frontend rendering or optional shared display semantics | needs decision | do not force into core | revisit after CLI requirements are clearer |
 | Analysis | analysis workspace | app/session + frontend-specific presentation | deferred | treat Qt as reference behavior | revisit after flows/packets/details/stream stabilize |

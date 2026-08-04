@@ -11,7 +11,7 @@ The baseline should focus on robust assertions:
 - expected key labels
 - packet count vs multi-packet behavior
 - generic vs protocol-aware classification
-- presence or absence of `payload_hex_text` and `protocol_text`
+- presence or absence of `payload_hex_text`
 - details-panel fallback behavior for single-packet generic items
 
 It should avoid brittle full-text snapshots of the entire Stream or details panes.
@@ -33,7 +33,6 @@ Baseline expectations:
   - stronger current expectation: `HTTP GET /`
 - item is complete, not partial
 - `packet_count == 1`
-- `protocol_text` is present
 - `payload_hex_text` is present
 - Stream Item Details should use the item-level texts, not packet fallback
 
@@ -52,7 +51,6 @@ Baseline expectations:
   - stronger current expectation: includes status code / reason
 - item is complete, not partial
 - `packet_count == 1`
-- `protocol_text` is present
 - `payload_hex_text` is present
 - Stream Item Details should use the item-level texts
 
@@ -107,7 +105,6 @@ Baseline expectations:
   - stronger current expectation: `TLS ClientHello`
 - item is complete, not partial
 - `packet_count == 1`
-- `protocol_text` is present
 - `payload_hex_text` is present
 - Stream Item Details should use item-level text, not packet fallback
 
@@ -128,7 +125,6 @@ Baseline expectations:
   - stronger current expectation: `TLS ServerHello`
 - item is complete, not partial
 - `packet_count == 1`
-- `protocol_text` is present
 - `payload_hex_text` is present
 
 ### QUIC flow that remains generic UDP in Stream
@@ -206,7 +202,7 @@ Baseline expectations:
 - one trailing partial item
   - `HTTP Payload (partial)`
   - covers the truncated tail associated with packets #6 and #8
-- the partial item should explain incompleteness in `protocol_text`
+- the partial item should remain explicitly partial through its label and structured Summary state
 
 ### Generic UDP payload
 
@@ -227,7 +223,7 @@ These tests define observable Stream behavior, not exact internal reconstruction
 - Assertions focus on labels, protocol-awareness, and partial vs complete behavior
 - Exact byte-level reconstruction is out of scope
 - no DNS-specific or QUIC-specific labels appear
-- item-level `protocol_text` and `payload_hex_text` remain empty
+- item-level `payload_hex_text` remains empty
 
 ### Generic TCP payload
 
@@ -240,7 +236,7 @@ Baseline expectations:
 - one or more TCP Stream items
 - every item label is `TCP Payload`
 - no HTTP-specific or TLS-specific labels appear
-- item-level `protocol_text` and `payload_hex_text` remain empty
+- item-level `payload_hex_text` remains empty
 
 ### TLS partial tail
 
@@ -253,7 +249,7 @@ Baseline expectations:
 - TLS-aware handshake items are still materialized before the truncated tail
 - the final item is explicit partial TLS data
   - `TLS Payload (partial)` or `TLS Record Fragment (partial)`
-- if the fragment label is used, `protocol_text` should explain incompleteness
+- if the fragment label is used, structured Summary should still report the incomplete TLS state conservatively
 
 ### TLS retransmitted server handshake
 
@@ -334,7 +330,7 @@ Prefer assertions like these:
 - row count is small and explicit
 - labels match a narrow expected set
 - `packet_count` is `1` or `2` as intended
-- `protocol_text.empty()` / `payload_hex_text.empty()` presence checks
+- `payload_hex_text.empty()` presence checks where that preview remains part of the contract
 - details fallback behavior is checked by category, not full snapshots
 
 Avoid:
@@ -354,6 +350,13 @@ Existing repository fixtures already cover:
 - TLS single-packet ClientHello
 - TLS single-packet ServerHello
 - QUIC flow that currently remains generic UDP in Stream
+
+Contract note:
+
+- Stream rows now retain structured semantics only for visible presentation.
+- Formatted Stream protocol text is no longer stored in `StreamItemRow`.
+- `payload_hex_text` remains temporarily and is scheduled for separate cleanup.
+- Flow-level `FlowRow::protocol_text` remains live and unchanged.
 
 Additional repository fixtures now cover:
 

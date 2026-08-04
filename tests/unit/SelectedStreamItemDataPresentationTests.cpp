@@ -231,7 +231,7 @@ void run_selected_stream_item_data_presentation_tests() {
         expect_hex_dump_matches(session, 0U, 30U, 32U, row.stream_item_index, expected_bytes);
 
         auto relabeled_row = row;
-        relabeled_row.protocol_text = "synthetic protocol text should not choose generic TCP item data";
+        relabeled_row.label = "synthetic label should not choose generic TCP item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,
@@ -259,7 +259,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(!session.format_selected_flow_stream_item_data_hex_dump(0U, 30U, 16U, row->stream_item_index).has_value());
 
         auto relabeled_row = *row;
-        relabeled_row.protocol_text = "synthetic protocol text should not choose HTTP item data";
+        relabeled_row.label = "synthetic label should not choose HTTP item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,
@@ -341,7 +341,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(materialized == row->summary_payload_bytes);
 
         auto relabeled_row = *row;
-        relabeled_row.protocol_text = "synthetic protocol text should not choose TLS item data";
+        relabeled_row.label = "synthetic label should not choose TLS item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,
@@ -385,7 +385,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(materialized == row->summary_payload_bytes);
 
         auto relabeled_row = *row;
-        relabeled_row.protocol_text = "synthetic protocol text should not choose reassembled TLS item data";
+        relabeled_row.label = "synthetic label should not choose reassembled TLS item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,
@@ -445,7 +445,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(materialized.size() == row->byte_count);
 
         auto relabeled_row = *row;
-        relabeled_row.protocol_text = "synthetic protocol text should not choose QUIC item data";
+        relabeled_row.label = "synthetic label should not choose QUIC item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,
@@ -605,7 +605,7 @@ void run_selected_stream_item_data_presentation_tests() {
         PFL_EXPECT(!session.format_selected_flow_stream_item_data_hex_dump(0U, 2U, 10U, gap_row->stream_item_index).has_value());
 
         auto relabeled_gap_row = *gap_row;
-        relabeled_gap_row.protocol_text = "synthetic protocol text should not choose HTTP gap item data";
+        relabeled_gap_row.label = "synthetic label should not choose HTTP gap item data";
         const auto relabeled_gap_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,
@@ -627,7 +627,7 @@ void run_selected_stream_item_data_presentation_tests() {
 
         const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 8U, rows[0].stream_item_index);
         auto relabeled_row = rows[0];
-        relabeled_row.protocol_text = "synthetic protocol text should not choose ARP item data";
+        relabeled_row.label = "synthetic label should not choose ARP item data";
         const auto relabeled_presentation = session_detail::derive_selected_stream_item_data_presentation(
             session,
             0U,

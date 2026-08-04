@@ -1291,18 +1291,6 @@ std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_ch
     return chunks;
 }
 
-std::string limited_quality_tls_protocol_text(const bool record_fragment) {
-    if (record_fragment) {
-        return "TLS\n  Reassembled bytes do not contain a complete TLS record in this direction.";
-    }
-
-    return "TLS\n  Reassembled bytes suggest a TLS record, but stream reconstruction quality is limited for this direction.";
-}
-
-std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
-    return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
-}
-
 bool is_plausible_service_name_char(const char value) noexcept {
     return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '.' || value == '-' || value == '_';
 }
@@ -1570,10 +1558,6 @@ void maybe_initialize_tls_scanner_pending_record(TlsStreamScannerState& state) {
         .label = tls_stream_label(captured_span.first(std::min(captured_span.size(), total_byte_count)), semantic_kind),
         .total_byte_count = total_byte_count,
         .semantic_kind = semantic_kind,
-        .protocol_text = tls_record_protocol_text(
-            captured_span.first(std::min(captured_span.size(), total_byte_count)),
-            semantic_kind
-        ),
         .initial_parser_context = state.parser_context,
         .first_packet_index = first_contribution.packet_index,
         .first_flow_packet_index = first_contribution.flow_packet_index,
@@ -1713,7 +1697,6 @@ std::optional<TlsScannedStreamRow> make_tls_stream_scanner_partial_row(
             .summary_payload_bytes = captured_bytes,
             .summary_records = {},
             .payload_hex_text = hex_dump_service.format(captured_bytes),
-            .protocol_text = limited_quality_tls_protocol_text(record_fragment),
             .semantic_kind = record_fragment
                 ? TlsStreamItemSemanticKind::partial_record
                 : TlsStreamItemSemanticKind::partial_payload,
@@ -1811,7 +1794,6 @@ TlsStreamScannerOutput consume_tls_stream_scanner(
             .summary_payload_bytes = consumed.captured_bytes,
             .summary_records = inspection.has_value() ? std::move(inspection->records) : std::vector<TlsRecordModel> {},
             .payload_hex_text = hex_dump_service.format(consumed.captured_bytes),
-            .protocol_text = tls_record_protocol_text(finalized_record_span, finalized_semantic_kind),
             .semantic_kind = finalized_semantic_kind,
             .initial_parser_context = state.pending_record->initial_parser_context,
             .final_parser_context = final_parser_context,
@@ -1923,7 +1905,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                     .summary_payload_bytes = std::vector<std::uint8_t>(trailing.begin(), trailing.end()),
                     .summary_records = {},
                     .payload_hex_text = hex_dump_service.format(trailing),
-                    .protocol_text = "TLS\n  Remaining bytes do not form a complete TLS record in this packet.",
                     .semantic_kind = TlsStreamItemSemanticKind::partial_payload,
                     .initial_parser_context = parser_context,
                     .final_parser_context = parser_context,
@@ -1942,7 +1923,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
                 .summary_payload_bytes = std::vector<std::uint8_t>(trailing.begin(), trailing.end()),
                 .summary_records = {},
                 .payload_hex_text = hex_dump_service.format(trailing),
-                .protocol_text = "TLS\n  Record header is present but the full TLS record body is not available in this packet.",
                 .semantic_kind = TlsStreamItemSemanticKind::partial_record,
                 .initial_parser_context = parser_context,
                 .final_parser_context = parser_context,
@@ -1963,7 +1943,6 @@ TlsPacketStreamPresentation build_tls_stream_items_for_packet(
             .summary_payload_bytes = std::vector<std::uint8_t>(record_bytes.begin(), record_bytes.end()),
             .summary_records = inspection.has_value() ? std::move(inspection->records) : std::vector<TlsRecordModel> {},
             .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = tls_record_protocol_text(record_bytes, semantic_kind),
             .semantic_kind = semantic_kind,
             .initial_parser_context = parser_context,
             .final_parser_context = final_parser_context,
@@ -2100,7 +2079,6 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
             .packet_indices = {result->first_gap_packet_index},
             .summary_records = {},
             .payload_hex_text = {},
-            .protocol_text = tcp_gap_protocol_text("TLS"),
             .semantic_kind = TlsStreamItemSemanticKind::gap,
             },
             logical_item_count,
@@ -2111,7 +2089,6 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = result->first_gap_packet_index;
         presentation.fallback_label = "TLS Payload";
-        presentation.fallback_protocol_text = tcp_gap_protocol_text("TLS");
     }
 
     return presentation;
@@ -2151,7 +2128,6 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .packet_indices = {*gap_packet_index},
             .summary_records = {},
             .payload_hex_text = {},
-            .protocol_text = tcp_gap_protocol_text("TLS"),
             .semantic_kind = TlsStreamItemSemanticKind::gap,
             },
             logical_item_count,
@@ -2162,7 +2138,6 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = *gap_packet_index;
         presentation.fallback_label = "TLS Payload";
-        presentation.fallback_protocol_text = tcp_gap_protocol_text("TLS");
     };
 
     std::vector<TlsStreamScannerContribution> contributions {};

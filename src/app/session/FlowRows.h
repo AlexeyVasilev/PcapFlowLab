@@ -163,7 +163,6 @@ struct StreamItemRow {
     std::string summary_text {};
     std::vector<std::uint8_t> summary_payload_bytes {};
     std::string payload_hex_text {};
-    std::string protocol_text {};
     std::optional<GenericStreamItemSummaryDetails> generic_summary {};
     std::optional<HttpStreamItemSummaryDetails> http_summary {};
     std::optional<ArpStreamItemSummaryDetails> arp_summary {};

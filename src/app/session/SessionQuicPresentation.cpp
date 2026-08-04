@@ -1657,27 +1657,6 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     return result;
 }
 
-std::optional<std::string> merge_quic_protocol_text(
-    const std::optional<std::string>& base_protocol_text,
-    const std::optional<std::string>& enrichment_text
-) {
-    if ((!base_protocol_text.has_value() || base_protocol_text->empty()) &&
-        (!enrichment_text.has_value() || enrichment_text->empty())) {
-        return std::nullopt;
-    }
-    if (!enrichment_text.has_value() || enrichment_text->empty()) {
-        return base_protocol_text;
-    }
-    if (!base_protocol_text.has_value() || base_protocol_text->empty()) {
-        return enrichment_text;
-    }
-    if (base_protocol_text->find(*enrichment_text) != std::string::npos) {
-        return base_protocol_text;
-    }
-
-    return *base_protocol_text + "\n" + *enrichment_text;
-}
-
 template <typename FlowKey>
 QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
     const CaptureSession& session,
@@ -1705,9 +1684,6 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
     QuicStreamPacketPresentation presentation {};
     presentation.handled = true;
 
-    const auto context_enrichment = context_result.has_value()
-        ? format_quic_presentation_enrichment(*context_result)
-        : std::optional<std::string> {};
     const bool client_to_server = is_quic_client_to_server(flow_key);
     QuicInitialParser initial_parser {};
 
@@ -1788,11 +1764,6 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
                 aggregate_result.semantics = context_result->semantics;
             }
 
-            const auto protocol_text = merge_quic_protocol_text(
-                format_quic_presentation_protocol_text(aggregate_result),
-                context_enrichment
-            );
-
             if (!semantic_items.empty()) {
                 for (const auto& semantic_item : semantic_items) {
                     QuicPresentationResult label_result {};
@@ -1806,7 +1777,6 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
                     QuicStreamPacketItem item {};
                     item.label = quic_stream_label_from_result(label_result);
                     item.byte_count = semantic_item.byte_count > 0U ? semantic_item.byte_count : packet_slice_length;
-                    item.protocol_text = protocol_text.value_or(std::string {});
                     item.structured_presentation = QuicStreamItemPresentation {
                         .semantic_kind = quic_stream_item_kind_from_result(label_result),
                         .packet = make_owned_quic_stream_packet(initial_packet_template, semantic_item.frames, owned_tls_handshakes),
@@ -1824,7 +1794,6 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
                 QuicStreamPacketItem item {};
                 item.label = quic_stream_label_from_result(aggregate_result);
                 item.byte_count = original_packet_slice_length;
-                item.protocol_text = protocol_text.value_or(std::string {});
                 item.structured_presentation = QuicStreamItemPresentation {
                     .semantic_kind = quic_stream_item_kind_from_result(aggregate_result),
                     .packet = make_owned_quic_stream_packet(initial_packet_template),
@@ -1853,7 +1822,6 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
             continue;
         }
 
-        const auto protocol_text = format_quic_presentation_protocol_text(result);
         const auto constricted_contribution = make_quic_constricted_contribution(
             packet,
             packet_slice_length,
@@ -1864,7 +1832,6 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
         item.byte_count = original_packet_slice_length;
         item.has_constricted_contribution = constricted_contribution.has_constricted_contribution;
         item.constricted_contribution_notes = constricted_contribution.constricted_contribution_notes;
-        item.protocol_text = protocol_text.value_or(std::string {});
         item.structured_presentation = QuicStreamItemPresentation {
             .semantic_kind = quic_stream_item_kind_from_result(result),
             .packet = make_owned_quic_stream_packet(parsed_packet),

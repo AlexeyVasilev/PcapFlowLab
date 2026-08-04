@@ -24,7 +24,6 @@ struct HttpStreamPresentationItem {
     std::vector<std::uint64_t> packet_indices {};
     StreamMaterializationStability stability {StreamMaterializationStability::stable};
     std::string payload_hex_text {};
-    std::string protocol_text {};
     HttpStreamItemSummaryDetails summary {};
 };
 
@@ -33,7 +32,6 @@ struct HttpDirectionalStreamPresentation {
     bool explicit_gap_item_emitted {false};
     std::uint64_t first_gap_packet_index {0};
     std::string fallback_label {};
-    std::string fallback_protocol_text {};
     std::set<std::uint64_t> covered_packet_indices {};
     std::vector<HttpStreamPresentationItem> items {};
 };

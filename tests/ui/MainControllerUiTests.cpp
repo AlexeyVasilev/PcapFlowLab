@@ -944,12 +944,7 @@ void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::
 
         for (const auto* row : matches) {
             UI_REQUIRE(row != nullptr);
-            UI_EXPECT(row->protocol_text.empty() == !stream_expectation.value(QStringLiteral("expects_protocol_text")).toBool());
             UI_EXPECT(row->payload_hex_text.empty() == !stream_expectation.value(QStringLiteral("expects_payload_hex_text")).toBool());
-
-            const auto protocol_text = QString::fromStdString(row->protocol_text);
-            UI_EXPECT(text_contains_required_fragments(protocol_text, stream_expectation.value(QStringLiteral("detail_required_substrings")).toArray()));
-            UI_EXPECT(text_omits_forbidden_fragments(protocol_text, stream_expectation.value(QStringLiteral("detail_forbidden_substrings")).toArray()));
         }
     }
 

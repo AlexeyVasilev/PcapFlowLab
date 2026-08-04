@@ -242,7 +242,6 @@ StreamItemRow make_stream_item_row(
     const std::string& summary_text = {},
     const std::vector<std::uint8_t>& summary_payload_bytes = {},
     const std::string& payload_hex_text = {},
-    const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
@@ -265,7 +264,6 @@ StreamItemRow make_stream_item_row(
         .summary_text = summary_text,
         .summary_payload_bytes = summary_payload_bytes,
         .payload_hex_text = payload_hex_text,
-        .protocol_text = protocol_text,
         .tls_semantic_kind = tls_semantic_kind,
         .tls_summary_records = tls_summary_records,
         .tls_initial_parser_context = tls_initial_parser_context,
@@ -283,7 +281,6 @@ StreamItemRow make_stream_item_row(
     const std::string& summary_text = {},
     const std::vector<std::uint8_t>& summary_payload_bytes = {},
     const std::string& payload_hex_text = {},
-    const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
     const std::vector<std::string>& constricted_contribution_notes = {},
     const std::vector<std::string>& constricted_packet_notes = {},
@@ -302,7 +299,6 @@ StreamItemRow make_stream_item_row(
         summary_text,
         summary_payload_bytes,
         payload_hex_text,
-        protocol_text,
         has_constricted_contribution,
         constricted_contribution_notes,
         constricted_packet_notes,
@@ -339,7 +335,6 @@ bool append_tls_stream_items(
             {},
             item.summary_payload_bytes,
             item.payload_hex_text,
-            item.protocol_text,
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             item.constricted_packet_notes,
@@ -359,16 +354,11 @@ bool append_tls_stream_items(
     return true;
 }
 
-std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
-    return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
-}
-
 struct DirectionalStreamPolicy {
     bool used_reassembly {false};
     bool explicit_gap_item_emitted {false};
     std::uint64_t first_gap_packet_index {0};
     std::string fallback_label {};
-    std::string fallback_protocol_text {};
     StreamItemSemanticFamily fallback_family {StreamItemSemanticFamily::generic};
     std::set<std::uint64_t> covered_packet_indices {};
 };
@@ -427,7 +417,6 @@ BuiltStreamRow make_stream_item_row_from_tls_scanned_row(
         {},
         row.item.summary_payload_bytes,
         row.item.payload_hex_text,
-        row.item.protocol_text,
         row.item.has_constricted_contribution,
         row.item.constricted_contribution_notes,
         row.item.constricted_packet_notes,
@@ -492,9 +481,6 @@ void merge_directional_policy(
     if (policy.fallback_label.empty()) {
         policy.fallback_label = presentation.fallback_label;
     }
-    if (policy.fallback_protocol_text.empty()) {
-        policy.fallback_protocol_text = presentation.fallback_protocol_text;
-    }
     if (policy.fallback_family == StreamItemSemanticFamily::generic) {
         policy.fallback_family = StreamItemSemanticFamily::tls;
     }
@@ -553,9 +539,6 @@ void merge_directional_policy(
     if (policy.fallback_label.empty()) {
         policy.fallback_label = presentation.fallback_label;
     }
-    if (policy.fallback_protocol_text.empty()) {
-        policy.fallback_protocol_text = presentation.fallback_protocol_text;
-    }
     if (policy.fallback_family == StreamItemSemanticFamily::generic) {
         policy.fallback_family = StreamItemSemanticFamily::http;
     }
@@ -578,7 +561,6 @@ BuiltStreamRow make_stream_item_row_from_tls_presentation(
         {},
         item.summary_payload_bytes,
         item.payload_hex_text,
-        item.protocol_text,
         item.has_constricted_contribution,
         item.constricted_contribution_notes,
         item.constricted_packet_notes,
@@ -607,8 +589,7 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
         item.packet_indices,
         {},
         {},
-        item.payload_hex_text,
-        item.protocol_text
+        item.payload_hex_text
     );
     row.materialization_stability = item.stability;
     row.semantic_family = StreamItemSemanticFamily::http;
@@ -685,7 +666,6 @@ DirectionalStreamPolicy append_http_stream_items_from_reassembly(
     policy.explicit_gap_item_emitted = presentation.explicit_gap_item_emitted;
     policy.first_gap_packet_index = presentation.first_gap_packet_index;
     policy.fallback_label = presentation.fallback_label;
-    policy.fallback_protocol_text = presentation.fallback_protocol_text;
     policy.covered_packet_indices = presentation.covered_packet_indices;
     return policy;
 }
@@ -708,7 +688,6 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
     policy.explicit_gap_item_emitted = presentation.explicit_gap_item_emitted;
     policy.first_gap_packet_index = presentation.first_gap_packet_index;
     policy.fallback_label = presentation.fallback_label;
-    policy.fallback_protocol_text = presentation.fallback_protocol_text;
     policy.covered_packet_indices = presentation.covered_packet_indices;
 
     return policy;
@@ -853,7 +832,6 @@ bool append_quic_stream_items_for_packet(
             {},
             {},
             packet_hex_dump,
-            item.protocol_text,
             item.has_constricted_contribution,
             item.constricted_contribution_notes,
             {},
@@ -1422,7 +1400,6 @@ bool append_arp_stream_item_for_packet(
 
     const auto presentation = session_detail::describe_arp_packet(*details);
     const auto summary_lines = session_detail::build_basic_summary_lines(*details);
-    const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
 
     PacketPayloadService payload_service {};
     const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
@@ -1436,8 +1413,7 @@ bool append_arp_stream_item_for_packet(
         packet,
         join_summary_lines(summary_lines),
         {},
-        hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
-        protocol_text
+        hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()))
     );
     row.materialization_stability = StreamMaterializationStability::stable;
     row.semantic_family = StreamItemSemanticFamily::arp;
@@ -1555,9 +1531,6 @@ void append_connection_stream_items_bounded(
                 : direction_policy.fallback_family == StreamItemSemanticFamily::tls
                     ? std::string {"TLS Gap"}
                     : std::string {"TCP Gap"};
-            const auto gap_protocol = !direction_policy.fallback_protocol_text.empty()
-                ? direction_policy.fallback_protocol_text
-                : tcp_gap_protocol_text("TCP");
             auto gap_row = make_stream_item_row(
                 0U,
                 direction_text,
@@ -1566,8 +1539,7 @@ void append_connection_stream_items_bounded(
                 packet,
                 {},
                 {},
-                {},
-                gap_protocol
+                {}
             );
             gap_row.materialization_stability = StreamMaterializationStability::stable;
             if (direction_policy.fallback_family == StreamItemSemanticFamily::http) {
@@ -1645,15 +1617,11 @@ void append_connection_stream_items_bounded(
         }
 
         std::string label = fallback_stream_label(flow_protocol);
-        std::string protocol_text {};
         std::optional<HttpStreamItemSummaryDetails> http_summary {};
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
             }
-            protocol_text = !direction_policy.fallback_protocol_text.empty()
-                ? direction_policy.fallback_protocol_text
-                : tcp_gap_protocol_text("TCP");
         } else if (!trimmed_tcp_payload) {
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
@@ -1673,8 +1641,7 @@ void append_connection_stream_items_bounded(
             packet,
             {},
             {},
-            {},
-            protocol_text
+            {}
         );
         row.materialization_stability = StreamMaterializationStability::stable;
         if (direction_tainted_by_gap) {
