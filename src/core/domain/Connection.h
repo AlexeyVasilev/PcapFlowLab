@@ -68,5 +68,14 @@ struct ConnectionV6 {
     void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
 };
 
+[[nodiscard]] const FlowKeyV4& first_observed_flow_key(const ConnectionV4& connection) noexcept;
+[[nodiscard]] const FlowKeyV6& first_observed_flow_key(const ConnectionV6& connection) noexcept;
+[[nodiscard]] EndpointKeyV4 first_observed_endpoint_a(const ConnectionV4& connection) noexcept;
+[[nodiscard]] EndpointKeyV4 first_observed_endpoint_b(const ConnectionV4& connection) noexcept;
+[[nodiscard]] EndpointKeyV6 first_observed_endpoint_a(const ConnectionV6& connection) noexcept;
+[[nodiscard]] EndpointKeyV6 first_observed_endpoint_b(const ConnectionV6& connection) noexcept;
+[[nodiscard]] bool has_valid_first_observed_orientation(const ConnectionV4& connection) noexcept;
+[[nodiscard]] bool has_valid_first_observed_orientation(const ConnectionV6& connection) noexcept;
+
 }  // namespace pfl
 

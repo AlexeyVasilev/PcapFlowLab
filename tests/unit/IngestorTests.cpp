@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "TestSupport.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/IngestedPacket.h"
 #include "core/services/PacketIngestor.h"
@@ -67,6 +68,7 @@ void run_ingestor_tests() {
         PFL_EXPECT(!connection->has_flow_b);
         PFL_EXPECT(connection->flow_a.packet_count == 1);
         PFL_EXPECT(connection->flow_a.packets.size() == 1);
+        PFL_EXPECT(has_valid_first_observed_orientation(*connection));
     }
 
     {
@@ -90,6 +92,7 @@ void run_ingestor_tests() {
         PFL_EXPECT(state.summary.flow_count == 1);
         PFL_EXPECT(connection->flow_a.packet_count == 2);
         PFL_EXPECT(!connection->has_flow_b);
+        PFL_EXPECT(has_valid_first_observed_orientation(*connection));
     }
 
     {
@@ -120,6 +123,7 @@ void run_ingestor_tests() {
         PFL_EXPECT(connection->has_flow_b);
         PFL_EXPECT(connection->flow_b.packet_count == 1);
         PFL_EXPECT(connection->packet_count == 2);
+        PFL_EXPECT(has_valid_first_observed_orientation(*connection));
     }
 
     {
@@ -177,6 +181,54 @@ void run_ingestor_tests() {
         PFL_EXPECT(connection != nullptr);
         PFL_EXPECT(connection->has_flow_a);
         PFL_EXPECT(connection->flow_a.packet_count == 1);
+        PFL_EXPECT(has_valid_first_observed_orientation(*connection));
+    }
+
+    {
+        CaptureState state {};
+        PacketIngestor ingestor {state};
+        const FlowKeyV4 tunnel_path_100 {
+            .src_addr = ipv4(10, 9, 0, 20),
+            .dst_addr = ipv4(10, 9, 0, 10),
+            .src_port = 443,
+            .dst_port = 50000,
+            .protocol = ProtocolId::tcp,
+            .protocol_path_id = 100U,
+        };
+        const FlowKeyV4 tunnel_path_100_reverse {
+            .src_addr = ipv4(10, 9, 0, 10),
+            .dst_addr = ipv4(10, 9, 0, 20),
+            .src_port = 50000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+            .protocol_path_id = 100U,
+        };
+        const FlowKeyV4 tunnel_path_200 {
+            .src_addr = ipv4(10, 9, 0, 10),
+            .dst_addr = ipv4(10, 9, 0, 20),
+            .src_port = 50000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+            .protocol_path_id = 200U,
+        };
+
+        ingestor.ingest(IngestedPacketV4 {.flow_key = tunnel_path_100, .packet_ref = packet_ref(0, 100)});
+        ingestor.ingest(IngestedPacketV4 {.flow_key = tunnel_path_100_reverse, .packet_ref = packet_ref(1, 101)});
+        ingestor.ingest(IngestedPacketV4 {.flow_key = tunnel_path_200, .packet_ref = packet_ref(2, 102)});
+
+        const auto listed_connections = session_detail::list_connections(state);
+        PFL_EXPECT(listed_connections.size() == 2U);
+
+        const auto first_row = session_detail::make_flow_row(0U, listed_connections[0], AnalysisSettings {});
+        const auto second_row = session_detail::make_flow_row(1U, listed_connections[1], AnalysisSettings {});
+        const bool first_is_path_100 = first_row.protocol_path_id == 100U;
+        const auto& path_100_row = first_is_path_100 ? first_row : second_row;
+        const auto& path_200_row = first_is_path_100 ? second_row : first_row;
+
+        PFL_EXPECT(path_100_row.endpoint_a == "10.9.0.20:443");
+        PFL_EXPECT(path_100_row.endpoint_b == "10.9.0.10:50000");
+        PFL_EXPECT(path_200_row.endpoint_a == "10.9.0.10:50000");
+        PFL_EXPECT(path_200_row.endpoint_b == "10.9.0.20:443");
     }
 }
 

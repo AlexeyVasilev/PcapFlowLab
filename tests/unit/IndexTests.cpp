@@ -31,6 +31,13 @@ void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<Fl
         PFL_EXPECT(left[index].service_hint == right[index].service_hint);
         PFL_EXPECT(left[index].has_fragmented_packets == right[index].has_fragmented_packets);
         PFL_EXPECT(left[index].fragmented_packet_count == right[index].fragmented_packet_count);
+        PFL_EXPECT(left[index].protocol_text == right[index].protocol_text);
+        PFL_EXPECT(left[index].address_a == right[index].address_a);
+        PFL_EXPECT(left[index].port_a == right[index].port_a);
+        PFL_EXPECT(left[index].endpoint_a == right[index].endpoint_a);
+        PFL_EXPECT(left[index].address_b == right[index].address_b);
+        PFL_EXPECT(left[index].port_b == right[index].port_b);
+        PFL_EXPECT(left[index].endpoint_b == right[index].endpoint_b);
     }
 }
 
@@ -347,6 +354,63 @@ void run_index_tests() {
         PFL_EXPECT(!loaded_session.read_packet_hex_dump(*packet).empty());
         PFL_EXPECT(loaded_session.export_flow_to_pcap(0, should_not_export_path));
         PFL_EXPECT(loaded_session.save_index(std::filesystem::temp_directory_path() / "pfl_attached_source_save.idx"));
+    }
+
+    {
+        const auto same_address_capture_path = write_temp_pcap(
+            "pfl_index_same_address_orientation_source.pcap",
+            make_classic_pcap({{
+                100,
+                make_ethernet_ipv4_tcp_packet(ipv4(127, 0, 0, 1), ipv4(127, 0, 0, 1), 50000, 443)
+            }})
+        );
+        const auto same_address_index_path = std::filesystem::temp_directory_path() / "pfl_index_same_address_orientation.idx";
+        std::filesystem::remove(same_address_index_path);
+
+        CaptureSession original_same_address_session {};
+        PFL_REQUIRE(original_same_address_session.open_capture(same_address_capture_path));
+        const auto original_same_address_rows = original_same_address_session.list_flows();
+        PFL_REQUIRE(original_same_address_rows.size() == 1U);
+        PFL_EXPECT(original_same_address_rows[0].endpoint_a == "127.0.0.1:50000");
+        PFL_EXPECT(original_same_address_rows[0].endpoint_b == "127.0.0.1:443");
+        PFL_REQUIRE(original_same_address_session.save_index(same_address_index_path));
+
+        CaptureSession loaded_same_address_session {};
+        PFL_REQUIRE(loaded_same_address_session.load_index(same_address_index_path));
+        expect_matching_rows(loaded_same_address_session.list_flows(), original_same_address_rows);
+    }
+
+    {
+        const auto reverse_first_capture_path = write_temp_pcap(
+            "pfl_index_first_observed_orientation_source.pcap",
+            make_classic_pcap({
+                {200, make_ethernet_ipv4_tcp_packet(ipv4(203, 0, 113, 20), ipv4(203, 0, 113, 10), 443, 50000)},
+                {100, make_ethernet_ipv4_tcp_packet(ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 20), 50000, 443)},
+            })
+        );
+        const auto reverse_first_index_path = std::filesystem::temp_directory_path() / "pfl_index_first_observed_orientation.idx";
+        std::filesystem::remove(reverse_first_index_path);
+
+        CaptureSession original_reverse_first_session {};
+        PFL_REQUIRE(original_reverse_first_session.open_capture(reverse_first_capture_path));
+        const auto original_reverse_first_rows = original_reverse_first_session.list_flows();
+        PFL_REQUIRE(original_reverse_first_rows.size() == 1U);
+        PFL_EXPECT(original_reverse_first_rows[0].endpoint_a == "203.0.113.20:443");
+        PFL_EXPECT(original_reverse_first_rows[0].endpoint_b == "203.0.113.10:50000");
+        const auto original_reverse_first_packets = original_reverse_first_session.list_flow_packets(0);
+        PFL_REQUIRE(original_reverse_first_packets.size() == 2U);
+        PFL_EXPECT(original_reverse_first_packets[0].direction_text == "A\xE2\x86\x92" "B");
+        PFL_EXPECT(original_reverse_first_packets[1].direction_text == "B\xE2\x86\x92" "A");
+        PFL_REQUIRE(original_reverse_first_session.save_index(reverse_first_index_path));
+
+        CaptureSession loaded_reverse_first_session {};
+        PFL_REQUIRE(loaded_reverse_first_session.load_index(reverse_first_index_path));
+        expect_matching_rows(loaded_reverse_first_session.list_flows(), original_reverse_first_rows);
+        const auto loaded_reverse_first_packets = loaded_reverse_first_session.list_flow_packets(0);
+        PFL_REQUIRE(loaded_reverse_first_packets.size() == original_reverse_first_packets.size());
+        for (std::size_t index = 0U; index < loaded_reverse_first_packets.size(); ++index) {
+            PFL_EXPECT(loaded_reverse_first_packets[index].direction_text == original_reverse_first_packets[index].direction_text);
+        }
     }
 
     {

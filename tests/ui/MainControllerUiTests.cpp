@@ -1351,6 +1351,41 @@ int main(int argc, char* argv[]) {
         QStringLiteral("ip.addr == 10.30.0.1 && ip.addr == 10.30.0.2 && udp.port == 7777")
     );
 
+    const auto first_observed_orientation_capture_path = write_temp_pcap(
+        "pfl_ui_first_observed_orientation.pcap",
+        make_classic_pcap({
+            {200, make_ethernet_ipv4_tcp_packet(ipv4(203, 0, 113, 20), ipv4(203, 0, 113, 10), 443, 50000)},
+            {100, make_ethernet_ipv4_tcp_packet(ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 20), 50000, 443)},
+        })
+    );
+    MainController first_observed_orientation_controller {};
+    UI_EXPECT(open_capture_and_wait(app, first_observed_orientation_controller, first_observed_orientation_capture_path));
+    auto* first_observed_orientation_flow_model =
+        qobject_cast<FlowListModel*>(first_observed_orientation_controller.flowModel());
+    UI_EXPECT(first_observed_orientation_flow_model != nullptr);
+    UI_REQUIRE(first_observed_orientation_flow_model->rowCount() == 1);
+    const auto first_observed_orientation_index = first_observed_orientation_flow_model->index(0, 0);
+    UI_EXPECT(
+        first_observed_orientation_flow_model->data(first_observed_orientation_index, FlowListModel::AddressARole).toString() ==
+        QStringLiteral("203.0.113.20")
+    );
+    UI_EXPECT(
+        first_observed_orientation_flow_model->data(first_observed_orientation_index, FlowListModel::PortARole).toUInt() == 443U
+    );
+    UI_EXPECT(
+        first_observed_orientation_flow_model->data(first_observed_orientation_index, FlowListModel::AddressBRole).toString() ==
+        QStringLiteral("203.0.113.10")
+    );
+    UI_EXPECT(
+        first_observed_orientation_flow_model->data(first_observed_orientation_index, FlowListModel::PortBRole).toUInt() == 50000U
+    );
+    first_observed_orientation_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(first_observed_orientation_controller.selectedFlowHasWiresharkFilter());
+    UI_EXPECT(
+        first_observed_orientation_controller.selectedFlowWiresharkFilter() ==
+        QStringLiteral("ip.addr == 203.0.113.20 && ip.addr == 203.0.113.10 && tcp.port == 50000")
+    );
+
 
     auto* analysis_flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(analysis_flow_model != nullptr);

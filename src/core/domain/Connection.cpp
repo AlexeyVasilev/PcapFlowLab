@@ -26,6 +26,34 @@ void append_packet(FlowV6& flow, const FlowKeyV6& packet_key, const PacketRef& p
     flow.total_bytes += packet.original_length;
 }
 
+[[nodiscard]] EndpointKeyV4 endpoint_a_for_flow_key(const FlowKeyV4& key) noexcept {
+    return EndpointKeyV4 {
+        .addr = key.src_addr,
+        .port = key.src_port,
+    };
+}
+
+[[nodiscard]] EndpointKeyV4 endpoint_b_for_flow_key(const FlowKeyV4& key) noexcept {
+    return EndpointKeyV4 {
+        .addr = key.dst_addr,
+        .port = key.dst_port,
+    };
+}
+
+[[nodiscard]] EndpointKeyV6 endpoint_a_for_flow_key(const FlowKeyV6& key) noexcept {
+    return EndpointKeyV6 {
+        .addr = key.src_addr,
+        .port = key.src_port,
+    };
+}
+
+[[nodiscard]] EndpointKeyV6 endpoint_b_for_flow_key(const FlowKeyV6& key) noexcept {
+    return EndpointKeyV6 {
+        .addr = key.dst_addr,
+        .port = key.dst_port,
+    };
+}
+
 template <typename Connection>
 void apply_hints_to_connection(Connection& connection, const FlowHintUpdate& hints) {
     if (connection.protocol_hint == FlowProtocolHint::unknown && hints.protocol_hint != FlowProtocolHint::unknown) {
@@ -123,7 +151,77 @@ void update_fragmentation_stats(Connection& connection, const PacketRef& packet)
     ++connection.fragmented_packet_count;
 }
 
+template <typename Connection>
+[[nodiscard]] bool has_valid_first_observed_orientation_for_connection(const Connection& connection) noexcept {
+    if (!connection.has_flow_a) {
+        return connection.packet_count == 0U &&
+            connection.total_bytes == 0U &&
+            !connection.has_flow_b &&
+            connection.flow_a.packet_count == 0U &&
+            connection.flow_a.total_bytes == 0U &&
+            connection.flow_a.packets.empty() &&
+            connection.flow_b.packet_count == 0U &&
+            connection.flow_b.total_bytes == 0U &&
+            connection.flow_b.packets.empty();
+    }
+
+    if (connection.flow_a.packets.empty() ||
+        connection.flow_a.packets.size() != connection.flow_a.packet_count ||
+        connection.flow_a.packet_count == 0U ||
+        make_connection_key(connection.flow_a.key) != connection.key) {
+        return false;
+    }
+
+    if (!connection.has_flow_b) {
+        return connection.flow_b.packet_count == 0U &&
+            connection.flow_b.total_bytes == 0U &&
+            connection.flow_b.packets.empty() &&
+            connection.packet_count == connection.flow_a.packet_count &&
+            connection.total_bytes == connection.flow_a.total_bytes;
+    }
+
+    return !connection.flow_b.packets.empty() &&
+        connection.flow_b.packets.size() == connection.flow_b.packet_count &&
+        connection.flow_b.packet_count > 0U &&
+        connection.flow_b.key != connection.flow_a.key &&
+        make_connection_key(connection.flow_b.key) == connection.key &&
+        connection.packet_count == connection.flow_a.packet_count + connection.flow_b.packet_count &&
+        connection.total_bytes == connection.flow_a.total_bytes + connection.flow_b.total_bytes;
+}
+
 }  // namespace
+
+const FlowKeyV4& first_observed_flow_key(const ConnectionV4& connection) noexcept {
+    return connection.flow_a.key;
+}
+
+const FlowKeyV6& first_observed_flow_key(const ConnectionV6& connection) noexcept {
+    return connection.flow_a.key;
+}
+
+EndpointKeyV4 first_observed_endpoint_a(const ConnectionV4& connection) noexcept {
+    return endpoint_a_for_flow_key(first_observed_flow_key(connection));
+}
+
+EndpointKeyV4 first_observed_endpoint_b(const ConnectionV4& connection) noexcept {
+    return endpoint_b_for_flow_key(first_observed_flow_key(connection));
+}
+
+EndpointKeyV6 first_observed_endpoint_a(const ConnectionV6& connection) noexcept {
+    return endpoint_a_for_flow_key(first_observed_flow_key(connection));
+}
+
+EndpointKeyV6 first_observed_endpoint_b(const ConnectionV6& connection) noexcept {
+    return endpoint_b_for_flow_key(first_observed_flow_key(connection));
+}
+
+bool has_valid_first_observed_orientation(const ConnectionV4& connection) noexcept {
+    return has_valid_first_observed_orientation_for_connection(connection);
+}
+
+bool has_valid_first_observed_orientation(const ConnectionV6& connection) noexcept {
+    return has_valid_first_observed_orientation_for_connection(connection);
+}
 
 void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& packet) {
     ++packet_count;

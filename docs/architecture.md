@@ -67,6 +67,14 @@ On-demand analysis is separate from the fast path and from index loading.
 
 - Connections use a canonical symmetric key for bidirectional grouping.
 - Each runtime connection keeps separate `flow_a` and `flow_b` packet lists.
+- The normalized `ConnectionKey` is identity only.
+- User-visible `Endpoint A` / `Endpoint B` orientation is taken from the first observed packet in the flow:
+  - `flow_a.key` stores that first-observed directional tuple;
+  - `Endpoint A` is the `flow_a.key` source endpoint;
+  - `Endpoint B` is the `flow_a.key` destination endpoint;
+  - packets in `flow_a` are `A->B`;
+  - packets in `flow_b` are `B->A`.
+- This orientation is capture-relative and does not perform client/server inference.
 - Effective flow identity is the normalized endpoint tuple plus an interned `protocol_path_id`, so namespace-bearing layers such as GRE key, ESP SPI, AH SPI, and MikroTik EoIP Tunnel ID (normalized through the GRE-key slot) can split otherwise identical tuples.
 - `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, effective terminal transport payload length, TCP flags, link type, and fragmentation metadata.
 - `PacketRef` does not store protocol-path identity; recognized packets resolve that through their owning flow/connection metadata.
@@ -104,7 +112,7 @@ Current Stream behavior:
 
 Current reassembly is intentionally narrow.
 
-- Directional: one flow direction (`A->B` or `B->A`) per request.
+- Directional: one flow direction (`A->B` or `B->A`) per request, where `A/B` come from the first observed packet of the flow rather than canonical endpoint ordering.
 - Bounded: every request is limited by `max_packets` and `max_bytes`.
 - Heuristic: packet-order payload concatenation, not transport-correct TCP reconstruction.
 - Ephemeral: buffers and packet-contribution maps are built only for the current request.

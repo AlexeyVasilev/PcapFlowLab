@@ -636,7 +636,7 @@ bool read_connection(std::istream& stream, ConnectionV4& connection) {
         return false;
     }
 
-    return true;
+    return has_valid_first_observed_orientation(connection);
 }
 
 bool read_connection(std::istream& stream, ConnectionV6& connection) {
@@ -670,7 +670,7 @@ bool read_connection(std::istream& stream, ConnectionV6& connection) {
         return false;
     }
 
-    return true;
+    return has_valid_first_observed_orientation(connection);
 }
 
 std::vector<const ConnectionV4*> sorted_connections(const ConnectionTableV4& table) {

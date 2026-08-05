@@ -418,6 +418,8 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
 
     if (connection.family == FlowAddressFamily::ipv4) {
         const auto& key = connection.ipv4->key;
+        const auto endpoint_a = first_observed_endpoint_a(*connection.ipv4);
+        const auto endpoint_b = first_observed_endpoint_b(*connection.ipv4);
         return FlowRow {
             .index = index,
             .family = FlowAddressFamily::ipv4,
@@ -428,18 +430,20 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
             .service_hint = connection.ipv4->service_hint,
             .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
             .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
-            .address_a = format_ipv4_address(key.first.addr),
-            .port_a = key.first.port,
-            .endpoint_a = format_endpoint(key.first),
-            .address_b = format_ipv4_address(key.second.addr),
-            .port_b = key.second.port,
-            .endpoint_b = format_endpoint(key.second),
+            .address_a = format_ipv4_address(endpoint_a.addr),
+            .port_a = endpoint_a.port,
+            .endpoint_a = format_endpoint(endpoint_a),
+            .address_b = format_ipv4_address(endpoint_b.addr),
+            .port_b = endpoint_b.port,
+            .endpoint_b = format_endpoint(endpoint_b),
             .packet_count = connection.ipv4->packet_count,
             .total_bytes = connection.ipv4->total_bytes,
         };
     }
 
     const auto& key = connection.ipv6->key;
+    const auto endpoint_a = first_observed_endpoint_a(*connection.ipv6);
+    const auto endpoint_b = first_observed_endpoint_b(*connection.ipv6);
     return FlowRow {
         .index = index,
         .family = FlowAddressFamily::ipv6,
@@ -450,12 +454,12 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
         .service_hint = connection.ipv6->service_hint,
         .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
         .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
-        .address_a = format_ipv6_address(key.first.addr),
-        .port_a = key.first.port,
-        .endpoint_a = format_endpoint(key.first),
-        .address_b = format_ipv6_address(key.second.addr),
-        .port_b = key.second.port,
-        .endpoint_b = format_endpoint(key.second),
+        .address_a = format_ipv6_address(endpoint_a.addr),
+        .port_a = endpoint_a.port,
+        .endpoint_a = format_endpoint(endpoint_a),
+        .address_b = format_ipv6_address(endpoint_b.addr),
+        .port_b = endpoint_b.port,
+        .endpoint_b = format_endpoint(endpoint_b),
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };

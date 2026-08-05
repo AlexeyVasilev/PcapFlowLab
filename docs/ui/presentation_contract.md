@@ -278,6 +278,8 @@ Each flow row should expose at least the following user-facing fields:
 - Flow index is displayed as a 1-based row identifier tied to the session flow index.
 - Address family is shown as `IPv4` or `IPv6`.
 - The visible flow table now uses compact `Endpoint A` / `Endpoint B` columns rather than separate address/port columns.
+- `Endpoint A` is the source endpoint of the first observed packet assigned to the flow, and `Endpoint B` is its destination endpoint.
+- Visible `A->B` / `B->A` direction text follows that same first-observed orientation and is not a lower-address or client/server inference rule.
 - Endpoint formatting rules are:
   - IPv4 with port: `address : port`;
   - IPv4 without port: `address`;
