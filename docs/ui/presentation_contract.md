@@ -806,6 +806,19 @@ section-scoped loading. Qt and Tauri both request these rows lazily on first
 eligible section expansion rather than carrying them through the eager
 overview DTO.
 
+For the current shared contract, canonical Statistics display formatting is
+owned by shared C++ presentation helpers rather than frontend-local QML or
+JavaScript:
+
+- overview `captured bytes` / `original bytes` expose both raw numeric values
+  and compact display text;
+- Protocol Summary transport/family rows expose both raw byte counts and
+  compact display text;
+- detected-protocol-hints rows expose both raw counts/bytes and canonical
+  `count (percent)` / `size (percent)` text;
+- raw numeric fields remain available for sorting, charts, and future
+  consumers.
+
 ### QUIC and TLS summary
 
 Qt now exposes `QUIC and TLS` as one optional collapsible Statistics section

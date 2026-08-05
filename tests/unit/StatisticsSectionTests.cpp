@@ -188,6 +188,52 @@ bool contains_text(const std::string& text, const std::string_view fragment) {
     return text.find(fragment) != std::string::npos;
 }
 
+void expect_shared_statistics_formatting_helpers() {
+    using session_detail::format_statistics_compact_size_value;
+    using session_detail::format_statistics_count_with_percent_text;
+    using session_detail::format_statistics_percent_text;
+    using session_detail::format_statistics_size_value;
+    using session_detail::format_statistics_size_with_percent_text;
+
+    PFL_EXPECT(format_statistics_compact_size_value(0U) == "0 B");
+    PFL_EXPECT(format_statistics_compact_size_value(162U) == "162 B");
+    PFL_EXPECT(format_statistics_compact_size_value(1536U) == "1.5 KB");
+    PFL_EXPECT(format_statistics_compact_size_value(3430649U) == "3.3 MB");
+    PFL_EXPECT(format_statistics_compact_size_value(12285799U) == "11.7 MB");
+    PFL_EXPECT(format_statistics_compact_size_value(15716610U) == "15 MB");
+
+    PFL_EXPECT(format_statistics_size_value(0U) == "0 B");
+    PFL_EXPECT(format_statistics_size_value(1536U) == "1.5 KB (1 536 B)");
+
+    PFL_EXPECT(format_statistics_percent_text(0.0) == "0%");
+    PFL_EXPECT(format_statistics_percent_text(48.0) == "48%");
+    PFL_EXPECT(format_statistics_percent_text(0.21) == "0.21%");
+    PFL_EXPECT(format_statistics_percent_text(0.03) == "0.03%");
+    PFL_EXPECT(format_statistics_percent_text(0.009) == "<0.01%");
+
+    PFL_EXPECT(format_statistics_count_with_percent_text(102U, 48.0) == "102 (48%)");
+    PFL_EXPECT(format_statistics_count_with_percent_text(4901U, 26.0) == "4 901 (26%)");
+    PFL_EXPECT(format_statistics_size_with_percent_text(3430649U, 22.0) == "3.3 MB (22%)");
+    PFL_EXPECT(format_statistics_size_with_percent_text(136U, 0.009) == "136 B (<0.01%)");
+    PFL_EXPECT(format_statistics_count_with_percent_text(0U, 0.0) == "0 (0%)");
+    PFL_EXPECT(format_statistics_size_with_percent_text(0U, 0.0) == "0 B (0%)");
+}
+
+void expect_protocol_hint_statistics_rows_handle_zero_denominators() {
+    const auto rows = session_detail::build_protocol_hint_statistics_rows(CaptureProtocolSummary {});
+    PFL_EXPECT(rows.size() == 13U);
+    for (const auto& row : rows) {
+        PFL_EXPECT(row.flow_count == 0U);
+        PFL_EXPECT(row.packet_count == 0U);
+        PFL_EXPECT(row.captured_bytes == 0U);
+        PFL_EXPECT(row.original_bytes == 0U);
+        PFL_EXPECT(row.flow_count_text == "0 (0%)");
+        PFL_EXPECT(row.packet_count_text == "0 (0%)");
+        PFL_EXPECT(row.captured_bytes_text == "0 B (0%)");
+        PFL_EXPECT(row.original_bytes_text == "0 B (0%)");
+    }
+}
+
 void expect_flow_packet_count_histogram_boundaries() {
     const auto input = make_histogram_input_connections({
         {1U, 100U},
@@ -579,11 +625,35 @@ void expect_overview_excludes_optional_statistics_sections() {
 
     PFL_EXPECT(overview.has_capture);
     PFL_EXPECT(overview.summary.flow_count == 3U);
+    PFL_EXPECT(overview.summary.captured_bytes_text == session_detail::format_statistics_compact_size_value(overview.summary.captured_bytes));
+    PFL_EXPECT(overview.summary.original_bytes_text == session_detail::format_statistics_compact_size_value(overview.summary.original_bytes));
     PFL_EXPECT(overview.protocol_summary.tcp.flow_count == 1U);
     PFL_EXPECT(overview.protocol_summary.udp.flow_count == 2U);
+    PFL_EXPECT(overview.protocol_summary.tcp.captured_bytes_text
+        == session_detail::format_statistics_compact_size_value(overview.protocol_summary.tcp.captured_bytes));
+    PFL_EXPECT(overview.protocol_summary.udp.original_bytes_text
+        == session_detail::format_statistics_compact_size_value(overview.protocol_summary.udp.original_bytes));
 
     PFL_EXPECT(hint_statistics.has_capture);
     PFL_EXPECT(hint_statistics.protocol_hints.size() == 13U);
+    PFL_REQUIRE(!hint_statistics.protocol_hints.empty());
+    PFL_EXPECT(hint_statistics.protocol_hints.back().protocol_label == "Unknown");
+    PFL_EXPECT(hint_statistics.protocol_hints.back().flow_count_text == "3 (100%)");
+    PFL_EXPECT(hint_statistics.protocol_hints.back().packet_count_text == "4 (100%)");
+    PFL_EXPECT(
+        hint_statistics.protocol_hints.back().captured_bytes_text
+        == session_detail::format_statistics_size_with_percent_text(
+            hint_statistics.protocol_hints.back().captured_bytes,
+            100.0
+        )
+    );
+    PFL_EXPECT(
+        hint_statistics.protocol_hints.back().original_bytes_text
+        == session_detail::format_statistics_size_with_percent_text(
+            hint_statistics.protocol_hints.back().original_bytes,
+            100.0
+        )
+    );
 
     PFL_EXPECT(quic_tls_statistics.has_capture);
     PFL_EXPECT(quic_tls_statistics.quic_recognition.total_flows == 0U);
@@ -708,6 +778,8 @@ void expect_statistics_section_bridge_json_shapes() {
 
     const auto overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_summary\""));
+    PFL_EXPECT(contains_text(overview_json, "\"captured_bytes_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"original_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_path_presentations\""));
     PFL_EXPECT(!contains_text(overview_json, "\"protocol_hints\""));
     PFL_EXPECT(!contains_text(overview_json, "\"quic_recognition\""));
@@ -719,6 +791,10 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(hints_json, "\"protocol_hints\""));
     PFL_EXPECT(contains_text(hints_json, "\"group\""));
     PFL_EXPECT(contains_text(hints_json, "\"protocol_label\""));
+    PFL_EXPECT(contains_text(hints_json, "\"flow_count_text\""));
+    PFL_EXPECT(contains_text(hints_json, "\"packet_count_text\""));
+    PFL_EXPECT(contains_text(hints_json, "\"captured_bytes_text\""));
+    PFL_EXPECT(contains_text(hints_json, "\"original_bytes_text\""));
 
     const auto quic_tls_json = take_bridge_string(pfl_frontend_session_adapter_get_quic_tls_statistics_json(handle));
     PFL_EXPECT(contains_text(quic_tls_json, "\"quic_recognition\""));
@@ -735,6 +811,8 @@ void expect_statistics_section_bridge_json_shapes() {
 }  // namespace
 
 void run_statistics_section_tests() {
+    expect_shared_statistics_formatting_helpers();
+    expect_protocol_hint_statistics_rows_handle_zero_denominators();
     expect_flow_packet_count_histogram_boundaries();
     expect_flow_packet_count_histogram_zero_packet_behavior();
     expect_flow_packet_count_histogram_supports_empty_inputs();

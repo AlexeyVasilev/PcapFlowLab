@@ -3475,8 +3475,8 @@
 
     elements.metricPackets.textContent = overview ? formatNumber(overview.summary?.packet_count) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
-    elements.metricCapturedBytes.textContent = overview ? formatNumber(overview.summary?.captured_bytes) : "-";
-    elements.metricOriginalBytes.textContent = overview ? formatNumber(overview.summary?.original_bytes) : "-";
+    elements.metricCapturedBytes.textContent = overview ? String(overview.summary?.captured_bytes_text ?? "-") : "-";
+    elements.metricOriginalBytes.textContent = overview ? String(overview.summary?.original_bytes_text ?? "-") : "-";
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";
@@ -3518,8 +3518,8 @@
           <td>${escapeHtml(label)}</td>
           <td>${formatNumber(stats?.flow_count)}</td>
           <td>${formatNumber(stats?.packet_count)}</td>
-          <td>${formatNumber(stats?.captured_bytes)}</td>
-          <td>${formatNumber(stats?.original_bytes)}</td>
+          <td>${escapeHtml(String(stats?.captured_bytes_text ?? "-"))}</td>
+          <td>${escapeHtml(String(stats?.original_bytes_text ?? "-"))}</td>
         </tr>
       `)
       .join("");
@@ -3529,8 +3529,8 @@
           <td>${escapeHtml(label)}</td>
           <td>${formatNumber(stats?.flow_count)}</td>
           <td>${formatNumber(stats?.packet_count)}</td>
-          <td>${formatNumber(stats?.captured_bytes)}</td>
-          <td>${formatNumber(stats?.original_bytes)}</td>
+          <td>${escapeHtml(String(stats?.captured_bytes_text ?? "-"))}</td>
+          <td>${escapeHtml(String(stats?.original_bytes_text ?? "-"))}</td>
         </tr>
       `)
       .join("");
@@ -3643,10 +3643,10 @@
             <tr class="${protocolHintFilterValue(row.protocol_label) ? "stats-drilldown-row" : ""}" data-protocol-filter="${escapeHtml(protocolHintFilterValue(row.protocol_label))}" title="${protocolHintFilterValue(row.protocol_label) ? "Filter flows by this protocol hint" : ""}">
               <td>${escapeHtml(row.group)}</td>
               <td>${escapeHtml(row.protocol_label)}</td>
-              <td>${formatNumber(row.flow_count)}</td>
-              <td>${formatNumber(row.packet_count)}</td>
-              <td>${formatNumber(row.captured_bytes)}</td>
-              <td>${formatNumber(row.original_bytes)}</td>
+              <td>${escapeHtml(String(row.flow_count_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.packet_count_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.captured_bytes_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.original_bytes_text ?? ""))}</td>
             </tr>
           `)
           .join("")

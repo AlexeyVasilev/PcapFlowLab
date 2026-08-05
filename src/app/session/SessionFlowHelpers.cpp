@@ -328,13 +328,109 @@ std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBu
     return std::to_string(bucket.lower_bound_inclusive) + '-' + std::to_string(*bucket.upper_bound_inclusive);
 }
 
+std::string format_statistics_count_value(const std::uint64_t value) {
+    return format_grouped_integer(value);
+}
+
+std::string format_statistics_compact_size_value(const std::uint64_t value) {
+    return format_byte_value(value);
+}
+
+std::string format_statistics_percent_text(const double percent) {
+    if (!(percent > 0.0)) {
+        return "0%";
+    }
+
+    if (percent < 0.01) {
+        return "<0.01%";
+    }
+
+    if (percent < 1.0) {
+        std::ostringstream out {};
+        out << std::fixed << std::setprecision(2) << percent;
+        return trim_trailing_zeros(out.str()) + '%';
+    }
+
+    return std::to_string(static_cast<std::uint64_t>(std::llround(percent))) + '%';
+}
+
+std::string format_statistics_count_with_percent_text(const std::uint64_t count, const double percent) {
+    return format_statistics_count_value(count) + " (" + format_statistics_percent_text(percent) + ')';
+}
+
+std::string format_statistics_size_with_percent_text(const std::uint64_t size, const double percent) {
+    return format_statistics_compact_size_value(size) + " (" + format_statistics_percent_text(percent) + ')';
+}
+
 std::string format_statistics_size_value(const std::uint64_t value) {
-    const auto compact = format_byte_value(value);
+    const auto compact = format_statistics_compact_size_value(value);
     if (value == 0U || value < 1024U) {
         return compact;
     }
 
     return compact + " (" + format_grouped_integer(value) + " B)";
+}
+
+std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary) {
+    std::vector<ProtocolHintStatisticsRow> rows {};
+    rows.reserve(13U);
+
+    auto append_row = [&](const char* group, const char* protocol_label, const ProtocolStats& stats) {
+        rows.push_back(ProtocolHintStatisticsRow {
+            .group = group,
+            .protocol_label = protocol_label,
+            .flow_count = stats.flow_count,
+            .packet_count = stats.packet_count,
+            .captured_bytes = stats.captured_bytes,
+            .original_bytes = stats.original_bytes,
+        });
+    };
+
+    append_row("Confirmed", "HTTP", summary.hint_http);
+    append_row("Confirmed", "TLS", summary.hint_tls);
+    append_row("Possible", "Possible TLS", summary.hint_possible_tls);
+    append_row("Confirmed", "DNS", summary.hint_dns);
+    append_row("Confirmed", "QUIC", summary.hint_quic);
+    append_row("Possible", "Possible QUIC", summary.hint_possible_quic);
+    append_row("Confirmed", "SSH", summary.hint_ssh);
+    append_row("Confirmed", "STUN", summary.hint_stun);
+    append_row("Confirmed", "BitTorrent", summary.hint_bittorrent);
+    append_row("Confirmed", "Mail protocols", summary.hint_mail_protocols);
+    append_row("Confirmed", "DHCP", summary.hint_dhcp);
+    append_row("Confirmed", "mDNS", summary.hint_mdns);
+    append_row("Unknown", "Unknown", summary.hint_unknown);
+
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_packet_count {0};
+    std::uint64_t total_captured_bytes {0};
+    std::uint64_t total_original_bytes {0};
+    for (const auto& row : rows) {
+        total_flow_count += row.flow_count;
+        total_packet_count += row.packet_count;
+        total_captured_bytes += row.captured_bytes;
+        total_original_bytes += row.original_bytes;
+    }
+
+    for (auto& row : rows) {
+        row.flow_count_text = format_statistics_count_with_percent_text(
+            row.flow_count,
+            safe_percent(row.flow_count, total_flow_count)
+        );
+        row.packet_count_text = format_statistics_count_with_percent_text(
+            row.packet_count,
+            safe_percent(row.packet_count, total_packet_count)
+        );
+        row.captured_bytes_text = format_statistics_size_with_percent_text(
+            row.captured_bytes,
+            safe_percent(row.captured_bytes, total_captured_bytes)
+        );
+        row.original_bytes_text = format_statistics_size_with_percent_text(
+            row.original_bytes,
+            safe_percent(row.original_bytes, total_original_bytes)
+        );
+    }
+
+    return rows;
 }
 
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {

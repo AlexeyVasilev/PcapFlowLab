@@ -10,31 +10,45 @@ Item {
     property var packetCount: 0
     property var flowCount: 0
     property var capturedBytes: 0
+    property string capturedBytesText: ""
     property var originalBytes: 0
+    property string originalBytesText: ""
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
     property var tcpCapturedBytes: 0
+    property string tcpCapturedBytesText: ""
     property var tcpOriginalBytes: 0
+    property string tcpOriginalBytesText: ""
     property var udpFlowCount: 0
     property var udpPacketCount: 0
     property var udpCapturedBytes: 0
+    property string udpCapturedBytesText: ""
     property var udpOriginalBytes: 0
+    property string udpOriginalBytesText: ""
     property var sctpFlowCount: 0
     property var sctpPacketCount: 0
     property var sctpCapturedBytes: 0
+    property string sctpCapturedBytesText: ""
     property var sctpOriginalBytes: 0
+    property string sctpOriginalBytesText: ""
     property var otherFlowCount: 0
     property var otherPacketCount: 0
     property var otherCapturedBytes: 0
+    property string otherCapturedBytesText: ""
     property var otherOriginalBytes: 0
+    property string otherOriginalBytesText: ""
     property var ipv4FlowCount: 0
     property var ipv4PacketCount: 0
     property var ipv4CapturedBytes: 0
+    property string ipv4CapturedBytesText: ""
     property var ipv4OriginalBytes: 0
+    property string ipv4OriginalBytesText: ""
     property var ipv6FlowCount: 0
     property var ipv6PacketCount: 0
     property var ipv6CapturedBytes: 0
+    property string ipv6CapturedBytesText: ""
     property var ipv6OriginalBytes: 0
+    property string ipv6OriginalBytesText: ""
     property var unrecognizedStatsPacketCount: 0
     property var unrecognizedStatsCapturedBytes: 0
     property var unrecognizedStatsOriginalBytes: 0
@@ -185,47 +199,6 @@ Item {
         if (Number(part || 0) <= 0 || Number(total || 0) <= 0)
             return "0% (0 flows)"
         return formatShare(part, total) + " (" + groupInteger(part) + " flows)"
-    }
-
-    function totalHintFlows() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["flows"] || 0
-        return total
-    }
-
-    function totalHintPackets() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["packets"] || 0
-        return total
-    }
-
-    function totalHintCapturedBytes() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["capturedBytes"] || 0
-        return total
-    }
-
-    function totalHintOriginalBytes() {
-        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
-            return 0
-        let total = 0
-        for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["originalBytes"] || 0
-        return total
-    }
-
-    function formatHintCell(value, total, isBytes) {
-        const formattedValue = isBytes ? formatBytes(value) : groupInteger(value)
-        return formattedValue + " (" + formatShare(value, total) + ")"
     }
 
     function protocolHintGroup(title) {
@@ -401,7 +374,9 @@ Item {
                     packetCount: root.packetCount
                     flowCount: root.flowCount
                     capturedBytes: root.capturedBytes
+                    capturedBytesText: root.capturedBytesText
                     originalBytes: root.originalBytes
+                    originalBytesText: root.originalBytesText
                     hasCapture: root.hasCapture
                 }
 
@@ -411,28 +386,28 @@ Item {
                     hasCapture: root.hasCapture
                     tcpFlowCount: root.tcpFlowCount
                     tcpPacketCount: root.tcpPacketCount
-                    tcpCapturedBytes: root.tcpCapturedBytes
-                    tcpOriginalBytes: root.tcpOriginalBytes
+                    tcpCapturedBytesText: root.tcpCapturedBytesText
+                    tcpOriginalBytesText: root.tcpOriginalBytesText
                     udpFlowCount: root.udpFlowCount
                     udpPacketCount: root.udpPacketCount
-                    udpCapturedBytes: root.udpCapturedBytes
-                    udpOriginalBytes: root.udpOriginalBytes
+                    udpCapturedBytesText: root.udpCapturedBytesText
+                    udpOriginalBytesText: root.udpOriginalBytesText
                     sctpFlowCount: root.sctpFlowCount
                     sctpPacketCount: root.sctpPacketCount
-                    sctpCapturedBytes: root.sctpCapturedBytes
-                    sctpOriginalBytes: root.sctpOriginalBytes
+                    sctpCapturedBytesText: root.sctpCapturedBytesText
+                    sctpOriginalBytesText: root.sctpOriginalBytesText
                     otherFlowCount: root.otherFlowCount
                     otherPacketCount: root.otherPacketCount
-                    otherCapturedBytes: root.otherCapturedBytes
-                    otherOriginalBytes: root.otherOriginalBytes
+                    otherCapturedBytesText: root.otherCapturedBytesText
+                    otherOriginalBytesText: root.otherOriginalBytesText
                     ipv4FlowCount: root.ipv4FlowCount
                     ipv4PacketCount: root.ipv4PacketCount
-                    ipv4CapturedBytes: root.ipv4CapturedBytes
-                    ipv4OriginalBytes: root.ipv4OriginalBytes
+                    ipv4CapturedBytesText: root.ipv4CapturedBytesText
+                    ipv4OriginalBytesText: root.ipv4OriginalBytesText
                     ipv6FlowCount: root.ipv6FlowCount
                     ipv6PacketCount: root.ipv6PacketCount
-                    ipv6CapturedBytes: root.ipv6CapturedBytes
-                    ipv6OriginalBytes: root.ipv6OriginalBytes
+                    ipv6CapturedBytesText: root.ipv6CapturedBytesText
+                    ipv6OriginalBytesText: root.ipv6OriginalBytesText
                 }
 
                 SectionFrame {
@@ -1074,10 +1049,10 @@ Item {
 
                                     Label { x: 0; width: root.hintGroupColumnWidth; anchors.verticalCenter: parent.verticalCenter; text: root.protocolHintGroup(modelData["title"] || ""); color: "#334155"; elide: Text.ElideRight }
                                     Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing; width: root.hintProtocolColumnWidth; anchors.verticalCenter: parent.verticalCenter; text: modelData["title"] || ""; color: "#0f172a"; elide: Text.ElideRight }
-                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing; width: root.hintFlowsColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: root.formatHintCell(modelData["flows"] || 0, root.totalHintFlows(), false); color: "#334155"; elide: Text.ElideLeft }
-                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing; width: root.hintPacketsColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: root.formatHintCell(modelData["packets"] || 0, root.totalHintPackets(), false); color: "#334155"; elide: Text.ElideLeft }
-                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing; width: root.hintCapturedColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: root.formatHintCell(modelData["capturedBytes"] || 0, root.totalHintCapturedBytes(), true); color: "#334155"; elide: Text.ElideLeft }
-                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing + root.hintCapturedColumnWidth + root.tableColumnSpacing; width: root.hintOriginalColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: root.formatHintCell(modelData["originalBytes"] || 0, root.totalHintOriginalBytes(), true); color: "#334155"; elide: Text.ElideLeft }
+                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing; width: root.hintFlowsColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: modelData["flowCountText"] || ""; color: "#334155"; elide: Text.ElideLeft }
+                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing; width: root.hintPacketsColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: modelData["packetCountText"] || ""; color: "#334155"; elide: Text.ElideLeft }
+                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing; width: root.hintCapturedColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: modelData["capturedBytesText"] || ""; color: "#334155"; elide: Text.ElideLeft }
+                                    Label { x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing + root.hintCapturedColumnWidth + root.tableColumnSpacing; width: root.hintOriginalColumnWidth; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight; text: modelData["originalBytesText"] || ""; color: "#334155"; elide: Text.ElideLeft }
                                 }
                             }
                         }

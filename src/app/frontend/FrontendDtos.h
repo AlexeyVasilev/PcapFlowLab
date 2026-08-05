@@ -130,9 +130,41 @@ struct FrontendProtocolHintStatsDto {
     std::string group {};
     std::string protocol_label {};
     std::uint64_t flow_count {0};
+    std::string flow_count_text {};
+    std::uint64_t packet_count {0};
+    std::string packet_count_text {};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
+struct FrontendProtocolStatsDto {
+    std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
     std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
     std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
+struct FrontendOverviewSummaryDto {
+    std::uint64_t packet_count {0};
+    std::uint64_t flow_count {0};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+    std::uint64_t total_bytes {0};
+};
+
+struct FrontendOverviewProtocolSummaryDto {
+    FrontendProtocolStatsDto tcp {};
+    FrontendProtocolStatsDto udp {};
+    FrontendProtocolStatsDto sctp {};
+    FrontendProtocolStatsDto other {};
+    FrontendProtocolStatsDto ipv4 {};
+    FrontendProtocolStatsDto ipv6 {};
 };
 
 struct FrontendTopEndpointDto {
@@ -236,12 +268,12 @@ struct FrontendProtocolPathPresentationDto {
 
 struct FrontendOverviewDto {
     bool has_capture {false};
-    CaptureSummary summary {};
+    FrontendOverviewSummaryDto summary {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
     std::uint64_t unrecognized_packet_count {0};
     std::optional<UnrecognizedPacketStatistics> unrecognized_packets {};
-    CaptureProtocolSummary protocol_summary {};
+    FrontendOverviewProtocolSummaryDto protocol_summary {};
     ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
     std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};
 };

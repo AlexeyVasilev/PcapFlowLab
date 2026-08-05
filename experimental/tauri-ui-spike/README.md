@@ -69,6 +69,7 @@ Implemented slice:
   - overview cards
   - transport summary
   - IP family summary
+  - shared C++ compact byte/count/percentage formatting for overview bytes, Protocol Summary byte columns, and Detected Protocol Hints values
   - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
   - six optional collapsible sections, initially closed for each capture:
     - Packet Size Distribution
@@ -247,7 +248,6 @@ Implemented slice:
 - The Stream tab is still experimental and exposes only a bounded selected-flow slice with Qt-like stream-item details; stream-to-packet navigation is still missing.
 - Selected-flow packet/stream latency on very large flows is still a known issue shared with the common backend/session path.
 - Statistics remain partial compared to Qt:
-  - Qt-style percentage formatting is still deferred.
   - Drill-down does not yet navigate directly to a specific flow row, packet row, or packet details.
 - The current Tauri Analysis tab intentionally covers only a first compact slice of the existing selected-flow session analysis:
   - flow summary

@@ -184,7 +184,9 @@ private:
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong capturedBytes READ capturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString capturedBytesText READ capturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong originalBytes READ originalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString originalBytesText READ originalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
     Q_PROPERTY(int statisticsSectionsResetToken READ statisticsSectionsResetToken NOTIFY statisticsSectionsResetTokenChanged)
     Q_PROPERTY(int packetSizeDistributionState READ packetSizeDistributionState NOTIFY stateChanged)
@@ -212,32 +214,44 @@ private:
     Q_PROPERTY(qulonglong tcpFlowCount READ tcpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpPacketCount READ tcpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpCapturedBytes READ tcpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString tcpCapturedBytesText READ tcpCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpOriginalBytes READ tcpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString tcpOriginalBytesText READ tcpOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpTotalBytes READ tcpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpFlowCount READ udpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpPacketCount READ udpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpCapturedBytes READ udpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString udpCapturedBytesText READ udpCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpOriginalBytes READ udpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString udpOriginalBytesText READ udpOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpTotalBytes READ udpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpFlowCount READ sctpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpPacketCount READ sctpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpCapturedBytes READ sctpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString sctpCapturedBytesText READ sctpCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpOriginalBytes READ sctpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString sctpOriginalBytesText READ sctpOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpTotalBytes READ sctpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherFlowCount READ otherFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherPacketCount READ otherPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherCapturedBytes READ otherCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString otherCapturedBytesText READ otherCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherOriginalBytes READ otherOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString otherOriginalBytesText READ otherOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4PacketCount READ ipv4PacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4CapturedBytes READ ipv4CapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv4CapturedBytesText READ ipv4CapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4OriginalBytes READ ipv4OriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv4OriginalBytesText READ ipv4OriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4TotalBytes READ ipv4TotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6PacketCount READ ipv6PacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6CapturedBytes READ ipv6CapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv6CapturedBytesText READ ipv6CapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6OriginalBytes READ ipv6OriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv6OriginalBytesText READ ipv6OriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6TotalBytes READ ipv6TotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong unrecognizedStatsPacketCount READ unrecognizedStatsPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong unrecognizedStatsCapturedBytes READ unrecognizedStatsCapturedBytes NOTIFY stateChanged)
@@ -427,7 +441,9 @@ public:
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong capturedBytes() const noexcept;
+    [[nodiscard]] QString capturedBytesText() const;
     [[nodiscard]] qulonglong originalBytes() const noexcept;
+    [[nodiscard]] QString originalBytesText() const;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
     [[nodiscard]] int statisticsSectionsResetToken() const noexcept;
     [[nodiscard]] int packetSizeDistributionState() const noexcept;
@@ -455,32 +471,44 @@ public:
     [[nodiscard]] qulonglong tcpFlowCount() const noexcept;
     [[nodiscard]] qulonglong tcpPacketCount() const noexcept;
     [[nodiscard]] qulonglong tcpCapturedBytes() const noexcept;
+    [[nodiscard]] QString tcpCapturedBytesText() const;
     [[nodiscard]] qulonglong tcpOriginalBytes() const noexcept;
+    [[nodiscard]] QString tcpOriginalBytesText() const;
     [[nodiscard]] qulonglong tcpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong udpFlowCount() const noexcept;
     [[nodiscard]] qulonglong udpPacketCount() const noexcept;
     [[nodiscard]] qulonglong udpCapturedBytes() const noexcept;
+    [[nodiscard]] QString udpCapturedBytesText() const;
     [[nodiscard]] qulonglong udpOriginalBytes() const noexcept;
+    [[nodiscard]] QString udpOriginalBytesText() const;
     [[nodiscard]] qulonglong udpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong sctpFlowCount() const noexcept;
     [[nodiscard]] qulonglong sctpPacketCount() const noexcept;
     [[nodiscard]] qulonglong sctpCapturedBytes() const noexcept;
+    [[nodiscard]] QString sctpCapturedBytesText() const;
     [[nodiscard]] qulonglong sctpOriginalBytes() const noexcept;
+    [[nodiscard]] QString sctpOriginalBytesText() const;
     [[nodiscard]] qulonglong sctpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong otherFlowCount() const noexcept;
     [[nodiscard]] qulonglong otherPacketCount() const noexcept;
     [[nodiscard]] qulonglong otherCapturedBytes() const noexcept;
+    [[nodiscard]] QString otherCapturedBytesText() const;
     [[nodiscard]] qulonglong otherOriginalBytes() const noexcept;
+    [[nodiscard]] QString otherOriginalBytesText() const;
     [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv4PacketCount() const noexcept;
     [[nodiscard]] qulonglong ipv4CapturedBytes() const noexcept;
+    [[nodiscard]] QString ipv4CapturedBytesText() const;
     [[nodiscard]] qulonglong ipv4OriginalBytes() const noexcept;
+    [[nodiscard]] QString ipv4OriginalBytesText() const;
     [[nodiscard]] qulonglong ipv4TotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv6PacketCount() const noexcept;
     [[nodiscard]] qulonglong ipv6CapturedBytes() const noexcept;
+    [[nodiscard]] QString ipv6CapturedBytesText() const;
     [[nodiscard]] qulonglong ipv6OriginalBytes() const noexcept;
+    [[nodiscard]] QString ipv6OriginalBytesText() const;
     [[nodiscard]] qulonglong ipv6TotalBytes() const noexcept;
     [[nodiscard]] qulonglong unrecognizedStatsPacketCount() const noexcept;
     [[nodiscard]] qulonglong unrecognizedStatsCapturedBytes() const noexcept;

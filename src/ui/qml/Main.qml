@@ -1221,31 +1221,45 @@ ApplicationWindow {
                 packetCount: mainController.packetCount
                 flowCount: mainController.flowCount
                 capturedBytes: mainController.capturedBytes
+                capturedBytesText: mainController.capturedBytesText
                 originalBytes: mainController.originalBytes
+                originalBytesText: mainController.originalBytesText
                 tcpFlowCount: mainController.tcpFlowCount
                 tcpPacketCount: mainController.tcpPacketCount
                 tcpCapturedBytes: mainController.tcpCapturedBytes
+                tcpCapturedBytesText: mainController.tcpCapturedBytesText
                 tcpOriginalBytes: mainController.tcpOriginalBytes
+                tcpOriginalBytesText: mainController.tcpOriginalBytesText
                 udpFlowCount: mainController.udpFlowCount
                 udpPacketCount: mainController.udpPacketCount
                 udpCapturedBytes: mainController.udpCapturedBytes
+                udpCapturedBytesText: mainController.udpCapturedBytesText
                 udpOriginalBytes: mainController.udpOriginalBytes
+                udpOriginalBytesText: mainController.udpOriginalBytesText
                 sctpFlowCount: mainController.sctpFlowCount
                 sctpPacketCount: mainController.sctpPacketCount
                 sctpCapturedBytes: mainController.sctpCapturedBytes
+                sctpCapturedBytesText: mainController.sctpCapturedBytesText
                 sctpOriginalBytes: mainController.sctpOriginalBytes
+                sctpOriginalBytesText: mainController.sctpOriginalBytesText
                 otherFlowCount: mainController.otherFlowCount
                 otherPacketCount: mainController.otherPacketCount
                 otherCapturedBytes: mainController.otherCapturedBytes
+                otherCapturedBytesText: mainController.otherCapturedBytesText
                 otherOriginalBytes: mainController.otherOriginalBytes
+                otherOriginalBytesText: mainController.otherOriginalBytesText
                 ipv4FlowCount: mainController.ipv4FlowCount
                 ipv4PacketCount: mainController.ipv4PacketCount
                 ipv4CapturedBytes: mainController.ipv4CapturedBytes
+                ipv4CapturedBytesText: mainController.ipv4CapturedBytesText
                 ipv4OriginalBytes: mainController.ipv4OriginalBytes
+                ipv4OriginalBytesText: mainController.ipv4OriginalBytesText
                 ipv6FlowCount: mainController.ipv6FlowCount
                 ipv6PacketCount: mainController.ipv6PacketCount
                 ipv6CapturedBytes: mainController.ipv6CapturedBytes
+                ipv6CapturedBytesText: mainController.ipv6CapturedBytesText
                 ipv6OriginalBytes: mainController.ipv6OriginalBytes
+                ipv6OriginalBytesText: mainController.ipv6OriginalBytesText
                 unrecognizedStatsPacketCount: mainController.unrecognizedStatsPacketCount
                 unrecognizedStatsCapturedBytes: mainController.unrecognizedStatsCapturedBytes
                 unrecognizedStatsOriginalBytes: mainController.unrecognizedStatsOriginalBytes

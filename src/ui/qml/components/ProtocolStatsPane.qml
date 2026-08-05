@@ -7,28 +7,28 @@ Frame {
 
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
-    property var tcpCapturedBytes: 0
-    property var tcpOriginalBytes: 0
+    property string tcpCapturedBytesText: ""
+    property string tcpOriginalBytesText: ""
     property var udpFlowCount: 0
     property var udpPacketCount: 0
-    property var udpCapturedBytes: 0
-    property var udpOriginalBytes: 0
+    property string udpCapturedBytesText: ""
+    property string udpOriginalBytesText: ""
     property var sctpFlowCount: 0
     property var sctpPacketCount: 0
-    property var sctpCapturedBytes: 0
-    property var sctpOriginalBytes: 0
+    property string sctpCapturedBytesText: ""
+    property string sctpOriginalBytesText: ""
     property var otherFlowCount: 0
     property var otherPacketCount: 0
-    property var otherCapturedBytes: 0
-    property var otherOriginalBytes: 0
+    property string otherCapturedBytesText: ""
+    property string otherOriginalBytesText: ""
     property var ipv4FlowCount: 0
     property var ipv4PacketCount: 0
-    property var ipv4CapturedBytes: 0
-    property var ipv4OriginalBytes: 0
+    property string ipv4CapturedBytesText: ""
+    property string ipv4OriginalBytesText: ""
     property var ipv6FlowCount: 0
     property var ipv6PacketCount: 0
-    property var ipv6CapturedBytes: 0
-    property var ipv6OriginalBytes: 0
+    property string ipv6CapturedBytesText: ""
+    property string ipv6OriginalBytesText: ""
     property bool hasCapture: false
 
     readonly property int tableRowHeight: 26
@@ -53,61 +53,6 @@ Frame {
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
         return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ")
-    }
-
-    function trimTrailingZeros(text) {
-        return text.replace(/\.0$/, "").replace(/(\.\d*[1-9])0+$/, "$1")
-    }
-
-    function formatBytes(value) {
-        const units = ["B", "KB", "MB", "GB", "TB"]
-        var scaled = Math.max(0, Number(value || 0))
-        var unitIndex = 0
-        while (scaled >= 1024 && unitIndex + 1 < units.length) {
-            scaled /= 1024
-            unitIndex += 1
-        }
-
-        var numberText = ""
-        if (unitIndex === 0) {
-            numberText = groupInteger(Math.round(scaled))
-        } else {
-            numberText = trimTrailingZeros(scaled.toFixed(1)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
-        }
-
-        return numberText + " " + units[unitIndex]
-    }
-
-    function totalTransportFlows() {
-        return Number(tcpFlowCount || 0) + Number(udpFlowCount || 0) + Number(sctpFlowCount || 0) + Number(otherFlowCount || 0)
-    }
-
-    function totalTransportPackets() {
-        return Number(tcpPacketCount || 0) + Number(udpPacketCount || 0) + Number(sctpPacketCount || 0) + Number(otherPacketCount || 0)
-    }
-
-    function totalTransportCapturedBytes() {
-        return Number(tcpCapturedBytes || 0) + Number(udpCapturedBytes || 0) + Number(sctpCapturedBytes || 0) + Number(otherCapturedBytes || 0)
-    }
-
-    function totalTransportOriginalBytes() {
-        return Number(tcpOriginalBytes || 0) + Number(udpOriginalBytes || 0) + Number(sctpOriginalBytes || 0) + Number(otherOriginalBytes || 0)
-    }
-
-    function totalIpFlows() {
-        return Number(ipv4FlowCount || 0) + Number(ipv6FlowCount || 0)
-    }
-
-    function totalIpPackets() {
-        return Number(ipv4PacketCount || 0) + Number(ipv6PacketCount || 0)
-    }
-
-    function totalIpCapturedBytes() {
-        return Number(ipv4CapturedBytes || 0) + Number(ipv6CapturedBytes || 0)
-    }
-
-    function totalIpOriginalBytes() {
-        return Number(ipv4OriginalBytes || 0) + Number(ipv6OriginalBytes || 0)
     }
 
     component SectionFrame: Frame {
@@ -333,10 +278,10 @@ Frame {
 
                 Repeater {
                     model: [
-                        { rowIndex: 0, name: "TCP", flows: root.tcpFlowCount, packets: root.tcpPacketCount, captured: root.tcpCapturedBytes, original: root.tcpOriginalBytes },
-                        { rowIndex: 1, name: "UDP", flows: root.udpFlowCount, packets: root.udpPacketCount, captured: root.udpCapturedBytes, original: root.udpOriginalBytes },
-                        { rowIndex: 2, name: "SCTP", flows: root.sctpFlowCount, packets: root.sctpPacketCount, captured: root.sctpCapturedBytes, original: root.sctpOriginalBytes },
-                        { rowIndex: 3, name: "Other", flows: root.otherFlowCount, packets: root.otherPacketCount, captured: root.otherCapturedBytes, original: root.otherOriginalBytes }
+                        { rowIndex: 0, name: "TCP", flows: root.tcpFlowCount, packets: root.tcpPacketCount, capturedText: root.tcpCapturedBytesText, originalText: root.tcpOriginalBytesText },
+                        { rowIndex: 1, name: "UDP", flows: root.udpFlowCount, packets: root.udpPacketCount, capturedText: root.udpCapturedBytesText, originalText: root.udpOriginalBytesText },
+                        { rowIndex: 2, name: "SCTP", flows: root.sctpFlowCount, packets: root.sctpPacketCount, capturedText: root.sctpCapturedBytesText, originalText: root.sctpOriginalBytesText },
+                        { rowIndex: 3, name: "Other", flows: root.otherFlowCount, packets: root.otherPacketCount, capturedText: root.otherCapturedBytesText, originalText: root.otherOriginalBytesText }
                     ]
 
                     delegate: FiveColumnRow {
@@ -344,8 +289,8 @@ Frame {
                         firstText: modelData.name
                         secondText: root.hasCapture ? root.groupInteger(modelData.flows) : "-"
                         thirdText: root.hasCapture ? root.groupInteger(modelData.packets) : "-"
-                        fourthText: root.hasCapture ? root.formatBytes(modelData.captured) : "-"
-                        fifthText: root.hasCapture ? root.formatBytes(modelData.original) : "-"
+                        fourthText: root.hasCapture ? modelData.capturedText : "-"
+                        fifthText: root.hasCapture ? modelData.originalText : "-"
                         firstWidth: root.transportNameColumnWidth
                         secondWidth: root.transportFlowsColumnWidth
                         thirdWidth: root.transportPacketsColumnWidth
@@ -384,8 +329,8 @@ Frame {
 
                 Repeater {
                     model: [
-                        { rowIndex: 0, name: "IPv4", flows: root.ipv4FlowCount, packets: root.ipv4PacketCount, captured: root.ipv4CapturedBytes, original: root.ipv4OriginalBytes },
-                        { rowIndex: 1, name: "IPv6", flows: root.ipv6FlowCount, packets: root.ipv6PacketCount, captured: root.ipv6CapturedBytes, original: root.ipv6OriginalBytes }
+                        { rowIndex: 0, name: "IPv4", flows: root.ipv4FlowCount, packets: root.ipv4PacketCount, capturedText: root.ipv4CapturedBytesText, originalText: root.ipv4OriginalBytesText },
+                        { rowIndex: 1, name: "IPv6", flows: root.ipv6FlowCount, packets: root.ipv6PacketCount, capturedText: root.ipv6CapturedBytesText, originalText: root.ipv6OriginalBytesText }
                     ]
 
                     delegate: FiveColumnRow {
@@ -393,8 +338,8 @@ Frame {
                         firstText: modelData.name
                         secondText: root.hasCapture ? root.groupInteger(modelData.flows) : "-"
                         thirdText: root.hasCapture ? root.groupInteger(modelData.packets) : "-"
-                        fourthText: root.hasCapture ? root.formatBytes(modelData.captured) : "-"
-                        fifthText: root.hasCapture ? root.formatBytes(modelData.original) : "-"
+                        fourthText: root.hasCapture ? modelData.capturedText : "-"
+                        fifthText: root.hasCapture ? modelData.originalText : "-"
                         firstWidth: root.familyNameColumnWidth
                         secondWidth: root.familyFlowsColumnWidth
                         thirdWidth: root.familyPacketsColumnWidth
@@ -407,6 +352,5 @@ Frame {
                 }
             }
         }
-
     }
 }

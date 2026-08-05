@@ -114,7 +114,9 @@ pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,7 +124,9 @@ pub struct OverviewSummaryDto {
     pub packet_count: u64,
     pub flow_count: u64,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
     pub total_bytes: u64,
 }
 
@@ -169,9 +173,13 @@ pub struct ProtocolHintStatsDto {
     pub group: String,
     pub protocol_label: String,
     pub flow_count: u64,
+    pub flow_count_text: String,
     pub packet_count: u64,
+    pub packet_count_text: String,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

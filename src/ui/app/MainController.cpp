@@ -206,32 +206,24 @@ QString formatCaptureStorageSummaryText(const CaptureStorageSummary& summary) {
 }
 
 QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary& summary) {
-    auto make_row = [](const char* label, const ProtocolStats& stats) {
-        QVariantMap row {};
-        row.insert(QStringLiteral("title"), QString::fromUtf8(label));
-        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(stats.flow_count));
-        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(stats.packet_count));
-        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(stats.captured_bytes));
-        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(stats.original_bytes));
-        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.original_bytes));
-        return row;
-    };
-
+    const auto shared_rows = session_detail::build_protocol_hint_statistics_rows(summary);
     QVariantList rows {};
-    rows.reserve(13);
-    rows.push_back(make_row("HTTP", summary.hint_http));
-    rows.push_back(make_row("TLS", summary.hint_tls));
-    rows.push_back(make_row("Possible TLS", summary.hint_possible_tls));
-    rows.push_back(make_row("DNS", summary.hint_dns));
-    rows.push_back(make_row("QUIC", summary.hint_quic));
-    rows.push_back(make_row("Possible QUIC", summary.hint_possible_quic));
-    rows.push_back(make_row("SSH", summary.hint_ssh));
-    rows.push_back(make_row("STUN", summary.hint_stun));
-    rows.push_back(make_row("BitTorrent", summary.hint_bittorrent));
-    rows.push_back(make_row("Mail protocols", summary.hint_mail_protocols));
-    rows.push_back(make_row("DHCP", summary.hint_dhcp));
-    rows.push_back(make_row("mDNS", summary.hint_mdns));
-    rows.push_back(make_row("Unknown", summary.hint_unknown));
+    rows.reserve(static_cast<qsizetype>(shared_rows.size()));
+    for (const auto& hint_row : shared_rows) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("title"), QString::fromStdString(hint_row.protocol_label));
+        row.insert(QStringLiteral("group"), QString::fromStdString(hint_row.group));
+        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(hint_row.flow_count));
+        row.insert(QStringLiteral("flowCountText"), QString::fromStdString(hint_row.flow_count_text));
+        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(hint_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), QString::fromStdString(hint_row.packet_count_text));
+        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(hint_row.captured_bytes));
+        row.insert(QStringLiteral("capturedBytesText"), QString::fromStdString(hint_row.captured_bytes_text));
+        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(hint_row.original_bytes));
+        row.insert(QStringLiteral("originalBytesText"), QString::fromStdString(hint_row.original_bytes_text));
+        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(hint_row.original_bytes));
+        rows.push_back(row);
+    }
     return rows;
 }
 
@@ -2771,8 +2763,16 @@ qulonglong MainController::capturedBytes() const noexcept {
     );
 }
 
+QString MainController::capturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(capturedBytes()));
+}
+
 qulonglong MainController::originalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
+}
+
+QString MainController::originalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(originalBytes()));
 }
 
 qulonglong MainController::totalBytes() const noexcept {
@@ -2914,8 +2914,16 @@ qulonglong MainController::tcpCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.captured_bytes);
 }
 
+QString MainController::tcpCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(tcpCapturedBytes()));
+}
+
 qulonglong MainController::tcpOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.original_bytes);
+}
+
+QString MainController::tcpOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(tcpOriginalBytes()));
 }
 
 qulonglong MainController::tcpTotalBytes() const noexcept {
@@ -2934,8 +2942,16 @@ qulonglong MainController::udpCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.captured_bytes);
 }
 
+QString MainController::udpCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(udpCapturedBytes()));
+}
+
 qulonglong MainController::udpOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.original_bytes);
+}
+
+QString MainController::udpOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(udpOriginalBytes()));
 }
 
 qulonglong MainController::udpTotalBytes() const noexcept {
@@ -2954,8 +2970,16 @@ qulonglong MainController::sctpCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.sctp.captured_bytes);
 }
 
+QString MainController::sctpCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(sctpCapturedBytes()));
+}
+
 qulonglong MainController::sctpOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.sctp.original_bytes);
+}
+
+QString MainController::sctpOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(sctpOriginalBytes()));
 }
 
 qulonglong MainController::sctpTotalBytes() const noexcept {
@@ -2974,8 +2998,16 @@ qulonglong MainController::otherCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.other.captured_bytes);
 }
 
+QString MainController::otherCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(otherCapturedBytes()));
+}
+
 qulonglong MainController::otherOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.other.original_bytes);
+}
+
+QString MainController::otherOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(otherOriginalBytes()));
 }
 
 qulonglong MainController::otherTotalBytes() const noexcept {
@@ -2994,8 +3026,16 @@ qulonglong MainController::ipv4CapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv4.captured_bytes);
 }
 
+QString MainController::ipv4CapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv4CapturedBytes()));
+}
+
 qulonglong MainController::ipv4OriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv4.original_bytes);
+}
+
+QString MainController::ipv4OriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv4OriginalBytes()));
 }
 
 qulonglong MainController::ipv4TotalBytes() const noexcept {
@@ -3014,8 +3054,16 @@ qulonglong MainController::ipv6CapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.captured_bytes);
 }
 
+QString MainController::ipv6CapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv6CapturedBytes()));
+}
+
 qulonglong MainController::ipv6OriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.original_bytes);
+}
+
+QString MainController::ipv6OriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv6OriginalBytes()));
 }
 
 qulonglong MainController::ipv6TotalBytes() const noexcept {

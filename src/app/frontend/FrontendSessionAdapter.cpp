@@ -187,37 +187,37 @@ std::string format_protocol_hint_display(const std::string& value) {
     return formatted;
 }
 
-FrontendProtocolHintStatsDto make_protocol_hint_stats(
-    const char* group,
-    const char* protocol_label,
-    const ProtocolStats& stats
-) {
-    return FrontendProtocolHintStatsDto {
-        .group = group,
-        .protocol_label = protocol_label,
+FrontendProtocolStatsDto make_frontend_protocol_stats(const ProtocolStats& stats) {
+    return FrontendProtocolStatsDto {
         .flow_count = stats.flow_count,
         .packet_count = stats.packet_count,
         .captured_bytes = stats.captured_bytes,
+        .captured_bytes_text = session_detail::format_statistics_compact_size_value(stats.captured_bytes),
         .original_bytes = stats.original_bytes,
+        .original_bytes_text = session_detail::format_statistics_compact_size_value(stats.original_bytes),
     };
 }
 
 std::vector<FrontendProtocolHintStatsDto> build_protocol_hint_stats(const CaptureProtocolSummary& summary) {
+    const auto shared_rows = session_detail::build_protocol_hint_statistics_rows(summary);
     std::vector<FrontendProtocolHintStatsDto> rows {};
-    rows.reserve(13U);
-    rows.push_back(make_protocol_hint_stats("Confirmed", "HTTP", summary.hint_http));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "TLS", summary.hint_tls));
-    rows.push_back(make_protocol_hint_stats("Possible", "Possible TLS", summary.hint_possible_tls));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "DNS", summary.hint_dns));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "QUIC", summary.hint_quic));
-    rows.push_back(make_protocol_hint_stats("Possible", "Possible QUIC", summary.hint_possible_quic));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "SSH", summary.hint_ssh));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "STUN", summary.hint_stun));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "BitTorrent", summary.hint_bittorrent));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "Mail protocols", summary.hint_mail_protocols));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "DHCP", summary.hint_dhcp));
-    rows.push_back(make_protocol_hint_stats("Confirmed", "mDNS", summary.hint_mdns));
-    rows.push_back(make_protocol_hint_stats("Unknown", "Unknown", summary.hint_unknown));
+    rows.reserve(shared_rows.size());
+
+    for (const auto& row : shared_rows) {
+        rows.push_back(FrontendProtocolHintStatsDto {
+            .group = row.group,
+            .protocol_label = row.protocol_label,
+            .flow_count = row.flow_count,
+            .flow_count_text = row.flow_count_text,
+            .packet_count = row.packet_count,
+            .packet_count_text = row.packet_count_text,
+            .captured_bytes = row.captured_bytes,
+            .captured_bytes_text = row.captured_bytes_text,
+            .original_bytes = row.original_bytes,
+            .original_bytes_text = row.original_bytes_text,
+        });
+    }
+
     return rows;
 }
 
@@ -2380,18 +2380,35 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
+    const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
+        protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
+    const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
+        protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
-        .summary = session_.summary(),
-        .captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
-            protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes,
-        .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
-            protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes,
+        .summary = FrontendOverviewSummaryDto {
+            .packet_count = session_.summary().packet_count,
+            .flow_count = session_.summary().flow_count,
+            .captured_bytes = captured_bytes,
+            .captured_bytes_text = session_detail::format_statistics_compact_size_value(captured_bytes),
+            .original_bytes = original_bytes,
+            .original_bytes_text = session_detail::format_statistics_compact_size_value(original_bytes),
+            .total_bytes = session_.summary().total_bytes,
+        },
+        .captured_bytes = captured_bytes,
+        .original_bytes = original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
         .unrecognized_packets = unrecognized_packets.packet_count > 0U
             ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
             : std::nullopt,
-        .protocol_summary = protocol_summary,
+        .protocol_summary = FrontendOverviewProtocolSummaryDto {
+            .tcp = make_frontend_protocol_stats(protocol_summary.tcp),
+            .udp = make_frontend_protocol_stats(protocol_summary.udp),
+            .sctp = make_frontend_protocol_stats(protocol_summary.sctp),
+            .other = make_frontend_protocol_stats(protocol_summary.other),
+            .ipv4 = make_frontend_protocol_stats(protocol_summary.ipv4),
+            .ipv6 = make_frontend_protocol_stats(protocol_summary.ipv6),
+        },
         .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
         .protocol_path_presentations = std::move(protocol_path_presentations),
     };

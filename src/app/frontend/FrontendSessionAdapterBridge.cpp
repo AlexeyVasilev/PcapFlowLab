@@ -103,13 +103,15 @@ std::string family_to_json(const FlowAddressFamily family) {
     return json_string(family == FlowAddressFamily::ipv6 ? "ipv6" : "ipv4");
 }
 
-std::string protocol_stats_json(const pfl::ProtocolStats& stats) {
+std::string protocol_stats_json(const pfl::FrontendProtocolStatsDto& stats) {
     std::ostringstream out {};
     out << '{'
         << "\"flow_count\":" << stats.flow_count << ','
         << "\"packet_count\":" << stats.packet_count << ','
         << "\"captured_bytes\":" << stats.captured_bytes << ','
-        << "\"original_bytes\":" << stats.original_bytes
+        << "\"captured_bytes_text\":" << json_string(stats.captured_bytes_text) << ','
+        << "\"original_bytes\":" << stats.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(stats.original_bytes_text)
         << '}';
     return out.str();
 }
@@ -564,9 +566,13 @@ std::string protocol_hint_stats_row_json(const pfl::FrontendProtocolHintStatsDto
         << "\"group\":" << json_string(row.group) << ','
         << "\"protocol_label\":" << json_string(row.protocol_label) << ','
         << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
         << "\"packet_count\":" << row.packet_count << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
         << "\"captured_bytes\":" << row.captured_bytes << ','
-        << "\"original_bytes\":" << row.original_bytes
+        << "\"captured_bytes_text\":" << json_string(row.captured_bytes_text) << ','
+        << "\"original_bytes\":" << row.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(row.original_bytes_text)
         << '}';
     return out.str();
 }
@@ -778,8 +784,10 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"summary\":{"
         << "\"packet_count\":" << overview.summary.packet_count << ','
         << "\"flow_count\":" << overview.summary.flow_count << ','
-        << "\"captured_bytes\":" << overview.captured_bytes << ','
-        << "\"original_bytes\":" << overview.original_bytes << ','
+        << "\"captured_bytes\":" << overview.summary.captured_bytes << ','
+        << "\"captured_bytes_text\":" << json_string(overview.summary.captured_bytes_text) << ','
+        << "\"original_bytes\":" << overview.summary.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(overview.summary.original_bytes_text) << ','
         << "\"total_bytes\":" << overview.summary.total_bytes
         << "},"
         << "\"protocol_summary\":{"

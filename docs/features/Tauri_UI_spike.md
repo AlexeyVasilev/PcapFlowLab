@@ -225,6 +225,10 @@ Backend/API note:
   - Detected Protocol Hints
   - QUIC and TLS
   - Top Endpoints and Ports
+- overview byte cards and Protocol Summary byte columns now reuse shared C++
+  compact formatting
+- `Detected Protocol Hints` now reuses shared C++ count/byte-plus-percentage
+  formatting instead of JavaScript-side calculations
 - Tauri overview no longer duplicates these optional-section payloads
 - Protocol Path remains on its separate lazy request/cache path
 
@@ -380,7 +384,7 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing
 - stream item details are now much closer to Qt, but some protocol-specific formatting/helper paths still remain Qt-only
-- statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
+- statistics still miss some deeper drill-down/navigation behavior compared with Qt
 - Analysis still misses:
   - richer charts
   - fuller Qt analysis workspace parity
@@ -396,7 +400,6 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - Save/open index workflow polish
 - settings persistence and any broader Settings/preferences parity
 - Stream-to-packet navigation
-- Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
 - fuller Analysis parity
 - analysis rate-graph presentation polish versus Qt

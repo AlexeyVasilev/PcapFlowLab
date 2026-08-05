@@ -87,9 +87,10 @@ Follow-up: add async Smart Export progress/cancel support to the Tauri spike, li
 
 ### 3. Statistics and top-shell messaging need compactness polish
 
-Tauri already covers the read-side statistics surface, but Qt remains denser and more presentation-complete in:
+Tauri now shares the same canonical C++ formatting for Statistics overview
+bytes, Protocol Summary byte columns, and Detected Protocol Hints display
+values. Qt still remains denser and more presentation-complete in:
 
-- percentage formatting
 - conditional sections
 - source/index warning copy
 - open/apply/progress messaging
@@ -107,7 +108,7 @@ This is not just a Tauri parity problem. Static inspection still points to a sha
 1. Packet list and packet-details polish
 2. Stream-item-details presentation polish
 3. Top-shell plus source/index warning/message polish
-4. Statistics compactness and percentage-format polish
+4. Statistics drill-down and messaging polish
 5. Smart Export progress/cancel UX polish
 6. Analysis rate-graph and graph-surface polish only after the lower-workspace and messaging surfaces feel stable
 
