@@ -335,6 +335,7 @@ ApplicationWindow {
                 width: parent.width
                 httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
                 usePossibleTlsQuic: mainController.usePossibleTlsQuic
+                ignoreVlanLayersWhenGroupingFlows: mainController.ignoreVlanLayersWhenGroupingFlows
                 validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
                 showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
                 showProtocolPathColumn: mainController.showProtocolPathColumn
@@ -343,6 +344,9 @@ ApplicationWindow {
                 }
                 onUsePossibleTlsQuicChangedByUser: function(enabled) {
                     mainController.usePossibleTlsQuic = enabled
+                }
+                onIgnoreVlanLayersWhenGroupingFlowsChangedByUser: function(enabled) {
+                    mainController.ignoreVlanLayersWhenGroupingFlows = enabled
                 }
                 onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
                     mainController.validateSelectedPacketChecksums = enabled
@@ -738,6 +742,24 @@ ApplicationWindow {
                 color: "#92400e"
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.PlainText
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.flowGroupingWarningText.length > 0
+            color: "#dbeafe"
+            border.color: "#93c5fd"
+            radius: 6
+            implicitHeight: flowGroupingWarningLabel.implicitHeight + 16
+
+            Label {
+                id: flowGroupingWarningLabel
+                anchors.fill: parent
+                anchors.margins: 8
+                text: mainController.flowGroupingWarningText
+                color: "#1e3a8a"
+                wrapMode: Text.WordWrap
             }
         }
 

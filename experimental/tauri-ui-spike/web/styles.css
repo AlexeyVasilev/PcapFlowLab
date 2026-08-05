@@ -17,6 +17,9 @@
   --warning-bg: #fff3c9;
   --warning-border: #f0b44c;
   --warning-text: #8a4d00;
+  --info-bg: #dbeafe;
+  --info-border: #93c5fd;
+  --info-text: #1e3a8a;
   --bg: var(--app-bg);
   --panel: var(--panel-bg);
   --border: var(--border-color);
@@ -662,6 +665,26 @@ body.is-resizing-vertical {
 .partial-open-warning-text {
   margin: 0;
   color: var(--warning-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.info-banner {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-color: var(--info-border);
+  background: var(--info-bg);
+}
+
+.info-banner.is-visible {
+  display: flex;
+}
+
+.info-banner-text {
+  margin: 0;
+  color: var(--info-text);
   font-size: 12px;
   line-height: 1.4;
 }

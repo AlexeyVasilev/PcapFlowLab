@@ -3114,10 +3114,13 @@ bool MainController::usePossibleTlsQuic() const noexcept {
     return pending_analysis_settings_.use_possible_tls_quic;
 }
 
+bool MainController::ignoreVlanLayersWhenGroupingFlows() const noexcept {
+    return pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows;
+}
+
 bool MainController::validateSelectedPacketChecksums() const noexcept {
     return validate_selected_packet_checksums_;
 }
-
 
 bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
     return show_wireshark_filter_for_selected_flow_;
@@ -3125,6 +3128,22 @@ bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
 
 bool MainController::showProtocolPathColumn() const noexcept {
     return show_protocol_path_column_;
+}
+
+QString MainController::flowGroupingWarningText() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    if (session_.opened_from_index()) {
+        return pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows
+            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN grouping setting is not reapplied.")
+            : QString {};
+    }
+
+    return session_.flow_grouping_ignores_vlan_layers()
+        ? QStringLiteral("VLAN layers are ignored for flow grouping. Flows from different VLANs may be merged.")
+        : QString {};
 }
 
 QString MainController::selectedFlowWiresharkFilter() const {
@@ -4563,6 +4582,20 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
         emit stateChanged();
     }
     emit usePossibleTlsQuicChanged();
+}
+
+void MainController::setIgnoreVlanLayersWhenGroupingFlows(const bool enabled) {
+    if (pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows == enabled) {
+        return;
+    }
+
+    pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows = enabled;
+    session_.set_analysis_settings(pending_analysis_settings_);
+    emit ignoreVlanLayersWhenGroupingFlowsChanged();
+    if (session_.has_capture()) {
+        setStatusText(QStringLiteral("Reopen the current capture or index to apply the VLAN flow-grouping setting."), false);
+        emit stateChanged();
+    }
 }
 
 void MainController::setValidateSelectedPacketChecksums(const bool enabled) {

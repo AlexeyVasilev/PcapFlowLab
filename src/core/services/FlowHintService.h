@@ -16,6 +16,7 @@ class PacketPayloadService;
 class FlowHintService {
 public:
     explicit FlowHintService(AnalysisSettings settings = {}, bool enable_quic_initial_sni = false);
+    [[nodiscard]] const AnalysisSettings& settings() const noexcept;
 
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const;
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,

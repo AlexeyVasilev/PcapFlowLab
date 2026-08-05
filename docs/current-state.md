@@ -56,6 +56,9 @@
 - The selected-flow Analysis workspace is stable.
 - Large-capture open progress and cooperative cancellation are implemented.
 - Smart Export includes progress reporting, cooperative cancellation, and a separate per-flow output mode.
+- The shared runtime settings slice now includes `Ignore VLAN layers when grouping flows` for raw-import flow identity normalization.
+- When that mode was active at raw import, Flow Path presentation and Protocol Path Statistics omit VLAN while Packet Details and Bytes still show the selected packet's actual VLAN headers.
+- Opening from an existing index preserves whatever flow grouping was stored in that index; the current VLAN-grouping setting is not reapplied on index load.
 
 ## Known gaps
 

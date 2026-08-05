@@ -1069,6 +1069,10 @@ FlowHintService::FlowHintService(const AnalysisSettings settings, const bool ena
     , enable_quic_initial_sni_(enable_quic_initial_sni) {
 }
 
+const AnalysisSettings& FlowHintService::settings() const noexcept {
+    return settings_;
+}
+
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const {
     return detect(packet_bytes, kLinkTypeEthernet, flow_key);
 }

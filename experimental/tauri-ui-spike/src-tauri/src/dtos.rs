@@ -7,6 +7,7 @@ pub struct SourceAvailabilityDto {
     pub opened_from_index: bool,
     pub partial_open: bool,
     pub byte_backed_inspection_available: bool,
+    pub flow_grouping_ignores_vlan_layers: bool,
     pub active_source_capture_path: String,
     pub expected_source_capture_path: String,
 }
@@ -75,6 +76,7 @@ pub struct SaveIndexResultDto {
 pub struct SettingsDto {
     pub http_use_path_as_service_hint: bool,
     pub use_possible_tls_quic: bool,
+    pub ignore_vlan_layers_when_grouping_flows: bool,
     pub show_wireshark_filter_for_selected_flow: bool,
     pub validate_selected_packet_checksums: bool,
 }

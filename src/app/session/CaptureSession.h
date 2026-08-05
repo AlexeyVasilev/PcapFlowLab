@@ -168,6 +168,7 @@ public:
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& attached_source_capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
+    [[nodiscard]] bool flow_grouping_ignores_vlan_layers() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] const CapturePacketSizeStatistics& packet_size_statistics() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
@@ -470,6 +471,7 @@ private:
     CaptureState state_ {};
     AnalysisSettings analysis_settings_ {};
     bool opened_from_index_ {false};
+    bool flow_grouping_ignores_vlan_layers_ {false};
     bool has_loaded_state_ {false};
     bool partial_open_ {false};
     OpenFailureInfo partial_open_failure_ {};

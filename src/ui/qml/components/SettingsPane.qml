@@ -7,12 +7,14 @@ Item {
 
     property bool httpUsePathAsServiceHint: false
     property bool usePossibleTlsQuic: false
+    property bool ignoreVlanLayersWhenGroupingFlows: false
     property bool validateSelectedPacketChecksums: false
     property bool showWiresharkFilterForSelectedFlow: true
     property bool showProtocolPathColumn: true
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
     signal usePossibleTlsQuicChangedByUser(bool enabled)
+    signal ignoreVlanLayersWhenGroupingFlowsChangedByUser(bool enabled)
     signal validateSelectedPacketChecksumsChangedByUser(bool enabled)
     signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
     signal showProtocolPathColumnChangedByUser(bool enabled)
@@ -72,6 +74,28 @@ Item {
                 color: "#64748b"
                 font.pixelSize: 12
                 text: "Applied immediately to the current view and statistics"
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            CheckBox {
+                objectName: "ignoreVlanLayersWhenGroupingFlowsCheckBox"
+                Layout.fillWidth: true
+                text: "Ignore VLAN layers when grouping flows"
+                checked: root.ignoreVlanLayersWhenGroupingFlows
+                onToggled: root.ignoreVlanLayersWhenGroupingFlowsChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied when importing a capture. Existing indexes keep their stored flow grouping."
             }
         }
 

@@ -51,6 +51,7 @@ char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t http_use_path_as_service_hint,
     std::uint8_t use_possible_tls_quic,
+    std::uint8_t ignore_vlan_layers_when_grouping_flows,
     std::uint8_t show_wireshark_filter_for_selected_flow,
     std::uint8_t validate_selected_packet_checksums
 );

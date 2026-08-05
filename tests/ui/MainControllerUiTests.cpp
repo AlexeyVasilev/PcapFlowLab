@@ -2705,6 +2705,25 @@ int main(int argc, char* argv[]) {
                 ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 43000, 80, make_http_request_without_host_payload(), 0x18)},
         })
     );
+    const auto vlan_grouping_capture_path = write_temp_pcap(
+        "pfl_ui_vlan_grouping_settings.pcap",
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 30, 0, 1), ipv4(10, 30, 0, 2), 44000, 443),
+                {{0x8100U, 100U}})},
+            {200, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 30, 0, 2), ipv4(10, 30, 0, 1), 443, 44000),
+                {{0x8100U, 200U}})},
+        })
+    );
+    const auto vlan_grouping_index_path = std::filesystem::temp_directory_path() / "pfl_ui_vlan_grouping_settings.idx";
+    {
+        CaptureSession index_seed_session {};
+        UI_EXPECT(index_seed_session.open_capture(vlan_grouping_capture_path));
+        UI_EXPECT(index_seed_session.save_index(vlan_grouping_index_path));
+    }
 
     MainController settings_controller {};
     UI_EXPECT(!settings_controller.httpUsePathAsServiceHint());
@@ -2746,6 +2765,52 @@ int main(int argc, char* argv[]) {
         settings_pane.object->setProperty("showProtocolPathColumn", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(protocol_path_checkbox->property("checked").toBool());
+    });
+
+    run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* vlan_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreVlanLayersWhenGroupingFlowsCheckBox");
+        UI_EXPECT(vlan_grouping_checkbox != nullptr);
+        UI_EXPECT(vlan_grouping_checkbox->property("visible").toBool());
+        settings_pane.object->setProperty("ignoreVlanLayersWhenGroupingFlows", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!vlan_grouping_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("ignoreVlanLayersWhenGroupingFlows", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(vlan_grouping_checkbox->property("checked").toBool());
+    });
+
+    run_ui_section("flow_grouping_warning_text", [&]() {
+        MainController vlan_grouping_controller {};
+        UI_EXPECT(!vlan_grouping_controller.ignoreVlanLayersWhenGroupingFlows());
+        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
+        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+
+        auto* vlan_grouping_flow_model = qobject_cast<FlowListModel*>(vlan_grouping_controller.flowModel());
+        UI_REQUIRE(vlan_grouping_flow_model != nullptr);
+        UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
+
+        vlan_grouping_controller.setIgnoreVlanLayersWhenGroupingFlows(true);
+        UI_EXPECT(vlan_grouping_controller.ignoreVlanLayersWhenGroupingFlows());
+        UI_EXPECT(vlan_grouping_controller.statusText() ==
+            QStringLiteral("Reopen the current capture or index to apply the VLAN flow-grouping setting."));
+        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
+
+        UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
+        UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText() ==
+            QStringLiteral("VLAN layers are ignored for flow grouping. Flows from different VLANs may be merged."));
+        UI_EXPECT(vlan_grouping_flow_model->rowCount() == 1);
+    });
+
+    run_ui_section("flow_grouping_index_warning_text", [&]() {
+        MainController vlan_grouping_index_controller {};
+        vlan_grouping_index_controller.setIgnoreVlanLayersWhenGroupingFlows(true);
+        UI_EXPECT(open_index_and_wait(app, vlan_grouping_index_controller, vlan_grouping_index_path));
+        UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText() ==
+            QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN grouping setting is not reapplied."));
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
@@ -2993,7 +3058,7 @@ int main(int argc, char* argv[]) {
         });
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(named_object(statistics_pane.object.get(), "packetSizeDistributionMaximumCapturedPacketLengthValue")
-            ->property("text").toString() == QStringLiteral("1.5 KB (1 536 B)"));
+            ->property("text").toString() == QStringLiteral("Maximum captured packet size: 1.5 KB (1 536 B)"));
 
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramState", section_ready);

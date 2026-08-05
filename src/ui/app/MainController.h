@@ -262,9 +262,11 @@ private:
     Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
+    Q_PROPERTY(bool ignoreVlanLayersWhenGroupingFlows READ ignoreVlanLayersWhenGroupingFlows WRITE setIgnoreVlanLayersWhenGroupingFlows NOTIFY ignoreVlanLayersWhenGroupingFlowsChanged)
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
+    Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -503,9 +505,11 @@ public:
     [[nodiscard]] int statisticsMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
+    [[nodiscard]] bool ignoreVlanLayersWhenGroupingFlows() const noexcept;
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
+    [[nodiscard]] QString flowGroupingWarningText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
@@ -583,6 +587,7 @@ public:
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
     void setUsePossibleTlsQuic(bool enabled);
+    void setIgnoreVlanLayersWhenGroupingFlows(bool enabled);
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setShowProtocolPathColumn(bool enabled);
@@ -601,6 +606,7 @@ signals:
     void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
     void usePossibleTlsQuicChanged();
+    void ignoreVlanLayersWhenGroupingFlowsChanged();
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();

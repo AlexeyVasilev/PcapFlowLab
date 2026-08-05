@@ -32,6 +32,42 @@ Current repository state:
 - kind-overview and identity-tree protocol-path statistics are now collapsible in both UI frontends;
 - both the Qt UI and the Tauri spike can now apply a selected protocol-path statistics node as a runtime structured flow-list filter.
 
+## VLAN-Agnostic Flow Grouping
+
+There is now one optional import-time flow-grouping mode:
+
+- `Ignore VLAN layers when grouping flows`
+
+Default behavior remains VLAN-sensitive:
+
+- `EthernetII -> VLAN(vid=100) -> IPv4 -> TCP`
+- `EthernetII -> VLAN(vid=200) -> IPv4 -> TCP`
+
+remain different identity paths.
+
+When the setting is enabled:
+
+- every `ProtocolLayerKind::vlan` layer is removed from the protocol path used for flow identity;
+- single-tag VLAN, QinQ, VID `0`, and tagged-versus-untagged asymmetry all normalize the same way;
+- non-VLAN identity layers and namespace identifiers remain significant, including MPLS labels, VXLAN/Geneve VNI, GTP-U TEID, GRE key, AH SPI, and ESP SPI;
+- Packet Summary, Packet Details, and Packet Bytes still show the actual VLAN layers from the selected packet;
+- the Flow table Path column and Protocol Path Statistics reflect the normalized flow-identity path, so they omit VLAN when this mode is active.
+
+Example with the mode enabled:
+
+```text
+EthernetII -> VLAN(100) -> IPv4 -> TCP
+EthernetII -> VLAN(200) -> IPv4 -> TCP
+```
+
+both normalize to:
+
+```text
+EthernetII -> IPv4 -> TCP
+```
+
+This can intentionally merge traffic from different VLANs into one user-visible flow when all remaining identity components match.
+
 ## Flow List Presentation
 
 The current UI may expose protocol-path-aware flow identity as a compact flow-list column, for example:
@@ -94,6 +130,7 @@ The current UI exposes three runtime view modes:
    - exact `FlowKeyV2` explanation mode;
    - presented as a collapsible tree;
    - current identifier-bearing layers such as `VXLAN(vni=...)`, `Geneve(vni=...)`, `GTP-U(teid=...)`, `VLAN(vid=...)`, and `MPLS(label=...)` remain distinct tree nodes.
+   - when VLAN-agnostic flow grouping was active at raw import, VLAN is already absent from the stored flow identity, so the identity tree reflects that normalized VLAN-free path.
 
 3. `Terminal paths`
    - flat list of complete terminal protocol paths only;

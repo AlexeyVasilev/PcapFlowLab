@@ -94,6 +94,12 @@
           <button id="attachSourceButton" type="button" class="secondary-button">Locate Source...</button>
         </section>
 
+        <section id="flowGroupingWarningBanner" class="panel info-banner">
+          <div class="partial-open-warning-copy">
+            <p id="flowGroupingWarningText" class="info-banner-text"></p>
+          </div>
+        </section>
+
         <nav class="tabbar" aria-label="Main tabs">
           <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
           <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
@@ -773,6 +779,13 @@
               <span>Use possible TLS/QUIC</span>
             </label>
             <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsIgnoreVlanLayersWhenGroupingFlows" type="checkbox" />
+              <span>Ignore VLAN layers when grouping flows</span>
+            </label>
+            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
           </section>
           <section class="settings-section">
             <label class="settings-checkbox-row">

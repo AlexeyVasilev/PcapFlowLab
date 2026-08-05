@@ -51,6 +51,25 @@ This contract must remain aligned with the current backend/session architecture:
 - no session-wide stream reconstruction for all flows at open time;
 - no unbounded packet or payload preview loading.
 
+## Flow Grouping Setting Contract
+
+The shared settings surface now includes one import-time grouping option:
+
+- `Ignore VLAN layers when grouping flows`
+
+Presentation semantics:
+
+- the setting affects raw-capture flow grouping only;
+- it does not rewrite the currently open session in place;
+- changing it while a capture or index is already open requires reopening that source to apply the new grouping;
+- when the active raw-imported session was actually opened with the mode enabled, Qt and Tauri should both show a persistent warning that VLANs are being ignored for grouping and that flows from different VLANs may merge;
+- when the active session was loaded from an index and the current setting is enabled, Qt and Tauri should both show the explicit limitation warning that stored index grouping is preserved and the current VLAN-grouping setting is not reapplied.
+
+Packet-versus-flow presentation boundary:
+
+- Packet Details and Bytes still show the observed VLAN headers for the selected packet;
+- flow-list Path presentation and Protocol Path Statistics follow the normalized flow identity, so VLAN may be absent there when the mode was active at import time.
+
 ## Terminology And Identifier Semantics
 
 The contract should use consistent identifier vocabulary across Qt, Tauri, and future CLI surfaces.

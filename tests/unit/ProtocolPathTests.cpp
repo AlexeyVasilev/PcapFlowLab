@@ -15,6 +15,7 @@
 #include "app/session/ProtocolPathPresentation.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/CaptureImportApplication.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
@@ -117,6 +118,14 @@ CaptureImportOptions fast_import_options() {
     return options;
 }
 
+CaptureImportOptions vlan_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_vlan_layers_when_grouping_flows = true,
+        },
+    };
+}
+
 ProtocolPathId flow_protocol_path_id(const FlowRow& row) {
     if (std::holds_alternative<ConnectionKeyV4>(row.key)) {
         return std::get<ConnectionKeyV4>(row.key).protocol_path_id;
@@ -138,7 +147,11 @@ std::string protocol_path_text_or_invalid(const CaptureState& state, const Proto
     return format_protocol_path(*path);
 }
 
-std::string normalized_protocol_path_text_for_flow_identity(const CaptureState& state, const ProtocolPathId id) {
+std::string normalized_protocol_path_text_for_flow_identity(
+    const CaptureState& state,
+    const ProtocolPathId id,
+    const AnalysisSettings& settings = {}
+) {
     if (id == kInvalidProtocolPathId) {
         return "invalid";
     }
@@ -148,19 +161,38 @@ std::string normalized_protocol_path_text_for_flow_identity(const CaptureState& 
         return "missing";
     }
 
-    std::vector<LayerKey> normalized_layers {};
-    normalized_layers.reserve(path->size());
-    for (const auto& layer : path->layers()) {
-        const bool omit_priority_tag =
-            layer.kind == ProtocolLayerKind::vlan &&
-            layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid &&
-            layer.identifier.value == 0U;
-        if (!omit_priority_tag) {
-            normalized_layers.push_back(layer);
-        }
+    const auto normalized = normalize_protocol_path_for_flow_identity(path->view(), settings);
+    if (!normalized.has_value()) {
+        return format_protocol_path(*path);
     }
 
-    return format_protocol_path(ProtocolPath {std::move(normalized_layers)});
+    return format_protocol_path(*normalized);
+}
+
+std::filesystem::path write_vlan_asymmetric_bidirectional_capture(
+    const std::string& name,
+    const std::vector<std::pair<std::uint16_t, std::uint16_t>>& forward_tags,
+    const std::vector<std::pair<std::uint16_t, std::uint16_t>>& reverse_tags
+) {
+    return write_temp_pcap(
+        name,
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 0, 1),
+                    ipv4(10, 0, 0, 2),
+                    50000,
+                    443),
+                forward_tags)},
+            {200, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 0, 2),
+                    ipv4(10, 0, 0, 1),
+                    443,
+                    50000),
+                reverse_tags)},
+        })
+    );
 }
 
 const FrontendProtocolPathPresentationDto* find_frontend_protocol_path_presentation(
@@ -1821,6 +1853,247 @@ void expect_same_exact_path_reverse_tuple_stays_bidirectional() {
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
 }
 
+void expect_vlan_flow_identity_normalization_helper_behaviors() {
+    const ProtocolPath single_vlan_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath qinq_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::vlan(200U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath vid_zero_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(0U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath non_vlan_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath namespaced_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::mpls(1100U),
+        LayerKey::vxlan(200U),
+        LayerKey::geneve(300U),
+        LayerKey::gtpu(0x01020304U),
+        LayerKey::gre(0x11111111U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+
+    const AnalysisSettings vlan_agnostic_settings {
+        .ignore_vlan_layers_when_grouping_flows = true,
+    };
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(single_vlan_path.view(), {}).has_value());
+
+    const auto normalized_single = normalize_protocol_path_for_flow_identity(single_vlan_path.view(), vlan_agnostic_settings);
+    PFL_REQUIRE(normalized_single.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_single) == "EthernetII -> IPv4 -> TCP");
+
+    const auto normalized_qinq = normalize_protocol_path_for_flow_identity(qinq_path.view(), vlan_agnostic_settings);
+    PFL_REQUIRE(normalized_qinq.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_qinq) == "EthernetII -> IPv4 -> UDP");
+
+    const auto normalized_vid_zero = normalize_protocol_path_for_flow_identity(vid_zero_path.view(), vlan_agnostic_settings);
+    PFL_REQUIRE(normalized_vid_zero.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_vid_zero) == "EthernetII -> IPv4 -> TCP");
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(non_vlan_path.view(), vlan_agnostic_settings).has_value());
+
+    const auto normalized_namespaced = normalize_protocol_path_for_flow_identity(namespaced_path.view(), vlan_agnostic_settings);
+    PFL_REQUIRE(normalized_namespaced.has_value());
+    PFL_EXPECT(
+        format_protocol_path(*normalized_namespaced) ==
+        "EthernetII -> MPLS(label=1100) -> VXLAN(vni=200) -> Geneve(vni=300) -> GTP-U(teid=0x01020304) -> GRE(key=0x11111111) -> IPv4 -> UDP");
+    PFL_EXPECT(std::none_of(
+        normalized_namespaced->layers().begin(),
+        normalized_namespaced->layers().end(),
+        [](const LayerKey& layer) {
+            return layer.kind == ProtocolLayerKind::vlan ||
+                layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid;
+        }));
+    PFL_EXPECT(normalized_namespaced->layers().front() == LayerKey::ethernet_ii());
+    PFL_EXPECT(normalized_namespaced->layers().back() == LayerKey::udp());
+}
+
+void expect_ignore_vlan_layers_merges_bidirectional_vlan_asymmetry() {
+    const auto capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_asymmetry_bidirectional.pcap",
+        {{0x8100U, 100U}},
+        {{0x8100U, 200U}}
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    const auto disabled_rows = disabled_session.list_flows();
+    PFL_EXPECT(disabled_rows.size() == 2U);
+    PFL_EXPECT(disabled_session.summary().packet_count == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_agnostic_import_options()));
+    const auto enabled_rows = enabled_session.list_flows();
+    PFL_REQUIRE(enabled_rows.size() == 1U);
+    PFL_EXPECT(enabled_session.summary().packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].endpoint_a == "10.0.0.1:50000");
+    PFL_EXPECT(enabled_rows[0].endpoint_b == "10.0.0.2:443");
+
+    const auto& state = enabled_session.state();
+    const auto connections = state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_b.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packets.front().packet_index == 0U);
+    PFL_EXPECT(connections.front()->flow_b.packets.front().packet_index == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(state, enabled_rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto summary = enabled_session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+    PFL_EXPECT(std::none_of(summary.rows.begin(), summary.rows.end(), [](const auto& row) {
+        return row.path_text.find("VLAN(") != std::string::npos;
+    }));
+
+    const auto details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+    PFL_REQUIRE(details.has_value());
+    PFL_EXPECT(details->has_vlan);
+    PFL_REQUIRE(details->vlan_tags.size() == 1U);
+    PFL_EXPECT(details->vlan_tags[0].tci == 100U);
+}
+
+void expect_ignore_vlan_layers_merges_tagged_and_untagged_paths() {
+    const auto capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_tagged_untagged_bidirectional.pcap",
+        {{0x8100U, 300U}},
+        {}
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+}
+
+void expect_ignore_vlan_layers_merges_qinq_and_untagged_paths() {
+    const auto capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_qinq_untagged_bidirectional.pcap",
+        {{0x88A8U, 410U}, {0x8100U, 420U}},
+        {}
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto details = enabled_session.read_packet_details(
+        enabled_session.state().ipv4_connections.list().front()->flow_a.packets.front());
+    PFL_REQUIRE(details.has_value());
+    PFL_REQUIRE(details->vlan_tags.size() == 2U);
+    PFL_EXPECT(details->vlan_tags[0].tci == 410U);
+    PFL_EXPECT(details->vlan_tags[1].tci == 420U);
+}
+
+void expect_ignore_vlan_layers_intentionally_merges_same_direction_tuples() {
+    const auto capture_path = write_temp_pcap(
+        "pfl_vlan_same_direction_merge.pcap",
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 1, 1),
+                    ipv4(10, 0, 1, 2),
+                    51000,
+                    443),
+                {{0x8100U, 100U}})},
+            {200, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 1, 1),
+                    ipv4(10, 0, 1, 2),
+                    51000,
+                    443),
+                {{0x8100U, 200U}})},
+        })
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(rows[0].packet_count == 2U);
+}
+
+void expect_ignore_vlan_layers_preserves_other_namespace_identity() {
+    CaptureSession mpls_session {};
+    PFL_REQUIRE(mpls_session.open_capture(
+        fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap"),
+        vlan_agnostic_import_options()));
+    PFL_EXPECT(mpls_session.list_flows().size() == 2U);
+
+    CaptureSession vxlan_session {};
+    PFL_REQUIRE(vxlan_session.open_capture(
+        fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"),
+        vlan_agnostic_import_options()));
+    PFL_EXPECT(vxlan_session.list_flows().size() == 2U);
+}
+
+void expect_vlan_agnostic_index_roundtrip_keeps_stored_grouping_without_reapply() {
+    const auto merge_capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_index_merge_roundtrip.pcap",
+        {{0x8100U, 100U}},
+        {{0x8100U, 200U}}
+    );
+    const auto split_capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_index_split_roundtrip.pcap",
+        {{0x8100U, 101U}},
+        {{0x8100U, 201U}}
+    );
+    const auto merged_index_path = std::filesystem::temp_directory_path() / "pfl_vlan_grouping_merged.idx";
+    const auto split_index_path = std::filesystem::temp_directory_path() / "pfl_vlan_grouping_split.idx";
+
+    CaptureSession imported_vlan_agnostic {};
+    PFL_REQUIRE(imported_vlan_agnostic.open_capture(merge_capture_path, vlan_agnostic_import_options()));
+    PFL_EXPECT(imported_vlan_agnostic.list_flows().size() == 1U);
+    PFL_EXPECT(imported_vlan_agnostic.save_index(merged_index_path));
+
+    CaptureSession loaded_vlan_agnostic {};
+    PFL_REQUIRE(loaded_vlan_agnostic.load_index(merged_index_path));
+    PFL_EXPECT(kCaptureIndexVersion == 13U);
+    PFL_EXPECT(loaded_vlan_agnostic.list_flows().size() == 1U);
+    PFL_EXPECT(!loaded_vlan_agnostic.flow_grouping_ignores_vlan_layers());
+
+    CaptureSession imported_vlan_sensitive {};
+    PFL_REQUIRE(imported_vlan_sensitive.open_capture(split_capture_path));
+    PFL_EXPECT(imported_vlan_sensitive.list_flows().size() == 2U);
+    PFL_EXPECT(imported_vlan_sensitive.save_index(split_index_path));
+
+    CaptureSession loaded_vlan_sensitive {};
+    PFL_REQUIRE(loaded_vlan_sensitive.load_index(split_index_path));
+    PFL_EXPECT(loaded_vlan_sensitive.list_flows().size() == 2U);
+    PFL_EXPECT(!loaded_vlan_sensitive.flow_grouping_ignores_vlan_layers());
+}
+
 void expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths() {
     struct FixtureExpectation {
         std::filesystem::path relative_path {};
@@ -1959,6 +2232,13 @@ void run_protocol_path_tests() {
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
     expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
     expect_same_exact_path_reverse_tuple_stays_bidirectional();
+    expect_vlan_flow_identity_normalization_helper_behaviors();
+    expect_ignore_vlan_layers_merges_bidirectional_vlan_asymmetry();
+    expect_ignore_vlan_layers_merges_tagged_and_untagged_paths();
+    expect_ignore_vlan_layers_merges_qinq_and_untagged_paths();
+    expect_ignore_vlan_layers_intentionally_merges_same_direction_tuples();
+    expect_ignore_vlan_layers_preserves_other_namespace_identity();
+    expect_vlan_agnostic_index_roundtrip_keeps_stored_grouping_without_reapply();
     expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths();
     expect_terminal_control_protocols_do_not_appear_in_protocol_paths();
     expect_common_case_packets_resolve_to_owning_flow_protocol_path();

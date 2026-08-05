@@ -22,18 +22,31 @@ namespace {
     return state.protocol_path_registry.intern(path);
 }
 
-[[nodiscard]] bool omit_protocol_layer_from_flow_identity(const LayerKey& layer) noexcept {
-    return layer.kind == ProtocolLayerKind::vlan &&
-        layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid &&
+[[nodiscard]] bool omit_protocol_layer_from_flow_identity(
+    const LayerKey& layer,
+    const AnalysisSettings& settings
+) noexcept {
+    if (layer.kind != ProtocolLayerKind::vlan) {
+        return false;
+    }
+
+    if (settings.ignore_vlan_layers_when_grouping_flows) {
+        return true;
+    }
+
+    return layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid &&
         layer.identifier.value == 0U;
 }
 
-[[nodiscard]] std::optional<ProtocolPath> normalize_protocol_path_for_flow_identity(const ProtocolPathView path) {
+[[nodiscard]] std::optional<ProtocolPath> normalize_protocol_path_for_flow_identity_impl(
+    const ProtocolPathView path,
+    const AnalysisSettings& settings
+) {
     std::vector<LayerKey> normalized_layers {};
     normalized_layers.reserve(path.size());
     bool changed = false;
     for (const auto& layer : path) {
-        if (omit_protocol_layer_from_flow_identity(layer)) {
+        if (omit_protocol_layer_from_flow_identity(layer, settings)) {
             changed = true;
             continue;
         }
@@ -93,16 +106,24 @@ template <typename Connection, typename FlowKey>
 
 }  // namespace
 
+std::optional<ProtocolPath> normalize_protocol_path_for_flow_identity(
+    const ProtocolPathView path,
+    const AnalysisSettings& settings
+) {
+    return normalize_protocol_path_for_flow_identity_impl(path, settings);
+}
+
 ProtocolPathId intern_protocol_path_id_for_flow_identity(
     CaptureState& state,
-    const ProtocolPathBuilder& decoded_protocol_path
+    const ProtocolPathBuilder& decoded_protocol_path,
+    const AnalysisSettings& settings
 ) {
     if (decoded_protocol_path.empty() || decoded_protocol_path.overflowed()) {
         return kInvalidProtocolPathId;
     }
 
     const auto decoded_protocol_path_view = decoded_protocol_path.view();
-    const auto normalized_protocol_path = normalize_protocol_path_for_flow_identity(decoded_protocol_path_view);
+    const auto normalized_protocol_path = normalize_protocol_path_for_flow_identity_impl(decoded_protocol_path_view, settings);
     if (!normalized_protocol_path.has_value()) {
         return intern_protocol_path_id(state, decoded_protocol_path_view);
     }
@@ -541,7 +562,7 @@ bool apply_decoded_packet_import(
         packet_ref.is_ip_fragmented = decoded.ipv4->packet_ref.is_ip_fragmented;
         decoded.ipv4->packet_ref = packet_ref;
         decoded.ipv4->flow_key.protocol_path_id =
-            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
+            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv4);
         return apply_decoded_flow_import(
             packet,
@@ -560,7 +581,7 @@ bool apply_decoded_packet_import(
         packet_ref.is_ip_fragmented = decoded.ipv6->packet_ref.is_ip_fragmented;
         decoded.ipv6->packet_ref = packet_ref;
         decoded.ipv6->flow_key.protocol_path_id =
-            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
+            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv6);
         return apply_decoded_flow_import(
             packet,

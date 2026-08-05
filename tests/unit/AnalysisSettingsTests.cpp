@@ -127,6 +127,21 @@ std::filesystem::path write_single_quic_capture(const std::string& name) {
     );
 }
 
+std::filesystem::path write_single_vlan_capture(const std::string& name, const std::uint16_t vlan_tci) {
+    return write_temp_pcap(
+        name,
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(192, 168, 55, 10),
+                    ipv4(93, 184, 216, 39),
+                    51520,
+                    443),
+                {{0x8100U, vlan_tci}})},
+        })
+    );
+}
+
 }  // namespace
 
 void run_analysis_settings_tests() {
@@ -224,6 +239,45 @@ void run_analysis_settings_tests() {
         const auto rows = session.list_flows();
         PFL_EXPECT(rows.size() == 1);
         PFL_EXPECT(rows[0].protocol_hint == "quic");
+    }
+
+    {
+        PFL_EXPECT(!AnalysisSettings {}.ignore_vlan_layers_when_grouping_flows);
+
+        CaptureSession default_session {};
+        const auto capture_path = write_single_vlan_capture("pfl_vlan_grouping_setting_default.pcap", 123U);
+        PFL_EXPECT(default_session.open_capture(capture_path));
+        PFL_EXPECT(!default_session.flow_grouping_ignores_vlan_layers());
+
+        CaptureSession enabled_session {};
+        PFL_EXPECT(enabled_session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_vlan_layers_when_grouping_flows = true},
+        }));
+        PFL_EXPECT(enabled_session.flow_grouping_ignores_vlan_layers());
+
+        const auto connections = enabled_session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_vlan);
+        PFL_REQUIRE(details->vlan_tags.size() == 1U);
+        PFL_EXPECT(details->vlan_tags[0].tci == 123U);
+    }
+
+    {
+        const auto capture_path = write_single_vlan_capture("pfl_vlan_grouping_setting_index_roundtrip.pcap", 124U);
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_vlan_grouping_setting_roundtrip.idx";
+
+        CaptureSession imported_session {};
+        PFL_EXPECT(imported_session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_vlan_layers_when_grouping_flows = true},
+        }));
+        PFL_EXPECT(imported_session.flow_grouping_ignores_vlan_layers());
+        PFL_EXPECT(imported_session.save_index(index_path));
+
+        CaptureSession loaded_session {};
+        PFL_EXPECT(loaded_session.load_index(index_path));
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_layers());
     }
 }
 
