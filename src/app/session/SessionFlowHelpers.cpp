@@ -318,6 +318,25 @@ std::size_t flow_packet_count_histogram_bucket_index(const std::uint64_t packet_
 
 }  // namespace
 
+std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket) {
+    if (!bucket.upper_bound_inclusive.has_value()) {
+        return std::to_string(bucket.lower_bound_inclusive) + '+';
+    }
+    if (bucket.lower_bound_inclusive == *bucket.upper_bound_inclusive) {
+        return std::to_string(bucket.lower_bound_inclusive);
+    }
+    return std::to_string(bucket.lower_bound_inclusive) + '-' + std::to_string(*bucket.upper_bound_inclusive);
+}
+
+std::string format_statistics_size_value(const std::uint64_t value) {
+    const auto compact = format_byte_value(value);
+    if (value == 0U || value < 1024U) {
+        return compact;
+    }
+
+    return compact + " (" + format_grouped_integer(value) + " B)";
+}
+
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
 }

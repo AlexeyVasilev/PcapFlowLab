@@ -70,7 +70,8 @@ Implemented slice:
   - transport summary
   - IP family summary
   - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
-  - five optional collapsible sections, initially closed for each capture:
+  - six optional collapsible sections, initially closed for each capture:
+    - Packet Size Distribution
     - Flows by Packet Count
     - Protocol Path Tree
     - Detected Protocol Hints
@@ -172,9 +173,16 @@ Implemented slice:
 - Selecting a stream item does not yet navigate to packet details or source packets.
 - Selected-flow packet and stream responsiveness on very large flows is still bounded, but not yet optimized deeply in the shared backend/session path.
 - The Statistics tab keeps overview cards plus transport/family summaries always visible.
-- The five optional Statistics sections start closed for each capture and load on first eligible expansion.
+- The six optional Statistics sections start closed for each capture and load on first eligible expansion.
 - Optional Statistics results are retained for the current capture, reused across collapse/reopen and tab return, and reset on capture replacement.
 - Tauri now requests optional Statistics content through dedicated shared-backend commands instead of eager overview duplication.
+- `Packet Size Distribution` is a separate capture-wide contract from the selected-flow Analysis packet-size histogram:
+  - it uses captured packet length
+  - it includes recognized, unrecognized, and decode-malformed imported packets
+  - it excludes unreadable truncated tail bytes
+  - import accumulates it once and index load reconstructs it from persisted `PacketRef::captured_length`
+  - expansion only requests and renders the retained DTO
+  - unsupported-interface PCAPNG EPBs skipped before packet surfacing are not represented
 - `Flows by Packet Count` keeps the existing packet-count buckets but now adds
   `Flows` / `Original bytes` display modes over the same cached histogram
   result.

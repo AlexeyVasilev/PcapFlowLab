@@ -47,6 +47,7 @@ public:
         const FrontendSmartExportOptions& options
     ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
+    [[nodiscard]] FrontendCapturePacketSizeStatisticsDto get_capture_packet_size_statistics() const;
     [[nodiscard]] FrontendFlowPacketCountHistogramDto get_flow_packet_count_histogram() const;
     [[nodiscard]] FrontendProtocolHintStatisticsDto get_protocol_hint_statistics() const;
     [[nodiscard]] FrontendQuicTlsStatisticsDto get_quic_tls_statistics() const;

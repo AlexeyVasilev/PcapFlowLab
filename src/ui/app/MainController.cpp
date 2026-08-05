@@ -3,6 +3,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "core/decode/PacketDecodeSupport.h"
@@ -235,6 +236,32 @@ QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary&
 }
 
 QString format_size_value(const std::uint64_t value);
+
+QVariantList build_packet_size_distribution_rows(const CapturePacketSizeStatistics& statistics) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(statistics.buckets.size()));
+
+    for (const auto& bucket : statistics.buckets) {
+        QVariantMap row {};
+        row.insert(
+            QStringLiteral("bucketId"),
+            QString::fromUtf8(bucket.stable_id.data(), static_cast<qsizetype>(bucket.stable_id.size()))
+        );
+        row.insert(QStringLiteral("label"), QString::fromStdString(session_detail::capture_packet_size_bucket_label(bucket)));
+        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
+            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
+            : QVariant {});
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(bucket.packet_count));
+        row.insert(QStringLiteral("normalizedFraction"),
+            statistics.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
+                : 0.0);
+        rows.push_back(row);
+    }
+
+    return rows;
+}
 
 QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& histogram) {
     QVariantList rows {};
@@ -2756,6 +2783,42 @@ int MainController::statisticsSectionsResetToken() const noexcept {
     return statistics_sections_reset_token_;
 }
 
+int MainController::packetSizeDistributionState() const noexcept {
+    return static_cast<int>(packet_size_distribution_state_);
+}
+
+QString MainController::packetSizeDistributionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::packet_size_distribution);
+}
+
+QString MainController::packetSizeDistributionSummaryText() const {
+    return packet_size_distribution_state_ == StatisticsSectionRequestState::ready
+        ? QStringLiteral("%1 packets").arg(packet_size_statistics_.total_packet_count)
+        : QString {};
+}
+
+qulonglong MainController::packetSizeDistributionTotalPacketCount() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.total_packet_count);
+}
+
+qulonglong MainController::packetSizeDistributionMaximumBucketPacketCount() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.maximum_bucket_packet_count);
+}
+
+qulonglong MainController::packetSizeDistributionMaximumCapturedPacketLength() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.maximum_captured_packet_length);
+}
+
+QString MainController::packetSizeDistributionMaximumCapturedPacketLengthText() const {
+    return QString::fromStdString(
+        session_detail::format_statistics_size_value(packet_size_statistics_.maximum_captured_packet_length)
+    );
+}
+
+QVariantList MainController::packetSizeDistributionRows() const {
+    return packet_size_distribution_rows_;
+}
+
 int MainController::flowPacketHistogramState() const noexcept {
     return static_cast<int>(flow_packet_histogram_state_);
 }
@@ -4090,6 +4153,10 @@ void MainController::setStatisticsSectionState(
     QString errorText
 ) {
     switch (section) {
+    case StatisticsOptionalSection::packet_size_distribution:
+        packet_size_distribution_state_ = state;
+        packet_size_distribution_error_text_ = std::move(errorText);
+        break;
     case StatisticsOptionalSection::flow_packet_histogram:
         flow_packet_histogram_state_ = state;
         flow_packet_histogram_error_text_ = std::move(errorText);
@@ -4118,6 +4185,10 @@ QString MainController::statisticsSectionStatusText(const StatisticsOptionalSect
     QString error_text {};
 
     switch (section) {
+    case StatisticsOptionalSection::packet_size_distribution:
+        state = packet_size_distribution_state_;
+        error_text = packet_size_distribution_error_text_;
+        break;
     case StatisticsOptionalSection::flow_packet_histogram:
         state = flow_packet_histogram_state_;
         error_text = flow_packet_histogram_error_text_;
@@ -4142,6 +4213,9 @@ QString MainController::statisticsSectionStatusText(const StatisticsOptionalSect
 
     switch (state) {
     case StatisticsSectionRequestState::loading:
+        if (section == StatisticsOptionalSection::packet_size_distribution) {
+            return QStringLiteral("Loading packet-size distribution...");
+        }
         return QStringLiteral("Calculating...");
     case StatisticsSectionRequestState::unavailable:
         return QStringLiteral("Statistics are unavailable for this capture.");
@@ -4156,12 +4230,15 @@ QString MainController::statisticsSectionStatusText(const StatisticsOptionalSect
 }
 
 void MainController::resetStatisticsSectionState(const bool emitResetToken) {
+    packet_size_distribution_expanded_ = false;
     flow_packet_histogram_expanded_ = false;
     protocol_path_section_expanded_ = false;
     protocol_hints_section_expanded_ = false;
     quic_tls_section_expanded_ = false;
     top_endpoints_ports_section_expanded_ = false;
 
+    packet_size_statistics_ = {};
+    packet_size_distribution_rows_.clear();
     flow_packet_count_histogram_ = {};
     flow_packet_histogram_rows_.clear();
     protocol_hint_distribution_.clear();
@@ -4174,6 +4251,7 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
     top_endpoints_model_.clear();
     top_ports_model_.clear();
 
+    setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::not_requested);
@@ -4184,6 +4262,30 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
         ++statistics_sections_reset_token_;
         emit statisticsSectionsResetTokenChanged();
     }
+}
+
+void MainController::ensurePacketSizeDistributionLoaded() {
+    if (!packet_size_distribution_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (packet_size_distribution_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    packet_size_statistics_ = session_.packet_size_statistics();
+    packet_size_distribution_rows_ = build_packet_size_distribution_rows(packet_size_statistics_);
+    setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::ready);
+    emit stateChanged();
 }
 
 void MainController::ensureFlowPacketHistogramLoaded() {
@@ -4314,6 +4416,7 @@ void MainController::ensureTopEndpointsAndPortsSectionLoaded() {
 }
 
 void MainController::maybeLoadExpandedStatisticsSections() {
+    ensurePacketSizeDistributionLoaded();
     ensureFlowPacketHistogramLoaded();
     ensureProtocolPathSectionLoaded();
     ensureProtocolHintsLoaded();
@@ -4324,6 +4427,9 @@ void MainController::maybeLoadExpandedStatisticsSections() {
 void MainController::setStatisticsSectionExpanded(const int section, const bool expanded) {
     const auto normalized_section = static_cast<StatisticsOptionalSection>(section);
     switch (normalized_section) {
+    case StatisticsOptionalSection::packet_size_distribution:
+        packet_size_distribution_expanded_ = expanded;
+        break;
     case StatisticsOptionalSection::flow_packet_histogram:
         flow_packet_histogram_expanded_ = expanded;
         break;

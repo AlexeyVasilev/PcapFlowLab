@@ -21,6 +21,7 @@
   const tauriEagerFlowLoadLimit = 250000;
   const topEndpointPortStatisticsLimit = 5;
   const statisticsSectionKeys = Object.freeze({
+    packetSizeDistribution: "packetSizeDistribution",
     flowPacketHistogram: "flowPacketHistogram",
     protocolPath: "protocolPath",
     protocolHints: "protocolHints",
@@ -45,6 +46,7 @@
 
   function createStatisticsSectionsState() {
     return {
+      [statisticsSectionKeys.packetSizeDistribution]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.flowPacketHistogram]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolPath]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolHints]: createStatisticsSectionEntry(),
@@ -158,6 +160,7 @@
     analysisFlowVirtualWindowEnd: 0,
     analysisFlowVirtualizationActive: false,
     statisticsSections: createStatisticsSectionsState(),
+    capturePacketSizeStatistics: null,
     flowPacketCountHistogram: null,
     flowPacketHistogramDisplayMode: "flows",
     protocolHintStatistics: null,
@@ -390,6 +393,11 @@
     familyStatsBody: document.getElementById("familyStatsBody"),
     unrecognizedStatsSection: document.getElementById("unrecognizedStatsSection"),
     unrecognizedStatsBody: document.getElementById("unrecognizedStatsBody"),
+    packetSizeDistributionDetails: document.getElementById("packetSizeDistributionDetails"),
+    packetSizeDistributionSummaryValue: document.getElementById("packetSizeDistributionSummaryValue"),
+    packetSizeDistributionStateText: document.getElementById("packetSizeDistributionStateText"),
+    packetSizeDistributionMaximumValue: document.getElementById("packetSizeDistributionMaximumValue"),
+    packetSizeDistributionRows: document.getElementById("packetSizeDistributionRows"),
     flowPacketHistogramDetails: document.getElementById("flowPacketHistogramDetails"),
     flowPacketHistogramSummaryValue: document.getElementById("flowPacketHistogramSummaryValue"),
     flowPacketHistogramStateText: document.getElementById("flowPacketHistogramStateText"),
@@ -460,6 +468,7 @@
 
   function resetOptionalStatisticsSections() {
     state.statisticsSections = createStatisticsSectionsState();
+    state.capturePacketSizeStatistics = null;
     state.flowPacketCountHistogram = null;
     state.flowPacketHistogramDisplayMode = "flows";
     state.protocolHintStatistics = null;
@@ -476,6 +485,7 @@
 
   function synchronizeStatisticsDisclosureState() {
     const detailsBindings = [
+      [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
       [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
       [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
       [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
@@ -2022,6 +2032,58 @@
     }
   }
 
+  async function ensureCapturePacketSizeStatisticsLoaded() {
+    const sectionKey = statisticsSectionKeys.packetSizeDistribution;
+    const section = statisticsSectionEntry(sectionKey);
+    if (state.openState !== "opened" || !state.overview) {
+      return null;
+    }
+
+    if (state.capturePacketSizeStatistics) {
+      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.ready);
+      return state.capturePacketSizeStatistics;
+    }
+
+    if (section?.requestState === statisticsSectionRequestStates.unavailable || section?.requestState === statisticsSectionRequestStates.error) {
+      return null;
+    }
+
+    if (section?.requestState === statisticsSectionRequestStates.loading) {
+      return null;
+    }
+
+    const captureGeneration = currentCaptureGeneration();
+    setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.loading);
+    if (state.activeTab === "statistics") {
+      renderCapturePacketSizeStatisticsSection();
+    }
+
+    try {
+      const statistics = await invoke("get_capture_packet_size_statistics");
+      if (captureGeneration !== currentCaptureGeneration() || state.openState !== "opened") {
+        return null;
+      }
+
+      state.capturePacketSizeStatistics = statistics || null;
+      setStatisticsSectionRequestState(
+        sectionKey,
+        statistics?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
+      );
+      return state.capturePacketSizeStatistics;
+    } catch (error) {
+      if (captureGeneration !== currentCaptureGeneration() || state.openState !== "opened") {
+        return null;
+      }
+
+      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.error, `Failed to load packet-size statistics: ${String(error)}`);
+      return null;
+    } finally {
+      if (captureGeneration === currentCaptureGeneration() && state.activeTab === "statistics") {
+        renderCapturePacketSizeStatisticsSection();
+      }
+    }
+  }
+
   async function ensureProtocolHintStatisticsLoaded() {
     const sectionKey = statisticsSectionKeys.protocolHints;
     const section = statisticsSectionEntry(sectionKey);
@@ -2179,6 +2241,9 @@
   }
 
   function requestExpandedStatisticsSections() {
+    if (statisticsSectionEligible(statisticsSectionKeys.packetSizeDistribution)) {
+      void ensureCapturePacketSizeStatisticsLoaded();
+    }
     if (statisticsSectionEligible(statisticsSectionKeys.flowPacketHistogram)) {
       void ensureFlowPacketCountHistogramLoaded();
     }
@@ -3026,6 +3091,10 @@
   }
 
   function clearStatisticsDom() {
+    elements.packetSizeDistributionStateText && (elements.packetSizeDistributionStateText.textContent = "");
+    elements.packetSizeDistributionRows && (elements.packetSizeDistributionRows.innerHTML = "");
+    elements.packetSizeDistributionSummaryValue && (elements.packetSizeDistributionSummaryValue.textContent = "");
+    elements.packetSizeDistributionMaximumValue && (elements.packetSizeDistributionMaximumValue.textContent = "");
     elements.flowPacketHistogramStateText && (elements.flowPacketHistogramStateText.textContent = "");
     elements.flowPacketHistogramRows && (elements.flowPacketHistogramRows.innerHTML = "");
     elements.flowPacketHistogramSummaryValue && (elements.flowPacketHistogramSummaryValue.textContent = "");
@@ -3063,6 +3132,70 @@
 
     state.flowPacketHistogramDisplayMode = normalizedMode;
     renderFlowPacketHistogramSection();
+  }
+
+  function renderCapturePacketSizeStatisticsSection() {
+    const section = statisticsSectionEntry(statisticsSectionKeys.packetSizeDistribution);
+    const statistics = state.capturePacketSizeStatistics;
+
+    if (elements.packetSizeDistributionSummaryValue) {
+      elements.packetSizeDistributionSummaryValue.textContent = statistics?.has_capture
+        ? `${formatNumber(statistics.total_packet_count)} packets`
+        : "";
+    }
+
+    if (section.requestState === statisticsSectionRequestStates.ready && statistics?.has_capture) {
+      if (elements.packetSizeDistributionStateText) {
+        elements.packetSizeDistributionStateText.textContent = "";
+      }
+      if (elements.packetSizeDistributionMaximumValue) {
+        elements.packetSizeDistributionMaximumValue.textContent =
+          `Maximum captured packet size: ${String(statistics.maximum_captured_packet_length_text || "0 B")}`;
+      }
+
+      const buckets = Array.isArray(statistics.buckets) ? statistics.buckets : [];
+      elements.packetSizeDistributionRows.innerHTML = buckets.length > 0
+        ? buckets
+          .map((bucket) => {
+            const packetCount = Number(bucket?.packet_count ?? 0);
+            const normalizedFraction = Number(bucket?.normalized_fraction ?? 0);
+            const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
+            return `
+              <div class="statistics-histogram-row">
+                <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>
+                <div class="statistics-histogram-track">
+                  <div class="statistics-histogram-fill" style="width:${percent}%; background:#34d399;"></div>
+                </div>
+                <span class="statistics-histogram-count">${formatNumber(packetCount)}</span>
+              </div>
+            `;
+          })
+          .join("")
+        : `<div class="statistics-histogram-empty">No packet-size distribution is available.</div>`;
+      return;
+    }
+
+    if (elements.packetSizeDistributionRows) {
+      elements.packetSizeDistributionRows.innerHTML = "";
+    }
+    if (elements.packetSizeDistributionMaximumValue) {
+      elements.packetSizeDistributionMaximumValue.textContent = "";
+    }
+    if (elements.packetSizeDistributionStateText) {
+      if (section.requestState === statisticsSectionRequestStates.loading) {
+        elements.packetSizeDistributionStateText.textContent = "Loading packet-size distribution...";
+      } else if (section.requestState === statisticsSectionRequestStates.error) {
+        elements.packetSizeDistributionStateText.textContent = section.errorText || "Failed to load packet-size distribution.";
+      } else if (section.requestState === statisticsSectionRequestStates.unavailable) {
+        elements.packetSizeDistributionStateText.textContent = "Packet-size distribution is unavailable.";
+      } else if (state.openState === "error") {
+        elements.packetSizeDistributionStateText.textContent = "Open failed. No packet-size distribution was loaded.";
+      } else if (state.openState !== "opened" || !state.overview) {
+        elements.packetSizeDistributionStateText.textContent = "Open a capture or index to load packet-size distribution.";
+      } else {
+        elements.packetSizeDistributionStateText.textContent = "Packet-size distribution loads when this section is opened.";
+      }
+    }
   }
 
   function clearAnalysisDom() {
@@ -3662,6 +3795,7 @@
   function renderStatisticsTab() {
     synchronizeStatisticsDisclosureState();
     renderStatisticsOverview();
+    renderCapturePacketSizeStatisticsSection();
     renderFlowPacketHistogramSection();
     renderProtocolPathStatsSection();
     renderProtocolHintSection();
@@ -7114,6 +7248,7 @@
     scheduleProtocolPathStatsViewportRender();
   });
   for (const [detailsElement, sectionKey] of [
+    [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
     [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
     [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],

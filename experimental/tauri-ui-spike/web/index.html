@@ -355,6 +355,23 @@
                 </div>
               </div>
 
+              <details id="packetSizeDistributionDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Packet Size Distribution</span>
+                  </span>
+                  <span id="packetSizeDistributionSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <p class="panel-subtitle">
+                    Captured packet lengths for all packets imported from the capture, including unrecognized packets.
+                  </p>
+                  <p id="packetSizeDistributionStateText" class="status-text compact-status-text"></p>
+                  <div id="packetSizeDistributionRows" class="statistics-histogram-rows"></div>
+                  <p id="packetSizeDistributionMaximumValue" class="panel-subtitle"></p>
+                </div>
+              </details>
+
               <details id="flowPacketHistogramDetails" class="statistics-disclosure">
                 <summary class="statistics-disclosure-summary">
                   <span class="statistics-disclosure-title-wrap">

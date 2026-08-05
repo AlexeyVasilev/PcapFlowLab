@@ -200,6 +200,26 @@ pub struct FlowPacketCountHistogramBucketDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturePacketSizeStatisticsBucketDto {
+    pub bucket_id: String,
+    pub label: String,
+    pub lower_bound_inclusive: u32,
+    pub upper_bound_inclusive: Option<u32>,
+    pub packet_count: u64,
+    pub normalized_fraction: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturePacketSizeStatisticsDto {
+    pub has_capture: bool,
+    pub total_packet_count: u64,
+    pub maximum_bucket_packet_count: u64,
+    pub maximum_captured_packet_length: u32,
+    pub maximum_captured_packet_length_text: String,
+    pub buckets: Vec<CapturePacketSizeStatisticsBucketDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowPacketCountHistogramDto {
     pub has_capture: bool,
     pub total_flow_count: u64,

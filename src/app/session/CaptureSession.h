@@ -169,6 +169,7 @@ public:
     [[nodiscard]] const std::filesystem::path& attached_source_capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
+    [[nodiscard]] const CapturePacketSizeStatistics& packet_size_statistics() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
     [[nodiscard]] FlowPacketCountHistogram flow_packet_count_histogram() const;
     [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(

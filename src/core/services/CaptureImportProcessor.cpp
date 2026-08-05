@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../../../core/open_context.h"
+#include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/LinkType.h"
 #include "core/services/CaptureImportApplication.h"
@@ -84,6 +85,8 @@ CaptureImportResult import_classic_packets(PcapReader& reader,
             }
         }
 
+        accumulate_capture_packet_size(state.packet_size_statistics, reusable_packet.captured_length);
+
         if (!processor.process_classic_import_packet(reader, reusable_packet, state, adaptive_header_prefix_bytes)) {
             break;
         }
@@ -132,6 +135,7 @@ CaptureImportResult import_full_packets(Reader& reader, CaptureState& state, con
             }
         }
 
+        accumulate_capture_packet_size(state.packet_size_statistics, packet->captured_length);
         processor.process_packet(*packet, state);
 
         if (should_cancel(ctx)) {

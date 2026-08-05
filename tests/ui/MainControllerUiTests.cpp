@@ -2900,6 +2900,7 @@ int main(int argc, char* argv[]) {
         })
     );
 
+    const int packet_size_section = static_cast<int>(MainController::StatisticsOptionalSection::packet_size_distribution);
     const int histogram_section = static_cast<int>(MainController::StatisticsOptionalSection::flow_packet_histogram);
     const int protocol_path_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_path);
     const int protocol_hints_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_hints);
@@ -2929,6 +2930,7 @@ int main(int argc, char* argv[]) {
 
     run_ui_section("statistics_sections_lazy_loading", [&]() {
         auto statistics_pane = load_qml_component("src/ui/qml/components/StatisticsPane.qml", "StatisticsPane");
+        statistics_pane.object->setProperty("packetSizeDistributionExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);
         statistics_pane.object->setProperty("protocolPathExpanded", true);
@@ -2936,6 +2938,7 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("quicTlsExpanded", true);
         statistics_pane.object->setProperty("topEndpointsPortsExpanded", true);
         statistics_pane.object->setProperty("statisticsSectionsResetToken", 1);
+        UI_EXPECT(!statistics_pane.object->property("packetSizeDistributionExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("flowPacketHistogramExpanded").toBool());
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 0);
         UI_EXPECT(!statistics_pane.object->property("protocolPathExpanded").toBool());
@@ -2960,14 +2963,37 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(statistics_pane.object.get(), "unrecognizedStatsOriginalBytesValue")->property("text").toString()
             == QStringLiteral("3 KB"));
         auto* unrecognized_stats_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "unrecognizedStatsSection"));
+        auto* packet_size_distribution_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "packetSizeDistributionSection"));
         auto* flow_packet_histogram_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "flowPacketHistogramSection"));
         UI_REQUIRE(unrecognized_stats_section != nullptr);
+        UI_REQUIRE(packet_size_distribution_section != nullptr);
         UI_REQUIRE(flow_packet_histogram_section != nullptr);
+        UI_EXPECT(packet_size_distribution_section->y() > unrecognized_stats_section->y());
         UI_EXPECT(flow_packet_histogram_section->y() > unrecognized_stats_section->y());
+        UI_EXPECT(flow_packet_histogram_section->y() > packet_size_distribution_section->y());
 
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
+
+        statistics_pane.object->setProperty("packetSizeDistributionExpanded", true);
+        statistics_pane.object->setProperty("packetSizeDistributionState", section_ready);
+        statistics_pane.object->setProperty("packetSizeDistributionMaximumCapturedPacketLengthText", QStringLiteral("1.5 KB (1 536 B)"));
+        statistics_pane.object->setProperty("packetSizeDistributionRows", QVariantList {
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("0-63")},
+                {QStringLiteral("packetCount"), QVariant::fromValue<qulonglong>(2U)},
+                {QStringLiteral("normalizedFraction"), 1.0},
+            },
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("64-127")},
+                {QStringLiteral("packetCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("normalizedFraction"), 0.5},
+            },
+        });
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "packetSizeDistributionMaximumCapturedPacketLengthValue")
+            ->property("text").toString() == QStringLiteral("1.5 KB (1 536 B)"));
 
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramState", section_ready);
@@ -3023,6 +3049,7 @@ int main(int argc, char* argv[]) {
         MainController histogram_controller {};
         UI_EXPECT(open_capture_and_wait(app, histogram_controller, histogram_capture_path));
         UI_EXPECT(histogram_controller.currentTabIndex() == 0);
+        UI_EXPECT(histogram_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolPathSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolHintsSectionState() == section_not_requested);
@@ -3031,11 +3058,30 @@ int main(int argc, char* argv[]) {
 
         histogram_controller.setCurrentTabIndex(2);
         UI_EXPECT(histogram_controller.currentTabIndex() == 2);
+        UI_EXPECT(histogram_controller.packetSizeDistributionState() == section_not_requested);
         UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolPathSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.protocolHintsSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.quicTlsSectionState() == section_not_requested);
         UI_EXPECT(histogram_controller.topEndpointPortSectionState() == section_not_requested);
+
+        histogram_controller.setStatisticsSectionExpanded(packet_size_section, true);
+        UI_EXPECT(histogram_controller.packetSizeDistributionState() == section_ready);
+        UI_EXPECT(histogram_controller.packetSizeDistributionTotalPacketCount() == 7U);
+        UI_EXPECT(histogram_controller.packetSizeDistributionMaximumBucketPacketCount() == 7U);
+        UI_EXPECT(histogram_controller.packetSizeDistributionMaximumCapturedPacketLength() > 0U);
+        UI_EXPECT(histogram_controller.packetSizeDistributionMaximumCapturedPacketLengthText().endsWith(QStringLiteral("B")));
+        const auto packet_size_rows = histogram_controller.packetSizeDistributionRows();
+        UI_EXPECT(packet_size_rows.size() == 13);
+        UI_EXPECT(packet_size_rows[0].toMap().value(QStringLiteral("label")).toString() == QStringLiteral("0-63"));
+        UI_EXPECT(packet_size_rows[12].toMap().value(QStringLiteral("label")).toString() == QStringLiteral("25001+"));
+        UI_EXPECT(find_flow_packet_histogram_row(packet_size_rows, QStringLiteral("0-63")).value(QStringLiteral("packetCount")).toULongLong() == 7U);
+        UI_EXPECT(find_flow_packet_histogram_row(packet_size_rows, QStringLiteral("0-63")).value(QStringLiteral("normalizedFraction")).toDouble() == 1.0);
+
+        histogram_controller.setStatisticsSectionExpanded(packet_size_section, false);
+        UI_EXPECT(histogram_controller.packetSizeDistributionState() == section_ready);
+        histogram_controller.setStatisticsSectionExpanded(packet_size_section, true);
+        UI_EXPECT(histogram_controller.packetSizeDistributionRows() == packet_size_rows);
 
         histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
         UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_ready);
@@ -3067,10 +3113,17 @@ int main(int argc, char* argv[]) {
 
         MainController deferred_histogram_controller {};
         UI_EXPECT(open_capture_and_wait(app, deferred_histogram_controller, histogram_capture_path));
-        deferred_histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
-        UI_EXPECT(deferred_histogram_controller.flowPacketHistogramState() == section_not_requested);
+        deferred_histogram_controller.setStatisticsSectionExpanded(packet_size_section, true);
+        UI_EXPECT(deferred_histogram_controller.packetSizeDistributionState() == section_not_requested);
         deferred_histogram_controller.setCurrentTabIndex(2);
-        UI_EXPECT(deferred_histogram_controller.flowPacketHistogramState() == section_ready);
+        UI_EXPECT(deferred_histogram_controller.packetSizeDistributionState() == section_ready);
+
+        MainController deferred_flow_histogram_controller {};
+        UI_EXPECT(open_capture_and_wait(app, deferred_flow_histogram_controller, histogram_capture_path));
+        deferred_flow_histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
+        UI_EXPECT(deferred_flow_histogram_controller.flowPacketHistogramState() == section_not_requested);
+        deferred_flow_histogram_controller.setCurrentTabIndex(2);
+        UI_EXPECT(deferred_flow_histogram_controller.flowPacketHistogramState() == section_ready);
 
         MainController unrecognized_controller {};
         UI_EXPECT(open_capture_and_wait(app, unrecognized_controller, nonzero_unrecognized_capture_path));

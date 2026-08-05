@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -596,6 +596,16 @@ fn get_flow_packet_count_histogram(
 }
 
 #[tauri::command]
+fn get_capture_packet_size_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<CapturePacketSizeStatisticsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_capture_packet_size_statistics()
+}
+
+#[tauri::command]
 fn get_protocol_hint_statistics(
     state: State<'_, Mutex<AdapterState>>,
 ) -> Result<ProtocolHintStatisticsDto, String> {
@@ -985,6 +995,7 @@ pub fn run() {
             get_overview,
             get_settings,
             get_flow_packet_count_histogram,
+            get_capture_packet_size_statistics,
             get_protocol_hint_statistics,
             get_quic_tls_statistics,
             get_top_endpoint_port_statistics,

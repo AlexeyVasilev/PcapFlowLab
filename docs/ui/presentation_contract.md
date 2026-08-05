@@ -898,12 +898,84 @@ Presentation contract:
   - no recalculation;
 - default mode for each new capture is `Flows`.
 
+### Packet Size Distribution
+
+The shared backend now also defines a separate capture-wide `Packet Size
+Distribution` model.
+
+Semantic contract:
+
+- the metric uses captured packet length:
+  - `RawPcapPacket::captured_length` during capture import
+  - persisted `PacketRef::captured_length` during index load;
+- it counts every packet record successfully accepted by the current import
+  pipeline, including:
+  - recognized flow packets
+  - unrecognized packets
+  - decode-malformed packets
+  - packets that never obtain a flow key;
+- it does not count:
+  - unreadable truncated tail bytes
+  - incomplete packet records
+  - PCAPNG metadata blocks
+  - block padding
+  - other non-packet records;
+- accumulation happens during capture import and is retained with capture
+  state;
+- index load reconstructs the same result from persisted `PacketRef` metadata
+  without reading packet bytes or reopening the source capture;
+- section expansion is presentation-lazy only:
+  - it requests a finalized retained DTO
+  - it does not rescan packets or flows;
+- the current PCAPNG unsupported-interface limitation remains explicit:
+  - EPBs skipped before a `RawPcapPacket` is surfaced are not represented.
+
+The semantic model carries:
+
+- `total_packet_count`
+- `maximum_bucket_packet_count`
+- `maximum_captured_packet_length`
+- 13 ordered fixed buckets with stable ids and inclusive bounds.
+
+Exact ordered buckets:
+
+- `0-63`
+- `64-127`
+- `128-255`
+- `256-511`
+- `512-1023`
+- `1024-1399`
+- `1400-1499`
+- `1500-2499`
+- `2500-5000`
+- `5001-9000`
+- `9001-16000`
+- `16001-25000`
+- `25001+`
+
+Presentation contract:
+
+- Qt and Tauri expose it as an optional collapsible Statistics section placed:
+  - after `Protocol Summary`
+  - after the conditional `Unrecognized Packets` block
+  - before `Flows by Packet Count`;
+- the section header summary is `<total_packet_count> packets`;
+- the expanded body shows:
+  - a short explanation that the metric covers imported captured packet lengths,
+    including unrecognized packets
+  - a maximum captured packet size line
+  - all 13 rows with shared stable bucket ids, shared labels, normalized bars,
+    and exact packet counts;
+- the maximum value is the maximum captured packet length, not original length
+  or decoded frame size.
+
 ### Section-scoped loading direction
 
 Qt now keeps only the overview cards plus the transport/family Protocol Summary
 always visible. These sections are optional, independently collapsible, and
 loaded through typed per-capture requests:
 
+- Packet Size Distribution
 - Flows by Packet Count
 - Protocol Path Tree
 - Detected Protocol Hints

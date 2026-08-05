@@ -2496,6 +2496,11 @@ const CaptureSummary& CaptureSession::summary() const noexcept {
     return state_.summary;
 }
 
+const CapturePacketSizeStatistics& CaptureSession::packet_size_statistics() const noexcept {
+    static const CapturePacketSizeStatistics empty_statistics {};
+    return has_capture() ? state_.packet_size_statistics : empty_statistics;
+}
+
 CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
     if (protocol_summary_cache_.has_value()) {
         return *protocol_summary_cache_;

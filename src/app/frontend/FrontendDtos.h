@@ -168,6 +168,24 @@ struct FrontendFlowPacketCountHistogramDto {
     std::vector<FrontendFlowPacketCountHistogramBucketDto> buckets {};
 };
 
+struct FrontendCapturePacketSizeStatisticsBucketDto {
+    std::string bucket_id {};
+    std::string label {};
+    std::uint32_t lower_bound_inclusive {0};
+    std::optional<std::uint32_t> upper_bound_inclusive {};
+    std::uint64_t packet_count {0};
+    double normalized_fraction {0.0};
+};
+
+struct FrontendCapturePacketSizeStatisticsDto {
+    bool has_capture {false};
+    std::uint64_t total_packet_count {0};
+    std::uint64_t maximum_bucket_packet_count {0};
+    std::uint32_t maximum_captured_packet_length {0};
+    std::string maximum_captured_packet_length_text {};
+    std::vector<FrontendCapturePacketSizeStatisticsBucketDto> buckets {};
+};
+
 struct FrontendProtocolHintStatisticsDto {
     bool has_capture {false};
     std::vector<FrontendProtocolHintStatsDto> protocol_hints {};

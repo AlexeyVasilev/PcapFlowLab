@@ -2,6 +2,7 @@
 
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -261,6 +262,35 @@ std::string flow_packet_count_histogram_bucket_label(const FlowPacketCountHistog
 }
 
 std::string format_size_value(const std::uint64_t value);
+
+FrontendCapturePacketSizeStatisticsDto build_capture_packet_size_statistics_dto(
+    const CapturePacketSizeStatistics& statistics
+) {
+    FrontendCapturePacketSizeStatisticsDto dto {};
+    dto.has_capture = true;
+    dto.total_packet_count = statistics.total_packet_count;
+    dto.maximum_bucket_packet_count = statistics.maximum_bucket_packet_count;
+    dto.maximum_captured_packet_length = statistics.maximum_captured_packet_length;
+    dto.maximum_captured_packet_length_text = session_detail::format_statistics_size_value(
+        statistics.maximum_captured_packet_length
+    );
+    dto.buckets.reserve(statistics.buckets.size());
+
+    for (const auto& bucket : statistics.buckets) {
+        dto.buckets.push_back(FrontendCapturePacketSizeStatisticsBucketDto {
+            .bucket_id = std::string(bucket.stable_id),
+            .label = session_detail::capture_packet_size_bucket_label(bucket),
+            .lower_bound_inclusive = bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = bucket.upper_bound_inclusive,
+            .packet_count = bucket.packet_count,
+            .normalized_fraction = statistics.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
+                : 0.0,
+        });
+    }
+
+    return dto;
+}
 
 FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
     const FlowPacketCountHistogram& histogram
@@ -2361,6 +2391,14 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
         .protocol_path_presentations = std::move(protocol_path_presentations),
     };
+}
+
+FrontendCapturePacketSizeStatisticsDto FrontendSessionAdapter::get_capture_packet_size_statistics() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_capture_packet_size_statistics_dto(session_.packet_size_statistics());
 }
 
 FrontendFlowPacketCountHistogramDto FrontendSessionAdapter::get_flow_packet_count_histogram() const {

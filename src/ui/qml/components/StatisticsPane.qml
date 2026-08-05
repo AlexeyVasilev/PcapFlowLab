@@ -38,6 +38,14 @@ Item {
     property var unrecognizedStatsPacketCount: 0
     property var unrecognizedStatsCapturedBytes: 0
     property var unrecognizedStatsOriginalBytes: 0
+    property int packetSizeDistributionState: 0
+    property string packetSizeDistributionStatusText: ""
+    property string packetSizeDistributionSummaryText: ""
+    property var packetSizeDistributionTotalPacketCount: 0
+    property var packetSizeDistributionMaximumBucketPacketCount: 0
+    property var packetSizeDistributionMaximumCapturedPacketLength: 0
+    property string packetSizeDistributionMaximumCapturedPacketLengthText: ""
+    property var packetSizeDistributionRows: []
     property int flowPacketHistogramState: 0
     property string flowPacketHistogramStatusText: ""
     property string flowPacketHistogramSummaryText: ""
@@ -78,11 +86,12 @@ Item {
     readonly property int requestStateReady: 2
     readonly property int requestStateUnavailable: 3
     readonly property int requestStateError: 4
-    readonly property int sectionFlowPacketHistogram: 0
-    readonly property int sectionProtocolPath: 1
-    readonly property int sectionProtocolHints: 2
-    readonly property int sectionQuicTls: 3
-    readonly property int sectionTopEndpointsPorts: 4
+    readonly property int sectionPacketSizeDistribution: 0
+    readonly property int sectionFlowPacketHistogram: 1
+    readonly property int sectionProtocolPath: 2
+    readonly property int sectionProtocolHints: 3
+    readonly property int sectionQuicTls: 4
+    readonly property int sectionTopEndpointsPorts: 5
     readonly property int flowPacketHistogramModeFlows: 0
     readonly property int flowPacketHistogramModeOriginalBytes: 1
     readonly property int tableRowHeight: 26
@@ -106,6 +115,7 @@ Item {
     readonly property int pathTreeExpanderWidth: 16
     readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
 
+    property bool packetSizeDistributionExpanded: false
     property bool flowPacketHistogramExpanded: false
     property bool protocolPathExpanded: false
     property bool protocolHintsExpanded: false
@@ -120,6 +130,7 @@ Item {
     signal statisticsSectionExpandedChanged(int section, bool expanded)
 
     onStatisticsSectionsResetTokenChanged: {
+        packetSizeDistributionExpanded = false
         flowPacketHistogramExpanded = false
         protocolPathExpanded = false
         protocolHintsExpanded = false
@@ -511,6 +522,88 @@ Item {
                                 text: root.formatBytes(root.unrecognizedStatsOriginalBytes)
                                 color: "#334155"
                             }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: packetSizeDistributionSection
+                    objectName: "packetSizeDistributionSection"
+                    title: "Packet Size Distribution"
+                    summaryText: root.packetSizeDistributionSummaryText
+                    expanded: root.packetSizeDistributionExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.packetSizeDistributionExpanded = expanded
+                        root.statisticsSectionExpandedChanged(root.sectionPacketSizeDistribution, expanded)
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.hasCapture
+                        text: "Captured packet lengths for all packets imported from the capture, including unrecognized packets."
+                        color: "#64748b"
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Label {
+                        visible: root.packetSizeDistributionState === root.requestStateLoading ||
+                            root.packetSizeDistributionState === root.requestStateUnavailable ||
+                            root.packetSizeDistributionState === root.requestStateError
+                        text: root.packetSizeDistributionStatusText
+                        color: "#64748b"
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: root.packetSizeDistributionState === root.requestStateReady
+                        spacing: 8
+
+                        Repeater {
+                            model: root.packetSizeDistributionRows
+
+                            delegate: RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                Label {
+                                    Layout.preferredWidth: 90
+                                    text: modelData.label
+                                    color: "#0f172a"
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 18
+                                    radius: 9
+                                    color: "#f1f5f9"
+                                    border.color: "#e2e8f0"
+
+                                    Rectangle {
+                                        width: Math.max(0, (parent.width - 2) * Number(modelData.normalizedFraction))
+                                        height: parent.height - 2
+                                        radius: 8
+                                        x: 1
+                                        y: 1
+                                        color: "#34d399"
+                                    }
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 90
+                                    horizontalAlignment: Text.AlignRight
+                                    text: root.groupInteger(modelData.packetCount)
+                                    color: "#334155"
+                                }
+                            }
+                        }
+
+                        Label {
+                            objectName: "packetSizeDistributionMaximumCapturedPacketLengthValue"
+                            Layout.fillWidth: true
+                            text: "Maximum captured packet size: " + root.packetSizeDistributionMaximumCapturedPacketLengthText
+                            color: "#0f172a"
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }

@@ -616,6 +616,47 @@ std::string tls_recognition_json(const pfl::TlsRecognitionStats& summary) {
     return out.str();
 }
 
+std::string capture_packet_size_statistics_bucket_json(const pfl::FrontendCapturePacketSizeStatisticsBucketDto& bucket) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"bucket_id\":" << json_string(bucket.bucket_id) << ','
+        << "\"label\":" << json_string(bucket.label) << ','
+        << "\"lower_bound_inclusive\":" << bucket.lower_bound_inclusive << ','
+        << "\"upper_bound_inclusive\":";
+    if (bucket.upper_bound_inclusive.has_value()) {
+        out << *bucket.upper_bound_inclusive;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_count\":" << bucket.packet_count << ','
+        << "\"normalized_fraction\":" << bucket.normalized_fraction
+        << '}';
+    return out.str();
+}
+
+std::string capture_packet_size_statistics_json(const pfl::FrontendCapturePacketSizeStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"total_packet_count\":" << statistics.total_packet_count << ','
+        << "\"maximum_bucket_packet_count\":" << statistics.maximum_bucket_packet_count << ','
+        << "\"maximum_captured_packet_length\":" << statistics.maximum_captured_packet_length << ','
+        << "\"maximum_captured_packet_length_text\":"
+        << json_string(statistics.maximum_captured_packet_length_text) << ','
+        << "\"buckets\":[";
+
+    for (std::size_t index = 0; index < statistics.buckets.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << capture_packet_size_statistics_bucket_json(statistics.buckets[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
 std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacketCountHistogramBucketDto& bucket) {
     std::ostringstream out {};
     out << '{'
@@ -1244,6 +1285,10 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     return pfl::FrontendFlowPacketCountHistogramDto {};
 }
 
+[[nodiscard]] pfl::FrontendCapturePacketSizeStatisticsDto unavailable_capture_packet_size_statistics() {
+    return pfl::FrontendCapturePacketSizeStatisticsDto {};
+}
+
 [[nodiscard]] pfl::FrontendProtocolHintStatisticsDto unavailable_protocol_hint_statistics() {
     return pfl::FrontendProtocolHintStatisticsDto {};
 }
@@ -1397,6 +1442,14 @@ char* pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(PflFront
     }
 
     return make_c_string(flow_packet_count_histogram_json(handle->adapter.get_flow_packet_count_histogram()));
+}
+
+char* pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(capture_packet_size_statistics_json(unavailable_capture_packet_size_statistics()));
+    }
+
+    return make_c_string(capture_packet_size_statistics_json(handle->adapter.get_capture_packet_size_statistics()));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_hint_statistics_json(PflFrontendSessionAdapterHandle* handle) {

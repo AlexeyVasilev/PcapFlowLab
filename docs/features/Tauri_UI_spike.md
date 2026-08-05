@@ -188,6 +188,7 @@ The `Statistics` tab now supports:
 - transport summary
 - IP family summary
 - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
+- optional `Packet Size Distribution` section sourced from retained import/index metadata
 - detected protocol hints
 - QUIC recognition
 - TLS recognition
@@ -202,16 +203,24 @@ Backend/API note:
 
 - Tauri now matches the Qt Statistics section contract:
   - overview cards plus `Transport` / `Family` summaries remain always visible
-  - five optional sections start collapsed for each capture
+  - six optional sections start collapsed for each capture
   - first eligible expansion issues the dedicated request once per capture
   - collapse/reopen and Statistics-tab return reuse the cached result
   - capture replacement clears expansion and per-section cached results
+- `Packet Size Distribution` is separate from the selected-flow Analysis packet-size histogram:
+  - it uses captured packet length
+  - it includes recognized, unrecognized, and decode-malformed imported packets
+  - it excludes unreadable truncated tail bytes
+  - import performs the accumulation and index load reconstructs it from persisted `PacketRef::captured_length`
+  - opening the section transports only the finalized DTO and renders it
+  - unsupported-interface PCAPNG EPBs skipped before packet surfacing are not represented
 - `Flows by Packet Count` keeps its existing packet-count buckets but now offers
   frontend-local `Flows` / `Original bytes` display modes over the same cached
   histogram payload
 - changing that histogram mode is presentation-only and does not trigger a
   second backend request or a second flow walk
 - the shared backend now also provides dedicated typed requests for:
+  - Packet Size Distribution
   - Flows by Packet Count
   - Detected Protocol Hints
   - QUIC and TLS

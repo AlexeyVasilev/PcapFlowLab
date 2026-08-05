@@ -29,17 +29,26 @@
 - `Possible TLS` and `Possible QUIC` are tracked as separate weak-hint buckets.
 - Qt now keeps only the overview cards plus the transport/family Protocol Summary always visible.
 - Qt optional Statistics sections are now independent collapsible panels:
+  - `Packet Size Distribution`
   - `Flows by Packet Count`
   - `Protocol Path Tree`
   - `Detected Protocol Hints`
   - `QUIC and TLS`
   - `Top Endpoints and Ports`
 - For each capture, those optional Qt sections start collapsed, request data on first expansion only, and reuse the per-capture cached result on collapse/reopen or Statistics-tab revisit.
+- `Packet Size Distribution` is a separate capture-wide contract from the selected-flow Analysis packet-size histogram:
+  - it uses captured packet length, not original length
+  - it counts all packet records accepted by the current importer, including unrecognized and decode-malformed packets
+  - it excludes unreadable truncated tail bytes and non-packet PCAP/PCAPNG metadata
+  - accumulation happens during capture import
+  - index load reconstructs the same result from persisted `PacketRef::captured_length` values without rereading capture bytes
+  - section expansion defers only DTO transport and rendering
+  - EPBs skipped earlier by the current unsupported-interface PCAPNG path are not represented
 - `Flows by Packet Count` now keeps the same packet-count buckets but exposes two presentation modes over one cached calculation:
   - `Flows`
   - `Original bytes`
 - That histogram lazy pass now accumulates both flow counts and original-byte totals per bucket without issuing a second backend request when the visible mode changes.
-- Opening a new capture resets the optional Qt section expansion and visible result state; the Tauri Statistics shell remains on its transitional eager overview path for now.
+- Opening a new capture resets the optional Qt and Tauri section expansion and visible result state.
 
 ## UI
 

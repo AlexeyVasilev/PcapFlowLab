@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -40,6 +40,9 @@ extern "C" {
         path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_settings_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(
@@ -257,6 +260,11 @@ impl CppFrontendSessionAdapter {
     pub fn get_settings(&self) -> Result<SettingsDto, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_settings_json(self.handle) };
         parse_json_owned::<SettingsDto>(json)
+    }
+
+    pub fn get_capture_packet_size_statistics(&self) -> Result<CapturePacketSizeStatisticsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(self.handle) };
+        parse_json_owned::<CapturePacketSizeStatisticsDto>(json)
     }
 
     pub fn get_flow_packet_count_histogram(&self) -> Result<FlowPacketCountHistogramDto, String> {

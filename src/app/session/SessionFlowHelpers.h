@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "app/session/FlowRows.h"
@@ -24,6 +25,8 @@ void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connect
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
 FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings);
+std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket);
+std::string format_statistics_size_value(std::uint64_t value);
 FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections);
 CaptureProtocolPathSummary build_protocol_path_summary(
     const CaptureState& state,

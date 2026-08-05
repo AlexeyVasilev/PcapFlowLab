@@ -23,6 +23,7 @@ The fast path is the default way to open a capture.
 - Parses PCAP / PCAPNG packets and decodes packet metadata.
 - Aggregates packets into bidirectional connections and per-direction flows.
 - Populates summaries, flow rows, packet rows, cheap hints, fragmentation flags, and packet references.
+- Accumulates retained capture-wide packet-size distribution statistics from accepted packet records using captured packet length; this includes recognized, unrecognized, and decode-malformed packets that are successfully surfaced by the importer.
 - Optional weak fallback hints may classify otherwise unresolved TCP/UDP port 443 flows as `Possible TLS` / `Possible QUIC`; these remain presentation-level buckets distinct from confirmed TLS/QUIC detection.
 - Does not run directional reassembly.
 - Does not perform deep protocol reconstruction during open.
@@ -38,6 +39,7 @@ Saved analysis indexes can be opened directly instead of re-importing the captur
 - Stable index data also includes the capture-level protocol-path registry plus flow/connection protocol-path identity metadata.
 - Runtime protocol-path statistics trees are rebuilt from indexed flow metadata and are not themselves persisted.
 - Unrecognized-packet metadata is persisted in current-format indexes and survives save/load without rescanning the source PCAP.
+- Capture-wide packet-size distribution statistics are reconstructed from persisted `PacketRef::captured_length` values for recognized and unrecognized packets; index load does not reread packet bytes from the source capture.
 - Raw packet bytes are not stored in the index.
 - An index can be opened without the original capture; this is an explicit index-only mode.
 - Raw packet features become available again only after the matching source capture is attached and validated.

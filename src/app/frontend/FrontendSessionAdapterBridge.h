@@ -29,6 +29,7 @@ char* pfl_frontend_session_adapter_save_index_json(
     const char* path_utf8
 );
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_protocol_hint_statistics_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_quic_tls_statistics_json(PflFrontendSessionAdapterHandle* handle);

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/domain/CaptureSummary.h"
 #include "core/domain/ConnectionTable.h"
 #include "core/domain/PacketRef.h"
@@ -20,6 +21,7 @@ struct CaptureState {
     ConnectionTableV6 ipv6_connections {};
     std::vector<UnrecognizedPacketRecord> unrecognized_packets {};
     ProtocolPathRegistry protocol_path_registry {};
+    CapturePacketSizeStatistics packet_size_statistics {};
     CaptureSummary summary {};
 };
 

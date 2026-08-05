@@ -1227,6 +1227,14 @@ ApplicationWindow {
                 unrecognizedStatsPacketCount: mainController.unrecognizedStatsPacketCount
                 unrecognizedStatsCapturedBytes: mainController.unrecognizedStatsCapturedBytes
                 unrecognizedStatsOriginalBytes: mainController.unrecognizedStatsOriginalBytes
+                packetSizeDistributionState: mainController.packetSizeDistributionState
+                packetSizeDistributionStatusText: mainController.packetSizeDistributionStatusText
+                packetSizeDistributionSummaryText: mainController.packetSizeDistributionSummaryText
+                packetSizeDistributionTotalPacketCount: mainController.packetSizeDistributionTotalPacketCount
+                packetSizeDistributionMaximumBucketPacketCount: mainController.packetSizeDistributionMaximumBucketPacketCount
+                packetSizeDistributionMaximumCapturedPacketLength: mainController.packetSizeDistributionMaximumCapturedPacketLength
+                packetSizeDistributionMaximumCapturedPacketLengthText: mainController.packetSizeDistributionMaximumCapturedPacketLengthText
+                packetSizeDistributionRows: mainController.packetSizeDistributionRows
                 flowPacketHistogramState: mainController.flowPacketHistogramState
                 flowPacketHistogramStatusText: mainController.flowPacketHistogramStatusText
                 flowPacketHistogramSummaryText: mainController.flowPacketHistogramSummaryText

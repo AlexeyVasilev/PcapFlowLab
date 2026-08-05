@@ -12,11 +12,38 @@
 #include <vector>
 
 #include "../../../core/open_context.h"
+#include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/index/Serialization.h"
 
 namespace pfl {
 
 namespace {
+
+void reconstruct_packet_size_statistics(CaptureState& state) {
+    state.packet_size_statistics = {};
+
+    for (const auto* connection : state.ipv4_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
+        }
+        for (const auto& packet : connection->flow_b.packets) {
+            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
+        }
+    }
+
+    for (const auto* connection : state.ipv6_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
+        }
+        for (const auto& packet : connection->flow_b.packets) {
+            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
+        }
+    }
+
+    for (const auto& packet : state.unrecognized_packets) {
+        accumulate_capture_packet_size(state.packet_size_statistics, packet.packet.captured_length);
+    }
+}
 
 [[nodiscard]] std::uint64_t current_offset(std::ifstream& stream) {
     const auto current = stream.tellg();
@@ -342,6 +369,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             return false;
         }
 
+        reconstruct_packet_size_statistics(state);
         out_state = std::move(state);
         out_source_capture_path = source_info.capture_path;
         if (out_source_info != nullptr) {
