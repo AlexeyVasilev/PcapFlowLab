@@ -104,30 +104,6 @@ void expect_histogram_equal(const FlowPacketCountHistogram& left, const FlowPack
     }
 }
 
-void expect_top_endpoint_rows_equal(
-    const std::vector<FrontendTopEndpointDto>& left,
-    const std::vector<FrontendTopEndpointDto>& right
-) {
-    PFL_EXPECT(left.size() == right.size());
-    for (std::size_t index = 0U; index < left.size(); ++index) {
-        PFL_EXPECT(left[index].endpoint_label == right[index].endpoint_label);
-        PFL_EXPECT(left[index].packet_count == right[index].packet_count);
-        PFL_EXPECT(left[index].total_bytes == right[index].total_bytes);
-    }
-}
-
-void expect_top_port_rows_equal(
-    const std::vector<FrontendTopPortDto>& left,
-    const std::vector<FrontendTopPortDto>& right
-) {
-    PFL_EXPECT(left.size() == right.size());
-    for (std::size_t index = 0U; index < left.size(); ++index) {
-        PFL_EXPECT(left[index].port == right[index].port);
-        PFL_EXPECT(left[index].packet_count == right[index].packet_count);
-        PFL_EXPECT(left[index].total_bytes == right[index].total_bytes);
-    }
-}
-
 std::string take_bridge_string(char* value) {
     PFL_REQUIRE(value != nullptr);
     const std::string text {value};
@@ -251,7 +227,7 @@ void expect_flow_packet_count_histogram_is_cached_per_capture() {
     expect_histogram_bucket(second_histogram, "packets_2", 1U, 2U, 2U);
 }
 
-void expect_statistics_section_adapter_results_match_transition_overview() {
+void expect_overview_excludes_optional_statistics_sections() {
     const auto tcp_ab = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80);
     const auto tcp_ba = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 2), ipv4(10, 0, 0, 1), 80, 1111);
     const auto udp_ac = make_ethernet_ipv4_udp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 3), 1111, 22);
@@ -275,24 +251,22 @@ void expect_statistics_section_adapter_results_match_transition_overview() {
     const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
     const auto histogram = adapter.get_flow_packet_count_histogram();
 
+    PFL_EXPECT(overview.has_capture);
+    PFL_EXPECT(overview.summary.flow_count == 3U);
+    PFL_EXPECT(overview.protocol_summary.tcp.flow_count == 1U);
+    PFL_EXPECT(overview.protocol_summary.udp.flow_count == 2U);
+
     PFL_EXPECT(hint_statistics.has_capture);
     PFL_EXPECT(hint_statistics.protocol_hints.size() == 13U);
-    PFL_EXPECT(hint_statistics.protocol_hints.size() == overview.protocol_hints.size());
-    for (std::size_t index = 0U; index < hint_statistics.protocol_hints.size(); ++index) {
-        PFL_EXPECT(hint_statistics.protocol_hints[index].group == overview.protocol_hints[index].group);
-        PFL_EXPECT(hint_statistics.protocol_hints[index].protocol_label == overview.protocol_hints[index].protocol_label);
-        PFL_EXPECT(hint_statistics.protocol_hints[index].flow_count == overview.protocol_hints[index].flow_count);
-        PFL_EXPECT(hint_statistics.protocol_hints[index].packet_count == overview.protocol_hints[index].packet_count);
-    }
 
     PFL_EXPECT(quic_tls_statistics.has_capture);
-    PFL_EXPECT(quic_tls_statistics.quic_recognition.total_flows == overview.quic_recognition.total_flows);
-    PFL_EXPECT(quic_tls_statistics.tls_recognition.total_flows == overview.tls_recognition.total_flows);
+    PFL_EXPECT(quic_tls_statistics.quic_recognition.total_flows == 0U);
+    PFL_EXPECT(quic_tls_statistics.tls_recognition.total_flows == 0U);
 
     PFL_EXPECT(top_statistics.has_capture);
     PFL_EXPECT(top_statistics.limit == 5U);
-    expect_top_endpoint_rows_equal(top_statistics.top_endpoints, overview.top_endpoints);
-    expect_top_port_rows_equal(top_statistics.top_ports, overview.top_ports);
+    PFL_EXPECT(!top_statistics.top_endpoints.empty());
+    PFL_EXPECT(!top_statistics.top_ports.empty());
 
     PFL_EXPECT(histogram.has_capture);
     PFL_EXPECT(histogram.total_flow_count == 3U);
@@ -365,6 +339,15 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(histogram_json, "\"bucket_id\":\"packets_2\""));
     PFL_EXPECT(contains_text(histogram_json, "\"label\":\"2\""));
 
+    const auto overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
+    PFL_EXPECT(contains_text(overview_json, "\"protocol_summary\""));
+    PFL_EXPECT(contains_text(overview_json, "\"protocol_path_presentations\""));
+    PFL_EXPECT(!contains_text(overview_json, "\"protocol_hints\""));
+    PFL_EXPECT(!contains_text(overview_json, "\"quic_recognition\""));
+    PFL_EXPECT(!contains_text(overview_json, "\"tls_recognition\""));
+    PFL_EXPECT(!contains_text(overview_json, "\"top_endpoints\""));
+    PFL_EXPECT(!contains_text(overview_json, "\"top_ports\""));
+
     const auto hints_json = take_bridge_string(pfl_frontend_session_adapter_get_protocol_hint_statistics_json(handle));
     PFL_EXPECT(contains_text(hints_json, "\"protocol_hints\""));
     PFL_EXPECT(contains_text(hints_json, "\"group\""));
@@ -390,7 +373,7 @@ void run_statistics_section_tests() {
     expect_flow_packet_count_histogram_supports_empty_inputs();
     expect_flow_packet_count_histogram_survives_index_roundtrip();
     expect_flow_packet_count_histogram_is_cached_per_capture();
-    expect_statistics_section_adapter_results_match_transition_overview();
+    expect_overview_excludes_optional_statistics_sections();
     expect_quic_tls_section_keeps_one_empty_side();
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();

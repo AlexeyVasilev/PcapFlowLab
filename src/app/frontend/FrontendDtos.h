@@ -215,11 +215,6 @@ struct FrontendOverviewDto {
     std::uint64_t unrecognized_packet_count {0};
     std::optional<UnrecognizedPacketStatistics> unrecognized_packets {};
     CaptureProtocolSummary protocol_summary {};
-    QuicRecognitionStats quic_recognition {};
-    TlsRecognitionStats tls_recognition {};
-    std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
-    std::vector<FrontendTopEndpointDto> top_endpoints {};
-    std::vector<FrontendTopPortDto> top_ports {};
     ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
     std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};
 };

@@ -2332,8 +2332,6 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
-    const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
-    const auto quic_tls_summary = session_.quic_tls_summary();
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = session_.summary(),
@@ -2346,11 +2344,6 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
             : std::nullopt,
         .protocol_summary = protocol_summary,
-        .quic_recognition = quic_tls_summary.quic,
-        .tls_recognition = quic_tls_summary.tls,
-        .protocol_hints = build_protocol_hint_stats(protocol_summary),
-        .top_endpoints = build_top_endpoints(top_summary),
-        .top_ports = build_top_ports(top_summary),
         .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
         .protocol_path_presentations = std::move(protocol_path_presentations),
     };

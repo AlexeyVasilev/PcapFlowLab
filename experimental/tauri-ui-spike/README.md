@@ -70,9 +70,12 @@ Implemented slice:
   - transport summary
   - IP family summary
   - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
-  - detected protocol hints
-  - QUIC/TLS recognition
-  - top endpoints / top ports
+  - five optional collapsible sections, initially closed for each capture:
+    - Flows by Packet Count
+    - Protocol Path Tree
+    - Detected Protocol Hints
+    - QUIC and TLS
+    - Top Endpoints and Ports
   - drill-down into the existing `Flows` filter
 - first selected-flow `Analysis` workflow:
 - left-side Analysis Flows list built from already loaded flow DTOs
@@ -168,7 +171,10 @@ Implemented slice:
 - Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Item Data` tabs.
 - Selecting a stream item does not yet navigate to packet details or source packets.
 - Selected-flow packet and stream responsiveness on very large flows is still bounded, but not yet optimized deeply in the shared backend/session path.
-- The Statistics tab renders compact overview/statistics sections from the frontend-neutral overview DTO.
+- The Statistics tab keeps overview cards plus transport/family summaries always visible.
+- The five optional Statistics sections start closed for each capture and load on first eligible expansion.
+- Optional Statistics results are retained for the current capture, reused across collapse/reopen and tab return, and reset on capture replacement.
+- Tauri now requests optional Statistics content through dedicated shared-backend commands instead of eager overview duplication.
 - Statistics drill-down currently works by switching to `Flows` and reusing the existing frontend filter.
 - The Analysis tab has its own compact flow list on the left and selected-flow analysis details on the right.
 - Analysis stays selected-flow-only and does not run during capture open.

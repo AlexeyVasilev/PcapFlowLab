@@ -200,17 +200,18 @@ The `Statistics` tab now supports:
 
 Backend/API note:
 
-- the visible Statistics UI is still overview-driven in this pass
-- no collapsible Statistics controls are exposed yet
+- Tauri now matches the Qt Statistics section contract:
+  - overview cards plus `Transport` / `Family` summaries remain always visible
+  - five optional sections start collapsed for each capture
+  - first eligible expansion issues the dedicated request once per capture
+  - collapse/reopen and Statistics-tab return reuse the cached result
+  - capture replacement clears expansion and per-section cached results
 - the shared backend now also provides dedicated typed requests for:
   - Flows by Packet Count
   - Detected Protocol Hints
   - QUIC and TLS
   - Top Endpoints and Ports
-- these section requests are intended for future lazy loading and use
-  per-capture backend caching where appropriate
-- the current overview DTO intentionally continues to duplicate these values
-  during the migration
+- Tauri overview no longer duplicates these optional-section payloads
 - Protocol Path remains on its separate lazy request/cache path
 
 ## Current Analysis capability

@@ -781,9 +781,9 @@ the same row semantics:
 - original bytes.
 
 This section now also has a dedicated backend/frontend-neutral request path for
-future section-scoped loading. The current overview DTO still carries the same
-rows temporarily so existing Qt and Tauri statistics shells do not change
-during the migration.
+section-scoped loading. Qt and Tauri both request these rows lazily on first
+eligible section expansion rather than carrying them through the eager
+overview DTO.
 
 ### QUIC and TLS summary
 
@@ -806,8 +806,8 @@ containing two side-by-side cards. The card contents remain protocol-specific:
 The shared backend now also exposes a dedicated typed `QUIC and TLS` section
 request that returns the two recognition models together while keeping them
 semantically independent. One side may be empty without invalidating the
-other. The current overview DTO still duplicates these values temporarily for
-compatibility.
+other. Qt and Tauri now load this section lazily instead of duplicating the
+values in the eager overview DTO.
 
 ### Top talkers
 
@@ -828,8 +828,8 @@ These panels also support drill-down actions from statistics into flow filtering
 The shared backend now also exposes a dedicated typed request for `Top
 Endpoints and Ports`. It reuses the existing bounded top-summary aggregation,
 keeps the current limit/order semantics, and may reuse a per-capture cache for
-the requested limit. The current overview DTO still duplicates these rows
-temporarily for compatibility.
+the requested limit. Qt and Tauri now load these rows lazily instead of
+duplicating them in the eager overview DTO.
 
 ### Flows by Packet Count
 

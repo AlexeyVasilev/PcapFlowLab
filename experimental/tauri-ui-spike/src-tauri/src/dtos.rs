@@ -262,11 +262,6 @@ pub struct OverviewDto {
     pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
     pub protocol_summary: OverviewProtocolSummaryDto,
-    pub quic_recognition: QuicRecognitionDto,
-    pub tls_recognition: TlsRecognitionDto,
-    pub protocol_hints: Vec<ProtocolHintStatsDto>,
-    pub top_endpoints: Vec<TopEndpointDto>,
-    pub top_ports: Vec<TopPortDto>,
     pub protocol_path_statistics_default_mode: u8,
     pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,
 }
