@@ -83,6 +83,8 @@ Item {
     readonly property int sectionProtocolHints: 2
     readonly property int sectionQuicTls: 3
     readonly property int sectionTopEndpointsPorts: 4
+    readonly property int flowPacketHistogramModeFlows: 0
+    readonly property int flowPacketHistogramModeOriginalBytes: 1
     readonly property int tableRowHeight: 26
     readonly property int tableHeaderHeight: 28
     readonly property int tablePadding: 8
@@ -109,6 +111,7 @@ Item {
     property bool protocolHintsExpanded: false
     property bool quicTlsExpanded: false
     property bool topEndpointsPortsExpanded: false
+    property int flowPacketHistogramDisplayMode: flowPacketHistogramModeFlows
 
     signal endpointActivated(string endpointText)
     signal portActivated(int port)
@@ -122,6 +125,7 @@ Item {
         protocolHintsExpanded = false
         quicTlsExpanded = false
         topEndpointsPortsExpanded = false
+        flowPacketHistogramDisplayMode = flowPacketHistogramModeFlows
     }
 
     function groupInteger(value) {
@@ -253,6 +257,14 @@ Item {
         leftPadding: 12
         rightPadding: 12
         implicitWidth: Math.max(120, implicitContentWidth + leftPadding + rightPadding)
+        implicitHeight: 28
+    }
+
+    component HistogramModeButton: Button {
+        checkable: true
+        leftPadding: 12
+        rightPadding: 12
+        implicitWidth: Math.max(92, implicitContentWidth + leftPadding + rightPadding)
         implicitHeight: 28
     }
 
@@ -514,6 +526,60 @@ Item {
                         root.statisticsSectionExpandedChanged(root.sectionFlowPacketHistogram, expanded)
                     }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: root.hasCapture
+                        spacing: 8
+
+                        Label {
+                            text: "Mode"
+                            color: "#64748b"
+                        }
+
+                        Rectangle {
+                            color: "#f8fafc"
+                            border.color: "#cbd5e1"
+                            radius: 6
+                            implicitHeight: flowPacketHistogramModeLayout.implicitHeight + 4
+                            implicitWidth: flowPacketHistogramModeLayout.implicitWidth + 8
+
+                            RowLayout {
+                                id: flowPacketHistogramModeLayout
+                                anchors.fill: parent
+                                anchors.margins: 2
+                                spacing: 2
+
+                                ButtonGroup {
+                                    id: flowPacketHistogramModeGroup
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowPacketHistogramModeFlowsButton"
+                                    text: "Flows"
+                                    checked: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                    ButtonGroup.group: flowPacketHistogramModeGroup
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 250
+                                    ToolTip.timeout: 8000
+                                    ToolTip.text: "Number of flows in each packet-count range."
+                                    onClicked: root.flowPacketHistogramDisplayMode = root.flowPacketHistogramModeFlows
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowPacketHistogramModeOriginalBytesButton"
+                                    text: "Original bytes"
+                                    checked: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeOriginalBytes
+                                    ButtonGroup.group: flowPacketHistogramModeGroup
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 250
+                                    ToolTip.timeout: 8000
+                                    ToolTip.text: "Sum of original bytes for flows in each packet-count range."
+                                    onClicked: root.flowPacketHistogramDisplayMode = root.flowPacketHistogramModeOriginalBytes
+                                }
+                            }
+                        }
+                    }
+
                     Label {
                         visible: root.flowPacketHistogramState === root.requestStateLoading ||
                             root.flowPacketHistogramState === root.requestStateUnavailable ||
@@ -549,7 +615,14 @@ Item {
                                     border.color: "#e2e8f0"
 
                                     Rectangle {
-                                        width: Math.max(0, (parent.width - 2) * Number(modelData.normalizedFraction || 0))
+                                        width: Math.max(
+                                            0,
+                                            (parent.width - 2) * Number(
+                                                root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                                    ? modelData.normalizedFlowFraction
+                                                    : modelData.normalizedOriginalByteFraction
+                                            )
+                                        )
                                         height: parent.height - 2
                                         radius: 8
                                         x: 1
@@ -559,9 +632,11 @@ Item {
                                 }
 
                                 Label {
-                                    Layout.preferredWidth: 70
+                                    Layout.preferredWidth: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows ? 70 : 110
                                     horizontalAlignment: Text.AlignRight
-                                    text: root.groupInteger(modelData.flowCount)
+                                    text: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
+                                        ? root.groupInteger(modelData.flowCount)
+                                        : modelData.originalByteCountText
                                     color: "#334155"
                                 }
                             }

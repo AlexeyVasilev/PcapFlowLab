@@ -844,10 +844,19 @@ Semantic contract:
   by capture import and index load;
 - packet count is per flow across both directions;
 - calculation is `O(number of listed flows)` with fixed-size bucket storage;
-- the model carries `total_flow_count`, `maximum_bucket_flow_count`, and
-  ordered semantic buckets;
+- one lazy per-capture calculation accumulates both:
+  - flow count per packet-count bucket
+  - original-byte totals per packet-count bucket;
+- the model carries:
+  - `total_flow_count`
+  - `total_original_byte_count`
+  - `maximum_bucket_flow_count`
+  - `maximum_bucket_original_byte_count`
+  - ordered semantic buckets;
 - each bucket carries a stable bucket id plus inclusive lower/upper bounds and
-  the number of flows in that range;
+  both:
+  - the number of flows in that range
+  - the summed original bytes for flows in that range;
 - display labels are derived later by the frontend-neutral adapter rather than
   being the semantic source of truth.
 
@@ -868,8 +877,26 @@ Exact ordered buckets:
 
 Normal listed flows do not use a zero-packet bucket. If a listed zero-packet
 flow is encountered, it is excluded from the normal bucket totals and counted
-separately through an explicit diagnostic counter so the main histogram remains
-production-safe and semantically honest.
+separately through explicit diagnostic counters for both flow count and
+original bytes so the main histogram remains production-safe and semantically
+honest.
+
+Presentation contract:
+
+- the bucket dimension remains packet count per flow;
+- both Qt and Tauri expose two frontend-local display modes over the same
+  cached histogram result:
+  - `Flows`
+  - `Original bytes`;
+- `Flows` uses flow-count normalization and exact flow counts;
+- `Original bytes` uses original-byte normalization and formatted original-byte
+  totals;
+- mode switching is presentation-only:
+  - no second backend request
+  - no second flow walk
+  - no cache invalidation
+  - no recalculation;
+- default mode for each new capture is `Flows`.
 
 ### Section-scoped loading direction
 

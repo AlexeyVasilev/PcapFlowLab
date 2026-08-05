@@ -234,11 +234,14 @@ QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary&
     return rows;
 }
 
+QString format_size_value(const std::uint64_t value);
+
 QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& histogram) {
     QVariantList rows {};
     rows.reserve(static_cast<qsizetype>(histogram.buckets.size()));
 
     const auto max_flow_count = histogram.maximum_bucket_flow_count;
+    const auto max_original_byte_count = histogram.maximum_bucket_original_byte_count;
     for (const auto& bucket : histogram.buckets) {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketId"), QString::fromStdString(bucket.stable_id));
@@ -252,9 +255,17 @@ QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& hi
                 : QStringLiteral("%1-%2").arg(bucket.lower_bound_inclusive).arg(*bucket.upper_bound_inclusive))
             : QStringLiteral("%1+").arg(bucket.lower_bound_inclusive));
         row.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(bucket.flow_count));
-        row.insert(QStringLiteral("normalizedFraction"),
+        row.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(bucket.original_byte_count));
+        row.insert(QStringLiteral("originalByteCountText"), format_size_value(bucket.original_byte_count));
+        const auto normalized_flow_fraction =
             max_flow_count > 0U
                 ? static_cast<double>(bucket.flow_count) / static_cast<double>(max_flow_count)
+                : 0.0;
+        row.insert(QStringLiteral("normalizedFraction"), normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedFlowFraction"), normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedOriginalByteFraction"),
+            max_original_byte_count > 0U
+                ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(max_original_byte_count)
                 : 0.0);
         rows.push_back(row);
     }

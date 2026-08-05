@@ -266,12 +266,16 @@ struct FlowPacketCountHistogramBucket {
     std::uint64_t lower_bound_inclusive {0};
     std::optional<std::uint64_t> upper_bound_inclusive {};
     std::uint64_t flow_count {0};
+    std::uint64_t original_byte_count {0};
 };
 
 struct FlowPacketCountHistogram {
     std::uint64_t total_flow_count {0};
+    std::uint64_t total_original_byte_count {0};
     std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
     std::uint64_t excluded_zero_packet_flow_count {0};
+    std::uint64_t excluded_zero_packet_original_byte_count {0};
     std::vector<FlowPacketCountHistogramBucket> buckets {};
 };
 

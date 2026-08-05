@@ -363,6 +363,15 @@
                   <span id="flowPacketHistogramSummaryValue" class="statistics-disclosure-summary-value"></span>
                 </summary>
                 <div class="statistics-disclosure-body">
+                  <div class="statistics-section-heading">
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Flow packet histogram mode">
+                        <button id="flowPacketHistogramModeFlows" type="button" class="secondary-button" title="Number of flows in each packet-count range.">Flows</button>
+                        <button id="flowPacketHistogramModeOriginalBytes" type="button" class="secondary-button" title="Sum of original bytes for flows in each packet-count range.">Original bytes</button>
+                      </div>
+                    </div>
+                  </div>
                   <p id="flowPacketHistogramStateText" class="status-text compact-status-text"></p>
                   <p id="flowPacketHistogramExcludedZeroPacketLabel" class="panel-subtitle is-hidden"></p>
                   <div id="flowPacketHistogramRows" class="statistics-histogram-rows"></div>

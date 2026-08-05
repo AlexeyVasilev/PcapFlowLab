@@ -629,7 +629,11 @@ std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacke
         out << "null";
     }
     out << ','
-        << "\"flow_count\":" << bucket.flow_count
+        << "\"flow_count\":" << bucket.flow_count << ','
+        << "\"original_byte_count\":" << bucket.original_byte_count << ','
+        << "\"original_byte_count_text\":" << json_string(bucket.original_byte_count_text) << ','
+        << "\"normalized_flow_fraction\":" << bucket.normalized_flow_fraction << ','
+        << "\"normalized_original_byte_fraction\":" << bucket.normalized_original_byte_fraction
         << '}';
     return out.str();
 }
@@ -639,8 +643,11 @@ std::string flow_packet_count_histogram_json(const pfl::FrontendFlowPacketCountH
     out << '{'
         << "\"has_capture\":" << bool_json(histogram.has_capture) << ','
         << "\"total_flow_count\":" << histogram.total_flow_count << ','
+        << "\"total_original_byte_count\":" << histogram.total_original_byte_count << ','
         << "\"maximum_bucket_flow_count\":" << histogram.maximum_bucket_flow_count << ','
+        << "\"maximum_bucket_original_byte_count\":" << histogram.maximum_bucket_original_byte_count << ','
         << "\"excluded_zero_packet_flow_count\":" << histogram.excluded_zero_packet_flow_count << ','
+        << "\"excluded_zero_packet_original_byte_count\":" << histogram.excluded_zero_packet_original_byte_count << ','
         << "\"buckets\":[";
 
     for (std::size_t index = 0; index < histogram.buckets.size(); ++index) {

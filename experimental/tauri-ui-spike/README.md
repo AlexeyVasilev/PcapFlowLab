@@ -175,6 +175,11 @@ Implemented slice:
 - The five optional Statistics sections start closed for each capture and load on first eligible expansion.
 - Optional Statistics results are retained for the current capture, reused across collapse/reopen and tab return, and reset on capture replacement.
 - Tauri now requests optional Statistics content through dedicated shared-backend commands instead of eager overview duplication.
+- `Flows by Packet Count` keeps the existing packet-count buckets but now adds
+  `Flows` / `Original bytes` display modes over the same cached histogram
+  result.
+- Switching that histogram mode is presentation-only and does not trigger a
+  second backend request, cache reset, or second flow walk.
 - Statistics drill-down currently works by switching to `Flows` and reusing the existing frontend filter.
 - The Analysis tab has its own compact flow list on the left and selected-flow analysis details on the right.
 - Analysis stays selected-flow-only and does not run during capture open.

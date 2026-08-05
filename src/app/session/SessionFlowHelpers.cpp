@@ -474,23 +474,32 @@ FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<Lis
             .lower_bound_inclusive = definition.lower_bound_inclusive,
             .upper_bound_inclusive = definition.upper_bound_inclusive,
             .flow_count = 0U,
+            .original_byte_count = 0U,
         });
     }
 
     for (const auto& connection : connections) {
         const auto packets_for_flow = packet_count(connection);
+        const auto original_bytes_for_flow = total_bytes(connection);
         if (packets_for_flow == 0U) {
             ++histogram.excluded_zero_packet_flow_count;
+            histogram.excluded_zero_packet_original_byte_count += original_bytes_for_flow;
             continue;
         }
 
         const auto bucket_index = flow_packet_count_histogram_bucket_index(packets_for_flow);
         ++histogram.buckets[bucket_index].flow_count;
+        histogram.buckets[bucket_index].original_byte_count += original_bytes_for_flow;
         ++histogram.total_flow_count;
+        histogram.total_original_byte_count += original_bytes_for_flow;
     }
 
     for (const auto& bucket : histogram.buckets) {
         histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
+        histogram.maximum_bucket_original_byte_count = std::max(
+            histogram.maximum_bucket_original_byte_count,
+            bucket.original_byte_count
+        );
     }
 
     return histogram;

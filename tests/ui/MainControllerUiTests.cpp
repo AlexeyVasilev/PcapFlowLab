@@ -2930,12 +2930,14 @@ int main(int argc, char* argv[]) {
     run_ui_section("statistics_sections_lazy_loading", [&]() {
         auto statistics_pane = load_qml_component("src/ui/qml/components/StatisticsPane.qml", "StatisticsPane");
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
+        statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);
         statistics_pane.object->setProperty("protocolPathExpanded", true);
         statistics_pane.object->setProperty("protocolHintsExpanded", true);
         statistics_pane.object->setProperty("quicTlsExpanded", true);
         statistics_pane.object->setProperty("topEndpointsPortsExpanded", true);
         statistics_pane.object->setProperty("statisticsSectionsResetToken", 1);
         UI_EXPECT(!statistics_pane.object->property("flowPacketHistogramExpanded").toBool());
+        UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 0);
         UI_EXPECT(!statistics_pane.object->property("protocolPathExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("protocolHintsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("quicTlsExpanded").toBool());
@@ -2970,10 +2972,40 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramState", section_ready);
         statistics_pane.object->setProperty("flowPacketHistogramExcludedZeroPacketFlowCount", 2);
+        statistics_pane.object->setProperty("flowPacketHistogramRows", QVariantList {
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("1")},
+                {QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("originalByteCount"), QVariant::fromValue<qulonglong>(0U)},
+                {QStringLiteral("originalByteCountText"), QStringLiteral("0 B")},
+                {QStringLiteral("normalizedFlowFraction"), 1.0},
+                {QStringLiteral("normalizedOriginalByteFraction"), 0.0},
+            },
+            QVariantMap {
+                {QStringLiteral("label"), QStringLiteral("3-5")},
+                {QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(1U)},
+                {QStringLiteral("originalByteCount"), QVariant::fromValue<qulonglong>(1536U)},
+                {QStringLiteral("originalByteCountText"), QStringLiteral("1.5 KB")},
+                {QStringLiteral("normalizedFlowFraction"), 1.0},
+                {QStringLiteral("normalizedOriginalByteFraction"), 1.0},
+            },
+        });
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(statistics_pane.object.get(), "flowPacketHistogramExcludedZeroPacketLabel"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramExcludedZeroPacketLabel")->property("text").toString()
             == QStringLiteral("Excluded zero-packet flows: 2"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeFlowsButton") != nullptr);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeOriginalBytesButton") != nullptr);
+        UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 0);
+        statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 1);
+        UI_EXPECT(statistics_pane.object->property("flowPacketHistogramState").toInt() == section_ready);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "flowPacketHistogramModeOriginalBytesButton")->property("checked").toBool());
+        statistics_pane.object->setProperty("flowPacketHistogramExpanded", false);
+        statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 1);
 
         const auto histogram_capture_path = write_temp_pcap(
             "pfl_ui_flow_packet_histogram_sections.pcap",
@@ -3026,6 +3058,12 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(histogram_controller.flowPacketHistogramState() == section_ready);
         histogram_controller.setStatisticsSectionExpanded(histogram_section, true);
         UI_EXPECT(histogram_controller.flowPacketHistogramRows() == histogram_rows);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCount")).toULongLong() > 0U);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountText")).toString().endsWith(QStringLiteral("B")));
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedFlowFraction")).toDouble() == 1.0);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("normalizedOriginalByteFraction")).toDouble() >= 0.0);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("3-5")).value(QStringLiteral("normalizedOriginalByteFraction")).toDouble() == 1.0);
+        UI_EXPECT(find_flow_packet_histogram_row(histogram_rows, QStringLiteral("1")).value(QStringLiteral("originalByteCountText")).toString() != QStringLiteral("0 B"));
 
         MainController deferred_histogram_controller {};
         UI_EXPECT(open_capture_and_wait(app, deferred_histogram_controller, histogram_capture_path));

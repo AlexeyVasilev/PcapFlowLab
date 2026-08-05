@@ -260,14 +260,19 @@ std::string flow_packet_count_histogram_bucket_label(const FlowPacketCountHistog
     return std::to_string(bucket.lower_bound_inclusive) + '-' + std::to_string(*bucket.upper_bound_inclusive);
 }
 
+std::string format_size_value(const std::uint64_t value);
+
 FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
     const FlowPacketCountHistogram& histogram
 ) {
     FrontendFlowPacketCountHistogramDto dto {};
     dto.has_capture = true;
     dto.total_flow_count = histogram.total_flow_count;
+    dto.total_original_byte_count = histogram.total_original_byte_count;
     dto.maximum_bucket_flow_count = histogram.maximum_bucket_flow_count;
+    dto.maximum_bucket_original_byte_count = histogram.maximum_bucket_original_byte_count;
     dto.excluded_zero_packet_flow_count = histogram.excluded_zero_packet_flow_count;
+    dto.excluded_zero_packet_original_byte_count = histogram.excluded_zero_packet_original_byte_count;
     dto.buckets.reserve(histogram.buckets.size());
 
     for (const auto& bucket : histogram.buckets) {
@@ -277,6 +282,15 @@ FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
             .lower_bound_inclusive = bucket.lower_bound_inclusive,
             .upper_bound_inclusive = bucket.upper_bound_inclusive,
             .flow_count = bucket.flow_count,
+            .original_byte_count = bucket.original_byte_count,
+            .original_byte_count_text = format_size_value(bucket.original_byte_count),
+            .normalized_flow_fraction = histogram.maximum_bucket_flow_count > 0U
+                ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.maximum_bucket_flow_count)
+                : 0.0,
+            .normalized_original_byte_fraction = histogram.maximum_bucket_original_byte_count > 0U
+                ? static_cast<double>(bucket.original_byte_count)
+                    / static_cast<double>(histogram.maximum_bucket_original_byte_count)
+                : 0.0,
         });
     }
 

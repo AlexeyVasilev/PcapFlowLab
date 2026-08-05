@@ -159,6 +159,7 @@
     analysisFlowVirtualizationActive: false,
     statisticsSections: createStatisticsSectionsState(),
     flowPacketCountHistogram: null,
+    flowPacketHistogramDisplayMode: "flows",
     protocolHintStatistics: null,
     quicTlsStatistics: null,
     topEndpointPortStatistics: null,
@@ -392,6 +393,8 @@
     flowPacketHistogramDetails: document.getElementById("flowPacketHistogramDetails"),
     flowPacketHistogramSummaryValue: document.getElementById("flowPacketHistogramSummaryValue"),
     flowPacketHistogramStateText: document.getElementById("flowPacketHistogramStateText"),
+    flowPacketHistogramModeFlows: document.getElementById("flowPacketHistogramModeFlows"),
+    flowPacketHistogramModeOriginalBytes: document.getElementById("flowPacketHistogramModeOriginalBytes"),
     flowPacketHistogramExcludedZeroPacketLabel: document.getElementById("flowPacketHistogramExcludedZeroPacketLabel"),
     flowPacketHistogramRows: document.getElementById("flowPacketHistogramRows"),
     protocolPathDetails: document.getElementById("protocolPathDetails"),
@@ -458,6 +461,7 @@
   function resetOptionalStatisticsSections() {
     state.statisticsSections = createStatisticsSectionsState();
     state.flowPacketCountHistogram = null;
+    state.flowPacketHistogramDisplayMode = "flows";
     state.protocolHintStatistics = null;
     state.quicTlsStatistics = null;
     state.topEndpointPortStatistics = null;
@@ -3045,6 +3049,22 @@
     elements.topPortsBody && (elements.topPortsBody.innerHTML = "");
   }
 
+  function renderFlowPacketHistogramModeButtons() {
+    elements.flowPacketHistogramModeFlows?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "flows");
+    elements.flowPacketHistogramModeOriginalBytes?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "original_bytes");
+  }
+
+  function setFlowPacketHistogramDisplayMode(mode) {
+    const normalizedMode = mode === "original_bytes" ? "original_bytes" : "flows";
+    if (state.flowPacketHistogramDisplayMode === normalizedMode) {
+      renderFlowPacketHistogramModeButtons();
+      return;
+    }
+
+    state.flowPacketHistogramDisplayMode = normalizedMode;
+    renderFlowPacketHistogramSection();
+  }
+
   function clearAnalysisDom() {
     elements.analysisFlowTableBody && (elements.analysisFlowTableBody.innerHTML = "");
     elements.analysisFlowRenderCapText && (elements.analysisFlowRenderCapText.textContent = "");
@@ -3370,6 +3390,7 @@
   function renderFlowPacketHistogramSection() {
     const section = statisticsSectionEntry(statisticsSectionKeys.flowPacketHistogram);
     const histogram = state.flowPacketCountHistogram;
+    renderFlowPacketHistogramModeButtons();
     if (elements.flowPacketHistogramSummaryValue) {
       elements.flowPacketHistogramSummaryValue.textContent = histogram?.has_capture
         ? `${formatNumber(histogram.total_flow_count)} flows`
@@ -3391,20 +3412,28 @@
           `Excluded zero-packet flows: ${formatNumber(histogram.excluded_zero_packet_flow_count)}`;
       }
 
-      const maximumBucketFlowCount = Number(histogram.maximum_bucket_flow_count ?? 0);
       const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : [];
+      const showingOriginalBytes = state.flowPacketHistogramDisplayMode === "original_bytes";
       elements.flowPacketHistogramRows.innerHTML = buckets.length > 0
         ? buckets
           .map((bucket) => {
             const flowCount = Number(bucket?.flow_count ?? 0);
-            const percent = maximumBucketFlowCount > 0 ? Math.max(0, Math.min(100, (flowCount / maximumBucketFlowCount) * 100)) : 0;
+            const normalizedFraction = Number(
+              showingOriginalBytes
+                ? bucket?.normalized_original_byte_fraction
+                : bucket?.normalized_flow_fraction
+            );
+            const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
+            const valueText = showingOriginalBytes
+              ? String(bucket?.original_byte_count_text || "0 B")
+              : formatNumber(flowCount);
             return `
               <div class="statistics-histogram-row">
                 <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>
                 <div class="statistics-histogram-track">
                   <div class="statistics-histogram-fill" style="width:${percent}%;"></div>
                 </div>
-                <span class="statistics-histogram-count">${formatNumber(flowCount)}</span>
+                <span class="statistics-histogram-count">${escapeHtml(valueText)}</span>
               </div>
             `;
           })
@@ -7095,6 +7124,12 @@
       handleStatisticsSectionToggle(sectionKey, detailsElement.open);
     });
   }
+  elements.flowPacketHistogramModeFlows?.addEventListener("click", () => {
+    setFlowPacketHistogramDisplayMode("flows");
+  });
+  elements.flowPacketHistogramModeOriginalBytes?.addEventListener("click", () => {
+    setFlowPacketHistogramDisplayMode("original_bytes");
+  });
   for (const button of elements.tabButtons) {
     button.addEventListener("click", async () => {
       state.activeTab = button.dataset.tab || "flows";

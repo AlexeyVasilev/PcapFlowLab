@@ -35,6 +35,10 @@
   - `QUIC and TLS`
   - `Top Endpoints and Ports`
 - For each capture, those optional Qt sections start collapsed, request data on first expansion only, and reuse the per-capture cached result on collapse/reopen or Statistics-tab revisit.
+- `Flows by Packet Count` now keeps the same packet-count buckets but exposes two presentation modes over one cached calculation:
+  - `Flows`
+  - `Original bytes`
+- That histogram lazy pass now accumulates both flow counts and original-byte totals per bucket without issuing a second backend request when the visible mode changes.
 - Opening a new capture resets the optional Qt section expansion and visible result state; the Tauri Statistics shell remains on its transitional eager overview path for now.
 
 ## UI

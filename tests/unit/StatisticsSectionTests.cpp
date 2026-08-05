@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,14 +27,20 @@ struct HistogramInputConnections {
     std::vector<session_detail::ListedConnectionRef> refs {};
 };
 
-HistogramInputConnections make_histogram_input_connections(const std::vector<std::uint64_t>& packet_counts) {
-    HistogramInputConnections input {};
-    input.storage.reserve(packet_counts.size());
-    input.refs.reserve(packet_counts.size());
+struct HistogramFlowInput {
+    std::uint64_t packet_count {0};
+    std::uint64_t original_byte_count {0};
+};
 
-    for (std::size_t index = 0U; index < packet_counts.size(); ++index) {
+HistogramInputConnections make_histogram_input_connections(const std::vector<HistogramFlowInput>& flows) {
+    HistogramInputConnections input {};
+    input.storage.reserve(flows.size());
+    input.refs.reserve(flows.size());
+
+    for (std::size_t index = 0U; index < flows.size(); ++index) {
         ConnectionV4 connection {};
-        connection.packet_count = packet_counts[index];
+        connection.packet_count = flows[index].packet_count;
+        connection.total_bytes = flows[index].original_byte_count;
         connection.key.first.addr = ipv4(10, 0, 0, static_cast<std::uint8_t>(index + 1U));
         connection.key.first.port = static_cast<std::uint16_t>(1000U + index);
         connection.key.second.addr = ipv4(10, 0, 1, static_cast<std::uint8_t>(index + 1U));
@@ -80,20 +87,25 @@ void expect_histogram_bucket(
     const FlowPacketCountHistogram& histogram,
     const std::string_view stable_id,
     const std::uint64_t expected_count,
+    const std::uint64_t expected_original_byte_count,
     const std::uint64_t expected_lower_bound,
     const std::optional<std::uint64_t> expected_upper_bound
 ) {
     const auto* bucket = find_bucket(histogram, stable_id);
     PFL_REQUIRE(bucket != nullptr);
     PFL_EXPECT(bucket->flow_count == expected_count);
+    PFL_EXPECT(bucket->original_byte_count == expected_original_byte_count);
     PFL_EXPECT(bucket->lower_bound_inclusive == expected_lower_bound);
     PFL_EXPECT(bucket->upper_bound_inclusive == expected_upper_bound);
 }
 
 void expect_histogram_equal(const FlowPacketCountHistogram& left, const FlowPacketCountHistogram& right) {
     PFL_EXPECT(left.total_flow_count == right.total_flow_count);
+    PFL_EXPECT(left.total_original_byte_count == right.total_original_byte_count);
     PFL_EXPECT(left.maximum_bucket_flow_count == right.maximum_bucket_flow_count);
+    PFL_EXPECT(left.maximum_bucket_original_byte_count == right.maximum_bucket_original_byte_count);
     PFL_EXPECT(left.excluded_zero_packet_flow_count == right.excluded_zero_packet_flow_count);
+    PFL_EXPECT(left.excluded_zero_packet_original_byte_count == right.excluded_zero_packet_original_byte_count);
     PFL_EXPECT(left.buckets.size() == right.buckets.size());
 
     for (std::size_t index = 0U; index < left.buckets.size(); ++index) {
@@ -101,6 +113,7 @@ void expect_histogram_equal(const FlowPacketCountHistogram& left, const FlowPack
         PFL_EXPECT(left.buckets[index].lower_bound_inclusive == right.buckets[index].lower_bound_inclusive);
         PFL_EXPECT(left.buckets[index].upper_bound_inclusive == right.buckets[index].upper_bound_inclusive);
         PFL_EXPECT(left.buckets[index].flow_count == right.buckets[index].flow_count);
+        PFL_EXPECT(left.buckets[index].original_byte_count == right.buckets[index].original_byte_count);
     }
 }
 
@@ -117,58 +130,113 @@ bool contains_text(const std::string& text, const std::string_view fragment) {
 
 void expect_flow_packet_count_histogram_boundaries() {
     const auto input = make_histogram_input_connections({
-        1U, 2U, 3U, 5U, 6U, 10U, 11U, 25U, 26U, 50U, 51U,
-        100U, 101U, 250U, 251U, 500U, 501U, 1000U, 1001U, 5000U, 5001U
+        {1U, 100U},
+        {2U, 200U},
+        {3U, 300U},
+        {5U, 500U},
+        {6U, 600U},
+        {10U, 1000U},
+        {11U, 1100U},
+        {25U, 2500U},
+        {26U, 2600U},
+        {50U, 5000U},
+        {51U, 5100U},
+        {100U, 10000U},
+        {101U, 10100U},
+        {250U, 25000U},
+        {251U, 25100U},
+        {500U, 50000U},
+        {501U, 50100U},
+        {1000U, 100000U},
+        {1001U, 100100U},
+        {5000U, 500000U},
+        {5001U, 500100U},
     });
     const auto histogram = session_detail::build_flow_packet_count_histogram(input.refs);
 
     PFL_EXPECT(histogram.total_flow_count == 21U);
+    PFL_EXPECT(histogram.total_original_byte_count == 1389500U);
     PFL_EXPECT(histogram.maximum_bucket_flow_count == 2U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 600100U);
     PFL_EXPECT(histogram.excluded_zero_packet_flow_count == 0U);
+    PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 0U);
     PFL_EXPECT(histogram.buckets.size() == 12U);
 
-    expect_histogram_bucket(histogram, "packets_1", 1U, 1U, 1U);
-    expect_histogram_bucket(histogram, "packets_2", 1U, 2U, 2U);
-    expect_histogram_bucket(histogram, "packets_3_5", 2U, 3U, 5U);
-    expect_histogram_bucket(histogram, "packets_6_10", 2U, 6U, 10U);
-    expect_histogram_bucket(histogram, "packets_11_25", 2U, 11U, 25U);
-    expect_histogram_bucket(histogram, "packets_26_50", 2U, 26U, 50U);
-    expect_histogram_bucket(histogram, "packets_51_100", 2U, 51U, 100U);
-    expect_histogram_bucket(histogram, "packets_101_250", 2U, 101U, 250U);
-    expect_histogram_bucket(histogram, "packets_251_500", 2U, 251U, 500U);
-    expect_histogram_bucket(histogram, "packets_501_1000", 2U, 501U, 1000U);
-    expect_histogram_bucket(histogram, "packets_1001_5000", 2U, 1001U, 5000U);
-    expect_histogram_bucket(histogram, "packets_5001_plus", 1U, 5001U, std::nullopt);
+    expect_histogram_bucket(histogram, "packets_1", 1U, 100U, 1U, 1U);
+    expect_histogram_bucket(histogram, "packets_2", 1U, 200U, 2U, 2U);
+    expect_histogram_bucket(histogram, "packets_3_5", 2U, 800U, 3U, 5U);
+    expect_histogram_bucket(histogram, "packets_6_10", 2U, 1600U, 6U, 10U);
+    expect_histogram_bucket(histogram, "packets_11_25", 2U, 3600U, 11U, 25U);
+    expect_histogram_bucket(histogram, "packets_26_50", 2U, 7600U, 26U, 50U);
+    expect_histogram_bucket(histogram, "packets_51_100", 2U, 15100U, 51U, 100U);
+    expect_histogram_bucket(histogram, "packets_101_250", 2U, 35100U, 101U, 250U);
+    expect_histogram_bucket(histogram, "packets_251_500", 2U, 75100U, 251U, 500U);
+    expect_histogram_bucket(histogram, "packets_501_1000", 2U, 150100U, 501U, 1000U);
+    expect_histogram_bucket(histogram, "packets_1001_5000", 2U, 600100U, 1001U, 5000U);
+    expect_histogram_bucket(histogram, "packets_5001_plus", 1U, 500100U, 5001U, std::nullopt);
 
     std::uint64_t summed_flow_count {0};
+    std::uint64_t summed_original_byte_count {0};
     for (const auto& bucket : histogram.buckets) {
         summed_flow_count += bucket.flow_count;
+        summed_original_byte_count += bucket.original_byte_count;
     }
     PFL_EXPECT(summed_flow_count == histogram.total_flow_count);
+    PFL_EXPECT(summed_original_byte_count == histogram.total_original_byte_count);
 }
 
 void expect_flow_packet_count_histogram_zero_packet_behavior() {
-    const auto input = make_histogram_input_connections({0U, 1U, 2U, 2U});
+    const auto input = make_histogram_input_connections({
+        {0U, 4096U},
+        {1U, 0U},
+        {2U, 512U},
+        {2U, 1536U},
+    });
     const auto histogram = session_detail::build_flow_packet_count_histogram(input.refs);
 
     PFL_EXPECT(histogram.total_flow_count == 3U);
+    PFL_EXPECT(histogram.total_original_byte_count == 2048U);
     PFL_EXPECT(histogram.maximum_bucket_flow_count == 2U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 2048U);
     PFL_EXPECT(histogram.excluded_zero_packet_flow_count == 1U);
-    expect_histogram_bucket(histogram, "packets_1", 1U, 1U, 1U);
-    expect_histogram_bucket(histogram, "packets_2", 2U, 2U, 2U);
+    PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 4096U);
+    expect_histogram_bucket(histogram, "packets_1", 1U, 0U, 1U, 1U);
+    expect_histogram_bucket(histogram, "packets_2", 2U, 2048U, 2U, 2U);
 }
 
 void expect_flow_packet_count_histogram_supports_empty_inputs() {
-    const auto input = make_histogram_input_connections({});
+    const auto input = make_histogram_input_connections(std::vector<HistogramFlowInput> {});
     const auto histogram = session_detail::build_flow_packet_count_histogram(input.refs);
 
     PFL_EXPECT(histogram.total_flow_count == 0U);
+    PFL_EXPECT(histogram.total_original_byte_count == 0U);
     PFL_EXPECT(histogram.maximum_bucket_flow_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 0U);
     PFL_EXPECT(histogram.excluded_zero_packet_flow_count == 0U);
+    PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 0U);
     PFL_EXPECT(histogram.buckets.size() == 12U);
     for (const auto& bucket : histogram.buckets) {
         PFL_EXPECT(bucket.flow_count == 0U);
+        PFL_EXPECT(bucket.original_byte_count == 0U);
     }
+}
+
+void expect_flow_packet_count_histogram_handles_large_original_byte_totals() {
+    const auto near_max = std::numeric_limits<std::uint64_t>::max() - 4096U;
+    const auto input = make_histogram_input_connections({
+        {1U, 1024U},
+        {2U, near_max},
+        {2U, 512U},
+    });
+    const auto histogram = session_detail::build_flow_packet_count_histogram(input.refs);
+
+    const auto expected_bucket_two_total = near_max + 512U;
+    const auto expected_histogram_total = expected_bucket_two_total + 1024U;
+    PFL_EXPECT(histogram.total_flow_count == 3U);
+    PFL_EXPECT(histogram.total_original_byte_count == expected_histogram_total);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == expected_bucket_two_total);
+    expect_histogram_bucket(histogram, "packets_1", 1U, 1024U, 1U, 1U);
+    expect_histogram_bucket(histogram, "packets_2", 2U, expected_bucket_two_total, 2U, 2U);
 }
 
 void expect_flow_packet_count_histogram_survives_index_roundtrip() {
@@ -218,13 +286,22 @@ void expect_flow_packet_count_histogram_is_cached_per_capture() {
     const auto first_histogram = session.flow_packet_count_histogram();
     auto* cached_connection = const_cast<ConnectionV4*>(session.state().ipv4_connections.list().front());
     cached_connection->packet_count = 5001U;
+    cached_connection->total_bytes = 999999U;
     const auto cached_histogram = session.flow_packet_count_histogram();
     expect_histogram_equal(first_histogram, cached_histogram);
 
     PFL_REQUIRE(session.open_capture(second_capture));
     const auto second_histogram = session.flow_packet_count_histogram();
     PFL_EXPECT(second_histogram.total_flow_count == 1U);
-    expect_histogram_bucket(second_histogram, "packets_2", 1U, 2U, 2U);
+    PFL_EXPECT(second_histogram.total_original_byte_count > 0U);
+    expect_histogram_bucket(
+        second_histogram,
+        "packets_2",
+        1U,
+        second_histogram.total_original_byte_count,
+        2U,
+        2U
+    );
 }
 
 void expect_overview_excludes_optional_statistics_sections() {
@@ -270,11 +347,18 @@ void expect_overview_excludes_optional_statistics_sections() {
 
     PFL_EXPECT(histogram.has_capture);
     PFL_EXPECT(histogram.total_flow_count == 3U);
+    PFL_EXPECT(histogram.total_original_byte_count > 0U);
     PFL_EXPECT(histogram.maximum_bucket_flow_count == 2U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count > 0U);
+    PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 0U);
     PFL_REQUIRE(find_bucket(histogram, "packets_1") != nullptr);
     PFL_REQUIRE(find_bucket(histogram, "packets_2") != nullptr);
     PFL_EXPECT(find_bucket(histogram, "packets_1")->label == "1");
     PFL_EXPECT(find_bucket(histogram, "packets_2")->label == "2");
+    PFL_EXPECT(find_bucket(histogram, "packets_1")->normalized_flow_fraction == 1.0);
+    PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_flow_fraction == 0.5);
+    PFL_EXPECT(find_bucket(histogram, "packets_1")->original_byte_count_text.find('B') != std::string::npos);
+    PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_original_byte_fraction > 0.0);
 }
 
 void expect_quic_tls_section_keeps_one_empty_side() {
@@ -306,6 +390,9 @@ void expect_statistics_section_requests_handle_missing_capture() {
     const auto top = adapter.get_top_endpoint_port_statistics(5U);
 
     PFL_EXPECT(!histogram.has_capture);
+    PFL_EXPECT(histogram.total_original_byte_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 0U);
+    PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 0U);
     PFL_EXPECT(histogram.buckets.empty());
     PFL_EXPECT(!hints.has_capture);
     PFL_EXPECT(hints.protocol_hints.empty());
@@ -334,10 +421,17 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
 
     const auto histogram_json = take_bridge_string(pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(handle));
+    PFL_EXPECT(contains_text(histogram_json, "\"total_original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"maximum_bucket_flow_count\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"maximum_bucket_original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"excluded_zero_packet_flow_count\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"excluded_zero_packet_original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"bucket_id\":\"packets_2\""));
     PFL_EXPECT(contains_text(histogram_json, "\"label\":\"2\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"original_byte_count\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"original_byte_count_text\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"normalized_flow_fraction\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"normalized_original_byte_fraction\""));
 
     const auto overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_summary\""));
@@ -371,6 +465,7 @@ void run_statistics_section_tests() {
     expect_flow_packet_count_histogram_boundaries();
     expect_flow_packet_count_histogram_zero_packet_behavior();
     expect_flow_packet_count_histogram_supports_empty_inputs();
+    expect_flow_packet_count_histogram_handles_large_original_byte_totals();
     expect_flow_packet_count_histogram_survives_index_roundtrip();
     expect_flow_packet_count_histogram_is_cached_per_capture();
     expect_overview_excludes_optional_statistics_sections();

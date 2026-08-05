@@ -193,14 +193,21 @@ pub struct FlowPacketCountHistogramBucketDto {
     pub lower_bound_inclusive: u64,
     pub upper_bound_inclusive: Option<u64>,
     pub flow_count: u64,
+    pub original_byte_count: u64,
+    pub original_byte_count_text: String,
+    pub normalized_flow_fraction: f64,
+    pub normalized_original_byte_fraction: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowPacketCountHistogramDto {
     pub has_capture: bool,
     pub total_flow_count: u64,
+    pub total_original_byte_count: u64,
     pub maximum_bucket_flow_count: u64,
+    pub maximum_bucket_original_byte_count: u64,
     pub excluded_zero_packet_flow_count: u64,
+    pub excluded_zero_packet_original_byte_count: u64,
     pub buckets: Vec<FlowPacketCountHistogramBucketDto>,
 }
 

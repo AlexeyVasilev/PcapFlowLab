@@ -151,13 +151,20 @@ struct FrontendFlowPacketCountHistogramBucketDto {
     std::uint64_t lower_bound_inclusive {0};
     std::optional<std::uint64_t> upper_bound_inclusive {};
     std::uint64_t flow_count {0};
+    std::uint64_t original_byte_count {0};
+    std::string original_byte_count_text {};
+    double normalized_flow_fraction {0.0};
+    double normalized_original_byte_fraction {0.0};
 };
 
 struct FrontendFlowPacketCountHistogramDto {
     bool has_capture {false};
     std::uint64_t total_flow_count {0};
+    std::uint64_t total_original_byte_count {0};
     std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
     std::uint64_t excluded_zero_packet_flow_count {0};
+    std::uint64_t excluded_zero_packet_original_byte_count {0};
     std::vector<FrontendFlowPacketCountHistogramBucketDto> buckets {};
 };
 

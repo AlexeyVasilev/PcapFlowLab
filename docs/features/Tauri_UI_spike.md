@@ -206,6 +206,11 @@ Backend/API note:
   - first eligible expansion issues the dedicated request once per capture
   - collapse/reopen and Statistics-tab return reuse the cached result
   - capture replacement clears expansion and per-section cached results
+- `Flows by Packet Count` keeps its existing packet-count buckets but now offers
+  frontend-local `Flows` / `Original bytes` display modes over the same cached
+  histogram payload
+- changing that histogram mode is presentation-only and does not trigger a
+  second backend request or a second flow walk
 - the shared backend now also provides dedicated typed requests for:
   - Flows by Packet Count
   - Detected Protocol Hints
