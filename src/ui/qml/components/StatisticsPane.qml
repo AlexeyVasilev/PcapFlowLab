@@ -842,11 +842,6 @@ Item {
                             }
                         }
 
-                        Label {
-                            visible: root.protocolPathStatsModel && root.protocolPathStatsModel.rowCount() === 0
-                            text: "No protocol-path statistics are available for this capture."
-                            color: "#64748b"
-                        }
                     }
                 }
 
