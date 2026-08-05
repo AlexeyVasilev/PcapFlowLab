@@ -408,8 +408,8 @@ void expect_capture_packet_size_statistics_boundaries() {
     expect_capture_packet_size_bucket(statistics, "captured_bytes_256_511", 2U, 256U, 511U);
     expect_capture_packet_size_bucket(statistics, "captured_bytes_512_1023", 2U, 512U, 1023U);
     expect_capture_packet_size_bucket(statistics, "captured_bytes_1024_1399", 2U, 1024U, 1399U);
-    expect_capture_packet_size_bucket(statistics, "captured_bytes_1400_1499", 2U, 1400U, 1499U);
-    expect_capture_packet_size_bucket(statistics, "captured_bytes_1500_2499", 2U, 1500U, 2499U);
+    expect_capture_packet_size_bucket(statistics, "captured_bytes_1400_1550", 2U, 1400U, 1550U);
+    expect_capture_packet_size_bucket(statistics, "captured_bytes_1551_2499", 2U, 1551U, 2499U);
     expect_capture_packet_size_bucket(statistics, "captured_bytes_2500_5000", 2U, 2500U, 5000U);
     expect_capture_packet_size_bucket(statistics, "captured_bytes_5001_9000", 2U, 5001U, 9000U);
     expect_capture_packet_size_bucket(statistics, "captured_bytes_9001_16000", 2U, 9001U, 16000U);

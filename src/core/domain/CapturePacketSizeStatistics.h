@@ -26,8 +26,8 @@ make_capture_packet_size_statistics_buckets() {
         {"captured_bytes_256_511", 256U, 511U, 0U},
         {"captured_bytes_512_1023", 512U, 1023U, 0U},
         {"captured_bytes_1024_1399", 1024U, 1399U, 0U},
-        {"captured_bytes_1400_1499", 1400U, 1499U, 0U},
-        {"captured_bytes_1500_2499", 1500U, 2499U, 0U},
+        {"captured_bytes_1400_1550", 1400U, 1550U, 0U},
+        {"captured_bytes_1551_2499", 1551U, 2499U, 0U},
         {"captured_bytes_2500_5000", 2500U, 5000U, 0U},
         {"captured_bytes_5001_9000", 5001U, 9000U, 0U},
         {"captured_bytes_9001_16000", 9001U, 16000U, 0U},
@@ -64,7 +64,7 @@ constexpr std::size_t capture_packet_size_bucket_index(const std::uint32_t captu
     if (captured_length <= 1399U) {
         return 5U;
     }
-    if (captured_length <= 1499U) {
+    if (captured_length <= 1550U) {
         return 6U;
     }
     if (captured_length <= 2499U) {

@@ -272,8 +272,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(packet_histogram_count(*analysis, "256-511") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "512-1023") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "1024-1399") == 0U);
-    PFL_EXPECT(packet_histogram_count(*analysis, "1400-1499") == 0U);
-    PFL_EXPECT(packet_histogram_count(*analysis, "1500-2499") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1400-1550") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1551-2499") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "2500-5000") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "5001+") == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows.size() == 3U);
@@ -339,10 +339,10 @@ void run_flow_analysis_tests() {
     const auto bucket_1024_1399_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1000, 0x18
     );
-    const auto bucket_1400_1499_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+    const auto bucket_1400_1550_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1376, 0x18
     );
-    const auto bucket_1500_2499_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+    const auto bucket_1551_2499_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1476, 0x18
     );
     const auto bucket_2500_5000_packet = make_ethernet_ipv4_tcp_packet_with_payload(
@@ -361,8 +361,8 @@ void run_flow_analysis_tests() {
             {130U, bucket_256_511_packet},
             {140U, bucket_512_1023_packet},
             {150U, bucket_1024_1399_packet},
-            {160U, bucket_1400_1499_packet},
-            {170U, bucket_1500_2499_packet},
+            {160U, bucket_1400_1550_packet},
+            {170U, bucket_1551_2499_packet},
             {180U, bucket_2500_5000_packet},
             {190U, bucket_5001_plus_packet},
         })
@@ -382,8 +382,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "256-511") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "512-1023") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1024-1399") == 1U);
-    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1400-1499") == 1U);
-    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1500-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1400-1550") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1551-2499") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "2500-5000") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "5001+") == 1U);
     PFL_EXPECT(
@@ -393,8 +393,8 @@ void run_flow_analysis_tests() {
         packet_histogram_count(*histogram_analysis, "256-511") +
         packet_histogram_count(*histogram_analysis, "512-1023") +
         packet_histogram_count(*histogram_analysis, "1024-1399") +
-        packet_histogram_count(*histogram_analysis, "1400-1499") +
-        packet_histogram_count(*histogram_analysis, "1500-2499") +
+        packet_histogram_count(*histogram_analysis, "1400-1550") +
+        packet_histogram_count(*histogram_analysis, "1551-2499") +
         packet_histogram_count(*histogram_analysis, "2500-5000") +
         packet_histogram_count(*histogram_analysis, "5001+") == histogram_analysis->total_packets
     );
@@ -470,8 +470,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b.size() == 10U);
     PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a.size() == 10U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "0-63") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1400-1499") == 1U);
-    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1500-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1400-1550") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1551-2499") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1024-1399") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "5001+") == 1U);
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "64-127") == 1U);

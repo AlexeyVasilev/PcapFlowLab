@@ -525,10 +525,10 @@ QString packet_size_bucket_label(const std::uint32_t captured_length) {
         return QStringLiteral("1024-1399");
     }
     if (captured_length <= 1499U) {
-        return QStringLiteral("1400-1499");
+        return QStringLiteral("1400-1550");
     }
     if (captured_length <= 2499U) {
-        return QStringLiteral("1500-2499");
+        return QStringLiteral("1551-2499");
     }
     if (captured_length <= 5000U) {
         return QStringLiteral("2500-5000");
@@ -1786,7 +1786,7 @@ int main(int argc, char* argv[]) {
         histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramBToA())
     );
     UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramAToB(), "0-63") == 1U);
-    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramAToB(), "1400-1499") == 1U);
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramAToB(), "1400-1550") == 1U);
     UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramBToA(), "2500-5000") == 1U);
     UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramBToA(), "5001+") == 1U);
     UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramAll()) == 3U);
