@@ -2872,6 +2872,25 @@ int main(int argc, char* argv[]) {
     const int top_endpoints_ports_section = static_cast<int>(MainController::StatisticsOptionalSection::top_endpoints_ports);
     const int section_not_requested = static_cast<int>(MainController::StatisticsSectionRequestState::not_requested);
     const int section_ready = static_cast<int>(MainController::StatisticsSectionRequestState::ready);
+    const auto zero_unrecognized_capture_path = write_temp_pcap(
+        "pfl_ui_statistics_unrecognized_zero.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 0, 1), ipv4(10, 42, 0, 2), 46001, 443)},
+        })
+    );
+    const std::vector<std::uint8_t> unrecognized_ethernet_packet {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+        0x88, 0xb5,
+        0x01, 0x02, 0x03, 0x04,
+    };
+    const auto nonzero_unrecognized_capture_path = write_temp_pcap(
+        "pfl_ui_statistics_unrecognized_nonzero.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 1, 1), ipv4(10, 42, 1, 2), 46002, 443)},
+            {200, unrecognized_ethernet_packet},
+        })
+    );
 
     run_ui_section("statistics_sections_lazy_loading", [&]() {
         auto statistics_pane = load_qml_component("src/ui/qml/components/StatisticsPane.qml", "StatisticsPane");
@@ -2886,6 +2905,32 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!statistics_pane.object->property("protocolHintsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("quicTlsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("topEndpointsPortsExpanded").toBool());
+
+        statistics_pane.object->setProperty("hasCapture", true);
+        statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
+        statistics_pane.object->setProperty("unrecognizedStatsCapturedBytes", 2048);
+        statistics_pane.object->setProperty("unrecognizedStatsOriginalBytes", 3072);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
+
+        statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 250206);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "unrecognizedStatsPacketValue")->property("text").toString()
+            == QStringLiteral("250 206"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "unrecognizedStatsCapturedBytesValue")->property("text").toString()
+            == QStringLiteral("2 KB"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "unrecognizedStatsOriginalBytesValue")->property("text").toString()
+            == QStringLiteral("3 KB"));
+        auto* unrecognized_stats_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "unrecognizedStatsSection"));
+        auto* flow_packet_histogram_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "flowPacketHistogramSection"));
+        UI_REQUIRE(unrecognized_stats_section != nullptr);
+        UI_REQUIRE(flow_packet_histogram_section != nullptr);
+        UI_EXPECT(flow_packet_histogram_section->y() > unrecognized_stats_section->y());
+
+        statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
 
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramState", section_ready);
@@ -2953,6 +2998,30 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(deferred_histogram_controller.flowPacketHistogramState() == section_not_requested);
         deferred_histogram_controller.setCurrentTabIndex(2);
         UI_EXPECT(deferred_histogram_controller.flowPacketHistogramState() == section_ready);
+
+        MainController unrecognized_controller {};
+        UI_EXPECT(open_capture_and_wait(app, unrecognized_controller, nonzero_unrecognized_capture_path));
+        UI_EXPECT(unrecognized_controller.tcpFlowCount() == 1U);
+        UI_EXPECT(unrecognized_controller.tcpPacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.ipv4FlowCount() == 1U);
+        UI_EXPECT(unrecognized_controller.ipv4PacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 18U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 18U);
+
+        UI_EXPECT(open_capture_and_wait(app, unrecognized_controller, zero_unrecognized_capture_path));
+        UI_EXPECT(unrecognized_controller.tcpFlowCount() == 1U);
+        UI_EXPECT(unrecognized_controller.tcpPacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.ipv4FlowCount() == 1U);
+        UI_EXPECT(unrecognized_controller.ipv4PacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 0U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 0U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 0U);
+
+        UI_EXPECT(open_capture_and_wait(app, unrecognized_controller, nonzero_unrecognized_capture_path));
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 18U);
+        UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 18U);
 
         MainController quic_tls_controller {};
         const auto tls_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "tls_1_2_badssl_baseline_14.pcap";

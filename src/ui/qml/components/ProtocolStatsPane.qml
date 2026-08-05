@@ -29,9 +29,6 @@ Frame {
     property var ipv6PacketCount: 0
     property var ipv6CapturedBytes: 0
     property var ipv6OriginalBytes: 0
-    property var unrecognizedStatsPacketCount: 0
-    property var unrecognizedStatsCapturedBytes: 0
-    property var unrecognizedStatsOriginalBytes: 0
     property bool hasCapture: false
 
     readonly property int tableRowHeight: 26
@@ -411,45 +408,5 @@ Frame {
             }
         }
 
-        Frame {
-            Layout.fillWidth: true
-            visible: root.hasCapture && Number(root.unrecognizedStatsPacketCount || 0) > 0
-            padding: 0
-
-            background: Rectangle {
-                color: "#ffffff"
-                border.color: "#d8dee9"
-                radius: 6
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 10
-                spacing: 16
-
-                Label {
-                    text: "Unrecognized Packets"
-                    font.bold: true
-                    color: "#0f172a"
-                }
-
-                Label {
-                    text: "Packets: " + root.groupInteger(root.unrecognizedStatsPacketCount)
-                    color: "#334155"
-                }
-
-                Label {
-                    text: "Captured: " + root.formatBytes(root.unrecognizedStatsCapturedBytes)
-                    color: "#334155"
-                }
-
-                Label {
-                    text: "Original: " + root.formatBytes(root.unrecognizedStatsOriginalBytes)
-                    color: "#334155"
-                }
-
-                Item { Layout.fillWidth: true }
-            }
-        }
     }
 }

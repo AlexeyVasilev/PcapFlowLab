@@ -410,9 +410,97 @@ Item {
                     ipv6PacketCount: root.ipv6PacketCount
                     ipv6CapturedBytes: root.ipv6CapturedBytes
                     ipv6OriginalBytes: root.ipv6OriginalBytes
-                    unrecognizedStatsPacketCount: root.unrecognizedStatsPacketCount
-                    unrecognizedStatsCapturedBytes: root.unrecognizedStatsCapturedBytes
-                    unrecognizedStatsOriginalBytes: root.unrecognizedStatsOriginalBytes
+                }
+
+                SectionFrame {
+                    id: unrecognizedStatsSection
+                    objectName: "unrecognizedStatsSection"
+                    Layout.fillWidth: true
+                    visible: root.hasCapture && Number(root.unrecognizedStatsPacketCount || 0) > 0
+
+                    Label {
+                        text: "Unrecognized Packets"
+                        font.bold: true
+                        font.pixelSize: 16
+                        color: "#0f172a"
+                    }
+
+                    Label {
+                        text: "Packets that could not be assigned to a flow"
+                        color: "#64748b"
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: root.tableHeaderHeight
+                        radius: 4
+                        color: "#f8fafc"
+                        border.color: "#e2e8f0"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: root.tablePadding
+                            anchors.rightMargin: root.tablePadding
+                            spacing: root.tableColumnSpacing
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: "Packets"
+                                font.bold: true
+                                color: "#334155"
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: "Captured Bytes"
+                                font.bold: true
+                                color: "#334155"
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: "Original Bytes"
+                                font.bold: true
+                                color: "#334155"
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: root.tableRowHeight
+                        radius: 4
+                        color: "transparent"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: root.tablePadding
+                            anchors.rightMargin: root.tablePadding
+                            spacing: root.tableColumnSpacing
+
+                            Label {
+                                objectName: "unrecognizedStatsPacketValue"
+                                Layout.fillWidth: true
+                                text: root.groupInteger(root.unrecognizedStatsPacketCount)
+                                color: "#0f172a"
+                            }
+
+                            Label {
+                                objectName: "unrecognizedStatsCapturedBytesValue"
+                                Layout.fillWidth: true
+                                text: root.formatBytes(root.unrecognizedStatsCapturedBytes)
+                                color: "#334155"
+                            }
+
+                            Label {
+                                objectName: "unrecognizedStatsOriginalBytesValue"
+                                Layout.fillWidth: true
+                                text: root.formatBytes(root.unrecognizedStatsOriginalBytes)
+                                color: "#334155"
+                            }
+                        }
+                    }
                 }
 
                 CollapsibleStatisticsSection {
