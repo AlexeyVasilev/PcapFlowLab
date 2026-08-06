@@ -37,7 +37,7 @@ Saved analysis indexes can be opened directly instead of re-importing the captur
 - The index stores capture summary, connections, flows, packet references, source metadata, and checkpointable analysis state.
 - The current binary format is explicitly sectioned, versioned as index format `13`, and loaded with an exact-version policy.
 - Stable index data also includes the capture-level protocol-path registry plus flow/connection protocol-path identity metadata.
-- Saved indexes preserve the exact flow grouping produced at raw-import time. The current format does not record whether VLAN/MPLS-agnostic grouping was enabled, so index load does not reinterpret stored grouping with the current application setting.
+- Saved indexes preserve the exact flow grouping produced at raw-import time. The current format does not record whether VLAN/MPLS-agnostic grouping or GTP-U-TEID-agnostic grouping was enabled, so index load does not reinterpret stored grouping with the current application setting.
 - Runtime protocol-path statistics trees are rebuilt from indexed flow metadata and are not themselves persisted.
 - Unrecognized-packet metadata is persisted in current-format indexes and survives save/load without rescanning the source PCAP.
 - Capture-wide packet-size distribution statistics are reconstructed from persisted `PacketRef::captured_length` values for recognized and unrecognized packets; index load does not reread packet bytes from the source capture.
@@ -80,6 +80,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - This orientation is capture-relative and does not perform client/server inference.
 - Effective flow identity is the normalized endpoint tuple plus an interned `protocol_path_id`, so namespace-bearing layers such as GRE key, ESP SPI, AH SPI, and MikroTik EoIP Tunnel ID (normalized through the GRE-key slot) can split otherwise identical tuples.
 - Raw-capture import can optionally ignore `ProtocolLayerKind::vlan` while building that flow-identity `protocol_path_id`. This strips every VLAN layer from flow grouping only; packet decoding, Packet Details, and byte presentation still expose the observed VLAN headers.
+- Raw-capture import can also optionally ignore only the `ProtocolLayerIdentifierKind::gtpu_teid` attached to `ProtocolLayerKind::gtpu` while leaving the `GTP-U` layer itself in the flow-identity path. This is an expert mode for deployments where opposite directions of the same inner connection use different TEIDs; packet decoding, Packet Details, and byte presentation still expose the observed TEID per packet, and unrelated tunnels with the same inner tuple may merge when the mode is enabled.
 - `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, effective terminal transport payload length, TCP flags, link type, and fragmentation metadata.
 - `PacketRef` does not store protocol-path identity; recognized packets resolve that through their owning flow/connection metadata.
 - Packet bytes are loaded lazily when details, payload, protocol text, export, or stream analysis needs them.

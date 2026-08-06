@@ -378,7 +378,7 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - save/open index workflow polish
 - the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
-- the shared runtime settings slice now includes `Ignore VLAN and MPLS layers when grouping flows`, and the Tauri shell mirrors the same reopen-required status plus the same raw-import and index-loaded VLAN/MPLS-grouping warnings as Qt
+- the shared runtime settings slice now includes both `Ignore VLAN and MPLS layers when grouping flows` and `Ignore GTP-U TEIDs when grouping inner flows`, and the Tauri shell mirrors the same reopen-required status plus the same raw-import and index-loaded informational grouping banners as Qt
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Bytes`
 - packet details display polish remains incomplete compared with Qt
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction

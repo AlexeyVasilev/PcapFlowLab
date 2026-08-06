@@ -336,6 +336,7 @@ ApplicationWindow {
                 httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
                 usePossibleTlsQuic: mainController.usePossibleTlsQuic
                 ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
+                ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
                 validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
                 showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
                 showProtocolPathColumn: mainController.showProtocolPathColumn
@@ -347,6 +348,9 @@ ApplicationWindow {
                 }
                 onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
                     mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
+                }
+                onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
+                    mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
                 }
                 onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
                     mainController.validateSelectedPacketChecksums = enabled
@@ -758,6 +762,24 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.margins: 8
                 text: mainController.flowGroupingWarningText
+                color: "#1e3a8a"
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.gtpuTeidGroupingInfoText.length > 0
+            color: "#dbeafe"
+            border.color: "#93c5fd"
+            radius: 6
+            implicitHeight: gtpuGroupingInfoLabel.implicitHeight + 16
+
+            Label {
+                id: gtpuGroupingInfoLabel
+                anchors.fill: parent
+                anchors.margins: 8
+                text: mainController.gtpuTeidGroupingInfoText
                 color: "#1e3a8a"
                 wrapMode: Text.WordWrap
             }

@@ -677,6 +677,7 @@ fn update_settings(
     http_use_path_as_service_hint: bool,
     use_possible_tls_quic: bool,
     ignore_vlan_and_mpls_layers_when_grouping_flows: bool,
+    ignore_gtpu_teids_when_grouping_inner_flows: bool,
     show_wireshark_filter_for_selected_flow: bool,
     validate_selected_packet_checksums: bool,
 ) -> Result<SettingsDto, String> {
@@ -687,6 +688,7 @@ fn update_settings(
         http_use_path_as_service_hint,
         use_possible_tls_quic,
         ignore_vlan_and_mpls_layers_when_grouping_flows,
+        ignore_gtpu_teids_when_grouping_inner_flows,
         show_wireshark_filter_for_selected_flow,
         validate_selected_packet_checksums,
     )

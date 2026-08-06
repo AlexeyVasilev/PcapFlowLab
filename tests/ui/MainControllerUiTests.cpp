@@ -2717,11 +2717,25 @@ int main(int argc, char* argv[]) {
                 {{0x8100U, 200U}})},
         })
     );
+    const auto gtpu_teid_grouping_capture_path =
+        ui_test_root() / "data" / "parsing" / "gtpu" / "35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap";
     const auto vlan_grouping_index_path = std::filesystem::temp_directory_path() / "pfl_ui_vlan_grouping_settings.idx";
+    const auto gtpu_teid_grouping_index_path = std::filesystem::temp_directory_path() / "pfl_ui_gtpu_teid_grouping_settings.idx";
     {
         CaptureSession index_seed_session {};
         UI_EXPECT(index_seed_session.open_capture(vlan_grouping_capture_path));
         UI_EXPECT(index_seed_session.save_index(vlan_grouping_index_path));
+    }
+    {
+        CaptureSession index_seed_session {};
+        UI_EXPECT(index_seed_session.open_capture(
+            gtpu_teid_grouping_capture_path,
+            CaptureImportOptions {
+                .settings = AnalysisSettings {
+                    .ignore_gtpu_teids_when_grouping_inner_flows = true,
+                },
+            }));
+        UI_EXPECT(index_seed_session.save_index(gtpu_teid_grouping_index_path));
     }
 
     MainController settings_controller {};
@@ -2779,6 +2793,25 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(vlan_grouping_checkbox->property("checked").toBool());
     });
 
+    run_ui_section("settings_pane_ignore_gtpu_teid_grouping_checkbox", [&]() {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* gtpu_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsCheckBox");
+        auto* vlan_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox");
+        UI_EXPECT(gtpu_grouping_checkbox != nullptr);
+        UI_EXPECT(vlan_grouping_checkbox != nullptr);
+        UI_EXPECT(gtpu_grouping_checkbox->property("visible").toBool());
+        settings_pane.object->setProperty("ignoreGtpuTeidsWhenGroupingInnerFlows", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!gtpu_grouping_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("ignoreVlanAndMplsLayersWhenGroupingFlows", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!gtpu_grouping_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("ignoreGtpuTeidsWhenGroupingInnerFlows", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(gtpu_grouping_checkbox->property("checked").toBool());
+        UI_EXPECT(vlan_grouping_checkbox->property("checked").toBool());
+    });
+
     run_ui_section("flow_grouping_warning_text", [&]() {
         MainController vlan_grouping_controller {};
         UI_EXPECT(!vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
@@ -2810,6 +2843,40 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
         UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText() ==
             QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied."));
+    });
+
+    run_ui_section("gtpu_teid_grouping_info_text", [&]() {
+        MainController gtpu_grouping_controller {};
+        UI_EXPECT(!gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
+        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(open_capture_and_wait(app, gtpu_grouping_controller, gtpu_teid_grouping_capture_path));
+        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+
+        auto* gtpu_grouping_flow_model = qobject_cast<FlowListModel*>(gtpu_grouping_controller.flowModel());
+        UI_REQUIRE(gtpu_grouping_flow_model != nullptr);
+        UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 2);
+
+        gtpu_grouping_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
+        UI_EXPECT(gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
+        UI_EXPECT(gtpu_grouping_controller.statusText() ==
+            QStringLiteral("Reopen the current capture or index to apply the GTP-U TEID flow-grouping setting."));
+        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
+        UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 2);
+
+        UI_EXPECT(open_capture_and_wait(app, gtpu_grouping_controller, gtpu_teid_grouping_capture_path));
+        UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText() ==
+            QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged."));
+        UI_EXPECT(gtpu_grouping_controller.flowGroupingWarningText().isEmpty());
+        UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 1);
+    });
+
+    run_ui_section("gtpu_teid_grouping_index_info_text", [&]() {
+        MainController gtpu_grouping_index_controller {};
+        gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
+        UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
+        UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() ==
+            QStringLiteral("Loaded indexes preserve their stored flow grouping. The current GTP-U TEID grouping setting is not reapplied."));
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {

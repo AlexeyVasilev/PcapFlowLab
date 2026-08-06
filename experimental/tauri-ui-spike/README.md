@@ -22,7 +22,7 @@ Implemented slice:
 - `Flow -> Export All Flows Info to CSV...` through the shared session flow-manifest CSV path
 - `Flow -> Smart Export...` through the existing session smart-export path
 - `View -> Settings` for the currently shared safe runtime settings slice
-- that shared runtime settings slice includes `Ignore VLAN and MPLS layers when grouping flows`, which affects raw capture imports only while existing indexes keep their stored grouping
+- that shared runtime settings slice includes `Ignore VLAN and MPLS layers when grouping flows` and `Ignore GTP-U TEIDs when grouping inner flows`; both affect raw capture imports only while existing indexes keep their stored grouping
 - locate/attach source capture for index-backed or source-missing sessions
 - dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`

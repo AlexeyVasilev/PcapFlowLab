@@ -100,6 +100,12 @@
           </div>
         </section>
 
+        <section id="gtpuGroupingInfoBanner" class="panel info-banner">
+          <div class="partial-open-warning-copy">
+            <p id="gtpuGroupingInfoText" class="info-banner-text"></p>
+          </div>
+        </section>
+
         <nav class="tabbar" aria-label="Main tabs">
           <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
           <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
@@ -784,6 +790,13 @@
             <label class="settings-checkbox-row">
               <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
               <span>Ignore VLAN and MPLS layers when grouping flows</span>
+            </label>
+            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
+              <span>Ignore GTP-U TEIDs when grouping inner flows</span>
             </label>
             <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
           </section>

@@ -53,9 +53,10 @@ This contract must remain aligned with the current backend/session architecture:
 
 ## Flow Grouping Setting Contract
 
-The shared settings surface now includes one import-time grouping option:
+The shared settings surface now includes two import-time grouping options:
 
 - `Ignore VLAN and MPLS layers when grouping flows`
+- `Ignore GTP-U TEIDs when grouping inner flows`
 
 Presentation semantics:
 
@@ -63,12 +64,16 @@ Presentation semantics:
 - it does not rewrite the currently open session in place;
 - changing it while a capture or index is already open requires reopening that source to apply the new grouping;
 - when the active raw-imported session was actually opened with the mode enabled, Qt and Tauri should both show a persistent informational banner that VLAN and MPLS layers are being ignored for grouping and that flows from different VLANs or MPLS paths may merge;
+- when the active raw-imported session was actually opened with the GTP-U expert mode enabled, Qt and Tauri should both show a persistent informational banner that GTP-U TEIDs are being ignored for inner-flow grouping and that flows from different GTP-U tunnels may merge;
 - when the active session was loaded from an index and the current setting is enabled, Qt and Tauri should both show the explicit limitation warning that stored index grouping is preserved and the current VLAN-and-MPLS grouping setting is not reapplied.
+- when the active session was loaded from an index and the current GTP-U expert mode is enabled, Qt and Tauri should both show the explicit limitation warning that stored index grouping is preserved and the current GTP-U TEID grouping setting is not reapplied.
 
 Packet-versus-flow presentation boundary:
 
 - Packet Details and Bytes still show the observed VLAN and MPLS headers for the selected packet;
 - flow-list Path presentation and Protocol Path Statistics follow the normalized flow identity, so VLAN and MPLS label-stack layers may be absent there when the mode was active at import time.
+- Packet Details and Bytes still show the observed per-packet GTP-U TEID for the selected packet;
+- flow-list Path presentation and Protocol Path Statistics follow the normalized flow identity, so `GTP-U(teid=...)` may appear there as plain `GTP-U` when the expert mode was active at import time.
 
 ## Terminology And Identifier Semantics
 

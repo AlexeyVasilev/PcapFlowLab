@@ -39,6 +39,21 @@ namespace {
         layer.identifier.value == 0U;
 }
 
+[[nodiscard]] LayerKey normalize_protocol_layer_for_flow_identity(
+    const LayerKey& layer,
+    const AnalysisSettings& settings,
+    bool& changed
+) noexcept {
+    if (settings.ignore_gtpu_teids_when_grouping_inner_flows &&
+        layer.kind == ProtocolLayerKind::gtpu &&
+        layer.identifier.kind == ProtocolLayerIdentifierKind::gtpu_teid) {
+        changed = true;
+        return LayerKey::gtpu();
+    }
+
+    return layer;
+}
+
 [[nodiscard]] std::optional<ProtocolPath> normalize_protocol_path_for_flow_identity_impl(
     const ProtocolPathView path,
     const AnalysisSettings& settings
@@ -52,7 +67,7 @@ namespace {
             continue;
         }
 
-        normalized_layers.push_back(layer);
+        normalized_layers.push_back(normalize_protocol_layer_for_flow_identity(layer, settings, changed));
     }
 
     if (!changed) {

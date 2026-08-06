@@ -59,6 +59,9 @@
 - The shared runtime settings slice now includes `Ignore VLAN and MPLS layers when grouping flows` for raw-import flow identity normalization.
 - When that mode was active at raw import, Flow Path presentation and Protocol Path Statistics omit VLAN and MPLS label-stack layers while Packet Details and Bytes still show the selected packet's actual VLAN and MPLS headers.
 - Opening from an existing index preserves whatever flow grouping was stored in that index; the current VLAN-and-MPLS grouping setting is not reapplied on index load.
+- The same shared runtime settings slice now also includes `Ignore GTP-U TEIDs when grouping inner flows`, disabled by default and applied only during raw capture import.
+- When that expert mode was active at raw import, flow identity keeps the `GTP-U` layer but strips only its TEID identifier; Flow Path presentation and Protocol Path Statistics therefore show `GTP-U` without `teid=...`, while Packet Summary and Bytes still expose each selected packet's actual TEID.
+- Opening from an existing index likewise preserves the stored TEID-sensitive or TEID-agnostic grouping; the current GTP-U TEID grouping setting is not reapplied on index load.
 
 ## Known gaps
 

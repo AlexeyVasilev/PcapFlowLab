@@ -69,6 +69,43 @@ EthernetII -> IPv4 -> TCP
 
 This can intentionally merge traffic from different VLANs or MPLS paths into one user-visible flow when all remaining identity components match.
 
+## GTP-U-TEID-Agnostic Inner-Flow Grouping
+
+There is now one separate optional expert import-time mode:
+
+- `Ignore GTP-U TEIDs when grouping inner flows`
+
+Default behavior remains TEID-sensitive:
+
+- `EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020311) -> IPv4 -> TCP`
+- `EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x02030412) -> IPv4 -> TCP`
+
+remain different identity paths.
+
+When the setting is enabled:
+
+- `ProtocolLayerKind::gtpu` remains in the flow-identity path;
+- only `ProtocolLayerIdentifierKind::gtpu_teid` is stripped from that `GTP-U` layer during raw import;
+- Packet Summary, Packet Details, and Packet Bytes still show the actual per-packet TEID;
+- Flow Path presentation and Protocol Path Statistics reflect the normalized identity path, so they show `GTP-U` without `teid=...`;
+- opening an existing index preserves its stored TEID-sensitive or TEID-agnostic grouping and does not reinterpret that grouping using the current setting;
+- unrelated tunnels with the same inner tuple can intentionally merge when the setting is enabled.
+
+Example with the setting enabled:
+
+```text
+EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020311) -> IPv4 -> TCP
+EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x02030412) -> IPv4 -> TCP
+```
+
+both normalize to:
+
+```text
+EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP
+```
+
+This expert mode exists for deployments where opposite directions of one inner connection use different TEIDs. It is deterministic identity normalization only; it is not GTP-C or PFCP correlation.
+
 ## Flow List Presentation
 
 The current UI may expose protocol-path-aware flow identity as a compact flow-list column, for example:

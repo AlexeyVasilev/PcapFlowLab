@@ -277,10 +277,12 @@ private:
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
     Q_PROPERTY(bool ignoreVlanAndMplsLayersWhenGroupingFlows READ ignoreVlanAndMplsLayersWhenGroupingFlows WRITE setIgnoreVlanAndMplsLayersWhenGroupingFlows NOTIFY ignoreVlanAndMplsLayersWhenGroupingFlowsChanged)
+    Q_PROPERTY(bool ignoreGtpuTeidsWhenGroupingInnerFlows READ ignoreGtpuTeidsWhenGroupingInnerFlows WRITE setIgnoreGtpuTeidsWhenGroupingInnerFlows NOTIFY ignoreGtpuTeidsWhenGroupingInnerFlowsChanged)
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
     Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
+    Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -534,10 +536,12 @@ public:
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
     [[nodiscard]] bool ignoreVlanAndMplsLayersWhenGroupingFlows() const noexcept;
+    [[nodiscard]] bool ignoreGtpuTeidsWhenGroupingInnerFlows() const noexcept;
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
     [[nodiscard]] QString flowGroupingWarningText() const;
+    [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
@@ -616,6 +620,7 @@ public:
     void setHttpUsePathAsServiceHint(bool enabled);
     void setUsePossibleTlsQuic(bool enabled);
     void setIgnoreVlanAndMplsLayersWhenGroupingFlows(bool enabled);
+    void setIgnoreGtpuTeidsWhenGroupingInnerFlows(bool enabled);
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setShowProtocolPathColumn(bool enabled);
@@ -635,6 +640,7 @@ signals:
     void httpUsePathAsServiceHintChanged();
     void usePossibleTlsQuicChanged();
     void ignoreVlanAndMplsLayersWhenGroupingFlowsChanged();
+    void ignoreGtpuTeidsWhenGroupingInnerFlowsChanged();
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();

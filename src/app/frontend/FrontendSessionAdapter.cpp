@@ -1929,6 +1929,7 @@ FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availabilit
         .partial_open = session_.is_partial_open(),
         .byte_backed_inspection_available = session_.has_source_capture() && session_.source_capture_accessible(),
         .flow_grouping_ignores_vlan_and_mpls_layers = session_.flow_grouping_ignores_vlan_and_mpls_layers(),
+        .flow_grouping_ignores_gtpu_teids = session_.flow_grouping_ignores_gtpu_teids(),
         .active_source_capture_path = path_to_string(session_.attached_source_capture_path()),
         .expected_source_capture_path = path_to_string(session_.expected_source_capture_path()),
     };
@@ -2046,6 +2047,7 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(const std::fi
                 .partial_open = worker_session.is_partial_open(),
                 .byte_backed_inspection_available = worker_session.has_source_capture() && worker_session.source_capture_accessible(),
                 .flow_grouping_ignores_vlan_and_mpls_layers = worker_session.flow_grouping_ignores_vlan_and_mpls_layers(),
+                .flow_grouping_ignores_gtpu_teids = worker_session.flow_grouping_ignores_gtpu_teids(),
                 .active_source_capture_path = path_to_string(worker_session.attached_source_capture_path()),
                 .expected_source_capture_path = path_to_string(worker_session.expected_source_capture_path()),
             };
@@ -2192,9 +2194,11 @@ FrontendSettingsDto FrontendSessionAdapter::update_settings(const FrontendSettin
     const bool use_possible_tls_quic_changed = settings_.use_possible_tls_quic != settings.use_possible_tls_quic;
     const bool ignore_vlan_layers_changed =
         settings_.ignore_vlan_and_mpls_layers_when_grouping_flows != settings.ignore_vlan_and_mpls_layers_when_grouping_flows;
+    const bool ignore_gtpu_teids_changed =
+        settings_.ignore_gtpu_teids_when_grouping_inner_flows != settings.ignore_gtpu_teids_when_grouping_inner_flows;
     settings_ = settings;
 
-    if ((use_possible_tls_quic_changed || ignore_vlan_layers_changed) && session_.has_capture()) {
+    if ((use_possible_tls_quic_changed || ignore_vlan_layers_changed || ignore_gtpu_teids_changed) && session_.has_capture()) {
         session_.set_analysis_settings(to_analysis_settings(settings_));
     }
 
@@ -3531,6 +3535,7 @@ AnalysisSettings FrontendSessionAdapter::to_analysis_settings(const FrontendSett
         .http_use_path_as_service_hint = settings.http_use_path_as_service_hint,
         .use_possible_tls_quic = settings.use_possible_tls_quic,
         .ignore_vlan_and_mpls_layers_when_grouping_flows = settings.ignore_vlan_and_mpls_layers_when_grouping_flows,
+        .ignore_gtpu_teids_when_grouping_inner_flows = settings.ignore_gtpu_teids_when_grouping_inner_flows,
     };
 }
 

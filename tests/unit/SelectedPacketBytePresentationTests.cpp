@@ -1429,6 +1429,31 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(
+            fixture_path("parsing/gtpu/35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap"),
+            CaptureImportOptions {
+                .settings = AnalysisSettings {
+                    .ignore_gtpu_teids_when_grouping_inner_flows = true,
+                },
+            }));
+
+        const auto first_packet = require_packet(session, 0U);
+        const auto first_presentation = require_presentation(session, first_packet);
+        const auto* first_gtpu_message = require_view(first_presentation, SelectedPacketByteViewKind::gtpu_payload);
+        const auto* first_inner_ipv4 = require_view(first_presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
+        expect_parent(*first_gtpu_message, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*first_inner_ipv4, SelectedPacketByteViewKind::gtpu_payload);
+
+        const auto second_packet = require_packet(session, 1U);
+        const auto second_presentation = require_presentation(session, second_packet);
+        const auto* second_gtpu_message = require_view(second_presentation, SelectedPacketByteViewKind::gtpu_payload);
+        const auto* second_inner_ipv4 = require_view(second_presentation, SelectedPacketByteViewKind::inner_ipv4_payload);
+        expect_parent(*second_gtpu_message, SelectedPacketByteViewKind::udp_payload);
+        expect_parent(*second_inner_ipv4, SelectedPacketByteViewKind::gtpu_payload);
+    }
+
+    {
+        CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/gre/15_gre_mpls_ipv4_udp.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto presentation = require_presentation(session, packet);

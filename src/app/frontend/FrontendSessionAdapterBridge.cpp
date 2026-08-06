@@ -235,6 +235,7 @@ std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& s
         << "\"partial_open\":" << bool_json(source.partial_open) << ','
         << "\"byte_backed_inspection_available\":" << bool_json(source.byte_backed_inspection_available) << ','
         << "\"flow_grouping_ignores_vlan_and_mpls_layers\":" << bool_json(source.flow_grouping_ignores_vlan_and_mpls_layers) << ','
+        << "\"flow_grouping_ignores_gtpu_teids\":" << bool_json(source.flow_grouping_ignores_gtpu_teids) << ','
         << "\"active_source_capture_path\":" << json_string(source.active_source_capture_path) << ','
         << "\"expected_source_capture_path\":" << json_string(source.expected_source_capture_path)
         << '}';
@@ -514,6 +515,7 @@ std::string settings_json(const pfl::FrontendSettingsDto& settings) {
         << "\"http_use_path_as_service_hint\":" << bool_json(settings.http_use_path_as_service_hint) << ','
         << "\"use_possible_tls_quic\":" << bool_json(settings.use_possible_tls_quic) << ','
         << "\"ignore_vlan_and_mpls_layers_when_grouping_flows\":" << bool_json(settings.ignore_vlan_and_mpls_layers_when_grouping_flows) << ','
+        << "\"ignore_gtpu_teids_when_grouping_inner_flows\":" << bool_json(settings.ignore_gtpu_teids_when_grouping_inner_flows) << ','
         << "\"show_wireshark_filter_for_selected_flow\":" << bool_json(settings.show_wireshark_filter_for_selected_flow) << ','
         << "\"validate_selected_packet_checksums\":" << bool_json(settings.validate_selected_packet_checksums)
         << '}';
@@ -1379,7 +1381,7 @@ char* pfl_frontend_session_adapter_open_capture_json(
     const char* path_utf8
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+        return make_c_string("{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"flow_grouping_ignores_gtpu_teids\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
     const auto path = path_from_utf8(path_utf8);
@@ -1400,7 +1402,7 @@ char* pfl_frontend_session_adapter_start_open_capture_json(
 
 char* pfl_frontend_session_adapter_poll_open_capture_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"ready\":false,\"progress\":{\"in_progress\":false,\"cancel_requested\":false,\"opening_as_index\":false,\"packets_processed\":0,\"bytes_processed\":0,\"total_bytes\":0,\"percent\":0.0,\"input_path\":\"\"},\"result\":{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}}");
+        return make_c_string("{\"ready\":false,\"progress\":{\"in_progress\":false,\"cancel_requested\":false,\"opening_as_index\":false,\"packets_processed\":0,\"bytes_processed\":0,\"total_bytes\":0,\"percent\":0.0,\"input_path\":\"\"},\"result\":{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"flow_grouping_ignores_gtpu_teids\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}}");
     }
 
     return make_c_string(open_poll_result_json(handle->adapter.poll_open_capture()));
@@ -1419,7 +1421,7 @@ char* pfl_frontend_session_adapter_attach_source_capture_json(
     const char* path_utf8
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"attached\":false,\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+        return make_c_string("{\"attached\":false,\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"flow_grouping_ignores_gtpu_teids\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
     const auto path = path_from_utf8(path_utf8);
@@ -1440,7 +1442,7 @@ char* pfl_frontend_session_adapter_save_index_json(
 
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"ignore_vlan_and_mpls_layers_when_grouping_flows\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"ignore_vlan_and_mpls_layers_when_grouping_flows\":false,\"ignore_gtpu_teids_when_grouping_inner_flows\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.get_settings()));
@@ -1539,19 +1541,21 @@ char* pfl_frontend_session_adapter_update_settings_json(
     const std::uint8_t http_use_path_as_service_hint,
     const std::uint8_t use_possible_tls_quic,
     const std::uint8_t ignore_vlan_and_mpls_layers_when_grouping_flows,
+    const std::uint8_t ignore_gtpu_teids_when_grouping_inner_flows,
     const std::uint8_t show_wireshark_filter_for_selected_flow,
     const std::uint8_t validate_selected_packet_checksums
 ) {
     if (handle == nullptr) {
         // Keep the existing default-settings fallback here because the C ABI currently
         // returns only the settings payload, not a richer success/error result object.
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"ignore_vlan_and_mpls_layers_when_grouping_flows\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"ignore_vlan_and_mpls_layers_when_grouping_flows\":false,\"ignore_gtpu_teids_when_grouping_inner_flows\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.update_settings(pfl::FrontendSettingsDto {
         .http_use_path_as_service_hint = http_use_path_as_service_hint != 0U,
         .use_possible_tls_quic = use_possible_tls_quic != 0U,
         .ignore_vlan_and_mpls_layers_when_grouping_flows = ignore_vlan_and_mpls_layers_when_grouping_flows != 0U,
+        .ignore_gtpu_teids_when_grouping_inner_flows = ignore_gtpu_teids_when_grouping_inner_flows != 0U,
         .show_wireshark_filter_for_selected_flow = show_wireshark_filter_for_selected_flow != 0U,
         .validate_selected_packet_checksums = validate_selected_packet_checksums != 0U,
     })));

@@ -75,6 +75,7 @@
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
       ignore_vlan_and_mpls_layers_when_grouping_flows: false,
+      ignore_gtpu_teids_when_grouping_inner_flows: false,
       show_wireshark_filter_for_selected_flow: true,
       validate_selected_packet_checksums: false,
     },
@@ -221,6 +222,7 @@
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
     settingsIgnoreVlanAndMplsLayersWhenGroupingFlows: document.getElementById("settingsIgnoreVlanAndMplsLayersWhenGroupingFlows"),
+    settingsIgnoreGtpuTeidsWhenGroupingInnerFlows: document.getElementById("settingsIgnoreGtpuTeidsWhenGroupingInnerFlows"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
     settingsShowProtocolPathColumn: document.getElementById("settingsShowProtocolPathColumn"),
     settingsValidateSelectedPacketChecksums: document.getElementById("settingsValidateSelectedPacketChecksums"),
@@ -277,6 +279,8 @@
     sourceWarningExpectedPath: document.getElementById("sourceWarningExpectedPath"),
     flowGroupingWarningBanner: document.getElementById("flowGroupingWarningBanner"),
     flowGroupingWarningText: document.getElementById("flowGroupingWarningText"),
+    gtpuGroupingInfoBanner: document.getElementById("gtpuGroupingInfoBanner"),
+    gtpuGroupingInfoText: document.getElementById("gtpuGroupingInfoText"),
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
@@ -1341,6 +1345,7 @@
       partial_open: Boolean(sourceAvailability?.partial_open),
       byte_backed_inspection_available: Boolean(sourceAvailability?.byte_backed_inspection_available),
       flow_grouping_ignores_vlan_and_mpls_layers: Boolean(sourceAvailability?.flow_grouping_ignores_vlan_and_mpls_layers),
+      flow_grouping_ignores_gtpu_teids: Boolean(sourceAvailability?.flow_grouping_ignores_gtpu_teids),
       active_source_capture_path: String(sourceAvailability?.active_source_capture_path || ""),
       expected_source_capture_path: String(sourceAvailability?.expected_source_capture_path || ""),
     };
@@ -2677,6 +2682,10 @@
       elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows.checked = Boolean(state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows);
       elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows.disabled = dialogDisabled;
     }
+    if (elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows) {
+      elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows.checked = Boolean(state.settings.ignore_gtpu_teids_when_grouping_inner_flows);
+      elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows.disabled = dialogDisabled;
+    }
     if (elements.settingsShowWiresharkFilterForSelectedFlow) {
       elements.settingsShowWiresharkFilterForSelectedFlow.checked = Boolean(state.settings.show_wireshark_filter_for_selected_flow);
       elements.settingsShowWiresharkFilterForSelectedFlow.disabled = dialogDisabled;
@@ -3524,6 +3533,27 @@
     const showBanner = warningText.length > 0;
     elements.flowGroupingWarningBanner.classList.toggle("is-visible", showBanner);
     elements.flowGroupingWarningText.textContent = showBanner ? warningText : "";
+  }
+
+  function gtpuGroupingInfoBannerText() {
+    const availability = currentSourceAvailability();
+    if (state.openState !== "opened") {
+      return "";
+    }
+    if (availability.flow_grouping_ignores_gtpu_teids) {
+      return "GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.";
+    }
+    if (state.currentSessionOpenedFromIndex && state.settings.ignore_gtpu_teids_when_grouping_inner_flows) {
+      return "Loaded indexes preserve their stored flow grouping. The current GTP-U TEID grouping setting is not reapplied.";
+    }
+    return "";
+  }
+
+  function renderGtpuGroupingInfoBanner() {
+    const infoText = gtpuGroupingInfoBannerText();
+    const showBanner = infoText.length > 0;
+    elements.gtpuGroupingInfoBanner.classList.toggle("is-visible", showBanner);
+    elements.gtpuGroupingInfoText.textContent = showBanner ? infoText : "";
   }
 
   function renderStatisticsOverview() {
@@ -5420,6 +5450,7 @@
       ["partial-open warning banner", renderPartialOpenWarningBanner],
       ["source warning banner", renderSourceWarningBanner],
       ["flow-grouping warning banner", renderFlowGroupingWarningBanner],
+      ["gtpu-grouping info banner", renderGtpuGroupingInfoBanner],
       ["status", renderStatus],
     ];
 
@@ -6677,6 +6708,7 @@
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
         ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_and_mpls_layers_when_grouping_flows),
+        ignore_gtpu_teids_when_grouping_inner_flows: Boolean(settings?.ignore_gtpu_teids_when_grouping_inner_flows),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
@@ -6749,6 +6781,7 @@
     const httpUsePathAsServiceHint = Boolean(elements.settingsHttpUsePathAsServiceHint?.checked);
     const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
     const ignoreVlanAndMplsLayersWhenGroupingFlows = Boolean(elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows?.checked);
+    const ignoreGtpuTeidsWhenGroupingInnerFlows = Boolean(elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
     const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
@@ -6762,6 +6795,7 @@
         http_use_path_as_service_hint: httpUsePathAsServiceHint,
         use_possible_tls_quic: usePossibleTlsQuic,
         ignore_vlan_and_mpls_layers_when_grouping_flows: ignoreVlanAndMplsLayersWhenGroupingFlows,
+        ignore_gtpu_teids_when_grouping_inner_flows: ignoreGtpuTeidsWhenGroupingInnerFlows,
         show_wireshark_filter_for_selected_flow: showWiresharkFilterForSelectedFlow,
         validate_selected_packet_checksums: validateSelectedPacketChecksums,
       });
@@ -6770,6 +6804,7 @@
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
         ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_and_mpls_layers_when_grouping_flows),
+        ignore_gtpu_teids_when_grouping_inner_flows: Boolean(settings?.ignore_gtpu_teids_when_grouping_inner_flows),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
@@ -6787,6 +6822,8 @@
 
       if (state.openState === "opened" && state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows !== currentSourceAvailability().flow_grouping_ignores_vlan_and_mpls_layers) {
         setStatus("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting.", "success");
+      } else if (state.openState === "opened" && state.settings.ignore_gtpu_teids_when_grouping_inner_flows !== currentSourceAvailability().flow_grouping_ignores_gtpu_teids) {
+        setStatus("Reopen the current capture or index to apply the GTP-U TEID flow-grouping setting.", "success");
       } else {
         setStatus("Settings updated.", "success");
       }

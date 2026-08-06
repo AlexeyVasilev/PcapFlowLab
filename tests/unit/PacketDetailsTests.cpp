@@ -451,11 +451,13 @@ std::string format_transport_port_prefix_hex(const std::uint16_t src_port, const
 }
 
 std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
-    const std::filesystem::path& relative_fixture_path
+    const std::filesystem::path& relative_fixture_path,
+    const CaptureImportOptions& options,
+    const std::uint64_t packet_index
 ) {
     CaptureSession session {};
-    PFL_EXPECT(session.open_capture(fixture_path(relative_fixture_path), CaptureImportOptions {}));
-    const auto packet = require_packet(session, 0U);
+    PFL_EXPECT(session.open_capture(fixture_path(relative_fixture_path), options));
+    const auto packet = require_packet(session, packet_index);
     const auto details = session.read_packet_details(packet);
     PFL_REQUIRE(details.has_value());
     const auto flow_context = resolve_selected_packet_flow_context(session, packet);
@@ -468,6 +470,12 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
         flow_context.loaded_packet_window_count
     );
     return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
+    const std::filesystem::path& relative_fixture_path
+) {
+    return build_fixture_summary_layers(relative_fixture_path, CaptureImportOptions {}, 0U);
 }
 
 std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers(
@@ -2943,6 +2951,34 @@ void run_packet_details_tests() {
             session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options()),
             "data"
         ) == nullptr);
+    }
+
+    {
+        const CaptureImportOptions gtpu_teid_agnostic_options {
+            .settings = AnalysisSettings {
+                .ignore_gtpu_teids_when_grouping_inner_flows = true,
+            },
+        };
+
+        const auto first_summary_layers = build_fixture_summary_layers(
+            "parsing/gtpu/35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap",
+            gtpu_teid_agnostic_options,
+            0U
+        );
+        const auto* first_gtpu_layer = find_summary_layer(first_summary_layers, "gtpu");
+        PFL_REQUIRE(first_gtpu_layer != nullptr);
+        PFL_EXPECT(first_gtpu_layer->title.find("0x01020311") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*first_gtpu_layer, "TEID") == "0x01020311");
+
+        const auto second_summary_layers = build_fixture_summary_layers(
+            "parsing/gtpu/35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap",
+            gtpu_teid_agnostic_options,
+            1U
+        );
+        const auto* second_gtpu_layer = find_summary_layer(second_summary_layers, "gtpu");
+        PFL_REQUIRE(second_gtpu_layer != nullptr);
+        PFL_EXPECT(second_gtpu_layer->title.find("0x02030412") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*second_gtpu_layer, "TEID") == "0x02030412");
     }
 
     {
