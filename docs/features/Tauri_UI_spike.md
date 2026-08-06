@@ -139,7 +139,9 @@ The `Flows` tab now supports:
 - packet details tabs:
   - `Summary`
   - `Bytes`
-  - `Protocol`
+- selected Stream Item Details tabs:
+  - `Summary`
+  - `Item Data`
 - the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
 - the top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button
 - the `Bytes` tab now shows one selected packet-byte view on demand rather than a preview-only display

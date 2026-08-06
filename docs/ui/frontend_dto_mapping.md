@@ -40,14 +40,22 @@ For the current repository-level protocol support matrix and known protocol limi
   - selected-flow stream;
   - selected-flow packet details.
 
-### What is mostly Qt-specific today
+### What remains frontend-specific today
 
 - Flow filtering and sorting semantics.
 - Settings persistence and any broader non-runtime preferences.
-- Packet inspector structure and most packet-details presentation composition.
-- Some stream-item-details presentation semantics in the right-hand inspector, especially Qt-only formatting/helper paths and the lack of a dedicated shared details query API.
-- Large parts of Statistics grouping/presentation.
+- Packet inspector layout, local selection widgets, and some packet-details presentation composition above the shared packet-summary and packet-bytes contracts.
+- Some stream-item-details rendering and interaction semantics in the right-hand inspector, even though shared C++ now owns the `Summary / Item Data` presentation contract and authoritative item-data materialization.
+- Statistics layout, section composition, and drill-down interaction above the shared structured Statistics DTOs and shared canonical display strings.
 - Most of Analysis presentation.
+
+### What is now shared in C++ presentation/DTOs
+
+- Shared C++ session/frontend presentation owns the structured Statistics DTOs used by Qt and Tauri.
+- Shared C++ owns Packet Bytes descriptors, stable byte-view identifiers, and selected-view content materialization.
+- Shared C++ owns Stream Item Data presentation and authoritative selected-item byte ownership/materialization.
+- Shared C++ owns the affected canonical Statistics display strings, including the compact byte/count/percentage text now reused by both frontends.
+- Qt and Tauri now adapt these same shared contracts while still keeping frontend-specific ownership of layout, local selection widgets, rendering, and interaction state where appropriate.
 
 ### What is currently duplicated or drifting between Qt and Tauri
 
