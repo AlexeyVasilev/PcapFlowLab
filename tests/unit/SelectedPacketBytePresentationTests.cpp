@@ -337,36 +337,29 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
 
-        const auto* frame = require_view(presentation, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::frame) == nullptr);
         const auto* ethernet_payload = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
         const auto* ipv4_payload = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
         const auto* tcp_payload = require_view(presentation, SelectedPacketByteViewKind::tcp_payload);
         const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
         const std::vector<std::string> expected_labels {
-            "Frame",
             "Ethernet II Frame",
             "IPv4 Packet",
             "TCP Segment",
         };
         PFL_EXPECT(collect_labels(presentation) == expected_labels);
-        PFL_EXPECT(frame->offset == 0U);
-        PFL_EXPECT(frame->captured_length == packet.captured_length);
         PFL_EXPECT(ethernet_payload->offset == 0U);
         PFL_EXPECT(ethernet_payload->captured_length == packet.captured_length);
         PFL_EXPECT(ipv4_payload->offset == 14U);
         PFL_EXPECT(tcp_payload->offset == 34U);
-        PFL_REQUIRE(descriptors.size() == 4U);
-        PFL_EXPECT(descriptors[0].stable_id == "frame:0:0");
-        PFL_EXPECT(descriptors[1].stable_id == "ethernet:0:0");
-        PFL_EXPECT(descriptors[2].stable_id == "ipv4:0:0");
-        PFL_EXPECT(descriptors[3].stable_id == "tcp:0:0");
-        PFL_EXPECT(descriptors[0].stable_id != descriptors[1].stable_id);
-        PFL_EXPECT(descriptors[0].available_length == descriptors[1].available_length);
-        PFL_EXPECT(!descriptors[0].supports_payload_only);
+        PFL_REQUIRE(descriptors.size() == 3U);
+        PFL_EXPECT(descriptors[0].stable_id == "ethernet:0:0");
+        PFL_EXPECT(descriptors[1].stable_id == "ipv4:0:0");
+        PFL_EXPECT(descriptors[2].stable_id == "tcp:0:0");
+        PFL_EXPECT(descriptors[0].supports_payload_only);
         PFL_EXPECT(descriptors[1].supports_payload_only);
         PFL_EXPECT(descriptors[2].supports_payload_only);
-        PFL_EXPECT(descriptors[3].supports_payload_only);
-        expect_parent(*ethernet_payload, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(!ethernet_payload->parent_id.has_value());
         expect_parent(*ipv4_payload, SelectedPacketByteViewKind::ethernet_payload);
         expect_parent(*tcp_payload, SelectedPacketByteViewKind::ipv4_payload);
         expect_materialized_view_aliases_owner_bytes(
@@ -402,6 +395,72 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_EXPECT(tcp_data->captured_length == 4U);
         PFL_EXPECT(!tcp_data->payload_range.has_value());
         expect_ascii_prefix(flow_aware_presentation, tcp_data->id, bytes, "ABCD");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
+
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::frame) == nullptr);
+        const auto* ethernet_payload = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
+        const auto* ipv4_payload = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
+        const auto* udp_payload = require_view(presentation, SelectedPacketByteViewKind::udp_payload);
+        PFL_REQUIRE(descriptors.size() == 3U);
+        PFL_EXPECT(descriptors[0].stable_id == "ethernet:0:0");
+        PFL_EXPECT(descriptors[1].stable_id == "ipv4:0:0");
+        PFL_EXPECT(descriptors[2].stable_id == "udp:0:0");
+        const std::vector<std::string> expected_labels {
+            "Ethernet II Frame",
+            "IPv4 Packet",
+            "UDP Datagram",
+        };
+        PFL_EXPECT(collect_labels(presentation) == expected_labels);
+        PFL_EXPECT(!ethernet_payload->parent_id.has_value());
+        PFL_EXPECT(ethernet_payload->offset == 0U);
+        PFL_EXPECT(ethernet_payload->captured_length == packet.captured_length);
+        expect_parent(*ipv4_payload, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*udp_payload, SelectedPacketByteViewKind::ipv4_payload);
+        expect_materialized_view_aliases_owner_bytes(
+            presentation,
+            SelectedPacketByteViewId {.kind = SelectedPacketByteViewKind::ethernet_payload, .occurrence = 0U},
+            bytes
+        );
+        PFL_EXPECT(bytes.size() == static_cast<std::size_t>(packet.captured_length));
+    }
+
+    {
+        const std::vector<std::uint8_t> captured_packet {
+            0x00U, 0x11U, 0x22U, 0x33U, 0x44U,
+            0x55U, 0x66U, 0x77U, 0x88U, 0x99U,
+        };
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/packet_byte_views/02_truncated_ethernet_header.pcap")));
+
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
+
+        PFL_REQUIRE(descriptors.size() == 1U);
+        PFL_EXPECT(descriptors[0].stable_id == "frame:0:0");
+        PFL_EXPECT(descriptors[0].label == "Captured Packet");
+        PFL_EXPECT(descriptors[0].depth == 0U);
+        PFL_EXPECT(!descriptors[0].parent_stable_id.has_value());
+        PFL_EXPECT(descriptors[0].available_length == captured_packet.size());
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ethernet_payload) == nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ipv4_payload) == nullptr);
+
+        const auto materialized = require_materialized_view(
+            presentation,
+            SelectedPacketByteViewId {.kind = SelectedPacketByteViewKind::frame, .occurrence = 0U},
+            bytes
+        );
+        PFL_EXPECT(materialized.bytes.size() == captured_packet.size());
+        PFL_EXPECT(std::equal(materialized.bytes.begin(), materialized.bytes.end(), captured_packet.begin(), captured_packet.end()));
     }
 
     {
@@ -700,7 +759,6 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto labels = collect_labels(presentation);
 
         const std::vector<std::string> expected_labels {
-            "Frame",
             "Ethernet II Frame",
             "802.1Q Encapsulation",
             "802.1Q Encapsulation #2",
@@ -747,14 +805,13 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto presentation = require_presentation(session, packet);
 
         const std::vector<std::string> expected_labels {
-            "Frame",
             "Ethernet II Frame",
             "ARP Packet",
         };
         PFL_EXPECT(collect_labels(presentation) == expected_labels);
         const auto* ethernet_view = require_view(presentation, SelectedPacketByteViewKind::ethernet_payload);
         const auto* arp_view = require_view(presentation, SelectedPacketByteViewKind::arp);
-        expect_parent(*ethernet_view, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(!ethernet_view->parent_id.has_value());
         expect_parent(*arp_view, SelectedPacketByteViewKind::ethernet_payload);
         PFL_EXPECT(arp_view->offset == 14U);
         PFL_EXPECT(arp_view->captured_length == 28U);
@@ -989,7 +1046,6 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto presentation = require_presentation(session, packet);
 
         const std::vector<std::string> expected_labels {
-            "Frame",
             "Ethernet II Frame",
             "IPv4 Packet",
             "ICMP Message",
@@ -1018,7 +1074,6 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto presentation = require_presentation(session, packet);
 
         const std::vector<std::string> expected_labels {
-            "Frame",
             "Ethernet II Frame",
             "IPv6 Packet",
             "ICMPv6 Message",
@@ -1040,7 +1095,6 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto presentation = require_presentation(session, packet);
 
         const std::vector<std::string> expected_labels {
-            "Frame",
             "Ethernet II Frame",
             "IPv4 Packet",
             "IGMP Message",
@@ -1123,7 +1177,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* llc = require_view(presentation, SelectedPacketByteViewKind::llc);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::snap) == nullptr);
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ipv4_payload) == nullptr);
-        expect_parent(*ieee8023, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(!ieee8023->parent_id.has_value());
         expect_parent(*llc, SelectedPacketByteViewKind::ieee8023_payload);
         PFL_REQUIRE(ieee8023->payload_range.has_value());
         PFL_REQUIRE(llc->payload_range.has_value());
@@ -1143,6 +1197,8 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto* llc = require_view(presentation, SelectedPacketByteViewKind::llc);
         PFL_REQUIRE(ieee8023->declared_length.has_value());
         PFL_REQUIRE(ieee8023->payload_range.has_value());
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::frame) != nullptr);
+        PFL_EXPECT(collect_labels(presentation).front() == "Captured Packet");
         PFL_EXPECT(ieee8023->captured_length == *ieee8023->declared_length);
         PFL_EXPECT(bytes.size() > ieee8023->captured_length);
         PFL_EXPECT(ieee8023->payload_range->offset == llc->offset);

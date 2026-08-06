@@ -194,6 +194,7 @@
     packetRequestToken: 0,
     streamRequestToken: 0,
     streamDetailsRequestToken: 0,
+    packetDetailsRequestToken: 0,
     packetDetailsByteViewRequestToken: 0,
     analysisRequestToken: 0,
     diagnosticsPacketRequestOffset: 0,
@@ -2438,6 +2439,8 @@
   }
 
   function clearPacketDetails() {
+    state.packetDetailsRequestToken += 1;
+    state.packetDetailsByteViewRequestToken += 1;
     state.selectedPacketIndex = null;
     state.selectedPacketRow = null;
     state.packetDetails = null;
@@ -3314,6 +3317,70 @@
 
   function packetByteViewDescriptors(details) {
     return Array.isArray(details?.byte_view_descriptors) ? details.byte_view_descriptors : [];
+  }
+
+  function selectedPacketOwnerKind() {
+    if (state.selectedPacketIndex == null || state.selectedPacketRow == null) {
+      return "none";
+    }
+
+    if (state.unrecognizedPacketsSelected) {
+      return "unrecognized";
+    }
+
+    if (state.selectedFlowIndex != null) {
+      return "flow";
+    }
+
+    return "none";
+  }
+
+  function firstPacketByteViewStableId(details) {
+    const descriptors = packetByteViewDescriptors(details);
+    return String(descriptors[0]?.stable_id || "");
+  }
+
+  function selectedPacketDisplayNumber(packetRow) {
+    const rowNumber = Number(packetRow?.row_number);
+    return Number.isFinite(rowNumber) && rowNumber > 0 ? rowNumber : null;
+  }
+
+  async function requestSelectedPacketDetails(ownerKind, packetIndex, packetRow) {
+    if (ownerKind === "unrecognized") {
+      return invoke("get_unrecognized_packet_details", {
+        packet_index: packetIndex,
+      });
+    }
+
+    if (ownerKind === "flow") {
+      return invoke("get_selected_flow_packet_details", {
+        packet_index: packetIndex,
+        flow_packet_index: Number(packetRow?.row_number || 0),
+        loaded_packet_window_count: Number(state.packets.length),
+      });
+    }
+
+    return null;
+  }
+
+  async function requestSelectedPacketByteViewContent(ownerKind, packetIndex, stableId, packetRow) {
+    if (ownerKind === "unrecognized") {
+      return invoke("get_unrecognized_packet_byte_view_content", {
+        packet_index: packetIndex,
+        stable_id: stableId,
+      });
+    }
+
+    if (ownerKind === "flow") {
+      return invoke("get_selected_flow_packet_byte_view_content", {
+        packet_index: packetIndex,
+        stable_id: stableId,
+        flow_packet_index: Number(packetRow?.row_number || 0),
+        loaded_packet_window_count: Number(state.packets.length),
+      });
+    }
+
+    return null;
   }
 
   function packetByteViewDisplayLabel(descriptor) {
@@ -4714,11 +4781,14 @@
     }
 
     const selectedPacket = state.selectedPacketRow;
+    const selectedPacketNumber = selectedPacketDisplayNumber(selectedPacket);
     const sourceAvailability = packetDetailsSourceAvailability(details);
     renderPacketSummary(elements.packetDetailsSummary, details, selectedPacket, sourceAvailability);
 
     if (state.packetDetailsState === "error") {
-      elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;
+      elements.packetDetailsMeta.textContent = selectedPacketNumber != null
+        ? `Packet ${selectedPacketNumber} details failed to load.`
+        : "Packet details failed to load.";
       elements.packetDetailsStateText.textContent = state.packetDetailsErrorText || "Failed to load packet details.";
       elements.packetDetailsStateText.classList.add("is-error");
       elements.packetDetailsBytesStateText.textContent = "Byte views unavailable.";
@@ -4733,7 +4803,9 @@
         || (sourceAvailability.expected_source_capture_path
           ? `Byte-backed packet details are unavailable until the source capture is attached/readable: ${sourceAvailability.expected_source_capture_path}`
           : "Packet details are unavailable for this session.");
-      elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} metadata loaded, byte-backed details unavailable.`;
+      elements.packetDetailsMeta.textContent = selectedPacketNumber != null
+        ? `Packet ${selectedPacketNumber} metadata loaded, byte-backed details unavailable.`
+        : "Packet metadata loaded, byte-backed details unavailable.";
       elements.packetDetailsStateText.textContent = unavailableText;
       elements.packetDetailsStateText.classList.add("is-error");
       elements.packetDetailsBytesStateText.textContent = details?.selected_byte_view?.unavailable_text || unavailableText;
@@ -4743,9 +4815,8 @@
       return;
     }
 
-    const selectedFlowRowNumber = Number(selectedPacket?.row_number);
-    elements.packetDetailsMeta.textContent = Number.isFinite(selectedFlowRowNumber) && selectedFlowRowNumber > 0
-      ? `Flow packet ${selectedFlowRowNumber} details loaded.`
+    elements.packetDetailsMeta.textContent = selectedPacketNumber != null
+      ? `Flow packet ${selectedPacketNumber} details loaded.`
       : "Packet details loaded.";
     elements.packetDetailsStateText.textContent = "";
 
@@ -5802,12 +5873,16 @@
   }
 
   async function loadSelectedPacketDetails() {
-    if (state.selectedPacketIndex == null) {
+    const ownerKind = selectedPacketOwnerKind();
+    if (ownerKind === "none") {
       clearPacketDetails();
       render();
       return;
     }
 
+    const requestToken = ++state.packetDetailsRequestToken;
+    const selectedPacketIndex = state.selectedPacketIndex;
+    const selectedPacketRow = state.selectedPacketRow;
     state.packetDetailsState = "loading";
     state.packetDetailsErrorText = "";
     state.packetDetails = null;
@@ -5815,52 +5890,64 @@
     render();
 
     try {
-      const details = state.unrecognizedPacketsSelected
-        ? await invoke("get_unrecognized_packet_details", {
-          packet_index: state.selectedPacketIndex,
-        })
-        : await invoke("get_selected_flow_packet_details", {
-          packet_index: state.selectedPacketIndex,
-          flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
-          loaded_packet_window_count: Number(state.packets.length),
-        });
+      const details = await requestSelectedPacketDetails(ownerKind, selectedPacketIndex, selectedPacketRow);
+      if (
+        requestToken !== state.packetDetailsRequestToken
+        || state.selectedPacketIndex !== selectedPacketIndex
+        || selectedPacketOwnerKind() !== ownerKind
+      ) {
+        return;
+      }
+
       const sourceAvailability = packetDetailsSourceAvailability(details);
       state.sourceAvailability = sourceAvailability;
 
       state.packetDetails = details;
-      const preferredStableId = state.packetDetailsSelectedByteViewStableId;
-      const defaultStableId = String(details?.selected_byte_view?.stable_id || "");
+      const preferredStableId = packetByteViewExists(details, state.packetDetailsSelectedByteViewStableId)
+        ? String(state.packetDetailsSelectedByteViewStableId || "")
+        : "";
+      const defaultStableId = firstPacketByteViewStableId(details);
+      const targetStableId = preferredStableId || defaultStableId;
 
-      if (preferredStableId && packetByteViewExists(details, preferredStableId) && preferredStableId !== defaultStableId) {
-        const selectedByteView = state.unrecognizedPacketsSelected
-          ? await invoke("get_unrecognized_packet_byte_view_content", {
-            packet_index: state.selectedPacketIndex,
-            stable_id: preferredStableId,
-          })
-          : await invoke("get_selected_flow_packet_byte_view_content", {
-            packet_index: state.selectedPacketIndex,
-            stable_id: preferredStableId,
-            flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
-            loaded_packet_window_count: Number(state.packets.length),
-          });
+      let selectedByteView = details?.selected_byte_view || null;
+      const selectedByteViewStableId = String(selectedByteView?.stable_id || "");
+      const selectedByteViewMatchesTarget = targetStableId.length > 0 && selectedByteViewStableId === targetStableId;
+
+      if (targetStableId && (!selectedByteView?.available || !selectedByteViewMatchesTarget)) {
+        selectedByteView = await requestSelectedPacketByteViewContent(
+          ownerKind,
+          selectedPacketIndex,
+          targetStableId,
+          selectedPacketRow
+        );
+        if (
+          requestToken !== state.packetDetailsRequestToken
+          || state.selectedPacketIndex !== selectedPacketIndex
+          || selectedPacketOwnerKind() !== ownerKind
+        ) {
+          return;
+        }
+
         state.packetDetails = {
           ...(details || {}),
           selected_byte_view: selectedByteView,
         };
       }
 
-      const resolvedStableId = packetByteViewExists(state.packetDetails, preferredStableId)
-        ? preferredStableId
-        : String(state.packetDetails?.selected_byte_view?.stable_id || "");
+      const resolvedStableId = targetStableId
+        || String(state.packetDetails?.selected_byte_view?.stable_id || "");
       state.packetDetailsSelectedByteViewStableId = resolvedStableId;
+      const hasByteDescriptors = packetByteViewDescriptors(state.packetDetails).length > 0;
+      const hasSelectedByteView = !!state.packetDetails?.selected_byte_view?.available;
+      const hasBytePresentation = hasByteDescriptors || hasSelectedByteView;
 
       if (details?.error_text) {
         state.packetDetailsState = "error";
         state.packetDetailsErrorText = details.error_text;
         setStatus(details.error_text, "error");
-      } else if (details?.unavailable_text && !details?.details_available) {
+      } else if (details?.unavailable_text && !details?.details_available && !hasBytePresentation) {
         state.packetDetailsState = "unavailable";
-      } else if (!sourceAvailability.byte_backed_inspection_available && !details?.details_available) {
+      } else if (!sourceAvailability.byte_backed_inspection_available && !details?.details_available && !hasBytePresentation) {
         state.packetDetailsState = "unavailable";
       } else {
         state.packetDetailsState = "loaded";
@@ -5876,7 +5963,8 @@
   }
 
   async function selectPacketByteView(stableId) {
-    if (!stableId || state.selectedPacketIndex == null || state.packetDetailsState !== "loaded") {
+    const ownerKind = selectedPacketOwnerKind();
+    if (!stableId || ownerKind === "none" || state.packetDetailsState !== "loaded") {
       return;
     }
 
@@ -5900,23 +5988,20 @@
 
     const requestToken = ++state.packetDetailsByteViewRequestToken;
     const selectedPacketIndex = state.selectedPacketIndex;
+    const selectedPacketRow = state.selectedPacketRow;
 
     try {
-      const content = state.unrecognizedPacketsSelected
-        ? await invoke("get_unrecognized_packet_byte_view_content", {
-          packet_index: selectedPacketIndex,
-          stable_id: stableId,
-        })
-        : await invoke("get_selected_flow_packet_byte_view_content", {
-          packet_index: selectedPacketIndex,
-          stable_id: stableId,
-          flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
-          loaded_packet_window_count: Number(state.packets.length),
-        });
+      const content = await requestSelectedPacketByteViewContent(
+        ownerKind,
+        selectedPacketIndex,
+        stableId,
+        selectedPacketRow
+      );
 
       if (
         requestToken !== state.packetDetailsByteViewRequestToken
         || state.selectedPacketIndex !== selectedPacketIndex
+        || selectedPacketOwnerKind() !== ownerKind
         || state.packetDetailsSelectedByteViewStableId !== stableId
       ) {
         return;
@@ -5932,6 +6017,7 @@
       if (
         requestToken !== state.packetDetailsByteViewRequestToken
         || state.selectedPacketIndex !== selectedPacketIndex
+        || selectedPacketOwnerKind() !== ownerKind
         || state.packetDetailsSelectedByteViewStableId !== stableId
       ) {
         return;
@@ -5958,6 +6044,7 @@
       if (
         requestToken === state.packetDetailsByteViewRequestToken
         && state.selectedPacketIndex === selectedPacketIndex
+        && selectedPacketOwnerKind() === ownerKind
       ) {
         state.packetDetailsByteViewLoading = false;
       }

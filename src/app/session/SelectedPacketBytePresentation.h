@@ -208,6 +208,10 @@ struct SelectedPacketByteViewContent {
     SelectedPacketByteBuildOptions options = {}
 );
 
+[[nodiscard]] SelectedPacketBytePresentation build_captured_packet_fallback_presentation(
+    const PacketRef& packet
+);
+
 [[nodiscard]] std::optional<SelectedPacketByteMaterialization> materialize_selected_packet_byte_view(
     const SelectedPacketBytePresentation& presentation,
     const SelectedPacketByteViewId& id,

@@ -2581,13 +2581,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
     UI_EXPECT(!details_model->summaryLayers().isEmpty());
     const auto expected_packet_byte_labels = QStringList {
-        QStringLiteral("Frame"),
         QStringLiteral("Ethernet II Frame"),
         QStringLiteral("IPv4 Packet"),
         QStringLiteral("TCP Segment"),
     };
     UI_EXPECT(packet_byte_view_labels(details_model) == expected_packet_byte_labels);
-    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0"));
+    UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("ethernet:0:0"));
     UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("00000000")));
     controller.selectPacketByteView(QStringLiteral("tcp:0:0"));
     UI_EXPECT(details_model->selectedPacketByteViewId() == QStringLiteral("tcp:0:0"));
@@ -2842,7 +2841,7 @@ int main(int argc, char* argv[]) {
         packet_model.setPacketBytePresentation(
             {},
             QStringLiteral("frame:0:0"),
-            QStringLiteral("Frame"),
+            QStringLiteral("Captured Packet"),
             true,
             QStringLiteral("complete"),
             0U,
@@ -2905,6 +2904,109 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(packet_model.selectedPacketByteViewId().isEmpty());
         UI_EXPECT(!packet_model.selectedPacketByteViewAvailable());
         UI_EXPECT(packet_model.selectedPacketByteViewText().isEmpty());
+    });
+
+    run_ui_section("packet_details_unrecognized_captured_packet_fallback", [&]() {
+        const auto truncated_fixture_path =
+            ui_test_root() / "data" / "parsing" / "packet_byte_views" / "02_truncated_ethernet_header.pcap";
+        const auto ethernet_fixture_path =
+            ui_test_root() / "data" / "parsing" / "packet_byte_views" / "01_ethernet_ipv4_udp.pcap";
+
+        MainController controller {};
+        UI_EXPECT(open_capture_and_wait(app, controller, truncated_fixture_path));
+
+        auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+        auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());
+        UI_REQUIRE(packet_model != nullptr);
+        UI_REQUIRE(details_model != nullptr);
+
+        controller.selectUnrecognizedPackets();
+        UI_EXPECT(controller.unrecognizedPacketsSelected());
+        UI_EXPECT(wait_until(app, [&]() {
+            return packet_model->rowCount() == 1;
+        }));
+
+        const auto packet_index = packet_model->data(
+            packet_model->index(0, 0),
+            PacketListModel::PacketIndexRole
+        ).toULongLong();
+        const auto authoritative_reason_text = packet_model->data(
+            packet_model->index(0, 0),
+            PacketListModel::ReasonTextRole
+        ).toString();
+        UI_EXPECT(!authoritative_reason_text.isEmpty());
+        controller.setSelectedPacketIndex(packet_index);
+
+        const QStringList expected_fallback_labels {
+            QStringLiteral("Captured Packet"),
+        };
+        UI_EXPECT(wait_until(app, [&]() {
+            return details_model->hasPacket()
+                && !details_model->summaryLayers().isEmpty()
+                && packet_byte_view_labels(details_model) == expected_fallback_labels
+                && details_model->selectedPacketByteViewId() == QStringLiteral("frame:0:0")
+                && details_model->selectedPacketByteViewAvailable()
+                && details_model->selectedPacketByteViewAvailableLength() == 10U
+                && !details_model->selectedPacketByteViewText().isEmpty();
+        }));
+
+        const auto frame_layer = find_top_level_summary_layer(details_model->summaryLayers(), QStringLiteral("frame"));
+        UI_EXPECT(!frame_layer.isEmpty());
+        UI_EXPECT(find_summary_field_value(frame_layer, QStringLiteral("Captured Length")) == QStringLiteral("10 bytes"));
+        UI_EXPECT(find_summary_field_value(frame_layer, QStringLiteral("Original Length")) == QStringLiteral("46 bytes"));
+        UI_EXPECT(combined_details_search_text(details_model).contains(authoritative_reason_text));
+        UI_EXPECT(details_model->selectedPacketByteViewLabel() == QStringLiteral("Captured Packet"));
+        UI_EXPECT(details_model->selectedPacketByteViewStatusText().contains(QStringLiteral("Available: 10 bytes")));
+        UI_EXPECT(details_model->selectedPacketByteViewStatusText().contains(QStringLiteral("Declared: 46 bytes")));
+        UI_EXPECT(details_model->selectedPacketByteViewText().contains(QStringLiteral("00 11 22 33 44 55 66 77 88 99")));
+        UI_EXPECT(!packet_byte_view_labels(details_model).contains(QStringLiteral("Ethernet II Frame")));
+        UI_EXPECT(details_model->selectedPacketByteViewStatusText() != QStringLiteral("No byte views are available for this packet."));
+
+        UI_EXPECT(open_capture_and_wait(app, controller, ethernet_fixture_path));
+        auto* recognized_packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+        auto* recognized_details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());
+        UI_REQUIRE(recognized_packet_model != nullptr);
+        UI_REQUIRE(recognized_details_model != nullptr);
+        UI_EXPECT(!controller.unrecognizedPacketsSelected());
+
+        auto* recognized_flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        UI_REQUIRE(recognized_flow_model != nullptr);
+        UI_EXPECT(recognized_flow_model->rowCount() == 1);
+        controller.setSelectedFlowIndex(0);
+        UI_EXPECT(wait_until(app, [&]() {
+            return recognized_packet_model->rowCount() == 1;
+        }));
+
+        const auto recognized_packet_index = recognized_packet_model->data(
+            recognized_packet_model->index(0, 0),
+            PacketListModel::PacketIndexRole
+        ).toULongLong();
+        controller.setSelectedPacketIndex(recognized_packet_index);
+
+        const QStringList expected_recognized_labels {
+            QStringLiteral("Ethernet II Frame"),
+            QStringLiteral("IPv4 Packet"),
+            QStringLiteral("UDP Datagram"),
+        };
+        UI_EXPECT(wait_until(app, [&]() {
+            const auto labels = packet_byte_view_labels(recognized_details_model);
+            return labels.contains(expected_recognized_labels[0])
+                && labels.contains(expected_recognized_labels[1])
+                && labels.contains(expected_recognized_labels[2])
+                && !recognized_details_model->selectedPacketByteViewId().isEmpty()
+                && recognized_details_model->selectedPacketByteViewAvailable()
+                && !recognized_details_model->selectedPacketByteViewText().isEmpty();
+        }));
+        const auto recognized_labels = packet_byte_view_labels(recognized_details_model);
+        UI_EXPECT(recognized_labels.contains(expected_recognized_labels[0]));
+        UI_EXPECT(recognized_labels.contains(expected_recognized_labels[1]));
+        UI_EXPECT(recognized_labels.contains(expected_recognized_labels[2]));
+        UI_EXPECT(recognized_details_model->selectedPacketByteViewId() == QStringLiteral("ethernet:0:0"));
+        UI_EXPECT(recognized_details_model->selectedPacketByteViewAvailable());
+        UI_EXPECT(!recognized_details_model->selectedPacketByteViewText().isEmpty());
+        UI_EXPECT(!recognized_labels.contains(QStringLiteral("Captured Packet")));
+        UI_EXPECT(!recognized_details_model->selectedPacketByteViewText().contains(
+            QStringLiteral("00 11 22 33 44 55 66 77 88 99")));
     });
 
     run_ui_section("stream_item_details_tabs_protocol_removed", [&]() {

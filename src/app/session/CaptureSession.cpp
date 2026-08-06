@@ -3571,13 +3571,13 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
 std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
     const PacketRef& packet
 ) const {
-    const auto details = read_packet_details(packet);
-    if (!details.has_value()) {
-        return std::nullopt;
-    }
     const auto packet_bytes = read_packet_data(packet);
     if (packet_bytes.empty()) {
         return std::nullopt;
+    }
+    const auto details = read_packet_details(packet);
+    if (!details.has_value()) {
+        return session_detail::build_captured_packet_fallback_presentation(packet);
     }
 
     const auto& connections = listed_connections();

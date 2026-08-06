@@ -1829,6 +1829,7 @@ QString buildPacketSummary(
 
 QString buildPacketSummaryFallback(
     const PacketRef& packet,
+    const QString& reason_text = {},
     const PacketChecksumSections& checksum_sections = {}
 ) {
     QStringList lines {};
@@ -1850,11 +1851,99 @@ QString buildPacketSummaryFallback(
         warnings.push_back(QStringLiteral("Captured Length: %1").arg(packet.captured_length));
         warnings.push_back(QStringLiteral("Original Length: %1").arg(packet.original_length));
     }
+    if (!reason_text.isEmpty()) {
+        warnings.push_back(reason_text);
+    }
     warnings.append(checksum_sections.warnings);
     appendSection(lines, QStringLiteral("Warnings"), warnings);
     appendSection(lines, QStringLiteral("Checksums"), checksum_sections.summary_lines);
 
     return lines.join(QLatin1Char('\n'));
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_layers(
+    const PacketRef& packet,
+    const QString& reason_text = {},
+    const PacketChecksumSections& checksum_sections = {}
+) {
+    std::vector<session_detail::PacketSummaryLayer> layers {};
+
+    std::vector<session_detail::PacketSummaryField> warning_fields {};
+    if (packet.is_ip_fragmented) {
+        warning_fields.push_back({});
+        warning_fields.back().value = "Packet is IP-fragmented";
+    }
+    if (packet.captured_length != packet.original_length) {
+        warning_fields.push_back({});
+        warning_fields.back().value = "Packet is truncated in capture";
+        warning_fields.push_back({
+            .label = "Captured Length",
+            .value = std::to_string(packet.captured_length) + " bytes",
+        });
+        warning_fields.push_back({
+            .label = "Original Length",
+            .value = std::to_string(packet.original_length) + " bytes",
+        });
+    }
+    if (!reason_text.isEmpty()) {
+        warning_fields.push_back({});
+        warning_fields.back().value = reason_text.toStdString();
+    }
+    for (const auto& warning : checksum_sections.warnings) {
+        warning_fields.push_back({
+            .value = warning.toStdString(),
+        });
+    }
+    if (!warning_fields.empty()) {
+        layers.push_back(session_detail::PacketSummaryLayer {
+            .id = "warnings",
+            .title = "Warnings",
+            .fields = std::move(warning_fields),
+            .expanded_by_default = true,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    std::vector<session_detail::PacketSummaryField> frame_fields {};
+    frame_fields.push_back({
+        .label = "Packet number in file",
+        .value = std::to_string(packet.packet_index + 1U),
+    });
+    frame_fields.push_back({
+        .label = "Timestamp",
+        .value = session_detail::format_packet_timestamp_full(packet),
+    });
+    frame_fields.push_back({
+        .label = "Captured Length",
+        .value = std::to_string(packet.captured_length) + " bytes",
+    });
+    frame_fields.push_back({
+        .label = "Original Length",
+        .value = std::to_string(packet.original_length) + " bytes",
+    });
+    layers.push_back(session_detail::PacketSummaryLayer {
+        .id = "frame",
+        .title = "Frame: Packet " + std::to_string(packet.packet_index + 1U) + " in file",
+        .fields = std::move(frame_fields),
+    });
+
+    std::vector<session_detail::PacketSummaryField> checksum_fields {};
+    checksum_fields.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
+    for (const auto& line : checksum_sections.summary_lines) {
+        checksum_fields.push_back({
+            .value = line.toStdString(),
+        });
+    }
+    if (!checksum_fields.empty()) {
+        layers.push_back(session_detail::PacketSummaryLayer {
+            .id = "checksums",
+            .title = "Checksums",
+            .fields = std::move(checksum_fields),
+        });
+    }
+
+    return layers;
 }
 
 }  // namespace
@@ -4773,7 +4862,6 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
 
     selected_packet_index_ = packetIndex;
     if (selected_packet_index_ == kInvalidPacketSelection) {
-        selected_packet_byte_view_stable_id_.clear();
         if (details_selection_context_ == DetailsSelectionContext::packet) {
             details_selection_context_ = DetailsSelectionContext::none;
             packet_details_model_.clear();
@@ -4815,48 +4903,59 @@ void MainController::refreshSelectedPacketByteView() {
 
     const auto packet_bytes = session_.read_packet_data(*packet);
     const auto details = session_.read_packet_details(*packet);
-    if (packet_bytes.empty() || !details.has_value()) {
+    if (packet_bytes.empty()) {
         packet_details_model_.clearPacketBytePresentation();
         selected_packet_byte_view_stable_id_.clear();
         return;
     }
 
-    const auto payload_lengths = resolve_transport_payload_lengths(
-        *details,
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        *packet
-    );
-    const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
-        const auto it = current_flow_packet_numbers_.find(packet->packet_index);
-        if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
-            return std::nullopt;
-        }
-        return it->second - 1U;
-    }();
-    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
-        session_,
-        *details,
-        *packet,
-        selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
-        flow_packet_index,
-        loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
-        payload_lengths.real_payload_length,
-        payload_lengths.original_payload_length
-    );
-    auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
-        *details,
-        *packet,
-        session_detail::SelectedPacketByteBuildOptions {
-            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-            .flow_packet_index = packet_summary_preparation.flow_packet_index,
-            .packet_data = packet_summary_preparation.packet_data,
-            .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
-            .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
-            .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
-        }
-    );
+    std::optional<session_detail::SelectedPacketBytePresentation> packet_byte_presentation {};
+    if (details.has_value()) {
+        const auto payload_lengths = resolve_transport_payload_lengths(
+            *details,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            *packet
+        );
+        const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+            const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+            if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+                return std::nullopt;
+            }
+            return it->second - 1U;
+        }();
+        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+            session_,
+            *details,
+            *packet,
+            selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
+            flow_packet_index,
+            loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
+            payload_lengths.real_payload_length,
+            payload_lengths.original_payload_length
+        );
+        packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            *packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                .flow_packet_index = packet_summary_preparation.flow_packet_index,
+                .packet_data = packet_summary_preparation.packet_data,
+                .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
+                .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
+                .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
+            }
+        );
+    } else if (unrecognized_packets_selected_) {
+        packet_byte_presentation = session_.derive_selected_packet_byte_presentation(*packet);
+    }
 
-    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
+    if (!packet_byte_presentation.has_value()) {
+        packet_details_model_.clearPacketBytePresentation();
+        selected_packet_byte_view_stable_id_.clear();
+        return;
+    }
+
+    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
     const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
     if (!selected_view_id.has_value()) {
         packet_details_model_.clearPacketBytePresentation();
@@ -4866,7 +4965,7 @@ void MainController::refreshSelectedPacketByteView() {
 
     HexDumpService hex_dump_service {};
     const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
-        packet_byte_presentation,
+        *packet_byte_presentation,
         *selected_view_id,
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         hex_dump_service
@@ -5442,6 +5541,7 @@ void MainController::clearSelectedFlowAnalysis() {
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
+    selected_packet_byte_view_stable_id_.clear();
     selected_packet_index_ = kInvalidPacketSelection;
 
     if (wasActive) {
@@ -6064,6 +6164,18 @@ void MainController::reloadSelectedPacketDetails() {
 
     const auto details = session_.read_packet_details(*packet);
     const auto packetBytes = session_.read_packet_data(*packet);
+    const auto unrecognized_reason_text = [&]() -> QString {
+        if (!unrecognized_packets_selected_) {
+            return {};
+        }
+
+        const auto row = packet_model_.rowForPacketIndex(selected_packet_index_);
+        if (row < 0) {
+            return {};
+        }
+
+        return packet_model_.data(packet_model_.index(row, 0), PacketListModel::ReasonTextRole).toString();
+    }();
     PacketChecksumSections checksum_sections {};
     if (details.has_value() && validate_selected_packet_checksums_) {
         checksum_sections = build_packet_checksum_sections(
@@ -6121,12 +6233,15 @@ void MainController::reloadSelectedPacketDetails() {
             session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation->make_options())
         ));
     } else {
-        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, checksum_sections));
-        packet_details_model_.setSummaryLayers({});
+        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, unrecognized_reason_text, checksum_sections));
+        packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+            build_packet_summary_fallback_layers(*packet, unrecognized_reason_text, checksum_sections)
+        ));
     }
 
+    std::optional<session_detail::SelectedPacketBytePresentation> packet_byte_presentation {};
     if (details.has_value() && packet_summary_preparation.has_value()) {
-        auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+        packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
             *details,
             *packet,
             session_detail::SelectedPacketByteBuildOptions {
@@ -6138,12 +6253,17 @@ void MainController::reloadSelectedPacketDetails() {
                 .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
             }
         );
-        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
+    } else if (unrecognized_packets_selected_) {
+        packet_byte_presentation = session_.derive_selected_packet_byte_presentation(*packet);
+    }
+
+    if (packet_byte_presentation.has_value()) {
+        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
         const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
         if (selected_view_id.has_value()) {
             HexDumpService hex_dump_service {};
             if (const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
-                    packet_byte_presentation,
+                    *packet_byte_presentation,
                     *selected_view_id,
                     std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
                     hex_dump_service);

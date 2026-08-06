@@ -495,7 +495,9 @@ Qt currently models the right-hand inspector as a tabbed details surface. That s
 Current Packet Details direction note:
 
 - `Summary / Bytes` is now the shared packet-details tab shape for Qt and the experimental Tauri UI;
-- the removed `Raw` tab is represented by the `Frame` byte view;
+- the removed `Raw` tab is represented by packet-byte inspection, whose fallback root view is now labeled `Captured Packet`;
+- rich decoded Packet Details may be unavailable while packet metadata Summary and `Bytes` fallback presentation remain available from the same shared adapter contract;
+- Qt and Tauri should therefore treat Summary availability and `Bytes` availability as related but independent states;
 - the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
 - the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
 - complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
@@ -542,7 +544,7 @@ Current direction note:
 - tunnel-carrier UDP does not independently emit generic `data` when a supported child tunnel owns those bytes, and unsupported tunnel bodies remain deferred rather than being reparsed inside the Summary layer builder;
 - an inner TCP ACK-only packet with zero terminal application payload must not emit `data`;
 - TLS ownership for selected-packet Summary must validate the bounded record header, must not treat zero-length Handshake / Alert / ChangeCipherSpec headers as TLS-owned, and should suppress `data` for zero-length ApplicationData only when the selected-packet path already has confirmed TLS context;
-- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in the Packet Details `Bytes` tab through `Frame` and protocol-level payload views, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
+- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in the Packet Details `Bytes` tab through the recognized outer packet-unit view or the fallback `Captured Packet` view plus protocol-level payload views, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
 - selected-packet QUIC preparation may also retain one bounded decrypted Initial plaintext artifact for future byte-level inspection, but that artifact stays packet-local, is not copied into Stream rows, and is not used as the semantic source of truth for current Summary layers;
 - recognized encrypted or opaque protocol payload remains owned by that protocol and must not fall back to generic `data`;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
@@ -557,19 +559,21 @@ Bytes should show one selected bounded byte view at a time.
 
 Expected semantics:
 
-- `Frame` replaces the old `Raw` packet preview;
-- the selector order now represents decoded protocol-layer units such as `Frame`, `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPPoE Packet`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
+- `Captured Packet` is the fallback replacement for the removed `Raw` packet preview and appears only when no complete safe outer protocol unit covers the captured packet bytes;
+- when rich decoded Packet Details are unavailable but captured packet bytes are still readable, `Captured Packet` may remain fully available and must not be hidden solely because Summary is partial;
+- for ordinary recognized packets, the selector starts with the actual recognized outer protocol unit, such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPPoE Packet`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
 - complete unit means protocol header plus bounded protocol payload;
 - stable identity belongs to the protocol layer, not to the currently displayed range mode;
-- `Frame` and the decoded link-layer unit may intentionally coexist even when both cover the same captured bytes;
+- the generic captured-packet root is suppressed whenever one recognized outer protocol-unit descriptor uses captured packet bytes, starts at offset `0`, and safely covers the full available captured packet range;
 - the current UI always materializes `whole_unit`;
 - a future UI pass may add `Whole Unit | Payload Only` without changing descriptor identities;
+- when no recognized outer unit safely covers the full available captured range, `Captured Packet` remains visible as the root fallback and exposes only captured packet bytes rather than PCAP/PCAPNG container metadata;
 - when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
 - packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
 - packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
 - whole-unit packet-backed carrier descriptors include their own protocol header, including `IEEE 802.3 Frame`, `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, `PPP Packet`, `VXLAN Packet`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`;
 - `IEEE 802.3 Frame` is selected from authoritative decode metadata rather than inferred in the UI layer; its whole-unit range begins at destination MAC, includes the 2-byte Length field, includes exactly the declared MAC client data extent, and excludes trailing MAC padding beyond the declared length; its payload-only range begins at LLC DSAP when present;
-- LLC/SNAP hierarchy is explicit when the decode path classifies the link layer as 802.3: `Frame -> IEEE 802.3 Frame -> LLC PDU -> SNAP PDU -> carried child`, while non-SNAP LLC remains `Frame -> IEEE 802.3 Frame -> LLC PDU`;
+- LLC/SNAP hierarchy is explicit when the decode path classifies the link layer as 802.3: `IEEE 802.3 Frame -> LLC PDU -> SNAP PDU -> carried child`, while non-SNAP LLC remains `IEEE 802.3 Frame -> LLC PDU`; when declared 802.3 coverage is incomplete because trailing captured bytes fall outside the authoritative whole-unit range, the fallback root may remain as `Captured Packet -> IEEE 802.3 Frame -> ...`;
 - PPPoE Session packet bytes now layer as `PPPoE Packet -> PPP Packet -> carried child` when the decode layer has an authoritative PPP Protocol field and bounded PPP information field; `PPP Packet` includes the PPP Protocol field in whole-unit mode and its payload-only range begins after the parsed Protocol field;
 - PPPoE Discovery packets remain `PPPoE Packet` only and do not manufacture a false `PPP Packet` child;
 - `802.1Q Encapsulation` whole-unit materialization begins at the VLAN TPID, includes TPID, TCI, the encapsulated EtherType/length field, and the complete bounded carried payload; its optional payload-only mode begins at the authoritative carried-protocol boundary;
@@ -589,7 +593,7 @@ Expected semantics:
 - the selector uses backend-provided stable ids and backend-provided descriptor order;
 - only one selected view is materialized/formatted at a time;
 - frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
-- when the preserved id is unavailable, frontends fall back to `Frame`, then to the first available descriptor;
+- when the preserved id is unavailable, frontends fall back to the historical captured-packet stable id when that fallback descriptor is visible, then to the first available descriptor;
 - frontends do not reconstruct hierarchy, ranges, or identities from offsets or display labels;
 - formatted hex/ascii text remains bounded and deterministic;
 - source-unavailable state remains explicit in index-only / no-source mode;
@@ -605,7 +609,7 @@ Backend note for the current migration stage:
   - one bounded reconstructed TLS-record owner when existing selected-packet TLS analysis already reconstructs a contributing TCP TLS record;
 - descriptors carry stable non-localized protocol-layer identities, explicit parent relationships, one primary complete-unit range, and an optional payload-only range only where that second range is already authoritative; they do not retain per-view byte buffers or preformatted text;
 - materialization and hex formatting happen on demand for one selected view at a time;
-- the current pass covers protocol-unit defaults for Frame, Ethernet II, IEEE 802.3, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, PPP, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet II, inner IEEE 802.3, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- the current pass covers protocol-unit defaults for the fallback `Captured Packet` root plus Ethernet II, IEEE 802.3, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, PPP, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet II, inner IEEE 802.3, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
 - current PPP Packet support is limited to the already-authoritative PPPoE decode path with a 2-byte PPP Protocol field; Protocol Field Compression is not guessed in the presentation layer;
 - Linux cooked SLL/SLL2 packet-byte units remain deferred in the current contract pass because the inspected packet-details model does not yet publish authoritative cooked-header whole-unit and payload ranges for byte-view materialization;
 - semantic child layers may intentionally overlap their parent transport or carrier range when the child unit is independently authoritative, including `UDP Datagram -> DNS Message`, `TCP Segment -> TLS Record`, `TLS Record -> TLS Handshake Message`, and `CRYPTO Frame Data -> TLS Handshake Message`;
