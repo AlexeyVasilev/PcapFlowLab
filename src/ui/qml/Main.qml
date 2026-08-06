@@ -1122,9 +1122,6 @@ ApplicationWindow {
                 onSortRequested: function(column) {
                     mainController.sortFlows(column)
                 }
-                onSendFlowToAnalysisRequested: function() {
-                    mainController.sendSelectedFlowToAnalysis()
-                }
                 onPacketSelected: function(packetIndex) {
                     mainController.selectedPacketIndex = packetIndex
                 }

@@ -480,6 +480,25 @@ QObject* named_object(QObject* root, const char* objectName) {
     return root->findChild<QObject*>(QString::fromLatin1(objectName));
 }
 
+QObject* find_object_with_text(QObject* root, const QString& text) {
+    if (root == nullptr) {
+        return nullptr;
+    }
+
+    if (root->property("text").toString() == text) {
+        return root;
+    }
+
+    const auto children = root->findChildren<QObject*>();
+    for (auto* child : children) {
+        if (child != nullptr && child->property("text").toString() == text) {
+            return child;
+        }
+    }
+
+    return nullptr;
+}
+
 QStringList direct_child_tab_button_texts(QObject* root, const char* objectName) {
     QStringList labels {};
     auto* container = named_object(root, objectName);
@@ -2881,6 +2900,9 @@ int main(int argc, char* argv[]) {
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
         auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
+        UI_EXPECT(named_object(flow_table.object.get(), "flowTextFilterField") != nullptr);
+        UI_EXPECT(named_object(flow_table.object.get(), "flowTextFilterClearButton") != nullptr);
+        UI_EXPECT(find_object_with_text(flow_table.object.get(), QStringLiteral("Send flow to Analysis")) == nullptr);
         UI_EXPECT(named_object(flow_table.object.get(), "wiresharkFilterRow") != nullptr);
         flow_table.object->setProperty("wiresharkFilterVisible", false);
         app.processEvents(QEventLoop::AllEvents, 25);

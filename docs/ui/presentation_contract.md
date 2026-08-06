@@ -1066,7 +1066,7 @@ Qt currently implements a selected-flow analysis workspace rather than only a pl
 Current Qt behavior:
 
 - analysis is selected-flow-driven;
-- `Send flow to Analysis` moves the selected flow into the Analysis tab;
+- manually entering the Analysis tab with a selected flow uses the current selected-flow context;
 - entering the Analysis tab with a selected flow triggers refresh;
 - analysis is not computed during capture open;
 - analysis refresh is tied to selected-flow context and active analysis tab.

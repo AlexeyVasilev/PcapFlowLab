@@ -58,7 +58,6 @@ Frame {
     signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
-    signal sendFlowToAnalysisRequested()
     signal unrecognizedPacketsRequested()
 
     function sortIndicator(column) {
@@ -182,6 +181,7 @@ Frame {
 
             TextField {
                 id: filterField
+                objectName: "flowTextFilterField"
                 Layout.fillWidth: true
                 placeholderText: "Filter by protocol, hint, service, address, or port"
                 text: root.filterText
@@ -195,12 +195,6 @@ Frame {
                 text: "Clear"
                 enabled: root.filterText.length > 0
                 onClicked: root.clearTextFilterRequested()
-            }
-
-            Button {
-                text: "Send flow to Analysis"
-                enabled: root.selectedFlowIndex >= 0
-                onClicked: root.sendFlowToAnalysisRequested()
             }
         }
 
