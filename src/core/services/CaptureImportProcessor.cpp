@@ -85,9 +85,17 @@ CaptureImportResult import_classic_packets(PcapReader& reader,
             }
         }
 
-        accumulate_capture_packet_size(state.packet_size_statistics, reusable_packet.captured_length);
+        const auto disposition = processor.process_classic_import_packet(
+            reader,
+            reusable_packet,
+            state,
+            adaptive_header_prefix_bytes
+        );
+        if (disposition != ClassicImportPacketDisposition::failure_before_packet_surfaced) {
+            accumulate_capture_packet_size(state.packet_size_statistics, reusable_packet.captured_length);
+        }
 
-        if (!processor.process_classic_import_packet(reader, reusable_packet, state, adaptive_header_prefix_bytes)) {
+        if (disposition != ClassicImportPacketDisposition::continue_after_packet) {
             break;
         }
 
@@ -135,8 +143,8 @@ CaptureImportResult import_full_packets(Reader& reader, CaptureState& state, con
             }
         }
 
-        accumulate_capture_packet_size(state.packet_size_statistics, packet->captured_length);
         processor.process_packet(*packet, state);
+        accumulate_capture_packet_size(state.packet_size_statistics, packet->captured_length);
 
         if (should_cancel(ctx)) {
             report_open_progress(ctx);
@@ -170,33 +178,35 @@ CaptureImportProcessor::CaptureImportProcessor(const AnalysisSettings settings)
     , hint_service_(settings, true) {
 }
 
-bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
-                                                           RawPcapPacket& packet,
-                                                           CaptureState& state,
-                                                           std::size_t& adaptive_header_prefix_bytes) const {
+ClassicImportPacketDisposition CaptureImportProcessor::process_classic_import_packet(
+    PcapReader& reader,
+    RawPcapPacket& packet,
+    CaptureState& state,
+    std::size_t& adaptive_header_prefix_bytes
+) const {
     const auto finalize_prefix_packet = [&reader, &packet]() {
         return reader.finish_prefix_packet(packet);
     };
 
     if (const auto required_bytes = required_classic_import_prefix_bytes(packet); required_bytes.has_value()) {
         if (!reader.materialize_packet_bytes(packet)) {
-            return false;
+            return ClassicImportPacketDisposition::failure_before_packet_surfaced;
         }
 
         adaptive_header_prefix_bytes =
             grow_adaptive_import_header_prefix(adaptive_header_prefix_bytes, *required_bytes);
         process_packet(packet, state);
-        return true;
+        return ClassicImportPacketDisposition::continue_after_packet;
     }
 
     auto result = run_unified_import_packet(packet, *registry_);
     if (!result.decision.has_decoded_packet() && packet.bytes.size() < packet.captured_length) {
         if (!reader.materialize_packet_bytes(packet)) {
-            return false;
+            return ClassicImportPacketDisposition::failure_before_packet_surfaced;
         }
 
         process_packet(packet, state);
-        return true;
+        return ClassicImportPacketDisposition::continue_after_packet;
     }
 
     void* materializer_context[] {&reader, &packet};
@@ -216,10 +226,12 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
         }
     );
     if (!applied) {
-        return false;
+        return ClassicImportPacketDisposition::failure_before_packet_surfaced;
     }
 
-    return finalize_prefix_packet();
+    return finalize_prefix_packet()
+        ? ClassicImportPacketDisposition::continue_after_packet
+        : ClassicImportPacketDisposition::stop_after_packet;
 }
 
 void CaptureImportProcessor::process_packet(RawPcapPacket& packet, CaptureState& state) const {

@@ -15,15 +15,23 @@ struct OpenContext;
 
 namespace pfl {
 
+enum class ClassicImportPacketDisposition {
+    continue_after_packet = 0,
+    stop_after_packet,
+    failure_before_packet_surfaced,
+};
+
 class CaptureImportProcessor {
 public:
     explicit CaptureImportProcessor(AnalysisSettings settings = {});
 
     void process_packet(RawPcapPacket& packet, CaptureState& state) const;
-    [[nodiscard]] bool process_classic_import_packet(PcapReader& reader,
-                                                     RawPcapPacket& packet,
-                                                     CaptureState& state,
-                                                     std::size_t& adaptive_header_prefix_bytes) const;
+    [[nodiscard]] ClassicImportPacketDisposition process_classic_import_packet(
+        PcapReader& reader,
+        RawPcapPacket& packet,
+        CaptureState& state,
+        std::size_t& adaptive_header_prefix_bytes
+    ) const;
 
 private:
     const dissection::DissectionRegistry* registry_ {nullptr};

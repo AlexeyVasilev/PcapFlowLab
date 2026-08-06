@@ -318,14 +318,26 @@ std::size_t flow_packet_count_histogram_bucket_index(const std::uint64_t packet_
 
 }  // namespace
 
+std::string format_statistics_bucket_label(
+    const std::uint64_t lower_bound_inclusive,
+    const std::optional<std::uint64_t> upper_bound_inclusive
+) {
+    if (!upper_bound_inclusive.has_value()) {
+        return std::to_string(lower_bound_inclusive) + '+';
+    }
+    if (lower_bound_inclusive == *upper_bound_inclusive) {
+        return std::to_string(lower_bound_inclusive);
+    }
+    return std::to_string(lower_bound_inclusive) + '-' + std::to_string(*upper_bound_inclusive);
+}
+
 std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket) {
-    if (!bucket.upper_bound_inclusive.has_value()) {
-        return std::to_string(bucket.lower_bound_inclusive) + '+';
-    }
-    if (bucket.lower_bound_inclusive == *bucket.upper_bound_inclusive) {
-        return std::to_string(bucket.lower_bound_inclusive);
-    }
-    return std::to_string(bucket.lower_bound_inclusive) + '-' + std::to_string(*bucket.upper_bound_inclusive);
+    return format_statistics_bucket_label(
+        static_cast<std::uint64_t>(bucket.lower_bound_inclusive),
+        bucket.upper_bound_inclusive.has_value()
+            ? std::optional<std::uint64_t> {static_cast<std::uint64_t>(*bucket.upper_bound_inclusive)}
+            : std::nullopt
+    );
 }
 
 std::string format_statistics_count_value(const std::uint64_t value) {

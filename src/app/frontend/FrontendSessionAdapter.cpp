@@ -251,16 +251,6 @@ std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary
     return rows;
 }
 
-std::string flow_packet_count_histogram_bucket_label(const FlowPacketCountHistogramBucket& bucket) {
-    if (!bucket.upper_bound_inclusive.has_value()) {
-        return std::to_string(bucket.lower_bound_inclusive) + '+';
-    }
-    if (bucket.lower_bound_inclusive == *bucket.upper_bound_inclusive) {
-        return std::to_string(bucket.lower_bound_inclusive);
-    }
-    return std::to_string(bucket.lower_bound_inclusive) + '-' + std::to_string(*bucket.upper_bound_inclusive);
-}
-
 std::string format_size_value(const std::uint64_t value);
 
 FrontendCapturePacketSizeStatisticsDto build_capture_packet_size_statistics_dto(
@@ -308,7 +298,10 @@ FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
     for (const auto& bucket : histogram.buckets) {
         dto.buckets.push_back(FrontendFlowPacketCountHistogramBucketDto {
             .bucket_id = bucket.stable_id,
-            .label = flow_packet_count_histogram_bucket_label(bucket),
+            .label = session_detail::format_statistics_bucket_label(
+                bucket.lower_bound_inclusive,
+                bucket.upper_bound_inclusive
+            ),
             .lower_bound_inclusive = bucket.lower_bound_inclusive,
             .upper_bound_inclusive = bucket.upper_bound_inclusive,
             .flow_count = bucket.flow_count,

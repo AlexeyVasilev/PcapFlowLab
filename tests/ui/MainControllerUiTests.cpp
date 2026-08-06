@@ -27,6 +27,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMetaEnum>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -3185,7 +3186,25 @@ int main(int argc, char* argv[]) {
     );
 
     run_ui_section("statistics_sections_lazy_loading", [&]() {
+        UI_EXPECT(QMetaEnum::fromType<MainController::StatisticsSectionRequestState>().isValid());
+        UI_EXPECT(QMetaEnum::fromType<MainController::StatisticsOptionalSection>().isValid());
         auto statistics_pane = load_qml_component("src/ui/qml/components/StatisticsPane.qml", "StatisticsPane");
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "packetSizeDistributionToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowPacketHistogramToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolPathStatisticsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "quicTlsStatisticsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "topEndpointPortStatisticsToggleButton") != nullptr);
+
+        auto stable_toggle_component = load_qml_component(
+            "src/ui/qml/components/CollapsibleStatisticsSection.qml",
+            "CollapsibleStatisticsSection"
+        );
+        stable_toggle_component.object->setProperty("title", QStringLiteral("Renamed Title"));
+        stable_toggle_component.object->setProperty("toggleObjectName", QStringLiteral("stableStatisticsToggle"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_REQUIRE(named_object(stable_toggle_component.object.get(), "stableStatisticsToggle") != nullptr);
+
         statistics_pane.object->setProperty("packetSizeDistributionExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);

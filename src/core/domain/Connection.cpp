@@ -1,5 +1,7 @@
 #include "core/domain/Connection.h"
 
+#include <cassert>
+
 namespace pfl {
 
 namespace {
@@ -192,10 +194,12 @@ template <typename Connection>
 }  // namespace
 
 const FlowKeyV4& first_observed_flow_key(const ConnectionV4& connection) noexcept {
+    assert(connection.has_flow_a);
     return connection.flow_a.key;
 }
 
 const FlowKeyV6& first_observed_flow_key(const ConnectionV6& connection) noexcept {
+    assert(connection.has_flow_a);
     return connection.flow_a.key;
 }
 

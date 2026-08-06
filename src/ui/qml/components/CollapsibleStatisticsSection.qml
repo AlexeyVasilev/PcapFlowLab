@@ -7,6 +7,7 @@ Frame {
 
     property string title: ""
     property string summaryText: ""
+    property string toggleObjectName: ""
     property bool expanded: false
     default property alias sectionContent: contentColumn.data
 
@@ -28,7 +29,7 @@ Frame {
 
         Button {
             id: headerButton
-            objectName: root.title.length > 0 ? root.title.replace(/\s+/g, "") + "ToggleButton" : ""
+            objectName: root.toggleObjectName
             Layout.fillWidth: true
             flat: true
             focusPolicy: Qt.StrongFocus

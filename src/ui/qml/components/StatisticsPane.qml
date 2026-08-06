@@ -505,6 +505,7 @@ Item {
                     id: packetSizeDistributionSection
                     objectName: "packetSizeDistributionSection"
                     title: "Packet Size Distribution"
+                    toggleObjectName: "packetSizeDistributionToggleButton"
                     summaryText: root.packetSizeDistributionSummaryText
                     expanded: root.packetSizeDistributionExpanded
                     onExpandedChangedByUser: function(expanded) {
@@ -587,6 +588,7 @@ Item {
                     id: flowPacketHistogramSection
                     objectName: "flowPacketHistogramSection"
                     title: "Flows by Packet Count"
+                    toggleObjectName: "flowPacketHistogramToggleButton"
                     summaryText: root.flowPacketHistogramSummaryText
                     expanded: root.flowPacketHistogramExpanded
                     onExpandedChangedByUser: function(expanded) {
@@ -724,6 +726,7 @@ Item {
                     id: protocolPathSection
                     objectName: "protocolPathSection"
                     title: "Protocol Path Tree"
+                    toggleObjectName: "protocolPathStatisticsToggleButton"
                     expanded: root.protocolPathExpanded
                     onExpandedChangedByUser: function(expanded) {
                         root.protocolPathExpanded = expanded
@@ -992,6 +995,7 @@ Item {
                     id: protocolHintsSection
                     objectName: "protocolHintsSection"
                     title: "Detected Protocol Hints"
+                    toggleObjectName: "protocolHintStatisticsToggleButton"
                     expanded: root.protocolHintsExpanded
                     onExpandedChangedByUser: function(expanded) {
                         root.protocolHintsExpanded = expanded
@@ -1069,6 +1073,7 @@ Item {
                     id: quicTlsSection
                     objectName: "quicTlsSection"
                     title: "QUIC and TLS"
+                    toggleObjectName: "quicTlsStatisticsToggleButton"
                     expanded: root.quicTlsExpanded
                     onExpandedChangedByUser: function(expanded) {
                         root.quicTlsExpanded = expanded
@@ -1125,6 +1130,7 @@ Item {
                     id: topTalkersSection
                     objectName: "topEndpointsPortsSection"
                     title: "Top Endpoints and Ports"
+                    toggleObjectName: "topEndpointPortStatisticsToggleButton"
                     expanded: root.topEndpointsPortsExpanded
                     visible: root.showTopTalkers
                     onExpandedChangedByUser: function(expanded) {

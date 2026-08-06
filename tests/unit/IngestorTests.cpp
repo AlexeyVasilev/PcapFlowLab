@@ -69,6 +69,11 @@ void run_ingestor_tests() {
         PFL_EXPECT(connection->flow_a.packet_count == 1);
         PFL_EXPECT(connection->flow_a.packets.size() == 1);
         PFL_EXPECT(has_valid_first_observed_orientation(*connection));
+        PFL_EXPECT(first_observed_flow_key(*connection) == packet.flow_key);
+        PFL_EXPECT(first_observed_endpoint_a(*connection).addr == packet.flow_key.src_addr);
+        PFL_EXPECT(first_observed_endpoint_a(*connection).port == packet.flow_key.src_port);
+        PFL_EXPECT(first_observed_endpoint_b(*connection).addr == packet.flow_key.dst_addr);
+        PFL_EXPECT(first_observed_endpoint_b(*connection).port == packet.flow_key.dst_port);
     }
 
     {
@@ -124,6 +129,7 @@ void run_ingestor_tests() {
         PFL_EXPECT(connection->flow_b.packet_count == 1);
         PFL_EXPECT(connection->packet_count == 2);
         PFL_EXPECT(has_valid_first_observed_orientation(*connection));
+        PFL_EXPECT(first_observed_flow_key(*connection) == flow_a);
     }
 
     {
@@ -229,6 +235,16 @@ void run_ingestor_tests() {
         PFL_EXPECT(path_100_row.endpoint_b == "10.9.0.10:50000");
         PFL_EXPECT(path_200_row.endpoint_a == "10.9.0.10:50000");
         PFL_EXPECT(path_200_row.endpoint_b == "10.9.0.20:443");
+    }
+
+    {
+        const ConnectionV4 empty_connection {};
+        const ConnectionV6 empty_connection_v6 {};
+        PFL_EXPECT(has_valid_first_observed_orientation(empty_connection));
+        PFL_EXPECT(has_valid_first_observed_orientation(empty_connection_v6));
+
+        const CaptureState empty_state {};
+        PFL_EXPECT(session_detail::list_connections(empty_state).empty());
     }
 }
 

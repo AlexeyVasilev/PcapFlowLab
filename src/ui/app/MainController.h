@@ -27,8 +27,6 @@ namespace pfl {
 
 class MainController final : public QObject {
     Q_OBJECT
-    Q_ENUMS(StatisticsSectionRequestState)
-    Q_ENUMS(StatisticsOptionalSection)
 
 public:
     enum class StatisticsSectionRequestState {
@@ -38,6 +36,7 @@ public:
         unavailable,
         error,
     };
+    Q_ENUM(StatisticsSectionRequestState)
 
     enum class StatisticsOptionalSection {
         packet_size_distribution = 0,
@@ -47,6 +46,7 @@ public:
         quic_tls,
         top_endpoints_ports,
     };
+    Q_ENUM(StatisticsOptionalSection)
 
 private:
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)

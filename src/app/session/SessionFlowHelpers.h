@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,7 +39,12 @@ void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connect
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
 FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings);
+// Precondition for first-observed endpoint/path presentation: the listed connection is non-empty.
 std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket);
+std::string format_statistics_bucket_label(
+    std::uint64_t lower_bound_inclusive,
+    std::optional<std::uint64_t> upper_bound_inclusive
+);
 std::string format_statistics_count_value(std::uint64_t value);
 std::string format_statistics_compact_size_value(std::uint64_t value);
 std::string format_statistics_percent_text(double percent);

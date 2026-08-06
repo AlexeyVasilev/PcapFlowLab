@@ -68,6 +68,7 @@ struct ConnectionV6 {
     void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
 };
 
+// Precondition: connection.has_flow_a is true.
 [[nodiscard]] const FlowKeyV4& first_observed_flow_key(const ConnectionV4& connection) noexcept;
 [[nodiscard]] const FlowKeyV6& first_observed_flow_key(const ConnectionV6& connection) noexcept;
 [[nodiscard]] EndpointKeyV4 first_observed_endpoint_a(const ConnectionV4& connection) noexcept;

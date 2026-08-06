@@ -15,6 +15,8 @@
 #include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/domain/Connection.h"
 #include "core/index/CaptureIndex.h"
+#include "core/io/PcapReader.h"
+#include "core/services/CaptureImportProcessor.h"
 
 namespace pfl::tests {
 
@@ -177,6 +179,42 @@ std::vector<std::uint8_t> unrecognized_ethernet_frame() {
     return bytes;
 }
 
+std::vector<std::uint8_t> large_unrecognized_ethernet_frame() {
+    auto bytes = unrecognized_ethernet_frame();
+    bytes.resize(256U, 0x5aU);
+    return bytes;
+}
+
+std::vector<std::uint8_t> large_recognized_tcp_frame_without_payload() {
+    auto bytes = make_ethernet_ipv4_tcp_packet(ipv4(10, 65, 0, 1), ipv4(10, 65, 0, 2), 6501, 443);
+    bytes.resize(256U, 0x00U);
+    return bytes;
+}
+
+void write_le32(std::vector<std::uint8_t>& bytes, const std::size_t offset, const std::uint32_t value) {
+    PFL_REQUIRE(offset + 4U <= bytes.size());
+    bytes[offset + 0U] = static_cast<std::uint8_t>(value & 0xffU);
+    bytes[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xffU);
+    bytes[offset + 2U] = static_cast<std::uint8_t>((value >> 16U) & 0xffU);
+    bytes[offset + 3U] = static_cast<std::uint8_t>((value >> 24U) & 0xffU);
+}
+
+std::vector<std::uint8_t> make_single_packet_classic_pcap_with_declared_capture_length(
+    const std::vector<std::uint8_t>& packet_bytes,
+    const std::uint32_t declared_captured_length,
+    const std::uint32_t declared_original_length,
+    const std::size_t retained_packet_bytes
+) {
+    auto capture = make_classic_pcap({{100U, packet_bytes}});
+    constexpr std::size_t kPacketHeaderOffset = 24U;
+    constexpr std::size_t kIncludedLengthOffset = kPacketHeaderOffset + 8U;
+    constexpr std::size_t kOriginalLengthOffset = kPacketHeaderOffset + 12U;
+    write_le32(capture, kIncludedLengthOffset, declared_captured_length);
+    write_le32(capture, kOriginalLengthOffset, declared_original_length);
+    capture.resize(kPacketHeaderOffset + 16U + retained_packet_bytes);
+    return capture;
+}
+
 std::string take_bridge_string(char* value) {
     PFL_REQUIRE(value != nullptr);
     const std::string text {value};
@@ -217,6 +255,16 @@ void expect_shared_statistics_formatting_helpers() {
     PFL_EXPECT(format_statistics_size_with_percent_text(136U, 0.009) == "136 B (<0.01%)");
     PFL_EXPECT(format_statistics_count_with_percent_text(0U, 0.0) == "0 (0%)");
     PFL_EXPECT(format_statistics_size_with_percent_text(0U, 0.0) == "0 B (0%)");
+    PFL_EXPECT(session_detail::format_statistics_bucket_label(1U, 1U) == "1");
+    PFL_EXPECT(session_detail::format_statistics_bucket_label(3U, 5U) == "3-5");
+    PFL_EXPECT(session_detail::format_statistics_bucket_label(5001U, std::nullopt) == "5001+");
+    PFL_EXPECT(session_detail::format_statistics_bucket_label(0U, 63U) == "0-63");
+    PFL_EXPECT(
+        session_detail::format_statistics_bucket_label(
+            std::numeric_limits<std::uint64_t>::max() - 1U,
+            std::nullopt
+        ) == std::to_string(std::numeric_limits<std::uint64_t>::max() - 1U) + '+'
+    );
 }
 
 void expect_protocol_hint_statistics_rows_handle_zero_denominators() {
@@ -598,6 +646,60 @@ void expect_capture_packet_size_statistics_survives_index_roundtrip() {
     );
 }
 
+void expect_capture_packet_size_statistics_ignores_unsurfaced_classic_packet_failures() {
+    const auto large_packet = large_unrecognized_ethernet_frame();
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_size_unsurfaced_classic_failure.pcap",
+        make_single_packet_classic_pcap_with_declared_capture_length(
+            large_packet,
+            static_cast<std::uint32_t>(large_packet.size()),
+            static_cast<std::uint32_t>(large_packet.size()),
+            220U
+        )
+    );
+
+    PcapReader reader {};
+    PFL_REQUIRE(reader.open(capture_path));
+    CaptureState state {};
+    const auto result = import_capture_from_reader(reader, state, CaptureImportProcessor {});
+
+    PFL_EXPECT(result == CaptureImportResult::failure);
+    PFL_EXPECT(state.summary.packet_count == 0U);
+    PFL_EXPECT(state.unrecognized_packets.empty());
+    PFL_EXPECT(state.packet_size_statistics.total_packet_count == 0U);
+    PFL_EXPECT(state.packet_size_statistics.maximum_bucket_packet_count == 0U);
+    PFL_EXPECT(state.packet_size_statistics.maximum_captured_packet_length == 0U);
+}
+
+void expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing_reader_error() {
+    const auto recognized_packet = large_recognized_tcp_frame_without_payload();
+    auto capture_bytes = make_classic_pcap({{100U, recognized_packet}});
+    capture_bytes.push_back(0xdeU);
+    capture_bytes.push_back(0xadU);
+    capture_bytes.push_back(0xbeU);
+    capture_bytes.push_back(0xefU);
+    capture_bytes.push_back(0x01U);
+    capture_bytes.push_back(0x02U);
+    capture_bytes.push_back(0x03U);
+    capture_bytes.push_back(0x04U);
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_size_surfaced_before_reader_error.pcap",
+        capture_bytes
+    );
+
+    PcapReader reader {};
+    PFL_REQUIRE(reader.open(capture_path));
+    CaptureState state {};
+    const auto result = import_capture_from_reader(reader, state, CaptureImportProcessor {});
+
+    PFL_EXPECT(result == CaptureImportResult::partial_success_with_warning);
+    PFL_EXPECT(state.summary.packet_count == 1U);
+    PFL_EXPECT(state.unrecognized_packets.empty());
+    PFL_EXPECT(state.packet_size_statistics.total_packet_count == 1U);
+    PFL_EXPECT(state.packet_size_statistics.maximum_bucket_packet_count == 1U);
+    PFL_EXPECT(state.packet_size_statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+}
+
 void expect_overview_excludes_optional_statistics_sections() {
     const auto tcp_ab = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80);
     const auto tcp_ba = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 2), ipv4(10, 0, 0, 1), 80, 1111);
@@ -826,6 +928,8 @@ void run_statistics_section_tests() {
     expect_capture_packet_size_statistics_excludes_unreadable_truncated_tail();
     expect_capture_packet_size_statistics_counts_supported_pcapng_packets();
     expect_capture_packet_size_statistics_survives_index_roundtrip();
+    expect_capture_packet_size_statistics_ignores_unsurfaced_classic_packet_failures();
+    expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing_reader_error();
     expect_overview_excludes_optional_statistics_sections();
     expect_quic_tls_section_keeps_one_empty_side();
     expect_statistics_section_requests_handle_missing_capture();
