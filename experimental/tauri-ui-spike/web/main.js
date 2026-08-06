@@ -74,7 +74,7 @@
     settings: {
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
-      ignore_vlan_layers_when_grouping_flows: false,
+      ignore_vlan_and_mpls_layers_when_grouping_flows: false,
       show_wireshark_filter_for_selected_flow: true,
       validate_selected_packet_checksums: false,
     },
@@ -220,7 +220,7 @@
     protocolPathLegendStatusText: document.getElementById("protocolPathLegendStatusText"),
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
-    settingsIgnoreVlanLayersWhenGroupingFlows: document.getElementById("settingsIgnoreVlanLayersWhenGroupingFlows"),
+    settingsIgnoreVlanAndMplsLayersWhenGroupingFlows: document.getElementById("settingsIgnoreVlanAndMplsLayersWhenGroupingFlows"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
     settingsShowProtocolPathColumn: document.getElementById("settingsShowProtocolPathColumn"),
     settingsValidateSelectedPacketChecksums: document.getElementById("settingsValidateSelectedPacketChecksums"),
@@ -1340,7 +1340,7 @@
       opened_from_index: Boolean(sourceAvailability?.opened_from_index),
       partial_open: Boolean(sourceAvailability?.partial_open),
       byte_backed_inspection_available: Boolean(sourceAvailability?.byte_backed_inspection_available),
-      flow_grouping_ignores_vlan_layers: Boolean(sourceAvailability?.flow_grouping_ignores_vlan_layers),
+      flow_grouping_ignores_vlan_and_mpls_layers: Boolean(sourceAvailability?.flow_grouping_ignores_vlan_and_mpls_layers),
       active_source_capture_path: String(sourceAvailability?.active_source_capture_path || ""),
       expected_source_capture_path: String(sourceAvailability?.expected_source_capture_path || ""),
     };
@@ -2673,9 +2673,9 @@
       elements.settingsUsePossibleTlsQuic.checked = Boolean(state.settings.use_possible_tls_quic);
       elements.settingsUsePossibleTlsQuic.disabled = dialogDisabled;
     }
-    if (elements.settingsIgnoreVlanLayersWhenGroupingFlows) {
-      elements.settingsIgnoreVlanLayersWhenGroupingFlows.checked = Boolean(state.settings.ignore_vlan_layers_when_grouping_flows);
-      elements.settingsIgnoreVlanLayersWhenGroupingFlows.disabled = dialogDisabled;
+    if (elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows) {
+      elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows.checked = Boolean(state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows);
+      elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows.disabled = dialogDisabled;
     }
     if (elements.settingsShowWiresharkFilterForSelectedFlow) {
       elements.settingsShowWiresharkFilterForSelectedFlow.checked = Boolean(state.settings.show_wireshark_filter_for_selected_flow);
@@ -3510,11 +3510,11 @@
     if (state.openState !== "opened") {
       return "";
     }
-    if (availability.flow_grouping_ignores_vlan_layers) {
-      return "VLAN layers are ignored for flow grouping. Flows from different VLANs may be merged.";
+    if (availability.flow_grouping_ignores_vlan_and_mpls_layers) {
+      return "VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.";
     }
-    if (state.currentSessionOpenedFromIndex && state.settings.ignore_vlan_layers_when_grouping_flows) {
-      return "Loaded indexes preserve their stored flow grouping. The current VLAN grouping setting is not reapplied.";
+    if (state.currentSessionOpenedFromIndex && state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows) {
+      return "Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied.";
     }
     return "";
   }
@@ -6676,7 +6676,7 @@
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
-        ignore_vlan_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_layers_when_grouping_flows),
+        ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_and_mpls_layers_when_grouping_flows),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
@@ -6748,7 +6748,7 @@
 
     const httpUsePathAsServiceHint = Boolean(elements.settingsHttpUsePathAsServiceHint?.checked);
     const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
-    const ignoreVlanLayersWhenGroupingFlows = Boolean(elements.settingsIgnoreVlanLayersWhenGroupingFlows?.checked);
+    const ignoreVlanAndMplsLayersWhenGroupingFlows = Boolean(elements.settingsIgnoreVlanAndMplsLayersWhenGroupingFlows?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
     const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
@@ -6761,7 +6761,7 @@
       const settings = await invoke("update_settings", {
         http_use_path_as_service_hint: httpUsePathAsServiceHint,
         use_possible_tls_quic: usePossibleTlsQuic,
-        ignore_vlan_layers_when_grouping_flows: ignoreVlanLayersWhenGroupingFlows,
+        ignore_vlan_and_mpls_layers_when_grouping_flows: ignoreVlanAndMplsLayersWhenGroupingFlows,
         show_wireshark_filter_for_selected_flow: showWiresharkFilterForSelectedFlow,
         validate_selected_packet_checksums: validateSelectedPacketChecksums,
       });
@@ -6769,7 +6769,7 @@
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
-        ignore_vlan_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_layers_when_grouping_flows),
+        ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(settings?.ignore_vlan_and_mpls_layers_when_grouping_flows),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
@@ -6785,8 +6785,8 @@
         await loadSelectedPacketDetails();
       }
 
-      if (state.openState === "opened" && state.settings.ignore_vlan_layers_when_grouping_flows !== currentSourceAvailability().flow_grouping_ignores_vlan_layers) {
-        setStatus("Reopen the current capture or index to apply the VLAN flow-grouping setting.", "success");
+      if (state.openState === "opened" && state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows !== currentSourceAvailability().flow_grouping_ignores_vlan_and_mpls_layers) {
+        setStatus("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting.", "success");
       } else {
         setStatus("Settings updated.", "success");
       }

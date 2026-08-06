@@ -1505,6 +1505,55 @@ void run_selected_packet_byte_presentation_tests_impl() {
 
     {
         CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/mpls/25_vlan_and_stacked_mpls_asymmetric_bidirectional_tcp.pcap")));
+
+        const auto first_packet = require_packet(session, 0U);
+        const auto first_presentation = require_presentation(session, first_packet);
+        const auto* first_outer_ethernet = require_view(first_presentation, SelectedPacketByteViewKind::ethernet_payload);
+        const auto* first_vlan = require_view(first_presentation, SelectedPacketByteViewKind::vlan_payload, 0U);
+        const auto* first_mpls = require_view(first_presentation, SelectedPacketByteViewKind::mpls_payload, 0U);
+        const auto* first_ipv4 = require_view(first_presentation, SelectedPacketByteViewKind::ipv4_payload);
+        const auto* first_tcp = require_view(first_presentation, SelectedPacketByteViewKind::tcp_payload);
+        const auto expected_first_labels = std::vector<std::string> {
+            "Captured Packet",
+            "Ethernet II Frame",
+            "802.1Q Encapsulation",
+            "MPLS Label Stack and Payload",
+            "IPv4 Packet",
+            "TCP Segment",
+        };
+        expect_parent(*first_outer_ethernet, SelectedPacketByteViewKind::frame);
+        expect_parent(*first_vlan, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*first_mpls, SelectedPacketByteViewKind::vlan_payload, 0U);
+        expect_parent(*first_ipv4, SelectedPacketByteViewKind::mpls_payload, 0U);
+        expect_parent(*first_tcp, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_EXPECT(collect_labels(first_presentation) == expected_first_labels);
+
+        const auto second_packet = require_packet(session, 1U);
+        const auto second_presentation = require_presentation(session, second_packet);
+        const auto* second_outer_ethernet = require_view(second_presentation, SelectedPacketByteViewKind::ethernet_payload);
+        const auto* second_outer_vlan = require_view(second_presentation, SelectedPacketByteViewKind::vlan_payload, 0U);
+        const auto* second_inner_vlan = require_view(second_presentation, SelectedPacketByteViewKind::vlan_payload, 1U);
+        const auto* second_ipv4 = require_view(second_presentation, SelectedPacketByteViewKind::ipv4_payload);
+        const auto* second_tcp = require_view(second_presentation, SelectedPacketByteViewKind::tcp_payload);
+        const auto expected_second_labels = std::vector<std::string> {
+            "Captured Packet",
+            "Ethernet II Frame",
+            "802.1Q Encapsulation",
+            "802.1Q Encapsulation",
+            "IPv4 Packet",
+            "TCP Segment",
+        };
+        expect_parent(*second_outer_ethernet, SelectedPacketByteViewKind::frame);
+        expect_parent(*second_outer_vlan, SelectedPacketByteViewKind::ethernet_payload);
+        expect_parent(*second_inner_vlan, SelectedPacketByteViewKind::vlan_payload, 0U);
+        expect_parent(*second_ipv4, SelectedPacketByteViewKind::vlan_payload, 1U);
+        expect_parent(*second_tcp, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_EXPECT(collect_labels(second_presentation) == expected_second_labels);
+    }
+
+    {
+        CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/13_vxlan_inner_vlan_ipv4_tcp.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto bytes = session.read_packet_data(packet);

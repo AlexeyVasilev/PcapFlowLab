@@ -2153,7 +2153,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     state_ = {};
     analysis_settings_ = {};
     opened_from_index_ = false;
-    flow_grouping_ignores_vlan_layers_ = false;
+    flow_grouping_ignores_vlan_and_mpls_layers_ = false;
     has_loaded_state_ = false;
     last_open_error_text_.clear();
     selected_flow_full_packet_cache_.reset();
@@ -2197,7 +2197,7 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
     swap(state_, other.state_);
     swap(analysis_settings_, other.analysis_settings_);
     swap(opened_from_index_, other.opened_from_index_);
-    swap(flow_grouping_ignores_vlan_layers_, other.flow_grouping_ignores_vlan_layers_);
+    swap(flow_grouping_ignores_vlan_and_mpls_layers_, other.flow_grouping_ignores_vlan_and_mpls_layers_);
     swap(has_loaded_state_, other.has_loaded_state_);
     swap(partial_open_, other.partial_open_);
     swap(partial_open_failure_, other.partial_open_failure_);
@@ -2269,7 +2269,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     state_ = imported_state;
     analysis_settings_ = options.settings;
     opened_from_index_ = false;
-    flow_grouping_ignores_vlan_layers_ = options.settings.ignore_vlan_layers_when_grouping_flows;
+    flow_grouping_ignores_vlan_and_mpls_layers_ = options.settings.ignore_vlan_and_mpls_layers_when_grouping_flows;
     has_loaded_state_ = true;
     partial_open_ = (import_result == CaptureImportResult::partial_success_with_warning);
     partial_open_failure_ = effective_ctx->failure;
@@ -2382,7 +2382,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     state_ = std::move(loaded_state);
     analysis_settings_ = {};
     opened_from_index_ = true;
-    flow_grouping_ignores_vlan_layers_ = false;
+    flow_grouping_ignores_vlan_and_mpls_layers_ = false;
     has_loaded_state_ = true;
     partial_open_ = false;
     partial_open_failure_ = {};
@@ -2443,8 +2443,8 @@ bool CaptureSession::opened_from_index() const noexcept {
     return opened_from_index_;
 }
 
-bool CaptureSession::flow_grouping_ignores_vlan_layers() const noexcept {
-    return flow_grouping_ignores_vlan_layers_;
+bool CaptureSession::flow_grouping_ignores_vlan_and_mpls_layers() const noexcept {
+    return flow_grouping_ignores_vlan_and_mpls_layers_;
 }
 
 bool CaptureSession::is_partial_open() const noexcept {

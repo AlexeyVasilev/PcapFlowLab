@@ -242,18 +242,18 @@ void run_analysis_settings_tests() {
     }
 
     {
-        PFL_EXPECT(!AnalysisSettings {}.ignore_vlan_layers_when_grouping_flows);
+        PFL_EXPECT(!AnalysisSettings {}.ignore_vlan_and_mpls_layers_when_grouping_flows);
 
         CaptureSession default_session {};
         const auto capture_path = write_single_vlan_capture("pfl_vlan_grouping_setting_default.pcap", 123U);
         PFL_EXPECT(default_session.open_capture(capture_path));
-        PFL_EXPECT(!default_session.flow_grouping_ignores_vlan_layers());
+        PFL_EXPECT(!default_session.flow_grouping_ignores_vlan_and_mpls_layers());
 
         CaptureSession enabled_session {};
         PFL_EXPECT(enabled_session.open_capture(capture_path, CaptureImportOptions {
-            .settings = AnalysisSettings {.ignore_vlan_layers_when_grouping_flows = true},
+            .settings = AnalysisSettings {.ignore_vlan_and_mpls_layers_when_grouping_flows = true},
         }));
-        PFL_EXPECT(enabled_session.flow_grouping_ignores_vlan_layers());
+        PFL_EXPECT(enabled_session.flow_grouping_ignores_vlan_and_mpls_layers());
 
         const auto connections = enabled_session.state().ipv4_connections.list();
         PFL_REQUIRE(connections.size() == 1U);
@@ -270,14 +270,14 @@ void run_analysis_settings_tests() {
 
         CaptureSession imported_session {};
         PFL_EXPECT(imported_session.open_capture(capture_path, CaptureImportOptions {
-            .settings = AnalysisSettings {.ignore_vlan_layers_when_grouping_flows = true},
+            .settings = AnalysisSettings {.ignore_vlan_and_mpls_layers_when_grouping_flows = true},
         }));
-        PFL_EXPECT(imported_session.flow_grouping_ignores_vlan_layers());
+        PFL_EXPECT(imported_session.flow_grouping_ignores_vlan_and_mpls_layers());
         PFL_EXPECT(imported_session.save_index(index_path));
 
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
-        PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_layers());
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
     }
 }
 

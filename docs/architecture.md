@@ -37,7 +37,7 @@ Saved analysis indexes can be opened directly instead of re-importing the captur
 - The index stores capture summary, connections, flows, packet references, source metadata, and checkpointable analysis state.
 - The current binary format is explicitly sectioned, versioned as index format `13`, and loaded with an exact-version policy.
 - Stable index data also includes the capture-level protocol-path registry plus flow/connection protocol-path identity metadata.
-- Saved indexes preserve the exact flow grouping produced at raw-import time. The current format does not record whether VLAN-agnostic grouping was enabled, so index load does not reinterpret stored grouping with the current application setting.
+- Saved indexes preserve the exact flow grouping produced at raw-import time. The current format does not record whether VLAN/MPLS-agnostic grouping was enabled, so index load does not reinterpret stored grouping with the current application setting.
 - Runtime protocol-path statistics trees are rebuilt from indexed flow metadata and are not themselves persisted.
 - Unrecognized-packet metadata is persisted in current-format indexes and survives save/load without rescanning the source PCAP.
 - Capture-wide packet-size distribution statistics are reconstructed from persisted `PacketRef::captured_length` values for recognized and unrecognized packets; index load does not reread packet bytes from the source capture.

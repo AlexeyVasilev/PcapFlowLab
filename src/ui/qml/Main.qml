@@ -335,7 +335,7 @@ ApplicationWindow {
                 width: parent.width
                 httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
                 usePossibleTlsQuic: mainController.usePossibleTlsQuic
-                ignoreVlanLayersWhenGroupingFlows: mainController.ignoreVlanLayersWhenGroupingFlows
+                ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
                 validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
                 showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
                 showProtocolPathColumn: mainController.showProtocolPathColumn
@@ -345,8 +345,8 @@ ApplicationWindow {
                 onUsePossibleTlsQuicChangedByUser: function(enabled) {
                     mainController.usePossibleTlsQuic = enabled
                 }
-                onIgnoreVlanLayersWhenGroupingFlowsChangedByUser: function(enabled) {
-                    mainController.ignoreVlanLayersWhenGroupingFlows = enabled
+                onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
+                    mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
                 }
                 onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
                     mainController.validateSelectedPacketChecksums = enabled

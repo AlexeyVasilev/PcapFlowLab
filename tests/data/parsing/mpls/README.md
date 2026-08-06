@@ -62,11 +62,12 @@ The shared backend/session path now performs a first-pass MPLS decode:
 - each MPLS label becomes its own selected-packet Summary layer;
 - inner IPv4 / IPv6 is inferred from the first nibble after the BoS label;
 - normal TCP/UDP flows are created when the inner IP + transport header is complete enough;
-- flow grouping uses the inner 5-tuple only, not MPLS labels;
+- default flow grouping keeps MPLS labels and stack order identity-significant, so matching inner 5-tuples still split when their MPLS path differs;
+- the optional `Ignore VLAN and MPLS layers when grouping flows` mode removes only `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` from flow identity before grouping;
+- that optional combined mode does not remove `ProtocolLayerKind::mpls_pw`, inner Ethernet, or other remaining namespace/structural layers;
 - malformed or unsupported MPLS packets stay in the unrecognized-packet list with conservative reason text.
 
 Current limitations:
-- MPLS labels are not part of the flow key;
 - no MPLS VPN / pseudowire / control-plane semantics are implemented;
 - MPLS-specific `Protocol` tab text is still conservative and mostly inherited from inner protocol handling;
 - malformed unrecognized MPLS packets are still not persisted through saved index round-trips because the unrecognized-packet list remains capture-backed only.
@@ -308,7 +309,39 @@ Current limitations:
   - packet 1: label 1100, TC 0, BoS 1, TTL 64
   - packet 2: label 1200, TC 0, BoS 1, TTL 64
 - Inner payload: IPv4 / TCP, same inner 5-tuple on both packets
-- Expected behavior: packets group into one normal flow because grouping uses the inner 5-tuple only, not the MPLS label.
+- Expected behavior:
+  - with the default setting disabled: packets remain in two flows because MPLS labels stay identity-significant;
+  - with `Ignore VLAN and MPLS layers when grouping flows` enabled: packets merge into one same-direction flow because the normalized identity path becomes `EthernetII -> IPv4 -> TCP`.
+
+### 24_mpls_plain_bidirectional_same_inner_tcp.pcap
+
+- Packets: 2
+- Packet order:
+  - packet 1: Ethernet / MPLS / IPv4 / TCP from `10.20.30.1:40000` to `10.20.30.2:443`
+  - packet 2: Ethernet / IPv4 / TCP from `10.20.30.2:443` to `10.20.30.1:40000`
+- MPLS EtherType: `0x8847`
+- MPLS labels:
+  - packet 1: label 1600, TC 0, BoS 1, TTL 64
+- Inner payload: one bidirectional TCP tuple
+- Expected behavior:
+  - with the default setting disabled: packet 1 and packet 2 remain separate because routed MPLS and plain Ethernet/IP/TCP stay different identity paths;
+  - with `Ignore VLAN and MPLS layers when grouping flows` enabled: they merge into one bidirectional flow with normalized identity path `EthernetII -> IPv4 -> TCP`;
+  - packet-level Summary and Bytes still show packet 1's actual MPLS layer and packet 2's plain Ethernet/IP/TCP layout;
+  - no pseudowire layer is present in either direction.
+
+### 25_vlan_and_stacked_mpls_asymmetric_bidirectional_tcp.pcap
+
+- Packets: 2
+- Packet order:
+  - packet 1: Ethernet / VLAN(300) / MPLS(2500) / MPLS(2501) / IPv4 / TCP from `10.20.31.1:40001` to `10.20.31.2:443`
+  - packet 2: Ethernet / QinQ(400,401) / IPv4 / TCP from `10.20.31.2:443` to `10.20.31.1:40001`
+- MPLS EtherType: `0x8847`
+- Inner payload: one bidirectional TCP tuple
+- Expected behavior:
+  - with the default setting disabled: packet 1 and packet 2 remain separate because VLAN and MPLS layers stay identity-significant;
+  - with `Ignore VLAN and MPLS layers when grouping flows` enabled: they merge into one bidirectional flow with normalized identity path `EthernetII -> IPv4 -> TCP`;
+  - packet-level Summary and Bytes still show packet 1's VLAN plus stacked MPLS labels and packet 2's QinQ stack;
+  - no pseudowire layer is present, so this fixture must not be used to justify ignoring `MPLS PW`.
 
 ## Expected generated file list
 
@@ -335,3 +368,5 @@ Current limitations:
 - `21_mpls_snaplen_truncated_inner_tcp.pcap`
 - `22_mpls_two_packets_same_ipv4_tcp_flow.pcap`
 - `23_mpls_same_inner_flow_different_labels.pcap`
+- `24_mpls_plain_bidirectional_same_inner_tcp.pcap`
+- `25_vlan_and_stacked_mpls_asymmetric_bidirectional_tcp.pcap`

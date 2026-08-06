@@ -32,13 +32,13 @@ Current repository state:
 - kind-overview and identity-tree protocol-path statistics are now collapsible in both UI frontends;
 - both the Qt UI and the Tauri spike can now apply a selected protocol-path statistics node as a runtime structured flow-list filter.
 
-## VLAN-Agnostic Flow Grouping
+## VLAN-And-MPLS-Agnostic Flow Grouping
 
 There is now one optional import-time flow-grouping mode:
 
-- `Ignore VLAN layers when grouping flows`
+- `Ignore VLAN and MPLS layers when grouping flows`
 
-Default behavior remains VLAN-sensitive:
+Default behavior remains VLAN/MPLS-sensitive:
 
 - `EthernetII -> VLAN(vid=100) -> IPv4 -> TCP`
 - `EthernetII -> VLAN(vid=200) -> IPv4 -> TCP`
@@ -47,16 +47,17 @@ remain different identity paths.
 
 When the setting is enabled:
 
-- every `ProtocolLayerKind::vlan` layer is removed from the protocol path used for flow identity;
-- single-tag VLAN, QinQ, VID `0`, and tagged-versus-untagged asymmetry all normalize the same way;
-- non-VLAN identity layers and namespace identifiers remain significant, including MPLS labels, VXLAN/Geneve VNI, GTP-U TEID, GRE key, AH SPI, and ESP SPI;
-- Packet Summary, Packet Details, and Packet Bytes still show the actual VLAN layers from the selected packet;
-- the Flow table Path column and Protocol Path Statistics reflect the normalized flow-identity path, so they omit VLAN when this mode is active.
+- every `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` layer is removed from the protocol path used for flow identity;
+- single-tag VLAN, QinQ, VID `0`, tagged-versus-untagged asymmetry, single MPLS labels, and MPLS label stacks all normalize the same way;
+- `ProtocolLayerKind::mpls_pw` is preserved, so MPLS pseudowire traffic remains distinct from plain routed traffic;
+- non-VLAN/MPLS identity layers and namespace identifiers remain significant, including VXLAN/Geneve VNI, GTP-U TEID, GRE key, AH SPI, and ESP SPI;
+- Packet Summary, Packet Details, and Packet Bytes still show the actual VLAN and MPLS layers from the selected packet;
+- the Flow table Path column and Protocol Path Statistics reflect the normalized flow-identity path, so they omit VLAN and MPLS label-stack layers when this mode is active.
 
 Example with the mode enabled:
 
 ```text
-EthernetII -> VLAN(100) -> IPv4 -> TCP
+EthernetII -> VLAN(100) -> MPLS(label=200) -> IPv4 -> TCP
 EthernetII -> VLAN(200) -> IPv4 -> TCP
 ```
 
@@ -66,7 +67,7 @@ both normalize to:
 EthernetII -> IPv4 -> TCP
 ```
 
-This can intentionally merge traffic from different VLANs into one user-visible flow when all remaining identity components match.
+This can intentionally merge traffic from different VLANs or MPLS paths into one user-visible flow when all remaining identity components match.
 
 ## Flow List Presentation
 
@@ -130,7 +131,7 @@ The current UI exposes three runtime view modes:
    - exact `FlowKeyV2` explanation mode;
    - presented as a collapsible tree;
    - current identifier-bearing layers such as `VXLAN(vni=...)`, `Geneve(vni=...)`, `GTP-U(teid=...)`, `VLAN(vid=...)`, and `MPLS(label=...)` remain distinct tree nodes.
-   - when VLAN-agnostic flow grouping was active at raw import, VLAN is already absent from the stored flow identity, so the identity tree reflects that normalized VLAN-free path.
+   - when VLAN-and-MPLS-agnostic flow grouping was active at raw import, VLAN and MPLS label-stack layers are already absent from the stored flow identity, so the identity tree reflects that normalized path.
 
 3. `Terminal paths`
    - flat list of complete terminal protocol paths only;
@@ -614,7 +615,7 @@ Stage C2 status:
 - import now interns non-empty, non-overflowed decoded paths from a lightweight builder/view representation and stores an effective flow-identity `protocol_path_id` on `FlowKey`;
 - in the common import hot path, owning `ProtocolPath` materialization is now deferred until the registry sees a new unique path;
 - in the common case, decode now emits flow-identity-ready protocol paths and import interns that path once for flow identity;
-- a later normalization pass is still retained only for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity;
+- a later normalization pass is still retained for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity and for the optional import-time mode that removes only `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` from flow identity;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
 - stable storage remains flow/registry oriented rather than per-packet.
 
@@ -624,7 +625,7 @@ Stage D:
 - current Stage D / E coverage includes default regression assertions for:
   - VXLAN same inner tuple, different VNI -> split into two flows;
   - GTP-U same inner tuple, different TEID -> split into two flows;
-  - MPLS same inner tuple, different label -> split into two flows;
+  - MPLS same inner tuple, different label -> split into two flows by default and merge only when the optional VLAN/MPLS-insensitive grouping mode is enabled;
   - same exact VXLAN path with reverse inner tuple -> still one bidirectional flow.
 
 Stage E:
@@ -764,7 +765,7 @@ The smallest safe insertion point was `PacketDecoder::decode(...)`, before `Deco
 
 Future tests should cover:
 
-- direct `IPv4/TCP` and `MPLS/VLAN/IPv4/TCP` with the same endpoint tuple must split under `FlowKeyV2`;
+- direct `IPv4/TCP` and `MPLS/VLAN/IPv4/TCP` with the same endpoint tuple must split under the default `FlowKeyV2` behavior and may merge only when the optional VLAN/MPLS-insensitive grouping mode is enabled;
 - same inner VXLAN tuple with different VNI must split;
 - same inner Geneve tuple with different VNI must split;
 - same inner GTP-U tuple with different TEID must split;
@@ -778,9 +779,8 @@ Relevant existing fixture families:
 - VXLAN collision fixtures now document same-inner-tuple/different-VNI split behavior under `FlowKeyV2`;
 - Geneve same-inner-tuple/different-VNI collision coverage is still missing as a dedicated deterministic fixture follow-up;
 - GTP-U collision fixtures now document same-inner-tuple/different-TEID split behavior under `FlowKeyV2`;
-- MPLS/VLAN fixtures already provide the shim stack shapes needed for future direct-vs-shim separation tests.
-- direct-vs-shimmed same effective tuple coverage is still missing as an exact deterministic fixture follow-up;
-- same-inner-tuple/different-VNI Geneve coverage is also still missing as a dedicated deterministic fixture follow-up.
+- MPLS/VLAN fixtures now include exact deterministic direct-vs-MPLS and VLAN-plus-stacked-MPLS asymmetry coverage for both default and combined-normalization modes.
+- same-inner-tuple/different-VNI Geneve coverage now exists as deterministic fixture-backed collision coverage alongside the other namespace-preservation checks.
 
 ## Key Decisions In This RFC
 

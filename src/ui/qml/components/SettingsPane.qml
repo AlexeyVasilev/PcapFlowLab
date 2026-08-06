@@ -7,14 +7,14 @@ Item {
 
     property bool httpUsePathAsServiceHint: false
     property bool usePossibleTlsQuic: false
-    property bool ignoreVlanLayersWhenGroupingFlows: false
+    property bool ignoreVlanAndMplsLayersWhenGroupingFlows: false
     property bool validateSelectedPacketChecksums: false
     property bool showWiresharkFilterForSelectedFlow: true
     property bool showProtocolPathColumn: true
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
     signal usePossibleTlsQuicChangedByUser(bool enabled)
-    signal ignoreVlanLayersWhenGroupingFlowsChangedByUser(bool enabled)
+    signal ignoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser(bool enabled)
     signal validateSelectedPacketChecksumsChangedByUser(bool enabled)
     signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
     signal showProtocolPathColumnChangedByUser(bool enabled)
@@ -82,11 +82,11 @@ Item {
             spacing: 4
 
             CheckBox {
-                objectName: "ignoreVlanLayersWhenGroupingFlowsCheckBox"
+                objectName: "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox"
                 Layout.fillWidth: true
-                text: "Ignore VLAN layers when grouping flows"
-                checked: root.ignoreVlanLayersWhenGroupingFlows
-                onToggled: root.ignoreVlanLayersWhenGroupingFlowsChangedByUser(checked)
+                text: "Ignore VLAN and MPLS layers when grouping flows"
+                checked: root.ignoreVlanAndMplsLayersWhenGroupingFlows
+                onToggled: root.ignoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser(checked)
             }
 
             Label {

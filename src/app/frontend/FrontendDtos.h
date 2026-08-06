@@ -18,7 +18,7 @@ struct FrontendSourceAvailabilityDto {
     bool opened_from_index {false};
     bool partial_open {false};
     bool byte_backed_inspection_available {false};
-    bool flow_grouping_ignores_vlan_layers {false};
+    bool flow_grouping_ignores_vlan_and_mpls_layers {false};
     std::string active_source_capture_path {};
     std::string expected_source_capture_path {};
 };
@@ -75,7 +75,7 @@ struct FrontendSaveIndexResult {
 struct FrontendSettingsDto {
     bool http_use_path_as_service_hint {false};
     bool use_possible_tls_quic {false};
-    bool ignore_vlan_layers_when_grouping_flows {false};
+    bool ignore_vlan_and_mpls_layers_when_grouping_flows {false};
     bool show_wireshark_filter_for_selected_flow {true};
     bool validate_selected_packet_checksums {false};
 };

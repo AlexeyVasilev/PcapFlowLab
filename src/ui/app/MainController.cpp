@@ -3251,8 +3251,8 @@ bool MainController::usePossibleTlsQuic() const noexcept {
     return pending_analysis_settings_.use_possible_tls_quic;
 }
 
-bool MainController::ignoreVlanLayersWhenGroupingFlows() const noexcept {
-    return pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows;
+bool MainController::ignoreVlanAndMplsLayersWhenGroupingFlows() const noexcept {
+    return pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows;
 }
 
 bool MainController::validateSelectedPacketChecksums() const noexcept {
@@ -3273,13 +3273,13 @@ QString MainController::flowGroupingWarningText() const {
     }
 
     if (session_.opened_from_index()) {
-        return pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows
-            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN grouping setting is not reapplied.")
+        return pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows
+            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied.")
             : QString {};
     }
 
-    return session_.flow_grouping_ignores_vlan_layers()
-        ? QStringLiteral("VLAN layers are ignored for flow grouping. Flows from different VLANs may be merged.")
+    return session_.flow_grouping_ignores_vlan_and_mpls_layers()
+        ? QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.")
         : QString {};
 }
 
@@ -4721,16 +4721,16 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     emit usePossibleTlsQuicChanged();
 }
 
-void MainController::setIgnoreVlanLayersWhenGroupingFlows(const bool enabled) {
-    if (pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows == enabled) {
+void MainController::setIgnoreVlanAndMplsLayersWhenGroupingFlows(const bool enabled) {
+    if (pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows == enabled) {
         return;
     }
 
-    pending_analysis_settings_.ignore_vlan_layers_when_grouping_flows = enabled;
+    pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows = enabled;
     session_.set_analysis_settings(pending_analysis_settings_);
-    emit ignoreVlanLayersWhenGroupingFlowsChanged();
+    emit ignoreVlanAndMplsLayersWhenGroupingFlowsChanged();
     if (session_.has_capture()) {
-        setStatusText(QStringLiteral("Reopen the current capture or index to apply the VLAN flow-grouping setting."), false);
+        setStatusText(QStringLiteral("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting."), false);
         emit stateChanged();
     }
 }

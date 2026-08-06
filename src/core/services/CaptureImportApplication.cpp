@@ -26,12 +26,13 @@ namespace {
     const LayerKey& layer,
     const AnalysisSettings& settings
 ) noexcept {
-    if (layer.kind != ProtocolLayerKind::vlan) {
-        return false;
+    if (settings.ignore_vlan_and_mpls_layers_when_grouping_flows &&
+        (layer.kind == ProtocolLayerKind::vlan || layer.kind == ProtocolLayerKind::mpls)) {
+        return true;
     }
 
-    if (settings.ignore_vlan_layers_when_grouping_flows) {
-        return true;
+    if (layer.kind != ProtocolLayerKind::vlan) {
+        return false;
     }
 
     return layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid &&

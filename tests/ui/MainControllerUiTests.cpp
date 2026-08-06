@@ -2768,20 +2768,20 @@ int main(int argc, char* argv[]) {
 
     run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
-        auto* vlan_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreVlanLayersWhenGroupingFlowsCheckBox");
+        auto* vlan_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox");
         UI_EXPECT(vlan_grouping_checkbox != nullptr);
         UI_EXPECT(vlan_grouping_checkbox->property("visible").toBool());
-        settings_pane.object->setProperty("ignoreVlanLayersWhenGroupingFlows", false);
+        settings_pane.object->setProperty("ignoreVlanAndMplsLayersWhenGroupingFlows", false);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!vlan_grouping_checkbox->property("checked").toBool());
-        settings_pane.object->setProperty("ignoreVlanLayersWhenGroupingFlows", true);
+        settings_pane.object->setProperty("ignoreVlanAndMplsLayersWhenGroupingFlows", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(vlan_grouping_checkbox->property("checked").toBool());
     });
 
     run_ui_section("flow_grouping_warning_text", [&]() {
         MainController vlan_grouping_controller {};
-        UI_EXPECT(!vlan_grouping_controller.ignoreVlanLayersWhenGroupingFlows());
+        UI_EXPECT(!vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
         UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
         UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
@@ -2790,26 +2790,26 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(vlan_grouping_flow_model != nullptr);
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
 
-        vlan_grouping_controller.setIgnoreVlanLayersWhenGroupingFlows(true);
-        UI_EXPECT(vlan_grouping_controller.ignoreVlanLayersWhenGroupingFlows());
+        vlan_grouping_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
+        UI_EXPECT(vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_controller.statusText() ==
-            QStringLiteral("Reopen the current capture or index to apply the VLAN flow-grouping setting."));
+            QStringLiteral("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting."));
         UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
 
         UI_EXPECT(open_capture_and_wait(app, vlan_grouping_controller, vlan_grouping_capture_path));
         UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText() ==
-            QStringLiteral("VLAN layers are ignored for flow grouping. Flows from different VLANs may be merged."));
+            QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged."));
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 1);
     });
 
     run_ui_section("flow_grouping_index_warning_text", [&]() {
         MainController vlan_grouping_index_controller {};
-        vlan_grouping_index_controller.setIgnoreVlanLayersWhenGroupingFlows(true);
+        vlan_grouping_index_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
         UI_EXPECT(open_index_and_wait(app, vlan_grouping_index_controller, vlan_grouping_index_path));
         UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
         UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText() ==
-            QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN grouping setting is not reapplied."));
+            QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied."));
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
