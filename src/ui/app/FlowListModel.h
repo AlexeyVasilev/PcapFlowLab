@@ -15,6 +15,10 @@ namespace pfl {
 
 class FlowListModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(int visibleFlowCount READ visibleFlowCount NOTIFY viewStateChanged)
+    Q_PROPERTY(int totalFlowCount READ totalFlowCount NOTIFY viewStateChanged)
+    Q_PROPERTY(bool hasActiveFlowFilter READ hasActiveFlowFilter NOTIFY viewStateChanged)
+    Q_PROPERTY(QString filteredFlowCountText READ filteredFlowCountText NOTIFY viewStateChanged)
 
 public:
     enum Role {
@@ -81,6 +85,9 @@ public:
     [[nodiscard]] bool sortAscending() const noexcept;
     [[nodiscard]] bool containsFlowIndex(int flowIndex) const noexcept;
     [[nodiscard]] int totalFlowCount() const noexcept;
+    [[nodiscard]] int visibleFlowCount() const noexcept;
+    [[nodiscard]] bool hasActiveFlowFilter() const noexcept;
+    [[nodiscard]] QString filteredFlowCountText() const;
     [[nodiscard]] std::vector<int> visibleFlowIndices() const;
     [[nodiscard]] std::vector<int> hiddenFlowIndices() const;
     [[nodiscard]] std::vector<int> checkedFlowIndices() const;
@@ -108,6 +115,7 @@ public:
 
 signals:
     void checkedFlowsChanged();
+    void viewStateChanged();
 
 private:
     struct CachedProtocolPathPresentation {

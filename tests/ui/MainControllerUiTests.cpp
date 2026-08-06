@@ -3638,9 +3638,20 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_and_text_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_and_text_controller.protocolPathStatsModel());
     UI_REQUIRE(protocol_path_and_text_flow_model != nullptr);
     UI_REQUIRE(protocol_path_and_text_stats_model != nullptr);
+    auto protocol_path_and_text_flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
+    protocol_path_and_text_flow_table.object->setProperty(
+        "flowModel",
+        QVariant::fromValue(protocol_path_and_text_controller.flowModel())
+    );
+    UI_EXPECT(named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel") != nullptr);
     protocol_path_and_text_controller.setCurrentTabIndex(2);
     protocol_path_and_text_controller.setStatisticsSectionExpanded(protocol_path_section, true);
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->totalFlowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 2);
+    UI_EXPECT(!protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText().isEmpty());
+    UI_EXPECT(!item_visible(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel"));
 
     protocol_path_and_text_controller.setStatisticsMode(0);
     protocol_path_and_text_stats_model->expandAll();
@@ -3657,7 +3668,16 @@ int main(int argc, char* argv[]) {
     protocol_path_and_text_controller.showSelectedProtocolPathFlows();
     UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 2 of 2 flows."));
     UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0, 1}));
+    UI_EXPECT(wait_until(app, [&]() {
+        auto* label = named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel");
+        return label != nullptr &&
+            label->property("visible").toBool() &&
+            label->property("text").toString() == QStringLiteral("Filtered to 2 of 2 flows.");
+    }));
 
     protocol_path_and_text_controller.setSelectedFlowIndex(1);
     UI_EXPECT(protocol_path_and_text_controller.selectedFlowIndex() == 1);
@@ -3665,24 +3685,91 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
     UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 1);
+    UI_EXPECT(protocol_path_and_text_flow_model->totalFlowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 1);
+    UI_EXPECT(protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
     UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0}));
     UI_EXPECT(protocol_path_and_text_controller.selectedFlowIndex() == -1);
+    UI_EXPECT(wait_until(app, [&]() {
+        auto* label = named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel");
+        return label != nullptr &&
+            label->property("visible").toBool() &&
+            label->property("text").toString() == QStringLiteral("Filtered to 1 of 2 flows.");
+    }));
+
+    protocol_path_and_text_controller.sortFlows(3);
+    UI_EXPECT(protocol_path_and_text_flow_model->totalFlowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 1);
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+    protocol_path_and_text_controller.setFlowFilterText(QStringLiteral("no-such-flow"));
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("no-such-flow"));
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 0);
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 0);
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 0 of 2 flows."));
+    UI_EXPECT(wait_until(app, [&]() {
+        auto* label = named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel");
+        return label != nullptr &&
+            label->property("visible").toBool() &&
+            label->property("text").toString() == QStringLiteral("Filtered to 0 of 2 flows.");
+    }));
+
+    protocol_path_and_text_controller.setFlowFilterText(QStringLiteral("10001"));
 
     protocol_path_and_text_controller.clearProtocolPathFlowFilter();
     UI_EXPECT(!protocol_path_and_text_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 1);
+    UI_EXPECT(protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 1);
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
     UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0}));
 
     protocol_path_and_text_controller.setFlowFilterText(QString());
     UI_EXPECT(protocol_path_and_text_controller.flowFilterText().isEmpty());
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+    UI_EXPECT(!protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 2);
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText().isEmpty());
+    UI_EXPECT(wait_until(app, [&]() {
+        auto* label = named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel");
+        return label != nullptr && !label->property("visible").toBool();
+    }));
 
     protocol_path_filter_controller.showSelectedProtocolPathFlows();
     UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_capture_path));
     UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText().isEmpty());
+
+    protocol_path_and_text_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_and_text_controller, protocol_path_capture_path));
+    UI_EXPECT(!protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText().isEmpty());
+    UI_EXPECT(protocol_path_and_text_flow_model->totalFlowCount() == 1);
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 1);
+    UI_EXPECT(!protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText().isEmpty());
+    UI_EXPECT(wait_until(app, [&]() {
+        auto* label = named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel");
+        return label != nullptr && !label->property("visible").toBool();
+    }));
+
+    MainController unrecognized_filter_controller {};
+    UI_EXPECT(open_capture_and_wait(app, unrecognized_filter_controller, nonzero_unrecognized_capture_path));
+    auto* unrecognized_filter_flow_model = qobject_cast<FlowListModel*>(unrecognized_filter_controller.flowModel());
+    UI_REQUIRE(unrecognized_filter_flow_model != nullptr);
+    UI_EXPECT(unrecognized_filter_controller.unrecognizedPacketCount() > 0U);
+    UI_EXPECT(unrecognized_filter_flow_model->totalFlowCount() ==
+        static_cast<int>(unrecognized_filter_controller.flowCount()));
+    unrecognized_filter_controller.setFlowFilterText(QStringLiteral("UDP"));
+    UI_EXPECT(unrecognized_filter_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(unrecognized_filter_flow_model->filteredFlowCountText() ==
+        QStringLiteral("Filtered to %1 of %2 flows.")
+            .arg(unrecognized_filter_flow_model->visibleFlowCount())
+            .arg(unrecognized_filter_flow_model->totalFlowCount()));
 
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",

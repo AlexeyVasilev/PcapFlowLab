@@ -166,6 +166,16 @@ Frame {
         anchors.fill: parent
         spacing: 6
 
+        Label {
+            objectName: "flowFilterStatusLabel"
+            Layout.fillWidth: true
+            visible: root.flowModel !== null && root.flowModel.hasActiveFlowFilter
+            text: visible ? root.flowModel.filteredFlowCountText : ""
+            color: "#64748b"
+            font.pixelSize: 12
+            elide: Text.ElideRight
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
