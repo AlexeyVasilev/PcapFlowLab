@@ -4094,7 +4094,10 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
     rows.reserve(connections.size());
 
     for (std::size_t index = 0; index < connections.size(); ++index) {
-        rows.push_back(make_flow_row(index, connections[index], analysis_settings_));
+        const auto row = make_flow_row(index, connections[index], analysis_settings_);
+        if (row.has_value()) {
+            rows.push_back(*row);
+        }
     }
 
     return rows;
@@ -5787,12 +5790,18 @@ bool CaptureSession::export_all_flows_info_csv(
     std::uint32_t export_flow_id = 1U;
     for (std::size_t index = 0; index < connections.size(); ++index) {
         const auto row = make_flow_row(index, connections[index], analysis_settings_);
+        if (!row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare flow info CSV row.";
+            }
+            return false;
+        }
         const auto packets = connections[index].family == FlowAddressFamily::ipv4
             ? collect_packets(*connections[index].ipv4)
             : collect_packets(*connections[index].ipv6);
         const auto manifest_row = build_flow_manifest_csv_row(
             state_,
-            row,
+            *row,
             export_flow_id,
             std::span<const PacketRef>(packets),
             {}

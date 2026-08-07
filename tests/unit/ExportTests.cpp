@@ -7,6 +7,7 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "core/domain/Connection.h"
 #include "core/io/PcapReader.h"
 #include "core/io/PcapWriter.h"
 #include "PcapTestUtils.h"
@@ -726,6 +727,45 @@ void run_export_tests() {
 
         PFL_EXPECT(found_tcp_flow);
         PFL_EXPECT(found_udp_flow);
+    }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+
+        const FlowKeyV4 valid_flow {
+            .src_addr = ipv4(203, 0, 113, 10),
+            .dst_addr = ipv4(203, 0, 113, 20),
+            .src_port = 45000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+        ConnectionV4 valid_connection {};
+        valid_connection.key = make_connection_key(valid_flow);
+        const PacketRef valid_packet {
+            .packet_index = 0U,
+            .captured_length = 64U,
+            .original_length = 64U,
+            .ts_sec = 1U,
+            .ts_usec = 100U,
+        };
+        valid_connection.add_packet(valid_flow, valid_packet);
+        state.ipv4_connections.get_or_create(valid_connection.key) = valid_connection;
+
+        ConnectionKeyV4 empty_key {};
+        empty_key.protocol = ProtocolId::tcp;
+        state.ipv4_connections.get_or_create(empty_key);
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_excludes_empty_connection.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        PFL_EXPECT(csv_lines[1].find("203.0.113.10") != std::string::npos);
+        PFL_EXPECT(csv_lines[1].find("203.0.113.20") != std::string::npos);
+        PFL_EXPECT(csv_lines[1].find("0.0.0.0") == std::string::npos);
+        PFL_EXPECT(csv_lines[1].find("::") == std::string::npos);
     }
 
     {

@@ -38,8 +38,11 @@ FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, 
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept;
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
-FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings);
-// Precondition for first-observed endpoint/path presentation: the listed connection is non-empty.
+std::optional<FlowRow> make_flow_row(
+    std::size_t index,
+    const ListedConnectionRef& connection,
+    const AnalysisSettings& settings
+);
 std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket);
 std::string format_statistics_bucket_label(
     std::uint64_t lower_bound_inclusive,

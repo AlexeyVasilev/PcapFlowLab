@@ -3812,6 +3812,121 @@ int main(int argc, char* argv[]) {
             .arg(unrecognized_filter_flow_model->visibleFlowCount())
             .arg(unrecognized_filter_flow_model->totalFlowCount()));
 
+    run_ui_section("flow_list_model_view_state_notifications", [&]() {
+        FlowListModel model {};
+        int view_state_changed_count = 0;
+        QObject::connect(&model, &FlowListModel::viewStateChanged, [&]() {
+            ++view_state_changed_count;
+        });
+
+        const auto make_row = [](const std::size_t index, const QString& protocol, const QString& service, const std::uint64_t packets) {
+            return FlowRow {
+                .index = index,
+                .family = FlowAddressFamily::ipv4,
+                .key = ConnectionKeyV4 {},
+                .protocol_path_id = kInvalidProtocolPathId,
+                .protocol_text = protocol.toStdString(),
+                .protocol_hint = {},
+                .service_hint = service.toStdString(),
+                .has_fragmented_packets = false,
+                .fragmented_packet_count = 0U,
+                .address_a = "10.0.0.1",
+                .port_a = 1000U,
+                .endpoint_a = "10.0.0.1:1000",
+                .address_b = "10.0.0.2",
+                .port_b = 2000U,
+                .endpoint_b = "10.0.0.2:2000",
+                .packet_count = packets,
+                .total_bytes = packets * 100U,
+            };
+        };
+
+        const std::vector<FlowRow> rows {
+            make_row(0U, QStringLiteral("TCP"), QStringLiteral("alpha"), 2U),
+            make_row(1U, QStringLiteral("UDP"), QStringLiteral("beta"), 5U),
+        };
+
+        model.refresh(rows);
+        UI_EXPECT(view_state_changed_count > 0);
+        UI_EXPECT(model.totalFlowCount() == 2);
+        UI_EXPECT(model.visibleFlowCount() == 2);
+        UI_EXPECT(!model.hasActiveFlowFilter());
+        UI_EXPECT(model.filteredFlowCountText().isEmpty());
+
+        const auto after_refresh = view_state_changed_count;
+        model.setFilterText(QStringLiteral("TCP"));
+        UI_EXPECT(view_state_changed_count > after_refresh);
+        UI_EXPECT(model.totalFlowCount() == 2);
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_text_filter = view_state_changed_count;
+        model.setAllowedFlowIndices(std::vector<int> {0, 1});
+        UI_EXPECT(view_state_changed_count > after_text_filter);
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_allowed_filter = view_state_changed_count;
+        model.setAllowedFlowIndices(std::vector<int> {1});
+        UI_EXPECT(view_state_changed_count > after_allowed_filter);
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.visibleFlowCount() == 0);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 0 of 2 flows."));
+
+        const auto after_allowed_replacement = view_state_changed_count;
+        model.clearAllowedFlowIndices();
+        UI_EXPECT(view_state_changed_count > after_allowed_replacement);
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_clearing_allowed = view_state_changed_count;
+        model.setFilterText(QString());
+        UI_EXPECT(view_state_changed_count > after_clearing_allowed);
+        UI_EXPECT(!model.hasActiveFlowFilter());
+        UI_EXPECT(model.visibleFlowCount() == 2);
+        UI_EXPECT(model.filteredFlowCountText().isEmpty());
+
+        const auto after_clearing_text = view_state_changed_count;
+        model.setAllowedFlowIndices(std::vector<int> {1});
+        UI_EXPECT(view_state_changed_count > after_clearing_text);
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_allowed_only = view_state_changed_count;
+        model.setSortKey(FlowListModel::SortKey::packets);
+        UI_EXPECT(view_state_changed_count > after_allowed_only);
+        UI_EXPECT(model.totalFlowCount() == 2);
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_sort_key = view_state_changed_count;
+        model.setSortAscending(false);
+        UI_EXPECT(view_state_changed_count > after_sort_key);
+        UI_EXPECT(model.totalFlowCount() == 2);
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_sort_direction = view_state_changed_count;
+        model.resetViewState();
+        UI_EXPECT(view_state_changed_count > after_sort_direction);
+        UI_EXPECT(model.totalFlowCount() == 2);
+        UI_EXPECT(model.visibleFlowCount() == 2);
+        UI_EXPECT(!model.hasActiveFlowFilter());
+        UI_EXPECT(model.filteredFlowCountText().isEmpty());
+
+        const auto after_reset_view_state = view_state_changed_count;
+        model.clear();
+        UI_EXPECT(view_state_changed_count > after_reset_view_state);
+        UI_EXPECT(model.totalFlowCount() == 0);
+        UI_EXPECT(model.visibleFlowCount() == 0);
+        UI_EXPECT(!model.hasActiveFlowFilter());
+        UI_EXPECT(model.filteredFlowCountText().isEmpty());
+    });
+
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",
         make_classic_pcap({

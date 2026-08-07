@@ -3,8 +3,10 @@
 #include <cstdint>
 
 #include "TestSupport.h"
+#include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CaptureState.h"
+#include "core/domain/Connection.h"
 #include "core/domain/IngestedPacket.h"
 #include "core/services/PacketIngestor.h"
 
@@ -69,11 +71,13 @@ void run_ingestor_tests() {
         PFL_EXPECT(connection->flow_a.packet_count == 1);
         PFL_EXPECT(connection->flow_a.packets.size() == 1);
         PFL_EXPECT(has_valid_first_observed_orientation(*connection));
-        PFL_EXPECT(first_observed_flow_key(*connection) == packet.flow_key);
-        PFL_EXPECT(first_observed_endpoint_a(*connection).addr == packet.flow_key.src_addr);
-        PFL_EXPECT(first_observed_endpoint_a(*connection).port == packet.flow_key.src_port);
-        PFL_EXPECT(first_observed_endpoint_b(*connection).addr == packet.flow_key.dst_addr);
-        PFL_EXPECT(first_observed_endpoint_b(*connection).port == packet.flow_key.dst_port);
+        PFL_EXPECT(first_observed_flow_key(*connection) == std::optional<FlowKeyV4> {packet.flow_key});
+        PFL_REQUIRE(first_observed_endpoint_a(*connection).has_value());
+        PFL_REQUIRE(first_observed_endpoint_b(*connection).has_value());
+        PFL_EXPECT(first_observed_endpoint_a(*connection)->addr == packet.flow_key.src_addr);
+        PFL_EXPECT(first_observed_endpoint_a(*connection)->port == packet.flow_key.src_port);
+        PFL_EXPECT(first_observed_endpoint_b(*connection)->addr == packet.flow_key.dst_addr);
+        PFL_EXPECT(first_observed_endpoint_b(*connection)->port == packet.flow_key.dst_port);
     }
 
     {
@@ -129,7 +133,7 @@ void run_ingestor_tests() {
         PFL_EXPECT(connection->flow_b.packet_count == 1);
         PFL_EXPECT(connection->packet_count == 2);
         PFL_EXPECT(has_valid_first_observed_orientation(*connection));
-        PFL_EXPECT(first_observed_flow_key(*connection) == flow_a);
+        PFL_EXPECT(first_observed_flow_key(*connection) == std::optional<FlowKeyV4> {flow_a});
     }
 
     {
@@ -227,9 +231,11 @@ void run_ingestor_tests() {
 
         const auto first_row = session_detail::make_flow_row(0U, listed_connections[0], AnalysisSettings {});
         const auto second_row = session_detail::make_flow_row(1U, listed_connections[1], AnalysisSettings {});
-        const bool first_is_path_100 = first_row.protocol_path_id == 100U;
-        const auto& path_100_row = first_is_path_100 ? first_row : second_row;
-        const auto& path_200_row = first_is_path_100 ? second_row : first_row;
+        PFL_REQUIRE(first_row.has_value());
+        PFL_REQUIRE(second_row.has_value());
+        const bool first_is_path_100 = first_row->protocol_path_id == 100U;
+        const auto& path_100_row = first_is_path_100 ? *first_row : *second_row;
+        const auto& path_200_row = first_is_path_100 ? *second_row : *first_row;
 
         PFL_EXPECT(path_100_row.endpoint_a == "10.9.0.20:443");
         PFL_EXPECT(path_100_row.endpoint_b == "10.9.0.10:50000");
@@ -242,9 +248,68 @@ void run_ingestor_tests() {
         const ConnectionV6 empty_connection_v6 {};
         PFL_EXPECT(has_valid_first_observed_orientation(empty_connection));
         PFL_EXPECT(has_valid_first_observed_orientation(empty_connection_v6));
+        PFL_EXPECT(!first_observed_flow_key(empty_connection).has_value());
+        PFL_EXPECT(!first_observed_flow_key(empty_connection_v6).has_value());
+        PFL_EXPECT(!first_observed_endpoint_a(empty_connection).has_value());
+        PFL_EXPECT(!first_observed_endpoint_b(empty_connection).has_value());
+        PFL_EXPECT(!first_observed_endpoint_a(empty_connection_v6).has_value());
+        PFL_EXPECT(!first_observed_endpoint_b(empty_connection_v6).has_value());
 
         const CaptureState empty_state {};
         PFL_EXPECT(session_detail::list_connections(empty_state).empty());
+    }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+
+        const FlowKeyV4 valid_ipv4_flow {
+            .src_addr = ipv4(192, 0, 2, 10),
+            .dst_addr = ipv4(192, 0, 2, 20),
+            .src_port = 41000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+        ConnectionV4 valid_ipv4_connection {};
+        valid_ipv4_connection.key = make_connection_key(valid_ipv4_flow);
+        valid_ipv4_connection.add_packet(valid_ipv4_flow, packet_ref(10U, 100U));
+        state.ipv4_connections.get_or_create(valid_ipv4_connection.key) = valid_ipv4_connection;
+
+        const FlowKeyV6 valid_ipv6_flow {
+            .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10}),
+            .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x20}),
+            .src_port = 42000,
+            .dst_port = 53,
+            .protocol = ProtocolId::udp,
+        };
+        ConnectionV6 valid_ipv6_connection {};
+        valid_ipv6_connection.key = make_connection_key(valid_ipv6_flow);
+        valid_ipv6_connection.add_packet(valid_ipv6_flow, packet_ref(11U, 80U));
+        state.ipv6_connections.get_or_create(valid_ipv6_connection.key) = valid_ipv6_connection;
+
+        ConnectionKeyV4 empty_ipv4_key {};
+        empty_ipv4_key.protocol = ProtocolId::tcp;
+        state.ipv4_connections.get_or_create(empty_ipv4_key);
+
+        ConnectionKeyV6 empty_ipv6_key {};
+        empty_ipv6_key.protocol = ProtocolId::udp;
+        state.ipv6_connections.get_or_create(empty_ipv6_key);
+
+        const auto listed_connections = session_detail::list_connections(state);
+        PFL_EXPECT(listed_connections.size() == 2U);
+
+        const auto flow_rows = session.list_flows();
+        PFL_EXPECT(flow_rows.size() == 2U);
+        for (const auto& row : flow_rows) {
+            PFL_EXPECT(row.endpoint_a != "0.0.0.0:0");
+            PFL_EXPECT(row.endpoint_b != "0.0.0.0:0");
+            PFL_EXPECT(row.endpoint_a.find("::0") == std::string::npos);
+            PFL_EXPECT(row.endpoint_b.find("::0") == std::string::npos);
+        }
+
+        PFL_EXPECT(session.flow_row(0U).has_value());
+        PFL_EXPECT(session.flow_row(1U).has_value());
+        PFL_EXPECT(!session.flow_row(2U).has_value());
     }
 }
 

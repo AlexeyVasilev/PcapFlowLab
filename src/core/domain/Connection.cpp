@@ -1,7 +1,5 @@
 #include "core/domain/Connection.h"
 
-#include <cassert>
-
 namespace pfl {
 
 namespace {
@@ -193,30 +191,50 @@ template <typename Connection>
 
 }  // namespace
 
-const FlowKeyV4& first_observed_flow_key(const ConnectionV4& connection) noexcept {
-    assert(connection.has_flow_a);
+std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept {
+    if (!connection.has_flow_a) {
+        return std::nullopt;
+    }
     return connection.flow_a.key;
 }
 
-const FlowKeyV6& first_observed_flow_key(const ConnectionV6& connection) noexcept {
-    assert(connection.has_flow_a);
+std::optional<FlowKeyV6> first_observed_flow_key(const ConnectionV6& connection) noexcept {
+    if (!connection.has_flow_a) {
+        return std::nullopt;
+    }
     return connection.flow_a.key;
 }
 
-EndpointKeyV4 first_observed_endpoint_a(const ConnectionV4& connection) noexcept {
-    return endpoint_a_for_flow_key(first_observed_flow_key(connection));
+std::optional<EndpointKeyV4> first_observed_endpoint_a(const ConnectionV4& connection) noexcept {
+    const auto key = first_observed_flow_key(connection);
+    if (!key.has_value()) {
+        return std::nullopt;
+    }
+    return endpoint_a_for_flow_key(*key);
 }
 
-EndpointKeyV4 first_observed_endpoint_b(const ConnectionV4& connection) noexcept {
-    return endpoint_b_for_flow_key(first_observed_flow_key(connection));
+std::optional<EndpointKeyV4> first_observed_endpoint_b(const ConnectionV4& connection) noexcept {
+    const auto key = first_observed_flow_key(connection);
+    if (!key.has_value()) {
+        return std::nullopt;
+    }
+    return endpoint_b_for_flow_key(*key);
 }
 
-EndpointKeyV6 first_observed_endpoint_a(const ConnectionV6& connection) noexcept {
-    return endpoint_a_for_flow_key(first_observed_flow_key(connection));
+std::optional<EndpointKeyV6> first_observed_endpoint_a(const ConnectionV6& connection) noexcept {
+    const auto key = first_observed_flow_key(connection);
+    if (!key.has_value()) {
+        return std::nullopt;
+    }
+    return endpoint_a_for_flow_key(*key);
 }
 
-EndpointKeyV6 first_observed_endpoint_b(const ConnectionV6& connection) noexcept {
-    return endpoint_b_for_flow_key(first_observed_flow_key(connection));
+std::optional<EndpointKeyV6> first_observed_endpoint_b(const ConnectionV6& connection) noexcept {
+    const auto key = first_observed_flow_key(connection);
+    if (!key.has_value()) {
+        return std::nullopt;
+    }
+    return endpoint_b_for_flow_key(*key);
 }
 
 bool has_valid_first_observed_orientation(const ConnectionV4& connection) noexcept {

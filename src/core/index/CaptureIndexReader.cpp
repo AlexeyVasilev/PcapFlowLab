@@ -12,38 +12,11 @@
 #include <vector>
 
 #include "../../../core/open_context.h"
-#include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/index/Serialization.h"
 
 namespace pfl {
 
 namespace {
-
-void reconstruct_packet_size_statistics(CaptureState& state) {
-    state.packet_size_statistics = {};
-
-    for (const auto* connection : state.ipv4_connections.list()) {
-        for (const auto& packet : connection->flow_a.packets) {
-            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
-        }
-        for (const auto& packet : connection->flow_b.packets) {
-            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
-        }
-    }
-
-    for (const auto* connection : state.ipv6_connections.list()) {
-        for (const auto& packet : connection->flow_a.packets) {
-            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
-        }
-        for (const auto& packet : connection->flow_b.packets) {
-            accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
-        }
-    }
-
-    for (const auto& packet : state.unrecognized_packets) {
-        accumulate_capture_packet_size(state.packet_size_statistics, packet.packet.captured_length);
-    }
-}
 
 [[nodiscard]] std::uint64_t current_offset(std::ifstream& stream) {
     const auto current = stream.tellg();
@@ -185,6 +158,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         std::uint16_t reserved {0};
         CaptureSourceInfo source_info {};
         CaptureState state {};
+        state.packet_size_statistics = {};
         bool has_source_info {false};
         bool has_summary {false};
         bool has_protocol_paths {false};
@@ -313,7 +287,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::ipv4_connections:
                 if (!parse_section_payload(payload, [&](std::istream& section_stream) {
-                    return detail::read_connection_table_chunk(section_stream, state.ipv4_connections);
+                    return detail::read_connection_table_chunk(
+                        section_stream,
+                        state.ipv4_connections,
+                        &state.packet_size_statistics
+                    );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv4 connection section");
                     if (ctx != nullptr) {
@@ -325,7 +303,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::ipv6_connections:
                 if (!parse_section_payload(payload, [&](std::istream& section_stream) {
-                    return detail::read_connection_table_chunk(section_stream, state.ipv6_connections);
+                    return detail::read_connection_table_chunk(
+                        section_stream,
+                        state.ipv6_connections,
+                        &state.packet_size_statistics
+                    );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv6 connection section");
                     if (ctx != nullptr) {
@@ -337,7 +319,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::unrecognized_packets:
                 if (has_unrecognized_packets || !parse_section_payload(payload, [&](std::istream& section_stream) {
-                    return detail::read_unrecognized_packet_records(section_stream, state.unrecognized_packets);
+                    return detail::read_unrecognized_packet_records(
+                        section_stream,
+                        state.unrecognized_packets,
+                        &state.packet_size_statistics
+                    );
                 })) {
                     set_error_context(section_header_offset, "invalid unrecognized-packets section");
                     if (ctx != nullptr) {
@@ -369,7 +355,6 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             return false;
         }
 
-        reconstruct_packet_size_statistics(state);
         out_state = std::move(state);
         out_source_capture_path = source_info.capture_path;
         if (out_source_info != nullptr) {

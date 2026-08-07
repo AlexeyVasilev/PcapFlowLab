@@ -1088,7 +1088,7 @@ std::optional<session_detail::SelectedPacketBytePresentation> derive_frontend_pa
     }
 
     if (!details.has_value()) {
-        return session.derive_selected_packet_byte_presentation(packet);
+        return session_detail::build_captured_packet_fallback_presentation(packet);
     }
 
     const auto original_transport_payload_length =

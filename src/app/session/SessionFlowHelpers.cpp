@@ -81,6 +81,12 @@ bool listed_connection_less(const ListedConnectionRef& left, const ListedConnect
     return left.ipv6->key < right.ipv6->key;
 }
 
+bool is_listable_connection(const ListedConnectionRef& connection) noexcept {
+    return connection.family == FlowAddressFamily::ipv4
+        ? connection.ipv4 != nullptr && connection.ipv4->has_flow_a
+        : connection.ipv6 != nullptr && connection.ipv6->has_flow_a;
+}
+
 ProtocolPathId protocol_path_id(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4)
         ? connection.ipv4->key.protocol_path_id
@@ -493,6 +499,9 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
     connections.reserve(ipv4_connections.size() + ipv6_connections.size());
 
     for (const auto* connection : ipv4_connections) {
+        if (connection == nullptr || !connection->has_flow_a) {
+            continue;
+        }
         connections.push_back(ListedConnectionRef {
             .family = FlowAddressFamily::ipv4,
             .ipv4 = connection,
@@ -500,6 +509,9 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
     }
 
     for (const auto* connection : ipv6_connections) {
+        if (connection == nullptr || !connection->has_flow_a) {
+            continue;
+        }
         connections.push_back(ListedConnectionRef {
             .family = FlowAddressFamily::ipv6,
             .ipv6 = connection,
@@ -539,7 +551,15 @@ std::vector<PacketRef> collect_packets(const ConnectionV6& connection) {
     return packets;
 }
 
-FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings) {
+std::optional<FlowRow> make_flow_row(
+    const std::size_t index,
+    const ListedConnectionRef& connection,
+    const AnalysisSettings& settings
+) {
+    if (!is_listable_connection(connection)) {
+        return std::nullopt;
+    }
+
     const auto hint = effective_protocol_hint(connection, settings);
     const auto hint_text = hint == FlowProtocolHint::unknown ? std::string {} : std::string(flow_protocol_hint_text(hint));
 
@@ -547,6 +567,9 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
         const auto& key = connection.ipv4->key;
         const auto endpoint_a = first_observed_endpoint_a(*connection.ipv4);
         const auto endpoint_b = first_observed_endpoint_b(*connection.ipv4);
+        if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+            return std::nullopt;
+        }
         return FlowRow {
             .index = index,
             .family = FlowAddressFamily::ipv4,
@@ -557,12 +580,12 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
             .service_hint = connection.ipv4->service_hint,
             .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
             .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
-            .address_a = format_ipv4_address(endpoint_a.addr),
-            .port_a = endpoint_a.port,
-            .endpoint_a = format_endpoint(endpoint_a),
-            .address_b = format_ipv4_address(endpoint_b.addr),
-            .port_b = endpoint_b.port,
-            .endpoint_b = format_endpoint(endpoint_b),
+            .address_a = format_ipv4_address(endpoint_a->addr),
+            .port_a = endpoint_a->port,
+            .endpoint_a = format_endpoint(*endpoint_a),
+            .address_b = format_ipv4_address(endpoint_b->addr),
+            .port_b = endpoint_b->port,
+            .endpoint_b = format_endpoint(*endpoint_b),
             .packet_count = connection.ipv4->packet_count,
             .total_bytes = connection.ipv4->total_bytes,
         };
@@ -571,6 +594,9 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
     const auto& key = connection.ipv6->key;
     const auto endpoint_a = first_observed_endpoint_a(*connection.ipv6);
     const auto endpoint_b = first_observed_endpoint_b(*connection.ipv6);
+    if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+        return std::nullopt;
+    }
     return FlowRow {
         .index = index,
         .family = FlowAddressFamily::ipv6,
@@ -581,12 +607,12 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
         .service_hint = connection.ipv6->service_hint,
         .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
         .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
-        .address_a = format_ipv6_address(endpoint_a.addr),
-        .port_a = endpoint_a.port,
-        .endpoint_a = format_endpoint(endpoint_a),
-        .address_b = format_ipv6_address(endpoint_b.addr),
-        .port_b = endpoint_b.port,
-        .endpoint_b = format_endpoint(endpoint_b),
+        .address_a = format_ipv6_address(endpoint_a->addr),
+        .port_a = endpoint_a->port,
+        .endpoint_a = format_endpoint(*endpoint_a),
+        .address_b = format_ipv6_address(endpoint_b->addr),
+        .port_b = endpoint_b->port,
+        .endpoint_b = format_endpoint(*endpoint_b),
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };

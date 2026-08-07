@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <filesystem>
+#include <sstream>
 #include <variant>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include "app/session/CaptureSession.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
+#include "core/index/Serialization.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
@@ -243,6 +245,78 @@ void run_index_tests() {
         auto mismatched_info = source_info;
         mismatched_info.file_size += 1;
         PFL_EXPECT(!validate_capture_source(mismatched_info, source_path));
+    }
+
+    {
+        ConnectionV4 empty_connection_v4 {};
+        std::stringstream empty_v4_stream(std::ios::in | std::ios::out | std::ios::binary);
+        PFL_REQUIRE(detail::write_connection(empty_v4_stream, empty_connection_v4));
+        empty_v4_stream.seekg(0);
+        ConnectionV4 decoded_empty_v4 {};
+        PFL_EXPECT(!detail::read_connection(empty_v4_stream, decoded_empty_v4));
+
+        ConnectionV6 empty_connection_v6 {};
+        std::stringstream empty_v6_stream(std::ios::in | std::ios::out | std::ios::binary);
+        PFL_REQUIRE(detail::write_connection(empty_v6_stream, empty_connection_v6));
+        empty_v6_stream.seekg(0);
+        ConnectionV6 decoded_empty_v6 {};
+        PFL_EXPECT(!detail::read_connection(empty_v6_stream, decoded_empty_v6));
+
+        const FlowKeyV4 one_direction_flow {
+            .src_addr = ipv4(198, 51, 100, 10),
+            .dst_addr = ipv4(198, 51, 100, 20),
+            .src_port = 46000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+        ConnectionV4 one_direction_connection {};
+        one_direction_connection.key = make_connection_key(one_direction_flow);
+        one_direction_connection.add_packet(one_direction_flow, PacketRef {
+            .packet_index = 0U,
+            .captured_length = static_cast<std::uint32_t>(forward_packet.size()),
+            .original_length = static_cast<std::uint32_t>(forward_packet.size()),
+            .ts_usec = 100U,
+        });
+        std::stringstream one_direction_stream(std::ios::in | std::ios::out | std::ios::binary);
+        PFL_REQUIRE(detail::write_connection(one_direction_stream, one_direction_connection));
+        one_direction_stream.seekg(0);
+        ConnectionV4 decoded_one_direction {};
+        PFL_REQUIRE(detail::read_connection(one_direction_stream, decoded_one_direction));
+        PFL_EXPECT(decoded_one_direction.has_flow_a);
+        PFL_EXPECT(!decoded_one_direction.has_flow_b);
+        PFL_EXPECT(first_observed_endpoint_a(decoded_one_direction)->addr == one_direction_flow.src_addr);
+        PFL_EXPECT(first_observed_endpoint_b(decoded_one_direction)->addr == one_direction_flow.dst_addr);
+
+        ConnectionV4 bidirectional_connection {};
+        bidirectional_connection.key = make_connection_key(one_direction_flow);
+        bidirectional_connection.add_packet(one_direction_flow, PacketRef {
+            .packet_index = 0U,
+            .captured_length = static_cast<std::uint32_t>(forward_packet.size()),
+            .original_length = static_cast<std::uint32_t>(forward_packet.size()),
+            .ts_usec = 100U,
+        });
+        bidirectional_connection.add_packet(FlowKeyV4 {
+            .src_addr = one_direction_flow.dst_addr,
+            .dst_addr = one_direction_flow.src_addr,
+            .src_port = one_direction_flow.dst_port,
+            .dst_port = one_direction_flow.src_port,
+            .protocol = one_direction_flow.protocol,
+        }, PacketRef {
+            .packet_index = 1U,
+            .captured_length = static_cast<std::uint32_t>(reverse_packet.size()),
+            .original_length = static_cast<std::uint32_t>(reverse_packet.size()),
+            .ts_usec = 200U,
+        });
+        std::stringstream bidirectional_stream(std::ios::in | std::ios::out | std::ios::binary);
+        PFL_REQUIRE(detail::write_connection(bidirectional_stream, bidirectional_connection));
+        bidirectional_stream.seekg(0);
+        ConnectionV4 decoded_bidirectional {};
+        PFL_REQUIRE(detail::read_connection(bidirectional_stream, decoded_bidirectional));
+        PFL_EXPECT(decoded_bidirectional.has_flow_a);
+        PFL_EXPECT(decoded_bidirectional.has_flow_b);
+        PFL_EXPECT(first_observed_endpoint_a(decoded_bidirectional)->addr == one_direction_flow.src_addr);
+        PFL_EXPECT(first_observed_endpoint_b(decoded_bidirectional)->addr == one_direction_flow.dst_addr);
+        PFL_EXPECT(kCaptureIndexVersion == 13U);
     }
     {
         OpenContext ctx {};

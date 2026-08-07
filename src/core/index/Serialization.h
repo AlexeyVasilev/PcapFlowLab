@@ -92,10 +92,26 @@ bool write_connection_table(
     const ConnectionTableV6& table,
     const SerializationProgressCallback& progress_callback
 );
-bool read_connection_table_chunk(std::istream& stream, ConnectionTableV4& table);
-bool read_connection_table_chunk(std::istream& stream, ConnectionTableV6& table);
-bool read_connection_table(std::istream& stream, ConnectionTableV4& table);
-bool read_connection_table(std::istream& stream, ConnectionTableV6& table);
+bool read_connection_table_chunk(
+    std::istream& stream,
+    ConnectionTableV4& table,
+    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
+bool read_connection_table_chunk(
+    std::istream& stream,
+    ConnectionTableV6& table,
+    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
+bool read_connection_table(
+    std::istream& stream,
+    ConnectionTableV4& table,
+    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
+bool read_connection_table(
+    std::istream& stream,
+    ConnectionTableV6& table,
+    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
 
 bool write_unrecognized_packet_records(
     std::ostream& stream,
@@ -106,10 +122,18 @@ bool write_unrecognized_packet_records(
     std::span<const UnrecognizedPacketRecord> records,
     const SerializationProgressCallback& progress_callback
 );
-bool read_unrecognized_packet_records(std::istream& stream, std::vector<UnrecognizedPacketRecord>& records);
+bool read_unrecognized_packet_records(
+    std::istream& stream,
+    std::vector<UnrecognizedPacketRecord>& records,
+    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);
-bool read_capture_state(std::istream& stream, CaptureState& state);
+bool read_capture_state(
+    std::istream& stream,
+    CaptureState& state,
+    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
 
 std::vector<const ConnectionV4*> sorted_connections(const ConnectionTableV4& table);
 std::vector<const ConnectionV6*> sorted_connections(const ConnectionTableV6& table);
