@@ -2513,6 +2513,7 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
+    const auto packet_size_statistics = session_.packet_size_statistics();
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto input_metadata = build_frontend_input_metadata(session_);
@@ -2520,7 +2521,8 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
     const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
         protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
-    const auto whole_capture_captured_bytes = session_.packet_size_statistics().total_captured_bytes;
+    const auto whole_capture_packet_count = packet_size_statistics.total_packet_count;
+    const auto whole_capture_captured_bytes = packet_size_statistics.total_captured_bytes;
     const auto whole_capture_original_bytes = session_.summary().total_bytes;
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
@@ -2534,6 +2536,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             .total_bytes = session_.summary().total_bytes,
         },
         .whole_capture_totals = FrontendWholeCaptureTotalsDto {
+            .packet_count = whole_capture_packet_count,
             .captured_bytes = whole_capture_captured_bytes,
             .captured_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_captured_bytes),
             .original_bytes = whole_capture_original_bytes,

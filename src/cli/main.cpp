@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -12,6 +13,7 @@
 
 #include "app/session/CaptureSession.h"
 #include "cli/CliFormatting.h"
+#include "cli/SummaryCommand.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/services/ChunkedCaptureImporter.h"
@@ -55,7 +57,8 @@ struct PrintableFlowRow {
 void print_usage() {
     std::cout
         << "Usage:\n"
-        << "  pcap-flow-lab summary <input>\n"
+        << "  pcap-flow-lab [summary] <input>\n"
+        << "  pcap-flow-lab summary --input <input>\n"
         << "  pcap-flow-lab flows <input>\n"
         << "  pcap-flow-lab inspect-packet <input> --packet-index <N>\n"
         << "  pcap-flow-lab hex <input> --packet-index <N>\n"
@@ -380,6 +383,34 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         print_usage();
         return 1;
+    }
+
+    std::vector<std::string_view> cli_args {};
+    cli_args.reserve(static_cast<std::size_t>(argc - 1));
+    for (int index = 1; index < argc; ++index) {
+        cli_args.push_back(argv[index]);
+    }
+
+    const auto dispatch = pfl::cli::classify_cli_invocation(cli_args);
+    if (dispatch.kind == pfl::cli::SummaryDispatchKind::summary) {
+        const auto parse_result = pfl::cli::parse_summary_command_arguments(dispatch.summary_args);
+        if (!parse_result.ok || !parse_result.options.has_value()) {
+            if (!parse_result.error_text.empty()) {
+                std::cerr << parse_result.error_text << '\n';
+            } else {
+                print_usage();
+            }
+            return 1;
+        }
+
+        const auto result = pfl::cli::execute_summary_command(*parse_result.options);
+        if (!result.stdout_text.empty()) {
+            std::cout << result.stdout_text;
+        }
+        if (!result.stderr_text.empty()) {
+            std::cerr << result.stderr_text;
+        }
+        return result.exit_code;
     }
 
     const std::string_view command = argv[1];

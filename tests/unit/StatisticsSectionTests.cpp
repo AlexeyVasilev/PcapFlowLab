@@ -756,6 +756,7 @@ void expect_overview_excludes_optional_statistics_sections() {
 
     PFL_EXPECT(overview.has_capture);
     PFL_EXPECT(overview.summary.flow_count == 3U);
+    PFL_EXPECT(overview.whole_capture_totals.packet_count == overview.summary.packet_count);
     PFL_EXPECT(overview.summary.captured_bytes_text == session_detail::format_statistics_compact_size_value(overview.summary.captured_bytes));
     PFL_EXPECT(overview.summary.original_bytes_text == session_detail::format_statistics_compact_size_value(overview.summary.original_bytes));
     PFL_EXPECT(overview.whole_capture_totals.captured_bytes == overview.summary.captured_bytes);
@@ -859,6 +860,8 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(raw_overview.input_metadata.input_file_size == std::filesystem::file_size(capture_path));
     PFL_EXPECT(!raw_overview.input_metadata.source_capture_path.has_value());
     PFL_EXPECT(raw_overview.input_metadata.source_capture_accessible);
+    PFL_EXPECT(raw_overview.whole_capture_totals.packet_count == 2U);
+    PFL_EXPECT(raw_overview.whole_capture_totals.packet_count > raw_overview.summary.packet_count);
     PFL_EXPECT(
         raw_overview.whole_capture_totals.captured_bytes ==
         static_cast<std::uint64_t>(recognized_packet.size() + unrecognized_packet.size())
@@ -884,6 +887,7 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_REQUIRE(indexed_overview.input_metadata.source_capture_path.has_value());
     PFL_EXPECT(*indexed_overview.input_metadata.source_capture_path == capture_path.string());
     PFL_EXPECT(!indexed_overview.input_metadata.source_capture_accessible);
+    PFL_EXPECT(indexed_overview.whole_capture_totals.packet_count == raw_overview.whole_capture_totals.packet_count);
     PFL_EXPECT(indexed_overview.whole_capture_totals.captured_bytes == raw_overview.whole_capture_totals.captured_bytes);
     PFL_EXPECT(indexed_overview.whole_capture_totals.original_bytes == raw_overview.whole_capture_totals.original_bytes);
 
@@ -1062,6 +1066,7 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"captured_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"original_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"whole_capture_totals\""));
+    PFL_EXPECT(contains_text(overview_json, "\"packet_count\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_metadata\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_kind\":\"pcap\""));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_path_presentations\""));

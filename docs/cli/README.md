@@ -1,9 +1,11 @@
 # CLI V2 Overview
 
-This directory documents the planned PcapFlowLab CLI v2 architecture.
+This directory documents the PcapFlowLab CLI v2 architecture and staged
+implementation direction.
 
 - It is not current command help.
-- The current production CLI is still legacy.
+- The current production CLI now includes an initial v2-style `summary` path.
+- Other public CLI commands remain legacy.
 - Implementation may not yet match the documents in this folder.
 
 For the full architecture contract, see [architecture.md](./architecture.md).

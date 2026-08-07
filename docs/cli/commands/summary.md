@@ -2,17 +2,29 @@
 
 ## Status
 
-This document defines the planned CLI v2 contract for:
+This document defines the CLI v2 contract for:
 
 ```text
 pcap-flow-lab summary
 ```
 
-It is a documentation-only design contract.
+The current production CLI now implements the first `summary` pass:
 
-- Implementation has not yet caught up to this document.
-- The current production CLI remains legacy.
-- This document does not implement CLI parsing or rendering yet.
+- structured `summary` parsing and dispatch
+- default summary invocation
+- Basic Summary stdout
+- `--extended`
+- Protocol Path Tree stdout preview and mode selection
+
+The following remain pending in later passes:
+
+- `--settings`
+- `--out-index`
+- `--out-flows-list`
+- `--out-protocol-path-tree`
+- `--progress`
+- `--force`
+- structured `--format` output
 
 ## Purpose
 

@@ -182,6 +182,7 @@ struct FrontendInputMetadataDto {
 };
 
 struct FrontendWholeCaptureTotalsDto {
+    std::uint64_t packet_count {0};
     std::uint64_t captured_bytes {0};
     std::string captured_bytes_text {};
     std::uint64_t original_bytes {0};

@@ -47,6 +47,7 @@ void run_analysis_settings_tests();
 void run_flow_analysis_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
+void run_cli_summary_tests();
 void run_selected_packet_byte_presentation_tests();
 void run_selected_stream_item_data_presentation_tests();
 void run_packet_payload_tests();
@@ -193,6 +194,7 @@ int main() {
         {"flow_analysis", pfl::tests::run_flow_analysis_tests},
         {"packet_access", pfl::tests::run_packet_access_tests},
         {"packet_details", pfl::tests::run_packet_details_tests},
+        {"cli_summary", pfl::tests::run_cli_summary_tests},
         {"selected_packet_byte_presentation", pfl::tests::run_selected_packet_byte_presentation_tests},
         {"selected_stream_item_data_presentation", pfl::tests::run_selected_stream_item_data_presentation_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},

@@ -826,6 +826,7 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"total_bytes\":" << overview.summary.total_bytes
         << "},"
         << "\"whole_capture_totals\":{"
+        << "\"packet_count\":" << overview.whole_capture_totals.packet_count << ','
         << "\"captured_bytes\":" << overview.whole_capture_totals.captured_bytes << ','
         << "\"captured_bytes_text\":" << json_string(overview.whole_capture_totals.captured_bytes_text) << ','
         << "\"original_bytes\":" << overview.whole_capture_totals.original_bytes << ','
