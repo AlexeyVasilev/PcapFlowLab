@@ -2298,6 +2298,37 @@ FrontendExportAllFlowsInfoCsvResult FrontendSessionAdapter::export_all_flows_inf
     return result;
 }
 
+FrontendExportProtocolPathTreeResult FrontendSessionAdapter::export_protocol_path_tree(
+    const ProtocolPathStatisticsMode mode,
+    const std::filesystem::path& output_path
+) const {
+    FrontendExportProtocolPathTreeResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_protocol_path_tree_text(
+            mode,
+            output_path,
+            session_detail::TextExportOverwritePolicy::overwrite_existing,
+            &error_text)) {
+        result.error_text = error_text.empty() ? "Failed to export Protocol Path Tree." : error_text;
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
     const std::filesystem::path& output_path,
     const std::vector<std::size_t>& flow_indices,

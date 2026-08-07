@@ -79,6 +79,9 @@ example through a future command-specific output option such as:
 --out-protocol-path-tree <path>
 ```
 
+That future CLI output is intended to reuse the shared C++ Protocol Path Tree
+plain-text formatter/exporter already used by the Qt and Tauri Statistics UIs.
+
 The exact summary sections, views, text output, and detailed output options are
 intentionally deferred to later per-command design work.
 
@@ -430,7 +433,7 @@ Intended ownership:
 - `--out-flows-data`: packet or capture export for selected flows
 - `--out-index`: reusable PcapFlowLab index output
 - `--out-protocol-path-tree`: complete-capture Protocol Path Tree export from
-  `summary`
+  `summary`, using the shared plain-text Protocol Path Tree exporter
 
 These names remain working API names and may still be refined in later
 per-command design.
@@ -645,7 +648,6 @@ This architecture pass does not decide:
 
 - exact `summary` output
 - exact summary sections or modes
-- exact Protocol Path Tree text formatting
 - exact `flows` columns
 - exact sorting field set
 - exact flow filter fields

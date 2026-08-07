@@ -5767,6 +5767,27 @@ bool CaptureSession::export_all_flows_info_csv(const std::filesystem::path& outp
     return export_all_flows_info_csv(output_path, nullptr);
 }
 
+bool CaptureSession::export_protocol_path_tree_text(
+    const ProtocolPathStatisticsMode mode,
+    const std::filesystem::path& output_path,
+    const session_detail::TextExportOverwritePolicy overwrite_policy,
+    std::string* out_error_text
+) const {
+    if (!has_capture()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No capture is open.";
+        }
+        return false;
+    }
+
+    return session_detail::export_protocol_path_tree_text(
+        protocol_path_summary(mode),
+        output_path,
+        overwrite_policy,
+        out_error_text
+    );
+}
+
 bool CaptureSession::export_all_flows_info_csv(
     const std::filesystem::path& output_path,
     std::string* out_error_text

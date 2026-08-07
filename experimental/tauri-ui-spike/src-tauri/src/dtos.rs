@@ -105,6 +105,13 @@ pub struct ExportAllFlowsInfoCsvResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportProtocolPathTreeResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartExportResultDto {
     pub exported: bool,
     pub output_path: String,

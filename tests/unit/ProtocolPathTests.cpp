@@ -1,11 +1,13 @@
 #include <algorithm>
 #include <array>
+#include <fstream>
 #include <filesystem>
 #include <functional>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "TestSupport.h"
@@ -13,6 +15,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/ProtocolPathTextExport.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/CaptureImportApplication.h"
@@ -24,6 +27,42 @@ namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_REQUIRE(stream.is_open());
+    return std::string(std::istreambuf_iterator<char> {stream}, std::istreambuf_iterator<char> {});
+}
+
+std::vector<std::string> split_lines(const std::string& text) {
+    std::vector<std::string> lines {};
+    std::string current {};
+    for (const char ch : text) {
+        if (ch == '\n') {
+            lines.push_back(current);
+            current.clear();
+            continue;
+        }
+        if (ch != '\r') {
+            current.push_back(ch);
+        }
+    }
+    if (!current.empty()) {
+        lines.push_back(current);
+    }
+    return lines;
+}
+
+bool has_trailing_whitespace(const std::string& line) {
+    return !line.empty() && (line.back() == ' ' || line.back() == '\t');
+}
+
+std::string left_pad(const std::string_view text, const std::size_t width) {
+    if (text.size() >= width) {
+        return std::string {text};
+    }
+    return std::string(width - text.size(), ' ') + std::string {text};
 }
 
 CaptureState require_imported_capture_state(const std::filesystem::path& path) {
@@ -1061,6 +1100,186 @@ void expect_frontend_protocol_path_legend_exposure() {
     PFL_EXPECT(!contains_short_label("ARP"));
     PFL_EXPECT(!contains_short_label("ICMP"));
     PFL_EXPECT(!contains_short_label("ICMP6"));
+}
+
+void expect_protocol_path_tree_text_formatter_core_contract() {
+    const CaptureProtocolPathSummary summary {
+        .mode = ProtocolPathStatisticsMode::kind_overview,
+        .rows = {
+            ProtocolPathStatisticsRow {
+                .depth = 0U,
+                .layer_text = "Ethernet II",
+                .path_text = "EthernetII",
+                .flow_count_text = "7 (70%)",
+                .packet_count_text = "11 (55%)",
+                .original_byte_count_text = "2 KB (40%)",
+            },
+            ProtocolPathStatisticsRow {
+                .depth = 2U,
+                .layer_text = "UDP",
+                .path_text = "EthernetII -> IPv4 -> UDP",
+                .flow_count_text = "5 (50%)",
+                .packet_count_text = "10 (50%)",
+                .original_byte_count_text = "1 KB (20%)",
+            },
+        },
+    };
+
+    const auto text = session_detail::format_protocol_path_tree_text(summary);
+    PFL_EXPECT(!text.empty());
+    PFL_EXPECT(text.back() == '\n');
+    PFL_EXPECT(text.find('\t') == std::string::npos);
+    PFL_EXPECT(text.find("\xE2\x96\xB6") == std::string::npos);
+    PFL_EXPECT(text.find("\xE2\x96\xBC") == std::string::npos);
+
+    const auto lines = split_lines(text);
+    PFL_REQUIRE(lines.size() == 6U);
+    PFL_EXPECT(lines[0] == "Protocol Path Tree");
+    PFL_EXPECT(lines[1] == "Mode: Kind overview");
+    PFL_EXPECT(lines[2].empty());
+
+    const auto flow_column = lines[3].find("Flows");
+    const auto packet_column = lines[3].find("Packets");
+    const auto original_bytes_column = lines[3].find("Original Bytes");
+    PFL_REQUIRE(flow_column != std::string::npos);
+    PFL_REQUIRE(packet_column != std::string::npos);
+    PFL_REQUIRE(original_bytes_column != std::string::npos);
+    const auto flow_width = packet_column - flow_column - 2U;
+    const auto packet_width = original_bytes_column - packet_column - 2U;
+    const auto layer_width = flow_column - 2U;
+
+    PFL_EXPECT(lines[3].substr(0U, layer_width) == std::string("Layer") + std::string(layer_width - 5U, ' '));
+    PFL_EXPECT(lines[4].substr(0U, 10U) == "Ethernet II");
+    PFL_EXPECT(lines[4].substr(flow_column, flow_width) == left_pad("7 (70%)", flow_width));
+    PFL_EXPECT(lines[4].substr(packet_column, packet_width) == left_pad("11 (55%)", packet_width));
+    PFL_EXPECT(lines[5].find("    UDP") != std::string::npos);
+    PFL_EXPECT(lines[5].substr(flow_column, flow_width) == left_pad("5 (50%)", flow_width));
+    PFL_EXPECT(lines[5].substr(packet_column, packet_width) == left_pad("10 (50%)", packet_width));
+
+    for (const auto& line : lines) {
+        PFL_EXPECT(!has_trailing_whitespace(line));
+    }
+}
+
+void expect_protocol_path_tree_text_formatter_empty_state() {
+    const CaptureProtocolPathSummary summary {
+        .mode = ProtocolPathStatisticsMode::kind_overview,
+    };
+
+    const auto text = session_detail::format_protocol_path_tree_text(summary);
+    PFL_EXPECT(text == "Protocol Path Tree\nMode: Kind overview\n\nLayer  Flows  Packets  Original Bytes\n");
+}
+
+void expect_protocol_path_tree_text_formatter_preserves_identity_labels() {
+    const CaptureProtocolPathSummary summary {
+        .mode = ProtocolPathStatisticsMode::identity_tree,
+        .rows = {
+            ProtocolPathStatisticsRow {
+                .depth = 3U,
+                .layer_text = "VXLAN (VNI 100)",
+                .path_text = "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)",
+                .flow_count_text = "1 (50%)",
+                .packet_count_text = "2 (50%)",
+                .original_byte_count_text = "128 B (50%)",
+            },
+        },
+    };
+
+    const auto text = session_detail::format_protocol_path_tree_text(summary);
+    PFL_EXPECT(text.find("Mode: Identity tree") != std::string::npos);
+    PFL_EXPECT(text.find("      VXLAN (VNI 100)") != std::string::npos);
+    PFL_EXPECT(text.find("VXLAN(vni=100)") == std::string::npos);
+}
+
+void expect_protocol_path_tree_text_formatter_terminal_paths_use_flat_rows() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
+    const auto summary = session.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
+    const auto text = session_detail::format_protocol_path_tree_text(summary);
+    const auto lines = split_lines(text);
+    PFL_REQUIRE(lines.size() >= 5U);
+
+    const auto first_data_line = lines[4];
+    PFL_EXPECT(!first_data_line.empty());
+    PFL_EXPECT(first_data_line.front() != ' ');
+    PFL_EXPECT(first_data_line.find("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP") != std::string::npos);
+    PFL_EXPECT(text.find("Mode: Terminal paths") != std::string::npos);
+}
+
+void expect_protocol_path_tree_text_file_overwrite_policies() {
+    const CaptureProtocolPathSummary summary {
+        .mode = ProtocolPathStatisticsMode::kind_overview,
+        .rows = {
+            ProtocolPathStatisticsRow {
+                .depth = 0U,
+                .layer_text = "Ethernet II",
+                .path_text = "EthernetII",
+                .flow_count_text = "1 (100%)",
+                .packet_count_text = "1 (100%)",
+                .original_byte_count_text = "64 B (100%)",
+            },
+        },
+    };
+
+    const auto output_path = std::filesystem::temp_directory_path() / "pfl_protocol_path_tree_export.txt";
+    std::filesystem::remove(output_path);
+
+    std::string error_text {};
+    PFL_EXPECT(session_detail::export_protocol_path_tree_text(
+        summary,
+        output_path,
+        session_detail::TextExportOverwritePolicy::fail_if_exists,
+        &error_text));
+    PFL_EXPECT(read_text_file(output_path) == session_detail::format_protocol_path_tree_text(summary));
+
+    const auto original_text = read_text_file(output_path);
+    error_text.clear();
+    PFL_EXPECT(!session_detail::export_protocol_path_tree_text(
+        summary,
+        output_path,
+        session_detail::TextExportOverwritePolicy::fail_if_exists,
+        &error_text));
+    PFL_EXPECT(error_text == "Output file already exists.");
+    PFL_EXPECT(read_text_file(output_path) == original_text);
+
+    const CaptureProtocolPathSummary replacement_summary {
+        .mode = ProtocolPathStatisticsMode::identity_tree,
+        .rows = {
+            ProtocolPathStatisticsRow {
+                .depth = 0U,
+                .layer_text = "VXLAN (VNI 200)",
+                .path_text = "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)",
+                .flow_count_text = "2 (100%)",
+                .packet_count_text = "2 (100%)",
+                .original_byte_count_text = "256 B (100%)",
+            },
+        },
+    };
+    error_text.clear();
+    PFL_EXPECT(session_detail::export_protocol_path_tree_text(
+        replacement_summary,
+        output_path,
+        session_detail::TextExportOverwritePolicy::overwrite_existing,
+        &error_text));
+    PFL_EXPECT(read_text_file(output_path) == session_detail::format_protocol_path_tree_text(replacement_summary));
+}
+
+void expect_frontend_protocol_path_tree_export_matches_shared_formatter() {
+    const auto capture_path = fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap");
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+    const auto summary = session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+    const auto expected_text = session_detail::format_protocol_path_tree_text(summary);
+
+    const auto output_path = std::filesystem::temp_directory_path() / "pfl_protocol_path_tree_adapter.txt";
+    std::filesystem::remove(output_path);
+    const auto result = adapter.export_protocol_path_tree(ProtocolPathStatisticsMode::identity_tree, output_path);
+    PFL_EXPECT(result.exported);
+    PFL_EXPECT(result.error_text.empty());
+    PFL_EXPECT(read_text_file(output_path) == expected_text);
 }
 
 void expect_builder_empty_state() {
@@ -2915,6 +3134,12 @@ void run_protocol_path_tests() {
     expect_flow_rows_expose_protocol_path_presentation();
     expect_frontend_flows_expose_protocol_path_presentation();
     expect_frontend_protocol_path_legend_exposure();
+    expect_protocol_path_tree_text_formatter_core_contract();
+    expect_protocol_path_tree_text_formatter_empty_state();
+    expect_protocol_path_tree_text_formatter_preserves_identity_labels();
+    expect_protocol_path_tree_text_formatter_terminal_paths_use_flat_rows();
+    expect_protocol_path_tree_text_file_overwrite_policies();
+    expect_frontend_protocol_path_tree_export_matches_shared_formatter();
     expect_builder_empty_state();
     expect_builder_push_order();
     expect_builder_identifier_layers();

@@ -11,6 +11,7 @@
 #include <array>
 
 #include "app/session/FlowRows.h"
+#include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -180,6 +181,12 @@ public:
     [[nodiscard]] std::vector<FlowIndex> protocol_path_summary_flow_indices(
         ProtocolPathStatisticsMode mode,
         std::uint64_t node_id
+    ) const;
+    bool export_protocol_path_tree_text(
+        ProtocolPathStatisticsMode mode,
+        const std::filesystem::path& output_path,
+        session_detail::TextExportOverwritePolicy overwrite_policy = session_detail::TextExportOverwritePolicy::overwrite_existing,
+        std::string* out_error_text = nullptr
     ) const;
     void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;

@@ -37,6 +37,10 @@ public:
     [[nodiscard]] FrontendExportAllFlowsInfoCsvResult export_all_flows_info_csv(
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] FrontendExportProtocolPathTreeResult export_protocol_path_tree(
+        ProtocolPathStatisticsMode mode,
+        const std::filesystem::path& output_path
+    ) const;
     [[nodiscard]] FrontendSmartExportResult export_smart_flows(
         const std::filesystem::path& output_path,
         const std::vector<std::size_t>& flow_indices,

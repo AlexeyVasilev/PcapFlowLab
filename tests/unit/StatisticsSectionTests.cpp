@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <optional>
 #include <string>
@@ -24,6 +25,12 @@ namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_REQUIRE(stream.is_open());
+    return std::string(std::istreambuf_iterator<char> {stream}, std::istreambuf_iterator<char> {});
 }
 
 struct HistogramInputConnections {
@@ -910,6 +917,37 @@ void expect_statistics_section_bridge_json_shapes() {
     pfl_frontend_session_adapter_free(handle);
 }
 
+void expect_protocol_path_tree_bridge_export_contract() {
+    auto* handle = pfl_frontend_session_adapter_new();
+    PFL_REQUIRE(handle != nullptr);
+
+    const auto capture_path = fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap");
+    const auto open_json = take_bridge_string(
+        pfl_frontend_session_adapter_open_capture_json(handle, capture_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
+
+    const auto output_path = std::filesystem::temp_directory_path() / "pfl_protocol_path_tree_bridge.txt";
+    std::filesystem::remove(output_path);
+    const auto export_json = take_bridge_string(
+        pfl_frontend_session_adapter_export_protocol_path_tree_json(handle, 2U, output_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(export_json, "\"exported\":true"));
+    PFL_EXPECT(contains_text(export_json, output_path.string()));
+    PFL_EXPECT(contains_text(export_json, "\"error_text\":\"\""));
+
+    const auto text = read_text_file(output_path);
+    PFL_EXPECT(contains_text(text, "Protocol Path Tree\n"));
+    PFL_EXPECT(contains_text(text, "Mode: Terminal paths\n"));
+    PFL_EXPECT(contains_text(text, "Layer"));
+    PFL_EXPECT(contains_text(
+        text,
+        "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+    PFL_EXPECT(text.find('\t') == std::string::npos);
+
+    pfl_frontend_session_adapter_free(handle);
+}
+
 }  // namespace
 
 void run_statistics_section_tests() {
@@ -934,6 +972,7 @@ void run_statistics_section_tests() {
     expect_quic_tls_section_keeps_one_empty_side();
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();
+    expect_protocol_path_tree_bridge_export_contract();
 }
 
 }  // namespace pfl::tests

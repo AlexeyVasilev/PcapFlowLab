@@ -552,6 +552,16 @@ std::string export_all_flows_info_csv_result_json(const pfl::FrontendExportAllFl
     return out.str();
 }
 
+std::string export_protocol_path_tree_result_json(const pfl::FrontendExportProtocolPathTreeResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"exported\":" << bool_json(result.exported) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string smart_export_result_json(const pfl::FrontendSmartExportResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -1533,6 +1543,26 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
             : pfl::ProtocolPathStatisticsMode::kind_overview);
     return make_c_string(flow_indices_json(
         handle->adapter.get_protocol_path_summary_flow_indices(statistics_mode, node_id)
+    ));
+}
+
+char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode,
+    const char* path_utf8
+) {
+    if (handle == nullptr || path_utf8 == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Invalid export request.\"}");
+    }
+
+    const auto statistics_mode = mode == 1U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree
+        : (mode == 2U
+            ? pfl::ProtocolPathStatisticsMode::terminal_paths
+            : pfl::ProtocolPathStatisticsMode::kind_overview);
+    const std::filesystem::path path {std::string {path_utf8}};
+    return make_c_string(export_protocol_path_tree_result_json(
+        handle->adapter.export_protocol_path_tree(statistics_mode, path)
     ));
 }
 

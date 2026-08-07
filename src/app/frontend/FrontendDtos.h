@@ -100,6 +100,12 @@ struct FrontendExportAllFlowsInfoCsvResult {
     std::string error_text {};
 };
 
+struct FrontendExportProtocolPathTreeResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 enum class FrontendSmartExportOutputMode : std::uint8_t {
     single_file = 0,
     separate_file_per_flow = 1,

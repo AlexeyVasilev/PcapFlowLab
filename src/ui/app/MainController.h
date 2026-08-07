@@ -577,6 +577,7 @@ public:
     Q_INVOKABLE bool exportSelectedFlows(const QString& path);
     Q_INVOKABLE bool exportUnselectedFlows(const QString& path);
     Q_INVOKABLE bool exportAllFlowsInfoCsv(const QString& path);
+    Q_INVOKABLE bool exportProtocolPathTree(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
     Q_INVOKABLE void browseAttachSourceCapture();
@@ -586,6 +587,7 @@ public:
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
     Q_INVOKABLE void browseExportAllFlowsInfoCsv();
+    Q_INVOKABLE void browseExportProtocolPathTree();
     Q_INVOKABLE bool browseSmartExportFlows(
         int outputMode,
         int flowScopeMode,
@@ -759,6 +761,7 @@ private:
     QString chooseSaveFile(bool forIndex) const;
     QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
+    QString chooseProtocolPathTreeSaveFile() const;
     QString chooseDirectory(const QString& title) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 

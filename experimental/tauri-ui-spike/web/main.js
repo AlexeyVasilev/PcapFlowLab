@@ -100,6 +100,7 @@
     attachSourceInProgress: false,
     saveIndexInProgress: false,
     exportAllFlowsInfoCsvInProgress: false,
+    protocolPathExportInProgress: false,
     exportCurrentFlowInProgress: false,
     exportSelectedFlowsInProgress: false,
     exportUnselectedFlowsInProgress: false,
@@ -423,6 +424,7 @@
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
     protocolPathShowFlowsButton: document.getElementById("protocolPathShowFlowsButton"),
+    protocolPathExportButton: document.getElementById("protocolPathExportButton"),
     protocolPathExpandAllButton: document.getElementById("protocolPathExpandAllButton"),
     protocolPathCollapseAllButton: document.getElementById("protocolPathCollapseAllButton"),
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
@@ -1427,6 +1429,18 @@
       && !state.smartExportInProgress;
   }
 
+  function canExportProtocolPathTree() {
+    return state.openState === "opened"
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
+  }
+
   function canSmartExport() {
     const availability = currentSourceAvailability();
     return state.openState === "opened"
@@ -2356,6 +2370,9 @@
     if (elements.protocolPathShowFlowsButton) {
       elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
     }
+    if (elements.protocolPathExportButton) {
+      elements.protocolPathExportButton.disabled = !canExportProtocolPathTree();
+    }
     if (elements.protocolPathExpandAllButton) {
       elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
       elements.protocolPathExpandAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
@@ -2547,6 +2564,7 @@
     state.attachSourceInProgress = false;
     state.saveIndexInProgress = false;
     state.exportAllFlowsInfoCsvInProgress = false;
+    state.protocolPathExportInProgress = false;
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
@@ -7144,6 +7162,45 @@
     }
   }
 
+  async function exportProtocolPathTreeFromStatistics() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canExportProtocolPathTree()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_protocol_path_tree_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.protocolPathExportInProgress = true;
+      setStatus("Exporting Protocol Path Tree...", "neutral");
+      render();
+
+      const result = await invoke("export_protocol_path_tree", {
+        mode: currentProtocolPathMode(),
+        path: selectedPath,
+      });
+
+      if (result?.exported) {
+        setStatus("Protocol Path Tree exported successfully.", "success");
+      } else {
+        setStatus(result?.error_text || "Failed to export Protocol Path Tree.", "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to export Protocol Path Tree: ${String(error)}`, "error");
+    } finally {
+      state.protocolPathExportInProgress = false;
+      render();
+    }
+  }
+
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
   elements.openCancelButton?.addEventListener("click", async () => {
     if (state.openState !== "opening") {
@@ -7333,6 +7390,9 @@
   });
   elements.protocolPathShowFlowsButton?.addEventListener("click", () => {
     void showSelectedProtocolPathFlows();
+  });
+  elements.protocolPathExportButton?.addEventListener("click", () => {
+    void exportProtocolPathTreeFromStatistics();
   });
   elements.protocolPathExpandAllButton?.addEventListener("click", () => {
     const protocolPathMode = currentProtocolPathMode();

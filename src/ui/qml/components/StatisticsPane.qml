@@ -141,6 +141,7 @@ Item {
     signal portActivated(int port)
     signal statisticsModeChangedByUser(int mode)
     signal showFlowsRequested()
+    signal protocolPathExportRequested()
     signal statisticsSectionExpandedChanged(int section, bool expanded)
 
     onStatisticsSectionsResetTokenChanged: {
@@ -818,6 +819,13 @@ Item {
                             }
 
                             Item { Layout.fillWidth: true }
+
+                            Button {
+                                objectName: "protocolPathExportButton"
+                                text: "Export"
+                                enabled: root.hasCapture && root.protocolPathSectionState === root.requestStateReady
+                                onClicked: root.protocolPathExportRequested()
+                            }
 
                             Button {
                                 text: "Expand all"

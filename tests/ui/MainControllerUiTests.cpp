@@ -598,6 +598,12 @@ std::vector<std::string> read_text_file_lines(const std::filesystem::path& path)
     return lines;
 }
 
+std::string read_text_file_text(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    UI_REQUIRE(stream.is_open());
+    return std::string(std::istreambuf_iterator<char> {stream}, std::istreambuf_iterator<char> {});
+}
+
 std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> fields {};
     std::string current {};
@@ -3192,6 +3198,8 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(named_object(statistics_pane.object.get(), "packetSizeDistributionToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "flowPacketHistogramToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolPathStatisticsToggleButton") != nullptr);
+        auto* protocol_path_export_button = named_object(statistics_pane.object.get(), "protocolPathExportButton");
+        UI_REQUIRE(protocol_path_export_button != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "quicTlsStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "topEndpointPortStatisticsToggleButton") != nullptr);
@@ -3220,12 +3228,15 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!statistics_pane.object->property("protocolHintsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("quicTlsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("topEndpointsPortsExpanded").toBool());
+        UI_EXPECT(!protocol_path_export_button->property("enabled").toBool());
 
         statistics_pane.object->setProperty("hasCapture", true);
+        statistics_pane.object->setProperty("protocolPathSectionState", section_ready);
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         statistics_pane.object->setProperty("unrecognizedStatsCapturedBytes", 2048);
         statistics_pane.object->setProperty("unrecognizedStatsOriginalBytes", 3072);
         app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(protocol_path_export_button->property("enabled").toBool());
         UI_EXPECT(!item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
 
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 250206);
@@ -3615,6 +3626,48 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
+
+    run_ui_section("protocol_path_export_button_wiring", [&]() {
+        MainController protocol_path_export_controller {};
+        UI_EXPECT(open_capture_and_wait(app, protocol_path_export_controller, protocol_path_mode_capture_path));
+        auto* protocol_path_export_stats_model =
+            qobject_cast<ProtocolPathStatsModel*>(protocol_path_export_controller.protocolPathStatsModel());
+        UI_REQUIRE(protocol_path_export_stats_model != nullptr);
+
+        protocol_path_export_controller.setCurrentTabIndex(2);
+        protocol_path_export_controller.setStatisticsMode(1);
+        protocol_path_export_controller.setStatisticsSectionExpanded(protocol_path_section, true);
+        UI_EXPECT(protocol_path_export_controller.protocolPathSectionState() == section_ready);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !protocol_path_export_controller.protocolPathStatistics().isEmpty();
+        }));
+
+        protocol_path_export_stats_model->collapseAll();
+        const auto collapsed_visible_row_count = protocol_path_export_stats_model->rowCount();
+        const auto collapsed_output_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_protocol_path_export_collapsed.txt";
+        std::filesystem::remove(collapsed_output_path);
+        UI_EXPECT(protocol_path_export_controller.exportProtocolPathTree(
+            QString::fromStdWString(collapsed_output_path.wstring())));
+        const auto collapsed_text = read_text_file_text(collapsed_output_path);
+        UI_EXPECT(collapsed_text.find("Protocol Path Tree\n") != std::string::npos);
+        UI_EXPECT(collapsed_text.find("Mode: Identity tree\n") != std::string::npos);
+        UI_EXPECT(collapsed_text.find("      VXLAN (VNI 100)") != std::string::npos);
+        UI_EXPECT(collapsed_text.find('\t') == std::string::npos);
+
+        protocol_path_export_stats_model->expandAll();
+        UI_EXPECT(protocol_path_export_stats_model->rowCount() > collapsed_visible_row_count);
+        const auto expanded_output_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_protocol_path_export_expanded.txt";
+        std::filesystem::remove(expanded_output_path);
+        UI_EXPECT(protocol_path_export_controller.exportProtocolPathTree(
+            QString::fromStdWString(expanded_output_path.wstring())));
+        const auto expanded_text = read_text_file_text(expanded_output_path);
+
+        UI_EXPECT(expanded_text == collapsed_text);
+        UI_EXPECT(protocol_path_export_controller.statusText()
+            == QStringLiteral("Protocol Path Tree exported successfully."));
+    });
 
     MainController protocol_path_filter_controller {};
     UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_mode_capture_path));

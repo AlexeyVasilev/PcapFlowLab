@@ -1335,6 +1335,9 @@ ApplicationWindow {
                 onShowFlowsRequested: function() {
                     mainController.showSelectedProtocolPathFlows()
                 }
+                onProtocolPathExportRequested: function() {
+                    mainController.browseExportProtocolPathTree()
+                }
                 onStatisticsSectionExpandedChanged: function(section, expanded) {
                     mainController.setStatisticsSectionExpanded(section, expanded)
                 }
