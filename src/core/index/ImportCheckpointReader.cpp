@@ -60,6 +60,7 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
     bool has_protocol_paths {false};
     bool has_ipv4_connections {false};
     bool has_ipv6_connections {false};
+    bool has_unrecognized_packets {false};
 
     if (!detail::read_u64(stream, magic) ||
         !detail::read_u16(stream, version) ||
@@ -129,7 +130,11 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
             break;
         case detail::ImportCheckpointSectionId::ipv4_connections:
             if (has_ipv4_connections || !parse_section_payload(payload, [&](std::istream& section_stream) {
-                return detail::read_connection_table(section_stream, checkpoint.state.ipv4_connections);
+                return detail::read_connection_table(
+                    section_stream,
+                    checkpoint.state.ipv4_connections,
+                    &checkpoint.state.packet_size_statistics
+                );
             })) {
                 return false;
             }
@@ -137,11 +142,27 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
             break;
         case detail::ImportCheckpointSectionId::ipv6_connections:
             if (has_ipv6_connections || !parse_section_payload(payload, [&](std::istream& section_stream) {
-                return detail::read_connection_table(section_stream, checkpoint.state.ipv6_connections);
+                return detail::read_connection_table(
+                    section_stream,
+                    checkpoint.state.ipv6_connections,
+                    &checkpoint.state.packet_size_statistics
+                );
             })) {
                 return false;
             }
             has_ipv6_connections = true;
+            break;
+        case detail::ImportCheckpointSectionId::unrecognized_packets:
+            if (has_unrecognized_packets || !parse_section_payload(payload, [&](std::istream& section_stream) {
+                return detail::read_unrecognized_packet_records(
+                    section_stream,
+                    checkpoint.state.unrecognized_packets,
+                    &checkpoint.state.packet_size_statistics
+                );
+            })) {
+                return false;
+            }
+            has_unrecognized_packets = true;
             break;
         default:
             return false;
@@ -149,7 +170,7 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
     }
 
     if (!has_source_info || !has_progress || !has_summary || !has_protocol_paths ||
-        !has_ipv4_connections || !has_ipv6_connections) {
+        !has_ipv4_connections || !has_ipv6_connections || !has_unrecognized_packets) {
         return false;
     }
 

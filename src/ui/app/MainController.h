@@ -27,6 +27,28 @@ namespace pfl {
 
 class MainController final : public QObject {
     Q_OBJECT
+
+public:
+    enum class StatisticsSectionRequestState {
+        not_requested = 0,
+        loading,
+        ready,
+        unavailable,
+        error,
+    };
+    Q_ENUM(StatisticsSectionRequestState)
+
+    enum class StatisticsOptionalSection {
+        packet_size_distribution = 0,
+        flow_packet_histogram,
+        protocol_path,
+        protocol_hints,
+        quic_tls,
+        top_endpoints_ports,
+    };
+    Q_ENUM(StatisticsOptionalSection)
+
+private:
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
     Q_PROPERTY(QString applicationVersion READ applicationVersion CONSTANT)
     Q_PROPERTY(QString activeSourceCapturePath READ activeSourceCapturePath NOTIFY sourceAvailabilityChanged)
@@ -162,44 +184,80 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong capturedBytes READ capturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString capturedBytesText READ capturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong originalBytes READ originalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString originalBytesText READ originalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
+    Q_PROPERTY(int statisticsSectionsResetToken READ statisticsSectionsResetToken NOTIFY statisticsSectionsResetTokenChanged)
+    Q_PROPERTY(int packetSizeDistributionState READ packetSizeDistributionState NOTIFY stateChanged)
+    Q_PROPERTY(QString packetSizeDistributionStatusText READ packetSizeDistributionStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QString packetSizeDistributionSummaryText READ packetSizeDistributionSummaryText NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong packetSizeDistributionTotalPacketCount READ packetSizeDistributionTotalPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong packetSizeDistributionMaximumBucketPacketCount READ packetSizeDistributionMaximumBucketPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong packetSizeDistributionMaximumCapturedPacketLength READ packetSizeDistributionMaximumCapturedPacketLength NOTIFY stateChanged)
+    Q_PROPERTY(QString packetSizeDistributionMaximumCapturedPacketLengthText READ packetSizeDistributionMaximumCapturedPacketLengthText NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList packetSizeDistributionRows READ packetSizeDistributionRows NOTIFY stateChanged)
+    Q_PROPERTY(int flowPacketHistogramState READ flowPacketHistogramState NOTIFY stateChanged)
+    Q_PROPERTY(QString flowPacketHistogramStatusText READ flowPacketHistogramStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QString flowPacketHistogramSummaryText READ flowPacketHistogramSummaryText NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong flowPacketHistogramTotalFlowCount READ flowPacketHistogramTotalFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong flowPacketHistogramMaximumBucketFlowCount READ flowPacketHistogramMaximumBucketFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong flowPacketHistogramExcludedZeroPacketFlowCount READ flowPacketHistogramExcludedZeroPacketFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList flowPacketHistogramRows READ flowPacketHistogramRows NOTIFY stateChanged)
+    Q_PROPERTY(int protocolHintsSectionState READ protocolHintsSectionState NOTIFY stateChanged)
+    Q_PROPERTY(QString protocolHintsSectionStatusText READ protocolHintsSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList protocolHintDistribution READ protocolHintDistribution NOTIFY stateChanged)
+    Q_PROPERTY(int protocolPathSectionState READ protocolPathSectionState NOTIFY stateChanged)
+    Q_PROPERTY(QString protocolPathSectionStatusText READ protocolPathSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList protocolPathStatistics READ protocolPathStatistics NOTIFY stateChanged)
     Q_PROPERTY(QObject* protocolPathStatsModel READ protocolPathStatsModel CONSTANT)
     Q_PROPERTY(qulonglong tcpFlowCount READ tcpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpPacketCount READ tcpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpCapturedBytes READ tcpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString tcpCapturedBytesText READ tcpCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpOriginalBytes READ tcpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString tcpOriginalBytesText READ tcpOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpTotalBytes READ tcpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpFlowCount READ udpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpPacketCount READ udpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpCapturedBytes READ udpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString udpCapturedBytesText READ udpCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpOriginalBytes READ udpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString udpOriginalBytesText READ udpOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpTotalBytes READ udpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpFlowCount READ sctpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpPacketCount READ sctpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpCapturedBytes READ sctpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString sctpCapturedBytesText READ sctpCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpOriginalBytes READ sctpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString sctpOriginalBytesText READ sctpOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong sctpTotalBytes READ sctpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherFlowCount READ otherFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherPacketCount READ otherPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherCapturedBytes READ otherCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString otherCapturedBytesText READ otherCapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherOriginalBytes READ otherOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString otherOriginalBytesText READ otherOriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4PacketCount READ ipv4PacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4CapturedBytes READ ipv4CapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv4CapturedBytesText READ ipv4CapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4OriginalBytes READ ipv4OriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv4OriginalBytesText READ ipv4OriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4TotalBytes READ ipv4TotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6PacketCount READ ipv6PacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6CapturedBytes READ ipv6CapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv6CapturedBytesText READ ipv6CapturedBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6OriginalBytes READ ipv6OriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString ipv6OriginalBytesText READ ipv6OriginalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6TotalBytes READ ipv6TotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong unrecognizedStatsPacketCount READ unrecognizedStatsPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong unrecognizedStatsCapturedBytes READ unrecognizedStatsCapturedBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong unrecognizedStatsOriginalBytes READ unrecognizedStatsOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(int quicTlsSectionState READ quicTlsSectionState NOTIFY stateChanged)
+    Q_PROPERTY(QString quicTlsSectionStatusText READ quicTlsSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicTotalFlows READ quicTotalFlows NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicWithSni READ quicWithSni NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicWithoutSni READ quicWithoutSni NOTIFY stateChanged)
@@ -213,12 +271,18 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong tlsVersion12 READ tlsVersion12 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersion13 READ tlsVersion13 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersionUnknown READ tlsVersionUnknown NOTIFY stateChanged)
+    Q_PROPERTY(int topEndpointPortSectionState READ topEndpointPortSectionState NOTIFY stateChanged)
+    Q_PROPERTY(QString topEndpointPortSectionStatusText READ topEndpointPortSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
+    Q_PROPERTY(bool ignoreVlanAndMplsLayersWhenGroupingFlows READ ignoreVlanAndMplsLayersWhenGroupingFlows WRITE setIgnoreVlanAndMplsLayersWhenGroupingFlows NOTIFY ignoreVlanAndMplsLayersWhenGroupingFlowsChanged)
+    Q_PROPERTY(bool ignoreGtpuTeidsWhenGroupingInnerFlows READ ignoreGtpuTeidsWhenGroupingInnerFlows WRITE setIgnoreGtpuTeidsWhenGroupingInnerFlows NOTIFY ignoreGtpuTeidsWhenGroupingInnerFlowsChanged)
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
+    Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
+    Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -379,44 +443,80 @@ public:
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong capturedBytes() const noexcept;
+    [[nodiscard]] QString capturedBytesText() const;
     [[nodiscard]] qulonglong originalBytes() const noexcept;
+    [[nodiscard]] QString originalBytesText() const;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
+    [[nodiscard]] int statisticsSectionsResetToken() const noexcept;
+    [[nodiscard]] int packetSizeDistributionState() const noexcept;
+    [[nodiscard]] QString packetSizeDistributionStatusText() const;
+    [[nodiscard]] QString packetSizeDistributionSummaryText() const;
+    [[nodiscard]] qulonglong packetSizeDistributionTotalPacketCount() const noexcept;
+    [[nodiscard]] qulonglong packetSizeDistributionMaximumBucketPacketCount() const noexcept;
+    [[nodiscard]] qulonglong packetSizeDistributionMaximumCapturedPacketLength() const noexcept;
+    [[nodiscard]] QString packetSizeDistributionMaximumCapturedPacketLengthText() const;
+    [[nodiscard]] QVariantList packetSizeDistributionRows() const;
+    [[nodiscard]] int flowPacketHistogramState() const noexcept;
+    [[nodiscard]] QString flowPacketHistogramStatusText() const;
+    [[nodiscard]] QString flowPacketHistogramSummaryText() const;
+    [[nodiscard]] qulonglong flowPacketHistogramTotalFlowCount() const noexcept;
+    [[nodiscard]] qulonglong flowPacketHistogramMaximumBucketFlowCount() const noexcept;
+    [[nodiscard]] qulonglong flowPacketHistogramExcludedZeroPacketFlowCount() const noexcept;
+    [[nodiscard]] QVariantList flowPacketHistogramRows() const;
+    [[nodiscard]] int protocolHintsSectionState() const noexcept;
+    [[nodiscard]] QString protocolHintsSectionStatusText() const;
     [[nodiscard]] QVariantList protocolHintDistribution() const;
+    [[nodiscard]] int protocolPathSectionState() const noexcept;
+    [[nodiscard]] QString protocolPathSectionStatusText() const;
     [[nodiscard]] QVariantList protocolPathStatistics() const;
     [[nodiscard]] QObject* protocolPathStatsModel() noexcept;
     [[nodiscard]] qulonglong tcpFlowCount() const noexcept;
     [[nodiscard]] qulonglong tcpPacketCount() const noexcept;
     [[nodiscard]] qulonglong tcpCapturedBytes() const noexcept;
+    [[nodiscard]] QString tcpCapturedBytesText() const;
     [[nodiscard]] qulonglong tcpOriginalBytes() const noexcept;
+    [[nodiscard]] QString tcpOriginalBytesText() const;
     [[nodiscard]] qulonglong tcpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong udpFlowCount() const noexcept;
     [[nodiscard]] qulonglong udpPacketCount() const noexcept;
     [[nodiscard]] qulonglong udpCapturedBytes() const noexcept;
+    [[nodiscard]] QString udpCapturedBytesText() const;
     [[nodiscard]] qulonglong udpOriginalBytes() const noexcept;
+    [[nodiscard]] QString udpOriginalBytesText() const;
     [[nodiscard]] qulonglong udpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong sctpFlowCount() const noexcept;
     [[nodiscard]] qulonglong sctpPacketCount() const noexcept;
     [[nodiscard]] qulonglong sctpCapturedBytes() const noexcept;
+    [[nodiscard]] QString sctpCapturedBytesText() const;
     [[nodiscard]] qulonglong sctpOriginalBytes() const noexcept;
+    [[nodiscard]] QString sctpOriginalBytesText() const;
     [[nodiscard]] qulonglong sctpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong otherFlowCount() const noexcept;
     [[nodiscard]] qulonglong otherPacketCount() const noexcept;
     [[nodiscard]] qulonglong otherCapturedBytes() const noexcept;
+    [[nodiscard]] QString otherCapturedBytesText() const;
     [[nodiscard]] qulonglong otherOriginalBytes() const noexcept;
+    [[nodiscard]] QString otherOriginalBytesText() const;
     [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv4PacketCount() const noexcept;
     [[nodiscard]] qulonglong ipv4CapturedBytes() const noexcept;
+    [[nodiscard]] QString ipv4CapturedBytesText() const;
     [[nodiscard]] qulonglong ipv4OriginalBytes() const noexcept;
+    [[nodiscard]] QString ipv4OriginalBytesText() const;
     [[nodiscard]] qulonglong ipv4TotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv6PacketCount() const noexcept;
     [[nodiscard]] qulonglong ipv6CapturedBytes() const noexcept;
+    [[nodiscard]] QString ipv6CapturedBytesText() const;
     [[nodiscard]] qulonglong ipv6OriginalBytes() const noexcept;
+    [[nodiscard]] QString ipv6OriginalBytesText() const;
     [[nodiscard]] qulonglong ipv6TotalBytes() const noexcept;
     [[nodiscard]] qulonglong unrecognizedStatsPacketCount() const noexcept;
     [[nodiscard]] qulonglong unrecognizedStatsCapturedBytes() const noexcept;
     [[nodiscard]] qulonglong unrecognizedStatsOriginalBytes() const noexcept;
+    [[nodiscard]] int quicTlsSectionState() const noexcept;
+    [[nodiscard]] QString quicTlsSectionStatusText() const;
     [[nodiscard]] qulonglong quicTotalFlows() const noexcept;
     [[nodiscard]] qulonglong quicWithSni() const noexcept;
     [[nodiscard]] qulonglong quicWithoutSni() const noexcept;
@@ -430,12 +530,18 @@ public:
     [[nodiscard]] qulonglong tlsVersion12() const noexcept;
     [[nodiscard]] qulonglong tlsVersion13() const noexcept;
     [[nodiscard]] qulonglong tlsVersionUnknown() const noexcept;
+    [[nodiscard]] int topEndpointPortSectionState() const noexcept;
+    [[nodiscard]] QString topEndpointPortSectionStatusText() const;
     [[nodiscard]] int statisticsMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
+    [[nodiscard]] bool ignoreVlanAndMplsLayersWhenGroupingFlows() const noexcept;
+    [[nodiscard]] bool ignoreGtpuTeidsWhenGroupingInnerFlows() const noexcept;
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
+    [[nodiscard]] QString flowGroupingWarningText() const;
+    [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
@@ -502,6 +608,7 @@ public:
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
     Q_INVOKABLE void drillDownToPort(quint32 port);
     Q_INVOKABLE void showSelectedProtocolPathFlows();
+    Q_INVOKABLE void setStatisticsSectionExpanded(int section, bool expanded);
     Q_INVOKABLE void ensureProtocolPathStatisticsLoaded();
     Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
@@ -512,6 +619,8 @@ public:
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
     void setUsePossibleTlsQuic(bool enabled);
+    void setIgnoreVlanAndMplsLayersWhenGroupingFlows(bool enabled);
+    void setIgnoreGtpuTeidsWhenGroupingInnerFlows(bool enabled);
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setShowProtocolPathColumn(bool enabled);
@@ -530,6 +639,8 @@ signals:
     void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
     void usePossibleTlsQuicChanged();
+    void ignoreVlanAndMplsLayersWhenGroupingFlowsChanged();
+    void ignoreGtpuTeidsWhenGroupingInnerFlowsChanged();
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();
@@ -551,6 +662,7 @@ signals:
     void smartExportStateChanged();
     void indexSaveStateChanged();
     void sessionApplicationStateChanged();
+    void statisticsSectionsResetTokenChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -564,6 +676,16 @@ private:
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
     void refreshSelectedPacketByteView();
+    void maybeLoadExpandedStatisticsSections();
+    void ensurePacketSizeDistributionLoaded();
+    void ensureFlowPacketHistogramLoaded();
+    void ensureProtocolHintsLoaded();
+    void ensureProtocolPathSectionLoaded();
+    void ensureQuicTlsSectionLoaded();
+    void ensureTopEndpointsAndPortsSectionLoaded();
+    void resetStatisticsSectionState(bool emitResetToken);
+    void setStatisticsSectionState(StatisticsOptionalSection section, StatisticsSectionRequestState state, QString errorText = {});
+    [[nodiscard]] QString statisticsSectionStatusText(StatisticsOptionalSection section) const;
     bool ensureSourceCaptureAvailable(const QString& unavailableActionText = {});
     void handleSourceCaptureUnavailable();
     void showSourceUnavailablePacketDetailsPlaceholder();
@@ -642,6 +764,11 @@ private:
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
+    CapturePacketSizeStatistics packet_size_statistics_ {};
+    QVariantList packet_size_distribution_rows_ {};
+    FlowPacketCountHistogram flow_packet_count_histogram_ {};
+    QVariantList flow_packet_histogram_rows_ {};
+    QVariantList protocol_hint_distribution_ {};
     UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
     CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
@@ -662,11 +789,18 @@ private:
     QString open_error_text_ {};
     QString status_text_ {};
     QString last_directory_path_ {};
+    QString packet_size_distribution_error_text_ {};
+    QString flow_packet_histogram_error_text_ {};
+    QString protocol_hints_error_text_ {};
+    QString protocol_path_error_text_ {};
+    QString quic_tls_error_text_ {};
+    QString top_endpoints_ports_error_text_ {};
     AnalysisSettings pending_analysis_settings_ {};
     bool validate_selected_packet_checksums_ {false};
     bool show_wireshark_filter_for_selected_flow_ {true};
     bool show_protocol_path_column_ {true};
     int statistics_mode_ {0};
+    int statistics_sections_reset_token_ {0};
     int loaded_protocol_path_statistics_mode_ {-1};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
@@ -674,6 +808,12 @@ private:
     qulonglong selected_stream_item_index_ {0};
     QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};
+    bool packet_size_distribution_expanded_ {false};
+    bool flow_packet_histogram_expanded_ {false};
+    bool protocol_path_section_expanded_ {false};
+    bool protocol_hints_section_expanded_ {false};
+    bool quic_tls_section_expanded_ {false};
+    bool top_endpoints_ports_section_expanded_ {false};
     bool has_active_protocol_path_filter_ {false};
     ProtocolPathStatisticsMode active_protocol_path_filter_mode_ {ProtocolPathStatisticsMode::kind_overview};
     std::uint64_t active_protocol_path_filter_node_id_ {kInvalidProtocolPathStatisticsNodeId};
@@ -696,6 +836,12 @@ private:
     bool stream_state_materialized_for_selected_flow_ {false};
     std::size_t prepared_tcp_contribution_packet_window_count_ {0U};
     bool analysis_loading_ {false};
+    StatisticsSectionRequestState packet_size_distribution_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState flow_packet_histogram_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState protocol_hints_section_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState protocol_path_section_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState quic_tls_section_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState top_endpoints_ports_section_state_ {StatisticsSectionRequestState::not_requested};
     bool analysis_sequence_export_in_progress_ {false};
     bool flow_info_csv_export_in_progress_ {false};
     bool smart_export_in_progress_ {false};

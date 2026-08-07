@@ -7,12 +7,16 @@ Item {
 
     property bool httpUsePathAsServiceHint: false
     property bool usePossibleTlsQuic: false
+    property bool ignoreVlanAndMplsLayersWhenGroupingFlows: false
+    property bool ignoreGtpuTeidsWhenGroupingInnerFlows: false
     property bool validateSelectedPacketChecksums: false
     property bool showWiresharkFilterForSelectedFlow: true
     property bool showProtocolPathColumn: true
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
     signal usePossibleTlsQuicChangedByUser(bool enabled)
+    signal ignoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser(bool enabled)
+    signal ignoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser(bool enabled)
     signal validateSelectedPacketChecksumsChangedByUser(bool enabled)
     signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
     signal showProtocolPathColumnChangedByUser(bool enabled)
@@ -72,6 +76,50 @@ Item {
                 color: "#64748b"
                 font.pixelSize: 12
                 text: "Applied immediately to the current view and statistics"
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            CheckBox {
+                objectName: "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox"
+                Layout.fillWidth: true
+                text: "Ignore VLAN and MPLS layers when grouping flows"
+                checked: root.ignoreVlanAndMplsLayersWhenGroupingFlows
+                onToggled: root.ignoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied when importing a capture. Existing indexes keep their stored flow grouping."
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            CheckBox {
+                objectName: "ignoreGtpuTeidsWhenGroupingInnerFlowsCheckBox"
+                Layout.fillWidth: true
+                text: "Ignore GTP-U TEIDs when grouping inner flows"
+                checked: root.ignoreGtpuTeidsWhenGroupingInnerFlows
+                onToggled: root.ignoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied when importing a capture. Existing indexes keep their stored flow grouping."
             }
         }
 

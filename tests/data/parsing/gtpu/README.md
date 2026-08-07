@@ -284,6 +284,10 @@ decoding plus production fixture tests.
   - `EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP`
   - `EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344) -> IPv4 -> TCP`
 - Purpose: TEID identity split
+- Additional flow-grouping contract:
+  - default raw import keeps these as two TEID-sensitive flows
+  - the expert setting `Ignore GTP-U TEIDs when grouping inner flows` intentionally merges them into one same-direction flow
+  - this collision-risk merge is expected because TEID namespace isolation is being weakened explicitly
 
 ### 22_gtpu_udp_port_direction_matrix.pcap
 
@@ -486,6 +490,45 @@ decoding plus production fixture tests.
   - no preview
   - no outer UDP / GTP-U fallback as generic Data
 
+### 35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap
+
+- Purpose: deterministic direction-specific-TEID grouping fixture for the expert GTP-U flow-identity normalization mode
+- Generation command used for the authoritative output:
+  `python tests/data/parsing/gtpu/generate_gtpu_grouping_fixtures.py --output-dir tests/data/parsing/gtpu --force`
+- File size:
+  - `236` bytes
+- Packet 1:
+  - Outer: EthernetII / IPv4 `203.0.113.60 -> 203.0.113.61` / UDP `55035 -> 2152`
+  - GTP-U: T-PDU, TEID `0x01020311`
+  - Inner: IPv4 / TCP `10.10.0.1:40000 -> 10.10.0.2:443`, `SYN`
+- Packet 2:
+  - Outer: EthernetII / IPv4 `203.0.113.61 -> 203.0.113.60` / UDP `55036 -> 2152`
+  - GTP-U: T-PDU, TEID `0x02030412`
+  - Inner: IPv4 / TCP `10.10.0.2:443 -> 10.10.0.1:40000`, `SYN, ACK`
+- Default flow-identity outcome:
+  - two recognized flows
+  - one packet in each flow
+  - protocol paths keep their distinct TEIDs
+- Expert flow-identity outcome with `Ignore GTP-U TEIDs when grouping inner flows`:
+  - one bidirectional recognized inner TCP flow
+  - two packets total
+  - `Endpoint A/B` follow the first observed inner packet
+  - normalized flow path is `EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP`
+- Packet-truth contract:
+  - Packet Summary still shows each packet's actual TEID
+  - Packet Bytes still exposes the GTP-U protocol unit/header
+
+## Import-time expert grouping note
+
+- TEID is identity-significant by default.
+- The expert setting removes only the TEID identifier from the `GTP-U` flow-identity layer; it does not remove the `GTP-U` layer itself.
+- Packet Summary, Packet Details, and Packet Bytes still show the actual packet TEID even when the expert mode is enabled.
+- The setting applies only during raw capture import.
+- Existing indexes keep their stored grouping and are not reinterpreted with the current checkbox state.
+- Index format remains `13`.
+- This setting is deterministic identity normalization only; it does not attempt GTP-C/PFCP/session correlation.
+- Unsupported tunnel namespaces such as VXLAN VNI, Geneve VNI, GRE key, AH SPI, and ESP SPI remain identity-significant.
+
 ## Notes for migration
 
 - This directory defines the production contract that the shadow GTP-U path now matches.
@@ -495,4 +538,5 @@ decoding plus production fixture tests.
   continuation, nested inner-UDP non-recursion, outer carrier reachability, and
   outer-fragment shell behavior.
 - Fixtures `32`, `33`, and `34` are synthetic deterministic Packet Details Data-ownership fixtures; they contain no private capture values.
+- Fixture `35` is a synthetic deterministic expert-grouping fixture for direction-specific TEID asymmetry; it contains no private capture values.
 - Their Summary-level `data` presentation is ephemeral: no ProtocolPath, import, index, or flow-identity semantics change.

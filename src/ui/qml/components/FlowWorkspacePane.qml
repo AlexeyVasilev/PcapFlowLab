@@ -92,7 +92,6 @@ Item {
     signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
-    signal sendFlowToAnalysisRequested()
     signal packetSelected(var packetIndex)
     signal loadMorePacketsRequested()
     signal streamItemSelected(var streamItemIndex)
@@ -143,9 +142,6 @@ Item {
             }
             onSortRequested: function(column) {
                 root.sortRequested(column)
-            }
-            onSendFlowToAnalysisRequested: function() {
-                root.sendFlowToAnalysisRequested()
             }
             onUnrecognizedPacketsRequested: function() {
                 root.unrecognizedPacketsRequested()

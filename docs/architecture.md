@@ -23,6 +23,7 @@ The fast path is the default way to open a capture.
 - Parses PCAP / PCAPNG packets and decodes packet metadata.
 - Aggregates packets into bidirectional connections and per-direction flows.
 - Populates summaries, flow rows, packet rows, cheap hints, fragmentation flags, and packet references.
+- Accumulates retained capture-wide packet-size distribution statistics from accepted packet records using captured packet length; this includes recognized, unrecognized, and decode-malformed packets that are successfully surfaced by the importer.
 - Optional weak fallback hints may classify otherwise unresolved TCP/UDP port 443 flows as `Possible TLS` / `Possible QUIC`; these remain presentation-level buckets distinct from confirmed TLS/QUIC detection.
 - Does not run directional reassembly.
 - Does not perform deep protocol reconstruction during open.
@@ -36,8 +37,10 @@ Saved analysis indexes can be opened directly instead of re-importing the captur
 - The index stores capture summary, connections, flows, packet references, source metadata, and checkpointable analysis state.
 - The current binary format is explicitly sectioned, versioned as index format `13`, and loaded with an exact-version policy.
 - Stable index data also includes the capture-level protocol-path registry plus flow/connection protocol-path identity metadata.
+- Saved indexes preserve the exact flow grouping produced at raw-import time. The current format does not record whether VLAN/MPLS-agnostic grouping or GTP-U-TEID-agnostic grouping was enabled, so index load does not reinterpret stored grouping with the current application setting.
 - Runtime protocol-path statistics trees are rebuilt from indexed flow metadata and are not themselves persisted.
 - Unrecognized-packet metadata is persisted in current-format indexes and survives save/load without rescanning the source PCAP.
+- Capture-wide packet-size distribution statistics are reconstructed from persisted `PacketRef::captured_length` values for recognized and unrecognized packets; index load does not reread packet bytes from the source capture.
 - Raw packet bytes are not stored in the index.
 - An index can be opened without the original capture; this is an explicit index-only mode.
 - Raw packet features become available again only after the matching source capture is attached and validated.
@@ -67,7 +70,17 @@ On-demand analysis is separate from the fast path and from index loading.
 
 - Connections use a canonical symmetric key for bidirectional grouping.
 - Each runtime connection keeps separate `flow_a` and `flow_b` packet lists.
+- The normalized `ConnectionKey` is identity only.
+- User-visible `Endpoint A` / `Endpoint B` orientation is taken from the first observed packet in the flow:
+  - `flow_a.key` stores that first-observed directional tuple;
+  - `Endpoint A` is the `flow_a.key` source endpoint;
+  - `Endpoint B` is the `flow_a.key` destination endpoint;
+  - packets in `flow_a` are `A->B`;
+  - packets in `flow_b` are `B->A`.
+- This orientation is capture-relative and does not perform client/server inference.
 - Effective flow identity is the normalized endpoint tuple plus an interned `protocol_path_id`, so namespace-bearing layers such as GRE key, ESP SPI, AH SPI, and MikroTik EoIP Tunnel ID (normalized through the GRE-key slot) can split otherwise identical tuples.
+- Raw-capture import can optionally ignore `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` while building that flow-identity `protocol_path_id`. This strips VLAN and MPLS label-stack layers from flow grouping only; packet decoding, Packet Details, and byte presentation still expose the observed VLAN/MPLS layers.
+- Raw-capture import can also optionally ignore only the `ProtocolLayerIdentifierKind::gtpu_teid` attached to `ProtocolLayerKind::gtpu` while leaving the `GTP-U` layer itself in the flow-identity path. This is an expert mode for deployments where opposite directions of the same inner connection use different TEIDs; packet decoding, Packet Details, and byte presentation still expose the observed TEID per packet, and unrelated tunnels with the same inner tuple may merge when the mode is enabled.
 - `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, effective terminal transport payload length, TCP flags, link type, and fragmentation metadata.
 - `PacketRef` does not store protocol-path identity; recognized packets resolve that through their owning flow/connection metadata.
 - Packet bytes are loaded lazily when details, payload, protocol text, export, or stream analysis needs them.
@@ -104,7 +117,7 @@ Current Stream behavior:
 
 Current reassembly is intentionally narrow.
 
-- Directional: one flow direction (`A->B` or `B->A`) per request.
+- Directional: one flow direction (`A->B` or `B->A`) per request, where `A/B` come from the first observed packet of the flow rather than canonical endpoint ordering.
 - Bounded: every request is limited by `max_packets` and `max_bytes`.
 - Heuristic: packet-order payload concatenation, not transport-correct TCP reconstruction.
 - Ephemeral: buffers and packet-contribution maps are built only for the current request.

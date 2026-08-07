@@ -252,20 +252,15 @@ bool load_index_only(const char* index_file, pfl::CaptureSession& session) {
 }
 
 PrintableFlowRow make_printable_flow_row(const pfl::FlowRow& row) {
-    PrintableFlowRow printable {
+    return PrintableFlowRow {
         .index = row.index,
         .family = (row.family == pfl::FlowAddressFamily::ipv4) ? "v4" : "v6",
+        .protocol = row.protocol_text,
+        .endpoint_a = row.endpoint_a,
+        .endpoint_b = row.endpoint_b,
         .packet_count = row.packet_count,
         .total_bytes = row.total_bytes,
     };
-
-    std::visit([&](const auto& key) {
-        printable.protocol = pfl::format_protocol(key.protocol);
-        printable.endpoint_a = pfl::format_endpoint(key.first);
-        printable.endpoint_b = pfl::format_endpoint(key.second);
-    }, row.key);
-
-    return printable;
 }
 
 void print_packet_details(const pfl::PacketDetails& details) {

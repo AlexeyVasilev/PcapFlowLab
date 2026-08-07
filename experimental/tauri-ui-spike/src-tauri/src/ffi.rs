@@ -2,8 +2,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -42,6 +42,22 @@ extern "C" {
     fn pfl_frontend_session_adapter_get_settings_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_hint_statistics_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_quic_tls_statistics_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        limit: usize,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_protocol_path_legend_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
@@ -58,6 +74,8 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         http_use_path_as_service_hint: c_uchar,
         use_possible_tls_quic: c_uchar,
+        ignore_vlan_and_mpls_layers_when_grouping_flows: c_uchar,
+        ignore_gtpu_teids_when_grouping_inner_flows: c_uchar,
         show_wireshark_filter_for_selected_flow: c_uchar,
         validate_selected_packet_checksums: c_uchar,
     ) -> *mut c_char;
@@ -246,6 +264,31 @@ impl CppFrontendSessionAdapter {
         parse_json_owned::<SettingsDto>(json)
     }
 
+    pub fn get_capture_packet_size_statistics(&self) -> Result<CapturePacketSizeStatisticsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(self.handle) };
+        parse_json_owned::<CapturePacketSizeStatisticsDto>(json)
+    }
+
+    pub fn get_flow_packet_count_histogram(&self) -> Result<FlowPacketCountHistogramDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(self.handle) };
+        parse_json_owned::<FlowPacketCountHistogramDto>(json)
+    }
+
+    pub fn get_protocol_hint_statistics(&self) -> Result<ProtocolHintStatisticsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_protocol_hint_statistics_json(self.handle) };
+        parse_json_owned::<ProtocolHintStatisticsDto>(json)
+    }
+
+    pub fn get_quic_tls_statistics(&self) -> Result<QuicTlsStatisticsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_quic_tls_statistics_json(self.handle) };
+        parse_json_owned::<QuicTlsStatisticsDto>(json)
+    }
+
+    pub fn get_top_endpoint_port_statistics(&self, limit: usize) -> Result<TopEndpointPortStatisticsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(self.handle, limit) };
+        parse_json_owned::<TopEndpointPortStatisticsDto>(json)
+    }
+
     pub fn get_protocol_path_legend(&self) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_legend_json(self.handle) };
         parse_json_owned::<Vec<ProtocolPathLegendEntryDto>>(json)
@@ -275,6 +318,8 @@ impl CppFrontendSessionAdapter {
         &mut self,
         http_use_path_as_service_hint: bool,
         use_possible_tls_quic: bool,
+        ignore_vlan_and_mpls_layers_when_grouping_flows: bool,
+        ignore_gtpu_teids_when_grouping_inner_flows: bool,
         show_wireshark_filter_for_selected_flow: bool,
         validate_selected_packet_checksums: bool,
     ) -> Result<SettingsDto, String> {
@@ -283,6 +328,8 @@ impl CppFrontendSessionAdapter {
                 self.handle,
                 if http_use_path_as_service_hint { 1 } else { 0 },
                 if use_possible_tls_quic { 1 } else { 0 },
+                if ignore_vlan_and_mpls_layers_when_grouping_flows { 1 } else { 0 },
+                if ignore_gtpu_teids_when_grouping_inner_flows { 1 } else { 0 },
                 if show_wireshark_filter_for_selected_flow { 1 } else { 0 },
                 if validate_selected_packet_checksums { 1 } else { 0 },
             )

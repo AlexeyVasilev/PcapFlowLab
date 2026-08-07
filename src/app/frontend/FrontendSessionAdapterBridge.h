@@ -29,6 +29,14 @@ char* pfl_frontend_session_adapter_save_index_json(
     const char* path_utf8
 );
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_protocol_hint_statistics_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_quic_tls_statistics_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::size_t limit
+);
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     PflFrontendSessionAdapterHandle* handle,
@@ -43,6 +51,8 @@ char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t http_use_path_as_service_hint,
     std::uint8_t use_possible_tls_quic,
+    std::uint8_t ignore_vlan_and_mpls_layers_when_grouping_flows,
+    std::uint8_t ignore_gtpu_teids_when_grouping_inner_flows,
     std::uint8_t show_wireshark_filter_for_selected_flow,
     std::uint8_t validate_selected_packet_checksums
 );

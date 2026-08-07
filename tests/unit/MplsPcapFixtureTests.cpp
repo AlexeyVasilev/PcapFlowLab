@@ -528,6 +528,62 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(first_details->mpls_labels[0].label == 1100U);
         PFL_EXPECT(second_details->mpls_labels[0].label == 1200U);
     }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls/24_mpls_plain_bidirectional_same_inner_tcp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+
+        const auto first_packet = require_packet(session, 0U);
+        const auto second_packet = require_packet(session, 1U);
+        const auto first_details = session.read_packet_details(first_packet);
+        const auto second_details = session.read_packet_details(second_packet);
+        PFL_REQUIRE(first_details.has_value());
+        PFL_REQUIRE(second_details.has_value());
+        PFL_EXPECT(first_details->has_mpls);
+        PFL_EXPECT(first_details->mpls_labels.size() == 1U);
+        PFL_EXPECT(!first_details->has_vlan);
+        PFL_EXPECT(!second_details->has_mpls);
+        PFL_EXPECT(!second_details->has_vlan);
+
+        const auto first_summary_layers = session_detail::build_packet_summary_layers(*first_details, first_packet);
+        const auto second_summary_layers = session_detail::build_packet_summary_layers(*second_details, second_packet);
+        expect_layer_prefix(first_summary_layers, {"frame", "ethernet", "mpls", "ipv4", "tcp"});
+        expect_layer_prefix(second_summary_layers, {"frame", "ethernet", "ipv4", "tcp"});
+        PFL_EXPECT(find_layer(first_summary_layers, "mpls") != nullptr);
+        PFL_EXPECT(find_layer(second_summary_layers, "mpls") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls/25_vlan_and_stacked_mpls_asymmetric_bidirectional_tcp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+
+        const auto first_packet = require_packet(session, 0U);
+        const auto second_packet = require_packet(session, 1U);
+        const auto first_details = session.read_packet_details(first_packet);
+        const auto second_details = session.read_packet_details(second_packet);
+        PFL_REQUIRE(first_details.has_value());
+        PFL_REQUIRE(second_details.has_value());
+        PFL_EXPECT(first_details->has_vlan);
+        PFL_EXPECT(first_details->vlan_tags.size() == 1U);
+        PFL_EXPECT(first_details->has_mpls);
+        PFL_EXPECT(first_details->mpls_labels.size() == 2U);
+        PFL_EXPECT(second_details->has_vlan);
+        PFL_EXPECT(second_details->vlan_tags.size() == 2U);
+        PFL_EXPECT(!second_details->has_mpls);
+
+        const auto first_summary_layers = session_detail::build_packet_summary_layers(*first_details, first_packet);
+        const auto second_summary_layers = session_detail::build_packet_summary_layers(*second_details, second_packet);
+        expect_layer_prefix(first_summary_layers, {"frame", "ethernet", "vlan", "mpls", "mpls", "ipv4", "tcp"});
+        expect_layer_prefix(second_summary_layers, {"frame", "ethernet", "vlan", "vlan", "ipv4", "tcp"});
+        PFL_EXPECT(count_layers(first_summary_layers, "vlan") == 1U);
+        PFL_EXPECT(count_layers(first_summary_layers, "mpls") == 2U);
+        PFL_EXPECT(count_layers(second_summary_layers, "vlan") == 2U);
+        PFL_EXPECT(find_layer(second_summary_layers, "mpls") == nullptr);
+    }
 }
 
 }  // namespace pfl::tests

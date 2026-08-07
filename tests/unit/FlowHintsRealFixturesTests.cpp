@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 
+#include "PcapTestUtils.h"
 #include "TestSupport.h"
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/frontend/FrontendSessionAdapterBridge.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SessionTlsPresentation.h"
 
@@ -121,6 +123,17 @@ std::string require_summary_field_value(
     const auto* field = find_summary_field(layer, label);
     PFL_REQUIRE(field != nullptr);
     return field->value;
+}
+
+std::string take_bridge_string(char* value) {
+    PFL_REQUIRE(value != nullptr);
+    const std::string text {value};
+    pfl_frontend_string_free(value);
+    return text;
+}
+
+bool contains_text(const std::string& text, const std::string_view fragment) {
+    return text.find(fragment) != std::string::npos;
 }
 
 void expect_fixture(const FixtureExpectation& expectation) {
@@ -482,8 +495,9 @@ void expect_frontend_adapter_selected_flow_quic_early_reassembled_tls_byte_views
 
 void expect_frontend_adapter_selected_flow_packet_byte_views() {
     FrontendSessionAdapter adapter {};
-    const auto open_result = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
+    const auto open_result = adapter.open_capture(fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap"));
     PFL_REQUIRE(open_result.opened);
+    PFL_EXPECT(adapter.get_overview().summary.packet_count == 1U);
 
     const auto flows = adapter.get_flows();
     PFL_REQUIRE(flows.size() == 1U);
@@ -498,50 +512,47 @@ void expect_frontend_adapter_selected_flow_packet_byte_views() {
     PFL_EXPECT(details.packet_found);
     PFL_EXPECT(details.details_available);
     PFL_EXPECT(details.selected_byte_view.available);
-    PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
-    PFL_EXPECT(details.selected_byte_view.label == "Frame");
+    PFL_EXPECT(details.selected_byte_view.stable_id == "ethernet:0:0");
+    PFL_EXPECT(details.selected_byte_view.label == "Ethernet II Frame");
     PFL_EXPECT(details.selected_byte_view.mode == "whole_unit");
+    PFL_EXPECT(details.selected_byte_view.available_length == packet.captured_length);
     PFL_EXPECT(details.selected_byte_view.formatted_text.find("00000000") != std::string::npos);
 
-    const std::vector<std::string> expected_labels {
-        "Frame",
-        "Ethernet II Frame",
-        "IPv4 Packet",
-        "TCP Segment",
-    };
-    PFL_EXPECT(packet_byte_view_labels(details) == expected_labels);
-    PFL_REQUIRE(details.byte_view_descriptors.size() == 4U);
-    PFL_EXPECT(details.byte_view_descriptors[0].stable_id == "frame:0:0");
-    PFL_EXPECT(details.byte_view_descriptors[1].stable_id == "ethernet:0:0");
-    PFL_EXPECT(details.byte_view_descriptors[2].stable_id == "ipv4:0:0");
-    PFL_EXPECT(details.byte_view_descriptors[3].stable_id == "tcp:0:0");
+    const auto labels = packet_byte_view_labels(details);
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "Ethernet II Frame") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "IPv4 Packet") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "UDP Datagram") != labels.end());
+    PFL_EXPECT(std::find(labels.begin(), labels.end(), "Captured Packet") == labels.end());
+    PFL_REQUIRE(details.byte_view_descriptors.size() >= 3U);
+    PFL_EXPECT(details.byte_view_descriptors[0].stable_id == "ethernet:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[1].stable_id == "ipv4:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[2].stable_id == "udp:0:0");
     PFL_EXPECT(!details.byte_view_descriptors[0].parent_stable_id.has_value());
-    PFL_EXPECT(details.byte_view_descriptors[1].parent_stable_id == std::optional<std::string> {"frame:0:0"});
-    PFL_EXPECT(details.byte_view_descriptors[2].parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
-    PFL_EXPECT(details.byte_view_descriptors[3].parent_stable_id == std::optional<std::string> {"ipv4:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[1].parent_stable_id == std::optional<std::string> {"ethernet:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[2].parent_stable_id == std::optional<std::string> {"ipv4:0:0"});
+    PFL_EXPECT(details.byte_view_descriptors[0].available_length == packet.captured_length);
+    PFL_EXPECT(details.byte_view_descriptors[0].declared_length == std::optional<std::uint32_t> {packet.original_length});
     PFL_EXPECT(details.byte_view_descriptors[0].owner_kind == "captured_packet");
-    PFL_EXPECT(details.byte_view_descriptors[3].owner_kind == "captured_packet");
+    PFL_EXPECT(details.byte_view_descriptors[2].owner_kind == "captured_packet");
     PFL_EXPECT(details.byte_view_descriptors[0].role == "protocol_unit");
     PFL_EXPECT(details.byte_view_descriptors[1].role == "protocol_unit");
     PFL_EXPECT(details.byte_view_descriptors[2].role == "protocol_unit");
-    PFL_EXPECT(details.byte_view_descriptors[3].role == "protocol_unit");
-    PFL_EXPECT(!details.byte_view_descriptors[0].supports_payload_only);
+    PFL_EXPECT(details.byte_view_descriptors[0].supports_payload_only);
     PFL_EXPECT(details.byte_view_descriptors[1].supports_payload_only);
     PFL_EXPECT(details.byte_view_descriptors[2].supports_payload_only);
-    PFL_EXPECT(details.byte_view_descriptors[3].supports_payload_only);
-    PFL_REQUIRE(details.byte_view_descriptors[3].payload_available_length.has_value());
+    PFL_REQUIRE(details.byte_view_descriptors[2].payload_available_length.has_value());
 
-    const auto tcp_payload = adapter.get_selected_flow_packet_byte_view_content(
+    const auto udp_payload = adapter.get_selected_flow_packet_byte_view_content(
         packet.packet_index,
-        "tcp:0:0",
+        "udp:0:0",
         packet.row_number,
         1U
     );
-    PFL_EXPECT(tcp_payload.available);
-    PFL_EXPECT(tcp_payload.stable_id == "tcp:0:0");
-    PFL_EXPECT(tcp_payload.mode == "whole_unit");
-    PFL_EXPECT(tcp_payload.formatted_text.find("47 45 54 20 2f") != std::string::npos);
-    PFL_EXPECT(tcp_payload.status_text.find("Available:") != std::string::npos);
+    PFL_EXPECT(udp_payload.available);
+    PFL_EXPECT(udp_payload.stable_id == "udp:0:0");
+    PFL_EXPECT(udp_payload.mode == "whole_unit");
+    PFL_EXPECT(udp_payload.formatted_text.find("d1 1a 01 bb") != std::string::npos);
+    PFL_EXPECT(udp_payload.status_text.find("Available:") != std::string::npos);
 }
 
 void expect_frontend_adapter_ieee8023_packet_byte_view() {
@@ -568,11 +579,74 @@ void expect_frontend_adapter_ieee8023_packet_byte_view() {
     PFL_REQUIRE(ieee8023_descriptor != nullptr);
     PFL_REQUIRE(llc_descriptor != nullptr);
     PFL_REQUIRE(snap_descriptor != nullptr);
-    PFL_EXPECT(ieee8023_descriptor->parent_stable_id == std::optional<std::string> {"frame:0:0"});
+    PFL_EXPECT(!ieee8023_descriptor->parent_stable_id.has_value());
     PFL_EXPECT(llc_descriptor->parent_stable_id == std::optional<std::string> {"ieee8023:0:0"});
     PFL_EXPECT(snap_descriptor->parent_stable_id == std::optional<std::string> {"llc:0:0"});
     PFL_EXPECT(ieee8023_descriptor->supports_payload_only);
     PFL_REQUIRE(ieee8023_descriptor->payload_available_length.has_value());
+}
+
+void expect_frontend_adapter_truncated_ethernet_packet_byte_fallback() {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path("parsing/packet_byte_views/02_truncated_ethernet_header.pcap"));
+    PFL_REQUIRE(open_result.opened);
+    PFL_EXPECT(adapter.get_overview().summary.packet_count == 1U);
+
+    const auto unrecognized = adapter.get_unrecognized_packets(0U, 4U);
+    PFL_REQUIRE(unrecognized.packets.size() == 1U);
+    const auto& packet = unrecognized.packets[0];
+
+    const auto details = adapter.get_unrecognized_packet_details(packet.packet_index);
+    PFL_EXPECT(details.error_text.empty());
+    PFL_EXPECT(details.packet_found);
+    PFL_EXPECT(!details.details_available);
+    PFL_EXPECT(!details.summary_text.empty());
+    PFL_EXPECT(details.selected_byte_view.available);
+    PFL_EXPECT(details.selected_byte_view.stable_id == "frame:0:0");
+    PFL_EXPECT(details.selected_byte_view.label == "Captured Packet");
+    PFL_EXPECT(details.selected_byte_view.available_length == 10U);
+    PFL_EXPECT(details.selected_byte_view.declared_length == std::optional<std::uint32_t> {46U});
+    PFL_EXPECT(details.selected_byte_view.formatted_text.find("00 11 22 33 44 55 66 77 88 99") != std::string::npos);
+    PFL_EXPECT(packet_byte_view_labels(details) == std::vector<std::string> {"Captured Packet"});
+    PFL_REQUIRE(details.byte_view_descriptors.size() == 1U);
+    PFL_EXPECT(details.byte_view_descriptors[0].stable_id == "frame:0:0");
+    PFL_EXPECT(details.byte_view_descriptors[0].label == "Captured Packet");
+    PFL_EXPECT(!details.byte_view_descriptors[0].parent_stable_id.has_value());
+    PFL_EXPECT(details.byte_view_descriptors[0].available_length == packet.captured_length);
+    PFL_EXPECT(details.byte_view_descriptors[0].declared_length == std::optional<std::uint32_t> {packet.original_length});
+    PFL_EXPECT(details.byte_view_descriptors[0].owner_kind == "captured_packet");
+    PFL_EXPECT(details.byte_view_descriptors[0].role == "protocol_unit");
+
+    const auto* frame_layer = find_summary_layer(details.summary_layers, "frame");
+    PFL_REQUIRE(frame_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*frame_layer, "Captured Length") == "10 bytes");
+    PFL_EXPECT(require_summary_field_value(*frame_layer, "Original Length") == "46 bytes");
+
+    const auto fallback_content = adapter.get_unrecognized_packet_byte_view_content(
+        packet.packet_index,
+        "frame:0:0"
+    );
+    PFL_EXPECT(fallback_content.available);
+    PFL_EXPECT(fallback_content.stable_id == "frame:0:0");
+    PFL_EXPECT(fallback_content.label == "Captured Packet");
+    PFL_EXPECT(fallback_content.available_length == 10U);
+    PFL_EXPECT(fallback_content.declared_length == std::optional<std::uint32_t> {46U});
+    PFL_EXPECT(fallback_content.formatted_text.find("00 11 22 33 44 55 66 77 88 99") != std::string::npos);
+
+    auto* bridge_handle = pfl_frontend_session_adapter_new();
+    PFL_REQUIRE(bridge_handle != nullptr);
+    const auto open_json = take_bridge_string(
+        pfl_frontend_session_adapter_open_capture_json(bridge_handle, fixture_path("parsing/packet_byte_views/02_truncated_ethernet_header.pcap").string().c_str())
+    );
+    PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
+    const auto details_json = take_bridge_string(
+        pfl_frontend_session_adapter_get_unrecognized_packet_details_json(bridge_handle, packet.packet_index)
+    );
+    PFL_EXPECT(contains_text(details_json, "\"details_available\":false"));
+    PFL_EXPECT(contains_text(details_json, "\"byte_view_descriptors\":[{\"stable_id\":\"frame:0:0\""));
+    PFL_EXPECT(contains_text(details_json, "\"selected_byte_view\":{\"available\":true,\"stable_id\":\"frame:0:0\",\"label\":\"Captured Packet\""));
+    PFL_EXPECT(contains_text(details_json, "\"formatted_text\":\"0000  00 11 22 33 44 55 66 77 88 99"));
+    pfl_frontend_session_adapter_free(bridge_handle);
 }
 
 void expect_frontend_adapter_pppoe_ppp_packet_byte_view() {
@@ -902,6 +976,7 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
     expect_frontend_adapter_selected_flow_packet_byte_views();
     expect_frontend_adapter_ieee8023_packet_byte_view();
+    expect_frontend_adapter_truncated_ethernet_packet_byte_fallback();
     expect_frontend_adapter_pppoe_ppp_packet_byte_view();
     expect_frontend_adapter_nested_gtpu_data_byte_view();
     expect_frontend_adapter_vxlan_packet_byte_view();

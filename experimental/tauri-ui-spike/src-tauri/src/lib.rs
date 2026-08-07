@@ -10,8 +10,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -586,6 +586,57 @@ fn get_settings(state: State<'_, Mutex<AdapterState>>) -> Result<SettingsDto, St
 }
 
 #[tauri::command]
+fn get_flow_packet_count_histogram(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<FlowPacketCountHistogramDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_flow_packet_count_histogram()
+}
+
+#[tauri::command]
+fn get_capture_packet_size_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<CapturePacketSizeStatisticsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_capture_packet_size_statistics()
+}
+
+#[tauri::command]
+fn get_protocol_hint_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<ProtocolHintStatisticsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_protocol_hint_statistics()
+}
+
+#[tauri::command]
+fn get_quic_tls_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<QuicTlsStatisticsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_quic_tls_statistics()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_top_endpoint_port_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+    limit: usize,
+) -> Result<TopEndpointPortStatisticsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_top_endpoint_port_statistics(limit)
+}
+
+#[tauri::command]
 fn get_protocol_path_legend(
     state: State<'_, Mutex<AdapterState>>,
 ) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
@@ -625,6 +676,8 @@ fn update_settings(
     state: State<'_, Mutex<AdapterState>>,
     http_use_path_as_service_hint: bool,
     use_possible_tls_quic: bool,
+    ignore_vlan_and_mpls_layers_when_grouping_flows: bool,
+    ignore_gtpu_teids_when_grouping_inner_flows: bool,
     show_wireshark_filter_for_selected_flow: bool,
     validate_selected_packet_checksums: bool,
 ) -> Result<SettingsDto, String> {
@@ -634,6 +687,8 @@ fn update_settings(
     state.adapter.update_settings(
         http_use_path_as_service_hint,
         use_possible_tls_quic,
+        ignore_vlan_and_mpls_layers_when_grouping_flows,
+        ignore_gtpu_teids_when_grouping_inner_flows,
         show_wireshark_filter_for_selected_flow,
         validate_selected_packet_checksums,
     )
@@ -943,6 +998,11 @@ pub fn run() {
             exit_app,
             get_overview,
             get_settings,
+            get_flow_packet_count_histogram,
+            get_capture_packet_size_statistics,
+            get_protocol_hint_statistics,
+            get_quic_tls_statistics,
+            get_top_endpoint_port_statistics,
             get_protocol_path_legend,
             get_protocol_path_statistics,
             get_protocol_path_summary_flow_indices,

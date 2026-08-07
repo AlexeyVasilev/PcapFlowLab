@@ -18,6 +18,8 @@ struct FrontendSourceAvailabilityDto {
     bool opened_from_index {false};
     bool partial_open {false};
     bool byte_backed_inspection_available {false};
+    bool flow_grouping_ignores_vlan_and_mpls_layers {false};
+    bool flow_grouping_ignores_gtpu_teids {false};
     std::string active_source_capture_path {};
     std::string expected_source_capture_path {};
 };
@@ -74,6 +76,8 @@ struct FrontendSaveIndexResult {
 struct FrontendSettingsDto {
     bool http_use_path_as_service_hint {false};
     bool use_possible_tls_quic {false};
+    bool ignore_vlan_and_mpls_layers_when_grouping_flows {false};
+    bool ignore_gtpu_teids_when_grouping_inner_flows {false};
     bool show_wireshark_filter_for_selected_flow {true};
     bool validate_selected_packet_checksums {false};
 };
@@ -128,9 +132,41 @@ struct FrontendProtocolHintStatsDto {
     std::string group {};
     std::string protocol_label {};
     std::uint64_t flow_count {0};
+    std::string flow_count_text {};
+    std::uint64_t packet_count {0};
+    std::string packet_count_text {};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
+struct FrontendProtocolStatsDto {
+    std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
     std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
     std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
+struct FrontendOverviewSummaryDto {
+    std::uint64_t packet_count {0};
+    std::uint64_t flow_count {0};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+    std::uint64_t total_bytes {0};
+};
+
+struct FrontendOverviewProtocolSummaryDto {
+    FrontendProtocolStatsDto tcp {};
+    FrontendProtocolStatsDto udp {};
+    FrontendProtocolStatsDto sctp {};
+    FrontendProtocolStatsDto other {};
+    FrontendProtocolStatsDto ipv4 {};
+    FrontendProtocolStatsDto ipv6 {};
 };
 
 struct FrontendTopEndpointDto {
@@ -143,6 +179,65 @@ struct FrontendTopPortDto {
     std::uint16_t port {0};
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+};
+
+struct FrontendFlowPacketCountHistogramBucketDto {
+    std::string bucket_id {};
+    std::string label {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::uint64_t original_byte_count {0};
+    std::string original_byte_count_text {};
+    double normalized_flow_fraction {0.0};
+    double normalized_original_byte_fraction {0.0};
+};
+
+struct FrontendFlowPacketCountHistogramDto {
+    bool has_capture {false};
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::uint64_t excluded_zero_packet_flow_count {0};
+    std::uint64_t excluded_zero_packet_original_byte_count {0};
+    std::vector<FrontendFlowPacketCountHistogramBucketDto> buckets {};
+};
+
+struct FrontendCapturePacketSizeStatisticsBucketDto {
+    std::string bucket_id {};
+    std::string label {};
+    std::uint32_t lower_bound_inclusive {0};
+    std::optional<std::uint32_t> upper_bound_inclusive {};
+    std::uint64_t packet_count {0};
+    double normalized_fraction {0.0};
+};
+
+struct FrontendCapturePacketSizeStatisticsDto {
+    bool has_capture {false};
+    std::uint64_t total_packet_count {0};
+    std::uint64_t maximum_bucket_packet_count {0};
+    std::uint32_t maximum_captured_packet_length {0};
+    std::string maximum_captured_packet_length_text {};
+    std::vector<FrontendCapturePacketSizeStatisticsBucketDto> buckets {};
+};
+
+struct FrontendProtocolHintStatisticsDto {
+    bool has_capture {false};
+    std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
+};
+
+struct FrontendQuicTlsStatisticsDto {
+    bool has_capture {false};
+    QuicRecognitionStats quic_recognition {};
+    TlsRecognitionStats tls_recognition {};
+};
+
+struct FrontendTopEndpointPortStatisticsDto {
+    bool has_capture {false};
+    std::size_t limit {0};
+    std::vector<FrontendTopEndpointDto> top_endpoints {};
+    std::vector<FrontendTopPortDto> top_ports {};
 };
 
 struct FrontendProtocolPathStatsDto {
@@ -175,17 +270,12 @@ struct FrontendProtocolPathPresentationDto {
 
 struct FrontendOverviewDto {
     bool has_capture {false};
-    CaptureSummary summary {};
+    FrontendOverviewSummaryDto summary {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
     std::uint64_t unrecognized_packet_count {0};
     std::optional<UnrecognizedPacketStatistics> unrecognized_packets {};
-    CaptureProtocolSummary protocol_summary {};
-    QuicRecognitionStats quic_recognition {};
-    TlsRecognitionStats tls_recognition {};
-    std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
-    std::vector<FrontendTopEndpointDto> top_endpoints {};
-    std::vector<FrontendTopPortDto> top_ports {};
+    FrontendOverviewProtocolSummaryDto protocol_summary {};
     ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
     std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};
 };

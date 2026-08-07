@@ -58,7 +58,6 @@ Frame {
     signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
-    signal sendFlowToAnalysisRequested()
     signal unrecognizedPacketsRequested()
 
     function sortIndicator(column) {
@@ -166,12 +165,23 @@ Frame {
         anchors.fill: parent
         spacing: 6
 
+        Label {
+            objectName: "flowFilterStatusLabel"
+            Layout.fillWidth: true
+            visible: root.flowModel !== null && root.flowModel.hasActiveFlowFilter
+            text: visible ? root.flowModel.filteredFlowCountText : ""
+            color: "#64748b"
+            font.pixelSize: 12
+            elide: Text.ElideRight
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
 
             TextField {
                 id: filterField
+                objectName: "flowTextFilterField"
                 Layout.fillWidth: true
                 placeholderText: "Filter by protocol, hint, service, address, or port"
                 text: root.filterText
@@ -185,12 +195,6 @@ Frame {
                 text: "Clear"
                 enabled: root.filterText.length > 0
                 onClicked: root.clearTextFilterRequested()
-            }
-
-            Button {
-                text: "Send flow to Analysis"
-                enabled: root.selectedFlowIndex >= 0
-                onClicked: root.sendFlowToAnalysisRequested()
             }
         }
 

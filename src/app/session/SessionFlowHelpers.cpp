@@ -81,6 +81,12 @@ bool listed_connection_less(const ListedConnectionRef& left, const ListedConnect
     return left.ipv6->key < right.ipv6->key;
 }
 
+bool is_listable_connection(const ListedConnectionRef& connection) noexcept {
+    return connection.family == FlowAddressFamily::ipv4
+        ? connection.ipv4 != nullptr && connection.ipv4->has_flow_a
+        : connection.ipv6 != nullptr && connection.ipv6->has_flow_a;
+}
+
 ProtocolPathId protocol_path_id(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4)
         ? connection.ipv4->key.protocol_path_id
@@ -124,6 +130,27 @@ struct PrefixStepKeyHash {
         return seed;
     }
 };
+
+struct FlowPacketCountHistogramBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountHistogramBucketDefinitions {{
+    {"packets_1", 1U, 1U},
+    {"packets_2", 2U, 2U},
+    {"packets_3_5", 3U, 5U},
+    {"packets_6_10", 6U, 10U},
+    {"packets_11_25", 11U, 25U},
+    {"packets_26_50", 26U, 50U},
+    {"packets_51_100", 51U, 100U},
+    {"packets_101_250", 101U, 250U},
+    {"packets_251_500", 251U, 500U},
+    {"packets_501_1000", 501U, 1000U},
+    {"packets_1001_5000", 1001U, 5000U},
+    {"packets_5001_plus", 5001U, std::nullopt},
+}};
 
 std::string group_integer_part(std::string text) {
     const auto sign_offset = !text.empty() && text.front() == '-' ? std::size_t {1} : std::size_t {0};
@@ -281,7 +308,148 @@ void append_protocol_path_statistics_rows(
     }
 }
 
+std::size_t flow_packet_count_histogram_bucket_index(const std::uint64_t packet_count_value) noexcept {
+    for (std::size_t index = 0U; index < kFlowPacketCountHistogramBucketDefinitions.size(); ++index) {
+        const auto& bucket = kFlowPacketCountHistogramBucketDefinitions[index];
+        if (packet_count_value < bucket.lower_bound_inclusive) {
+            continue;
+        }
+        if (!bucket.upper_bound_inclusive.has_value() || packet_count_value <= *bucket.upper_bound_inclusive) {
+            return index;
+        }
+    }
+
+    return kFlowPacketCountHistogramBucketDefinitions.size() - 1U;
+}
+
 }  // namespace
+
+std::string format_statistics_bucket_label(
+    const std::uint64_t lower_bound_inclusive,
+    const std::optional<std::uint64_t> upper_bound_inclusive
+) {
+    if (!upper_bound_inclusive.has_value()) {
+        return std::to_string(lower_bound_inclusive) + '+';
+    }
+    if (lower_bound_inclusive == *upper_bound_inclusive) {
+        return std::to_string(lower_bound_inclusive);
+    }
+    return std::to_string(lower_bound_inclusive) + '-' + std::to_string(*upper_bound_inclusive);
+}
+
+std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket) {
+    return format_statistics_bucket_label(
+        static_cast<std::uint64_t>(bucket.lower_bound_inclusive),
+        bucket.upper_bound_inclusive.has_value()
+            ? std::optional<std::uint64_t> {static_cast<std::uint64_t>(*bucket.upper_bound_inclusive)}
+            : std::nullopt
+    );
+}
+
+std::string format_statistics_count_value(const std::uint64_t value) {
+    return format_grouped_integer(value);
+}
+
+std::string format_statistics_compact_size_value(const std::uint64_t value) {
+    return format_byte_value(value);
+}
+
+std::string format_statistics_percent_text(const double percent) {
+    if (!(percent > 0.0)) {
+        return "0%";
+    }
+
+    if (percent < 0.01) {
+        return "<0.01%";
+    }
+
+    if (percent < 1.0) {
+        std::ostringstream out {};
+        out << std::fixed << std::setprecision(2) << percent;
+        return trim_trailing_zeros(out.str()) + '%';
+    }
+
+    return std::to_string(static_cast<std::uint64_t>(std::llround(percent))) + '%';
+}
+
+std::string format_statistics_count_with_percent_text(const std::uint64_t count, const double percent) {
+    return format_statistics_count_value(count) + " (" + format_statistics_percent_text(percent) + ')';
+}
+
+std::string format_statistics_size_with_percent_text(const std::uint64_t size, const double percent) {
+    return format_statistics_compact_size_value(size) + " (" + format_statistics_percent_text(percent) + ')';
+}
+
+std::string format_statistics_size_value(const std::uint64_t value) {
+    const auto compact = format_statistics_compact_size_value(value);
+    if (value == 0U || value < 1024U) {
+        return compact;
+    }
+
+    return compact + " (" + format_grouped_integer(value) + " B)";
+}
+
+std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary) {
+    std::vector<ProtocolHintStatisticsRow> rows {};
+    rows.reserve(13U);
+
+    auto append_row = [&](const char* group, const char* protocol_label, const ProtocolStats& stats) {
+        rows.push_back(ProtocolHintStatisticsRow {
+            .group = group,
+            .protocol_label = protocol_label,
+            .flow_count = stats.flow_count,
+            .packet_count = stats.packet_count,
+            .captured_bytes = stats.captured_bytes,
+            .original_bytes = stats.original_bytes,
+        });
+    };
+
+    append_row("Confirmed", "HTTP", summary.hint_http);
+    append_row("Confirmed", "TLS", summary.hint_tls);
+    append_row("Possible", "Possible TLS", summary.hint_possible_tls);
+    append_row("Confirmed", "DNS", summary.hint_dns);
+    append_row("Confirmed", "QUIC", summary.hint_quic);
+    append_row("Possible", "Possible QUIC", summary.hint_possible_quic);
+    append_row("Confirmed", "SSH", summary.hint_ssh);
+    append_row("Confirmed", "STUN", summary.hint_stun);
+    append_row("Confirmed", "BitTorrent", summary.hint_bittorrent);
+    append_row("Confirmed", "Mail protocols", summary.hint_mail_protocols);
+    append_row("Confirmed", "DHCP", summary.hint_dhcp);
+    append_row("Confirmed", "mDNS", summary.hint_mdns);
+    append_row("Unknown", "Unknown", summary.hint_unknown);
+
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_packet_count {0};
+    std::uint64_t total_captured_bytes {0};
+    std::uint64_t total_original_bytes {0};
+    for (const auto& row : rows) {
+        total_flow_count += row.flow_count;
+        total_packet_count += row.packet_count;
+        total_captured_bytes += row.captured_bytes;
+        total_original_bytes += row.original_bytes;
+    }
+
+    for (auto& row : rows) {
+        row.flow_count_text = format_statistics_count_with_percent_text(
+            row.flow_count,
+            safe_percent(row.flow_count, total_flow_count)
+        );
+        row.packet_count_text = format_statistics_count_with_percent_text(
+            row.packet_count,
+            safe_percent(row.packet_count, total_packet_count)
+        );
+        row.captured_bytes_text = format_statistics_size_with_percent_text(
+            row.captured_bytes,
+            safe_percent(row.captured_bytes, total_captured_bytes)
+        );
+        row.original_bytes_text = format_statistics_size_with_percent_text(
+            row.original_bytes,
+            safe_percent(row.original_bytes, total_original_bytes)
+        );
+    }
+
+    return rows;
+}
 
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
@@ -331,6 +499,9 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
     connections.reserve(ipv4_connections.size() + ipv6_connections.size());
 
     for (const auto* connection : ipv4_connections) {
+        if (connection == nullptr || !connection->has_flow_a) {
+            continue;
+        }
         connections.push_back(ListedConnectionRef {
             .family = FlowAddressFamily::ipv4,
             .ipv4 = connection,
@@ -338,6 +509,9 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
     }
 
     for (const auto* connection : ipv6_connections) {
+        if (connection == nullptr || !connection->has_flow_a) {
+            continue;
+        }
         connections.push_back(ListedConnectionRef {
             .family = FlowAddressFamily::ipv6,
             .ipv6 = connection,
@@ -377,12 +551,25 @@ std::vector<PacketRef> collect_packets(const ConnectionV6& connection) {
     return packets;
 }
 
-FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings) {
+std::optional<FlowRow> make_flow_row(
+    const std::size_t index,
+    const ListedConnectionRef& connection,
+    const AnalysisSettings& settings
+) {
+    if (!is_listable_connection(connection)) {
+        return std::nullopt;
+    }
+
     const auto hint = effective_protocol_hint(connection, settings);
     const auto hint_text = hint == FlowProtocolHint::unknown ? std::string {} : std::string(flow_protocol_hint_text(hint));
 
     if (connection.family == FlowAddressFamily::ipv4) {
         const auto& key = connection.ipv4->key;
+        const auto endpoint_a = first_observed_endpoint_a(*connection.ipv4);
+        const auto endpoint_b = first_observed_endpoint_b(*connection.ipv4);
+        if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+            return std::nullopt;
+        }
         return FlowRow {
             .index = index,
             .family = FlowAddressFamily::ipv4,
@@ -393,18 +580,23 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
             .service_hint = connection.ipv4->service_hint,
             .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
             .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
-            .address_a = format_ipv4_address(key.first.addr),
-            .port_a = key.first.port,
-            .endpoint_a = format_endpoint(key.first),
-            .address_b = format_ipv4_address(key.second.addr),
-            .port_b = key.second.port,
-            .endpoint_b = format_endpoint(key.second),
+            .address_a = format_ipv4_address(endpoint_a->addr),
+            .port_a = endpoint_a->port,
+            .endpoint_a = format_endpoint(*endpoint_a),
+            .address_b = format_ipv4_address(endpoint_b->addr),
+            .port_b = endpoint_b->port,
+            .endpoint_b = format_endpoint(*endpoint_b),
             .packet_count = connection.ipv4->packet_count,
             .total_bytes = connection.ipv4->total_bytes,
         };
     }
 
     const auto& key = connection.ipv6->key;
+    const auto endpoint_a = first_observed_endpoint_a(*connection.ipv6);
+    const auto endpoint_b = first_observed_endpoint_b(*connection.ipv6);
+    if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+        return std::nullopt;
+    }
     return FlowRow {
         .index = index,
         .family = FlowAddressFamily::ipv6,
@@ -415,15 +607,55 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
         .service_hint = connection.ipv6->service_hint,
         .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
         .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
-        .address_a = format_ipv6_address(key.first.addr),
-        .port_a = key.first.port,
-        .endpoint_a = format_endpoint(key.first),
-        .address_b = format_ipv6_address(key.second.addr),
-        .port_b = key.second.port,
-        .endpoint_b = format_endpoint(key.second),
+        .address_a = format_ipv6_address(endpoint_a->addr),
+        .port_a = endpoint_a->port,
+        .endpoint_a = format_endpoint(*endpoint_a),
+        .address_b = format_ipv6_address(endpoint_b->addr),
+        .port_b = endpoint_b->port,
+        .endpoint_b = format_endpoint(*endpoint_b),
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };
+}
+
+FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections) {
+    FlowPacketCountHistogram histogram {};
+    histogram.buckets.reserve(kFlowPacketCountHistogramBucketDefinitions.size());
+    for (const auto& definition : kFlowPacketCountHistogramBucketDefinitions) {
+        histogram.buckets.push_back(FlowPacketCountHistogramBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+            .flow_count = 0U,
+            .original_byte_count = 0U,
+        });
+    }
+
+    for (const auto& connection : connections) {
+        const auto packets_for_flow = packet_count(connection);
+        const auto original_bytes_for_flow = total_bytes(connection);
+        if (packets_for_flow == 0U) {
+            ++histogram.excluded_zero_packet_flow_count;
+            histogram.excluded_zero_packet_original_byte_count += original_bytes_for_flow;
+            continue;
+        }
+
+        const auto bucket_index = flow_packet_count_histogram_bucket_index(packets_for_flow);
+        ++histogram.buckets[bucket_index].flow_count;
+        histogram.buckets[bucket_index].original_byte_count += original_bytes_for_flow;
+        ++histogram.total_flow_count;
+        histogram.total_original_byte_count += original_bytes_for_flow;
+    }
+
+    for (const auto& bucket : histogram.buckets) {
+        histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
+        histogram.maximum_bucket_original_byte_count = std::max(
+            histogram.maximum_bucket_original_byte_count,
+            bucket.original_byte_count
+        );
+    }
+
+    return histogram;
 }
 
 CaptureProtocolPathSummary build_protocol_path_summary(

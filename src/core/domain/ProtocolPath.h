@@ -89,6 +89,7 @@ struct LayerKey {
     [[nodiscard]] static constexpr LayerKey icmp() noexcept;
     [[nodiscard]] static constexpr LayerKey icmpv6() noexcept;
     [[nodiscard]] static constexpr LayerKey arp() noexcept;
+    [[nodiscard]] static constexpr LayerKey gtpu() noexcept;
     [[nodiscard]] static constexpr LayerKey gre() noexcept;
     [[nodiscard]] static constexpr LayerKey gre(std::uint32_t key) noexcept;
     [[nodiscard]] static constexpr LayerKey ah(std::uint32_t spi) noexcept;
@@ -363,6 +364,10 @@ constexpr LayerKey LayerKey::geneve(const std::uint32_t vni) noexcept {
             .value = vni,
         },
     };
+}
+
+constexpr LayerKey LayerKey::gtpu() noexcept {
+    return LayerKey {.kind = ProtocolLayerKind::gtpu};
 }
 
 constexpr LayerKey LayerKey::gtpu(const std::uint32_t teid) noexcept {

@@ -335,6 +335,8 @@ ApplicationWindow {
                 width: parent.width
                 httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
                 usePossibleTlsQuic: mainController.usePossibleTlsQuic
+                ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
+                ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
                 validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
                 showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
                 showProtocolPathColumn: mainController.showProtocolPathColumn
@@ -343,6 +345,12 @@ ApplicationWindow {
                 }
                 onUsePossibleTlsQuicChangedByUser: function(enabled) {
                     mainController.usePossibleTlsQuic = enabled
+                }
+                onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
+                    mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
+                }
+                onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
+                    mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
                 }
                 onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
                     mainController.validateSelectedPacketChecksums = enabled
@@ -741,6 +749,42 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.flowGroupingWarningText.length > 0
+            color: "#dbeafe"
+            border.color: "#93c5fd"
+            radius: 6
+            implicitHeight: flowGroupingWarningLabel.implicitHeight + 16
+
+            Label {
+                id: flowGroupingWarningLabel
+                anchors.fill: parent
+                anchors.margins: 8
+                text: mainController.flowGroupingWarningText
+                color: "#1e3a8a"
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.gtpuTeidGroupingInfoText.length > 0
+            color: "#dbeafe"
+            border.color: "#93c5fd"
+            radius: 6
+            implicitHeight: gtpuGroupingInfoLabel.implicitHeight + 16
+
+            Label {
+                id: gtpuGroupingInfoLabel
+                anchors.fill: parent
+                anchors.margins: 8
+                text: mainController.gtpuTeidGroupingInfoText
+                color: "#1e3a8a"
+                wrapMode: Text.WordWrap
+            }
+        }
+
         TextEdit {
             Layout.fillWidth: true
             visible: mainController.openErrorText.length > 0
@@ -1078,9 +1122,6 @@ ApplicationWindow {
                 onSortRequested: function(column) {
                     mainController.sortFlows(column)
                 }
-                onSendFlowToAnalysisRequested: function() {
-                    mainController.sendSelectedFlowToAnalysis()
-                }
                 onPacketSelected: function(packetIndex) {
                     mainController.selectedPacketIndex = packetIndex
                 }
@@ -1195,37 +1236,76 @@ ApplicationWindow {
 
             StatisticsPane {
                 hasCapture: mainController.hasCapture
+                statisticsSectionsResetToken: mainController.statisticsSectionsResetToken
                 packetCount: mainController.packetCount
                 flowCount: mainController.flowCount
                 capturedBytes: mainController.capturedBytes
+                capturedBytesText: mainController.capturedBytesText
                 originalBytes: mainController.originalBytes
+                originalBytesText: mainController.originalBytesText
                 tcpFlowCount: mainController.tcpFlowCount
                 tcpPacketCount: mainController.tcpPacketCount
                 tcpCapturedBytes: mainController.tcpCapturedBytes
+                tcpCapturedBytesText: mainController.tcpCapturedBytesText
                 tcpOriginalBytes: mainController.tcpOriginalBytes
+                tcpOriginalBytesText: mainController.tcpOriginalBytesText
                 udpFlowCount: mainController.udpFlowCount
                 udpPacketCount: mainController.udpPacketCount
                 udpCapturedBytes: mainController.udpCapturedBytes
+                udpCapturedBytesText: mainController.udpCapturedBytesText
                 udpOriginalBytes: mainController.udpOriginalBytes
+                udpOriginalBytesText: mainController.udpOriginalBytesText
                 sctpFlowCount: mainController.sctpFlowCount
                 sctpPacketCount: mainController.sctpPacketCount
                 sctpCapturedBytes: mainController.sctpCapturedBytes
+                sctpCapturedBytesText: mainController.sctpCapturedBytesText
                 sctpOriginalBytes: mainController.sctpOriginalBytes
+                sctpOriginalBytesText: mainController.sctpOriginalBytesText
                 otherFlowCount: mainController.otherFlowCount
                 otherPacketCount: mainController.otherPacketCount
                 otherCapturedBytes: mainController.otherCapturedBytes
+                otherCapturedBytesText: mainController.otherCapturedBytesText
                 otherOriginalBytes: mainController.otherOriginalBytes
+                otherOriginalBytesText: mainController.otherOriginalBytesText
                 ipv4FlowCount: mainController.ipv4FlowCount
                 ipv4PacketCount: mainController.ipv4PacketCount
                 ipv4CapturedBytes: mainController.ipv4CapturedBytes
+                ipv4CapturedBytesText: mainController.ipv4CapturedBytesText
                 ipv4OriginalBytes: mainController.ipv4OriginalBytes
+                ipv4OriginalBytesText: mainController.ipv4OriginalBytesText
                 ipv6FlowCount: mainController.ipv6FlowCount
                 ipv6PacketCount: mainController.ipv6PacketCount
                 ipv6CapturedBytes: mainController.ipv6CapturedBytes
+                ipv6CapturedBytesText: mainController.ipv6CapturedBytesText
                 ipv6OriginalBytes: mainController.ipv6OriginalBytes
+                ipv6OriginalBytesText: mainController.ipv6OriginalBytesText
                 unrecognizedStatsPacketCount: mainController.unrecognizedStatsPacketCount
                 unrecognizedStatsCapturedBytes: mainController.unrecognizedStatsCapturedBytes
                 unrecognizedStatsOriginalBytes: mainController.unrecognizedStatsOriginalBytes
+                packetSizeDistributionState: mainController.packetSizeDistributionState
+                packetSizeDistributionStatusText: mainController.packetSizeDistributionStatusText
+                packetSizeDistributionSummaryText: mainController.packetSizeDistributionSummaryText
+                packetSizeDistributionTotalPacketCount: mainController.packetSizeDistributionTotalPacketCount
+                packetSizeDistributionMaximumBucketPacketCount: mainController.packetSizeDistributionMaximumBucketPacketCount
+                packetSizeDistributionMaximumCapturedPacketLength: mainController.packetSizeDistributionMaximumCapturedPacketLength
+                packetSizeDistributionMaximumCapturedPacketLengthText: mainController.packetSizeDistributionMaximumCapturedPacketLengthText
+                packetSizeDistributionRows: mainController.packetSizeDistributionRows
+                flowPacketHistogramState: mainController.flowPacketHistogramState
+                flowPacketHistogramStatusText: mainController.flowPacketHistogramStatusText
+                flowPacketHistogramSummaryText: mainController.flowPacketHistogramSummaryText
+                flowPacketHistogramTotalFlowCount: mainController.flowPacketHistogramTotalFlowCount
+                flowPacketHistogramMaximumBucketFlowCount: mainController.flowPacketHistogramMaximumBucketFlowCount
+                flowPacketHistogramExcludedZeroPacketFlowCount: mainController.flowPacketHistogramExcludedZeroPacketFlowCount
+                flowPacketHistogramRows: mainController.flowPacketHistogramRows
+                protocolHintsSectionState: mainController.protocolHintsSectionState
+                protocolHintsSectionStatusText: mainController.protocolHintsSectionStatusText
+                protocolHintDistribution: mainController.protocolHintDistribution
+                protocolPathSectionState: mainController.protocolPathSectionState
+                protocolPathSectionStatusText: mainController.protocolPathSectionStatusText
+                protocolPathStatsModel: mainController.protocolPathStatsModel
+                statisticsMode: mainController.statisticsMode
+                quicTlsSectionState: mainController.quicTlsSectionState
+                quicTlsSectionStatusText: mainController.quicTlsSectionStatusText
                 quicTotalFlows: mainController.quicTotalFlows
                 quicWithSni: mainController.quicWithSni
                 quicWithoutSni: mainController.quicWithoutSni
@@ -1237,11 +1317,10 @@ ApplicationWindow {
                 tlsWithSni: mainController.tlsWithSni
                 tlsWithoutSni: mainController.tlsWithoutSni
                 tlsVersion12: mainController.tlsVersion12
-                    tlsVersion13: mainController.tlsVersion13
-                    tlsVersionUnknown: mainController.tlsVersionUnknown
-                    protocolHintDistribution: mainController.protocolHintDistribution
-                    protocolPathStatsModel: mainController.protocolPathStatsModel
-                    statisticsMode: mainController.statisticsMode
+                tlsVersion13: mainController.tlsVersion13
+                tlsVersionUnknown: mainController.tlsVersionUnknown
+                topEndpointPortSectionState: mainController.topEndpointPortSectionState
+                topEndpointPortSectionStatusText: mainController.topEndpointPortSectionStatusText
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {
@@ -1255,6 +1334,9 @@ ApplicationWindow {
                 }
                 onShowFlowsRequested: function() {
                     mainController.showSelectedProtocolPathFlows()
+                }
+                onStatisticsSectionExpandedChanged: function(section, expanded) {
+                    mainController.setStatisticsSectionExpanded(section, expanded)
                 }
             }
         }

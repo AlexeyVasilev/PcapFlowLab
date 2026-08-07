@@ -103,13 +103,15 @@ std::string family_to_json(const FlowAddressFamily family) {
     return json_string(family == FlowAddressFamily::ipv6 ? "ipv6" : "ipv4");
 }
 
-std::string protocol_stats_json(const pfl::ProtocolStats& stats) {
+std::string protocol_stats_json(const pfl::FrontendProtocolStatsDto& stats) {
     std::ostringstream out {};
     out << '{'
         << "\"flow_count\":" << stats.flow_count << ','
         << "\"packet_count\":" << stats.packet_count << ','
         << "\"captured_bytes\":" << stats.captured_bytes << ','
-        << "\"original_bytes\":" << stats.original_bytes
+        << "\"captured_bytes_text\":" << json_string(stats.captured_bytes_text) << ','
+        << "\"original_bytes\":" << stats.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(stats.original_bytes_text)
         << '}';
     return out.str();
 }
@@ -232,6 +234,8 @@ std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& s
         << "\"opened_from_index\":" << bool_json(source.opened_from_index) << ','
         << "\"partial_open\":" << bool_json(source.partial_open) << ','
         << "\"byte_backed_inspection_available\":" << bool_json(source.byte_backed_inspection_available) << ','
+        << "\"flow_grouping_ignores_vlan_and_mpls_layers\":" << bool_json(source.flow_grouping_ignores_vlan_and_mpls_layers) << ','
+        << "\"flow_grouping_ignores_gtpu_teids\":" << bool_json(source.flow_grouping_ignores_gtpu_teids) << ','
         << "\"active_source_capture_path\":" << json_string(source.active_source_capture_path) << ','
         << "\"expected_source_capture_path\":" << json_string(source.expected_source_capture_path)
         << '}';
@@ -510,6 +514,8 @@ std::string settings_json(const pfl::FrontendSettingsDto& settings) {
     out << '{'
         << "\"http_use_path_as_service_hint\":" << bool_json(settings.http_use_path_as_service_hint) << ','
         << "\"use_possible_tls_quic\":" << bool_json(settings.use_possible_tls_quic) << ','
+        << "\"ignore_vlan_and_mpls_layers_when_grouping_flows\":" << bool_json(settings.ignore_vlan_and_mpls_layers_when_grouping_flows) << ','
+        << "\"ignore_gtpu_teids_when_grouping_inner_flows\":" << bool_json(settings.ignore_gtpu_teids_when_grouping_inner_flows) << ','
         << "\"show_wireshark_filter_for_selected_flow\":" << bool_json(settings.show_wireshark_filter_for_selected_flow) << ','
         << "\"validate_selected_packet_checksums\":" << bool_json(settings.validate_selected_packet_checksums)
         << '}';
@@ -556,6 +562,211 @@ std::string smart_export_result_json(const pfl::FrontendSmartExportResult& resul
     return out.str();
 }
 
+std::string protocol_hint_stats_row_json(const pfl::FrontendProtocolHintStatsDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"group\":" << json_string(row.group) << ','
+        << "\"protocol_label\":" << json_string(row.protocol_label) << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"captured_bytes\":" << row.captured_bytes << ','
+        << "\"captured_bytes_text\":" << json_string(row.captured_bytes_text) << ','
+        << "\"original_bytes\":" << row.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(row.original_bytes_text)
+        << '}';
+    return out.str();
+}
+
+std::string top_endpoint_json(const pfl::FrontendTopEndpointDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"endpoint_label\":" << json_string(row.endpoint_label) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"total_bytes\":" << row.total_bytes
+        << '}';
+    return out.str();
+}
+
+std::string top_port_json(const pfl::FrontendTopPortDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"port\":" << row.port << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"total_bytes\":" << row.total_bytes
+        << '}';
+    return out.str();
+}
+
+std::string quic_recognition_json(const pfl::QuicRecognitionStats& summary) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"total_flows\":" << summary.total_flows << ','
+        << "\"with_sni\":" << summary.with_sni << ','
+        << "\"without_sni\":" << summary.without_sni << ','
+        << "\"version_v1\":" << summary.version_v1 << ','
+        << "\"version_draft29\":" << summary.version_draft29 << ','
+        << "\"version_v2\":" << summary.version_v2 << ','
+        << "\"version_unknown\":" << summary.version_unknown
+        << '}';
+    return out.str();
+}
+
+std::string tls_recognition_json(const pfl::TlsRecognitionStats& summary) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"total_flows\":" << summary.total_flows << ','
+        << "\"with_sni\":" << summary.with_sni << ','
+        << "\"without_sni\":" << summary.without_sni << ','
+        << "\"version_tls12\":" << summary.version_tls12 << ','
+        << "\"version_tls13\":" << summary.version_tls13 << ','
+        << "\"version_unknown\":" << summary.version_unknown
+        << '}';
+    return out.str();
+}
+
+std::string capture_packet_size_statistics_bucket_json(const pfl::FrontendCapturePacketSizeStatisticsBucketDto& bucket) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"bucket_id\":" << json_string(bucket.bucket_id) << ','
+        << "\"label\":" << json_string(bucket.label) << ','
+        << "\"lower_bound_inclusive\":" << bucket.lower_bound_inclusive << ','
+        << "\"upper_bound_inclusive\":";
+    if (bucket.upper_bound_inclusive.has_value()) {
+        out << *bucket.upper_bound_inclusive;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_count\":" << bucket.packet_count << ','
+        << "\"normalized_fraction\":" << bucket.normalized_fraction
+        << '}';
+    return out.str();
+}
+
+std::string capture_packet_size_statistics_json(const pfl::FrontendCapturePacketSizeStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"total_packet_count\":" << statistics.total_packet_count << ','
+        << "\"maximum_bucket_packet_count\":" << statistics.maximum_bucket_packet_count << ','
+        << "\"maximum_captured_packet_length\":" << statistics.maximum_captured_packet_length << ','
+        << "\"maximum_captured_packet_length_text\":"
+        << json_string(statistics.maximum_captured_packet_length_text) << ','
+        << "\"buckets\":[";
+
+    for (std::size_t index = 0; index < statistics.buckets.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << capture_packet_size_statistics_bucket_json(statistics.buckets[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacketCountHistogramBucketDto& bucket) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"bucket_id\":" << json_string(bucket.bucket_id) << ','
+        << "\"label\":" << json_string(bucket.label) << ','
+        << "\"lower_bound_inclusive\":" << bucket.lower_bound_inclusive << ','
+        << "\"upper_bound_inclusive\":";
+    if (bucket.upper_bound_inclusive.has_value()) {
+        out << *bucket.upper_bound_inclusive;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"flow_count\":" << bucket.flow_count << ','
+        << "\"original_byte_count\":" << bucket.original_byte_count << ','
+        << "\"original_byte_count_text\":" << json_string(bucket.original_byte_count_text) << ','
+        << "\"normalized_flow_fraction\":" << bucket.normalized_flow_fraction << ','
+        << "\"normalized_original_byte_fraction\":" << bucket.normalized_original_byte_fraction
+        << '}';
+    return out.str();
+}
+
+std::string flow_packet_count_histogram_json(const pfl::FrontendFlowPacketCountHistogramDto& histogram) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(histogram.has_capture) << ','
+        << "\"total_flow_count\":" << histogram.total_flow_count << ','
+        << "\"total_original_byte_count\":" << histogram.total_original_byte_count << ','
+        << "\"maximum_bucket_flow_count\":" << histogram.maximum_bucket_flow_count << ','
+        << "\"maximum_bucket_original_byte_count\":" << histogram.maximum_bucket_original_byte_count << ','
+        << "\"excluded_zero_packet_flow_count\":" << histogram.excluded_zero_packet_flow_count << ','
+        << "\"excluded_zero_packet_original_byte_count\":" << histogram.excluded_zero_packet_original_byte_count << ','
+        << "\"buckets\":[";
+
+    for (std::size_t index = 0; index < histogram.buckets.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << flow_packet_count_histogram_bucket_json(histogram.buckets[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string protocol_hint_statistics_json(const pfl::FrontendProtocolHintStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"protocol_hints\":[";
+
+    for (std::size_t index = 0; index < statistics.protocol_hints.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_hint_stats_row_json(statistics.protocol_hints[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string quic_tls_statistics_json(const pfl::FrontendQuicTlsStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"quic_recognition\":" << quic_recognition_json(statistics.quic_recognition) << ','
+        << "\"tls_recognition\":" << tls_recognition_json(statistics.tls_recognition)
+        << '}';
+    return out.str();
+}
+
+std::string top_endpoint_port_statistics_json(const pfl::FrontendTopEndpointPortStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
+        << "\"limit\":" << statistics.limit << ','
+        << "\"top_endpoints\":[";
+
+    for (std::size_t index = 0; index < statistics.top_endpoints.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << top_endpoint_json(statistics.top_endpoints[index]);
+    }
+
+    out << "],"
+        << "\"top_ports\":[";
+
+    for (std::size_t index = 0; index < statistics.top_ports.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << top_port_json(statistics.top_ports[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
 std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     std::ostringstream out {};
     out << '{'
@@ -575,8 +786,10 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"summary\":{"
         << "\"packet_count\":" << overview.summary.packet_count << ','
         << "\"flow_count\":" << overview.summary.flow_count << ','
-        << "\"captured_bytes\":" << overview.captured_bytes << ','
-        << "\"original_bytes\":" << overview.original_bytes << ','
+        << "\"captured_bytes\":" << overview.summary.captured_bytes << ','
+        << "\"captured_bytes_text\":" << json_string(overview.summary.captured_bytes_text) << ','
+        << "\"original_bytes\":" << overview.summary.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(overview.summary.original_bytes_text) << ','
         << "\"total_bytes\":" << overview.summary.total_bytes
         << "},"
         << "\"protocol_summary\":{"
@@ -587,74 +800,6 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"ipv4\":" << protocol_stats_json(overview.protocol_summary.ipv4) << ','
         << "\"ipv6\":" << protocol_stats_json(overview.protocol_summary.ipv6)
         << "},"
-        << "\"quic_recognition\":{"
-        << "\"total_flows\":" << overview.quic_recognition.total_flows << ','
-        << "\"with_sni\":" << overview.quic_recognition.with_sni << ','
-        << "\"without_sni\":" << overview.quic_recognition.without_sni << ','
-        << "\"version_v1\":" << overview.quic_recognition.version_v1 << ','
-        << "\"version_draft29\":" << overview.quic_recognition.version_draft29 << ','
-        << "\"version_v2\":" << overview.quic_recognition.version_v2 << ','
-        << "\"version_unknown\":" << overview.quic_recognition.version_unknown
-        << "},"
-        << "\"tls_recognition\":{"
-        << "\"total_flows\":" << overview.tls_recognition.total_flows << ','
-        << "\"with_sni\":" << overview.tls_recognition.with_sni << ','
-        << "\"without_sni\":" << overview.tls_recognition.without_sni << ','
-        << "\"version_tls12\":" << overview.tls_recognition.version_tls12 << ','
-        << "\"version_tls13\":" << overview.tls_recognition.version_tls13 << ','
-        << "\"version_unknown\":" << overview.tls_recognition.version_unknown
-        << "},"
-        << "\"protocol_hints\":[";
-
-    for (std::size_t index = 0; index < overview.protocol_hints.size(); ++index) {
-        if (index != 0U) {
-            out << ',';
-        }
-
-        const auto& row = overview.protocol_hints[index];
-        out << '{'
-            << "\"group\":" << json_string(row.group) << ','
-            << "\"protocol_label\":" << json_string(row.protocol_label) << ','
-            << "\"flow_count\":" << row.flow_count << ','
-            << "\"packet_count\":" << row.packet_count << ','
-            << "\"captured_bytes\":" << row.captured_bytes << ','
-            << "\"original_bytes\":" << row.original_bytes
-            << '}';
-    }
-
-    out << "],"
-        << "\"top_endpoints\":[";
-
-    for (std::size_t index = 0; index < overview.top_endpoints.size(); ++index) {
-        if (index != 0U) {
-            out << ',';
-        }
-
-        const auto& row = overview.top_endpoints[index];
-        out << '{'
-            << "\"endpoint_label\":" << json_string(row.endpoint_label) << ','
-            << "\"packet_count\":" << row.packet_count << ','
-            << "\"total_bytes\":" << row.total_bytes
-            << '}';
-    }
-
-    out << "],"
-        << "\"top_ports\":[";
-
-    for (std::size_t index = 0; index < overview.top_ports.size(); ++index) {
-        if (index != 0U) {
-            out << ',';
-        }
-
-        const auto& row = overview.top_ports[index];
-        out << '{'
-            << "\"port\":" << row.port << ','
-            << "\"packet_count\":" << row.packet_count << ','
-            << "\"total_bytes\":" << row.total_bytes
-            << '}';
-    }
-
-    out << "],"
         << "\"protocol_path_statistics_default_mode\":" << static_cast<int>(overview.protocol_path_statistics_default_mode) << ','
         << "\"protocol_path_presentations\":[";
 
@@ -1148,6 +1293,26 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     return pfl::FrontendOverviewDto {};
 }
 
+[[nodiscard]] pfl::FrontendFlowPacketCountHistogramDto unavailable_flow_packet_count_histogram() {
+    return pfl::FrontendFlowPacketCountHistogramDto {};
+}
+
+[[nodiscard]] pfl::FrontendCapturePacketSizeStatisticsDto unavailable_capture_packet_size_statistics() {
+    return pfl::FrontendCapturePacketSizeStatisticsDto {};
+}
+
+[[nodiscard]] pfl::FrontendProtocolHintStatisticsDto unavailable_protocol_hint_statistics() {
+    return pfl::FrontendProtocolHintStatisticsDto {};
+}
+
+[[nodiscard]] pfl::FrontendQuicTlsStatisticsDto unavailable_quic_tls_statistics() {
+    return pfl::FrontendQuicTlsStatisticsDto {};
+}
+
+[[nodiscard]] pfl::FrontendTopEndpointPortStatisticsDto unavailable_top_endpoint_port_statistics() {
+    return pfl::FrontendTopEndpointPortStatisticsDto {};
+}
+
 [[nodiscard]] pfl::FrontendSelectedFlowPacketsResult unavailable_selected_flow_packets() {
     return pfl::FrontendSelectedFlowPacketsResult {};
 }
@@ -1216,7 +1381,7 @@ char* pfl_frontend_session_adapter_open_capture_json(
     const char* path_utf8
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+        return make_c_string("{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"flow_grouping_ignores_gtpu_teids\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
     const auto path = path_from_utf8(path_utf8);
@@ -1237,7 +1402,7 @@ char* pfl_frontend_session_adapter_start_open_capture_json(
 
 char* pfl_frontend_session_adapter_poll_open_capture_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"ready\":false,\"progress\":{\"in_progress\":false,\"cancel_requested\":false,\"opening_as_index\":false,\"packets_processed\":0,\"bytes_processed\":0,\"total_bytes\":0,\"percent\":0.0,\"input_path\":\"\"},\"result\":{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}}");
+        return make_c_string("{\"ready\":false,\"progress\":{\"in_progress\":false,\"cancel_requested\":false,\"opening_as_index\":false,\"packets_processed\":0,\"bytes_processed\":0,\"total_bytes\":0,\"percent\":0.0,\"input_path\":\"\"},\"result\":{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"flow_grouping_ignores_gtpu_teids\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}}");
     }
 
     return make_c_string(open_poll_result_json(handle->adapter.poll_open_capture()));
@@ -1256,7 +1421,7 @@ char* pfl_frontend_session_adapter_attach_source_capture_json(
     const char* path_utf8
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"attached\":false,\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+        return make_c_string("{\"attached\":false,\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"flow_grouping_ignores_vlan_and_mpls_layers\":false,\"flow_grouping_ignores_gtpu_teids\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
     const auto path = path_from_utf8(path_utf8);
@@ -1277,10 +1442,53 @@ char* pfl_frontend_session_adapter_save_index_json(
 
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"ignore_vlan_and_mpls_layers_when_grouping_flows\":false,\"ignore_gtpu_teids_when_grouping_inner_flows\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.get_settings()));
+}
+
+char* pfl_frontend_session_adapter_get_flow_packet_count_histogram_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(flow_packet_count_histogram_json(unavailable_flow_packet_count_histogram()));
+    }
+
+    return make_c_string(flow_packet_count_histogram_json(handle->adapter.get_flow_packet_count_histogram()));
+}
+
+char* pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(capture_packet_size_statistics_json(unavailable_capture_packet_size_statistics()));
+    }
+
+    return make_c_string(capture_packet_size_statistics_json(handle->adapter.get_capture_packet_size_statistics()));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_hint_statistics_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(protocol_hint_statistics_json(unavailable_protocol_hint_statistics()));
+    }
+
+    return make_c_string(protocol_hint_statistics_json(handle->adapter.get_protocol_hint_statistics()));
+}
+
+char* pfl_frontend_session_adapter_get_quic_tls_statistics_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string(quic_tls_statistics_json(unavailable_quic_tls_statistics()));
+    }
+
+    return make_c_string(quic_tls_statistics_json(handle->adapter.get_quic_tls_statistics()));
+}
+
+char* pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::size_t limit
+) {
+    if (handle == nullptr) {
+        return make_c_string(top_endpoint_port_statistics_json(unavailable_top_endpoint_port_statistics()));
+    }
+
+    return make_c_string(top_endpoint_port_statistics_json(handle->adapter.get_top_endpoint_port_statistics(limit)));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle) {
@@ -1332,18 +1540,22 @@ char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint8_t http_use_path_as_service_hint,
     const std::uint8_t use_possible_tls_quic,
+    const std::uint8_t ignore_vlan_and_mpls_layers_when_grouping_flows,
+    const std::uint8_t ignore_gtpu_teids_when_grouping_inner_flows,
     const std::uint8_t show_wireshark_filter_for_selected_flow,
     const std::uint8_t validate_selected_packet_checksums
 ) {
     if (handle == nullptr) {
         // Keep the existing default-settings fallback here because the C ABI currently
         // returns only the settings payload, not a richer success/error result object.
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"ignore_vlan_and_mpls_layers_when_grouping_flows\":false,\"ignore_gtpu_teids_when_grouping_inner_flows\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.update_settings(pfl::FrontendSettingsDto {
         .http_use_path_as_service_hint = http_use_path_as_service_hint != 0U,
         .use_possible_tls_quic = use_possible_tls_quic != 0U,
+        .ignore_vlan_and_mpls_layers_when_grouping_flows = ignore_vlan_and_mpls_layers_when_grouping_flows != 0U,
+        .ignore_gtpu_teids_when_grouping_inner_flows = ignore_gtpu_teids_when_grouping_inner_flows != 0U,
         .show_wireshark_filter_for_selected_flow = show_wireshark_filter_for_selected_flow != 0U,
         .validate_selected_packet_checksums = validate_selected_packet_checksums != 0U,
     })));

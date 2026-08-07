@@ -39,7 +39,7 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
     return *packet;
 }
 
-constexpr std::array<std::string_view, 31> kExpectedGtpuFixtureFiles {{
+constexpr std::array<std::string_view, 35> kExpectedGtpuFixtureFiles {{
     "01_gtpu_inner_ipv4_tcp.pcap",
     "02_gtpu_inner_ipv4_udp.pcap",
     "03_gtpu_inner_ipv6_tcp.pcap",
@@ -71,6 +71,10 @@ constexpr std::array<std::string_view, 31> kExpectedGtpuFixtureFiles {{
     "29_gtpu_nested_overlay_udp_terminal.pcap",
     "30_gtpu_outer_ipv4_fragmentation.pcap",
     "31_gtpu_outer_ipv6_fragmentation.pcap",
+    "32_gtpu_inner_ipv4_udp_data.pcap",
+    "33_gtpu_inner_ipv4_tcp_data.pcap",
+    "34_gtpu_inner_ipv4_tcp_ack_only.pcap",
+    "35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap",
 }};
 
 std::set<std::string> expected_fixture_file_names() {

@@ -8,35 +8,14 @@ Frame {
     property var packetCount: 0
     property var flowCount: 0
     property var capturedBytes: 0
+    property string capturedBytesText: ""
     property var originalBytes: 0
+    property string originalBytesText: ""
     property bool hasCapture: false
 
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
         return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ")
-    }
-
-    function trimTrailingZeros(text) {
-        return text.replace(/\.0$/, "").replace(/(\.\d*[1-9])0+$/, "$1")
-    }
-
-    function formatBytes(value) {
-        const units = ["B", "KB", "MB", "GB", "TB"]
-        var scaled = Math.max(0, Number(value || 0))
-        var unitIndex = 0
-        while (scaled >= 1024 && unitIndex + 1 < units.length) {
-            scaled /= 1024
-            unitIndex += 1
-        }
-
-        var numberText = ""
-        if (unitIndex === 0) {
-            numberText = groupInteger(Math.round(scaled))
-        } else {
-            numberText = trimTrailingZeros(scaled.toFixed(1)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
-        }
-
-        return numberText + " " + units[unitIndex]
     }
 
     component StatChip: Frame {
@@ -98,12 +77,12 @@ Frame {
 
         StatChip {
             title: "Original bytes"
-            valueText: root.hasCapture ? root.formatBytes(root.originalBytes) : "-"
+            valueText: root.hasCapture ? root.originalBytesText : "-"
         }
 
         StatChip {
             title: "Captured bytes"
-            valueText: root.hasCapture ? root.formatBytes(root.capturedBytes) : "-"
+            valueText: root.hasCapture ? root.capturedBytesText : "-"
         }
     }
 }

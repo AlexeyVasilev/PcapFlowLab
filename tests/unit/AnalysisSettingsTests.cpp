@@ -8,6 +8,10 @@ namespace pfl::tests {
 
 namespace {
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path("tests/data") / relative_path;
+}
+
 std::vector<std::uint8_t> make_http_request_without_host_payload() {
     constexpr char request[] =
         "GET /fallback/path HTTP/1.1\r\n"
@@ -127,6 +131,21 @@ std::filesystem::path write_single_quic_capture(const std::string& name) {
     );
 }
 
+std::filesystem::path write_single_vlan_capture(const std::string& name, const std::uint16_t vlan_tci) {
+    return write_temp_pcap(
+        name,
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(192, 168, 55, 10),
+                    ipv4(93, 184, 216, 39),
+                    51520,
+                    443),
+                {{0x8100U, vlan_tci}})},
+        })
+    );
+}
+
 }  // namespace
 
 void run_analysis_settings_tests() {
@@ -224,6 +243,81 @@ void run_analysis_settings_tests() {
         const auto rows = session.list_flows();
         PFL_EXPECT(rows.size() == 1);
         PFL_EXPECT(rows[0].protocol_hint == "quic");
+    }
+
+    {
+        PFL_EXPECT(!AnalysisSettings {}.ignore_vlan_and_mpls_layers_when_grouping_flows);
+        PFL_EXPECT(!AnalysisSettings {}.ignore_gtpu_teids_when_grouping_inner_flows);
+
+        CaptureSession default_session {};
+        const auto capture_path = write_single_vlan_capture("pfl_vlan_grouping_setting_default.pcap", 123U);
+        PFL_EXPECT(default_session.open_capture(capture_path));
+        PFL_EXPECT(!default_session.flow_grouping_ignores_vlan_and_mpls_layers());
+        PFL_EXPECT(!default_session.flow_grouping_ignores_gtpu_teids());
+
+        CaptureSession enabled_session {};
+        PFL_EXPECT(enabled_session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_vlan_and_mpls_layers_when_grouping_flows = true},
+        }));
+        PFL_EXPECT(enabled_session.flow_grouping_ignores_vlan_and_mpls_layers());
+        PFL_EXPECT(!enabled_session.flow_grouping_ignores_gtpu_teids());
+
+        const auto connections = enabled_session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_vlan);
+        PFL_REQUIRE(details->vlan_tags.size() == 1U);
+        PFL_EXPECT(details->vlan_tags[0].tci == 123U);
+    }
+
+    {
+        const auto capture_path = write_single_vlan_capture("pfl_vlan_grouping_setting_index_roundtrip.pcap", 124U);
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_vlan_grouping_setting_roundtrip.idx";
+
+        CaptureSession imported_session {};
+        PFL_EXPECT(imported_session.open_capture(capture_path, CaptureImportOptions {
+            .settings = AnalysisSettings {.ignore_vlan_and_mpls_layers_when_grouping_flows = true},
+        }));
+        PFL_EXPECT(imported_session.flow_grouping_ignores_vlan_and_mpls_layers());
+        PFL_EXPECT(imported_session.save_index(index_path));
+
+        CaptureSession loaded_session {};
+        PFL_EXPECT(loaded_session.load_index(index_path));
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_vlan_and_mpls_layers());
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
+    }
+
+    {
+        PFL_EXPECT(!AnalysisSettings {}.ignore_gtpu_teids_when_grouping_inner_flows);
+
+        CaptureSession default_session {};
+        PFL_EXPECT(default_session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
+        PFL_EXPECT(!default_session.flow_grouping_ignores_gtpu_teids());
+
+        CaptureSession enabled_session {};
+        PFL_EXPECT(enabled_session.open_capture(
+            fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap"),
+            CaptureImportOptions {
+                .settings = AnalysisSettings {.ignore_gtpu_teids_when_grouping_inner_flows = true},
+            }));
+        PFL_EXPECT(enabled_session.flow_grouping_ignores_gtpu_teids());
+        PFL_EXPECT(!enabled_session.flow_grouping_ignores_vlan_and_mpls_layers());
+
+        const auto first_packet = enabled_session.find_packet(0U);
+        PFL_REQUIRE(first_packet.has_value());
+        const auto details = enabled_session.read_packet_details(*first_packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_gtpu);
+        PFL_EXPECT(details->gtpu.present);
+        PFL_EXPECT(details->gtpu.teid == 0x01020304U);
+
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_gtpu_teid_grouping_setting_roundtrip.idx";
+        PFL_EXPECT(enabled_session.save_index(index_path));
+
+        CaptureSession loaded_session {};
+        PFL_EXPECT(loaded_session.load_index(index_path));
+        PFL_EXPECT(!loaded_session.flow_grouping_ignores_gtpu_teids());
     }
 }
 

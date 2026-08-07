@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "PcapTestUtils.h"
 
@@ -147,6 +148,62 @@ void run_query_tests() {
     const bool forward_is_a_to_b = direction_rows[0].address_a == "10.1.0.1" && direction_rows[0].port_a == 40000;
     PFL_EXPECT(packet_rows[0].direction_text == (forward_is_a_to_b ? "A\xE2\x86\x92" "B" : "B\xE2\x86\x92" "A"));
     PFL_EXPECT(packet_rows[1].direction_text == (forward_is_a_to_b ? "B\xE2\x86\x92" "A" : "A\xE2\x86\x92" "B"));
+
+    const auto reverse_first_packet = make_ethernet_ipv4_tcp_packet(
+        ipv4(203, 0, 113, 20), ipv4(203, 0, 113, 10), 443, 50000);
+    const auto reverse_second_packet = make_ethernet_ipv4_tcp_packet(
+        ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 20), 50000, 443);
+    const auto reverse_first_path = write_temp_pcap(
+        "pfl_query_first_observed_orientation.pcap",
+        make_classic_pcap({{200, reverse_first_packet}, {100, reverse_second_packet}})
+    );
+
+    CaptureSession reverse_first_session {};
+    PFL_EXPECT(reverse_first_session.open_capture(reverse_first_path));
+    const auto reverse_first_rows = reverse_first_session.list_flows();
+    PFL_REQUIRE(reverse_first_rows.size() == 1U);
+    PFL_EXPECT(reverse_first_rows[0].address_a == "203.0.113.20");
+    PFL_EXPECT(reverse_first_rows[0].port_a == 443U);
+    PFL_EXPECT(reverse_first_rows[0].endpoint_a == "203.0.113.20:443");
+    PFL_EXPECT(reverse_first_rows[0].address_b == "203.0.113.10");
+    PFL_EXPECT(reverse_first_rows[0].port_b == 50000U);
+    PFL_EXPECT(reverse_first_rows[0].endpoint_b == "203.0.113.10:50000");
+    const auto& reverse_first_key = std::get<ConnectionKeyV4>(reverse_first_rows[0].key);
+    PFL_EXPECT(reverse_first_key.first.addr == ipv4(203, 0, 113, 10));
+    PFL_EXPECT(reverse_first_key.first.port == 50000U);
+    PFL_EXPECT(reverse_first_key.second.addr == ipv4(203, 0, 113, 20));
+    PFL_EXPECT(reverse_first_key.second.port == 443U);
+
+    const auto reverse_first_packet_rows = reverse_first_session.list_flow_packets(0);
+    PFL_REQUIRE(reverse_first_packet_rows.size() == 2U);
+    PFL_EXPECT(reverse_first_packet_rows[0].packet_index == 0U);
+    PFL_EXPECT(reverse_first_packet_rows[0].direction_text == "A\xE2\x86\x92" "B");
+    PFL_EXPECT(reverse_first_packet_rows[1].packet_index == 1U);
+    PFL_EXPECT(reverse_first_packet_rows[1].direction_text == "B\xE2\x86\x92" "A");
+
+    FrontendSessionAdapter reverse_first_adapter {};
+    PFL_REQUIRE(reverse_first_adapter.open_capture(reverse_first_path).opened);
+    const auto reverse_first_frontend_flows = reverse_first_adapter.get_flows();
+    PFL_REQUIRE(reverse_first_frontend_flows.size() == 1U);
+    PFL_EXPECT(reverse_first_frontend_flows[0].endpoint_a == reverse_first_rows[0].endpoint_a);
+    PFL_EXPECT(reverse_first_frontend_flows[0].endpoint_b == reverse_first_rows[0].endpoint_b);
+
+    const auto same_address_packet = make_ethernet_ipv4_tcp_packet(
+        ipv4(127, 0, 0, 1), ipv4(127, 0, 0, 1), 50000, 443);
+    const auto same_address_path = write_temp_pcap(
+        "pfl_query_same_address_orientation.pcap",
+        make_classic_pcap({{100, same_address_packet}})
+    );
+
+    CaptureSession same_address_session {};
+    PFL_EXPECT(same_address_session.open_capture(same_address_path));
+    const auto same_address_rows = same_address_session.list_flows();
+    PFL_REQUIRE(same_address_rows.size() == 1U);
+    PFL_EXPECT(same_address_rows[0].endpoint_a == "127.0.0.1:50000");
+    PFL_EXPECT(same_address_rows[0].endpoint_b == "127.0.0.1:443");
+    const auto& same_address_key = std::get<ConnectionKeyV4>(same_address_rows[0].key);
+    PFL_EXPECT(same_address_key.first.port == 443U);
+    PFL_EXPECT(same_address_key.second.port == 50000U);
 
     const auto retransmit_duplicate_path = write_temp_pcap(
         "pfl_query_retransmit_duplicate.pcap",

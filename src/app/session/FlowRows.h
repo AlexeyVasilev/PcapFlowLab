@@ -243,6 +243,11 @@ struct TlsRecognitionStats {
     std::uint64_t version_unknown {0};
 };
 
+struct CaptureQuicTlsSummary {
+    QuicRecognitionStats quic {};
+    TlsRecognitionStats tls {};
+};
+
 enum class ProtocolPathStatisticsMode : std::uint8_t {
     kind_overview = 0,
     identity_tree = 1,
@@ -254,6 +259,24 @@ inline constexpr std::uint64_t kInvalidProtocolPathStatisticsNodeId = 0U;
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
+};
+
+struct FlowPacketCountHistogramBucket {
+    std::string stable_id {};
+    std::uint64_t lower_bound_inclusive {0};
+    std::optional<std::uint64_t> upper_bound_inclusive {};
+    std::uint64_t flow_count {0};
+    std::uint64_t original_byte_count {0};
+};
+
+struct FlowPacketCountHistogram {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_original_byte_count {0};
+    std::uint64_t excluded_zero_packet_flow_count {0};
+    std::uint64_t excluded_zero_packet_original_byte_count {0};
+    std::vector<FlowPacketCountHistogramBucket> buckets {};
 };
 
 struct ProtocolPathStatisticsRow {

@@ -33,7 +33,13 @@ struct UnifiedImportPacketResult {
 
 [[nodiscard]] ProtocolPathId intern_protocol_path_id_for_flow_identity(
     CaptureState& state,
-    const ProtocolPathBuilder& decoded_protocol_path
+    const ProtocolPathBuilder& decoded_protocol_path,
+    const AnalysisSettings& settings
+);
+
+[[nodiscard]] std::optional<ProtocolPath> normalize_protocol_path_for_flow_identity(
+    ProtocolPathView path,
+    const AnalysisSettings& settings
 );
 
 [[nodiscard]] PacketRef packet_ref_from_raw_packet(const RawPcapPacket& packet);

@@ -438,6 +438,24 @@ int FlowListModel::totalFlowCount() const noexcept {
     return static_cast<int>(all_items_.size());
 }
 
+int FlowListModel::visibleFlowCount() const noexcept {
+    return static_cast<int>(visible_item_indices_.size());
+}
+
+bool FlowListModel::hasActiveFlowFilter() const noexcept {
+    return !filter_text_.isEmpty() || has_allowed_flow_index_filter_;
+}
+
+QString FlowListModel::filteredFlowCountText() const {
+    if (!hasActiveFlowFilter()) {
+        return {};
+    }
+
+    return QStringLiteral("Filtered to %1 of %2 flows.")
+        .arg(QString::number(visibleFlowCount()))
+        .arg(QString::number(totalFlowCount()));
+}
+
 std::vector<int> FlowListModel::visibleFlowIndices() const {
     std::vector<int> flowIndices {};
     flowIndices.reserve(visible_item_indices_.size());
@@ -557,6 +575,7 @@ void FlowListModel::rebuildVisibleItems() {
     });
 
     endResetModel();
+    emit viewStateChanged();
 }
 
 }  // namespace pfl

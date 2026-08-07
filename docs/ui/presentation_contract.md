@@ -51,6 +51,30 @@ This contract must remain aligned with the current backend/session architecture:
 - no session-wide stream reconstruction for all flows at open time;
 - no unbounded packet or payload preview loading.
 
+## Flow Grouping Setting Contract
+
+The shared settings surface now includes two import-time grouping options:
+
+- `Ignore VLAN and MPLS layers when grouping flows`
+- `Ignore GTP-U TEIDs when grouping inner flows`
+
+Presentation semantics:
+
+- the setting affects raw-capture flow grouping only;
+- it does not rewrite the currently open session in place;
+- changing it while a capture or index is already open requires reopening that source to apply the new grouping;
+- when the active raw-imported session was actually opened with the mode enabled, Qt and Tauri should both show a persistent informational banner that VLAN and MPLS layers are being ignored for grouping and that flows from different VLANs or MPLS paths may merge;
+- when the active raw-imported session was actually opened with the GTP-U expert mode enabled, Qt and Tauri should both show a persistent informational banner that GTP-U TEIDs are being ignored for inner-flow grouping and that flows from different GTP-U tunnels may merge;
+- when the active session was loaded from an index and the current setting is enabled, Qt and Tauri should both show the explicit limitation warning that stored index grouping is preserved and the current VLAN-and-MPLS grouping setting is not reapplied.
+- when the active session was loaded from an index and the current GTP-U expert mode is enabled, Qt and Tauri should both show the explicit limitation warning that stored index grouping is preserved and the current GTP-U TEID grouping setting is not reapplied.
+
+Packet-versus-flow presentation boundary:
+
+- Packet Details and Bytes still show the observed VLAN and MPLS headers for the selected packet;
+- flow-list Path presentation and Protocol Path Statistics follow the normalized flow identity, so VLAN and MPLS label-stack layers may be absent there when the mode was active at import time.
+- Packet Details and Bytes still show the observed per-packet GTP-U TEID for the selected packet;
+- flow-list Path presentation and Protocol Path Statistics follow the normalized flow identity, so `GTP-U(teid=...)` may appear there as plain `GTP-U` when the expert mode was active at import time.
+
 ## Terminology And Identifier Semantics
 
 The contract should use consistent identifier vocabulary across Qt, Tauri, and future CLI surfaces.
@@ -278,6 +302,8 @@ Each flow row should expose at least the following user-facing fields:
 - Flow index is displayed as a 1-based row identifier tied to the session flow index.
 - Address family is shown as `IPv4` or `IPv6`.
 - The visible flow table now uses compact `Endpoint A` / `Endpoint B` columns rather than separate address/port columns.
+- `Endpoint A` is the source endpoint of the first observed packet assigned to the flow, and `Endpoint B` is its destination endpoint.
+- Visible `A->B` / `B->A` direction text follows that same first-observed orientation and is not a lower-address or client/server inference rule.
 - Endpoint formatting rules are:
   - IPv4 with port: `address : port`;
   - IPv4 without port: `address`;
@@ -474,7 +500,9 @@ Qt currently models the right-hand inspector as a tabbed details surface. That s
 Current Packet Details direction note:
 
 - `Summary / Bytes` is now the shared packet-details tab shape for Qt and the experimental Tauri UI;
-- the removed `Raw` tab is represented by the `Frame` byte view;
+- the removed `Raw` tab is represented by packet-byte inspection, whose fallback root view is now labeled `Captured Packet`;
+- rich decoded Packet Details may be unavailable while packet metadata Summary and `Bytes` fallback presentation remain available from the same shared adapter contract;
+- Qt and Tauri should therefore treat Summary availability and `Bytes` availability as related but independent states;
 - the `Bytes` selector is now protocol-unit-oriented by default, so entries such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, and existing QUIC packet/frame views represent complete bounded protocol data units rather than payload-only slices;
 - the same stable protocol-layer identity may also retain an optional payload-only range for a later `Whole Unit | Payload Only` UI toggle, but the current Qt and Tauri UIs always request/display the complete unit range;
 - complete nested carrier units now use protocol-oriented selectors such as `802.1Q Encapsulation`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`, while any retained payload-only range stays internal optional metadata on the same descriptor;
@@ -521,7 +549,7 @@ Current direction note:
 - tunnel-carrier UDP does not independently emit generic `data` when a supported child tunnel owns those bytes, and unsupported tunnel bodies remain deferred rather than being reparsed inside the Summary layer builder;
 - an inner TCP ACK-only packet with zero terminal application payload must not emit `data`;
 - TLS ownership for selected-packet Summary must validate the bounded record header, must not treat zero-length Handshake / Alert / ChangeCipherSpec headers as TLS-owned, and should suppress `data` for zero-length ApplicationData only when the selected-packet path already has confirmed TLS context;
-- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in the Packet Details `Bytes` tab through `Frame` and protocol-level payload views, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
+- this `data` layer is selected-packet Summary only, stays packet-local, uses a bounded 32-byte preview, keeps full bytes in the Packet Details `Bytes` tab through the recognized outer packet-unit view or the fallback `Captured Packet` view plus protocol-level payload views, and does not affect ProtocolPath, flow identity, index format, import recognition, or Stream Summary behavior; generic Stream Data and unsupported L2/L3 or tunnel payload Data remain deferred;
 - selected-packet QUIC preparation may also retain one bounded decrypted Initial plaintext artifact for future byte-level inspection, but that artifact stays packet-local, is not copied into Stream rows, and is not used as the semantic source of truth for current Summary layers;
 - recognized encrypted or opaque protocol payload remains owned by that protocol and must not fall back to generic `data`;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
@@ -536,19 +564,21 @@ Bytes should show one selected bounded byte view at a time.
 
 Expected semantics:
 
-- `Frame` replaces the old `Raw` packet preview;
-- the selector order now represents decoded protocol-layer units such as `Frame`, `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPPoE Packet`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
+- `Captured Packet` is the fallback replacement for the removed `Raw` packet preview and appears only when no complete safe outer protocol unit covers the captured packet bytes;
+- when rich decoded Packet Details are unavailable but captured packet bytes are still readable, `Captured Packet` may remain fully available and must not be hidden solely because Summary is partial;
+- for ordinary recognized packets, the selector starts with the actual recognized outer protocol unit, such as `Ethernet II Frame`, `IEEE 802.3 Frame`, `PPPoE Packet`, `PPP Packet`, `IPv4 Packet`, `TCP Segment`, `UDP Datagram`, `ARP Packet`, `ICMP Message`, `ICMPv6 Message`, `IGMP Message`, and existing QUIC packet/frame views;
 - complete unit means protocol header plus bounded protocol payload;
 - stable identity belongs to the protocol layer, not to the currently displayed range mode;
-- `Frame` and the decoded link-layer unit may intentionally coexist even when both cover the same captured bytes;
+- the generic captured-packet root is suppressed whenever one recognized outer protocol-unit descriptor uses captured packet bytes, starts at offset `0`, and safely covers the full available captured packet range;
 - the current UI always materializes `whole_unit`;
 - a future UI pass may add `Whole Unit | Payload Only` without changing descriptor identities;
+- when no recognized outer unit safely covers the full available captured range, `Captured Packet` remains visible as the root fallback and exposes only captured packet bytes rather than PCAP/PCAPNG container metadata;
 - when an IPv6 payload-only range exists in the current backend contract, it starts at the authoritative upper-layer payload offset after any decoded IPv6 extension-header chain rather than immediately after the fixed 40-byte base header;
 - packet-local DNS byte views now expose `DNS Message` as a semantic child of `UDP Datagram` when the current DNS analyzer already owns the transport payload authoritatively;
 - packet-local DNS over TCP remains packet-local only: when the current parser recognizes one complete length-prefixed DNS message already present in the selected TCP payload, the `DNS Message` range excludes the 2-byte TCP DNS length prefix;
 - whole-unit packet-backed carrier descriptors include their own protocol header, including `IEEE 802.3 Frame`, `LLC PDU`, `SNAP PDU`, `PBB Packet`, `PPPoE Packet`, `PPP Packet`, `VXLAN Packet`, `GRE Packet`, `EoIP Packet`, `Geneve Packet`, `GTP-U Message`, `AH Packet`, and `ESP Packet`;
 - `IEEE 802.3 Frame` is selected from authoritative decode metadata rather than inferred in the UI layer; its whole-unit range begins at destination MAC, includes the 2-byte Length field, includes exactly the declared MAC client data extent, and excludes trailing MAC padding beyond the declared length; its payload-only range begins at LLC DSAP when present;
-- LLC/SNAP hierarchy is explicit when the decode path classifies the link layer as 802.3: `Frame -> IEEE 802.3 Frame -> LLC PDU -> SNAP PDU -> carried child`, while non-SNAP LLC remains `Frame -> IEEE 802.3 Frame -> LLC PDU`;
+- LLC/SNAP hierarchy is explicit when the decode path classifies the link layer as 802.3: `IEEE 802.3 Frame -> LLC PDU -> SNAP PDU -> carried child`, while non-SNAP LLC remains `IEEE 802.3 Frame -> LLC PDU`; when declared 802.3 coverage is incomplete because trailing captured bytes fall outside the authoritative whole-unit range, the fallback root may remain as `Captured Packet -> IEEE 802.3 Frame -> ...`;
 - PPPoE Session packet bytes now layer as `PPPoE Packet -> PPP Packet -> carried child` when the decode layer has an authoritative PPP Protocol field and bounded PPP information field; `PPP Packet` includes the PPP Protocol field in whole-unit mode and its payload-only range begins after the parsed Protocol field;
 - PPPoE Discovery packets remain `PPPoE Packet` only and do not manufacture a false `PPP Packet` child;
 - `802.1Q Encapsulation` whole-unit materialization begins at the VLAN TPID, includes TPID, TCI, the encapsulated EtherType/length field, and the complete bounded carried payload; its optional payload-only mode begins at the authoritative carried-protocol boundary;
@@ -568,7 +598,7 @@ Expected semantics:
 - the selector uses backend-provided stable ids and backend-provided descriptor order;
 - only one selected view is materialized/formatted at a time;
 - frontends preserve the exact previously selected stable id when the newly selected packet still exposes that same id;
-- when the preserved id is unavailable, frontends fall back to `Frame`, then to the first available descriptor;
+- when the preserved id is unavailable, frontends fall back to the historical captured-packet stable id when that fallback descriptor is visible, then to the first available descriptor;
 - frontends do not reconstruct hierarchy, ranges, or identities from offsets or display labels;
 - formatted hex/ascii text remains bounded and deterministic;
 - source-unavailable state remains explicit in index-only / no-source mode;
@@ -584,7 +614,7 @@ Backend note for the current migration stage:
   - one bounded reconstructed TLS-record owner when existing selected-packet TLS analysis already reconstructs a contributing TCP TLS record;
 - descriptors carry stable non-localized protocol-layer identities, explicit parent relationships, one primary complete-unit range, and an optional payload-only range only where that second range is already authoritative; they do not retain per-view byte buffers or preformatted text;
 - materialization and hex formatting happen on demand for one selected view at a time;
-- the current pass covers protocol-unit defaults for Frame, Ethernet II, IEEE 802.3, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, PPP, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet II, inner IEEE 802.3, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
+- the current pass covers protocol-unit defaults for the fallback `Captured Packet` root plus Ethernet II, IEEE 802.3, stacked VLAN encapsulations, LLC, SNAP, MPLS label-stack-and-payload units, PBB, PPPoE, PPP, ARP, IPv4, IPv6, TCP, UDP, SCTP, ICMP, ICMPv6, IGMP, VXLAN, inner Ethernet II, inner IEEE 802.3, and inner IPv4/IPv6/TCP/UDP/SCTP where production packet details already expose authoritative bounds;
 - current PPP Packet support is limited to the already-authoritative PPPoE decode path with a 2-byte PPP Protocol field; Protocol Field Compression is not guessed in the presentation layer;
 - Linux cooked SLL/SLL2 packet-byte units remain deferred in the current contract pass because the inspected packet-details model does not yet publish authoritative cooked-header whole-unit and payload ranges for byte-view materialization;
 - semantic child layers may intentionally overlap their parent transport or carrier range when the child unit is independently authoritative, including `UDP Datagram -> DNS Message`, `TCP Segment -> TLS Record`, `TLS Record -> TLS Handshake Message`, and `CRYPTO Frame Data -> TLS Handshake Message`;
@@ -766,7 +796,9 @@ Current Qt protocol statistics show:
 
 ### Protocol-hint summary
 
-Qt currently shows a detected-protocol-hints table with:
+Qt now exposes the detected-protocol-hints table as an optional collapsible
+Statistics section rather than an always-visible panel. The table itself keeps
+the same row semantics:
 
 - group:
   - Confirmed;
@@ -778,9 +810,28 @@ Qt currently shows a detected-protocol-hints table with:
 - captured bytes;
 - original bytes.
 
+This section now also has a dedicated backend/frontend-neutral request path for
+section-scoped loading. Qt and Tauri both request these rows lazily on first
+eligible section expansion rather than carrying them through the eager
+overview DTO.
+
+For the current shared contract, canonical Statistics display formatting is
+owned by shared C++ presentation helpers rather than frontend-local QML or
+JavaScript:
+
+- overview `captured bytes` / `original bytes` expose both raw numeric values
+  and compact display text;
+- Protocol Summary transport/family rows expose both raw byte counts and
+  compact display text;
+- detected-protocol-hints rows expose both raw counts/bytes and canonical
+  `count (percent)` / `size (percent)` text;
+- raw numeric fields remain available for sorting, charts, and future
+  consumers.
+
 ### QUIC and TLS summary
 
-Qt also exposes protocol-specific summary sections for:
+Qt now exposes `QUIC and TLS` as one optional collapsible Statistics section
+containing two side-by-side cards. The card contents remain protocol-specific:
 
 - QUIC:
   - total flows;
@@ -795,9 +846,16 @@ Qt also exposes protocol-specific summary sections for:
   - TLS 1.3 count;
   - unknown-version count.
 
+The shared backend now also exposes a dedicated typed `QUIC and TLS` section
+request that returns the two recognition models together while keeping them
+semantically independent. One side may be empty without invalidating the
+other. Qt and Tauri now load this section lazily instead of duplicating the
+values in the eager overview DTO.
+
 ### Top talkers
 
-Qt currently exposes top-talker panels:
+Qt now exposes `Top Endpoints and Ports` as one optional collapsible
+Statistics section containing the existing two top-talker panels:
 
 - Top Endpoints
 - Top Ports
@@ -809,6 +867,179 @@ Each panel shows:
 - byte count.
 
 These panels also support drill-down actions from statistics into flow filtering/navigation.
+
+The shared backend now also exposes a dedicated typed request for `Top
+Endpoints and Ports`. It reuses the existing bounded top-summary aggregation,
+keeps the current limit/order semantics, and may reuse a per-capture cache for
+the requested limit. Qt and Tauri now load these rows lazily instead of
+duplicating them in the eager overview DTO.
+
+### Flows by Packet Count
+
+The shared backend now defines a presentation-neutral histogram for `Flows by
+Packet Count`.
+
+Semantic contract:
+
+- the authoritative source is the finalized listed-flow packet count restored
+  by capture import and index load;
+- packet count is per flow across both directions;
+- calculation is `O(number of listed flows)` with fixed-size bucket storage;
+- one lazy per-capture calculation accumulates both:
+  - flow count per packet-count bucket
+  - original-byte totals per packet-count bucket;
+- the model carries:
+  - `total_flow_count`
+  - `total_original_byte_count`
+  - `maximum_bucket_flow_count`
+  - `maximum_bucket_original_byte_count`
+  - ordered semantic buckets;
+- each bucket carries a stable bucket id plus inclusive lower/upper bounds and
+  both:
+  - the number of flows in that range
+  - the summed original bytes for flows in that range;
+- display labels are derived later by the frontend-neutral adapter rather than
+  being the semantic source of truth.
+
+Exact ordered buckets:
+
+- `1`
+- `2`
+- `3-5`
+- `6-10`
+- `11-25`
+- `26-50`
+- `51-100`
+- `101-250`
+- `251-500`
+- `501-1000`
+- `1001-5000`
+- `5001+`
+
+Normal listed flows do not use a zero-packet bucket. If a listed zero-packet
+flow is encountered, it is excluded from the normal bucket totals and counted
+separately through explicit diagnostic counters for both flow count and
+original bytes so the main histogram remains production-safe and semantically
+honest.
+
+Presentation contract:
+
+- the bucket dimension remains packet count per flow;
+- both Qt and Tauri expose two frontend-local display modes over the same
+  cached histogram result:
+  - `Flows`
+  - `Original bytes`;
+- `Flows` uses flow-count normalization and exact flow counts;
+- `Original bytes` uses original-byte normalization and formatted original-byte
+  totals;
+- mode switching is presentation-only:
+  - no second backend request
+  - no second flow walk
+  - no cache invalidation
+  - no recalculation;
+- default mode for each new capture is `Flows`.
+
+### Packet Size Distribution
+
+The shared backend now also defines a separate capture-wide `Packet Size
+Distribution` model.
+
+Semantic contract:
+
+- the metric uses captured packet length:
+  - `RawPcapPacket::captured_length` during capture import
+  - persisted `PacketRef::captured_length` during index load;
+- it counts every packet record successfully accepted by the current import
+  pipeline, including:
+  - recognized flow packets
+  - unrecognized packets
+  - decode-malformed packets
+  - packets that never obtain a flow key;
+- it does not count:
+  - unreadable truncated tail bytes
+  - incomplete packet records
+  - PCAPNG metadata blocks
+  - block padding
+  - other non-packet records;
+- accumulation happens during capture import and is retained with capture
+  state;
+- index load reconstructs the same result from persisted `PacketRef` metadata
+  without reading packet bytes or reopening the source capture;
+- section expansion is presentation-lazy only:
+  - it requests a finalized retained DTO
+  - it does not rescan packets or flows;
+- the current PCAPNG unsupported-interface limitation remains explicit:
+  - EPBs skipped before a `RawPcapPacket` is surfaced are not represented.
+
+The semantic model carries:
+
+- `total_packet_count`
+- `maximum_bucket_packet_count`
+- `maximum_captured_packet_length`
+- 13 ordered fixed buckets with stable ids and inclusive bounds.
+
+Exact ordered buckets:
+
+- `0-63`
+- `64-127`
+- `128-255`
+- `256-511`
+- `512-1023`
+- `1024-1399`
+- `1400-1550`
+- `1551-2499`
+- `2500-5000`
+- `5001-9000`
+- `9001-16000`
+- `16001-25000`
+- `25001+`
+
+Presentation contract:
+
+- Qt and Tauri expose it as an optional collapsible Statistics section placed:
+  - after `Protocol Summary`
+  - after the conditional `Unrecognized Packets` block
+  - before `Flows by Packet Count`;
+- the section header summary is `<total_packet_count> packets`;
+- the expanded body shows:
+  - a short explanation that the metric covers imported captured packet lengths,
+    including unrecognized packets
+  - a maximum captured packet size line
+  - all 13 rows with shared stable bucket ids, shared labels, normalized bars,
+    and exact packet counts;
+- the maximum value is the maximum captured packet length, not original length
+  or decoded frame size.
+
+### Section-scoped loading direction
+
+Qt now keeps only the overview cards plus the transport/family Protocol Summary
+always visible. These sections are optional, independently collapsible, and
+loaded through typed per-capture requests:
+
+- Packet Size Distribution
+- Flows by Packet Count
+- Protocol Path Tree
+- Detected Protocol Hints
+- QUIC and TLS
+- Top Endpoints and Ports
+
+Request contract for the Qt Statistics tab:
+
+- a section request may start only when a capture is loaded, the Statistics tab
+  is active, the section is expanded, and the section is still
+  `not_requested` for the current capture;
+- first expansion loads once for the current capture;
+- collapse/reopen and Statistics-tab leave/return reuse the already prepared
+  result;
+- opening or closing a capture resets optional-section expansion, visible
+  section state, and section request state to `not_requested`.
+
+`Protocol Path` remains a separate independently mode-cached lazy request path.
+Qt keeps the current mode selector plus `Show flows`, `Expand all`, and
+`Collapse all` controls inside that collapsible section. Switching modes while
+the section is collapsed defers the request until the section is expanded
+again; switching modes while expanded reuses an existing mode cache or loads
+that mode once.
 
 ### Statistics state expectations
 
@@ -835,7 +1066,7 @@ Qt currently implements a selected-flow analysis workspace rather than only a pl
 Current Qt behavior:
 
 - analysis is selected-flow-driven;
-- `Send flow to Analysis` moves the selected flow into the Analysis tab;
+- manually entering the Analysis tab with a selected flow uses the current selected-flow context;
 - entering the Analysis tab with a selected flow triggers refresh;
 - analysis is not computed during capture open;
 - analysis refresh is tied to selected-flow context and active analysis tab.

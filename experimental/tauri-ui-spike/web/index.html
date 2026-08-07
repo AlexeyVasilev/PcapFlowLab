@@ -94,6 +94,18 @@
           <button id="attachSourceButton" type="button" class="secondary-button">Locate Source...</button>
         </section>
 
+        <section id="flowGroupingWarningBanner" class="panel info-banner">
+          <div class="partial-open-warning-copy">
+            <p id="flowGroupingWarningText" class="info-banner-text"></p>
+          </div>
+        </section>
+
+        <section id="gtpuGroupingInfoBanner" class="panel info-banner">
+          <div class="partial-open-warning-copy">
+            <p id="gtpuGroupingInfoText" class="info-banner-text"></p>
+          </div>
+        </section>
+
         <nav class="tabbar" aria-label="Main tabs">
           <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
           <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
@@ -355,30 +367,55 @@
                 </div>
               </div>
 
-              <div class="statistics-section">
-                <div class="statistics-section-heading">
-                  <h3>Detected Protocol Hints</h3>
+              <details id="packetSizeDistributionDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Packet Size Distribution</span>
+                  </span>
+                  <span id="packetSizeDistributionSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <p class="panel-subtitle">
+                    Captured packet lengths for all packets imported from the capture, including unrecognized packets.
+                  </p>
+                  <p id="packetSizeDistributionStateText" class="status-text compact-status-text"></p>
+                  <div id="packetSizeDistributionRows" class="statistics-histogram-rows"></div>
+                  <p id="packetSizeDistributionMaximumValue" class="panel-subtitle"></p>
                 </div>
-                <div class="table-wrap">
-                  <table class="data-table compact-stats-table protocol-hints-table">
-                    <thead>
-                      <tr>
-                        <th>Group</th>
-                        <th>Protocol</th>
-                        <th>Flows</th>
-                        <th>Packets</th>
-                        <th>Captured Bytes</th>
-                        <th>Original Bytes</th>
-                      </tr>
-                    </thead>
-                    <tbody id="protocolHintStatsBody"></tbody>
-                  </table>
-                </div>
-              </div>
+              </details>
 
-                <div class="statistics-section">
+              <details id="flowPacketHistogramDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Flows by Packet Count</span>
+                  </span>
+                  <span id="flowPacketHistogramSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
                   <div class="statistics-section-heading">
-                    <h3>Protocol Path Tree</h3>
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Flow packet histogram mode">
+                        <button id="flowPacketHistogramModeFlows" type="button" class="secondary-button" title="Number of flows in each packet-count range.">Flows</button>
+                        <button id="flowPacketHistogramModeOriginalBytes" type="button" class="secondary-button" title="Sum of original bytes for flows in each packet-count range.">Original bytes</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p id="flowPacketHistogramStateText" class="status-text compact-status-text"></p>
+                  <p id="flowPacketHistogramExcludedZeroPacketLabel" class="panel-subtitle is-hidden"></p>
+                  <div id="flowPacketHistogramRows" class="statistics-histogram-rows"></div>
+                </div>
+              </details>
+
+              <details id="protocolPathDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Protocol Path Tree</span>
+                  </span>
+                  <span id="protocolPathSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-section-heading">
                     <div class="statistics-mode-toolbar">
                       <button id="protocolPathShowFlowsButton" type="button" class="protocol-path-show-flows-button">Show flows</button>
                       <span class="inline-select-label">Mode</span>
@@ -403,82 +440,129 @@
                           <th>Original Bytes</th>
                         </tr>
                       </thead>
-                    <tbody id="protocolPathStatsBody"></tbody>
-                  </table>
+                      <tbody id="protocolPathStatsBody"></tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              </details>
 
-              <div class="statistics-split">
-                <div class="statistics-section">
-                  <div class="statistics-section-heading">
-                    <h3>QUIC Recognition</h3>
-                  </div>
+              <details id="protocolHintsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Detected Protocol Hints</span>
+                  </span>
+                  <span id="protocolHintsSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
                   <div class="table-wrap">
-                    <table class="data-table compact-stats-table recognition-table">
+                    <table class="data-table compact-stats-table protocol-hints-table">
                       <thead>
                         <tr>
-                          <th>Metric</th>
-                          <th>Value</th>
+                          <th>Group</th>
+                          <th>Protocol</th>
+                          <th>Flows</th>
+                          <th>Packets</th>
+                          <th>Captured Bytes</th>
+                          <th>Original Bytes</th>
                         </tr>
                       </thead>
-                      <tbody id="quicStatsBody"></tbody>
+                      <tbody id="protocolHintStatsBody"></tbody>
                     </table>
                   </div>
                 </div>
-                <div class="statistics-section">
-                  <div class="statistics-section-heading">
-                    <h3>TLS Recognition</h3>
-                  </div>
-                  <div class="table-wrap">
-                    <table class="data-table compact-stats-table recognition-table">
-                      <thead>
-                        <tr>
-                          <th>Metric</th>
-                          <th>Value</th>
-                        </tr>
-                      </thead>
-                      <tbody id="tlsStatsBody"></tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
+              </details>
 
-              <div class="statistics-split">
-                <div class="statistics-section">
-                  <div class="statistics-section-heading">
-                    <h3>Top Endpoints</h3>
-                  </div>
-                  <div class="table-wrap">
-                    <table class="data-table compact-stats-table top-talkers-table">
-                      <thead>
-                        <tr>
-                          <th>Endpoint</th>
-                          <th>Packets</th>
-                          <th>Bytes</th>
-                        </tr>
-                      </thead>
-                      <tbody id="topEndpointsBody"></tbody>
-                    </table>
+              <details id="quicTlsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">QUIC and TLS</span>
+                  </span>
+                  <span id="quicTlsSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-split">
+                    <div class="statistics-section">
+                      <div class="statistics-section-heading">
+                        <h3>QUIC Recognition</h3>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table recognition-table">
+                          <thead>
+                            <tr>
+                              <th>Metric</th>
+                              <th>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody id="quicStatsBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div class="statistics-section">
+                      <div class="statistics-section-heading">
+                        <h3>TLS Recognition</h3>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table recognition-table">
+                          <thead>
+                            <tr>
+                              <th>Metric</th>
+                              <th>Value</th>
+                            </tr>
+                          </thead>
+                          <tbody id="tlsStatsBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div class="statistics-section">
-                  <div class="statistics-section-heading">
-                    <h3>Top Ports</h3>
-                  </div>
-                  <div class="table-wrap">
-                    <table class="data-table compact-stats-table top-talkers-table">
-                      <thead>
-                        <tr>
-                          <th>Port</th>
-                          <th>Packets</th>
-                          <th>Bytes</th>
-                        </tr>
-                      </thead>
-                      <tbody id="topPortsBody"></tbody>
-                    </table>
+              </details>
+
+              <details id="topEndpointsPortsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Top Endpoints and Ports</span>
+                  </span>
+                  <span id="topEndpointsPortsSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-split">
+                    <div class="statistics-section">
+                      <div class="statistics-section-heading">
+                        <h3>Top Endpoints</h3>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table top-talkers-table">
+                          <thead>
+                            <tr>
+                              <th>Endpoint</th>
+                              <th>Packets</th>
+                              <th>Bytes</th>
+                            </tr>
+                          </thead>
+                          <tbody id="topEndpointsBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div class="statistics-section">
+                      <div class="statistics-section-heading">
+                        <h3>Top Ports</h3>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table top-talkers-table">
+                          <thead>
+                            <tr>
+                              <th>Port</th>
+                              <th>Packets</th>
+                              <th>Bytes</th>
+                            </tr>
+                          </thead>
+                          <tbody id="topPortsBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
             </div>
           </section>
         </section>
@@ -701,6 +785,20 @@
               <span>Use possible TLS/QUIC</span>
             </label>
             <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
+              <span>Ignore VLAN and MPLS layers when grouping flows</span>
+            </label>
+            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
+              <span>Ignore GTP-U TEIDs when grouping inner flows</span>
+            </label>
+            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
           </section>
           <section class="settings-section">
             <label class="settings-checkbox-row">

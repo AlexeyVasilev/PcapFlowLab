@@ -376,7 +376,7 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
 
     switch (descriptor.id.kind) {
     case SelectedPacketByteViewKind::frame:
-        return "Frame";
+        return "Captured Packet";
     case SelectedPacketByteViewKind::ethernet_payload:
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "Ethernet II Frame"
@@ -881,6 +881,61 @@ std::optional<SelectedPacketByteViewId> append_protocol_unit_from_payload_range(
         *unit_range,
         payload_range
     );
+}
+
+bool is_complete_captured_packet_root(
+    const SelectedPacketByteViewDescriptor& view,
+    const std::uint32_t owner_captured_length
+) noexcept {
+    return !view.parent_id.has_value() &&
+        view.owner_kind == SelectedPacketByteOwnerKind::captured_packet &&
+        view.role == SelectedPacketByteViewRole::protocol_unit &&
+        view.id.kind != SelectedPacketByteViewKind::frame &&
+        view.offset == 0U &&
+        view.captured_length == owner_captured_length;
+}
+
+void ensure_captured_packet_root_when_needed(SelectedPacketBytePresentation& presentation, const PacketRef& packet) {
+    const auto already_has_complete_root = std::any_of(
+        presentation.views.begin(),
+        presentation.views.end(),
+        [&](const SelectedPacketByteViewDescriptor& view) {
+            return is_complete_captured_packet_root(view, presentation.owner_captured_length);
+        }
+    );
+    if (already_has_complete_root) {
+        return;
+    }
+
+    const auto frame_id = append_view(
+        presentation.views,
+        std::nullopt,
+        kCapturedPacketOwnerId,
+        presentation.owner_kind,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteAssemblyKind::packet_local,
+        SelectedPacketByteViewKind::frame,
+        0U,
+        presentation.owner_captured_length,
+        0U,
+        std::optional<std::uint32_t> {packet.original_length},
+        packet.captured_length,
+        packet.captured_length < packet.original_length
+    );
+    if (!frame_id.has_value()) {
+        return;
+    }
+
+    for (auto& view : presentation.views) {
+        if (view.id == *frame_id) {
+            continue;
+        }
+        if (!view.parent_id.has_value() && view.owner_kind == SelectedPacketByteOwnerKind::captured_packet) {
+            view.parent_id = frame_id;
+        }
+    }
+
+    std::rotate(presentation.views.begin(), presentation.views.end() - 1, presentation.views.end());
 }
 
 std::optional<SelectedPacketByteViewId> append_payload_fallback_view(
@@ -2741,23 +2796,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
     SelectedPacketBytePresentation presentation {};
     presentation.owner_captured_length = packet.captured_length;
 
-    const auto frame_id = append_view(
-        presentation.views,
-        std::nullopt,
-        kCapturedPacketOwnerId,
-        presentation.owner_kind,
-        SelectedPacketByteViewRole::protocol_unit,
-        SelectedPacketByteAssemblyKind::packet_local,
-        SelectedPacketByteViewKind::frame,
-        0U,
-        presentation.owner_captured_length,
-        0U,
-        std::optional<std::uint32_t> {packet.original_length},
-        packet.captured_length,
-        packet.captured_length < packet.original_length
-    );
-
-    std::optional<SelectedPacketByteViewId> outer_parent = frame_id;
+    std::optional<SelectedPacketByteViewId> outer_parent {};
     std::optional<PacketByteRange> outer_payload_range {};
     std::optional<PacketByteRange> outer_ip_range {};
     const auto outer_vlan_count = details.has_pbb
@@ -2771,7 +2810,7 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
             : SelectedPacketByteViewKind::ethernet_payload;
         const auto ethernet_id = append_protocol_unit_from_payload_range(
             presentation.views,
-            frame_id,
+            outer_parent,
             kCapturedPacketOwnerId,
             presentation.owner_kind,
             outer_ethernet_kind,
@@ -3092,6 +3131,33 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         outer_tcp_id,
         outer_udp_id
     );
+
+    ensure_captured_packet_root_when_needed(presentation, packet);
+
+    return presentation;
+}
+
+SelectedPacketBytePresentation build_captured_packet_fallback_presentation(
+    const PacketRef& packet
+) {
+    SelectedPacketBytePresentation presentation {};
+    presentation.owner_captured_length = packet.captured_length;
+
+    static_cast<void>(append_view(
+        presentation.views,
+        std::nullopt,
+        kCapturedPacketOwnerId,
+        presentation.owner_kind,
+        SelectedPacketByteViewRole::protocol_unit,
+        SelectedPacketByteAssemblyKind::packet_local,
+        SelectedPacketByteViewKind::frame,
+        0U,
+        presentation.owner_captured_length,
+        0U,
+        std::optional<std::uint32_t> {packet.original_length},
+        packet.captured_length,
+        packet.captured_length < packet.original_length
+    ));
 
     return presentation;
 }

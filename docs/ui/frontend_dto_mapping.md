@@ -40,14 +40,22 @@ For the current repository-level protocol support matrix and known protocol limi
   - selected-flow stream;
   - selected-flow packet details.
 
-### What is mostly Qt-specific today
+### What remains frontend-specific today
 
 - Flow filtering and sorting semantics.
 - Settings persistence and any broader non-runtime preferences.
-- Packet inspector structure and most packet-details presentation composition.
-- Some stream-item-details presentation semantics in the right-hand inspector, especially Qt-only formatting/helper paths and the lack of a dedicated shared details query API.
-- Large parts of Statistics grouping/presentation.
+- Packet inspector layout, local selection widgets, and some packet-details presentation composition above the shared packet-summary and packet-bytes contracts.
+- Some stream-item-details rendering and interaction semantics in the right-hand inspector, even though shared C++ now owns the `Summary / Item Data` presentation contract and authoritative item-data materialization.
+- Statistics layout, section composition, and drill-down interaction above the shared structured Statistics DTOs and shared canonical display strings.
 - Most of Analysis presentation.
+
+### What is now shared in C++ presentation/DTOs
+
+- Shared C++ session/frontend presentation owns the structured Statistics DTOs used by Qt and Tauri.
+- Shared C++ owns Packet Bytes descriptors, stable byte-view identifiers, and selected-view content materialization.
+- Shared C++ owns Stream Item Data presentation and authoritative selected-item byte ownership/materialization.
+- Shared C++ owns the affected canonical Statistics display strings, including the compact byte/count/percentage text now reused by both frontends.
+- Qt and Tauri now adapt these same shared contracts while still keeping frontend-specific ownership of layout, local selection widgets, rendering, and interaction state where appropriate.
 
 ### What is currently duplicated or drifting between Qt and Tauri
 
@@ -188,15 +196,15 @@ For the current repository-level protocol support matrix and known protocol limi
 |---|---|---|---|---|---|---|
 | packet count | `SummaryBar`, `MainController.packetCount` | `FrontendOverviewDto.summary.packet_count` | `OverviewDto.summary.packet_count` | aligned | frontend-neutral DTO | High |
 | flow count | `SummaryBar`, `MainController.flowCount` | `FrontendOverviewDto.summary.flow_count` | `OverviewDto.summary.flow_count` | aligned | frontend-neutral DTO | High |
-| original bytes | Qt `SummaryBar` shows original bytes | `FrontendOverviewDto.summary.original_bytes` is now derived cheaply from existing transport protocol stats | Tauri statistics tab now shows explicit original bytes in the overview cards | aligned for current overview scope | frontend-neutral DTO | Improved |
-| captured bytes | Qt `SummaryBar` shows captured bytes | `FrontendOverviewDto.summary.captured_bytes` is now derived cheaply from existing transport protocol stats | Tauri statistics tab now shows explicit captured bytes in the overview cards | aligned for current overview scope | frontend-neutral DTO | Improved |
-| TCP/UDP/Other counters | `ProtocolStatsPane` transport section | `FrontendOverviewDto.protocol_summary.tcp/udp/other` with flow/packet/captured/original | Tauri now renders a compact transport summary table with the shared counters | aligned for current transport summary scope | frontend-neutral DTO | Improved |
-| IPv4/IPv6 counters | `ProtocolStatsPane` family section | `FrontendOverviewDto.protocol_summary.ipv4/ipv6` | Tauri now renders a compact IP family summary table with the shared counters | aligned for current family summary scope | frontend-neutral DTO | Improved |
-| protocol hint groups | Qt derives grouped table from `protocolHintDistribution` in `MainController`, backed by `CaptureProtocolSummary` hint buckets | `FrontendOverviewDto.protocol_hints` now carries grouped rows with protocol label plus flow/packet/captured/original counters | Tauri statistics tab now renders a compact `Detected Protocol Hints` table from the shared overview DTO | percentages and richer grouping presentation still remain Qt-owned; drill-down is still absent | frontend-neutral DTO for row facts, frontend formatting for presentation density | Improved |
-| QUIC summary | Qt protocol stats pane; `MainController.quic*` properties | `FrontendOverviewDto.quic_recognition` | Tauri now renders a compact QUIC recognition section with total, SNI, and version counts | aligned for current recognition summary scope | frontend-neutral DTO | Improved |
-| TLS summary | Qt protocol stats pane; `MainController.tls*` properties | `FrontendOverviewDto.tls_recognition` | Tauri now renders a compact TLS recognition section with total, SNI, and version counts | aligned for current recognition summary scope | frontend-neutral DTO | Improved |
-| top endpoints | `TopTalkersPane`, `topEndpointsModel`, `CaptureSession::top_summary()` | `FrontendOverviewDto.top_endpoints` now carries bounded endpoint rows with packet and byte counters | Tauri statistics tab now renders a compact `Top Endpoints` table from the shared overview DTO | Qt drill-down action is still Qt-only; Tauri currently shows rows only | frontend-neutral DTO for bounded rows, frontend controller/model for later actions | Improved |
-| top ports | `TopTalkersPane`, `topPortsModel`, `CaptureSession::top_summary()` | `FrontendOverviewDto.top_ports` now carries bounded port rows with packet and byte counters | Tauri statistics tab now renders a compact `Top Ports` table from the shared overview DTO | Qt drill-down action is still Qt-only; Tauri currently shows rows only | frontend-neutral DTO for bounded rows, frontend controller/model for later actions | Improved |
+| original bytes | Qt `SummaryBar` shows original bytes | `FrontendOverviewDto.summary.original_bytes` plus canonical `original_bytes_text` built in shared C++ presentation helpers | Tauri statistics tab now renders the shared `original_bytes_text` overview value | aligned for current overview scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
+| captured bytes | Qt `SummaryBar` shows captured bytes | `FrontendOverviewDto.summary.captured_bytes` plus canonical `captured_bytes_text` built in shared C++ presentation helpers | Tauri statistics tab now renders the shared `captured_bytes_text` overview value | aligned for current overview scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
+| TCP/UDP/Other counters | `ProtocolStatsPane` transport section | `FrontendOverviewDto.protocol_summary.tcp/udp/other` with raw counters plus canonical `captured_bytes_text` / `original_bytes_text` | Tauri now renders the shared byte text fields in the transport summary table | aligned for current transport summary scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
+| IPv4/IPv6 counters | `ProtocolStatsPane` family section | `FrontendOverviewDto.protocol_summary.ipv4/ipv6` with raw counters plus canonical `captured_bytes_text` / `original_bytes_text` | Tauri now renders the shared byte text fields in the family summary table | aligned for current family summary scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
+| protocol hint groups | Qt derives grouped table from `protocolHintDistribution` in `MainController`, backed by `CaptureProtocolSummary` hint buckets and shared helper rows | dedicated `FrontendProtocolHintStatisticsDto` via `get_protocol_hint_statistics()` with raw values plus `*_text` display fields | Tauri renders `Detected Protocol Hints` from the dedicated lazy section request and now consumes the same canonical count/size/percentage text as Qt | drill-down remains filter-based in Tauri, but value formatting is now shared rather than Qt-owned | frontend-neutral DTO + shared C++ presentation helpers | Improved |
+| QUIC summary | Qt protocol stats pane; `MainController.quic*` properties | dedicated `FrontendQuicTlsStatisticsDto` via `get_quic_tls_statistics()` | Tauri renders the QUIC side of the combined `QUIC and TLS` section from the dedicated lazy request | aligned for current recognition summary scope | frontend-neutral DTO | Improved |
+| TLS summary | Qt protocol stats pane; `MainController.tls*` properties | dedicated `FrontendQuicTlsStatisticsDto` via `get_quic_tls_statistics()` | Tauri renders the TLS side of the combined `QUIC and TLS` section from the dedicated lazy request | aligned for current recognition summary scope | frontend-neutral DTO | Improved |
+| top endpoints | `TopTalkersPane`, `topEndpointsModel`, `CaptureSession::top_summary()` | dedicated `FrontendTopEndpointPortStatisticsDto` via `get_top_endpoint_port_statistics(limit)` | Tauri renders `Top Endpoints` inside the lazy `Top Endpoints and Ports` section | Qt drill-down action is still richer; Tauri currently reuses flow-filter drill-down | frontend-neutral DTO for bounded rows, frontend controller/model for later actions | Improved |
+| top ports | `TopTalkersPane`, `topPortsModel`, `CaptureSession::top_summary()` | dedicated `FrontendTopEndpointPortStatisticsDto` via `get_top_endpoint_port_statistics(limit)` | Tauri renders `Top Ports` inside the lazy `Top Endpoints and Ports` section | Qt drill-down action is still richer; Tauri currently reuses flow-filter drill-down | frontend-neutral DTO for bounded rows, frontend controller/model for later actions | Improved |
 | statistics drill-down actions | Qt `drillDownToEndpoint`, `drillDownToPort` | no frontend-neutral action/query contract | Tauri now supports frontend-only drill-down by switching to `Flows` and setting the existing flow filter from protocol-hint / endpoint / port rows | still no shared action/query contract; Tauri behavior is filter-only, not full Qt drill-down parity | frontend controller/model + later contract decision | Improved |
 
 ## Mapping Table: Analysis

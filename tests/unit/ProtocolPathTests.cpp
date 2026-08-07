@@ -15,6 +15,7 @@
 #include "app/session/ProtocolPathPresentation.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/CaptureImportApplication.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
@@ -117,6 +118,22 @@ CaptureImportOptions fast_import_options() {
     return options;
 }
 
+CaptureImportOptions vlan_and_mpls_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_vlan_and_mpls_layers_when_grouping_flows = true,
+        },
+    };
+}
+
+CaptureImportOptions gtpu_teid_agnostic_import_options() {
+    return CaptureImportOptions {
+        .settings = AnalysisSettings {
+            .ignore_gtpu_teids_when_grouping_inner_flows = true,
+        },
+    };
+}
+
 ProtocolPathId flow_protocol_path_id(const FlowRow& row) {
     if (std::holds_alternative<ConnectionKeyV4>(row.key)) {
         return std::get<ConnectionKeyV4>(row.key).protocol_path_id;
@@ -138,7 +155,11 @@ std::string protocol_path_text_or_invalid(const CaptureState& state, const Proto
     return format_protocol_path(*path);
 }
 
-std::string normalized_protocol_path_text_for_flow_identity(const CaptureState& state, const ProtocolPathId id) {
+std::string normalized_protocol_path_text_for_flow_identity(
+    const CaptureState& state,
+    const ProtocolPathId id,
+    const AnalysisSettings& settings = {}
+) {
     if (id == kInvalidProtocolPathId) {
         return "invalid";
     }
@@ -148,19 +169,38 @@ std::string normalized_protocol_path_text_for_flow_identity(const CaptureState& 
         return "missing";
     }
 
-    std::vector<LayerKey> normalized_layers {};
-    normalized_layers.reserve(path->size());
-    for (const auto& layer : path->layers()) {
-        const bool omit_priority_tag =
-            layer.kind == ProtocolLayerKind::vlan &&
-            layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid &&
-            layer.identifier.value == 0U;
-        if (!omit_priority_tag) {
-            normalized_layers.push_back(layer);
-        }
+    const auto normalized = normalize_protocol_path_for_flow_identity(path->view(), settings);
+    if (!normalized.has_value()) {
+        return format_protocol_path(*path);
     }
 
-    return format_protocol_path(ProtocolPath {std::move(normalized_layers)});
+    return format_protocol_path(*normalized);
+}
+
+std::filesystem::path write_vlan_asymmetric_bidirectional_capture(
+    const std::string& name,
+    const std::vector<std::pair<std::uint16_t, std::uint16_t>>& forward_tags,
+    const std::vector<std::pair<std::uint16_t, std::uint16_t>>& reverse_tags
+) {
+    return write_temp_pcap(
+        name,
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 0, 1),
+                    ipv4(10, 0, 0, 2),
+                    50000,
+                    443),
+                forward_tags)},
+            {200, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 0, 2),
+                    ipv4(10, 0, 0, 1),
+                    443,
+                    50000),
+                reverse_tags)},
+        })
+    );
 }
 
 const FrontendProtocolPathPresentationDto* find_frontend_protocol_path_presentation(
@@ -641,6 +681,14 @@ void expect_formatting() {
         LayerKey::ipv4(),
         LayerKey::sctp(),
     };
+    const ProtocolPath gtpu_without_teid {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(),
+        LayerKey::ipv4(),
+        LayerKey::sctp(),
+    };
     const ProtocolPath gre_key {
         LayerKey::ethernet_ii(),
         LayerKey::ipv4(),
@@ -707,6 +755,7 @@ void expect_formatting() {
     PFL_EXPECT(format_protocol_layer_key(LayerKey::macsec()) == "MACsec");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::vxlan(100U)) == "VXLAN(vni=100)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::geneve(200U)) == "Geneve(vni=200)");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::gtpu()) == "GTP-U");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::gtpu(0x01020384U)) == "GTP-U(teid=0x01020384)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::gre(0x11111111U)) == "GRE(key=0x11111111)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::esp(0x01020304U)) == "ESP(spi=0x01020304)");
@@ -745,6 +794,14 @@ void expect_protocol_path_presentation_mapping() {
         LayerKey::ipv4(),
         LayerKey::udp(),
         LayerKey::gtpu(0x01020384U),
+        LayerKey::ipv4(),
+        LayerKey::sctp(),
+    };
+    const ProtocolPath gtpu_without_teid {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(),
         LayerKey::ipv4(),
         LayerKey::sctp(),
     };
@@ -815,6 +872,10 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(gtpu_presentation.badges[3].short_label == "GTP-U");
     PFL_EXPECT(gtpu_presentation.badges[3].tooltip == "GTP-U\nTEID: 0x01020384");
     PFL_EXPECT(gtpu_presentation.badges.back().short_label == "SCTP");
+
+    const auto gtpu_without_teid_presentation = session_detail::build_protocol_path_presentation(&gtpu_without_teid);
+    PFL_EXPECT(gtpu_without_teid_presentation.badges[3].short_label == "GTP-U");
+    PFL_EXPECT(gtpu_without_teid_presentation.badges[3].tooltip == "GTP-U");
 
     const auto gre_key_presentation = session_detail::build_protocol_path_presentation(&gre_key);
     PFL_EXPECT(gre_key_presentation.compact_text == "EII|Ip4|GRE|Ip4|UDP");
@@ -1821,6 +1882,925 @@ void expect_same_exact_path_reverse_tuple_stays_bidirectional() {
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
 }
 
+void expect_vlan_and_mpls_flow_identity_normalization_helper_behaviors() {
+    const ProtocolPath single_vlan_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath qinq_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::vlan(200U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath vid_zero_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(0U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath single_mpls_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::mpls(1100U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath stacked_mpls_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::mpls(1100U),
+        LayerKey::mpls(1200U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath mixed_vlan_mpls_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(300U),
+        LayerKey::mpls(2100U),
+        LayerKey::mpls(2200U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath non_vlan_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath mpls_pw_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::mpls(24050U),
+        LayerKey::mpls(16050U),
+        LayerKey::mpls_pw(),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath namespaced_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::mpls(1100U),
+        LayerKey::vxlan(200U),
+        LayerKey::geneve(300U),
+        LayerKey::gtpu(0x01020304U),
+        LayerKey::gre(0x11111111U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath ah_namespaced_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::mpls(1100U),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath esp_namespaced_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(100U),
+        LayerKey::mpls(1100U),
+        LayerKey::ipv4(),
+        LayerKey::esp(0x11121314U),
+        LayerKey::udp(),
+    };
+
+    const AnalysisSettings vlan_and_mpls_agnostic_settings {
+        .ignore_vlan_and_mpls_layers_when_grouping_flows = true,
+    };
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(single_vlan_path.view(), {}).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(single_mpls_path.view(), {}).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(stacked_mpls_path.view(), {}).has_value());
+
+    const auto normalized_single = normalize_protocol_path_for_flow_identity(
+        single_vlan_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_single.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_single) == "EthernetII -> IPv4 -> TCP");
+
+    const auto normalized_qinq = normalize_protocol_path_for_flow_identity(
+        qinq_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_qinq.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_qinq) == "EthernetII -> IPv4 -> UDP");
+
+    const auto normalized_vid_zero_disabled = normalize_protocol_path_for_flow_identity(vid_zero_path.view(), {});
+    PFL_REQUIRE(normalized_vid_zero_disabled.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_vid_zero_disabled) == "EthernetII -> IPv4 -> TCP");
+
+    const auto normalized_vid_zero = normalize_protocol_path_for_flow_identity(
+        vid_zero_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_vid_zero.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_vid_zero) == "EthernetII -> IPv4 -> TCP");
+
+    const auto normalized_single_mpls = normalize_protocol_path_for_flow_identity(
+        single_mpls_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_single_mpls.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_single_mpls) == "EthernetII -> IPv4 -> TCP");
+
+    const auto normalized_stacked_mpls = normalize_protocol_path_for_flow_identity(
+        stacked_mpls_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_stacked_mpls.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_stacked_mpls) == "EthernetII -> IPv4 -> TCP");
+
+    const auto normalized_mixed_vlan_mpls = normalize_protocol_path_for_flow_identity(
+        mixed_vlan_mpls_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_mixed_vlan_mpls.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_mixed_vlan_mpls) == "EthernetII -> IPv4 -> TCP");
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(non_vlan_path.view(), vlan_and_mpls_agnostic_settings).has_value());
+
+    const auto normalized_namespaced = normalize_protocol_path_for_flow_identity(
+        namespaced_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_namespaced.has_value());
+    PFL_EXPECT(
+        format_protocol_path(*normalized_namespaced) ==
+        "EthernetII -> VXLAN(vni=200) -> Geneve(vni=300) -> GTP-U(teid=0x01020304) -> GRE(key=0x11111111) -> IPv4 -> UDP");
+    PFL_EXPECT(std::none_of(
+        normalized_namespaced->layers().begin(),
+        normalized_namespaced->layers().end(),
+        [](const LayerKey& layer) {
+            return layer.kind == ProtocolLayerKind::vlan ||
+                layer.kind == ProtocolLayerKind::mpls ||
+                layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid;
+        }));
+    PFL_EXPECT(normalized_namespaced->layers().front() == LayerKey::ethernet_ii());
+    PFL_EXPECT(normalized_namespaced->layers().back() == LayerKey::udp());
+
+    const auto normalized_ah_namespaced = normalize_protocol_path_for_flow_identity(
+        ah_namespaced_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_ah_namespaced.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_ah_namespaced) == "EthernetII -> IPv4 -> AH(spi=0x01020304) -> TCP");
+
+    const auto normalized_esp_namespaced = normalize_protocol_path_for_flow_identity(
+        esp_namespaced_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_esp_namespaced.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_esp_namespaced) == "EthernetII -> IPv4 -> ESP(spi=0x11121314) -> UDP");
+
+    const auto normalized_mpls_pw = normalize_protocol_path_for_flow_identity(
+        mpls_pw_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_mpls_pw.has_value());
+    PFL_EXPECT(
+        format_protocol_path(*normalized_mpls_pw) ==
+        "EthernetII -> MPLS PW -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(*normalized_mpls_pw) != format_protocol_path(non_vlan_path));
+
+    const auto normalized_vxlan_100 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::vxlan(100U),
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    const auto normalized_vxlan_200 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::vxlan(200U),
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_vxlan_100.has_value());
+    PFL_REQUIRE(normalized_vxlan_200.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_vxlan_100) != format_protocol_path(*normalized_vxlan_200));
+
+    const auto normalized_geneve_100 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::geneve(100U),
+            LayerKey::ipv4(),
+            LayerKey::udp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    const auto normalized_geneve_200 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::geneve(200U),
+            LayerKey::ipv4(),
+            LayerKey::udp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_geneve_100.has_value());
+    PFL_REQUIRE(normalized_geneve_200.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_geneve_100) != format_protocol_path(*normalized_geneve_200));
+
+    const auto normalized_gtpu_1 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::ipv4(),
+            LayerKey::udp(),
+            LayerKey::gtpu(0x01020304U),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    const auto normalized_gtpu_2 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::ipv4(),
+            LayerKey::udp(),
+            LayerKey::gtpu(0x11223344U),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_gtpu_1.has_value());
+    PFL_REQUIRE(normalized_gtpu_2.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_1) != format_protocol_path(*normalized_gtpu_2));
+
+    const auto normalized_gre_1 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::ipv4(),
+            LayerKey::gre(0x11111111U),
+            LayerKey::ipv4(),
+            LayerKey::udp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    const auto normalized_gre_2 = normalize_protocol_path_for_flow_identity(
+        ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(100U),
+            LayerKey::mpls(1100U),
+            LayerKey::ipv4(),
+            LayerKey::gre(0x22222222U),
+            LayerKey::ipv4(),
+            LayerKey::udp(),
+        }.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_gre_1.has_value());
+    PFL_REQUIRE(normalized_gre_2.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_gre_1) != format_protocol_path(*normalized_gre_2));
+}
+
+void expect_gtpu_teid_flow_identity_normalization_helper_behaviors() {
+    const ProtocolPath gtpu_path_a {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x01020304U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath gtpu_path_b {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x11223344U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath gtpu_without_identifier_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath multi_gtpu_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x01020304U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x11223344U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath plain_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath gtpu_udp_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x01020304U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath gtpu_mpls_pw_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x01020304U),
+        LayerKey::mpls_pw(),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath namespaced_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(405U),
+        LayerKey::mpls(110U),
+        LayerKey::mpls_pw(),
+        LayerKey::ethernet_ii(),
+        LayerKey::vlan(2369U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x02083DBEU),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath vxlan_100_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::vxlan(100U),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath vxlan_200_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::vxlan(200U),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath geneve_100_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::geneve(100U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath geneve_200_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::geneve(200U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath gre_1_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::gre(0x11111111U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath gre_2_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::gre(0x22222222U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath ah_1_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath ah_2_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x05060708U),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath esp_1_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::esp(0x01020304U),
+        LayerKey::udp(),
+    };
+    const ProtocolPath esp_2_path {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::esp(0x11121314U),
+        LayerKey::udp(),
+    };
+
+    const AnalysisSettings gtpu_teid_agnostic_settings {
+        .ignore_gtpu_teids_when_grouping_inner_flows = true,
+    };
+    const AnalysisSettings vlan_and_mpls_agnostic_settings {
+        .ignore_vlan_and_mpls_layers_when_grouping_flows = true,
+    };
+    const AnalysisSettings combined_agnostic_settings {
+        .ignore_vlan_and_mpls_layers_when_grouping_flows = true,
+        .ignore_gtpu_teids_when_grouping_inner_flows = true,
+    };
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(gtpu_path_a.view(), {}).has_value());
+
+    const auto normalized_gtpu_a = normalize_protocol_path_for_flow_identity(gtpu_path_a.view(), gtpu_teid_agnostic_settings);
+    const auto normalized_gtpu_b = normalize_protocol_path_for_flow_identity(gtpu_path_b.view(), gtpu_teid_agnostic_settings);
+    PFL_REQUIRE(normalized_gtpu_a.has_value());
+    PFL_REQUIRE(normalized_gtpu_b.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_a) == "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_b) == "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+    PFL_EXPECT(normalized_gtpu_a->layers()[3] == LayerKey::gtpu());
+    PFL_EXPECT(normalized_gtpu_b->layers()[3] == LayerKey::gtpu());
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(
+        gtpu_without_identifier_path.view(),
+        gtpu_teid_agnostic_settings
+    ).has_value());
+
+    const auto normalized_multi_gtpu = normalize_protocol_path_for_flow_identity(
+        multi_gtpu_path.view(),
+        gtpu_teid_agnostic_settings);
+    PFL_REQUIRE(normalized_multi_gtpu.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_multi_gtpu) ==
+        "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+    PFL_EXPECT(normalized_multi_gtpu->layers()[3] == LayerKey::gtpu());
+    PFL_EXPECT(normalized_multi_gtpu->layers()[6] == LayerKey::gtpu());
+
+    const auto normalized_gtpu_only = normalize_protocol_path_for_flow_identity(
+        namespaced_path.view(),
+        gtpu_teid_agnostic_settings);
+    PFL_REQUIRE(normalized_gtpu_only.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_only) ==
+        "EthernetII -> VLAN(vid=405) -> MPLS(label=110) -> MPLS PW -> EthernetII -> VLAN(vid=2369) -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+
+    const auto normalized_vlan_only = normalize_protocol_path_for_flow_identity(
+        namespaced_path.view(),
+        vlan_and_mpls_agnostic_settings);
+    PFL_REQUIRE(normalized_vlan_only.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_vlan_only) ==
+        "EthernetII -> MPLS PW -> EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x02083dbe) -> IPv4 -> TCP");
+
+    const auto normalized_both = normalize_protocol_path_for_flow_identity(
+        namespaced_path.view(),
+        combined_agnostic_settings);
+    PFL_REQUIRE(normalized_both.has_value());
+    PFL_EXPECT(format_protocol_path(*normalized_both) ==
+        "EthernetII -> MPLS PW -> EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_a) != format_protocol_path(plain_path));
+    PFL_EXPECT(format_protocol_path(*normalized_both) != format_protocol_path(plain_path));
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_a) != format_protocol_path(gtpu_udp_path));
+    PFL_EXPECT(format_protocol_path(*normalized_gtpu_a) != format_protocol_path(gtpu_mpls_pw_path));
+
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(vxlan_100_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(vxlan_200_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(format_protocol_path(vxlan_100_path) != format_protocol_path(vxlan_200_path));
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(geneve_100_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(geneve_200_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(format_protocol_path(geneve_100_path) != format_protocol_path(geneve_200_path));
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(gre_1_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(gre_2_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(format_protocol_path(gre_1_path) != format_protocol_path(gre_2_path));
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(ah_1_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(ah_2_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(format_protocol_path(ah_1_path) != format_protocol_path(ah_2_path));
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(esp_1_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(!normalize_protocol_path_for_flow_identity(esp_2_path.view(), gtpu_teid_agnostic_settings).has_value());
+    PFL_EXPECT(format_protocol_path(esp_1_path) != format_protocol_path(esp_2_path));
+}
+
+void expect_ignore_gtpu_teids_merges_direction_specific_teid_fixture() {
+    const auto capture_path = fixture_path("parsing/gtpu/35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap");
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    const auto disabled_rows = disabled_session.list_flows();
+    PFL_REQUIRE(disabled_rows.size() == 2U);
+    PFL_EXPECT(disabled_rows[0].packet_count == 1U);
+    PFL_EXPECT(disabled_rows[1].packet_count == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(disabled_session.state(), disabled_rows[0].protocol_path_id).find("GTP-U(teid=") != std::string::npos);
+    PFL_EXPECT(protocol_path_text_or_invalid(disabled_session.state(), disabled_rows[1].protocol_path_id).find("GTP-U(teid=") != std::string::npos);
+    PFL_EXPECT(require_packet_flow_protocol_path_id(disabled_session.state(), 0U) !=
+        require_packet_flow_protocol_path_id(disabled_session.state(), 1U));
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, gtpu_teid_agnostic_import_options()));
+    const auto enabled_rows = enabled_session.list_flows();
+    PFL_REQUIRE(enabled_rows.size() == 1U);
+    PFL_EXPECT(enabled_rows[0].packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].endpoint_a == "10.10.0.1:40000");
+    PFL_EXPECT(enabled_rows[0].endpoint_b == "10.10.0.2:443");
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), enabled_rows[0].protocol_path_id) ==
+        "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+
+    const auto connections = enabled_session.state().ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_b.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packets.front().packet_index == 0U);
+    PFL_EXPECT(connections.front()->flow_b.packets.front().packet_index == 1U);
+    PFL_EXPECT(require_packet_flow_protocol_path_id(enabled_session.state(), 0U) ==
+        require_packet_flow_protocol_path_id(enabled_session.state(), 1U));
+
+    const auto first_details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+    const auto second_details = enabled_session.read_packet_details(connections.front()->flow_b.packets.front());
+    PFL_REQUIRE(first_details.has_value());
+    PFL_REQUIRE(second_details.has_value());
+    PFL_EXPECT(first_details->has_gtpu);
+    PFL_EXPECT(second_details->has_gtpu);
+    PFL_EXPECT(first_details->gtpu.teid == 0x01020311U);
+    PFL_EXPECT(second_details->gtpu.teid == 0x02030412U);
+}
+
+void expect_ignore_gtpu_teids_intentionally_merges_same_direction_tuples() {
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(
+        fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(rows[0].packet_count == 2U);
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), rows[0].protocol_path_id) ==
+        "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+}
+
+void expect_ignore_gtpu_teids_preserves_other_namespace_identity() {
+    CaptureSession inner_tuple_session {};
+    PFL_REQUIRE(inner_tuple_session.open_capture(
+        fixture_path("parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(inner_tuple_session.list_flows().size() == 2U);
+
+    CaptureSession vxlan_session {};
+    PFL_REQUIRE(vxlan_session.open_capture(
+        fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(vxlan_session.list_flows().size() == 2U);
+
+    CaptureSession geneve_session {};
+    PFL_REQUIRE(geneve_session.open_capture(
+        fixture_path("parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(geneve_session.list_flows().size() == 2U);
+
+    CaptureSession gre_session {};
+    PFL_REQUIRE(gre_session.open_capture(
+        fixture_path("parsing/gre/21_gre_same_inner_tuple_different_keys.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(gre_session.list_flows().size() == 2U);
+
+    CaptureSession ah_session {};
+    PFL_REQUIRE(ah_session.open_capture(
+        fixture_path("parsing/ah/05_ipv4_ah_same_tuple_different_spi.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(ah_session.list_flows().size() == 2U);
+
+    CaptureSession esp_session {};
+    PFL_REQUIRE(esp_session.open_capture(
+        fixture_path("parsing/esp/03_ipv4_esp_same_hosts_different_spi.pcap"),
+        gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(esp_session.list_flows().size() == 2U);
+}
+
+void expect_gtpu_teid_agnostic_index_roundtrip_keeps_stored_grouping_without_reapply() {
+    const auto capture_path = fixture_path("parsing/gtpu/35_gtpu_bidirectional_different_teids_same_inner_tcp.pcap");
+    const auto merged_index_path = std::filesystem::temp_directory_path() / "pfl_gtpu_teid_grouping_merged.idx";
+    const auto split_index_path = std::filesystem::temp_directory_path() / "pfl_gtpu_teid_grouping_split.idx";
+
+    CaptureSession imported_gtpu_teid_agnostic {};
+    PFL_REQUIRE(imported_gtpu_teid_agnostic.open_capture(capture_path, gtpu_teid_agnostic_import_options()));
+    PFL_EXPECT(imported_gtpu_teid_agnostic.list_flows().size() == 1U);
+    PFL_EXPECT(imported_gtpu_teid_agnostic.save_index(merged_index_path));
+
+    CaptureSession loaded_gtpu_teid_agnostic {};
+    loaded_gtpu_teid_agnostic.set_analysis_settings(AnalysisSettings {
+        .ignore_gtpu_teids_when_grouping_inner_flows = false,
+    });
+    PFL_REQUIRE(loaded_gtpu_teid_agnostic.load_index(merged_index_path));
+    PFL_EXPECT(kCaptureIndexVersion == 13U);
+    PFL_EXPECT(loaded_gtpu_teid_agnostic.list_flows().size() == 1U);
+    PFL_EXPECT(!loaded_gtpu_teid_agnostic.flow_grouping_ignores_gtpu_teids());
+    PFL_EXPECT(protocol_path_text_or_invalid(
+        loaded_gtpu_teid_agnostic.state(),
+        loaded_gtpu_teid_agnostic.list_flows().front().protocol_path_id) == "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP");
+
+    CaptureSession imported_gtpu_teid_sensitive {};
+    PFL_REQUIRE(imported_gtpu_teid_sensitive.open_capture(capture_path));
+    PFL_EXPECT(imported_gtpu_teid_sensitive.list_flows().size() == 2U);
+    PFL_EXPECT(imported_gtpu_teid_sensitive.save_index(split_index_path));
+
+    CaptureSession loaded_gtpu_teid_sensitive {};
+    loaded_gtpu_teid_sensitive.set_analysis_settings(AnalysisSettings {
+        .ignore_gtpu_teids_when_grouping_inner_flows = true,
+    });
+    PFL_REQUIRE(loaded_gtpu_teid_sensitive.load_index(split_index_path));
+    const auto loaded_rows = loaded_gtpu_teid_sensitive.list_flows();
+    PFL_REQUIRE(loaded_rows.size() == 2U);
+    PFL_EXPECT(!loaded_gtpu_teid_sensitive.flow_grouping_ignores_gtpu_teids());
+    PFL_EXPECT(protocol_path_text_or_invalid(
+        loaded_gtpu_teid_sensitive.state(),
+        loaded_rows[0].protocol_path_id).find("GTP-U(teid=") != std::string::npos);
+    PFL_EXPECT(protocol_path_text_or_invalid(
+        loaded_gtpu_teid_sensitive.state(),
+        loaded_rows[1].protocol_path_id).find("GTP-U(teid=") != std::string::npos);
+}
+
+void expect_ignore_vlan_and_mpls_layers_merges_bidirectional_vlan_asymmetry() {
+    const auto capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_asymmetry_bidirectional.pcap",
+        {{0x8100U, 100U}},
+        {{0x8100U, 200U}}
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    const auto disabled_rows = disabled_session.list_flows();
+    PFL_EXPECT(disabled_rows.size() == 2U);
+    PFL_EXPECT(disabled_session.summary().packet_count == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_and_mpls_agnostic_import_options()));
+    const auto enabled_rows = enabled_session.list_flows();
+    PFL_REQUIRE(enabled_rows.size() == 1U);
+    PFL_EXPECT(enabled_session.summary().packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].endpoint_a == "10.0.0.1:50000");
+    PFL_EXPECT(enabled_rows[0].endpoint_b == "10.0.0.2:443");
+
+    const auto& state = enabled_session.state();
+    const auto connections = state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_b.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packets.front().packet_index == 0U);
+    PFL_EXPECT(connections.front()->flow_b.packets.front().packet_index == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(state, enabled_rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto summary = enabled_session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+    PFL_EXPECT(std::none_of(summary.rows.begin(), summary.rows.end(), [](const auto& row) {
+        return row.path_text.find("VLAN(") != std::string::npos;
+    }));
+
+    const auto details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+    PFL_REQUIRE(details.has_value());
+    PFL_EXPECT(details->has_vlan);
+    PFL_REQUIRE(details->vlan_tags.size() == 1U);
+    PFL_EXPECT(details->vlan_tags[0].tci == 100U);
+}
+
+void expect_ignore_vlan_and_mpls_layers_merges_tagged_and_untagged_paths() {
+    const auto capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_tagged_untagged_bidirectional.pcap",
+        {{0x8100U, 300U}},
+        {}
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_and_mpls_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+}
+
+void expect_ignore_vlan_and_mpls_layers_merges_qinq_and_untagged_paths() {
+    const auto capture_path = write_vlan_asymmetric_bidirectional_capture(
+        "pfl_vlan_qinq_untagged_bidirectional.pcap",
+        {{0x88A8U, 410U}, {0x8100U, 420U}},
+        {}
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_and_mpls_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto details = enabled_session.read_packet_details(
+        enabled_session.state().ipv4_connections.list().front()->flow_a.packets.front());
+    PFL_REQUIRE(details.has_value());
+    PFL_REQUIRE(details->vlan_tags.size() == 2U);
+    PFL_EXPECT(details->vlan_tags[0].tci == 410U);
+    PFL_EXPECT(details->vlan_tags[1].tci == 420U);
+}
+
+void expect_ignore_vlan_and_mpls_layers_intentionally_merges_same_direction_tuples() {
+    const auto capture_path = write_temp_pcap(
+        "pfl_vlan_same_direction_merge.pcap",
+        make_classic_pcap({
+            {100, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 1, 1),
+                    ipv4(10, 0, 1, 2),
+                    51000,
+                    443),
+                {{0x8100U, 100U}})},
+            {200, add_vlan_tags(
+                make_ethernet_ipv4_tcp_packet(
+                    ipv4(10, 0, 1, 1),
+                    ipv4(10, 0, 1, 2),
+                    51000,
+                    443),
+                {{0x8100U, 200U}})},
+        })
+    );
+
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(capture_path));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(capture_path, vlan_and_mpls_agnostic_import_options()));
+    const auto rows = enabled_session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(rows[0].packet_count == 2U);
+}
+
+void expect_ignore_vlan_and_mpls_layers_preserves_other_namespace_identity() {
+    CaptureSession mpls_session {};
+    PFL_REQUIRE(mpls_session.open_capture(
+        fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    PFL_EXPECT(mpls_session.list_flows().size() == 1U);
+
+    CaptureSession vxlan_session {};
+    PFL_REQUIRE(vxlan_session.open_capture(
+        fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    PFL_EXPECT(vxlan_session.list_flows().size() == 2U);
+
+    CaptureSession geneve_session {};
+    PFL_REQUIRE(geneve_session.open_capture(
+        fixture_path("parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    PFL_EXPECT(geneve_session.list_flows().size() == 2U);
+
+    CaptureSession gtpu_session {};
+    PFL_REQUIRE(gtpu_session.open_capture(
+        fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    PFL_EXPECT(gtpu_session.list_flows().size() == 2U);
+
+    CaptureSession gre_session {};
+    PFL_REQUIRE(gre_session.open_capture(
+        fixture_path("parsing/gre/21_gre_same_inner_tuple_different_keys.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    PFL_EXPECT(gre_session.list_flows().size() == 2U);
+}
+
+void expect_mpls_same_inner_tuple_different_labels_merge_only_when_enabled() {
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap")));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(
+        fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    const auto enabled_rows = enabled_session.list_flows();
+    PFL_REQUIRE(enabled_rows.size() == 1U);
+    PFL_EXPECT(enabled_rows[0].packet_count == 2U);
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), enabled_rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto& enabled_state = enabled_session.state();
+    PFL_EXPECT(require_packet_flow_protocol_path_id(enabled_state, 0U) == require_packet_flow_protocol_path_id(enabled_state, 1U));
+}
+
+void expect_combined_setting_merges_asymmetric_mpls_plain_fixture() {
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(fixture_path("parsing/mpls/24_mpls_plain_bidirectional_same_inner_tcp.pcap")));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(
+        fixture_path("parsing/mpls/24_mpls_plain_bidirectional_same_inner_tcp.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    const auto enabled_rows = enabled_session.list_flows();
+    PFL_REQUIRE(enabled_rows.size() == 1U);
+    PFL_EXPECT(enabled_rows[0].packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].endpoint_a == "10.20.30.1:40000");
+    PFL_EXPECT(enabled_rows[0].endpoint_b == "10.20.30.2:443");
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), enabled_rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto& enabled_state = enabled_session.state();
+    const auto connections = enabled_state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_b.packet_count == 1U);
+    PFL_EXPECT(connections.front()->flow_a.packets.front().packet_index == 0U);
+    PFL_EXPECT(connections.front()->flow_b.packets.front().packet_index == 1U);
+    PFL_EXPECT(require_packet_flow_protocol_path_id(enabled_state, 0U) == require_packet_flow_protocol_path_id(enabled_state, 1U));
+
+    const auto first_details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+    const auto second_details = enabled_session.read_packet_details(connections.front()->flow_b.packets.front());
+    PFL_REQUIRE(first_details.has_value());
+    PFL_REQUIRE(second_details.has_value());
+    PFL_EXPECT(first_details->has_mpls);
+    PFL_EXPECT(first_details->mpls_labels.size() == 1U);
+    PFL_EXPECT(!first_details->has_vlan);
+    PFL_EXPECT(!second_details->has_mpls);
+    PFL_EXPECT(!second_details->has_vlan);
+}
+
+void expect_combined_setting_merges_vlan_and_stacked_mpls_fixture() {
+    CaptureSession disabled_session {};
+    PFL_REQUIRE(disabled_session.open_capture(fixture_path("parsing/mpls/25_vlan_and_stacked_mpls_asymmetric_bidirectional_tcp.pcap")));
+    PFL_EXPECT(disabled_session.list_flows().size() == 2U);
+
+    CaptureSession enabled_session {};
+    PFL_REQUIRE(enabled_session.open_capture(
+        fixture_path("parsing/mpls/25_vlan_and_stacked_mpls_asymmetric_bidirectional_tcp.pcap"),
+        vlan_and_mpls_agnostic_import_options()));
+    const auto enabled_rows = enabled_session.list_flows();
+    PFL_REQUIRE(enabled_rows.size() == 1U);
+    PFL_EXPECT(enabled_rows[0].packet_count == 2U);
+    PFL_EXPECT(enabled_rows[0].endpoint_a == "10.20.31.1:40001");
+    PFL_EXPECT(enabled_rows[0].endpoint_b == "10.20.31.2:443");
+    PFL_EXPECT(protocol_path_text_or_invalid(enabled_session.state(), enabled_rows[0].protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    const auto& enabled_state = enabled_session.state();
+    const auto connections = enabled_state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    const auto first_details = enabled_session.read_packet_details(connections.front()->flow_a.packets.front());
+    const auto second_details = enabled_session.read_packet_details(connections.front()->flow_b.packets.front());
+    PFL_REQUIRE(first_details.has_value());
+    PFL_REQUIRE(second_details.has_value());
+    PFL_EXPECT(first_details->has_vlan);
+    PFL_EXPECT(first_details->vlan_tags.size() == 1U);
+    PFL_EXPECT(first_details->has_mpls);
+    PFL_EXPECT(first_details->mpls_labels.size() == 2U);
+    PFL_EXPECT(second_details->has_vlan);
+    PFL_EXPECT(second_details->vlan_tags.size() == 2U);
+    PFL_EXPECT(!second_details->has_mpls);
+
+    const auto summary = enabled_session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+    PFL_EXPECT(std::none_of(summary.rows.begin(), summary.rows.end(), [](const auto& row) {
+        return row.path_text.find("VLAN(") != std::string::npos || row.path_text.find("MPLS(") != std::string::npos;
+    }));
+}
+
+void expect_vlan_and_mpls_agnostic_index_roundtrip_keeps_stored_grouping_without_reapply() {
+    const auto merge_capture_path = fixture_path("parsing/mpls/24_mpls_plain_bidirectional_same_inner_tcp.pcap");
+    const auto split_capture_path = fixture_path("parsing/mpls/24_mpls_plain_bidirectional_same_inner_tcp.pcap");
+    const auto merged_index_path = std::filesystem::temp_directory_path() / "pfl_vlan_mpls_grouping_merged.idx";
+    const auto split_index_path = std::filesystem::temp_directory_path() / "pfl_vlan_mpls_grouping_split.idx";
+
+    CaptureSession imported_vlan_and_mpls_agnostic {};
+    PFL_REQUIRE(imported_vlan_and_mpls_agnostic.open_capture(merge_capture_path, vlan_and_mpls_agnostic_import_options()));
+    PFL_EXPECT(imported_vlan_and_mpls_agnostic.list_flows().size() == 1U);
+    PFL_EXPECT(imported_vlan_and_mpls_agnostic.save_index(merged_index_path));
+
+    CaptureSession loaded_vlan_and_mpls_agnostic {};
+    PFL_REQUIRE(loaded_vlan_and_mpls_agnostic.load_index(merged_index_path));
+    PFL_EXPECT(kCaptureIndexVersion == 13U);
+    PFL_EXPECT(loaded_vlan_and_mpls_agnostic.list_flows().size() == 1U);
+    PFL_EXPECT(!loaded_vlan_and_mpls_agnostic.flow_grouping_ignores_vlan_and_mpls_layers());
+    PFL_EXPECT(protocol_path_text_or_invalid(
+        loaded_vlan_and_mpls_agnostic.state(),
+        loaded_vlan_and_mpls_agnostic.list_flows().front().protocol_path_id) == "EthernetII -> IPv4 -> TCP");
+
+    CaptureSession imported_vlan_and_mpls_sensitive {};
+    PFL_REQUIRE(imported_vlan_and_mpls_sensitive.open_capture(split_capture_path));
+    PFL_EXPECT(imported_vlan_and_mpls_sensitive.list_flows().size() == 2U);
+    PFL_EXPECT(imported_vlan_and_mpls_sensitive.save_index(split_index_path));
+
+    CaptureSession loaded_vlan_and_mpls_sensitive {};
+    PFL_REQUIRE(loaded_vlan_and_mpls_sensitive.load_index(split_index_path));
+    PFL_EXPECT(loaded_vlan_and_mpls_sensitive.list_flows().size() == 2U);
+    PFL_EXPECT(!loaded_vlan_and_mpls_sensitive.flow_grouping_ignores_vlan_and_mpls_layers());
+    PFL_EXPECT(protocol_path_text_or_invalid(
+        loaded_vlan_and_mpls_sensitive.state(),
+        loaded_vlan_and_mpls_sensitive.list_flows()[0].protocol_path_id).find("MPLS(") != std::string::npos ||
+        protocol_path_text_or_invalid(
+            loaded_vlan_and_mpls_sensitive.state(),
+            loaded_vlan_and_mpls_sensitive.list_flows()[1].protocol_path_id).find("MPLS(") != std::string::npos);
+}
+
 void expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths() {
     struct FixtureExpectation {
         std::filesystem::path relative_path {};
@@ -1959,6 +2939,21 @@ void run_protocol_path_tests() {
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
     expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
     expect_same_exact_path_reverse_tuple_stays_bidirectional();
+    expect_vlan_and_mpls_flow_identity_normalization_helper_behaviors();
+    expect_gtpu_teid_flow_identity_normalization_helper_behaviors();
+    expect_ignore_vlan_and_mpls_layers_merges_bidirectional_vlan_asymmetry();
+    expect_ignore_vlan_and_mpls_layers_merges_tagged_and_untagged_paths();
+    expect_ignore_vlan_and_mpls_layers_merges_qinq_and_untagged_paths();
+    expect_ignore_vlan_and_mpls_layers_intentionally_merges_same_direction_tuples();
+    expect_ignore_gtpu_teids_merges_direction_specific_teid_fixture();
+    expect_ignore_gtpu_teids_intentionally_merges_same_direction_tuples();
+    expect_mpls_same_inner_tuple_different_labels_merge_only_when_enabled();
+    expect_combined_setting_merges_asymmetric_mpls_plain_fixture();
+    expect_combined_setting_merges_vlan_and_stacked_mpls_fixture();
+    expect_ignore_vlan_and_mpls_layers_preserves_other_namespace_identity();
+    expect_vlan_and_mpls_agnostic_index_roundtrip_keeps_stored_grouping_without_reapply();
+    expect_ignore_gtpu_teids_preserves_other_namespace_identity();
+    expect_gtpu_teid_agnostic_index_roundtrip_keeps_stored_grouping_without_reapply();
     expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths();
     expect_terminal_control_protocols_do_not_appear_in_protocol_paths();
     expect_common_case_packets_resolve_to_owning_flow_protocol_path();

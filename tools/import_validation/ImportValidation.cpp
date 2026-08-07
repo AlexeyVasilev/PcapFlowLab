@@ -630,7 +630,7 @@ bool process_classic_legacy_import_packet(
 
         packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
         decoded.ipv4->flow_key.protocol_path_id =
-            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
+            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv4);
         if (!decoded.ipv4->packet_ref.is_ip_fragmented &&
             connection.should_attempt_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol) &&
@@ -667,7 +667,7 @@ bool process_classic_legacy_import_packet(
 
         packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
         decoded.ipv6->flow_key.protocol_path_id =
-            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
+            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv6);
         if (!decoded.ipv6->packet_ref.is_ip_fragmented &&
             connection.should_attempt_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol) &&

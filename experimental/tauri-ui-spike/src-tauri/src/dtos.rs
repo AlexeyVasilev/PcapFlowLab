@@ -7,6 +7,8 @@ pub struct SourceAvailabilityDto {
     pub opened_from_index: bool,
     pub partial_open: bool,
     pub byte_backed_inspection_available: bool,
+    pub flow_grouping_ignores_vlan_and_mpls_layers: bool,
+    pub flow_grouping_ignores_gtpu_teids: bool,
     pub active_source_capture_path: String,
     pub expected_source_capture_path: String,
 }
@@ -75,6 +77,8 @@ pub struct SaveIndexResultDto {
 pub struct SettingsDto {
     pub http_use_path_as_service_hint: bool,
     pub use_possible_tls_quic: bool,
+    pub ignore_vlan_and_mpls_layers_when_grouping_flows: bool,
+    pub ignore_gtpu_teids_when_grouping_inner_flows: bool,
     pub show_wireshark_filter_for_selected_flow: bool,
     pub validate_selected_packet_checksums: bool,
 }
@@ -112,7 +116,9 @@ pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,7 +126,9 @@ pub struct OverviewSummaryDto {
     pub packet_count: u64,
     pub flow_count: u64,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
     pub total_bytes: u64,
 }
 
@@ -167,9 +175,13 @@ pub struct ProtocolHintStatsDto {
     pub group: String,
     pub protocol_label: String,
     pub flow_count: u64,
+    pub flow_count_text: String,
     pub packet_count: u64,
+    pub packet_count_text: String,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +196,72 @@ pub struct TopPortDto {
     pub port: u16,
     pub packet_count: u64,
     pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowPacketCountHistogramBucketDto {
+    pub bucket_id: String,
+    pub label: String,
+    pub lower_bound_inclusive: u64,
+    pub upper_bound_inclusive: Option<u64>,
+    pub flow_count: u64,
+    pub original_byte_count: u64,
+    pub original_byte_count_text: String,
+    pub normalized_flow_fraction: f64,
+    pub normalized_original_byte_fraction: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturePacketSizeStatisticsBucketDto {
+    pub bucket_id: String,
+    pub label: String,
+    pub lower_bound_inclusive: u32,
+    pub upper_bound_inclusive: Option<u32>,
+    pub packet_count: u64,
+    pub normalized_fraction: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturePacketSizeStatisticsDto {
+    pub has_capture: bool,
+    pub total_packet_count: u64,
+    pub maximum_bucket_packet_count: u64,
+    pub maximum_captured_packet_length: u32,
+    pub maximum_captured_packet_length_text: String,
+    pub buckets: Vec<CapturePacketSizeStatisticsBucketDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowPacketCountHistogramDto {
+    pub has_capture: bool,
+    pub total_flow_count: u64,
+    pub total_original_byte_count: u64,
+    pub maximum_bucket_flow_count: u64,
+    pub maximum_bucket_original_byte_count: u64,
+    pub excluded_zero_packet_flow_count: u64,
+    pub excluded_zero_packet_original_byte_count: u64,
+    pub buckets: Vec<FlowPacketCountHistogramBucketDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolHintStatisticsDto {
+    pub has_capture: bool,
+    pub protocol_hints: Vec<ProtocolHintStatsDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuicTlsStatisticsDto {
+    pub has_capture: bool,
+    pub quic_recognition: QuicRecognitionDto,
+    pub tls_recognition: TlsRecognitionDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopEndpointPortStatisticsDto {
+    pub has_capture: bool,
+    pub limit: usize,
+    pub top_endpoints: Vec<TopEndpointDto>,
+    pub top_ports: Vec<TopPortDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,11 +301,6 @@ pub struct OverviewDto {
     pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
     pub protocol_summary: OverviewProtocolSummaryDto,
-    pub quic_recognition: QuicRecognitionDto,
-    pub tls_recognition: TlsRecognitionDto,
-    pub protocol_hints: Vec<ProtocolHintStatsDto>,
-    pub top_endpoints: Vec<TopEndpointDto>,
-    pub top_ports: Vec<TopPortDto>,
     pub protocol_path_statistics_default_mode: u8,
     pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "core/domain/ConnectionKey.h"
@@ -67,6 +68,15 @@ struct ConnectionV6 {
     [[nodiscard]] bool should_attempt_hint_detection(const PacketRef& packet, ProtocolId protocol) const noexcept;
     void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
 };
+
+[[nodiscard]] std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept;
+[[nodiscard]] std::optional<FlowKeyV6> first_observed_flow_key(const ConnectionV6& connection) noexcept;
+[[nodiscard]] std::optional<EndpointKeyV4> first_observed_endpoint_a(const ConnectionV4& connection) noexcept;
+[[nodiscard]] std::optional<EndpointKeyV4> first_observed_endpoint_b(const ConnectionV4& connection) noexcept;
+[[nodiscard]] std::optional<EndpointKeyV6> first_observed_endpoint_a(const ConnectionV6& connection) noexcept;
+[[nodiscard]] std::optional<EndpointKeyV6> first_observed_endpoint_b(const ConnectionV6& connection) noexcept;
+[[nodiscard]] bool has_valid_first_observed_orientation(const ConnectionV4& connection) noexcept;
+[[nodiscard]] bool has_valid_first_observed_orientation(const ConnectionV6& connection) noexcept;
 
 }  // namespace pfl
 

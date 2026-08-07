@@ -36,6 +36,13 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(arp_key.first.port == 0U);
         PFL_EXPECT(arp_key.second.addr == ipv4(192, 168, 1, 10));
         PFL_EXPECT(arp_key.second.port == 0U);
+        PFL_EXPECT(rows[0].endpoint_a == "192.168.1.10");
+        PFL_EXPECT(rows[0].endpoint_b == "192.168.1.1");
+
+        const auto arp_packet_rows = session.list_flow_packets(0);
+        PFL_REQUIRE(arp_packet_rows.size() == 2U);
+        PFL_EXPECT(arp_packet_rows[0].direction_text == "A\xE2\x86\x92" "B");
+        PFL_EXPECT(arp_packet_rows[1].direction_text == "B\xE2\x86\x92" "A");
 
         const auto request_packet = session.find_packet(0);
         PFL_REQUIRE(request_packet.has_value());

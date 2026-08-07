@@ -47,6 +47,11 @@ public:
         const FrontendSmartExportOptions& options
     ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
+    [[nodiscard]] FrontendCapturePacketSizeStatisticsDto get_capture_packet_size_statistics() const;
+    [[nodiscard]] FrontendFlowPacketCountHistogramDto get_flow_packet_count_histogram() const;
+    [[nodiscard]] FrontendProtocolHintStatisticsDto get_protocol_hint_statistics() const;
+    [[nodiscard]] FrontendQuicTlsStatisticsDto get_quic_tls_statistics() const;
+    [[nodiscard]] FrontendTopEndpointPortStatisticsDto get_top_endpoint_port_statistics(std::size_t limit = 5U) const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] std::vector<FrontendProtocolPathLegendEntryDto> get_protocol_path_legend() const;
     [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(

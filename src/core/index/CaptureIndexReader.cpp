@@ -158,6 +158,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         std::uint16_t reserved {0};
         CaptureSourceInfo source_info {};
         CaptureState state {};
+        state.packet_size_statistics = {};
         bool has_source_info {false};
         bool has_summary {false};
         bool has_protocol_paths {false};
@@ -286,7 +287,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::ipv4_connections:
                 if (!parse_section_payload(payload, [&](std::istream& section_stream) {
-                    return detail::read_connection_table_chunk(section_stream, state.ipv4_connections);
+                    return detail::read_connection_table_chunk(
+                        section_stream,
+                        state.ipv4_connections,
+                        &state.packet_size_statistics
+                    );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv4 connection section");
                     if (ctx != nullptr) {
@@ -298,7 +303,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::ipv6_connections:
                 if (!parse_section_payload(payload, [&](std::istream& section_stream) {
-                    return detail::read_connection_table_chunk(section_stream, state.ipv6_connections);
+                    return detail::read_connection_table_chunk(
+                        section_stream,
+                        state.ipv6_connections,
+                        &state.packet_size_statistics
+                    );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv6 connection section");
                     if (ctx != nullptr) {
@@ -310,7 +319,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::unrecognized_packets:
                 if (has_unrecognized_packets || !parse_section_payload(payload, [&](std::istream& section_stream) {
-                    return detail::read_unrecognized_packet_records(section_stream, state.unrecognized_packets);
+                    return detail::read_unrecognized_packet_records(
+                        section_stream,
+                        state.unrecognized_packets,
+                        &state.packet_size_statistics
+                    );
                 })) {
                     set_error_context(section_header_offset, "invalid unrecognized-packets section");
                     if (ctx != nullptr) {

@@ -139,7 +139,9 @@ The `Flows` tab now supports:
 - packet details tabs:
   - `Summary`
   - `Bytes`
-  - `Protocol`
+- selected Stream Item Details tabs:
+  - `Summary`
+  - `Item Data`
 - the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
 - the top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button
 - the `Bytes` tab now shows one selected packet-byte view on demand rather than a preview-only display
@@ -188,6 +190,7 @@ The `Statistics` tab now supports:
 - transport summary
 - IP family summary
 - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
+- optional `Packet Size Distribution` section sourced from retained import/index metadata
 - detected protocol hints
 - QUIC recognition
 - TLS recognition
@@ -197,6 +200,39 @@ The `Statistics` tab now supports:
   - protocol hints
   - top endpoints
   - top ports
+
+Backend/API note:
+
+- Tauri now matches the Qt Statistics section contract:
+  - overview cards plus `Transport` / `Family` summaries remain always visible
+  - six optional sections start collapsed for each capture
+  - first eligible expansion issues the dedicated request once per capture
+  - collapse/reopen and Statistics-tab return reuse the cached result
+  - capture replacement clears expansion and per-section cached results
+- `Packet Size Distribution` is separate from the selected-flow Analysis packet-size histogram:
+  - it uses captured packet length
+  - it includes recognized, unrecognized, and decode-malformed imported packets
+  - it excludes unreadable truncated tail bytes
+  - import performs the accumulation and index load reconstructs it from persisted `PacketRef::captured_length`
+  - opening the section transports only the finalized DTO and renders it
+  - unsupported-interface PCAPNG EPBs skipped before packet surfacing are not represented
+- `Flows by Packet Count` keeps its existing packet-count buckets but now offers
+  frontend-local `Flows` / `Original bytes` display modes over the same cached
+  histogram payload
+- changing that histogram mode is presentation-only and does not trigger a
+  second backend request or a second flow walk
+- the shared backend now also provides dedicated typed requests for:
+  - Packet Size Distribution
+  - Flows by Packet Count
+  - Detected Protocol Hints
+  - QUIC and TLS
+  - Top Endpoints and Ports
+- overview byte cards and Protocol Summary byte columns now reuse shared C++
+  compact formatting
+- `Detected Protocol Hints` now reuses shared C++ count/byte-plus-percentage
+  formatting instead of JavaScript-side calculations
+- Tauri overview no longer duplicates these optional-section payloads
+- Protocol Path remains on its separate lazy request/cache path
 
 ## Current Analysis capability
 
@@ -344,12 +380,13 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - save/open index workflow polish
 - the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
+- the shared runtime settings slice now includes both `Ignore VLAN and MPLS layers when grouping flows` and `Ignore GTP-U TEIDs when grouping inner flows`, and the Tauri shell mirrors the same reopen-required status plus the same raw-import and index-loaded informational grouping banners as Qt
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Bytes`
 - packet details display polish remains incomplete compared with Qt
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing
 - stream item details are now much closer to Qt, but some protocol-specific formatting/helper paths still remain Qt-only
-- statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
+- statistics still miss some deeper drill-down/navigation behavior compared with Qt
 - Analysis still misses:
   - richer charts
   - fuller Qt analysis workspace parity
@@ -365,7 +402,6 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - Save/open index workflow polish
 - settings persistence and any broader Settings/preferences parity
 - Stream-to-packet navigation
-- Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
 - fuller Analysis parity
 - analysis rate-graph presentation polish versus Qt

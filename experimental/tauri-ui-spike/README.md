@@ -22,6 +22,7 @@ Implemented slice:
 - `Flow -> Export All Flows Info to CSV...` through the shared session flow-manifest CSV path
 - `Flow -> Smart Export...` through the existing session smart-export path
 - `View -> Settings` for the currently shared safe runtime settings slice
+- that shared runtime settings slice includes `Ignore VLAN and MPLS layers when grouping flows` and `Ignore GTP-U TEIDs when grouping inner flows`; both affect raw capture imports only while existing indexes keep their stored grouping
 - locate/attach source capture for index-backed or source-missing sessions
 - dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
@@ -69,10 +70,15 @@ Implemented slice:
   - overview cards
   - transport summary
   - IP family summary
+  - shared C++ compact byte/count/percentage formatting for overview bytes, Protocol Summary byte columns, and Detected Protocol Hints values
   - optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
-  - detected protocol hints
-  - QUIC/TLS recognition
-  - top endpoints / top ports
+  - six optional collapsible sections, initially closed for each capture:
+    - Packet Size Distribution
+    - Flows by Packet Count
+    - Protocol Path Tree
+    - Detected Protocol Hints
+    - QUIC and TLS
+    - Top Endpoints and Ports
   - drill-down into the existing `Flows` filter
 - first selected-flow `Analysis` workflow:
 - left-side Analysis Flows list built from already loaded flow DTOs
@@ -168,7 +174,22 @@ Implemented slice:
 - Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Item Data` tabs.
 - Selecting a stream item does not yet navigate to packet details or source packets.
 - Selected-flow packet and stream responsiveness on very large flows is still bounded, but not yet optimized deeply in the shared backend/session path.
-- The Statistics tab renders compact overview/statistics sections from the frontend-neutral overview DTO.
+- The Statistics tab keeps overview cards plus transport/family summaries always visible.
+- The six optional Statistics sections start closed for each capture and load on first eligible expansion.
+- Optional Statistics results are retained for the current capture, reused across collapse/reopen and tab return, and reset on capture replacement.
+- Tauri now requests optional Statistics content through dedicated shared-backend commands instead of eager overview duplication.
+- `Packet Size Distribution` is a separate capture-wide contract from the selected-flow Analysis packet-size histogram:
+  - it uses captured packet length
+  - it includes recognized, unrecognized, and decode-malformed imported packets
+  - it excludes unreadable truncated tail bytes
+  - import accumulates it once and index load reconstructs it from persisted `PacketRef::captured_length`
+  - expansion only requests and renders the retained DTO
+  - unsupported-interface PCAPNG EPBs skipped before packet surfacing are not represented
+- `Flows by Packet Count` keeps the existing packet-count buckets but now adds
+  `Flows` / `Original bytes` display modes over the same cached histogram
+  result.
+- Switching that histogram mode is presentation-only and does not trigger a
+  second backend request, cache reset, or second flow walk.
 - Statistics drill-down currently works by switching to `Flows` and reusing the existing frontend filter.
 - The Analysis tab has its own compact flow list on the left and selected-flow analysis details on the right.
 - Analysis stays selected-flow-only and does not run during capture open.
@@ -228,7 +249,6 @@ Implemented slice:
 - The Stream tab is still experimental and exposes only a bounded selected-flow slice with Qt-like stream-item details; stream-to-packet navigation is still missing.
 - Selected-flow packet/stream latency on very large flows is still a known issue shared with the common backend/session path.
 - Statistics remain partial compared to Qt:
-  - Qt-style percentage formatting is still deferred.
   - Drill-down does not yet navigate directly to a specific flow row, packet row, or packet details.
 - The current Tauri Analysis tab intentionally covers only a first compact slice of the existing selected-flow session analysis:
   - flow summary

@@ -56,6 +56,9 @@ bool ImportCheckpointWriter::write(const std::filesystem::path& checkpoint_path,
         }) ||
         !write_marshaled_section(stream, detail::ImportCheckpointSectionId::ipv6_connections, [&](std::ostream& payload) {
             return detail::write_connection_table(payload, checkpoint.state.ipv6_connections);
+        }) ||
+        !write_marshaled_section(stream, detail::ImportCheckpointSectionId::unrecognized_packets, [&](std::ostream& payload) {
+            return detail::write_unrecognized_packet_records(payload, checkpoint.state.unrecognized_packets);
         })) {
         return false;
     }

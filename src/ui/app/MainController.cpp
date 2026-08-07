@@ -3,6 +3,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "core/decode/PacketDecodeSupport.h"
@@ -53,6 +54,7 @@ constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
 constexpr int kProtocolPathStatisticsModeKindOverview = 0;
 constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
 constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
+constexpr std::size_t kTopSummaryLimit = 5U;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
@@ -201,6 +203,93 @@ QString formatCaptureStorageSummaryText(const CaptureStorageSummary& summary) {
         .arg(summary.approx_protocol_path_layer_payload_bytes);
     lines << QStringLiteral("Notes: estimates exclude allocator, hash-node, and transient UI/frontend copy overhead.");
     return lines.join(QLatin1Char('\n'));
+}
+
+QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary& summary) {
+    const auto shared_rows = session_detail::build_protocol_hint_statistics_rows(summary);
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(shared_rows.size()));
+    for (const auto& hint_row : shared_rows) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("title"), QString::fromStdString(hint_row.protocol_label));
+        row.insert(QStringLiteral("group"), QString::fromStdString(hint_row.group));
+        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(hint_row.flow_count));
+        row.insert(QStringLiteral("flowCountText"), QString::fromStdString(hint_row.flow_count_text));
+        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(hint_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), QString::fromStdString(hint_row.packet_count_text));
+        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(hint_row.captured_bytes));
+        row.insert(QStringLiteral("capturedBytesText"), QString::fromStdString(hint_row.captured_bytes_text));
+        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(hint_row.original_bytes));
+        row.insert(QStringLiteral("originalBytesText"), QString::fromStdString(hint_row.original_bytes_text));
+        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(hint_row.original_bytes));
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+QString format_size_value(const std::uint64_t value);
+
+QVariantList build_packet_size_distribution_rows(const CapturePacketSizeStatistics& statistics) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(statistics.buckets.size()));
+
+    for (const auto& bucket : statistics.buckets) {
+        QVariantMap row {};
+        row.insert(
+            QStringLiteral("bucketId"),
+            QString::fromUtf8(bucket.stable_id.data(), static_cast<qsizetype>(bucket.stable_id.size()))
+        );
+        row.insert(QStringLiteral("label"), QString::fromStdString(session_detail::capture_packet_size_bucket_label(bucket)));
+        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
+            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
+            : QVariant {});
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(bucket.packet_count));
+        row.insert(QStringLiteral("normalizedFraction"),
+            statistics.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
+                : 0.0);
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& histogram) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(histogram.buckets.size()));
+
+    const auto max_flow_count = histogram.maximum_bucket_flow_count;
+    const auto max_original_byte_count = histogram.maximum_bucket_original_byte_count;
+    for (const auto& bucket : histogram.buckets) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketId"), QString::fromStdString(bucket.stable_id));
+        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
+            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
+            : QVariant {});
+        row.insert(QStringLiteral("label"), bucket.upper_bound_inclusive.has_value()
+            ? (*bucket.upper_bound_inclusive == bucket.lower_bound_inclusive
+                ? QString::number(bucket.lower_bound_inclusive)
+                : QStringLiteral("%1-%2").arg(bucket.lower_bound_inclusive).arg(*bucket.upper_bound_inclusive))
+            : QStringLiteral("%1+").arg(bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(bucket.flow_count));
+        row.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(bucket.original_byte_count));
+        row.insert(QStringLiteral("originalByteCountText"), format_size_value(bucket.original_byte_count));
+        const auto normalized_flow_fraction =
+            max_flow_count > 0U
+                ? static_cast<double>(bucket.flow_count) / static_cast<double>(max_flow_count)
+                : 0.0;
+        row.insert(QStringLiteral("normalizedFraction"), normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedFlowFraction"), normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedOriginalByteFraction"),
+            max_original_byte_count > 0U
+                ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(max_original_byte_count)
+                : 0.0);
+        rows.push_back(row);
+    }
+
+    return rows;
 }
 
 QString selected_flow_service_hint(const FlowListModel& flow_model, const int selected_flow_index) {
@@ -1740,6 +1829,7 @@ QString buildPacketSummary(
 
 QString buildPacketSummaryFallback(
     const PacketRef& packet,
+    const QString& reason_text = {},
     const PacketChecksumSections& checksum_sections = {}
 ) {
     QStringList lines {};
@@ -1761,11 +1851,99 @@ QString buildPacketSummaryFallback(
         warnings.push_back(QStringLiteral("Captured Length: %1").arg(packet.captured_length));
         warnings.push_back(QStringLiteral("Original Length: %1").arg(packet.original_length));
     }
+    if (!reason_text.isEmpty()) {
+        warnings.push_back(reason_text);
+    }
     warnings.append(checksum_sections.warnings);
     appendSection(lines, QStringLiteral("Warnings"), warnings);
     appendSection(lines, QStringLiteral("Checksums"), checksum_sections.summary_lines);
 
     return lines.join(QLatin1Char('\n'));
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_layers(
+    const PacketRef& packet,
+    const QString& reason_text = {},
+    const PacketChecksumSections& checksum_sections = {}
+) {
+    std::vector<session_detail::PacketSummaryLayer> layers {};
+
+    std::vector<session_detail::PacketSummaryField> warning_fields {};
+    if (packet.is_ip_fragmented) {
+        warning_fields.push_back({});
+        warning_fields.back().value = "Packet is IP-fragmented";
+    }
+    if (packet.captured_length != packet.original_length) {
+        warning_fields.push_back({});
+        warning_fields.back().value = "Packet is truncated in capture";
+        warning_fields.push_back({
+            .label = "Captured Length",
+            .value = std::to_string(packet.captured_length) + " bytes",
+        });
+        warning_fields.push_back({
+            .label = "Original Length",
+            .value = std::to_string(packet.original_length) + " bytes",
+        });
+    }
+    if (!reason_text.isEmpty()) {
+        warning_fields.push_back({});
+        warning_fields.back().value = reason_text.toStdString();
+    }
+    for (const auto& warning : checksum_sections.warnings) {
+        warning_fields.push_back({
+            .value = warning.toStdString(),
+        });
+    }
+    if (!warning_fields.empty()) {
+        layers.push_back(session_detail::PacketSummaryLayer {
+            .id = "warnings",
+            .title = "Warnings",
+            .fields = std::move(warning_fields),
+            .expanded_by_default = true,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    std::vector<session_detail::PacketSummaryField> frame_fields {};
+    frame_fields.push_back({
+        .label = "Packet number in file",
+        .value = std::to_string(packet.packet_index + 1U),
+    });
+    frame_fields.push_back({
+        .label = "Timestamp",
+        .value = session_detail::format_packet_timestamp_full(packet),
+    });
+    frame_fields.push_back({
+        .label = "Captured Length",
+        .value = std::to_string(packet.captured_length) + " bytes",
+    });
+    frame_fields.push_back({
+        .label = "Original Length",
+        .value = std::to_string(packet.original_length) + " bytes",
+    });
+    layers.push_back(session_detail::PacketSummaryLayer {
+        .id = "frame",
+        .title = "Frame: Packet " + std::to_string(packet.packet_index + 1U) + " in file",
+        .fields = std::move(frame_fields),
+    });
+
+    std::vector<session_detail::PacketSummaryField> checksum_fields {};
+    checksum_fields.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
+    for (const auto& line : checksum_sections.summary_lines) {
+        checksum_fields.push_back({
+            .value = line.toStdString(),
+        });
+    }
+    if (!checksum_fields.empty()) {
+        layers.push_back(session_detail::PacketSummaryLayer {
+            .id = "checksums",
+            .title = "Checksums",
+            .fields = std::move(checksum_fields),
+        });
+    }
+
+    return layers;
 }
 
 }  // namespace
@@ -2674,42 +2852,110 @@ qulonglong MainController::capturedBytes() const noexcept {
     );
 }
 
+QString MainController::capturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(capturedBytes()));
+}
+
 qulonglong MainController::originalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
+}
+
+QString MainController::originalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(originalBytes()));
 }
 
 qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
 }
 
-QVariantList MainController::protocolHintDistribution() const {
-    auto makeRow = [](const char* label, const ProtocolStats& stats) {
-        QVariantMap row {};
-        row.insert(QStringLiteral("title"), QString::fromUtf8(label));
-        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(stats.flow_count));
-        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(stats.packet_count));
-        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(stats.captured_bytes));
-        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(stats.original_bytes));
-        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.original_bytes));
-        return row;
-    };
+int MainController::statisticsSectionsResetToken() const noexcept {
+    return statistics_sections_reset_token_;
+}
 
-    QVariantList rows {};
-    rows.reserve(13);
-    rows.push_back(makeRow("HTTP", protocol_summary_.hint_http));
-    rows.push_back(makeRow("TLS", protocol_summary_.hint_tls));
-    rows.push_back(makeRow("Possible TLS", protocol_summary_.hint_possible_tls));
-    rows.push_back(makeRow("DNS", protocol_summary_.hint_dns));
-    rows.push_back(makeRow("QUIC", protocol_summary_.hint_quic));
-    rows.push_back(makeRow("Possible QUIC", protocol_summary_.hint_possible_quic));
-    rows.push_back(makeRow("SSH", protocol_summary_.hint_ssh));
-    rows.push_back(makeRow("STUN", protocol_summary_.hint_stun));
-    rows.push_back(makeRow("BitTorrent", protocol_summary_.hint_bittorrent));
-    rows.push_back(makeRow("Mail protocols", protocol_summary_.hint_mail_protocols));
-    rows.push_back(makeRow("DHCP", protocol_summary_.hint_dhcp));
-    rows.push_back(makeRow("mDNS", protocol_summary_.hint_mdns));
-    rows.push_back(makeRow("Unknown", protocol_summary_.hint_unknown));
-    return rows;
+int MainController::packetSizeDistributionState() const noexcept {
+    return static_cast<int>(packet_size_distribution_state_);
+}
+
+QString MainController::packetSizeDistributionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::packet_size_distribution);
+}
+
+QString MainController::packetSizeDistributionSummaryText() const {
+    return packet_size_distribution_state_ == StatisticsSectionRequestState::ready
+        ? QStringLiteral("%1 packets").arg(packet_size_statistics_.total_packet_count)
+        : QString {};
+}
+
+qulonglong MainController::packetSizeDistributionTotalPacketCount() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.total_packet_count);
+}
+
+qulonglong MainController::packetSizeDistributionMaximumBucketPacketCount() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.maximum_bucket_packet_count);
+}
+
+qulonglong MainController::packetSizeDistributionMaximumCapturedPacketLength() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.maximum_captured_packet_length);
+}
+
+QString MainController::packetSizeDistributionMaximumCapturedPacketLengthText() const {
+    return QString::fromStdString(
+        session_detail::format_statistics_size_value(packet_size_statistics_.maximum_captured_packet_length)
+    );
+}
+
+QVariantList MainController::packetSizeDistributionRows() const {
+    return packet_size_distribution_rows_;
+}
+
+int MainController::flowPacketHistogramState() const noexcept {
+    return static_cast<int>(flow_packet_histogram_state_);
+}
+
+QString MainController::flowPacketHistogramStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::flow_packet_histogram);
+}
+
+QString MainController::flowPacketHistogramSummaryText() const {
+    return flow_packet_count_histogram_.total_flow_count > 0U
+        ? QStringLiteral("%1 flows").arg(flow_packet_count_histogram_.total_flow_count)
+        : QString {};
+}
+
+qulonglong MainController::flowPacketHistogramTotalFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_packet_count_histogram_.total_flow_count);
+}
+
+qulonglong MainController::flowPacketHistogramMaximumBucketFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_packet_count_histogram_.maximum_bucket_flow_count);
+}
+
+qulonglong MainController::flowPacketHistogramExcludedZeroPacketFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_packet_count_histogram_.excluded_zero_packet_flow_count);
+}
+
+QVariantList MainController::flowPacketHistogramRows() const {
+    return flow_packet_histogram_rows_;
+}
+
+int MainController::protocolHintsSectionState() const noexcept {
+    return static_cast<int>(protocol_hints_section_state_);
+}
+
+QString MainController::protocolHintsSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::protocol_hints);
+}
+
+QVariantList MainController::protocolHintDistribution() const {
+    return protocol_hint_distribution_;
+}
+
+int MainController::protocolPathSectionState() const noexcept {
+    return static_cast<int>(protocol_path_section_state_);
+}
+
+QString MainController::protocolPathSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::protocol_path);
 }
 
 QVariantList MainController::protocolPathStatistics() const {
@@ -2757,8 +3003,16 @@ qulonglong MainController::tcpCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.captured_bytes);
 }
 
+QString MainController::tcpCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(tcpCapturedBytes()));
+}
+
 qulonglong MainController::tcpOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.original_bytes);
+}
+
+QString MainController::tcpOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(tcpOriginalBytes()));
 }
 
 qulonglong MainController::tcpTotalBytes() const noexcept {
@@ -2777,8 +3031,16 @@ qulonglong MainController::udpCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.captured_bytes);
 }
 
+QString MainController::udpCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(udpCapturedBytes()));
+}
+
 qulonglong MainController::udpOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.original_bytes);
+}
+
+QString MainController::udpOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(udpOriginalBytes()));
 }
 
 qulonglong MainController::udpTotalBytes() const noexcept {
@@ -2797,8 +3059,16 @@ qulonglong MainController::sctpCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.sctp.captured_bytes);
 }
 
+QString MainController::sctpCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(sctpCapturedBytes()));
+}
+
 qulonglong MainController::sctpOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.sctp.original_bytes);
+}
+
+QString MainController::sctpOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(sctpOriginalBytes()));
 }
 
 qulonglong MainController::sctpTotalBytes() const noexcept {
@@ -2817,8 +3087,16 @@ qulonglong MainController::otherCapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.other.captured_bytes);
 }
 
+QString MainController::otherCapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(otherCapturedBytes()));
+}
+
 qulonglong MainController::otherOriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.other.original_bytes);
+}
+
+QString MainController::otherOriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(otherOriginalBytes()));
 }
 
 qulonglong MainController::otherTotalBytes() const noexcept {
@@ -2837,8 +3115,16 @@ qulonglong MainController::ipv4CapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv4.captured_bytes);
 }
 
+QString MainController::ipv4CapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv4CapturedBytes()));
+}
+
 qulonglong MainController::ipv4OriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv4.original_bytes);
+}
+
+QString MainController::ipv4OriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv4OriginalBytes()));
 }
 
 qulonglong MainController::ipv4TotalBytes() const noexcept {
@@ -2857,8 +3143,16 @@ qulonglong MainController::ipv6CapturedBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.captured_bytes);
 }
 
+QString MainController::ipv6CapturedBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv6CapturedBytes()));
+}
+
 qulonglong MainController::ipv6OriginalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.original_bytes);
+}
+
+QString MainController::ipv6OriginalBytesText() const {
+    return QString::fromStdString(session_detail::format_statistics_compact_size_value(ipv6OriginalBytes()));
 }
 
 qulonglong MainController::ipv6TotalBytes() const noexcept {
@@ -2875,6 +3169,14 @@ qulonglong MainController::unrecognizedStatsCapturedBytes() const noexcept {
 
 qulonglong MainController::unrecognizedStatsOriginalBytes() const noexcept {
     return static_cast<qulonglong>(unrecognized_packet_statistics_.original_bytes);
+}
+
+int MainController::quicTlsSectionState() const noexcept {
+    return static_cast<int>(quic_tls_section_state_);
+}
+
+QString MainController::quicTlsSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::quic_tls);
 }
 
 qulonglong MainController::quicTotalFlows() const noexcept {
@@ -2929,6 +3231,14 @@ qulonglong MainController::tlsVersionUnknown() const noexcept {
     return static_cast<qulonglong>(tls_recognition_stats_.version_unknown);
 }
 
+int MainController::topEndpointPortSectionState() const noexcept {
+    return static_cast<int>(top_endpoints_ports_section_state_);
+}
+
+QString MainController::topEndpointPortSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::top_endpoints_ports);
+}
+
 int MainController::statisticsMode() const noexcept {
     return statistics_mode_;
 }
@@ -2941,10 +3251,17 @@ bool MainController::usePossibleTlsQuic() const noexcept {
     return pending_analysis_settings_.use_possible_tls_quic;
 }
 
+bool MainController::ignoreVlanAndMplsLayersWhenGroupingFlows() const noexcept {
+    return pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows;
+}
+
+bool MainController::ignoreGtpuTeidsWhenGroupingInnerFlows() const noexcept {
+    return pending_analysis_settings_.ignore_gtpu_teids_when_grouping_inner_flows;
+}
+
 bool MainController::validateSelectedPacketChecksums() const noexcept {
     return validate_selected_packet_checksums_;
 }
-
 
 bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
     return show_wireshark_filter_for_selected_flow_;
@@ -2952,6 +3269,38 @@ bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
 
 bool MainController::showProtocolPathColumn() const noexcept {
     return show_protocol_path_column_;
+}
+
+QString MainController::flowGroupingWarningText() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    if (session_.opened_from_index()) {
+        return pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows
+            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied.")
+            : QString {};
+    }
+
+    return session_.flow_grouping_ignores_vlan_and_mpls_layers()
+        ? QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.")
+        : QString {};
+}
+
+QString MainController::gtpuTeidGroupingInfoText() const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    if (session_.opened_from_index()) {
+        return pending_analysis_settings_.ignore_gtpu_teids_when_grouping_inner_flows
+            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current GTP-U TEID grouping setting is not reapplied.")
+            : QString {};
+    }
+
+    return session_.flow_grouping_ignores_gtpu_teids()
+        ? QStringLiteral("GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.")
+        : QString {};
 }
 
 QString MainController::selectedFlowWiresharkFilter() const {
@@ -3974,20 +4323,309 @@ void MainController::showSelectedProtocolPathFlows() {
     emit protocolPathFlowFilterChanged();
 }
 
-void MainController::ensureProtocolPathStatisticsLoaded() {
+void MainController::setStatisticsSectionState(
+    const StatisticsOptionalSection section,
+    const StatisticsSectionRequestState state,
+    QString errorText
+) {
+    switch (section) {
+    case StatisticsOptionalSection::packet_size_distribution:
+        packet_size_distribution_state_ = state;
+        packet_size_distribution_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::flow_packet_histogram:
+        flow_packet_histogram_state_ = state;
+        flow_packet_histogram_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::protocol_path:
+        protocol_path_section_state_ = state;
+        protocol_path_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::protocol_hints:
+        protocol_hints_section_state_ = state;
+        protocol_hints_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::quic_tls:
+        quic_tls_section_state_ = state;
+        quic_tls_error_text_ = std::move(errorText);
+        break;
+    case StatisticsOptionalSection::top_endpoints_ports:
+        top_endpoints_ports_section_state_ = state;
+        top_endpoints_ports_error_text_ = std::move(errorText);
+        break;
+    }
+}
+
+QString MainController::statisticsSectionStatusText(const StatisticsOptionalSection section) const {
+    StatisticsSectionRequestState state {StatisticsSectionRequestState::not_requested};
+    QString error_text {};
+
+    switch (section) {
+    case StatisticsOptionalSection::packet_size_distribution:
+        state = packet_size_distribution_state_;
+        error_text = packet_size_distribution_error_text_;
+        break;
+    case StatisticsOptionalSection::flow_packet_histogram:
+        state = flow_packet_histogram_state_;
+        error_text = flow_packet_histogram_error_text_;
+        break;
+    case StatisticsOptionalSection::protocol_path:
+        state = protocol_path_section_state_;
+        error_text = protocol_path_error_text_;
+        break;
+    case StatisticsOptionalSection::protocol_hints:
+        state = protocol_hints_section_state_;
+        error_text = protocol_hints_error_text_;
+        break;
+    case StatisticsOptionalSection::quic_tls:
+        state = quic_tls_section_state_;
+        error_text = quic_tls_error_text_;
+        break;
+    case StatisticsOptionalSection::top_endpoints_ports:
+        state = top_endpoints_ports_section_state_;
+        error_text = top_endpoints_ports_error_text_;
+        break;
+    }
+
+    switch (state) {
+    case StatisticsSectionRequestState::loading:
+        if (section == StatisticsOptionalSection::packet_size_distribution) {
+            return QStringLiteral("Loading packet-size distribution...");
+        }
+        return QStringLiteral("Calculating...");
+    case StatisticsSectionRequestState::unavailable:
+        return QStringLiteral("Statistics are unavailable for this capture.");
+    case StatisticsSectionRequestState::error:
+        return error_text.isEmpty() ? QStringLiteral("Failed to calculate this section.") : error_text;
+    case StatisticsSectionRequestState::not_requested:
+    case StatisticsSectionRequestState::ready:
+        return {};
+    }
+
+    return {};
+}
+
+void MainController::resetStatisticsSectionState(const bool emitResetToken) {
+    packet_size_distribution_expanded_ = false;
+    flow_packet_histogram_expanded_ = false;
+    protocol_path_section_expanded_ = false;
+    protocol_hints_section_expanded_ = false;
+    quic_tls_section_expanded_ = false;
+    top_endpoints_ports_section_expanded_ = false;
+
+    packet_size_statistics_ = {};
+    packet_size_distribution_rows_.clear();
+    flow_packet_count_histogram_ = {};
+    flow_packet_histogram_rows_.clear();
+    protocol_hint_distribution_.clear();
+    protocol_path_summary_ = {};
+    protocol_path_stats_model_.clear();
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    quic_recognition_stats_ = {};
+    tls_recognition_stats_ = {};
+    top_endpoints_model_.clear();
+    top_ports_model_.clear();
+
+    setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::not_requested);
+
+    if (emitResetToken) {
+        ++statistics_sections_reset_token_;
+        emit statisticsSectionsResetTokenChanged();
+    }
+}
+
+void MainController::ensurePacketSizeDistributionLoaded() {
+    if (!packet_size_distribution_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
     if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (packet_size_distribution_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    packet_size_statistics_ = session_.packet_size_statistics();
+    packet_size_distribution_rows_ = build_packet_size_distribution_rows(packet_size_statistics_);
+    setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureFlowPacketHistogramLoaded() {
+    if (!flow_packet_histogram_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (flow_packet_histogram_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    flow_packet_count_histogram_ = session_.flow_packet_count_histogram();
+    flow_packet_histogram_rows_ = build_flow_packet_histogram_rows(flow_packet_count_histogram_);
+    setStatisticsSectionState(StatisticsOptionalSection::flow_packet_histogram, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureProtocolHintsLoaded() {
+    if (!protocol_hints_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureProtocolPathStatisticsLoaded() {
+    ensureProtocolPathSectionLoaded();
+}
+
+void MainController::ensureProtocolPathSectionLoaded() {
+    if (!protocol_path_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
         return;
     }
 
     const auto current_mode = protocol_path_statistics_mode_from_int(statistics_mode_);
-    if (loaded_protocol_path_statistics_mode_ == statistics_mode_) {
+    if (protocol_path_section_state_ == StatisticsSectionRequestState::ready &&
+        loaded_protocol_path_statistics_mode_ == statistics_mode_) {
         return;
     }
 
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::loading);
+    emit stateChanged();
     protocol_path_summary_ = session_.protocol_path_summary(current_mode);
     protocol_path_stats_model_.refresh(protocol_path_summary_);
     loaded_protocol_path_statistics_mode_ = statistics_mode_;
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::ready);
     emit stateChanged();
+}
+
+void MainController::ensureQuicTlsSectionLoaded() {
+    if (!quic_tls_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (quic_tls_section_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    const auto summary = session_.quic_tls_summary();
+    quic_recognition_stats_ = summary.quic;
+    tls_recognition_stats_ = summary.tls;
+    setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::ensureTopEndpointsAndPortsSectionLoaded() {
+    if (!top_endpoints_ports_section_expanded_) {
+        return;
+    }
+    if (current_tab_index_ != kStatsTabIndex) {
+        return;
+    }
+    if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::unavailable);
+        emit stateChanged();
+        return;
+    }
+    if (top_endpoints_ports_section_state_ == StatisticsSectionRequestState::ready) {
+        return;
+    }
+
+    setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::loading);
+    emit stateChanged();
+    refreshTopSummaryModels();
+    setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::ready);
+    emit stateChanged();
+}
+
+void MainController::maybeLoadExpandedStatisticsSections() {
+    ensurePacketSizeDistributionLoaded();
+    ensureFlowPacketHistogramLoaded();
+    ensureProtocolPathSectionLoaded();
+    ensureProtocolHintsLoaded();
+    ensureQuicTlsSectionLoaded();
+    ensureTopEndpointsAndPortsSectionLoaded();
+}
+
+void MainController::setStatisticsSectionExpanded(const int section, const bool expanded) {
+    const auto normalized_section = static_cast<StatisticsOptionalSection>(section);
+    switch (normalized_section) {
+    case StatisticsOptionalSection::packet_size_distribution:
+        packet_size_distribution_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::flow_packet_histogram:
+        flow_packet_histogram_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::protocol_path:
+        protocol_path_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::protocol_hints:
+        protocol_hints_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::quic_tls:
+        quic_tls_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::top_endpoints_ports:
+        top_endpoints_ports_section_expanded_ = expanded;
+        break;
+    }
+
+    if (expanded) {
+        maybeLoadExpandedStatisticsSections();
+    }
 }
 
 void MainController::clearProtocolPathFlowFilter() {
@@ -4065,11 +4703,11 @@ void MainController::setStatisticsMode(const int mode) {
     loaded_protocol_path_statistics_mode_ = -1;
     protocol_path_stats_model_.clear();
     protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
-    if (session_.has_capture() && current_tab_index_ == kStatsTabIndex) {
-        ensureProtocolPathStatisticsLoaded();
-    } else {
-        emit stateChanged();
+    setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
+    if (session_.has_capture() && current_tab_index_ == kStatsTabIndex && protocol_path_section_expanded_) {
+        ensureProtocolPathSectionLoaded();
     }
+    emit stateChanged();
     emit statisticsModeChanged();
 }
 
@@ -4092,12 +4730,43 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
+        if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
+            protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
+        }
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
         }
         emit stateChanged();
     }
     emit usePossibleTlsQuicChanged();
+}
+
+void MainController::setIgnoreVlanAndMplsLayersWhenGroupingFlows(const bool enabled) {
+    if (pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows == enabled) {
+        return;
+    }
+
+    pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows = enabled;
+    session_.set_analysis_settings(pending_analysis_settings_);
+    emit ignoreVlanAndMplsLayersWhenGroupingFlowsChanged();
+    if (session_.has_capture()) {
+        setStatusText(QStringLiteral("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting."), false);
+        emit stateChanged();
+    }
+}
+
+void MainController::setIgnoreGtpuTeidsWhenGroupingInnerFlows(const bool enabled) {
+    if (pending_analysis_settings_.ignore_gtpu_teids_when_grouping_inner_flows == enabled) {
+        return;
+    }
+
+    pending_analysis_settings_.ignore_gtpu_teids_when_grouping_inner_flows = enabled;
+    session_.set_analysis_settings(pending_analysis_settings_);
+    emit ignoreGtpuTeidsWhenGroupingInnerFlowsChanged();
+    if (session_.has_capture()) {
+        setStatusText(QStringLiteral("Reopen the current capture or index to apply the GTP-U TEID flow-grouping setting."), false);
+        emit stateChanged();
+    }
 }
 
 void MainController::setValidateSelectedPacketChecksums(const bool enabled) {
@@ -4155,7 +4824,7 @@ void MainController::setCurrentTabIndex(const int index) {
         }
     }
     if (current_tab_index_ == kStatsTabIndex) {
-        ensureProtocolPathStatisticsLoaded();
+        maybeLoadExpandedStatisticsSections();
     }
     emit currentTabIndexChanged();
 }
@@ -4227,7 +4896,6 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
 
     selected_packet_index_ = packetIndex;
     if (selected_packet_index_ == kInvalidPacketSelection) {
-        selected_packet_byte_view_stable_id_.clear();
         if (details_selection_context_ == DetailsSelectionContext::packet) {
             details_selection_context_ = DetailsSelectionContext::none;
             packet_details_model_.clear();
@@ -4269,48 +4937,59 @@ void MainController::refreshSelectedPacketByteView() {
 
     const auto packet_bytes = session_.read_packet_data(*packet);
     const auto details = session_.read_packet_details(*packet);
-    if (packet_bytes.empty() || !details.has_value()) {
+    if (packet_bytes.empty()) {
         packet_details_model_.clearPacketBytePresentation();
         selected_packet_byte_view_stable_id_.clear();
         return;
     }
 
-    const auto payload_lengths = resolve_transport_payload_lengths(
-        *details,
-        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-        *packet
-    );
-    const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
-        const auto it = current_flow_packet_numbers_.find(packet->packet_index);
-        if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
-            return std::nullopt;
-        }
-        return it->second - 1U;
-    }();
-    auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
-        session_,
-        *details,
-        *packet,
-        selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
-        flow_packet_index,
-        loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
-        payload_lengths.real_payload_length,
-        payload_lengths.original_payload_length
-    );
-    auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
-        *details,
-        *packet,
-        session_detail::SelectedPacketByteBuildOptions {
-            .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-            .flow_packet_index = packet_summary_preparation.flow_packet_index,
-            .packet_data = packet_summary_preparation.packet_data,
-            .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
-            .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
-            .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
-        }
-    );
+    std::optional<session_detail::SelectedPacketBytePresentation> packet_byte_presentation {};
+    if (details.has_value()) {
+        const auto payload_lengths = resolve_transport_payload_lengths(
+            *details,
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            *packet
+        );
+        const auto flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+            const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+            if (it == current_flow_packet_numbers_.end() || it->second == 0U) {
+                return std::nullopt;
+            }
+            return it->second - 1U;
+        }();
+        auto packet_summary_preparation = session_detail::prepare_selected_packet_summary(
+            session_,
+            *details,
+            *packet,
+            selected_flow_index_ >= 0 ? std::optional<std::size_t> {static_cast<std::size_t>(selected_flow_index_)} : std::nullopt,
+            flow_packet_index,
+            loaded_packet_row_count_ > 0U ? std::optional<std::size_t> {loaded_packet_row_count_} : std::nullopt,
+            payload_lengths.real_payload_length,
+            payload_lengths.original_payload_length
+        );
+        packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+            *details,
+            *packet,
+            session_detail::SelectedPacketByteBuildOptions {
+                .packet_bytes = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                .flow_packet_index = packet_summary_preparation.flow_packet_index,
+                .packet_data = packet_summary_preparation.packet_data,
+                .tls_initial_parser_context = packet_summary_preparation.tls_initial_parser_context,
+                .reconstructed_tls_records = std::move(packet_summary_preparation.reconstructed_tls_records),
+                .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
+            }
+        );
+    } else if (unrecognized_packets_selected_) {
+        packet_byte_presentation = session_.derive_selected_packet_byte_presentation(*packet);
+    }
 
-    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
+    if (!packet_byte_presentation.has_value()) {
+        packet_details_model_.clearPacketBytePresentation();
+        selected_packet_byte_view_stable_id_.clear();
+        return;
+    }
+
+    const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
     const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
     if (!selected_view_id.has_value()) {
         packet_details_model_.clearPacketBytePresentation();
@@ -4320,7 +4999,7 @@ void MainController::refreshSelectedPacketByteView() {
 
     HexDumpService hex_dump_service {};
     const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
-        packet_byte_presentation,
+        *packet_byte_presentation,
         *selected_view_id,
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         hex_dump_service
@@ -4896,6 +5575,7 @@ void MainController::clearSelectedFlowAnalysis() {
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
+    selected_packet_byte_view_stable_id_.clear();
     selected_packet_index_ = kInvalidPacketSelection;
 
     if (wasActive) {
@@ -5002,12 +5682,8 @@ void MainController::resetLoadedState() {
     session_ = {};
     protocol_summary_ = {};
     unrecognized_packet_statistics_ = {};
-    protocol_path_summary_ = {};
-    loaded_protocol_path_statistics_mode_ = -1;
-    protocol_path_stats_model_.clear();
+    resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
-    quic_recognition_stats_ = {};
-    tls_recognition_stats_ = {};
     flow_model_.clear();
     flow_model_.resetViewState();
     packet_model_.clear();
@@ -5048,25 +5724,19 @@ void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
     unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
-    protocol_path_summary_ = {};
-    loaded_protocol_path_statistics_mode_ = -1;
-    protocol_path_stats_model_.clear();
-    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
-    quic_recognition_stats_ = session_.quic_recognition_stats();
-    tls_recognition_stats_ = session_.tls_recognition_stats();
     // Clear any selected-flow state from the previous capture before publishing
     // the new flow list, so re-selecting flow 0 after a reload always refreshes.
     clearFlowSelection();
     flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
-    refreshTopSummaryModels();
-    if (current_tab_index_ == kStatsTabIndex) {
-        ensureProtocolPathStatisticsLoaded();
-    }
     setOpenErrorText({});
     setStatusText({});
+    if (current_tab_index_ == kStatsTabIndex) {
+        maybeLoadExpandedStatisticsSections();
+    }
     emit stateChanged();
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
@@ -5080,7 +5750,7 @@ void MainController::refreshTopSummaryModels() {
         return;
     }
 
-    const auto top = session_.top_summary();
+    const auto top = session_.top_summary(kTopSummaryLimit);
     top_endpoints_model_.refreshEndpoints(top.endpoints_by_bytes);
     top_ports_model_.refreshPorts(top.ports_by_bytes);
 }
@@ -5528,6 +6198,18 @@ void MainController::reloadSelectedPacketDetails() {
 
     const auto details = session_.read_packet_details(*packet);
     const auto packetBytes = session_.read_packet_data(*packet);
+    const auto unrecognized_reason_text = [&]() -> QString {
+        if (!unrecognized_packets_selected_) {
+            return {};
+        }
+
+        const auto row = packet_model_.rowForPacketIndex(selected_packet_index_);
+        if (row < 0) {
+            return {};
+        }
+
+        return packet_model_.data(packet_model_.index(row, 0), PacketListModel::ReasonTextRole).toString();
+    }();
     PacketChecksumSections checksum_sections {};
     if (details.has_value() && validate_selected_packet_checksums_) {
         checksum_sections = build_packet_checksum_sections(
@@ -5585,12 +6267,15 @@ void MainController::reloadSelectedPacketDetails() {
             session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation->make_options())
         ));
     } else {
-        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, checksum_sections));
-        packet_details_model_.setSummaryLayers({});
+        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, unrecognized_reason_text, checksum_sections));
+        packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+            build_packet_summary_fallback_layers(*packet, unrecognized_reason_text, checksum_sections)
+        ));
     }
 
+    std::optional<session_detail::SelectedPacketBytePresentation> packet_byte_presentation {};
     if (details.has_value() && packet_summary_preparation.has_value()) {
-        auto packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
+        packet_byte_presentation = session_detail::build_selected_packet_byte_presentation(
             *details,
             *packet,
             session_detail::SelectedPacketByteBuildOptions {
@@ -5602,12 +6287,17 @@ void MainController::reloadSelectedPacketDetails() {
                 .quic_presentation = std::move(packet_summary_preparation->quic_presentation),
             }
         );
-        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(packet_byte_presentation);
+    } else if (unrecognized_packets_selected_) {
+        packet_byte_presentation = session_.derive_selected_packet_byte_presentation(*packet);
+    }
+
+    if (packet_byte_presentation.has_value()) {
+        const auto byte_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
         const auto selected_view_id = resolve_selected_packet_byte_view_id(byte_descriptors, selected_packet_byte_view_stable_id_);
         if (selected_view_id.has_value()) {
             HexDumpService hex_dump_service {};
             if (const auto packet_byte_content = session_detail::format_selected_packet_byte_view_content(
-                    packet_byte_presentation,
+                    *packet_byte_presentation,
                     *selected_view_id,
                     std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
                     hex_dump_service);
