@@ -193,6 +193,7 @@ fn main() {
         "src/core/services/QuicInitialParser.cpp",
         "src/core/services/HexDumpService.cpp",
         "src/app/frontend/FrontendSessionAdapter.cpp",
+        "src/app/frontend/FrontendSettingsJson.cpp",
         "src/app/frontend/FrontendSessionAdapterBridge.cpp",
         "src/app/session/CaptureSession.cpp",
         "src/app/session/ProtocolPathPresentation.cpp",

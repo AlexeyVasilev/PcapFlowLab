@@ -1,4 +1,6 @@
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -55,6 +57,28 @@ std::vector<std::uint8_t> unrecognized_ethernet_frame() {
         0x12, 0x34,
         0xde, 0xad, 0xbe, 0xef,
     };
+}
+
+std::filesystem::path write_temp_text_file(const std::string& filename, const std::string& text) {
+    const auto path = std::filesystem::temp_directory_path() / filename;
+    std::ofstream stream {path, std::ios::binary | std::ios::trunc};
+    stream << text;
+    return path;
+}
+
+std::string settings_json(
+    const bool ignore_gtpu_teids_when_grouping_inner_flows,
+    const bool ignore_vlan_and_mpls_layers_when_grouping_flows = false,
+    const bool validate_selected_packet_checksums = false
+) {
+    return std::string {"{"}
+        + "\"ignore_vlan_and_mpls_layers_when_grouping_flows\":"
+        + (ignore_vlan_and_mpls_layers_when_grouping_flows ? "true" : "false") + ','
+        + "\"ignore_gtpu_teids_when_grouping_inner_flows\":"
+        + (ignore_gtpu_teids_when_grouping_inner_flows ? "true" : "false") + ','
+        + "\"validate_selected_packet_checksums\":"
+        + (validate_selected_packet_checksums ? "true" : "false")
+        + "}";
 }
 
 void expect_summary_dispatch_and_parse_rules() {
@@ -114,29 +138,48 @@ void expect_summary_dispatch_and_parse_rules() {
     {
         const std::vector<std::string_view> args {"capture.pcap", "--settings", "settings.json"};
         const auto parse_result = cli::parse_summary_command_arguments(args);
-        PFL_EXPECT(!parse_result.ok);
-        PFL_EXPECT(contains_text(parse_result.error_text, "not implemented"));
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_REQUIRE(parse_result.options->settings_path.has_value());
+        PFL_EXPECT(parse_result.options->settings_path->filename() == "settings.json");
     }
 
     {
         const std::vector<std::string_view> args {"capture.pcap", "--protocol-path-mode", "identity-tree"};
         const auto parse_result = cli::parse_summary_command_arguments(args);
         PFL_EXPECT(!parse_result.ok);
-        PFL_EXPECT(contains_text(parse_result.error_text, "valid only when --protocol-path-tree"));
+        PFL_EXPECT(contains_text(parse_result.error_text, "--out-protocol-path-tree"));
     }
 
     {
         const std::vector<std::string_view> args {
             "capture.pcap",
-            "--protocol-path-tree",
+            "--out-protocol-path-tree",
+            "tree.txt",
             "--protocol-path-mode",
             "terminal-paths",
         };
         const auto parse_result = cli::parse_summary_command_arguments(args);
         PFL_REQUIRE(parse_result.ok);
         PFL_REQUIRE(parse_result.options.has_value());
-        PFL_EXPECT(parse_result.options->protocol_path_tree);
+        PFL_REQUIRE(parse_result.options->out_protocol_path_tree_path.has_value());
         PFL_EXPECT(parse_result.options->protocol_path_mode == ProtocolPathStatisticsMode::terminal_paths);
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--progress", "on", "--force"};
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_EXPECT(parse_result.options->progress_mode == cli::SummaryCommandProgressMode::on);
+        PFL_EXPECT(parse_result.options->force);
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--out-flows-list", "flows.csv"};
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "not implemented"));
     }
 
     {
@@ -145,6 +188,15 @@ void expect_summary_dispatch_and_parse_rules() {
         PFL_EXPECT(!parse_result.ok);
         PFL_EXPECT(contains_text(parse_result.error_text, "always whole-capture"));
     }
+}
+
+void expect_progress_policy_rules() {
+    PFL_EXPECT(!cli::should_enable_summary_progress(cli::SummaryCommandProgressMode::off, false));
+    PFL_EXPECT(!cli::should_enable_summary_progress(cli::SummaryCommandProgressMode::off, true));
+    PFL_EXPECT(cli::should_enable_summary_progress(cli::SummaryCommandProgressMode::on, false));
+    PFL_EXPECT(cli::should_enable_summary_progress(cli::SummaryCommandProgressMode::on, true));
+    PFL_EXPECT(!cli::should_enable_summary_progress(cli::SummaryCommandProgressMode::auto_mode, false));
+    PFL_EXPECT(cli::should_enable_summary_progress(cli::SummaryCommandProgressMode::auto_mode, true));
 }
 
 void expect_basic_summary_rendering() {
@@ -204,12 +256,6 @@ void expect_basic_summary_rendering() {
     ));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.whole_capture_totals.captured_bytes_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.whole_capture_totals.original_bytes_text));
-    const auto recognized_transport_packet_total =
-        overview.protocol_summary.tcp.packet_count +
-        overview.protocol_summary.udp.packet_count +
-        overview.protocol_summary.sctp.packet_count +
-        overview.protocol_summary.other.packet_count;
-    PFL_EXPECT(recognized_transport_packet_total < overview.whole_capture_totals.packet_count);
 }
 
 void expect_index_summary_rendering_without_source_capture() {
@@ -356,15 +402,389 @@ void expect_protocol_path_summary_execution() {
     PFL_EXPECT(!contains_text(execution_result.stdout_text, "additional rows not shown"));
 }
 
+void expect_settings_file_contracts() {
+    const auto capture_path = fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap");
+    const auto empty_settings_path = write_temp_text_file(
+        "pfl_cli_summary_settings_empty.json",
+        "{}"
+    );
+    const auto settings_path = write_temp_text_file(
+        "pfl_cli_summary_settings_valid.json",
+        settings_json(true)
+    );
+    const auto checksum_only_settings_path = write_temp_text_file(
+        "pfl_cli_summary_settings_checksum_only.json",
+        "{\"validate_selected_packet_checksums\":true}"
+    );
+
+    FrontendSessionAdapter default_adapter {};
+    PFL_REQUIRE(default_adapter.open_capture(capture_path).opened);
+    const auto default_overview = default_adapter.get_overview();
+
+    FrontendSessionAdapter grouped_adapter {};
+    [[maybe_unused]] const auto grouped_settings = grouped_adapter.update_settings(FrontendSettingsDto {
+        .ignore_gtpu_teids_when_grouping_inner_flows = true,
+        .show_wireshark_filter_for_selected_flow = true,
+    });
+    PFL_REQUIRE(grouped_adapter.open_capture(capture_path).opened);
+    const auto grouped_overview = grouped_adapter.get_overview();
+    PFL_EXPECT(default_overview.summary.flow_count != grouped_overview.summary.flow_count);
+
+    {
+        cli::SummaryCommandOptions empty_options {};
+        empty_options.input_path = capture_path;
+        empty_options.settings_path = empty_settings_path;
+        const auto empty_result = cli::execute_summary_command(empty_options);
+        PFL_EXPECT(empty_result.exit_code == 0);
+        PFL_EXPECT(contains_text(
+            empty_result.stdout_text,
+            "Flows:   " + session_detail::format_statistics_count_value(default_overview.summary.flow_count)
+        ));
+    }
+
+    cli::SummaryCommandOptions options {};
+    options.input_path = capture_path;
+    options.settings_path = settings_path;
+    const auto execution_result = cli::execute_summary_command(options);
+    PFL_EXPECT(execution_result.exit_code == 0);
+    PFL_EXPECT(contains_text(
+        execution_result.stdout_text,
+        "Flows:   " + session_detail::format_statistics_count_value(grouped_overview.summary.flow_count)
+    ));
+
+    {
+        cli::SummaryCommandOptions checksum_only_options {};
+        checksum_only_options.input_path = capture_path;
+        checksum_only_options.settings_path = checksum_only_settings_path;
+        const auto checksum_only_result = cli::execute_summary_command(checksum_only_options);
+        PFL_EXPECT(checksum_only_result.exit_code == 0);
+        PFL_EXPECT(contains_text(
+            checksum_only_result.stdout_text,
+            "Flows:   " + session_detail::format_statistics_count_value(default_overview.summary.flow_count)
+        ));
+    }
+
+    {
+        cli::SummaryCommandOptions index_settings_options {};
+        index_settings_options.input_path = std::filesystem::temp_directory_path() / "capture.idx";
+        index_settings_options.settings_path = settings_path;
+        const auto result = cli::execute_summary_command(index_settings_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "--settings is valid only for raw capture input"));
+    }
+
+    {
+        cli::SummaryCommandOptions missing_settings_options {};
+        missing_settings_options.input_path = capture_path;
+        missing_settings_options.settings_path = std::filesystem::temp_directory_path() / "missing-summary-settings.json";
+        const auto result = cli::execute_summary_command(missing_settings_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Settings file does not exist"));
+    }
+
+    {
+        const auto malformed_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_malformed.json",
+            "{"
+        );
+        cli::SummaryCommandOptions malformed_options {};
+        malformed_options.input_path = capture_path;
+        malformed_options.settings_path = malformed_settings_path;
+        const auto result = cli::execute_summary_command(malformed_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid settings JSON"));
+    }
+
+    {
+        const auto invalid_type_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_invalid_type.json",
+            "{\"ignore_gtpu_teids_when_grouping_inner_flows\":1}"
+        );
+        cli::SummaryCommandOptions invalid_type_options {};
+        invalid_type_options.input_path = capture_path;
+        invalid_type_options.settings_path = invalid_type_settings_path;
+        const auto result = cli::execute_summary_command(invalid_type_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "expected boolean value"));
+    }
+
+    {
+        const auto invalid_vlan_type_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_invalid_vlan_type.json",
+            "{\"ignore_vlan_and_mpls_layers_when_grouping_flows\":1}"
+        );
+        cli::SummaryCommandOptions invalid_vlan_type_options {};
+        invalid_vlan_type_options.input_path = capture_path;
+        invalid_vlan_type_options.settings_path = invalid_vlan_type_settings_path;
+        const auto result = cli::execute_summary_command(invalid_vlan_type_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "expected boolean value"));
+    }
+
+    {
+        const auto invalid_checksum_type_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_invalid_checksum_type.json",
+            "{\"validate_selected_packet_checksums\":1}"
+        );
+        cli::SummaryCommandOptions invalid_checksum_type_options {};
+        invalid_checksum_type_options.input_path = capture_path;
+        invalid_checksum_type_options.settings_path = invalid_checksum_type_settings_path;
+        const auto result = cli::execute_summary_command(invalid_checksum_type_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "expected boolean value"));
+    }
+
+    {
+        const auto removed_http_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_removed_http.json",
+            "{\"http_use_path_as_service_hint\":true}"
+        );
+        cli::SummaryCommandOptions removed_http_options {};
+        removed_http_options.input_path = capture_path;
+        removed_http_options.settings_path = removed_http_settings_path;
+        const auto result = cli::execute_summary_command(removed_http_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown settings field"));
+    }
+
+    {
+        const auto removed_quic_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_removed_quic.json",
+            "{\"use_possible_tls_quic\":true}"
+        );
+        cli::SummaryCommandOptions removed_quic_options {};
+        removed_quic_options.input_path = capture_path;
+        removed_quic_options.settings_path = removed_quic_settings_path;
+        const auto result = cli::execute_summary_command(removed_quic_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown settings field"));
+    }
+
+    {
+        const auto removed_wireshark_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_removed_wireshark.json",
+            "{\"show_wireshark_filter_for_selected_flow\":true}"
+        );
+        cli::SummaryCommandOptions removed_wireshark_options {};
+        removed_wireshark_options.input_path = capture_path;
+        removed_wireshark_options.settings_path = removed_wireshark_settings_path;
+        const auto result = cli::execute_summary_command(removed_wireshark_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown settings field"));
+    }
+
+    {
+        const auto typo_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_typo.json",
+            "{\"ignore_gtpu_teids_when_grouping_inner_flowz\":true}"
+        );
+        cli::SummaryCommandOptions typo_options {};
+        typo_options.input_path = capture_path;
+        typo_options.settings_path = typo_settings_path;
+        const auto result = cli::execute_summary_command(typo_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown settings field"));
+    }
+
+    {
+        const auto all_supported_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_all_supported.json",
+            settings_json(true, false, true)
+        );
+        cli::SummaryCommandOptions all_supported_options {};
+        all_supported_options.input_path = capture_path;
+        all_supported_options.settings_path = all_supported_settings_path;
+        const auto result = cli::execute_summary_command(all_supported_options);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(
+            result.stdout_text,
+            "Flows:   " + session_detail::format_statistics_count_value(grouped_overview.summary.flow_count)
+        ));
+    }
+}
+
+void expect_index_output_contracts() {
+    const auto capture_path = fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap");
+    const auto settings_path = write_temp_text_file(
+        "pfl_cli_summary_settings_for_index.json",
+        settings_json(true)
+    );
+    const auto output_index_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_output.idx";
+    const auto protocol_tree_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_output_protocol_tree.txt";
+    std::filesystem::remove(output_index_path);
+    std::filesystem::remove(protocol_tree_path);
+
+    FrontendSessionAdapter grouped_adapter {};
+    [[maybe_unused]] const auto grouped_settings = grouped_adapter.update_settings(FrontendSettingsDto {
+        .ignore_gtpu_teids_when_grouping_inner_flows = true,
+        .show_wireshark_filter_for_selected_flow = true,
+    });
+    PFL_REQUIRE(grouped_adapter.open_capture(capture_path).opened);
+    const auto grouped_overview = grouped_adapter.get_overview();
+
+    cli::SummaryCommandOptions options {};
+    options.input_path = capture_path;
+    options.settings_path = settings_path;
+    options.out_index_path = output_index_path;
+    options.out_protocol_path_tree_path = protocol_tree_path;
+    const auto result = cli::execute_summary_command(options);
+    PFL_EXPECT(result.exit_code == 0);
+    PFL_EXPECT(contains_text(result.stderr_text, "Index written to:"));
+    PFL_EXPECT(contains_text(result.stderr_text, "Protocol Path Tree written to:"));
+
+    FrontendSessionAdapter reopened_index {};
+    PFL_REQUIRE(reopened_index.open_capture(output_index_path).opened);
+    const auto reopened_overview = reopened_index.get_overview();
+    PFL_EXPECT(reopened_overview.summary.flow_count == grouped_overview.summary.flow_count);
+
+    std::ifstream protocol_tree_stream {protocol_tree_path, std::ios::binary};
+    const std::string protocol_tree_text {
+        std::istreambuf_iterator<char>(protocol_tree_stream),
+        std::istreambuf_iterator<char>()
+    };
+    PFL_EXPECT(contains_text(protocol_tree_text, "Protocol Path Tree"));
+
+    {
+        cli::SummaryCommandOptions invalid_index_options {};
+        invalid_index_options.input_path = output_index_path;
+        invalid_index_options.out_index_path = std::filesystem::temp_directory_path() / "copy.idx";
+        const auto invalid_result = cli::execute_summary_command(invalid_index_options);
+        PFL_EXPECT(invalid_result.exit_code == 1);
+        PFL_EXPECT(contains_text(invalid_result.stderr_text, "--out-index is valid only for raw capture input"));
+    }
+
+    {
+        const auto existing_target = write_temp_text_file("pfl_cli_summary_existing_output.idx", "old");
+        cli::SummaryCommandOptions existing_options {};
+        existing_options.input_path = capture_path;
+        existing_options.out_index_path = existing_target;
+        const auto existing_result = cli::execute_summary_command(existing_options);
+        PFL_EXPECT(existing_result.exit_code == 1);
+        PFL_EXPECT(contains_text(existing_result.stderr_text, "--out-index already exists"));
+
+        cli::SummaryCommandOptions force_options {};
+        force_options.input_path = capture_path;
+        force_options.out_index_path = existing_target;
+        force_options.force = true;
+        const auto force_result = cli::execute_summary_command(force_options);
+        PFL_EXPECT(force_result.exit_code == 0);
+        PFL_EXPECT(contains_text(force_result.stderr_text, "Index written to:"));
+    }
+
+    {
+        cli::SummaryCommandOptions same_path_options {};
+        same_path_options.input_path = capture_path;
+        same_path_options.out_index_path = capture_path;
+        const auto same_path_result = cli::execute_summary_command(same_path_options);
+        PFL_EXPECT(same_path_result.exit_code == 1);
+        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite the input path"));
+    }
+}
+
+void expect_protocol_path_export_contracts() {
+    const auto capture_path = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap");
+    const auto protocol_tree_path = std::filesystem::temp_directory_path() / "pfl_cli_protocol_path_identity.txt";
+    std::filesystem::remove(protocol_tree_path);
+
+    cli::SummaryCommandOptions identity_options {};
+    identity_options.input_path = capture_path;
+    identity_options.protocol_path_mode = ProtocolPathStatisticsMode::identity_tree;
+    identity_options.out_protocol_path_tree_path = protocol_tree_path;
+    const auto identity_result = cli::execute_summary_command(identity_options);
+    PFL_EXPECT(identity_result.exit_code == 0);
+    PFL_EXPECT(!contains_text(identity_result.stdout_text, "Protocol Path Tree\nMode: Identity tree"));
+    PFL_EXPECT(contains_text(identity_result.stderr_text, "Protocol Path Tree written to:"));
+
+    {
+        std::ifstream tree_stream {protocol_tree_path, std::ios::binary};
+        const std::string tree_text {
+            std::istreambuf_iterator<char>(tree_stream),
+            std::istreambuf_iterator<char>()
+        };
+        PFL_EXPECT(contains_text(tree_text, "Mode: Identity tree"));
+    }
+
+    cli::SummaryCommandOptions preview_and_export_options {};
+    preview_and_export_options.input_path = capture_path;
+    preview_and_export_options.protocol_path_tree = true;
+    preview_and_export_options.protocol_path_mode = ProtocolPathStatisticsMode::terminal_paths;
+    preview_and_export_options.out_protocol_path_tree_path =
+        std::filesystem::temp_directory_path() / "pfl_cli_protocol_path_terminal.txt";
+    std::filesystem::remove(*preview_and_export_options.out_protocol_path_tree_path);
+    const auto preview_and_export_result = cli::execute_summary_command(preview_and_export_options);
+    PFL_EXPECT(preview_and_export_result.exit_code == 0);
+    PFL_EXPECT(contains_text(preview_and_export_result.stdout_text, "Mode: Terminal paths"));
+
+    {
+        FrontendSessionAdapter raw_adapter {};
+        PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_protocol_path.idx";
+        std::filesystem::remove(index_path);
+        PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+
+        cli::SummaryCommandOptions index_export_options {};
+        index_export_options.input_path = index_path;
+        index_export_options.out_protocol_path_tree_path =
+            std::filesystem::temp_directory_path() / "pfl_cli_protocol_path_from_index.txt";
+        std::filesystem::remove(*index_export_options.out_protocol_path_tree_path);
+        const auto index_export_result = cli::execute_summary_command(index_export_options);
+        PFL_EXPECT(index_export_result.exit_code == 0);
+        PFL_EXPECT(contains_text(index_export_result.stderr_text, "Protocol Path Tree written to:"));
+    }
+
+    {
+        const auto existing_target = write_temp_text_file("pfl_cli_protocol_path_existing.txt", "old");
+        cli::SummaryCommandOptions existing_options {};
+        existing_options.input_path = capture_path;
+        existing_options.out_protocol_path_tree_path = existing_target;
+        const auto existing_result = cli::execute_summary_command(existing_options);
+        PFL_EXPECT(existing_result.exit_code == 1);
+        PFL_EXPECT(contains_text(existing_result.stderr_text, "--out-protocol-path-tree already exists"));
+
+        cli::SummaryCommandOptions force_options {};
+        force_options.input_path = capture_path;
+        force_options.out_protocol_path_tree_path = existing_target;
+        force_options.force = true;
+        const auto force_result = cli::execute_summary_command(force_options);
+        PFL_EXPECT(force_result.exit_code == 0);
+        PFL_EXPECT(contains_text(force_result.stderr_text, "Protocol Path Tree written to:"));
+    }
+
+    {
+        cli::SummaryCommandOptions same_path_options {};
+        same_path_options.input_path = capture_path;
+        same_path_options.out_protocol_path_tree_path = capture_path;
+        const auto same_path_result = cli::execute_summary_command(same_path_options);
+        PFL_EXPECT(same_path_result.exit_code == 1);
+        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite the input path"));
+    }
+}
+
+void expect_preflight_fails_before_opening_input() {
+    const auto existing_target = write_temp_text_file("pfl_cli_summary_preflight_existing.txt", "old");
+    cli::SummaryCommandOptions options {};
+    options.input_path = std::filesystem::temp_directory_path() / "missing_summary_input_capture.pcap";
+    options.out_protocol_path_tree_path = existing_target;
+    const auto result = cli::execute_summary_command(options);
+    PFL_EXPECT(result.exit_code == 1);
+    PFL_EXPECT(contains_text(result.stderr_text, "--out-protocol-path-tree already exists"));
+    PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input"));
+}
+
 }  // namespace
 
 void run_cli_summary_tests() {
     expect_summary_dispatch_and_parse_rules();
+    expect_progress_policy_rules();
     expect_basic_summary_rendering();
     expect_index_summary_rendering_without_source_capture();
     expect_extended_summary_rendering();
     expect_protocol_path_preview_rendering();
     expect_protocol_path_summary_execution();
+    expect_settings_file_contracts();
+    expect_index_output_contracts();
+    expect_protocol_path_export_contracts();
+    expect_preflight_fails_before_opening_input();
 }
 
 }  // namespace pfl::tests

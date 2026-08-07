@@ -217,21 +217,18 @@ CLI v2 reserves:
 
 The configuration format is JSON.
 
-The initial intended contents are import-related settings, such as
-flow-grouping policy. An illustrative structure is:
+The initial intended contents are a deliberately small headless-relevant
+subset of application settings. The first production schema is:
 
 ```json
 {
-  "import": {
-    "flowGrouping": {
-      "ignoreVlanAndMpls": true,
-      "ignoreGtpuTeids": false
-    }
-  }
+  "ignore_vlan_and_mpls_layers_when_grouping_flows": true,
+  "ignore_gtpu_teids_when_grouping_inner_flows": false,
+  "validate_selected_packet_checksums": false
 }
 ```
 
-This is illustrative architecture only. It is not yet a frozen schema.
+It is intentionally narrower than the GUI settings model.
 
 Important semantic rule:
 

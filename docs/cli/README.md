@@ -72,7 +72,7 @@ For byte-backed operations against an index, CLI v2 also reserves:
 | --- | --- |
 | `--input <path>` | Explicit input path |
 | `--source-capture <path>` | Source-capture override for byte-backed index operations |
-| `--settings <settings.json>` | Import-related settings, such as flow grouping |
+| `--settings <settings.json>` | Narrow CLI JSON settings subset for raw-capture summary import |
 | `--filter <text>` | Flow-text filtering for flow-oriented commands |
 | `--sort <field>:<asc\|desc>` | Flow sorting for flow-oriented commands |
 | `--limit <N>` | Limit result flow count after selection, filter, and sort |

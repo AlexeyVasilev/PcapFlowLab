@@ -2,17 +2,31 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstdio>
 #include <sstream>
 #include <string>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "core/index/CaptureIndex.h"
+
+#if defined(_WIN32)
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace pfl::cli {
 namespace {
+
+using Clock = std::chrono::steady_clock;
 
 constexpr std::array<std::string_view, 8> kSummaryInvalidSelectorOptions {
     "--filter",
@@ -25,14 +39,10 @@ constexpr std::array<std::string_view, 8> kSummaryInvalidSelectorOptions {
     "--source-capture",
 };
 
-constexpr std::array<std::string_view, 7> kSummaryUnsupportedOptions {
-    "--settings",
-    "--out-index",
+constexpr std::array<std::string_view, 3> kSummaryUnsupportedOptions {
     "--out-flows-list",
-    "--out-protocol-path-tree",
-    "--progress",
-    "--force",
     "--format",
+    "--source-capture",
 };
 
 constexpr std::array<std::string_view, 8> kLegacyCliCommands {
@@ -51,11 +61,28 @@ struct TableColumn {
     bool right_align {false};
 };
 
+struct OutputPreflightResult {
+    bool ok {false};
+    std::string error_text {};
+};
+
+struct SummaryExecutionEnvironment {
+    bool stderr_is_terminal {false};
+};
+
 bool contains_option(
     const std::span<const std::string_view> options,
     const std::string_view candidate
 ) noexcept {
     return std::find(options.begin(), options.end(), candidate) != options.end();
+}
+
+bool stderr_supports_interactive_updates() noexcept {
+#if defined(_WIN32)
+    return _isatty(_fileno(stderr)) != 0;
+#else
+    return isatty(fileno(stderr)) != 0;
+#endif
 }
 
 std::string input_kind_display_text(const FrontendInputKind kind) {
@@ -155,6 +182,45 @@ std::optional<ProtocolPathStatisticsMode> parse_protocol_path_mode(const std::st
         return ProtocolPathStatisticsMode::terminal_paths;
     }
     return std::nullopt;
+}
+
+std::optional<SummaryCommandProgressMode> parse_progress_mode(const std::string_view value) noexcept {
+    if (value == "auto") {
+        return SummaryCommandProgressMode::auto_mode;
+    }
+    if (value == "on") {
+        return SummaryCommandProgressMode::on;
+    }
+    if (value == "off") {
+        return SummaryCommandProgressMode::off;
+    }
+    return std::nullopt;
+}
+
+std::filesystem::path normalized_comparison_path(const std::filesystem::path& path) {
+    if (path.empty()) {
+        return {};
+    }
+
+    std::error_code error {};
+    const auto current_path = std::filesystem::current_path(error);
+    error.clear();
+    const auto absolute_path = current_path.empty() ? path : (current_path / path);
+
+    if (std::filesystem::exists(absolute_path, error) && !error) {
+        error.clear();
+        const auto canonical_path = std::filesystem::weakly_canonical(absolute_path, error);
+        if (!error) {
+            return canonical_path.lexically_normal();
+        }
+    }
+
+    return absolute_path.lexically_normal();
+}
+
+bool is_existing_directory(const std::filesystem::path& path) {
+    std::error_code error {};
+    return std::filesystem::is_directory(path, error) && !error;
 }
 
 std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
@@ -406,6 +472,280 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
     return out.str();
 }
 
+OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& options) {
+    OutputPreflightResult result {
+        .ok = true,
+    };
+
+    std::vector<std::pair<std::string_view, std::filesystem::path>> outputs {};
+    if (options.out_index_path.has_value()) {
+        outputs.push_back({"--out-index", *options.out_index_path});
+    }
+    if (options.out_protocol_path_tree_path.has_value()) {
+        outputs.push_back({"--out-protocol-path-tree", *options.out_protocol_path_tree_path});
+    }
+
+    const auto normalized_input_path = normalized_comparison_path(options.input_path);
+
+    for (const auto& [label, output_path] : outputs) {
+        const auto normalized_output_path = normalized_comparison_path(output_path);
+        if (!normalized_input_path.empty() && normalized_output_path == normalized_input_path) {
+            result.ok = false;
+            result.error_text = std::string {label} + " cannot overwrite the input path.";
+            return result;
+        }
+
+        const auto parent_path = output_path.parent_path();
+        if (!parent_path.empty()) {
+            std::error_code error {};
+            const bool parent_exists = std::filesystem::exists(parent_path, error);
+            if (error || !parent_exists || !std::filesystem::is_directory(parent_path, error) || error) {
+                result.ok = false;
+                result.error_text = std::string {label} + " parent directory does not exist.";
+                return result;
+            }
+        }
+
+        std::error_code exists_error {};
+        const bool output_exists = std::filesystem::exists(output_path, exists_error);
+        if (exists_error) {
+            result.ok = false;
+            result.error_text = std::string {label} + " path is not usable.";
+            return result;
+        }
+        if (output_exists && is_existing_directory(output_path)) {
+            result.ok = false;
+            result.error_text = std::string {label} + " must be a regular file path.";
+            return result;
+        }
+        if (output_exists && !options.force) {
+            result.ok = false;
+            result.error_text = std::string {label} + " already exists. Re-run with --force to overwrite.";
+            return result;
+        }
+    }
+
+    if (options.out_index_path.has_value() && options.out_protocol_path_tree_path.has_value()) {
+        if (normalized_comparison_path(*options.out_index_path)
+            == normalized_comparison_path(*options.out_protocol_path_tree_path)) {
+            result.ok = false;
+            result.error_text = "--out-index and --out-protocol-path-tree must not target the same path.";
+            return result;
+        }
+    }
+
+    return result;
+}
+
+std::string render_open_progress_text(const FrontendOpenProgressDto& progress) {
+    std::ostringstream out {};
+    out << "Opening " << (progress.opening_as_index ? "index" : "capture") << ": ";
+    const auto percent = std::clamp(progress.percent * 100.0, 0.0, 100.0);
+    out << static_cast<int>(percent + 0.5);
+    out << '%';
+    if (progress.total_bytes > 0U) {
+        out << " ("
+            << session_detail::format_statistics_compact_size_value(progress.bytes_processed)
+            << " / "
+            << session_detail::format_statistics_compact_size_value(progress.total_bytes)
+            << ')';
+    }
+    return out.str();
+}
+
+FrontendOpenResult open_summary_input(
+    FrontendSessionAdapter& adapter,
+    const SummaryCommandOptions& options,
+    std::string& stderr_text,
+    const SummaryExecutionEnvironment& environment
+) {
+    if (!should_enable_summary_progress(options.progress_mode, environment.stderr_is_terminal)) {
+        return adapter.open_capture(options.input_path);
+    }
+
+    const auto start_result = adapter.start_open_capture(options.input_path);
+    if (!start_result.started) {
+        return FrontendOpenResult {
+            .opened = false,
+            .error_text = start_result.error_text,
+        };
+    }
+
+    const bool interactive = environment.stderr_is_terminal;
+    const auto update_interval = interactive ? std::chrono::milliseconds {120} : std::chrono::milliseconds {250};
+    auto last_update = Clock::time_point {};
+    std::string last_line {};
+    bool emitted_progress = false;
+
+    while (true) {
+        const auto poll = adapter.poll_open_capture();
+        if (poll.ready) {
+            if (interactive && emitted_progress) {
+                stderr_text += '\n';
+            }
+            return poll.result;
+        }
+
+        const auto now = Clock::now();
+        if (last_update.time_since_epoch().count() == 0 || now - last_update >= update_interval) {
+            const auto line = render_open_progress_text(poll.progress);
+            if (line != last_line) {
+                if (interactive) {
+                    stderr_text += '\r';
+                    stderr_text += line;
+                } else {
+                    stderr_text += line;
+                    stderr_text += '\n';
+                }
+                last_line = line;
+                emitted_progress = true;
+            }
+            last_update = now;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds {50});
+    }
+}
+
+SummaryCommandExecutionResult execute_summary_command_with_environment(
+    const SummaryCommandOptions& options,
+    const SummaryExecutionEnvironment& environment
+) {
+    const bool input_looks_like_index = looks_like_index_file(options.input_path);
+    if (input_looks_like_index && options.settings_path.has_value()) {
+        return {
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = "--settings is valid only for raw capture input.\n",
+        };
+    }
+    if (input_looks_like_index && options.out_index_path.has_value()) {
+        return {
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = "--out-index is valid only for raw capture input.\n",
+        };
+    }
+
+    if (options.settings_path.has_value()) {
+        std::error_code error {};
+        if (!std::filesystem::exists(*options.settings_path, error) || error) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Settings file does not exist: " + options.settings_path->string() + '\n',
+            };
+        }
+    }
+
+    const auto preflight = preflight_output_paths(options);
+    if (!preflight.ok) {
+        return {
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = preflight.error_text + '\n',
+        };
+    }
+
+    FrontendSettingsDto effective_settings {};
+    if (options.settings_path.has_value()) {
+        const auto parse_result = parse_frontend_settings_json_file(*options.settings_path);
+        if (!parse_result.ok) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = parse_result.error_text + '\n',
+            };
+        }
+        effective_settings = parse_result.settings;
+    }
+
+    FrontendSessionAdapter adapter {};
+    if (options.settings_path.has_value()) {
+        [[maybe_unused]] const auto updated_settings = adapter.update_settings(effective_settings);
+    }
+
+    std::string stderr_text {};
+    const auto open_result = open_summary_input(adapter, options, stderr_text, environment);
+    if (!open_result.opened) {
+        if (stderr_text.find('\r') != std::string::npos && !stderr_text.empty() && stderr_text.back() != '\n') {
+            stderr_text += '\n';
+        }
+        stderr_text += open_result.error_text.empty()
+            ? "Failed to open input: " + options.input_path.string() + '\n'
+            : open_result.error_text + '\n';
+        return {
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = std::move(stderr_text),
+        };
+    }
+
+    std::ostringstream stdout_builder {};
+    stdout_builder << render_basic_summary_text(adapter.get_overview());
+
+    if (options.extended) {
+        stdout_builder << render_extended_summary_text(adapter);
+    }
+
+    if (options.protocol_path_tree) {
+        stdout_builder << '\n'
+            << render_protocol_path_preview_text(
+                adapter.get_protocol_path_statistics(options.protocol_path_mode),
+                options.protocol_path_mode
+            );
+    }
+
+    if (open_result.partial_open && !open_result.partial_open_warning_text.empty()) {
+        stderr_text += open_result.partial_open_warning_text;
+        stderr_text += '\n';
+    }
+
+    if (options.out_index_path.has_value()) {
+        const auto save_result = adapter.save_index(*options.out_index_path);
+        if (!save_result.saved) {
+            stderr_text += save_result.error_text.empty()
+                ? "Failed to write index.\n"
+                : save_result.error_text + '\n';
+            return {
+                .exit_code = 1,
+                .stdout_text = stdout_builder.str(),
+                .stderr_text = std::move(stderr_text),
+            };
+        }
+        stderr_text += "Index written to: " + save_result.output_path + '\n';
+    }
+
+    if (options.out_protocol_path_tree_path.has_value()) {
+        const auto export_result = adapter.export_protocol_path_tree(
+            options.protocol_path_mode,
+            *options.out_protocol_path_tree_path
+        );
+        if (!export_result.exported) {
+            stderr_text += export_result.error_text.empty()
+                ? "Failed to export Protocol Path Tree.\n"
+                : export_result.error_text + '\n';
+            return {
+                .exit_code = 1,
+                .stdout_text = stdout_builder.str(),
+                .stderr_text = std::move(stderr_text),
+            };
+        }
+        stderr_text += "Protocol Path Tree written to: " + export_result.output_path + '\n';
+    }
+
+    auto stdout_text = stdout_builder.str();
+    if (!stdout_text.empty() && stdout_text.back() != '\n') {
+        stdout_text.push_back('\n');
+    }
+
+    return {
+        .exit_code = 0,
+        .stdout_text = std::move(stdout_text),
+        .stderr_text = std::move(stderr_text),
+    };
+}
+
 }  // namespace
 
 bool is_legacy_cli_command_name(const std::string_view name) noexcept {
@@ -444,7 +784,11 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
     SummaryCommandOptions options {};
     bool positional_input_seen = false;
     bool explicit_input_seen = false;
+    bool explicit_settings_seen = false;
+    bool out_index_seen = false;
+    bool out_protocol_path_tree_seen = false;
     bool protocol_path_mode_seen = false;
+    bool progress_seen = false;
 
     for (std::size_t index = 0; index < args.size(); ++index) {
         const auto token = args[index];
@@ -456,6 +800,11 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
 
         if (token == "--protocol-path-tree") {
             options.protocol_path_tree = true;
+            continue;
+        }
+
+        if (token == "--force") {
+            options.force = true;
             continue;
         }
 
@@ -483,6 +832,94 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
             }
             explicit_input_seen = true;
             options.input_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--settings") {
+            if (explicit_settings_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --settings is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--settings requires a path.",
+                };
+            }
+            explicit_settings_seen = true;
+            options.settings_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--out-index") {
+            if (out_index_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --out-index is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--out-index requires a path.",
+                };
+            }
+            out_index_seen = true;
+            options.out_index_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--out-protocol-path-tree") {
+            if (out_protocol_path_tree_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --out-protocol-path-tree is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--out-protocol-path-tree requires a path.",
+                };
+            }
+            out_protocol_path_tree_seen = true;
+            options.out_protocol_path_tree_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--progress") {
+            if (progress_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --progress is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--progress requires one of: auto, on, off.",
+                };
+            }
+            const auto mode = parse_progress_mode(args[++index]);
+            if (!mode.has_value()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Invalid --progress value. Expected one of: auto, on, off.",
+                };
+            }
+            progress_seen = true;
+            options.progress_mode = *mode;
             continue;
         }
 
@@ -549,11 +986,13 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
         };
     }
 
-    if (protocol_path_mode_seen && !options.protocol_path_tree) {
+    if (protocol_path_mode_seen &&
+        !options.protocol_path_tree &&
+        !options.out_protocol_path_tree_path.has_value()) {
         return {
             .ok = false,
             .options = std::nullopt,
-            .error_text = "--protocol-path-mode is valid only when --protocol-path-tree is also present.",
+            .error_text = "--protocol-path-mode is valid only when --protocol-path-tree or --out-protocol-path-tree is also present.",
         };
     }
 
@@ -562,6 +1001,21 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
         .options = options,
         .error_text = {},
     };
+}
+
+bool should_enable_summary_progress(
+    const SummaryCommandProgressMode mode,
+    const bool stderr_is_terminal
+) noexcept {
+    switch (mode) {
+    case SummaryCommandProgressMode::on:
+        return true;
+    case SummaryCommandProgressMode::off:
+        return false;
+    case SummaryCommandProgressMode::auto_mode:
+    default:
+        return stderr_is_terminal;
+    }
 }
 
 std::string render_protocol_path_preview_text(
@@ -624,48 +1078,12 @@ std::string render_protocol_path_preview_text(
 }
 
 SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOptions& options) {
-    FrontendSessionAdapter adapter {};
-    const auto open_result = adapter.open_capture(options.input_path);
-    if (!open_result.opened) {
-        return {
-            .exit_code = 1,
-            .stdout_text = {},
-            .stderr_text = open_result.error_text.empty()
-                ? "Failed to open input: " + options.input_path.string() + '\n'
-                : open_result.error_text + '\n',
-        };
-    }
-
-    std::ostringstream stdout_builder {};
-    stdout_builder << render_basic_summary_text(adapter.get_overview());
-
-    if (options.extended) {
-        stdout_builder << render_extended_summary_text(adapter);
-    }
-
-    if (options.protocol_path_tree) {
-        stdout_builder << '\n'
-            << render_protocol_path_preview_text(
-                adapter.get_protocol_path_statistics(options.protocol_path_mode),
-                options.protocol_path_mode
-            );
-    }
-
-    auto stdout_text = stdout_builder.str();
-    if (!stdout_text.empty() && stdout_text.back() != '\n') {
-        stdout_text.push_back('\n');
-    }
-
-    std::string stderr_text {};
-    if (open_result.partial_open && !open_result.partial_open_warning_text.empty()) {
-        stderr_text = open_result.partial_open_warning_text + '\n';
-    }
-
-    return {
-        .exit_code = 0,
-        .stdout_text = std::move(stdout_text),
-        .stderr_text = std::move(stderr_text),
-    };
+    return execute_summary_command_with_environment(
+        options,
+        SummaryExecutionEnvironment {
+            .stderr_is_terminal = stderr_supports_interactive_updates(),
+        }
+    );
 }
 
 }  // namespace pfl::cli

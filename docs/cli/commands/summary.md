@@ -8,22 +8,22 @@ This document defines the CLI v2 contract for:
 pcap-flow-lab summary
 ```
 
-The current production CLI now implements the first `summary` pass:
+The current production CLI now implements:
 
 - structured `summary` parsing and dispatch
 - default summary invocation
 - Basic Summary stdout
+- `--settings`
 - `--extended`
 - Protocol Path Tree stdout preview and mode selection
-
-The following remain pending in later passes:
-
-- `--settings`
 - `--out-index`
-- `--out-flows-list`
 - `--out-protocol-path-tree`
 - `--progress`
 - `--force`
+
+The following remain pending in later passes:
+
+- `--out-flows-list`
 - structured `--format` output
 
 ## Purpose
@@ -721,10 +721,21 @@ Settings apply consistently to the imported session and therefore affect:
 - flow-based summary statistics
 - Protocol Path Tree
 - `--out-index`
-- `--out-flows-list`
 
-The initial JSON schema is not frozen here beyond the architecture-level
-flow-grouping concept.
+The current production CLI settings schema is intentionally narrower than the
+full GUI/application settings model.
+
+It supports exactly these boolean fields:
+
+- `ignore_vlan_and_mpls_layers_when_grouping_flows`
+- `ignore_gtpu_teids_when_grouping_inner_flows`
+- `validate_selected_packet_checksums`
+
+Unknown fields are currently rejected conservatively.
+
+`validate_selected_packet_checksums` is accepted as a headless-relevant
+frontend setting for future packet-oriented commands, but it does not change
+current `summary` output.
 
 ## `--source-capture`
 
