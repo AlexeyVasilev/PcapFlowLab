@@ -11,6 +11,8 @@ implementation direction.
 For the full architecture contract, see [architecture.md](./architecture.md).
 For the detailed `summary` command contract, see
 [commands/summary.md](./commands/summary.md).
+For the detailed `flows` command contract, see
+[commands/flows.md](./commands/flows.md).
 
 ## What The CLI Is For
 
@@ -103,12 +105,20 @@ Filtering, sorting, and limiting belong to flow-oriented commands such as:
 
 ## Numbering Model
 
-All CLI v2 user-facing flow and packet numbers are planned to be 1-based.
+CLI v2 user-facing flow and packet numbers are 1-based in the documented
+command contracts.
 
 - flow numbers refer to canonical session flows
 - sorting does not renumber flows
 - packet numbering in file and packet numbering in flow are separate coordinate
   systems
+
+The documented `flows` contract also defines:
+
+- one-based canonical flow numbering
+- filtering and sorting semantics for flow-oriented commands
+- a default 25-row stdout preview
+- CSV metadata export for selected flow lists
 
 ## stdout And stderr
 
@@ -189,10 +199,10 @@ Detailed command documentation is intended to be added incrementally as
 individual command designs are finalized:
 
 - `docs/cli/commands/summary.md` (now defined)
-- `docs/cli/commands/flows.md`
+- `docs/cli/commands/flows.md` (now defined)
 - `docs/cli/commands/export_flows.md`
 - `docs/cli/commands/flow_info.md`
 - `docs/cli/commands/packet_info.md`
 
-Only `summary.md` exists in this pass. The other command documents are still
-deferred.
+`summary.md` and `flows.md` now exist. The remaining command documents are
+still deferred.

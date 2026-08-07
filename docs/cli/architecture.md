@@ -138,6 +138,8 @@ The exact `summary` contract is now defined in
 - It operates on selected subsets of canonical flows.
 - It owns filtering, sorting, limiting, and flow-list presentation.
 - It may later support console rendering and flow-list file export.
+- The detailed command contract is documented in
+  [commands/flows.md](./commands/flows.md).
 
 Current working output vocabulary for this command includes:
 
@@ -145,8 +147,19 @@ Current working output vocabulary for this command includes:
 --out-flows-list <path>
 ```
 
-The exact flow-list columns, text layout, and file schemas are not finalized in
-this document.
+This document does not repeat the detailed `flows` semantics.
+
+The `flows` contract now defines:
+
+- one-based canonical flow numbering
+- the exact selection pipeline
+- initial flow text-filter semantics
+- initial sort fields and tie-break rules
+- the distinction between the default 25-row stdout preview and explicit
+  `--limit`
+- reuse of the existing flow metadata CSV schema
+
+Implementation remains pending.
 
 ### `export-flows`
 
@@ -351,12 +364,11 @@ The final parser implementation is intentionally deferred.
 --filter <text>
 ```
 
-This uses the same conceptual primitive text-flow filtering model as the UI
-flow list.
+The exact searched fields and semantics are now defined by the detailed
+`flows` command contract.
 
-- Protocol Path-specific filtering is out of scope for the initial CLI design.
-- The exact searched fields are deferred to the detailed `flows` command
-  design.
+Protocol Path-specific filtering remains out of scope for the initial CLI
+design.
 
 ### `--sort`
 
@@ -372,8 +384,8 @@ Example:
 --sort bytes:desc
 ```
 
-The full allowed field set is intentionally deferred. It should later be based
-on useful PcapFlowLab flow-list sorting semantics.
+The initial allowed field set and semantic rules are now defined by the
+detailed `flows` command contract.
 
 ### `--limit`
 
@@ -385,6 +397,9 @@ on useful PcapFlowLab flow-list sorting semantics.
 
 It limits the number of flows remaining for command-specific output or
 processing.
+
+The default 25-row stdout preview used by `flows` is separate from this
+explicit result-set limit.
 
 ## Flow Selection Pipeline
 
@@ -688,17 +703,18 @@ These documents should contain:
 - capture, index, and source-capture differences
 - error cases
 
-At this stage, only `docs/cli/commands/summary.md` is defined. The remaining
-command documents are still intentionally deferred.
+At this stage:
+
+- `docs/cli/commands/summary.md` is defined
+- `docs/cli/commands/flows.md` is defined
+
+The remaining command documents are still intentionally deferred.
 
 ## Intentionally Deferred Decisions
 
 This architecture pass does not decide:
 
 - exact summary sections or modes
-- exact `flows` columns
-- exact sorting field set
-- exact flow filter fields
 - Smart Export packet-limit policy
 - `flow-info` presentation modes
 - `packet-info` presentation modes
