@@ -81,6 +81,102 @@ std::string settings_json(
         + "}";
 }
 
+void expect_global_and_summary_help_behavior() {
+    std::string global_help_stdout {};
+
+    {
+        const std::vector<std::string_view> args {"-h"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(result.stderr_text.empty());
+        PFL_EXPECT(contains_text(result.stdout_text, "PcapFlowLab CLI"));
+        PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab <capture-or-index> [summary options]"));
+        PFL_EXPECT(contains_text(result.stdout_text, "summary"));
+        PFL_EXPECT(contains_text(result.stdout_text, "flows"));
+        PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab <command> --help"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "\\--input"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "\\<input>"));
+        PFL_EXPECT(has_no_tabs_or_trailing_spaces(result.stdout_text));
+        PFL_EXPECT(has_no_ansi_escape_sequences(result.stdout_text));
+        global_help_stdout = result.stdout_text;
+    }
+
+    {
+        const std::vector<std::string_view> args {"--help"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(result.stderr_text.empty());
+        PFL_EXPECT(contains_text(result.stdout_text, "Commands"));
+        PFL_EXPECT(contains_text(result.stdout_text, "Legacy flow list command"));
+        PFL_EXPECT(result.stdout_text == global_help_stdout);
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_help_should_not_exist.idx";
+        const auto output_path_text = output_path.string();
+        std::filesystem::remove(output_path);
+        const std::vector<std::string_view> args {
+            "summary",
+            "--help",
+            "--unknown",
+            "--out-index",
+            output_path_text,
+        };
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(result.stderr_text.empty());
+        PFL_EXPECT(contains_text(result.stdout_text, "PcapFlowLab CLI - summary"));
+        PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab summary <input> [options]"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--settings <settings.json>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--extended"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--protocol-path-tree"));
+        PFL_EXPECT(contains_text(result.stdout_text, "kind-overview|identity-tree|terminal-paths"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--out-index <path>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--out-protocol-path-tree <path>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--progress <auto|on|off>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--force"));
+        PFL_EXPECT(contains_text(result.stdout_text, "-h, --help"));
+        PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab capture.pcap"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "--out-flows-list"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "--format"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "\\--input"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "\\<input>"));
+        PFL_EXPECT(!std::filesystem::exists(output_path));
+        PFL_EXPECT(has_no_tabs_or_trailing_spaces(result.stdout_text));
+        PFL_EXPECT(has_no_ansi_escape_sequences(result.stdout_text));
+    }
+
+    {
+        const std::vector<std::string_view> args {"summary", "missing_capture_for_help.pcap", "--help"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(result.stderr_text.empty());
+        PFL_EXPECT(contains_text(result.stdout_text, "PcapFlowLab CLI - summary"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Failed to open"));
+    }
+
+    {
+        const std::vector<std::string_view> args {};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "PcapFlowLab CLI"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Usage"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Usage:\n  pcap-flow-lab [summary] <input>\n"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "\\--input"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "\\<input>"));
+        PFL_EXPECT(result.stderr_text == global_help_stdout);
+        PFL_EXPECT(has_no_tabs_or_trailing_spaces(result.stderr_text));
+        PFL_EXPECT(has_no_ansi_escape_sequences(result.stderr_text));
+    }
+}
+
 void expect_summary_dispatch_and_parse_rules() {
     {
         const std::vector<std::string_view> args {"capture.pcap"};
@@ -187,6 +283,105 @@ void expect_summary_dispatch_and_parse_rules() {
         const auto parse_result = cli::parse_summary_command_arguments(args);
         PFL_EXPECT(!parse_result.ok);
         PFL_EXPECT(contains_text(parse_result.error_text, "always whole-capture"));
+    }
+}
+
+void expect_summary_syntax_error_help_behavior() {
+    {
+        const std::vector<std::string_view> args {"summary"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "summary requires an input path"));
+        PFL_EXPECT(contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI\n\nUsage"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"summary", "capture.pcap", "--input", "capture.pcap"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "mutually exclusive input forms"));
+        PFL_EXPECT(contains_text(result.stderr_text, "pcap-flow-lab summary <input> [options]"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"summary", "capture.pcap", "--unknown"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown summary option"));
+        PFL_EXPECT(contains_text(result.stderr_text, "--protocol-path-mode <kind-overview|identity-tree|terminal-paths>"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"summary", "capture.pcap", "--protocol-path-mode", "invalid-mode"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid --protocol-path-mode value"));
+        PFL_EXPECT(contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--unknown"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown summary option"));
+        PFL_EXPECT(contains_text(result.stderr_text, "pcap-flow-lab <input> [summary options]"));
+    }
+}
+
+void expect_runtime_errors_do_not_append_help() {
+    {
+        const std::vector<std::string_view> args {"summary", "missing_capture_for_cli_help_test.pcap"};
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(!result.stderr_text.empty());
+        PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Usage"));
+    }
+
+    {
+        const auto malformed_settings_path = write_temp_text_file(
+            "pfl_cli_summary_help_runtime_malformed.json",
+            "{"
+        );
+        const auto input_path_text = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap").string();
+        const auto malformed_settings_path_text = malformed_settings_path.string();
+        const std::vector<std::string_view> args {
+            "summary",
+            input_path_text,
+            "--settings",
+            malformed_settings_path_text,
+        };
+        const auto result = cli::process_cli_invocation(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid settings JSON"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
+    }
+
+    {
+        const auto capture_path = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap");
+        const auto existing_target = write_temp_text_file("pfl_cli_summary_help_runtime_existing.txt", "old");
+        cli::SummaryCommandOptions options {};
+        options.input_path = capture_path;
+        options.out_protocol_path_tree_path = existing_target;
+        const auto result = cli::execute_summary_command(options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "--out-protocol-path-tree already exists"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
     }
 }
 
@@ -774,7 +969,10 @@ void expect_preflight_fails_before_opening_input() {
 }  // namespace
 
 void run_cli_summary_tests() {
+    expect_global_and_summary_help_behavior();
     expect_summary_dispatch_and_parse_rules();
+    expect_summary_syntax_error_help_behavior();
+    expect_runtime_errors_do_not_append_help();
     expect_progress_policy_rules();
     expect_basic_summary_rendering();
     expect_index_summary_rendering_without_source_capture();

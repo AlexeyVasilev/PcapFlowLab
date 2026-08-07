@@ -26,6 +26,16 @@ The following remain pending in later passes:
 - `--out-flows-list`
 - structured `--format` output
 
+The current production CLI also supports:
+
+```text
+pcap-flow-lab summary -h
+pcap-flow-lab summary --help
+```
+
+These forms print summary-specific help, require no input, perform no open or
+import work, create no side outputs, and return success.
+
 ## Purpose
 
 `summary` provides whole-input capture or index overview and selected
@@ -89,7 +99,6 @@ Side outputs:
 
 ```text
 --out-index <path>
---out-flows-list <path>
 --out-protocol-path-tree <path>
 ```
 
@@ -113,6 +122,35 @@ Future structured formats such as JSON remain deferred.
 
 All Basic, Extended, and Protocol Path summary data is intended to work from an
 index without source packet bytes.
+
+## Help And Error Behavior
+
+Explicit summary help:
+
+```text
+pcap-flow-lab summary -h
+pcap-flow-lab summary --help
+```
+
+prints summary-specific help to `stdout` and returns success.
+
+If summary argument parsing fails, the CLI prints:
+
+- a concise error message
+- summary-specific help
+
+Such syntax errors return non-zero.
+
+Examples include:
+
+- missing input
+- positional input combined with `--input`
+- unknown summary options
+- invalid `--protocol-path-mode`
+
+Runtime errors after successful parsing, such as missing input files, malformed
+settings JSON, or side-output write failures, report the actual error but do
+not append full summary help.
 
 ## Basic Summary
 

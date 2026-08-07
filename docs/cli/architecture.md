@@ -33,6 +33,50 @@ and whole-capture overview belong to `summary`.
 
 ## Command Model
 
+### Global help
+
+CLI v2 supports:
+
+```text
+pcap-flow-lab -h
+pcap-flow-lab --help
+```
+
+These forms show global CLI help, require no input, and return success.
+
+Global help should:
+
+- show the CLI title
+- show the default-summary invocation shape
+- list current commands with short descriptions
+- point to command-specific help through `pcap-flow-lab <command> --help`
+
+During the transition period, global help may still list preserved legacy
+commands alongside v2-oriented commands.
+
+### Command-specific help
+
+Commands should support:
+
+```text
+pcap-flow-lab <command> -h
+pcap-flow-lab <command> --help
+```
+
+Explicit help must be handled before ordinary required-argument validation.
+
+### Syntax versus runtime errors
+
+CLI v2 distinguishes between:
+
+- syntax or argument errors
+- runtime or operational errors
+
+Syntax errors should use command-specific help.
+
+Runtime errors should report the actual operational failure and should not dump
+full command help after parsing has already succeeded.
+
 ### Default summary invocation
 
 CLI v2 should support all of the following conceptual forms:
@@ -491,6 +535,11 @@ Important constraints:
 ## stdout And stderr Contract
 
 CLI v2 should follow this stream contract:
+
+Explicit `-h` and `--help` output belongs on `stdout`.
+
+Argument-error responses should keep both the concise error text and the
+associated help on `stderr`.
 
 `stdout`
 : requested command data

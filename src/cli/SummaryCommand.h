@@ -55,10 +55,20 @@ struct SummaryCommandExecutionResult {
     std::string stderr_text {};
 };
 
+struct CliInvocationResult {
+    bool handled {false};
+    int exit_code {1};
+    std::string stdout_text {};
+    std::string stderr_text {};
+};
+
 [[nodiscard]] bool is_legacy_cli_command_name(std::string_view name) noexcept;
 [[nodiscard]] SummaryDispatchDecision classify_cli_invocation(std::span<const std::string_view> args);
 [[nodiscard]] SummaryCommandParseResult parse_summary_command_arguments(std::span<const std::string_view> args);
 [[nodiscard]] SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOptions& options);
+[[nodiscard]] std::string render_global_cli_help();
+[[nodiscard]] std::string render_summary_command_help();
+[[nodiscard]] CliInvocationResult process_cli_invocation(std::span<const std::string_view> args);
 [[nodiscard]] bool should_enable_summary_progress(
     SummaryCommandProgressMode mode,
     bool stderr_is_terminal

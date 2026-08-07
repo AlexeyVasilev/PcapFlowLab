@@ -380,37 +380,21 @@ int print_chunked_result(pfl::ChunkedImportStatus status, const std::filesystem:
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        print_usage();
-        return 1;
-    }
-
     std::vector<std::string_view> cli_args {};
     cli_args.reserve(static_cast<std::size_t>(argc - 1));
     for (int index = 1; index < argc; ++index) {
         cli_args.push_back(argv[index]);
     }
 
-    const auto dispatch = pfl::cli::classify_cli_invocation(cli_args);
-    if (dispatch.kind == pfl::cli::SummaryDispatchKind::summary) {
-        const auto parse_result = pfl::cli::parse_summary_command_arguments(dispatch.summary_args);
-        if (!parse_result.ok || !parse_result.options.has_value()) {
-            if (!parse_result.error_text.empty()) {
-                std::cerr << parse_result.error_text << '\n';
-            } else {
-                print_usage();
-            }
-            return 1;
+    const auto cli_result = pfl::cli::process_cli_invocation(cli_args);
+    if (cli_result.handled) {
+        if (!cli_result.stdout_text.empty()) {
+            std::cout << cli_result.stdout_text;
         }
-
-        const auto result = pfl::cli::execute_summary_command(*parse_result.options);
-        if (!result.stdout_text.empty()) {
-            std::cout << result.stdout_text;
+        if (!cli_result.stderr_text.empty()) {
+            std::cerr << cli_result.stderr_text;
         }
-        if (!result.stderr_text.empty()) {
-            std::cerr << result.stderr_text;
-        }
-        return result.exit_code;
+        return cli_result.exit_code;
     }
 
     const std::string_view command = argv[1];
@@ -473,21 +457,6 @@ int main(int argc, char* argv[]) {
     if (!parsed_args.valid) {
         print_usage();
         return 1;
-    }
-
-    if (command == "summary") {
-        if (!parsed_args.remaining_args.empty()) {
-            print_usage();
-            return 1;
-        }
-
-        pfl::CaptureSession session {};
-        if (!open_analysis_input(input, parsed_args, session)) {
-            return 1;
-        }
-
-        print_summary(session, "Input", input);
-        return 0;
     }
 
     if (command == "load-index-summary") {

@@ -56,6 +56,11 @@ constexpr std::array<std::string_view, 8> kLegacyCliCommands {
     "resume-import",
 };
 
+constexpr std::array<std::string_view, 2> kHelpOptions {
+    "-h",
+    "--help",
+};
+
 struct TableColumn {
     std::string header {};
     bool right_align {false};
@@ -75,6 +80,39 @@ bool contains_option(
     const std::string_view candidate
 ) noexcept {
     return std::find(options.begin(), options.end(), candidate) != options.end();
+}
+
+bool contains_help_option(const std::span<const std::string_view> args) noexcept {
+    return std::any_of(args.begin(), args.end(), [](const std::string_view arg) {
+        return contains_option(kHelpOptions, arg);
+    });
+}
+
+std::string render_command_list() {
+    std::ostringstream out {};
+    out << "Commands\n";
+    out << "  summary             Show whole-capture or whole-index overview and statistics.\n";
+    out << "  flows               Legacy flow list command.\n";
+    out << "  inspect-packet      Legacy packet details command.\n";
+    out << "  hex                 Legacy packet hex dump command.\n";
+    out << "  export-flow         Legacy single-flow PCAP export command.\n";
+    out << "  save-index          Legacy raw-capture to index command.\n";
+    out << "  load-index-summary  Legacy index summary command.\n";
+    out << "  chunked-import      Legacy chunked import command.\n";
+    out << "  resume-import       Legacy chunked import resume command.\n";
+    out << "  finalize-import     Legacy checkpoint finalize command.\n";
+    return out.str();
+}
+
+std::string render_summary_examples() {
+    std::ostringstream out {};
+    out << "Examples\n";
+    out << "  pcap-flow-lab capture.pcap\n";
+    out << "  pcap-flow-lab summary capture.pcap --extended\n";
+    out << "  pcap-flow-lab summary capture.idx --protocol-path-tree --protocol-path-mode identity-tree\n";
+    out << "  pcap-flow-lab summary capture.pcap --out-index capture.pflidx\n";
+    out << "  pcap-flow-lab summary capture.idx --out-protocol-path-tree protocol-path.txt\n";
+    return out.str();
 }
 
 bool stderr_supports_interactive_updates() noexcept {
@@ -748,6 +786,49 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
 
 }  // namespace
 
+std::string render_global_cli_help() {
+    std::ostringstream out {};
+    out << "PcapFlowLab CLI\n\n";
+    out << "Usage\n";
+    out << "  pcap-flow-lab <capture-or-index> [summary options]\n";
+    out << "  pcap-flow-lab summary <input> [options]\n";
+    out << "  pcap-flow-lab summary --input <input> [options]\n";
+    out << "  pcap-flow-lab -h\n";
+    out << "  pcap-flow-lab --help\n\n";
+    out << render_command_list() << '\n';
+    out << "Command-specific help\n";
+    out << "  pcap-flow-lab <command> --help\n";
+    return out.str();
+}
+
+std::string render_summary_command_help() {
+    std::ostringstream out {};
+    out << "PcapFlowLab CLI - summary\n\n";
+    out << "Show whole-capture or whole-index overview and statistics.\n\n";
+    out << "Usage\n";
+    out << "  pcap-flow-lab summary <input> [options]\n";
+    out << "  pcap-flow-lab summary --input <input> [options]\n";
+    out << "  pcap-flow-lab <input> [summary options]\n\n";
+    out << "Input and import\n";
+    out << "  --input <path>\n";
+    out << "  --settings <settings.json>\n";
+    out << "    Applies to raw capture import and is invalid for index input.\n\n";
+    out << "Presentation\n";
+    out << "  --extended\n";
+    out << "  --protocol-path-tree\n";
+    out << "  --protocol-path-mode <kind-overview|identity-tree|terminal-paths>\n\n";
+    out << "Side outputs\n";
+    out << "  --out-index <path>\n";
+    out << "  --out-protocol-path-tree <path>\n\n";
+    out << "Runtime\n";
+    out << "  --progress <auto|on|off>\n";
+    out << "  --force\n\n";
+    out << "Help\n";
+    out << "  -h, --help\n\n";
+    out << render_summary_examples();
+    return out.str();
+}
+
 bool is_legacy_cli_command_name(const std::string_view name) noexcept {
     return name == "finalize-import" || contains_option(kLegacyCliCommands, name);
 }
@@ -1084,6 +1165,67 @@ SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOption
             .stderr_is_terminal = stderr_supports_interactive_updates(),
         }
     );
+}
+
+CliInvocationResult process_cli_invocation(const std::span<const std::string_view> args) {
+    if (args.empty()) {
+        return {
+            .handled = true,
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = render_global_cli_help(),
+        };
+    }
+
+    if (contains_option(kHelpOptions, args.front())) {
+        return {
+            .handled = true,
+            .exit_code = 0,
+            .stdout_text = render_global_cli_help(),
+            .stderr_text = {},
+        };
+    }
+
+    const auto dispatch = classify_cli_invocation(args);
+    if (dispatch.kind != SummaryDispatchKind::summary) {
+        return {
+            .handled = false,
+        };
+    }
+
+    if (contains_help_option(dispatch.summary_args)) {
+        return {
+            .handled = true,
+            .exit_code = 0,
+            .stdout_text = render_summary_command_help(),
+            .stderr_text = {},
+        };
+    }
+
+    const auto parse_result = parse_summary_command_arguments(dispatch.summary_args);
+    if (!parse_result.ok || !parse_result.options.has_value()) {
+        std::string stderr_text {};
+        if (!parse_result.error_text.empty()) {
+            stderr_text += parse_result.error_text;
+            stderr_text += '\n';
+            stderr_text += '\n';
+        }
+        stderr_text += render_summary_command_help();
+        return {
+            .handled = true,
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = std::move(stderr_text),
+        };
+    }
+
+    const auto result = execute_summary_command(*parse_result.options);
+    return {
+        .handled = true,
+        .exit_code = result.exit_code,
+        .stdout_text = result.stdout_text,
+        .stderr_text = result.stderr_text,
+    };
 }
 
 }  // namespace pfl::cli
