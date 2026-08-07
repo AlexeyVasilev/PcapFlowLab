@@ -169,6 +169,9 @@ public:
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& attached_source_capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
+    [[nodiscard]] const std::filesystem::path& input_path() const noexcept;
+    [[nodiscard]] std::uint64_t input_file_size() const noexcept;
+    [[nodiscard]] const CaptureSourceInfo& source_info() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_vlan_and_mpls_layers() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_gtpu_teids() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
@@ -475,7 +478,9 @@ private:
 
     std::filesystem::path capture_path_ {};
     std::filesystem::path source_capture_path_ {};
+    std::filesystem::path input_path_ {};
     CaptureSourceInfo source_info_ {};
+    std::uint64_t input_file_size_ {0};
     CaptureState state_ {};
     AnalysisSettings analysis_settings_ {};
     bool opened_from_index_ {false};

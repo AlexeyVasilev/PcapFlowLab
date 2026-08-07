@@ -650,6 +650,9 @@ std::string capture_packet_size_statistics_bucket_json(const pfl::FrontendCaptur
     }
     out << ','
         << "\"packet_count\":" << bucket.packet_count << ','
+        << "\"packet_count_text\":" << json_string(bucket.packet_count_text) << ','
+        << "\"total_fraction\":" << bucket.total_fraction << ','
+        << "\"total_percent_text\":" << json_string(bucket.total_percent_text) << ','
         << "\"normalized_fraction\":" << bucket.normalized_fraction
         << '}';
     return out.str();
@@ -691,12 +694,32 @@ std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacke
     }
     out << ','
         << "\"flow_count\":" << bucket.flow_count << ','
+        << "\"flow_count_with_total_percent_text\":"
+        << json_string(bucket.flow_count_with_total_percent_text) << ','
         << "\"original_byte_count\":" << bucket.original_byte_count << ','
         << "\"original_byte_count_text\":" << json_string(bucket.original_byte_count_text) << ','
+        << "\"original_byte_count_with_total_percent_text\":"
+        << json_string(bucket.original_byte_count_with_total_percent_text) << ','
+        << "\"total_flow_fraction\":" << bucket.total_flow_fraction << ','
+        << "\"total_original_byte_fraction\":" << bucket.total_original_byte_fraction << ','
         << "\"normalized_flow_fraction\":" << bucket.normalized_flow_fraction << ','
         << "\"normalized_original_byte_fraction\":" << bucket.normalized_original_byte_fraction
         << '}';
     return out.str();
+}
+
+std::string input_kind_json(const pfl::FrontendInputKind kind) {
+    switch (kind) {
+    case pfl::FrontendInputKind::classic_pcap:
+        return json_string("pcap");
+    case pfl::FrontendInputKind::pcapng:
+        return json_string("pcapng");
+    case pfl::FrontendInputKind::pcap_flow_lab_index:
+        return json_string("pcap_flow_lab_index");
+    case pfl::FrontendInputKind::unknown:
+    default:
+        return json_string("unknown");
+    }
 }
 
 std::string flow_packet_count_histogram_json(const pfl::FrontendFlowPacketCountHistogramDto& histogram) {
@@ -801,6 +824,25 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"original_bytes\":" << overview.summary.original_bytes << ','
         << "\"original_bytes_text\":" << json_string(overview.summary.original_bytes_text) << ','
         << "\"total_bytes\":" << overview.summary.total_bytes
+        << "},"
+        << "\"whole_capture_totals\":{"
+        << "\"captured_bytes\":" << overview.whole_capture_totals.captured_bytes << ','
+        << "\"captured_bytes_text\":" << json_string(overview.whole_capture_totals.captured_bytes_text) << ','
+        << "\"original_bytes\":" << overview.whole_capture_totals.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(overview.whole_capture_totals.original_bytes_text)
+        << "},"
+        << "\"input_metadata\":{"
+        << "\"input_path\":" << json_string(overview.input_metadata.input_path) << ','
+        << "\"input_kind\":" << input_kind_json(overview.input_metadata.input_kind) << ','
+        << "\"input_file_size\":" << overview.input_metadata.input_file_size << ','
+        << "\"source_capture_path\":";
+    if (overview.input_metadata.source_capture_path.has_value()) {
+        out << json_string(*overview.input_metadata.source_capture_path);
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"source_capture_accessible\":" << bool_json(overview.input_metadata.source_capture_accessible)
         << "},"
         << "\"protocol_summary\":{"
         << "\"tcp\":" << protocol_stats_json(overview.protocol_summary.tcp) << ','

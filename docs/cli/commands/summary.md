@@ -196,15 +196,14 @@ recognized transport rows.
 
 ### Current Implementation Note
 
-Current shared DTO support still has an implementation gap:
+The shared frontend-neutral layer now exposes distinct whole-capture totals for:
 
-- whole-capture Original Bytes already exists in backend capture summary state
-- current frontend overview byte totals are recognized-flow totals
-- a shared whole-capture Captured Bytes value still needs to be exposed before
-  CLI summary implementation is complete
+- whole-capture Captured Bytes
+- whole-capture Original Bytes
 
-This is a known implementation gap. It is not a change to the desired public
-CLI contract.
+Current frontend overview transport-row totals remain recognized-flow totals.
+Future CLI `summary` work should consume the explicit whole-capture totals
+rather than reinterpreting recognized-flow transport totals.
 
 ## Transport Summary
 
@@ -880,47 +879,24 @@ Illustrative formatting style:
 Exact shared formatter implementation remains deferred to the later
 implementation pass.
 
-## Known Implementation Gaps
+## Remaining Implementation Gaps
 
-### A. Whole-Capture Captured Bytes
+The four shared-data gaps targeted by this pass are now in place:
 
-Desired CLI semantics require:
+- whole-capture captured/original totals are exposed separately from
+  recognized-flow overview totals
+- input path/type/file-size metadata is exposed through a frontend-neutral DTO
+- Packet Size Distribution exposes deterministic total-based percentage
+  presentation in addition to GUI bar normalization
+- Flows by Packet Count exposes deterministic total-based flow/original-byte
+  presentation in addition to GUI bar normalization
 
-```text
-sum of captured packet lengths across the complete capture,
-including unrecognized packets
-```
+The remaining work is still CLI-specific:
 
-Current frontend overview byte totals are recognized-flow totals.
-
-A shared whole-capture captured-byte value must be exposed before CLI summary
-implementation is complete.
-
-### B. Input Metadata DTO
-
-Input path, type, and file size exist in current session and source metadata
-but are not yet exposed as one CLI-ready frontend-neutral DTO.
-
-A small frontend-neutral extension will likely be needed.
-
-### C. Packet Size Percentage Presentation
-
-Existing GUI `normalized_fraction` is bar normalization against the largest
-bucket, not percentage of all packets.
-
-CLI needs deterministic total-based percentage presentation.
-
-### D. Flow Histogram Percentage Presentation
-
-Existing GUI normalized fractions are bar-normalization values.
-
-CLI needs total-based:
-
-- flow percentage
-- original-byte percentage
-
-These are presentation or frontend-neutral gaps. No new statistics algorithms
-are otherwise required for the agreed `summary` contract.
+- command parsing and dispatch
+- stdout layout/rendering
+- progress behavior
+- option wiring for documented `summary` subfeatures
 
 ## Output Examples
 

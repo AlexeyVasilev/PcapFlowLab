@@ -2149,7 +2149,9 @@ std::size_t first_unstable_stream_row_index(const std::vector<BuiltStreamRow>& r
 void CaptureSession::reset_runtime_state() noexcept {
     capture_path_.clear();
     source_capture_path_.clear();
+    input_path_.clear();
     source_info_ = {};
+    input_file_size_ = 0;
     state_ = {};
     analysis_settings_ = {};
     opened_from_index_ = false;
@@ -2194,7 +2196,9 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
 
     swap(capture_path_, other.capture_path_);
     swap(source_capture_path_, other.source_capture_path_);
+    swap(input_path_, other.input_path_);
     swap(source_info_, other.source_info_);
+    swap(input_file_size_, other.input_file_size_);
     swap(state_, other.state_);
     swap(analysis_settings_, other.analysis_settings_);
     swap(opened_from_index_, other.opened_from_index_);
@@ -2268,6 +2272,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 
     capture_path_ = path;
     source_capture_path_ = path;
+    input_path_ = path;
     state_ = imported_state;
     analysis_settings_ = options.settings;
     opened_from_index_ = false;
@@ -2289,6 +2294,15 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
+        std::error_code error {};
+        input_file_size_ = std::filesystem::is_regular_file(path, error) && !error
+            ? std::filesystem::file_size(path, error)
+            : 0U;
+        if (error) {
+            input_file_size_ = 0U;
+        }
+    } else {
+        input_file_size_ = source_info_.file_size;
     }
 
     debug::log_if<debug::kDebugOpen>([&]() {
@@ -2381,6 +2395,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
 
     capture_path_.clear();
     source_capture_path_ = std::move(loaded_capture_path);
+    input_path_ = index_path;
     source_info_ = std::move(loaded_source_info);
     state_ = std::move(loaded_state);
     analysis_settings_ = {};
@@ -2390,6 +2405,15 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     has_loaded_state_ = true;
     partial_open_ = false;
     partial_open_failure_ = {};
+    {
+        std::error_code error {};
+        input_file_size_ = std::filesystem::is_regular_file(index_path, error) && !error
+            ? std::filesystem::file_size(index_path, error)
+            : 0U;
+        if (error) {
+            input_file_size_ = 0U;
+        }
+    }
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
@@ -2506,6 +2530,18 @@ const std::filesystem::path& CaptureSession::attached_source_capture_path() cons
 
 const std::filesystem::path& CaptureSession::expected_source_capture_path() const noexcept {
     return source_capture_path_;
+}
+
+const std::filesystem::path& CaptureSession::input_path() const noexcept {
+    return input_path_;
+}
+
+std::uint64_t CaptureSession::input_file_size() const noexcept {
+    return input_file_size_;
+}
+
+const CaptureSourceInfo& CaptureSession::source_info() const noexcept {
+    return source_info_;
 }
 
 const CaptureSummary& CaptureSession::summary() const noexcept {

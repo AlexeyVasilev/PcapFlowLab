@@ -24,6 +24,7 @@ void expect_packet_size_statistics_equal(
     const CapturePacketSizeStatistics& expected
 ) {
     PFL_EXPECT(actual.total_packet_count == expected.total_packet_count);
+    PFL_EXPECT(actual.total_captured_bytes == expected.total_captured_bytes);
     PFL_EXPECT(actual.maximum_bucket_packet_count == expected.maximum_bucket_packet_count);
     PFL_EXPECT(actual.maximum_captured_packet_length == expected.maximum_captured_packet_length);
     PFL_EXPECT(actual.buckets.size() == expected.buckets.size());

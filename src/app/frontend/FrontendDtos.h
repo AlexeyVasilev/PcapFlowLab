@@ -166,6 +166,28 @@ struct FrontendOverviewSummaryDto {
     std::uint64_t total_bytes {0};
 };
 
+enum class FrontendInputKind : std::uint8_t {
+    unknown = 0,
+    classic_pcap = 1,
+    pcapng = 2,
+    pcap_flow_lab_index = 3,
+};
+
+struct FrontendInputMetadataDto {
+    std::string input_path {};
+    FrontendInputKind input_kind {FrontendInputKind::unknown};
+    std::uint64_t input_file_size {0};
+    std::optional<std::string> source_capture_path {};
+    bool source_capture_accessible {false};
+};
+
+struct FrontendWholeCaptureTotalsDto {
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
 struct FrontendOverviewProtocolSummaryDto {
     FrontendProtocolStatsDto tcp {};
     FrontendProtocolStatsDto udp {};
@@ -193,8 +215,12 @@ struct FrontendFlowPacketCountHistogramBucketDto {
     std::uint64_t lower_bound_inclusive {0};
     std::optional<std::uint64_t> upper_bound_inclusive {};
     std::uint64_t flow_count {0};
+    std::string flow_count_with_total_percent_text {};
     std::uint64_t original_byte_count {0};
     std::string original_byte_count_text {};
+    std::string original_byte_count_with_total_percent_text {};
+    double total_flow_fraction {0.0};
+    double total_original_byte_fraction {0.0};
     double normalized_flow_fraction {0.0};
     double normalized_original_byte_fraction {0.0};
 };
@@ -216,6 +242,9 @@ struct FrontendCapturePacketSizeStatisticsBucketDto {
     std::uint32_t lower_bound_inclusive {0};
     std::optional<std::uint32_t> upper_bound_inclusive {};
     std::uint64_t packet_count {0};
+    std::string packet_count_text {};
+    double total_fraction {0.0};
+    std::string total_percent_text {};
     double normalized_fraction {0.0};
 };
 
@@ -277,6 +306,8 @@ struct FrontendProtocolPathPresentationDto {
 struct FrontendOverviewDto {
     bool has_capture {false};
     FrontendOverviewSummaryDto summary {};
+    FrontendWholeCaptureTotalsDto whole_capture_totals {};
+    FrontendInputMetadataDto input_metadata {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
     std::uint64_t unrecognized_packet_count {0};

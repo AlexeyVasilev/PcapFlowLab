@@ -253,6 +253,44 @@ std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary
 
 std::string format_size_value(const std::uint64_t value);
 
+double safe_percent(const std::uint64_t numerator, const std::uint64_t denominator) {
+    if (denominator == 0U) {
+        return 0.0;
+    }
+
+    return (static_cast<double>(numerator) * 100.0) / static_cast<double>(denominator);
+}
+
+FrontendInputKind frontend_input_kind_for_session(const CaptureSession& session) {
+    if (session.opened_from_index()) {
+        return FrontendInputKind::pcap_flow_lab_index;
+    }
+
+    switch (session.source_info().format) {
+    case CaptureSourceFormat::classic_pcap:
+        return FrontendInputKind::classic_pcap;
+    case CaptureSourceFormat::pcapng:
+        return FrontendInputKind::pcapng;
+    case CaptureSourceFormat::unknown:
+    default:
+        return FrontendInputKind::unknown;
+    }
+}
+
+FrontendInputMetadataDto build_frontend_input_metadata(const CaptureSession& session) {
+    FrontendInputMetadataDto metadata {};
+    metadata.input_path = path_to_string(session.input_path());
+    metadata.input_kind = frontend_input_kind_for_session(session);
+    metadata.input_file_size = session.input_file_size();
+    metadata.source_capture_accessible = session.source_capture_accessible();
+
+    if (session.opened_from_index() && !session.expected_source_capture_path().empty()) {
+        metadata.source_capture_path = path_to_string(session.expected_source_capture_path());
+    }
+
+    return metadata;
+}
+
 FrontendCapturePacketSizeStatisticsDto build_capture_packet_size_statistics_dto(
     const CapturePacketSizeStatistics& statistics
 ) {
@@ -273,6 +311,13 @@ FrontendCapturePacketSizeStatisticsDto build_capture_packet_size_statistics_dto(
             .lower_bound_inclusive = bucket.lower_bound_inclusive,
             .upper_bound_inclusive = bucket.upper_bound_inclusive,
             .packet_count = bucket.packet_count,
+            .packet_count_text = session_detail::format_statistics_count_value(bucket.packet_count),
+            .total_fraction = statistics.total_packet_count > 0U
+                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
+                : 0.0,
+            .total_percent_text = session_detail::format_statistics_percent_text(
+                safe_percent(bucket.packet_count, statistics.total_packet_count)
+            ),
             .normalized_fraction = statistics.maximum_bucket_packet_count > 0U
                 ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
                 : 0.0,
@@ -305,8 +350,22 @@ FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
             .lower_bound_inclusive = bucket.lower_bound_inclusive,
             .upper_bound_inclusive = bucket.upper_bound_inclusive,
             .flow_count = bucket.flow_count,
+            .flow_count_with_total_percent_text = session_detail::format_statistics_count_with_percent_text(
+                bucket.flow_count,
+                safe_percent(bucket.flow_count, histogram.total_flow_count)
+            ),
             .original_byte_count = bucket.original_byte_count,
             .original_byte_count_text = format_size_value(bucket.original_byte_count),
+            .original_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
+                bucket.original_byte_count,
+                safe_percent(bucket.original_byte_count, histogram.total_original_byte_count)
+            ),
+            .total_flow_fraction = histogram.total_flow_count > 0U
+                ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.total_flow_count)
+                : 0.0,
+            .total_original_byte_fraction = histogram.total_original_byte_count > 0U
+                ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(histogram.total_original_byte_count)
+                : 0.0,
             .normalized_flow_fraction = histogram.maximum_bucket_flow_count > 0U
                 ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.maximum_bucket_flow_count)
                 : 0.0,
@@ -2456,10 +2515,13 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
+    const auto input_metadata = build_frontend_input_metadata(session_);
     const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
         protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
     const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
         protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
+    const auto whole_capture_captured_bytes = session_.packet_size_statistics().total_captured_bytes;
+    const auto whole_capture_original_bytes = session_.summary().total_bytes;
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = FrontendOverviewSummaryDto {
@@ -2471,6 +2533,13 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             .original_bytes_text = session_detail::format_statistics_compact_size_value(original_bytes),
             .total_bytes = session_.summary().total_bytes,
         },
+        .whole_capture_totals = FrontendWholeCaptureTotalsDto {
+            .captured_bytes = whole_capture_captured_bytes,
+            .captured_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_captured_bytes),
+            .original_bytes = whole_capture_original_bytes,
+            .original_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_original_bytes),
+        },
+        .input_metadata = std::move(input_metadata),
         .captured_bytes = captured_bytes,
         .original_bytes = original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
