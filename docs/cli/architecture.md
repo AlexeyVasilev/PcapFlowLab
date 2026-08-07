@@ -60,6 +60,8 @@ be used to disambiguate the intended input path.
 - It always operates on the complete opened capture or index.
 - It may later include multiple summary sections and multiple side outputs.
 - Protocol Path Tree belongs to this summary/statistics domain.
+- The detailed command contract is documented in
+  [commands/summary.md](./commands/summary.md).
 
 `summary` must not accept flow-selection options. In particular, it must not
 support:
@@ -82,8 +84,8 @@ example through a future command-specific output option such as:
 That future CLI output is intended to reuse the shared C++ Protocol Path Tree
 plain-text formatter/exporter already used by the Qt and Tauri Statistics UIs.
 
-The exact summary sections, views, text output, and detailed output options are
-intentionally deferred to later per-command design work.
+The exact `summary` contract is now defined in
+[commands/summary.md](./commands/summary.md).
 
 ### `flows`
 
@@ -618,7 +620,7 @@ v2 work should prefer shared frontend-neutral models over:
 
 ## Future Detailed Documentation
 
-Later command-specific documentation is intended to live at:
+Command-specific documentation is intended to live at:
 
 ```text
 docs/cli/commands/summary.md
@@ -628,7 +630,7 @@ docs/cli/commands/flow_info.md
 docs/cli/commands/packet_info.md
 ```
 
-Those future documents should contain:
+These documents should contain:
 
 - complete syntax
 - supported options
@@ -640,13 +642,13 @@ Those future documents should contain:
 - capture, index, and source-capture differences
 - error cases
 
-Those files are intentionally not created in this pass.
+At this stage, only `docs/cli/commands/summary.md` is defined. The remaining
+command documents are still intentionally deferred.
 
 ## Intentionally Deferred Decisions
 
 This architecture pass does not decide:
 
-- exact `summary` output
 - exact summary sections or modes
 - exact `flows` columns
 - exact sorting field set

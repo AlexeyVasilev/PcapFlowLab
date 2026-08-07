@@ -7,6 +7,8 @@ This directory documents the planned PcapFlowLab CLI v2 architecture.
 - Implementation may not yet match the documents in this folder.
 
 For the full architecture contract, see [architecture.md](./architecture.md).
+For the detailed `summary` command contract, see
+[commands/summary.md](./commands/summary.md).
 
 ## What The CLI Is For
 
@@ -86,6 +88,10 @@ For byte-backed operations against an index, CLI v2 also reserves:
 
 - It is not flow-filtered.
 - It does not accept flow-selection options.
+- It prints Basic Summary by default.
+- `--extended` adds selected whole-capture statistics sections.
+- Protocol Path Tree preview belongs to `summary` and is controlled
+  independently.
 - Protocol Path Tree belongs to the summary/statistics domain.
 
 Filtering, sorting, and limiting belong to flow-oriented commands such as:
@@ -177,13 +183,14 @@ pcap-flow-lab packet-info capture.pcap \
 
 ## Next Documentation Layer
 
-Detailed command documentation is intended to be added later as individual
-command designs are finalized:
+Detailed command documentation is intended to be added incrementally as
+individual command designs are finalized:
 
-- `docs/cli/commands/summary.md`
+- `docs/cli/commands/summary.md` (now defined)
 - `docs/cli/commands/flows.md`
 - `docs/cli/commands/export_flows.md`
 - `docs/cli/commands/flow_info.md`
 - `docs/cli/commands/packet_info.md`
 
-Those files do not exist yet in this initial architecture pass.
+Only `summary.md` exists in this pass. The other command documents are still
+deferred.
