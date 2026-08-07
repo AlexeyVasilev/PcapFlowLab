@@ -91,10 +91,6 @@ CaptureImportResult import_classic_packets(PcapReader& reader,
             state,
             adaptive_header_prefix_bytes
         );
-        if (disposition != ClassicImportPacketDisposition::failure_before_packet_surfaced) {
-            accumulate_capture_packet_size(state.packet_size_statistics, reusable_packet.captured_length);
-        }
-
         if (disposition != ClassicImportPacketDisposition::continue_after_packet) {
             break;
         }
@@ -144,7 +140,6 @@ CaptureImportResult import_full_packets(Reader& reader, CaptureState& state, con
         }
 
         processor.process_packet(*packet, state);
-        accumulate_capture_packet_size(state.packet_size_statistics, packet->captured_length);
 
         if (should_cancel(ctx)) {
             report_open_progress(ctx);
@@ -228,6 +223,7 @@ ClassicImportPacketDisposition CaptureImportProcessor::process_classic_import_pa
     if (!applied) {
         return ClassicImportPacketDisposition::failure_before_packet_surfaced;
     }
+    accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
 
     return finalize_prefix_packet()
         ? ClassicImportPacketDisposition::continue_after_packet
@@ -241,6 +237,7 @@ void CaptureImportProcessor::process_packet(RawPcapPacket& packet, CaptureState&
         *registry_,
         hint_service_
     ));
+    accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
 }
 
 CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {

@@ -3,16 +3,11 @@
 This directory contains deterministic classic-PCAP fixtures for selected-packet
 `Bytes` fallback coverage.
 
-Local regeneration:
-
-```bash
-python tests/data/parsing/packet_byte_views/generate_packet_byte_view_pcaps.py --output-dir tests/data/parsing/packet_byte_views --force
-```
-
 Notes:
 
-- the generator is dependency-free and writes classic little-endian Ethernet `.pcap` files directly;
-- the generated binaries are committed test assets and are opened from disk by tests;
+- the PCAP fixtures are deterministic generated assets committed as authoritative test inputs;
+- under current project practice, local generator scripts may exist outside the repository but are not committed;
+- repository documentation intentionally does not point to a repository-local regeneration command for an untracked generator;
 - `Captured Packet` is a fallback for a packet record whose outer protocol unit cannot be safely decoded;
 - rich decoded Packet Details may be unavailable while the fallback `Captured Packet` byte view remains available;
 - classic-PCAP record headers are not part of the selected packet `Bytes` view;

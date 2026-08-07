@@ -1119,6 +1119,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
 
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::ethernet_payload) == nullptr);
+        PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::frame) == nullptr);
         PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::ieee8023_payload) == 1U);
         PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::llc) == 1U);
         PFL_EXPECT(count_views(presentation, SelectedPacketByteViewKind::snap) == 1U);
@@ -1199,6 +1200,7 @@ void run_selected_packet_byte_presentation_tests_impl() {
         PFL_REQUIRE(ieee8023->payload_range.has_value());
         PFL_EXPECT(find_view(presentation, SelectedPacketByteViewKind::frame) != nullptr);
         PFL_EXPECT(collect_labels(presentation).front() == "Captured Packet");
+        expect_parent(*ieee8023, SelectedPacketByteViewKind::frame);
         PFL_EXPECT(ieee8023->captured_length == *ieee8023->declared_length);
         PFL_EXPECT(bytes.size() > ieee8023->captured_length);
         PFL_EXPECT(ieee8023->payload_range->offset == llc->offset);

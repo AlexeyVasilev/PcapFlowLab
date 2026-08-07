@@ -29,6 +29,7 @@ enum class ImportCheckpointSectionId : std::uint32_t {
     protocol_paths = 4,
     ipv4_connections = 5,
     ipv6_connections = 6,
+    unrecognized_packets = 7,
 };
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes);

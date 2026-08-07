@@ -8,6 +8,33 @@
 
 namespace pfl::tests {
 
+namespace {
+
+std::vector<std::uint8_t> unrecognized_ethernet_frame() {
+    return std::vector<std::uint8_t> {
+        0xffU, 0xffU, 0xffU, 0xffU, 0xffU, 0xffU,
+        0x00U, 0x11U, 0x22U, 0x33U, 0x44U, 0x55U,
+        0x88U, 0xb5U,
+        0x01U, 0x02U, 0x03U, 0x04U,
+    };
+}
+
+void expect_packet_size_statistics_equal(
+    const CapturePacketSizeStatistics& actual,
+    const CapturePacketSizeStatistics& expected
+) {
+    PFL_EXPECT(actual.total_packet_count == expected.total_packet_count);
+    PFL_EXPECT(actual.maximum_bucket_packet_count == expected.maximum_bucket_packet_count);
+    PFL_EXPECT(actual.maximum_captured_packet_length == expected.maximum_captured_packet_length);
+    PFL_EXPECT(actual.buckets.size() == expected.buckets.size());
+    for (std::size_t index = 0U; index < expected.buckets.size(); ++index) {
+        PFL_EXPECT(actual.buckets[index].stable_id == expected.buckets[index].stable_id);
+        PFL_EXPECT(actual.buckets[index].packet_count == expected.buckets[index].packet_count);
+    }
+}
+
+}  // namespace
+
 void run_chunked_import_tests() {
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 20, 30, 1), ipv4(10, 20, 30, 2), 50000, 443);
     const auto reverse_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 20, 30, 2), ipv4(10, 20, 30, 1), 443, 50000);
@@ -36,6 +63,12 @@ void run_chunked_import_tests() {
         PFL_EXPECT(!checkpoint.completed);
         PFL_EXPECT(checkpoint.state.summary.packet_count == 1);
         PFL_EXPECT(checkpoint.state.summary.flow_count == 1);
+        PFL_EXPECT(checkpoint.state.packet_size_statistics.total_packet_count == 1U);
+        PFL_EXPECT(checkpoint.state.packet_size_statistics.maximum_bucket_packet_count == 1U);
+        PFL_EXPECT(
+            checkpoint.state.packet_size_statistics.maximum_captured_packet_length ==
+            static_cast<std::uint32_t>(forward_packet.size())
+        );
 
         const auto second_status = importer.resume_chunk(checkpoint_path, 1);
         PFL_EXPECT(second_status == ChunkedImportStatus::completed);
@@ -45,6 +78,10 @@ void run_chunked_import_tests() {
         PFL_EXPECT(checkpoint.state.summary.packet_count == one_shot_session.summary().packet_count);
         PFL_EXPECT(checkpoint.state.summary.flow_count == one_shot_session.summary().flow_count);
         PFL_EXPECT(checkpoint.state.summary.total_bytes == one_shot_session.summary().total_bytes);
+        expect_packet_size_statistics_equal(
+            checkpoint.state.packet_size_statistics,
+            one_shot_session.packet_size_statistics()
+        );
 
         PFL_EXPECT(importer.finalize_to_index(checkpoint_path, index_path));
         PFL_EXPECT(std::filesystem::exists(index_path));
@@ -56,6 +93,60 @@ void run_chunked_import_tests() {
         PFL_EXPECT(indexed_session.summary().packet_count == one_shot_session.summary().packet_count);
         PFL_EXPECT(indexed_session.summary().flow_count == one_shot_session.summary().flow_count);
         PFL_EXPECT(indexed_session.list_flows().size() == one_shot_session.list_flows().size());
+        expect_packet_size_statistics_equal(
+            indexed_session.packet_size_statistics(),
+            one_shot_session.packet_size_statistics()
+        );
+    }
+
+    {
+        const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 21, 30, 1), ipv4(10, 21, 30, 2), 50001, 443);
+        const auto unrecognized_packet = unrecognized_ethernet_frame();
+        const auto statistics_source_path = write_temp_pcap(
+            "pfl_chunked_statistics_source.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, recognized_packet},
+                {200U, unrecognized_packet},
+            })
+        );
+        const auto statistics_checkpoint_path = std::filesystem::temp_directory_path() / "pfl_chunked_statistics.ckp";
+        const auto statistics_index_path = std::filesystem::temp_directory_path() / "pfl_chunked_statistics.idx";
+        std::filesystem::remove(statistics_checkpoint_path);
+        std::filesystem::remove(statistics_index_path);
+
+        CaptureSession one_shot_statistics_session {};
+        PFL_REQUIRE(one_shot_statistics_session.open_capture(statistics_source_path));
+
+        ChunkedCaptureImporter importer {};
+        PFL_EXPECT(importer.import_chunk(statistics_source_path, statistics_checkpoint_path, 1) == ChunkedImportStatus::checkpoint_saved);
+
+        ImportCheckpointReader checkpoint_reader {};
+        ImportCheckpoint checkpoint {};
+        PFL_REQUIRE(checkpoint_reader.read(statistics_checkpoint_path, checkpoint));
+        PFL_EXPECT(checkpoint.state.summary.packet_count == 1U);
+        PFL_EXPECT(checkpoint.state.unrecognized_packets.empty());
+        PFL_EXPECT(checkpoint.state.packet_size_statistics.total_packet_count == 1U);
+        PFL_EXPECT(
+            checkpoint.state.packet_size_statistics.maximum_captured_packet_length ==
+            static_cast<std::uint32_t>(recognized_packet.size())
+        );
+
+        PFL_EXPECT(importer.resume_chunk(statistics_checkpoint_path, 1) == ChunkedImportStatus::completed);
+        PFL_REQUIRE(checkpoint_reader.read(statistics_checkpoint_path, checkpoint));
+        PFL_EXPECT(checkpoint.state.summary.packet_count == 1U);
+        PFL_EXPECT(checkpoint.state.unrecognized_packets.size() == 1U);
+        expect_packet_size_statistics_equal(
+            checkpoint.state.packet_size_statistics,
+            one_shot_statistics_session.packet_size_statistics()
+        );
+
+        PFL_REQUIRE(importer.finalize_to_index(statistics_checkpoint_path, statistics_index_path));
+        CaptureSession indexed_statistics_session {};
+        PFL_REQUIRE(indexed_statistics_session.load_index(statistics_index_path));
+        expect_packet_size_statistics_equal(
+            indexed_statistics_session.packet_size_statistics(),
+            one_shot_statistics_session.packet_size_statistics()
+        );
     }
 
     {

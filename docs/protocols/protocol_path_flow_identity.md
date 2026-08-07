@@ -652,7 +652,7 @@ Stage C2 status:
 - import now interns non-empty, non-overflowed decoded paths from a lightweight builder/view representation and stores an effective flow-identity `protocol_path_id` on `FlowKey`;
 - in the common import hot path, owning `ProtocolPath` materialization is now deferred until the registry sees a new unique path;
 - in the common case, decode now emits flow-identity-ready protocol paths and import interns that path once for flow identity;
-- a later normalization pass is still retained for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity and for the optional import-time mode that removes only `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` from flow identity;
+- a later normalization pass is still retained for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity, for the optional import-time mode that removes only `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` from flow identity, and for the separate optional mode that strips only `ProtocolLayerIdentifierKind::gtpu_teid` while keeping the `GTP-U` layer in flow identity;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
 - stable storage remains flow/registry oriented rather than per-packet.
 
