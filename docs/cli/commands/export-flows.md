@@ -2,13 +2,13 @@
 
 ## Status
 
-This document defines the target CLI v2 contract for:
+This document defines the production CLI v2 contract for:
 
 ```text
 pcap-flow-lab export-flows
 ```
 
-The current production CLI does not implement this v2 command yet.
+The current production CLI implements this v2 command.
 
 The current repository already contains the shared backend capabilities that
 this command is intended to expose:
@@ -613,6 +613,9 @@ Current backend export-progress reality is not uniform:
 - per-flow folder export exposes preparing/writing progress plus cancellation
 
 The CLI must not promise fake uniform percentages across all export paths.
+
+When Smart Export progress is enabled, CLI rendering should throttle callback
+output so terminal and redirected log output remain readable.
 
 ## Success Reporting
 

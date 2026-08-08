@@ -11,6 +11,7 @@
 #include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "cli/ExportFlowsCommand.h"
 #include "cli/FlowsCommand.h"
 #include "core/index/CaptureIndex.h"
 
@@ -67,6 +68,7 @@ std::string render_command_list() {
     out << "Commands\n";
     out << "  summary             Show whole-capture or whole-index overview and statistics.\n";
     out << "  flows               List, filter, sort, and export flow metadata.\n";
+    out << "  export-flows        Export packet data for selected canonical flows.\n";
     out << "  inspect-packet      Legacy packet details command.\n";
     out << "  hex                 Legacy packet hex dump command.\n";
     out << "  export-flow         Legacy single-flow PCAP export command.\n";
@@ -713,6 +715,14 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
         };
     }
 
+    if (args.front() == "export-flows") {
+        return SummaryDispatchDecision {
+            .kind = SummaryDispatchKind::export_flows,
+            .legacy_command = {},
+            .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
+        };
+    }
+
     if (is_legacy_cli_command_name(args.front())) {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::legacy,
@@ -1096,6 +1106,42 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
             }
 
             const auto result = execute_flows_command(*parse_result.options);
+            return {
+                .handled = true,
+                .exit_code = result.exit_code,
+                .stdout_text = result.stdout_text,
+                .stderr_text = result.stderr_text,
+            };
+        }
+
+        if (dispatch.kind == SummaryDispatchKind::export_flows) {
+            if (contains_help_option(dispatch.summary_args)) {
+                return {
+                    .handled = true,
+                    .exit_code = 0,
+                    .stdout_text = render_export_flows_command_help(),
+                    .stderr_text = {},
+                };
+            }
+
+            const auto parse_result = parse_export_flows_command_arguments(dispatch.summary_args);
+            if (!parse_result.ok || !parse_result.options.has_value()) {
+                std::string stderr_text {};
+                if (!parse_result.error_text.empty()) {
+                    stderr_text += parse_result.error_text;
+                    stderr_text += '\n';
+                    stderr_text += '\n';
+                }
+                stderr_text += render_export_flows_command_help();
+                return {
+                    .handled = true,
+                    .exit_code = 1,
+                    .stdout_text = {},
+                    .stderr_text = std::move(stderr_text),
+                };
+            }
+
+            const auto result = execute_export_flows_command(*parse_result.options);
             return {
                 .handled = true,
                 .exit_code = result.exit_code,

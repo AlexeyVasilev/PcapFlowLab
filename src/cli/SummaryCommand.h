@@ -18,6 +18,7 @@ namespace pfl::cli {
 enum class SummaryDispatchKind : std::uint8_t {
     summary,
     flows,
+    export_flows,
     legacy,
 };
 

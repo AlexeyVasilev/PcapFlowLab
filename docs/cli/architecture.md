@@ -2,12 +2,13 @@
 
 ## Status
 
-This document describes the planned PcapFlowLab CLI v2 architecture.
+This document describes the PcapFlowLab CLI v2 architecture direction.
 
-- It is a forward-looking design document.
-- Implementation has not yet caught up to this contract.
-- The current production CLI includes v2-style `summary` and `flows` paths,
-  while other public commands remain legacy and may not yet match this design.
+- It remains primarily architectural.
+- Some deferred commands still remain design-only.
+- The current production CLI includes v2-style `summary`, `flows`, and
+  `export-flows` paths, while other public commands remain legacy and may not
+  yet match this design.
 
 ## Goals
 
@@ -160,7 +161,7 @@ The `flows` contract now defines:
   `--limit`
 - reuse of the existing flow metadata CSV schema
 
-Implementation remains pending.
+The `flows` command is implemented.
 
 ### `export-flows`
 
@@ -710,7 +711,7 @@ At this stage:
 
 - `docs/cli/commands/summary.md` is defined
 - `docs/cli/commands/flows.md` is defined
-- `docs/cli/commands/export-flows.md` is defined
+- `docs/cli/commands/export-flows.md` is defined and implemented
 
 The remaining command documents are still intentionally deferred.
 
