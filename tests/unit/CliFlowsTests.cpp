@@ -680,6 +680,7 @@ void expect_flows_runtime_behavior() {
 
 void expect_preview_and_csv_behavior() {
     const auto preview_capture_path = build_many_flows_capture_path("pfl_cli_flows_preview.pcap", 30U);
+    const auto filtered_preview_capture_path = build_many_flows_capture_path("pfl_cli_flows_filtered_preview.pcap", 70U);
 
     {
         const std::vector<std::string> args {"flows", preview_capture_path.string()};
@@ -718,6 +719,12 @@ void expect_preview_and_csv_behavior() {
         PFL_EXPECT(count_rendered_flow_rows(result.stdout_text) == 25U);
         PFL_EXPECT(contains_text(result.stdout_text, "Showing 25 of 30 flows."));
         PFL_EXPECT(contains_text(result.stdout_text, "Use --limit <N> to show more rows or --out-flows-list <path> to export the result."));
+
+        const std::vector<std::string> baseline_args {"flows", preview_capture_path.string()};
+        const auto baseline_result = invoke_cli(baseline_args);
+        PFL_EXPECT(baseline_result.exit_code == 0);
+        PFL_EXPECT(baseline_result.stdout_text == result.stdout_text);
+        PFL_EXPECT(contains_text(result.stderr_text, "Flows list written to:"));
 
         const auto csv_lines = read_text_file_lines(output_path);
         PFL_REQUIRE(csv_lines.size() == 31U);
@@ -770,6 +777,77 @@ void expect_preview_and_csv_behavior() {
         PFL_REQUIRE(second_data.size() == 16U);
         PFL_EXPECT(first_data[0] == std::to_string(expected.ordered_flow_indices[0] + 1U));
         PFL_EXPECT(second_data[0] == std::to_string(expected.ordered_flow_indices[1] + 1U));
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_preview_limit_30.csv";
+        std::filesystem::remove(output_path);
+
+        const std::vector<std::string> baseline_args {"flows", preview_capture_path.string(), "--limit", "30"};
+        const auto baseline_result = invoke_cli(baseline_args);
+        PFL_EXPECT(baseline_result.exit_code == 0);
+        PFL_EXPECT(count_rendered_flow_rows(baseline_result.stdout_text) == 30U);
+        PFL_EXPECT(contains_text(baseline_result.stdout_text, "Showing 30 of 30 flows."));
+
+        const std::vector<std::string> args {
+            "flows",
+            preview_capture_path.string(),
+            "--limit",
+            "30",
+            "--out-flows-list",
+            output_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(result.stdout_text == baseline_result.stdout_text);
+        PFL_EXPECT(count_rendered_flow_rows(result.stdout_text) == 30U);
+        PFL_EXPECT(contains_text(result.stderr_text, "Flows list written to:"));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 31U);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(filtered_preview_capture_path).opened);
+        session_detail::FlowQuery query {};
+        query.text_filter = "10.250.";
+        const auto expected = adapter.query_flows(query);
+        PFL_REQUIRE(expected.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(expected.result_count_before_limit == 70U);
+        PFL_EXPECT(expected.ordered_flow_indices.size() == 70U);
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_filtered_preview_all.csv";
+        std::filesystem::remove(output_path);
+
+        const std::vector<std::string> baseline_args {
+            "flows",
+            filtered_preview_capture_path.string(),
+            "--filter",
+            "10.250.",
+        };
+        const auto baseline_result = invoke_cli(baseline_args);
+        PFL_EXPECT(baseline_result.exit_code == 0);
+        PFL_EXPECT(count_rendered_flow_rows(baseline_result.stdout_text) == 25U);
+        PFL_EXPECT(contains_text(baseline_result.stdout_text, "Showing 25 of 70 flows."));
+
+        const std::vector<std::string> args {
+            "flows",
+            filtered_preview_capture_path.string(),
+            "--filter",
+            "10.250.",
+            "--out-flows-list",
+            output_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(result.stdout_text == baseline_result.stdout_text);
+        PFL_EXPECT(count_rendered_flow_rows(result.stdout_text) == 25U);
+        PFL_EXPECT(contains_text(result.stdout_text, "Showing 25 of 70 flows."));
+        PFL_EXPECT(contains_text(result.stderr_text, "Flows list written to:"));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == expected.ordered_flow_indices.size() + 1U);
     }
 
     {

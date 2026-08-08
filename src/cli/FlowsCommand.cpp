@@ -399,12 +399,12 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
     }
 
     const bool explicit_limit_supplied = options.limit.has_value();
-    const auto preview_count = explicit_limit_supplied
+    const auto rendered_count = explicit_limit_supplied
         ? query_result.ordered_flow_indices.size()
         : std::min(query_result.ordered_flow_indices.size(), kDefaultFlowsPreviewLimit);
-    const auto preview_rows = std::span<const std::size_t>(
+    const auto rendered_rows = std::span<const std::size_t>(
         query_result.ordered_flow_indices.data(),
-        preview_count
+        rendered_count
     );
 
     std::ostringstream stdout_builder {};
@@ -412,7 +412,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
     if (query_result.ordered_flow_indices.empty()) {
         stdout_builder << "No matching flows.\n";
     } else {
-        const auto table = render_flows_table(adapter, preview_rows);
+        const auto table = render_flows_table(adapter, rendered_rows);
         if (table.empty()) {
             return {
                 .exit_code = 1,
@@ -422,7 +422,6 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         }
         stdout_builder << table;
 
-        const auto shown_count = query_result.ordered_flow_indices.size();
         const auto count_before_limit = query_result.result_count_before_limit;
         const bool default_preview_truncated =
             !explicit_limit_supplied && count_before_limit > kDefaultFlowsPreviewLimit;
@@ -430,7 +429,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         if (explicit_limit_supplied || default_preview_truncated) {
             stdout_builder << '\n'
                 << "Showing "
-                << session_detail::format_statistics_count_value(shown_count)
+                << session_detail::format_statistics_count_value(rendered_count)
                 << " of "
                 << session_detail::format_statistics_count_value(count_before_limit)
                 << " flows.\n";
