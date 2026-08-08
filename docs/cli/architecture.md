@@ -193,23 +193,10 @@ source-capture, manifest, or output-directory semantics.
 
 `packet-info` is the packet inspection command.
 
-It supports two distinct packet coordinate systems:
+It is still planned and not yet implemented in the current production CLI.
 
-1. Packet number inside one selected flow:
-
-   ```text
-   --flow-number <N>
-   --packets-in-flow <range>
-   ```
-
-2. Packet number in the complete capture or file:
-
-   ```text
-   --packets-in-file <range>
-   ```
-
-The detailed Summary, Bytes, hex, short, and full output modes are deferred to
-later command design work.
+The detailed contract is documented in
+[commands/packet-info.md](./commands/packet-info.md).
 
 ## Input Model
 
@@ -707,8 +694,7 @@ At this stage:
 - `docs/cli/commands/flows.md` is defined
 - `docs/cli/commands/export-flows.md` is defined and implemented
 - `docs/cli/commands/flow-info.md` is defined and implemented
-
-The remaining `packet-info` command document is still intentionally deferred.
+- `docs/cli/commands/packet-info.md` is now defined as planned, not implemented
 
 ## Intentionally Deferred Decisions
 

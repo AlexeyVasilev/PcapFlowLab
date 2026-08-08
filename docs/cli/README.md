@@ -17,6 +17,8 @@ For the detailed `export-flows` command contract, see
 [commands/export-flows.md](./commands/export-flows.md).
 For the detailed `flow-info` command contract, see
 [commands/flow-info.md](./commands/flow-info.md).
+For the detailed planned `packet-info` command contract, see
+[commands/packet-info.md](./commands/packet-info.md).
 
 ## What The CLI Is For
 
@@ -194,7 +196,7 @@ Packet inspection by packet number inside a selected flow:
 ```text
 pcap-flow-lab packet-info capture.pcap \
     --flow-number 42 \
-    --packets-in-flow 1-5,8,14
+    --packet-in-flow 7
 ```
 
 ## Next Documentation Layer
@@ -206,7 +208,10 @@ individual command designs are finalized:
 - `docs/cli/commands/flows.md` (now defined)
 - `docs/cli/commands/export-flows.md` (now defined and implemented in production)
 - `docs/cli/commands/flow-info.md` (now defined and implemented in production)
-- `docs/cli/commands/packet_info.md`
+- `docs/cli/commands/packet-info.md` (now defined as planned, not implemented)
 
-`summary.md`, `flows.md`, `export-flows.md`, and `flow-info.md` now exist.
-The `packet-info` command document is still deferred.
+`summary.md`, `flows.md`, `export-flows.md`, `flow-info.md`, and
+`packet-info.md` now exist.
+
+`packet-info` remains planned and is not yet implemented in the current
+production CLI.
