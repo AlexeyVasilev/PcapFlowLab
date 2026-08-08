@@ -25,11 +25,16 @@ public:
     [[nodiscard]] FrontendOpenStartResult start_open_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendOpenPollResultDto poll_open_capture();
     [[nodiscard]] bool cancel_open_capture();
+    [[nodiscard]] FrontendSourceAvailabilityDto source_availability() const;
     [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendSaveIndexResult save_index(const std::filesystem::path& output_path) const;
     [[nodiscard]] FrontendSettingsDto get_settings() const noexcept;
     [[nodiscard]] FrontendSettingsDto update_settings(const FrontendSettingsDto& settings);
     [[nodiscard]] FrontendExportCurrentFlowResult export_current_flow(const std::filesystem::path& output_path) const;
+    [[nodiscard]] FrontendExportSelectedFlowsResult export_flows_to_pcap(
+        const std::filesystem::path& output_path,
+        const std::vector<std::size_t>& flow_indices
+    ) const;
     [[nodiscard]] FrontendExportSelectedFlowsResult export_selected_flows(
         const std::filesystem::path& output_path,
         const std::vector<std::size_t>& flow_indices
@@ -49,6 +54,16 @@ public:
         const std::filesystem::path& output_path,
         const std::vector<std::size_t>& flow_indices,
         const FrontendSmartExportOptions& options
+    ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_flows_to_pcap(
+        const std::filesystem::path& output_path,
+        const SmartFlowExportRequest& request,
+        const SmartSingleFileExportOptions& options = {}
+    ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_flows_to_folder(
+        const std::filesystem::path& output_path,
+        const SmartFlowExportRequest& request,
+        const SmartPerFlowExportOptions& options = {}
     ) const;
     [[nodiscard]] FrontendSmartExportResult export_smart_unrecognized_packets(
         const std::filesystem::path& output_path,

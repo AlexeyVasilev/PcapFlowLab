@@ -116,86 +116,6 @@ std::string render_flows_examples() {
     return out.str();
 }
 
-bool all_ascii_digits(const std::string_view text) noexcept {
-    return !text.empty() && std::all_of(text.begin(), text.end(), [](const char ch) {
-        return ch >= '0' && ch <= '9';
-    });
-}
-
-std::optional<std::size_t> parse_positive_size_t(const std::string_view text) noexcept {
-    if (!all_ascii_digits(text)) {
-        return std::nullopt;
-    }
-
-    std::size_t value = 0U;
-    for (const auto ch : text) {
-        const auto digit = static_cast<std::size_t>(ch - '0');
-        if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10U) {
-            return std::nullopt;
-        }
-        value = value * 10U + digit;
-    }
-
-    if (value == 0U) {
-        return std::nullopt;
-    }
-
-    return value;
-}
-
-std::optional<std::vector<std::size_t>> parse_flow_number_ranges(const std::string_view text) noexcept {
-    if (text.empty()) {
-        return std::nullopt;
-    }
-
-    std::vector<std::size_t> flow_indices {};
-    std::size_t start = 0U;
-    while (start < text.size()) {
-        const auto comma = text.find(',', start);
-        const auto token = text.substr(start, comma == std::string_view::npos ? text.size() - start : comma - start);
-        if (token.empty()) {
-            return std::nullopt;
-        }
-
-        const auto dash = token.find('-');
-        if (dash == std::string_view::npos) {
-            const auto flow_number = parse_positive_size_t(token);
-            if (!flow_number.has_value()) {
-                return std::nullopt;
-            }
-            flow_indices.push_back(*flow_number - 1U);
-        } else {
-            if (token.find('-', dash + 1U) != std::string_view::npos) {
-                return std::nullopt;
-            }
-
-            const auto lower_text = token.substr(0U, dash);
-            const auto upper_text = token.substr(dash + 1U);
-            const auto lower = parse_positive_size_t(lower_text);
-            const auto upper = parse_positive_size_t(upper_text);
-            if (!lower.has_value() || !upper.has_value() || *upper < *lower) {
-                return std::nullopt;
-            }
-
-            for (std::size_t flow_number = *lower; flow_number <= *upper; ++flow_number) {
-                flow_indices.push_back(flow_number - 1U);
-                if (flow_number == std::numeric_limits<std::size_t>::max()) {
-                    break;
-                }
-            }
-        }
-
-        if (comma == std::string_view::npos) {
-            break;
-        }
-        start = comma + 1U;
-    }
-
-    std::sort(flow_indices.begin(), flow_indices.end());
-    flow_indices.erase(std::unique(flow_indices.begin(), flow_indices.end()), flow_indices.end());
-    return flow_indices;
-}
-
 std::optional<session_detail::FlowQuerySortSpec> parse_sort_spec(const std::string_view text) noexcept {
     const auto colon = text.find(':');
     if (colon == std::string_view::npos || colon == 0U || colon + 1U >= text.size()) {
@@ -563,12 +483,12 @@ FlowsCommandParseResult parse_flows_command_arguments(const std::span<const std:
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--flow-number requires a positive one-based flow number."};
             }
-            const auto flow_number = parse_positive_size_t(args[++index]);
-            if (!flow_number.has_value()) {
+            const auto flow_index = parse_cli_flow_number(args[++index]);
+            if (!flow_index.has_value()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Invalid --flow-number value. Expected a positive one-based flow number."};
             }
             flow_number_seen = true;
-            options.selected_flow_indices = std::vector<std::size_t> {*flow_number - 1U};
+            options.selected_flow_indices = std::vector<std::size_t> {*flow_index};
             continue;
         }
 
@@ -582,7 +502,7 @@ FlowsCommandParseResult parse_flows_command_arguments(const std::span<const std:
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--flow-numbers requires one or more positive one-based ranges."};
             }
-            const auto parsed = parse_flow_number_ranges(args[++index]);
+            const auto parsed = parse_cli_flow_numbers(args[++index]);
             if (!parsed.has_value()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Invalid --flow-numbers value. Expected inclusive positive one-based ranges such as 1-10,24,31-35."};
             }
@@ -626,7 +546,7 @@ FlowsCommandParseResult parse_flows_command_arguments(const std::span<const std:
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--limit requires a positive flow count."};
             }
-            const auto limit = parse_positive_size_t(args[++index]);
+            const auto limit = parse_cli_positive_size(args[++index]);
             if (!limit.has_value()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Invalid --limit value. Expected a positive flow count."};
             }

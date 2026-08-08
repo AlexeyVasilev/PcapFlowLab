@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "core/domain/Connection.h"
 #include "core/io/PcapReader.h"
@@ -1450,6 +1451,219 @@ void run_export_tests() {
         std::string retry_error_text {};
         PFL_EXPECT(session.export_smart_flows_to_folder(request, output_directory, SmartPerFlowExportOptions {}, &retry_error_text));
         PFL_EXPECT(std::filesystem::exists(output_directory / "flows_manifest.csv"));
+    }
+
+    {
+        const auto first_packet = make_ethernet_ipv4_udp_packet(
+            ipv4(10, 100, 0, 1), ipv4(10, 100, 0, 2), 41001, 53);
+        const auto second_packet = make_ethernet_ipv4_tcp_packet(
+            ipv4(10, 101, 0, 1), ipv4(10, 101, 0, 2), 41002, 443);
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_direct_export_source.pcap",
+            make_classic_pcap({
+                {100U, first_packet},
+                {200U, second_packet},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_adapter_direct_export_output.pcap";
+        std::filesystem::remove(output_path);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        const auto flows = adapter.get_flows();
+        PFL_REQUIRE(flows.size() == 2U);
+
+        const auto result = adapter.export_flows_to_pcap(output_path, {flows[1].flow_index, flows[0].flow_index});
+        PFL_EXPECT(result.exported);
+        PFL_EXPECT(result.output_path == output_path.string());
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].bytes == first_packet);
+        PFL_EXPECT(exported_packets[1].bytes == second_packet);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+    }
+
+    {
+        const auto flow_a_packet_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA1}, 0x18);
+        const auto flow_a_packet_2 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA2}, 0x18);
+        const auto flow_a_packet_3 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA3}, 0x18);
+        const auto flow_a_packet_4 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA4}, 0x18);
+        const auto flow_b_packet_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB1});
+        const auto flow_b_packet_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB2});
+        const auto flow_b_packet_3 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB3});
+        const auto flow_b_packet_4 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB4});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_smart_single_source.pcap",
+            make_classic_pcap({
+                {100U, flow_a_packet_1},
+                {200U, flow_b_packet_1},
+                {300U, flow_a_packet_2},
+                {400U, flow_b_packet_2},
+                {500U, flow_a_packet_3},
+                {600U, flow_b_packet_3},
+                {700U, flow_a_packet_4},
+                {800U, flow_b_packet_4},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_adapter_smart_single_output.pcap";
+        std::filesystem::remove(output_path);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        const auto flows = adapter.get_flows();
+        PFL_REQUIRE(flows.size() == 2U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices = {flows[0].flow_index, flows[1].flow_index};
+        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.first_n_packets = 1U;
+        request.include_last_packet = true;
+        request.include_every_kth_packet_after_base = true;
+        request.every_kth_packet = 2U;
+
+        std::uint64_t progress_updates = 0U;
+        const auto result = adapter.export_smart_flows_to_pcap(
+            output_path,
+            request,
+            SmartSingleFileExportOptions {
+                .progress_callback = [&](const SmartSingleFileExportProgress&) {
+                    ++progress_updates;
+                },
+            }
+        );
+        PFL_EXPECT(result.exported);
+        PFL_EXPECT(progress_updates >= 1U);
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 6U);
+        PFL_EXPECT(exported_packets[0].bytes == flow_a_packet_1);
+        PFL_EXPECT(exported_packets[1].bytes == flow_b_packet_1);
+        PFL_EXPECT(exported_packets[2].bytes == flow_a_packet_3);
+        PFL_EXPECT(exported_packets[3].bytes == flow_b_packet_3);
+        PFL_EXPECT(exported_packets[4].bytes == flow_a_packet_4);
+        PFL_EXPECT(exported_packets[5].bytes == flow_b_packet_4);
+    }
+
+    {
+        const auto flow_a_packet = make_ethernet_ipv4_tcp_packet(
+            ipv4(10, 130, 0, 1), ipv4(10, 130, 0, 2), 44001, 443);
+        const auto flow_b_packet = make_ethernet_ipv4_udp_packet(
+            ipv4(10, 131, 0, 1), ipv4(10, 131, 0, 2), 45001, 53);
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_smart_folder_source.pcap",
+            make_classic_pcap({
+                {100U, flow_a_packet},
+                {200U, flow_b_packet},
+            })
+        );
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_adapter_smart_folder_output";
+        std::filesystem::remove_all(output_directory);
+        std::filesystem::create_directories(output_directory);
+        {
+            std::ofstream keep_stream(output_directory / "keep.txt", std::ios::binary | std::ios::trunc);
+            keep_stream << "keep";
+        }
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        const auto flows = adapter.get_flows();
+        PFL_REQUIRE(flows.size() == 2U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices = {flows[0].flow_index, flows[1].flow_index};
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        std::uint64_t progress_updates = 0U;
+        const auto result = adapter.export_smart_flows_to_folder(
+            output_directory,
+            request,
+            SmartPerFlowExportOptions {
+                .buffer_budget_bytes = 1U * 1024U * 1024U,
+                .progress_callback = [&](const SmartPerFlowExportProgress&) {
+                    ++progress_updates;
+                },
+            }
+        );
+        PFL_EXPECT(result.exported);
+        PFL_EXPECT(progress_updates >= 1U);
+        PFL_EXPECT(std::filesystem::exists(output_directory / "keep.txt"));
+
+        const auto exported_pcaps = list_exported_pcaps(output_directory);
+        PFL_EXPECT(exported_pcaps.size() == 2U);
+
+        const auto manifest_rows = parse_csv_file(output_directory / "flows_manifest.csv");
+        PFL_REQUIRE(manifest_rows.size() == 3U);
+        PFL_REQUIRE(manifest_rows[1].size() >= 2U);
+        PFL_REQUIRE(manifest_rows[2].size() >= 2U);
+        PFL_EXPECT(manifest_rows[1][0] == "1");
+        PFL_EXPECT(manifest_rows[2][0] == "2");
+    }
+
+    {
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_attach_source_original.pcap",
+            make_classic_pcap({{100U, tcp_packet}, {200U, udp_packet}})
+        );
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source.idx";
+        const auto moved_source_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source_moved.pcap";
+        const auto mismatched_source_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source_mismatch.pcap";
+        const auto export_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source_export.pcap";
+        std::filesystem::remove(index_path);
+        std::filesystem::remove(moved_source_path);
+        std::filesystem::remove(mismatched_source_path);
+        std::filesystem::remove(export_path);
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(source_path));
+        PFL_REQUIRE(session.save_index(index_path));
+        std::filesystem::rename(source_path, moved_source_path);
+
+        auto mismatched_bytes = make_classic_pcap({{100U, tcp_packet}, {200U, udp_packet}});
+        PFL_REQUIRE(!mismatched_bytes.empty());
+        mismatched_bytes.back() ^= 0xFFU;
+        {
+            std::ofstream mismatched_stream(mismatched_source_path, std::ios::binary | std::ios::trunc);
+            mismatched_stream.write(
+                reinterpret_cast<const char*>(mismatched_bytes.data()),
+                static_cast<std::streamsize>(mismatched_bytes.size())
+            );
+        }
+        std::filesystem::last_write_time(mismatched_source_path, std::filesystem::last_write_time(moved_source_path));
+
+        FrontendSessionAdapter adapter {};
+        const auto open_result = adapter.open_capture(index_path);
+        PFL_REQUIRE(open_result.opened);
+        PFL_EXPECT(open_result.opened_from_index);
+
+        const auto unavailable = adapter.source_availability();
+        PFL_EXPECT(unavailable.opened_from_index);
+        PFL_EXPECT(!unavailable.has_source_capture);
+        PFL_EXPECT(!unavailable.source_capture_accessible);
+
+        const auto export_without_source = adapter.export_flows_to_pcap(export_path, {0U});
+        PFL_EXPECT(!export_without_source.exported);
+        PFL_EXPECT(export_without_source.error_text == "Original source capture is unavailable. Reattach the capture file to export flows.");
+
+        const auto mismatched_attach = adapter.attach_source_capture(mismatched_source_path);
+        PFL_EXPECT(!mismatched_attach.attached);
+        PFL_EXPECT(mismatched_attach.error_text == "Selected file does not match the expected source capture.");
+        PFL_EXPECT(!mismatched_attach.source_availability.has_source_capture);
+
+        const auto valid_attach = adapter.attach_source_capture(moved_source_path);
+        PFL_EXPECT(valid_attach.attached);
+        PFL_EXPECT(valid_attach.source_availability.has_source_capture);
+        PFL_EXPECT(valid_attach.source_availability.source_capture_accessible);
     }
 }
 

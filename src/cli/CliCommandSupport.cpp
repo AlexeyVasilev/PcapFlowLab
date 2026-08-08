@@ -4,9 +4,11 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <limits>
 #include <sstream>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #include "app/session/SessionFlowHelpers.h"
 
@@ -20,6 +22,12 @@ namespace pfl::cli {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+bool all_ascii_digits(const std::string_view text) noexcept {
+    return !text.empty() && std::all_of(text.begin(), text.end(), [](const char ch) {
+        return ch >= '0' && ch <= '9';
+    });
+}
 
 std::filesystem::path normalized_comparison_path(const std::filesystem::path& path) {
     if (path.empty()) {
@@ -78,6 +86,89 @@ bool contains_help_option(const std::span<const std::string_view> args) noexcept
         }
     }
     return false;
+}
+
+std::optional<std::size_t> parse_cli_positive_size(const std::string_view value) noexcept {
+    if (!all_ascii_digits(value)) {
+        return std::nullopt;
+    }
+
+    std::size_t parsed_value = 0U;
+    for (const auto ch : value) {
+        const auto digit = static_cast<std::size_t>(ch - '0');
+        if (parsed_value > (std::numeric_limits<std::size_t>::max() - digit) / 10U) {
+            return std::nullopt;
+        }
+        parsed_value = parsed_value * 10U + digit;
+    }
+
+    if (parsed_value == 0U) {
+        return std::nullopt;
+    }
+
+    return parsed_value;
+}
+
+std::optional<std::size_t> parse_cli_flow_number(const std::string_view value) noexcept {
+    const auto flow_number = parse_cli_positive_size(value);
+    if (!flow_number.has_value()) {
+        return std::nullopt;
+    }
+
+    return *flow_number - 1U;
+}
+
+std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(const std::string_view value) noexcept {
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::size_t> flow_indices {};
+    std::size_t start = 0U;
+    while (start < value.size()) {
+        const auto comma = value.find(',', start);
+        const auto token = value.substr(start, comma == std::string_view::npos ? value.size() - start : comma - start);
+        if (token.empty()) {
+            return std::nullopt;
+        }
+
+        const auto dash = token.find('-');
+        if (dash == std::string_view::npos) {
+            const auto flow_index = parse_cli_flow_number(token);
+            if (!flow_index.has_value()) {
+                return std::nullopt;
+            }
+            flow_indices.push_back(*flow_index);
+        } else {
+            if (token.find('-', dash + 1U) != std::string_view::npos) {
+                return std::nullopt;
+            }
+
+            const auto lower_text = token.substr(0U, dash);
+            const auto upper_text = token.substr(dash + 1U);
+            const auto lower = parse_cli_positive_size(lower_text);
+            const auto upper = parse_cli_positive_size(upper_text);
+            if (!lower.has_value() || !upper.has_value() || *upper < *lower) {
+                return std::nullopt;
+            }
+
+            for (std::size_t flow_number = *lower; flow_number <= *upper; ++flow_number) {
+                flow_indices.push_back(flow_number - 1U);
+                if (flow_number == std::numeric_limits<std::size_t>::max()) {
+                    break;
+                }
+            }
+        }
+
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        start = comma + 1U;
+    }
+
+    std::sort(flow_indices.begin(), flow_indices.end());
+    flow_indices.erase(std::unique(flow_indices.begin(), flow_indices.end()), flow_indices.end());
+    return flow_indices;
 }
 
 std::optional<CliProgressMode> parse_cli_progress_mode(const std::string_view value) noexcept {

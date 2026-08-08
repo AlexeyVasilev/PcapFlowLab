@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/frontend/FrontendSessionAdapter.h"
@@ -40,6 +41,9 @@ struct CliInvocationResult {
     std::string_view candidate
 ) noexcept;
 [[nodiscard]] bool contains_help_option(std::span<const std::string_view> args) noexcept;
+[[nodiscard]] std::optional<std::size_t> parse_cli_positive_size(std::string_view value) noexcept;
+[[nodiscard]] std::optional<std::size_t> parse_cli_flow_number(std::string_view value) noexcept;
+[[nodiscard]] std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(std::string_view value) noexcept;
 [[nodiscard]] std::optional<CliProgressMode> parse_cli_progress_mode(std::string_view value) noexcept;
 [[nodiscard]] bool stderr_supports_interactive_updates() noexcept;
 [[nodiscard]] bool should_enable_cli_progress(

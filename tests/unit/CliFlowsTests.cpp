@@ -9,6 +9,7 @@
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "cli/CliCommandSupport.h"
 #include "cli/FlowsCommand.h"
 #include "cli/SummaryCommand.h"
 
@@ -541,6 +542,50 @@ void expect_flows_help_and_parser_behavior() {
     }
 }
 
+void expect_shared_cli_flow_selector_helpers() {
+    {
+        PFL_EXPECT(cli::parse_cli_positive_size("1") == std::optional<std::size_t> {1U});
+        PFL_EXPECT(cli::parse_cli_positive_size("50") == std::optional<std::size_t> {50U});
+        PFL_EXPECT(!cli::parse_cli_positive_size("0").has_value());
+        PFL_EXPECT(!cli::parse_cli_positive_size("-1").has_value());
+        PFL_EXPECT(!cli::parse_cli_positive_size("1.5").has_value());
+        PFL_EXPECT(!cli::parse_cli_positive_size("abc").has_value());
+        PFL_EXPECT(!cli::parse_cli_positive_size("18446744073709551616").has_value());
+    }
+
+    {
+        PFL_EXPECT(cli::parse_cli_flow_number("1") == std::optional<std::size_t> {0U});
+        PFL_EXPECT(cli::parse_cli_flow_number("42") == std::optional<std::size_t> {41U});
+        PFL_EXPECT(!cli::parse_cli_flow_number("0").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_number("-1").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_number("abc").has_value());
+    }
+
+    {
+        const auto single = cli::parse_cli_flow_numbers("42");
+        PFL_REQUIRE(single.has_value());
+        const auto expected = std::vector<std::size_t> {41U};
+        PFL_EXPECT(*single == expected);
+
+        const auto ranges = cli::parse_cli_flow_numbers("1-3,5,7-8");
+        PFL_REQUIRE(ranges.has_value());
+        const auto expected_ranges = std::vector<std::size_t> {0U, 1U, 2U, 4U, 6U, 7U};
+        PFL_EXPECT(*ranges == expected_ranges);
+
+        const auto deduped = cli::parse_cli_flow_numbers("1,1,2-3,2");
+        PFL_REQUIRE(deduped.has_value());
+        const auto expected_deduped = std::vector<std::size_t> {0U, 1U, 2U};
+        PFL_EXPECT(*deduped == expected_deduped);
+
+        PFL_EXPECT(!cli::parse_cli_flow_numbers("0").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_numbers("-1").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_numbers("10-5").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_numbers("1-2-3").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_numbers("1,,2").has_value());
+        PFL_EXPECT(!cli::parse_cli_flow_numbers("18446744073709551616").has_value());
+    }
+}
+
 void expect_flows_runtime_behavior() {
     const auto capture_path = build_cli_flows_capture_path();
 
@@ -1033,6 +1078,7 @@ void expect_settings_behavior() {
 }  // namespace
 
 void run_cli_flows_tests() {
+    expect_shared_cli_flow_selector_helpers();
     expect_flows_help_and_parser_behavior();
     expect_flows_runtime_behavior();
     expect_preview_and_csv_behavior();

@@ -2156,6 +2156,10 @@ bool FrontendSessionAdapter::cancel_open_capture() {
     return true;
 }
 
+FrontendSourceAvailabilityDto FrontendSessionAdapter::source_availability() const {
+    return current_source_availability();
+}
+
 FrontendAttachSourceCaptureResult FrontendSessionAdapter::attach_source_capture(const std::filesystem::path& path) {
     FrontendAttachSourceCaptureResult result {
         .attached = false,
@@ -2264,6 +2268,13 @@ FrontendExportCurrentFlowResult FrontendSessionAdapter::export_current_flow(cons
 }
 
 FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_selected_flows(
+    const std::filesystem::path& output_path,
+    const std::vector<std::size_t>& flow_indices
+) const {
+    return export_flows_to_pcap(output_path, flow_indices);
+}
+
+FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_flows_to_pcap(
     const std::filesystem::path& output_path,
     const std::vector<std::size_t>& flow_indices
 ) const {
@@ -2439,20 +2450,88 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
             return result;
         }
 
-        std::string error_text {};
-        const SmartPerFlowExportOptions per_flow_options {
+        return export_smart_flows_to_folder(output_path, request, SmartPerFlowExportOptions {
             .buffer_budget_bytes = options.per_flow_buffer_budget_bytes,
-        };
+        });
+    }
 
-        if (!session_.export_smart_flows_to_folder(request, output_path, per_flow_options, &error_text)) {
-            result.error_text = error_text.empty() ? "Failed to smart-export flows." : error_text;
-            return result;
-        }
-    } else {
-        if (!session_.export_smart_flows_to_pcap(request, output_path)) {
-            result.error_text = "Failed to smart-export flows.";
-            return result;
-        }
+    return export_smart_flows_to_pcap(output_path, request);
+}
+
+FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows_to_pcap(
+    const std::filesystem::path& output_path,
+    const SmartFlowExportRequest& request,
+    const SmartSingleFileExportOptions& options
+) const {
+    FrontendSmartExportResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (request.flow_indices.empty()) {
+        result.error_text = "No flows selected for smart export.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to export flows.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_smart_flows_to_pcap(request, output_path, options, &error_text)) {
+        result.error_text = error_text.empty() ? "Failed to smart-export flows." : error_text;
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
+FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows_to_folder(
+    const std::filesystem::path& output_path,
+    const SmartFlowExportRequest& request,
+    const SmartPerFlowExportOptions& options
+) const {
+    FrontendSmartExportResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (request.flow_indices.empty()) {
+        result.error_text = "No flows selected for smart export.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to export flows.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No destination folder selected for smart export.";
+        return result;
+    }
+
+    if (options.buffer_budget_bytes == 0U) {
+        result.error_text = "Select a valid buffer memory budget preset for per-flow smart export.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_smart_flows_to_folder(request, output_path, options, &error_text)) {
+        result.error_text = error_text.empty() ? "Failed to smart-export flows." : error_text;
+        return result;
     }
 
     result.exported = true;
