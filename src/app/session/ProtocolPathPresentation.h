@@ -29,6 +29,10 @@ struct ProtocolPathPresentation {
     const ProtocolPathRegistry& registry,
     ProtocolPathId protocol_path_id
 );
+[[nodiscard]] std::string protocol_path_compact_text(
+    const ProtocolPathRegistry& registry,
+    ProtocolPathId protocol_path_id
+);
 [[nodiscard]] std::string format_protocol_path_layer_display_text(const LayerKey& layer);
 [[nodiscard]] std::vector<ProtocolPathLegendEntry> protocol_path_legend_entries();
 

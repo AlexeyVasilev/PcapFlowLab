@@ -1,7 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/session/FlowRows.h"
@@ -29,6 +31,45 @@ struct ProtocolHintStatisticsRow {
     std::string original_bytes_text {};
 };
 
+enum class FlowQuerySortKey : std::uint8_t {
+    canonical_index = 0,
+    protocol,
+    service,
+    endpoint_a,
+    endpoint_b,
+    packets,
+    bytes,
+};
+
+enum class FlowQuerySortDirection : std::uint8_t {
+    ascending = 0,
+    descending,
+};
+
+struct FlowQuerySortSpec {
+    FlowQuerySortKey key {FlowQuerySortKey::canonical_index};
+    FlowQuerySortDirection direction {FlowQuerySortDirection::ascending};
+};
+
+struct FlowQuery {
+    std::optional<std::vector<std::size_t>> selected_flow_indices {};
+    std::string text_filter {};
+    std::optional<FlowQuerySortSpec> sort {};
+    std::optional<std::size_t> limit {};
+};
+
+enum class FlowQueryStatus : std::uint8_t {
+    ok = 0,
+    invalid_flow_index,
+    invalid_limit,
+};
+
+struct FlowQueryResult {
+    FlowQueryStatus status {FlowQueryStatus::ok};
+    std::vector<std::size_t> ordered_flow_indices {};
+    std::optional<std::size_t> invalid_flow_index {};
+};
+
 std::vector<ListedConnectionRef> list_connections(const CaptureState& state);
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept;
 std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept;
@@ -42,6 +83,12 @@ std::optional<FlowRow> make_flow_row(
     std::size_t index,
     const ListedConnectionRef& connection,
     const AnalysisSettings& settings
+);
+[[nodiscard]] bool flow_row_matches_text_filter(const FlowRow& row, std::string_view filter) noexcept;
+[[nodiscard]] FlowQueryResult query_flow_indices(
+    std::span<const ListedConnectionRef> connections,
+    const AnalysisSettings& settings,
+    const FlowQuery& query
 );
 std::string capture_packet_size_bucket_label(const CapturePacketSizeStatisticsBucket& bucket);
 std::string format_statistics_bucket_label(

@@ -3612,6 +3612,14 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
     return service.decode_best_effort(bytes, packet);
 }
 
+session_detail::FlowQueryResult CaptureSession::query_flows(const session_detail::FlowQuery& query) const {
+    return session_detail::query_flow_indices(listed_connections(), analysis_settings_, query);
+}
+
+std::string CaptureSession::protocol_path_compact_text(const ProtocolPathId protocol_path_id) const {
+    return session_detail::protocol_path_compact_text(state_.protocol_path_registry, protocol_path_id);
+}
+
 std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
     const PacketRef& packet
 ) const {
@@ -5246,6 +5254,80 @@ bool write_flow_manifest_csv(
     return true;
 }
 
+bool export_flow_info_csv_rows(
+    const CaptureState& state,
+    const AnalysisSettings& analysis_settings,
+    const std::span<const ListedConnectionRef> connections,
+    const std::span<const std::size_t> flow_indices,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) {
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to create flows manifest CSV.";
+        }
+        return false;
+    }
+
+    if (!write_flow_manifest_csv_header(stream, FlowManifestCsvProfile::all_flows_info)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    for (const auto flow_index : flow_indices) {
+        if (flow_index >= connections.size()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to resolve flow info CSV row.";
+            }
+            return false;
+        }
+
+        const auto row = make_flow_row(flow_index, connections[flow_index], analysis_settings);
+        if (!row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare flow info CSV row.";
+            }
+            return false;
+        }
+
+        const auto packets = connections[flow_index].family == FlowAddressFamily::ipv4
+            ? collect_packets(*connections[flow_index].ipv4)
+            : collect_packets(*connections[flow_index].ipv6);
+        const auto manifest_row = build_flow_manifest_csv_row(
+            state,
+            *row,
+            static_cast<std::uint32_t>(flow_index + 1U),
+            std::span<const PacketRef>(packets),
+            {}
+        );
+        if (!manifest_row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare flow info CSV row.";
+            }
+            return false;
+        }
+
+        if (!write_flow_manifest_csv_row(stream, *manifest_row, FlowManifestCsvProfile::all_flows_info)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to write flows manifest CSV.";
+            }
+            return false;
+        }
+    }
+
+    if (!stream.good()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    return true;
+}
+
 [[nodiscard]] std::vector<PacketRef> collect_selected_smart_export_packets(
     const std::vector<PacketRef>& packets,
     const SmartPacketRetentionOptions& options
@@ -5803,6 +5885,13 @@ bool CaptureSession::export_all_flows_info_csv(const std::filesystem::path& outp
     return export_all_flows_info_csv(output_path, nullptr);
 }
 
+bool CaptureSession::export_flows_info_csv(
+    const std::span<const std::size_t> flow_indices,
+    const std::filesystem::path& output_path
+) const {
+    return export_flows_info_csv(flow_indices, output_path, nullptr);
+}
+
 bool CaptureSession::export_protocol_path_tree_text(
     const ProtocolPathStatisticsMode mode,
     const std::filesystem::path& output_path,
@@ -5828,66 +5917,36 @@ bool CaptureSession::export_all_flows_info_csv(
     const std::filesystem::path& output_path,
     std::string* out_error_text
 ) const {
-    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
-    if (!stream.is_open()) {
-        if (out_error_text != nullptr) {
-            *out_error_text = "Failed to create flows manifest CSV.";
-        }
-        return false;
-    }
-
-    if (!write_flow_manifest_csv_header(stream, FlowManifestCsvProfile::all_flows_info)) {
-        if (out_error_text != nullptr) {
-            *out_error_text = "Failed to write flows manifest CSV.";
-        }
-        return false;
-    }
-
-    const auto connections = list_connections(state_);
-    std::uint32_t export_flow_id = 1U;
+    const auto& connections = listed_connections();
+    std::vector<std::size_t> flow_indices {};
+    flow_indices.resize(connections.size());
     for (std::size_t index = 0; index < connections.size(); ++index) {
-        const auto row = make_flow_row(index, connections[index], analysis_settings_);
-        if (!row.has_value()) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to prepare flow info CSV row.";
-            }
-            return false;
-        }
-        const auto packets = connections[index].family == FlowAddressFamily::ipv4
-            ? collect_packets(*connections[index].ipv4)
-            : collect_packets(*connections[index].ipv6);
-        const auto manifest_row = build_flow_manifest_csv_row(
-            state_,
-            *row,
-            export_flow_id,
-            std::span<const PacketRef>(packets),
-            {}
-        );
-        if (!manifest_row.has_value()) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to prepare flow info CSV row.";
-            }
-            return false;
-        }
-
-        if (!write_flow_manifest_csv_row(stream, *manifest_row, FlowManifestCsvProfile::all_flows_info)) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to write flows manifest CSV.";
-            }
-            return false;
-        }
-
-        ++export_flow_id;
+        flow_indices[index] = index;
     }
 
-    if (!stream.good()) {
-        if (out_error_text != nullptr) {
-            *out_error_text = "Failed to write flows manifest CSV.";
-        }
-        return false;
-    }
+    return export_flow_info_csv_rows(
+        state_,
+        analysis_settings_,
+        connections,
+        flow_indices,
+        output_path,
+        out_error_text
+    );
+}
 
-    return true;
+bool CaptureSession::export_flows_info_csv(
+    const std::span<const std::size_t> flow_indices,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    return export_flow_info_csv_rows(
+        state_,
+        analysis_settings_,
+        listed_connections(),
+        flow_indices,
+        output_path,
+        out_error_text
+    );
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {

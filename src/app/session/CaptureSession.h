@@ -199,6 +199,8 @@ public:
     [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
+    [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
+    [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
     [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
         const PacketRef& packet
     ) const;
@@ -330,6 +332,12 @@ public:
         const SmartFlowExportRequest& request,
         const std::filesystem::path& output_directory,
         const SmartPerFlowExportOptions& options,
+        std::string* out_error_text
+    ) const;
+    bool export_flows_info_csv(std::span<const std::size_t> flow_indices, const std::filesystem::path& output_path) const;
+    bool export_flows_info_csv(
+        std::span<const std::size_t> flow_indices,
+        const std::filesystem::path& output_path,
         std::string* out_error_text
     ) const;
     bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;

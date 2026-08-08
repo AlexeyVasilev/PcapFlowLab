@@ -11,9 +11,13 @@ pcap-flow-lab flows
 The current production CLI still uses the legacy explicit `flows` command
  implementation.
 
-This document is a design contract only.
+Shared groundwork for canonical flow querying and subset flow-metadata CSV
+export is now implemented in shared session/backend code.
 
-No production `flows` behavior is changed by this pass.
+This document remains a design contract for the CLI surface itself.
+
+No production CLI v2 `flows` parser, stdout presentation, or help behavior is
+implemented by this pass.
 
 ## Purpose
 

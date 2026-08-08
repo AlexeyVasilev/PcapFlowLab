@@ -5,6 +5,7 @@
 #include "TestSupport.h"
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
@@ -40,6 +41,144 @@ std::vector<std::uint8_t> make_dns_query_payload() {
 
 std::vector<std::uint8_t> bytes_payload(std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
+std::optional<std::size_t> find_flow_index_by_service_hint(
+    const std::vector<FlowRow>& rows,
+    const std::string_view service_hint
+) {
+    for (const auto& row : rows) {
+        if (row.service_hint == service_hint) {
+            return row.index;
+        }
+    }
+
+    return std::nullopt;
+}
+
+CaptureSession build_shared_flow_query_session() {
+    CaptureSession session {};
+    auto& state = session.state();
+
+    const auto simple_tcp_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+    const auto simple_udp_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::udp()}
+    });
+    const auto simple_ipv6_udp_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv6(), LayerKey::udp()}
+    });
+    const auto vxlan_tcp_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::udp(), LayerKey::vxlan(100U), LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+
+    const FlowKeyV4 tcp_heavy_flow {
+        .src_addr = ipv4(10, 0, 0, 30),
+        .dst_addr = ipv4(10, 0, 0, 40),
+        .src_port = 43000,
+        .dst_port = 22,
+        .protocol = ProtocolId::tcp,
+    };
+    ConnectionV4 tcp_heavy_connection {};
+    tcp_heavy_connection.key = make_connection_key(tcp_heavy_flow);
+    tcp_heavy_connection.key.protocol_path_id = simple_tcp_path_id;
+    tcp_heavy_connection.service_hint = "zz-flow.example";
+    for (std::uint64_t packet_offset = 0; packet_offset < 10U; ++packet_offset) {
+        tcp_heavy_connection.add_packet(
+            tcp_heavy_flow,
+            PacketRef {
+                .packet_index = packet_offset,
+                .captured_length = 66U,
+                .original_length = 66U,
+                .ts_sec = 1U,
+                .ts_usec = static_cast<std::uint32_t>(100U + packet_offset),
+            }
+        );
+    }
+    state.ipv4_connections.get_or_create(tcp_heavy_connection.key) = tcp_heavy_connection;
+
+    const FlowKeyV4 http_flow {
+        .src_addr = ipv4(10, 0, 0, 10),
+        .dst_addr = ipv4(10, 0, 0, 20),
+        .src_port = 41000,
+        .dst_port = 80,
+        .protocol = ProtocolId::tcp,
+    };
+    ConnectionV4 http_connection {};
+    http_connection.key = make_connection_key(http_flow);
+    http_connection.key.protocol_path_id = vxlan_tcp_path_id;
+    http_connection.protocol_hint = FlowProtocolHint::http;
+    http_connection.service_hint = "alpha.example";
+    http_connection.add_packet(
+        http_flow,
+        PacketRef {
+            .packet_index = 10U,
+            .captured_length = 100U,
+            .original_length = 100U,
+            .ts_sec = 2U,
+            .ts_usec = 100U,
+        }
+    );
+    http_connection.add_packet(
+        http_flow,
+        PacketRef {
+            .packet_index = 11U,
+            .captured_length = 100U,
+            .original_length = 100U,
+            .ts_sec = 2U,
+            .ts_usec = 200U,
+        }
+    );
+    state.ipv4_connections.get_or_create(http_connection.key) = http_connection;
+
+    const FlowKeyV4 dns_flow {
+        .src_addr = ipv4(10, 0, 0, 11),
+        .dst_addr = ipv4(10, 0, 0, 21),
+        .src_port = 53000,
+        .dst_port = 53,
+        .protocol = ProtocolId::udp,
+    };
+    ConnectionV4 dns_connection {};
+    dns_connection.key = make_connection_key(dns_flow);
+    dns_connection.key.protocol_path_id = simple_udp_path_id;
+    dns_connection.protocol_hint = FlowProtocolHint::dns;
+    dns_connection.service_hint = "beta.example";
+    dns_connection.add_packet(
+        dns_flow,
+        PacketRef {
+            .packet_index = 12U,
+            .captured_length = 90U,
+            .original_length = 90U,
+            .ts_sec = 3U,
+            .ts_usec = 100U,
+        }
+    );
+    state.ipv4_connections.get_or_create(dns_connection.key) = dns_connection;
+
+    const FlowKeyV6 ipv6_udp_flow {
+        .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x31}),
+        .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x32}),
+        .src_port = 54000,
+        .dst_port = 54001,
+        .protocol = ProtocolId::udp,
+    };
+    ConnectionV6 ipv6_udp_connection {};
+    ipv6_udp_connection.key = make_connection_key(ipv6_udp_flow);
+    ipv6_udp_connection.key.protocol_path_id = simple_ipv6_udp_path_id;
+    ipv6_udp_connection.add_packet(
+        ipv6_udp_flow,
+        PacketRef {
+            .packet_index = 13U,
+            .captured_length = 70U,
+            .original_length = 70U,
+            .ts_sec = 4U,
+            .ts_usec = 100U,
+        }
+    );
+    state.ipv6_connections.get_or_create(ipv6_udp_connection.key) = ipv6_udp_connection;
+
+    return session;
 }
 
 }  // namespace
@@ -508,6 +647,191 @@ void run_query_tests() {
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 15U);
+
+    {
+        const FlowRow filter_row {
+            .index = 17U,
+            .family = FlowAddressFamily::ipv4,
+            .protocol_path_id = kInvalidProtocolPathId,
+            .protocol_text = "TCP",
+            .protocol_hint = "http",
+            .service_hint = "alpha.example",
+            .has_fragmented_packets = true,
+            .fragmented_packet_count = 7U,
+            .address_a = "10.11.12.13",
+            .port_a = 41000U,
+            .endpoint_a = "10.11.12.13:41000",
+            .address_b = "10.11.12.14",
+            .port_b = 80U,
+            .endpoint_b = "10.11.12.14:80",
+            .packet_count = 12U,
+            .total_bytes = 2048U,
+        };
+
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "ipv4"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "tcp"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "HTTP"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "alpha.example"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "10.11.12.13"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "10.11.12.14"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "10.11.12.13:41000"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "10.11.12.14:80"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "41000"));
+        PFL_EXPECT(session_detail::flow_row_matches_text_filter(filter_row, "80"));
+        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "frag"));
+        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "7"));
+        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "12"));
+        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "2048"));
+        PFL_EXPECT(!session_detail::flow_row_matches_text_filter(filter_row, "vxlan"));
+    }
+
+    {
+        auto query_session = build_shared_flow_query_session();
+        const auto rows = query_session.list_flows();
+        PFL_REQUIRE(rows.size() == 4U);
+
+        const auto tcp_heavy_index = find_flow_index_by_service_hint(rows, "zz-flow.example");
+        const auto http_index = find_flow_index_by_service_hint(rows, "alpha.example");
+        const auto dns_index = find_flow_index_by_service_hint(rows, "beta.example");
+        PFL_REQUIRE(tcp_heavy_index.has_value());
+        PFL_REQUIRE(http_index.has_value());
+        PFL_REQUIRE(dns_index.has_value());
+
+        std::optional<std::size_t> ipv6_index {};
+        for (const auto& row : rows) {
+            if (row.family == FlowAddressFamily::ipv6) {
+                ipv6_index = row.index;
+                break;
+            }
+        }
+        PFL_REQUIRE(ipv6_index.has_value());
+
+        session_detail::FlowQuery query {};
+        auto result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({0U, 1U, 2U, 3U}));
+
+        query.selected_flow_indices = std::vector<std::size_t> {*dns_index, *http_index, *dns_index};
+        query.text_filter.clear();
+        query.sort.reset();
+        query.limit.reset();
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*http_index, *dns_index}));
+
+        query.selected_flow_indices = std::vector<std::size_t> {99U};
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::invalid_flow_index);
+        PFL_EXPECT(result.invalid_flow_index == std::optional<std::size_t> {99U});
+        PFL_EXPECT(result.ordered_flow_indices.empty());
+
+        query.selected_flow_indices.reset();
+        query.text_filter = "no-such-flow";
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices.empty());
+
+        query.text_filter = "beta.example";
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*dns_index}));
+
+        query.text_filter = "VXLAN";
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices.empty());
+
+        query.text_filter.clear();
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::canonical_index,
+            .direction = session_detail::FlowQuerySortDirection::descending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({3U, 2U, 1U, 0U}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::protocol,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*tcp_heavy_index, *http_index, *dns_index, *ipv6_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::protocol,
+            .direction = session_detail::FlowQuerySortDirection::descending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*dns_index, *ipv6_index, *tcp_heavy_index, *http_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::service,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*ipv6_index, *http_index, *dns_index, *tcp_heavy_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::endpoint_a,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*http_index, *dns_index, *tcp_heavy_index, *ipv6_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::endpoint_b,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*http_index, *dns_index, *tcp_heavy_index, *ipv6_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::packets,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*dns_index, *ipv6_index, *http_index, *tcp_heavy_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::packets,
+            .direction = session_detail::FlowQuerySortDirection::descending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*tcp_heavy_index, *http_index, *dns_index, *ipv6_index}));
+
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::bytes,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*ipv6_index, *dns_index, *http_index, *tcp_heavy_index}));
+        const auto& http_row = rows[*http_index];
+        const auto& dns_row = rows[*dns_index];
+        PFL_REQUIRE(dns_row.total_bytes < http_row.total_bytes);
+        PFL_REQUIRE(std::to_string(dns_row.total_bytes) > std::to_string(http_row.total_bytes));
+
+        query.selected_flow_indices = std::vector<std::size_t> {*dns_index, *http_index, *tcp_heavy_index};
+        query.text_filter = "tcp";
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::bytes,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        query.limit = 1U;
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*http_index}));
+
+        query.limit = 0U;
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::invalid_limit);
+
+        PFL_EXPECT(query_session.protocol_path_compact_text(rows[*http_index].protocol_path_id) == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
+        const auto direct_compact_text =
+            session_detail::build_protocol_path_presentation(
+                query_session.state().protocol_path_registry,
+                rows[*http_index].protocol_path_id
+            ).compact_text;
+        PFL_EXPECT(query_session.protocol_path_compact_text(rows[*http_index].protocol_path_id) == direct_compact_text);
+    }
 }
 
 }  // namespace pfl::tests
