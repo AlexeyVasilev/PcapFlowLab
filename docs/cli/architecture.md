@@ -185,15 +185,9 @@ source-capture, manifest, or output-directory semantics.
 
 - It corresponds conceptually to the application's Analysis surface.
 - It operates on one selected canonical flow.
-- It will later support multiple presentation modes.
-
-The current working single-flow selector is:
-
-```text
---flow-number <N>
-```
-
-The detailed presentation modes are intentionally deferred.
+- It is documented in detail in
+  [commands/flow-info.md](./commands/flow-info.md).
+- It remains planned and is not yet implemented in the current production CLI.
 
 ### `packet-info`
 
@@ -691,8 +685,8 @@ Command-specific documentation is intended to live at:
 docs/cli/commands/summary.md
 docs/cli/commands/flows.md
 docs/cli/commands/export-flows.md
-docs/cli/commands/flow_info.md
-docs/cli/commands/packet_info.md
+docs/cli/commands/flow-info.md
+docs/cli/commands/packet-info.md
 ```
 
 These documents should contain:
@@ -712,8 +706,9 @@ At this stage:
 - `docs/cli/commands/summary.md` is defined
 - `docs/cli/commands/flows.md` is defined
 - `docs/cli/commands/export-flows.md` is defined and implemented
+- `docs/cli/commands/flow-info.md` is now defined as planned-only
 
-The remaining command documents are still intentionally deferred.
+The remaining `packet-info` command document is still intentionally deferred.
 
 ## Intentionally Deferred Decisions
 
