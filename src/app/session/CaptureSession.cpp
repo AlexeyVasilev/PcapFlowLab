@@ -4884,7 +4884,10 @@ constexpr std::string_view kAllFlowsInfoCsvHeader =
     "packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path\n";
 
 std::string escape_csv_field(std::string_view text) {
-    if (text.find_first_of(",\"\n\r") == std::string_view::npos) {
+    const auto requires_quoting = std::any_of(text.begin(), text.end(), [](const char ch) {
+        return ch == ',' || ch == '"' || ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ';
+    });
+    if (!requires_quoting) {
         return std::string(text);
     }
 

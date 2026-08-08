@@ -69,6 +69,15 @@ std::vector<std::string> read_text_file_lines(const std::filesystem::path& path)
     return lines;
 }
 
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+    return {
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()
+    };
+}
+
 std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> fields {};
     std::string field {};
@@ -106,6 +115,70 @@ std::vector<std::string> split_csv_line(const std::string& line) {
 
     fields.push_back(field);
     return fields;
+}
+
+std::vector<std::vector<std::string>> parse_csv_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+
+    const std::string text {
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()
+    };
+
+    std::vector<std::vector<std::string>> rows {};
+    std::vector<std::string> current_row {};
+    std::string current_field {};
+    bool in_quotes = false;
+
+    for (std::size_t index = 0U; index < text.size(); ++index) {
+        const char ch = text[index];
+        if (in_quotes) {
+            if (ch == '"') {
+                if (index + 1U < text.size() && text[index + 1U] == '"') {
+                    current_field.push_back('"');
+                    ++index;
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                current_field.push_back(ch);
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_quotes = true;
+            continue;
+        }
+
+        if (ch == ',') {
+            current_row.push_back(current_field);
+            current_field.clear();
+            continue;
+        }
+
+        if (ch == '\r') {
+            continue;
+        }
+
+        if (ch == '\n') {
+            current_row.push_back(current_field);
+            current_field.clear();
+            rows.push_back(current_row);
+            current_row.clear();
+            continue;
+        }
+
+        current_field.push_back(ch);
+    }
+
+    if (!current_field.empty() || !current_row.empty()) {
+        current_row.push_back(current_field);
+        rows.push_back(current_row);
+    }
+
+    return rows;
 }
 
 std::optional<std::size_t> find_flow_index_by_service_hint(
@@ -189,6 +262,51 @@ CaptureSession build_flow_info_export_session() {
         }
     );
     state.ipv4_connections.get_or_create(beta_connection.key) = beta_connection;
+
+    return session;
+}
+
+CaptureSession build_flow_info_export_session_with_control_characters() {
+    CaptureSession session {};
+    auto& state = session.state();
+
+    const auto protocol_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+
+    const FlowKeyV4 flow {
+        .src_addr = ipv4(198, 18, 0, 10),
+        .dst_addr = ipv4(198, 18, 0, 20),
+        .src_port = 45000,
+        .dst_port = 80,
+        .protocol = ProtocolId::tcp,
+    };
+    ConnectionV4 connection {};
+    connection.key = make_connection_key(flow);
+    connection.key.protocol_path_id = protocol_path_id;
+    connection.protocol_hint = FlowProtocolHint::http;
+    connection.service_hint = "tab\tcomma,value \"quoted\"\r\nnext line";
+    connection.add_packet(
+        flow,
+        PacketRef {
+            .packet_index = 0U,
+            .captured_length = 96U,
+            .original_length = 96U,
+            .ts_sec = 5U,
+            .ts_usec = 10U,
+        }
+    );
+    connection.add_packet(
+        flow,
+        PacketRef {
+            .packet_index = 1U,
+            .captured_length = 96U,
+            .original_length = 96U,
+            .ts_sec = 5U,
+            .ts_usec = 40U,
+        }
+    );
+    state.ipv4_connections.get_or_create(connection.key) = connection;
 
     return session;
 }
@@ -1015,6 +1133,117 @@ void run_export_tests() {
         PFL_REQUIRE(only_row.size() == 16U);
         PFL_EXPECT(only_row[0] == "1");
         PFL_EXPECT(only_row[2] == "UDP");
+    }
+
+    {
+        CaptureSession arp_session {};
+        PFL_REQUIRE(arp_session.open_capture(fixture_path("parsing/arp/01_arp_request_ipv4.pcap")));
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_arp.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(arp_session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        PFL_EXPECT(csv_lines[1].find("\"Who has 10.10.12.1? Tell 10.10.12.2\"") != std::string::npos);
+
+        const auto rows = parse_csv_file(output_path);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_REQUIRE(rows[0].size() == 16U);
+        PFL_REQUIRE(rows[1].size() == 16U);
+        PFL_EXPECT(rows[1][1] == "IPv4");
+        PFL_EXPECT(rows[1][2] == "ARP");
+        PFL_EXPECT(rows[1][4] == "Who has 10.10.12.1? Tell 10.10.12.2");
+        PFL_EXPECT(rows[1][5] == "10.10.12.2");
+        PFL_EXPECT(rows[1][6] == "0");
+        PFL_EXPECT(rows[1][7] == "10.10.12.1");
+        PFL_EXPECT(rows[1][8] == "0");
+        PFL_EXPECT(rows[1][9] == "1");
+        PFL_EXPECT(!rows[1][10].empty());
+        PFL_EXPECT(!rows[1][11].empty());
+        PFL_EXPECT(!rows[1][12].empty());
+        PFL_EXPECT(!rows[1][13].empty());
+        PFL_EXPECT(!rows[1][14].empty());
+        PFL_EXPECT(!rows[1][15].empty());
+    }
+
+    {
+        CaptureSession igmp_session {};
+        PFL_REQUIRE(igmp_session.open_capture(fixture_path("parsing/igmp/02_igmpv2_membership_report_mdns_group.pcap")));
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_igmp.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(igmp_session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        PFL_EXPECT(csv_lines[1].find("\"Membership Report 224.0.0.251\"") != std::string::npos);
+
+        const auto rows = parse_csv_file(output_path);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_REQUIRE(rows[0].size() == 16U);
+        PFL_REQUIRE(rows[1].size() == 16U);
+        PFL_EXPECT(rows[1][1] == "IPv4");
+        PFL_EXPECT(rows[1][2] == "IGMP");
+        PFL_EXPECT(rows[1][3] == "igmpv2");
+        PFL_EXPECT(rows[1][4] == "Membership Report 224.0.0.251");
+        PFL_EXPECT(rows[1][5] == "192.0.2.10");
+        PFL_EXPECT(rows[1][6] == "0");
+        PFL_EXPECT(rows[1][7] == "224.0.0.251");
+        PFL_EXPECT(rows[1][8] == "0");
+        PFL_EXPECT(rows[1][9] == "1");
+        PFL_EXPECT(!rows[1][10].empty());
+        PFL_EXPECT(!rows[1][11].empty());
+        PFL_EXPECT(!rows[1][12].empty());
+        PFL_EXPECT(!rows[1][13].empty());
+        PFL_EXPECT(!rows[1][14].empty());
+        PFL_EXPECT(!rows[1][15].empty());
+    }
+
+    {
+        auto session = build_flow_info_export_session_with_control_characters();
+        const auto all_output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_controls.csv";
+        const auto subset_output_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_controls.csv";
+        std::filesystem::remove(all_output_path);
+        std::filesystem::remove(subset_output_path);
+
+        PFL_EXPECT(session.export_all_flows_info_csv(all_output_path));
+        PFL_EXPECT(session.export_flows_info_csv(std::vector<std::size_t> {0U}, subset_output_path));
+
+        const auto all_csv_text = read_text_file(all_output_path);
+        const auto subset_csv_text = read_text_file(subset_output_path);
+        PFL_EXPECT(all_csv_text.find("\"tab\tcomma,value \"\"quoted\"\"\r\nnext line\"") != std::string::npos);
+        PFL_EXPECT(subset_csv_text.find("\"tab\tcomma,value \"\"quoted\"\"\r\nnext line\"") != std::string::npos);
+
+        const auto all_rows = parse_csv_file(all_output_path);
+        const auto subset_rows = parse_csv_file(subset_output_path);
+        PFL_REQUIRE(all_rows.size() == 2U);
+        PFL_REQUIRE(subset_rows.size() == 2U);
+        PFL_REQUIRE(all_rows[1].size() == 16U);
+        PFL_REQUIRE(subset_rows[1].size() == 16U);
+        PFL_EXPECT(all_rows[1] == subset_rows[1]);
+        PFL_EXPECT(all_rows[1][0] == "1");
+        PFL_EXPECT(all_rows[1][3] == "http");
+        PFL_EXPECT(all_rows[1][4] == "tab\tcomma,value \"quoted\"\r\nnext line");
+        PFL_EXPECT(all_rows[1][5] == "198.18.0.10");
+        PFL_EXPECT(all_rows[1][6] == "45000");
+        PFL_EXPECT(all_rows[1][7] == "198.18.0.20");
+        PFL_EXPECT(all_rows[1][8] == "80");
+        PFL_EXPECT(all_rows[1][9] == "2");
+        PFL_EXPECT(all_rows[1][15] == "EthernetII->IPv4->TCP");
+    }
+
+    {
+        auto session = build_flow_info_export_session();
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_single_token_quote_policy.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 3U);
+        PFL_EXPECT(csv_lines[1].find("\"alpha,\"\"quoted\"\",example\"") != std::string::npos);
+        PFL_EXPECT(csv_lines[2].find(",beta.example,") != std::string::npos);
+        PFL_EXPECT(csv_lines[2].find("\"beta.example\"") == std::string::npos);
     }
 
     {
