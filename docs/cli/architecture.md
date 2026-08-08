@@ -166,17 +166,17 @@ Implementation remains pending.
 
 `export-flows` is the Smart-Export-like flow packet export command.
 
-- It applies the same flow-selection pipeline as `flows`.
+- It applies the same canonical flow-selection pipeline shape as `flows`,
+  without a sort stage.
 - It exports packet records belonging to the resulting flow set.
+- It supports documented Smart Export packet-retention rules.
+- It supports either one merged classic-PCAP output or one classic-PCAP file
+  per selected flow.
+- The detailed command contract is documented in
+  [commands/export-flows.md](./commands/export-flows.md).
 
-Current working output vocabulary for this command includes:
-
-```text
---out-flows-data <path>
-```
-
-Future work will define Smart Export policies such as packet limits per flow.
-Those policies are explicitly out of scope for this architecture pass.
+This document does not repeat the detailed `export-flows` packet-retention,
+source-capture, manifest, or output-directory semantics.
 
 ### `flow-info`
 
@@ -479,17 +479,19 @@ Current working output option vocabulary includes:
 
 ```text
 --out-flows-list <path>
---out-flows-data <path>
 --out-index <path>
 --out-protocol-path-tree <path>
 ```
 
 Not every output applies to every command.
 
+`export-flows` now has its own detailed output contract in
+[commands/export-flows.md](./commands/export-flows.md), including `--out` and
+`--out-dir`.
+
 Intended ownership:
 
 - `--out-flows-list`: flow metadata or flow-list export
-- `--out-flows-data`: packet or capture export for selected flows
 - `--out-index`: reusable PcapFlowLab index output
 - `--out-protocol-path-tree`: complete-capture Protocol Path Tree export from
   `summary`, using the shared plain-text Protocol Path Tree exporter
@@ -687,7 +689,7 @@ Command-specific documentation is intended to live at:
 ```text
 docs/cli/commands/summary.md
 docs/cli/commands/flows.md
-docs/cli/commands/export_flows.md
+docs/cli/commands/export-flows.md
 docs/cli/commands/flow_info.md
 docs/cli/commands/packet_info.md
 ```
@@ -708,6 +710,7 @@ At this stage:
 
 - `docs/cli/commands/summary.md` is defined
 - `docs/cli/commands/flows.md` is defined
+- `docs/cli/commands/export-flows.md` is defined
 
 The remaining command documents are still intentionally deferred.
 

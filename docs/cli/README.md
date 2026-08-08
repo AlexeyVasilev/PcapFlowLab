@@ -13,6 +13,8 @@ For the detailed `summary` command contract, see
 [commands/summary.md](./commands/summary.md).
 For the detailed `flows` command contract, see
 [commands/flows.md](./commands/flows.md).
+For the detailed planned `export-flows` command contract, see
+[commands/export-flows.md](./commands/export-flows.md).
 
 ## What The CLI Is For
 
@@ -176,7 +178,7 @@ Selected flow export:
 ```text
 pcap-flow-lab export-flows capture.idx \
     --filter "192.168.0.152" \
-    --out-flows-data selected.pcap
+    --out selected.pcap
 ```
 
 Selected-flow analysis:
@@ -200,9 +202,9 @@ individual command designs are finalized:
 
 - `docs/cli/commands/summary.md` (now defined)
 - `docs/cli/commands/flows.md` (now defined)
-- `docs/cli/commands/export_flows.md`
+- `docs/cli/commands/export-flows.md` (now defined as a planned command contract)
 - `docs/cli/commands/flow_info.md`
 - `docs/cli/commands/packet_info.md`
 
-`summary.md` and `flows.md` now exist. The remaining command documents are
-still deferred.
+`summary.md`, `flows.md`, and `export-flows.md` now exist. The remaining
+command documents are still deferred.
