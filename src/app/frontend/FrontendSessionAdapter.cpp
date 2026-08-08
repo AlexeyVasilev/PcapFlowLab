@@ -1824,6 +1824,10 @@ std::string build_analysis_endpoint_summary(const FlowRow& row) {
     return out.str();
 }
 
+std::string flow_family_text(const FlowAddressFamily family) {
+    return family == FlowAddressFamily::ipv6 ? "IPv6" : "IPv4";
+}
+
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
     return (static_cast<std::uint64_t>(packet.ts_sec) * 1'000'000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
 }
@@ -3237,6 +3241,93 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         });
     }
 
+    return result;
+}
+
+FrontendFlowInfoDto FrontendSessionAdapter::get_flow_info(const std::size_t flow_index) const {
+    FrontendFlowInfoDto result {
+        .has_capture = session_.has_capture(),
+        .flow_available = false,
+        .analysis_available = false,
+        .flow_index = flow_index,
+    };
+
+    if (!result.has_capture) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    auto row = session_.flow_row(flow_index);
+    if (row.has_value()) {
+        row = apply_service_hint_override(*row, flow_service_hint_overrides_);
+    }
+    if (!row.has_value()) {
+        result.error_text = "The requested flow is unavailable.";
+        return result;
+    }
+
+    result.flow_available = true;
+
+    const auto analysis = session_.get_flow_analysis(flow_index);
+    if (!analysis.has_value()) {
+        result.unavailable_text = "Analysis is unavailable for the requested flow.";
+        return result;
+    }
+
+    const auto connections = session_detail::list_connections(session_.state());
+    if (flow_index >= connections.size()) {
+        result.error_text = "The requested flow is unavailable.";
+        result.flow_available = false;
+        return result;
+    }
+
+    const auto protocol_path = session_detail::build_protocol_path_presentation(
+        session_.state().protocol_path_registry,
+        row->protocol_path_id
+    );
+    const auto captured_bytes = session_detail::captured_bytes(connections[flow_index]);
+
+    result.analysis_available = true;
+    result.total_packets = analysis->total_packets;
+    result.total_bytes = analysis->total_bytes;
+    result.captured_bytes = captured_bytes;
+    result.packets_a_to_b = analysis->packets_a_to_b;
+    result.packets_b_to_a = analysis->packets_b_to_a;
+    result.bytes_a_to_b = analysis->bytes_a_to_b;
+    result.bytes_b_to_a = analysis->bytes_b_to_a;
+    result.endpoint_a = row->endpoint_a;
+    result.endpoint_b = row->endpoint_b;
+    result.endpoint_summary_text = build_analysis_endpoint_summary(*row);
+    result.family_text = flow_family_text(row->family);
+    result.protocol_text = row->protocol_text;
+    result.protocol_hint_display = !analysis->protocol_hint.empty()
+        ? session_detail::format_flow_protocol_hint_display(analysis->protocol_hint)
+        : session_detail::format_flow_protocol_hint_display(row->protocol_hint);
+    result.service_hint_text = !analysis->service_hint.empty()
+        ? analysis->service_hint
+        : (!row->service_hint.empty() ? row->service_hint : analysis->protocol_panel_service_text);
+    result.protocol_path_text = protocol_path.full_text;
+    result.first_packet_time_text = analysis->first_packet_timestamp_text;
+    result.last_packet_time_text = analysis->last_packet_timestamp_text;
+    result.duration_text = format_duration_us(analysis->duration_us);
+    result.largest_gap_text = format_duration_us(analysis->largest_gap_us);
+    result.total_packets_text = format_grouped_integer(analysis->total_packets);
+    result.total_bytes_text = format_size_value(analysis->total_bytes);
+    result.captured_bytes_text = format_size_value(captured_bytes);
+    result.max_captured_packet_size_text = format_size_value(analysis->max_captured_packet_size_bytes);
+    result.packets_a_to_b_text = format_grouped_integer(analysis->packets_a_to_b);
+    result.packets_b_to_a_text = format_grouped_integer(analysis->packets_b_to_a);
+    result.total_direction_packets_text = format_grouped_integer(analysis->total_packets);
+    result.bytes_a_to_b_text = format_size_value(analysis->bytes_a_to_b);
+    result.bytes_b_to_a_text = format_size_value(analysis->bytes_b_to_a);
+    result.total_direction_bytes_text = format_size_value(analysis->total_bytes);
+    result.packet_direction_text = analysis->packet_direction_text;
+    result.data_direction_text = analysis->data_direction_text;
+    result.packet_size_histogram_rows = build_analysis_histogram_rows(
+        analysis->packet_size_histograms.histogram_all,
+        analysis->packet_size_histograms.histogram_a_to_b,
+        analysis->packet_size_histograms.histogram_b_to_a
+    );
     return result;
 }
 

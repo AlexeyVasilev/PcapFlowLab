@@ -146,6 +146,7 @@ add_executable(
     src/cli/CliFormatting.cpp
     src/cli/CliCommandSupport.cpp
     src/cli/ExportFlowsCommand.cpp
+    src/cli/FlowInfoCommand.cpp
     src/cli/FlowsCommand.cpp
     src/cli/SummaryCommand.cpp
 )
@@ -386,6 +387,7 @@ if(BUILD_TESTING)
         tests/unit/PacketDetailsTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp
+        tests/unit/CliFlowInfoTests.cpp
         tests/unit/CliSummaryTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
@@ -441,6 +443,7 @@ if(BUILD_TESTING)
         src/app/frontend/FrontendSettingsJson.cpp
         src/cli/CliCommandSupport.cpp
         src/cli/ExportFlowsCommand.cpp
+        src/cli/FlowInfoCommand.cpp
         src/cli/FlowsCommand.cpp
         src/cli/SummaryCommand.cpp
     )

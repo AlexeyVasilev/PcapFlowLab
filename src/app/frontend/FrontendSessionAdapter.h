@@ -110,6 +110,7 @@ public:
         const std::string& stable_id
     );
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
+    [[nodiscard]] FrontendFlowInfoDto get_flow_info(std::size_t flow_index) const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path
     ) const;

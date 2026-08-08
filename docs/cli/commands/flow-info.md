@@ -2,24 +2,22 @@
 
 ## Status
 
-This document defines the planned CLI v2 contract for:
+This document defines the current CLI v2 contract for:
 
 ```text
 pcap-flow-lab flow-info
 ```
 
-This is a design-only document.
-
-The current production CLI does not yet implement:
+The current production CLI implements:
 
 - `flow-info` parsing
 - `flow-info` dispatch
 - `flow-info` help
 - `flow-info` stdout rendering
 
-The command is documented here so the later implementation can reuse the
-current shared flow-analysis and flow-presentation architecture without adding
-a second semantics layer.
+The command is documented here so the implemented path can continue to reuse
+the current shared flow-analysis and flow-presentation architecture without
+adding a second semantics layer.
 
 ## Purpose
 
@@ -52,7 +50,7 @@ The initial command must work:
 
 ## Input Forms
 
-These forms are planned:
+These forms are supported:
 
 ```text
 pcap-flow-lab flow-info capture.pcap --flow-number 42
@@ -172,8 +170,7 @@ The initial contract does not add:
 
 The Identity section contains:
 
-- `Endpoint A`
-- `Endpoint B`
+- `Endpoints`
 - `Family`
 - `Protocol`
 - `Protocol Hint`
@@ -184,8 +181,7 @@ Conceptual example:
 
 ```text
 Identity
-  Endpoint A:       10.10.205.13:46368
-  Endpoint B:       216.58.209.174:443
+  Endpoints:        10.10.205.13:46368 <-> 216.58.209.174:443
   Family:           IPv4
   Protocol:         UDP
   Protocol Hint:    QUIC
@@ -195,8 +191,7 @@ Identity
 
 ### Endpoint Orientation
 
-`Endpoint A` and `Endpoint B` are preserved because current flow orientation
-is first-observed.
+The `Endpoints` line preserves current first-observed A/B orientation.
 
 The initial CLI must not relabel them as:
 
@@ -453,8 +448,8 @@ which is a real flow statistic and belongs in the Traffic section.
 
 The Timing section contains:
 
-- `First Seen`
-- `Last Seen`
+- `First Packet`
+- `Last Packet`
 - `Duration`
 - `Largest Gap`
 
@@ -462,8 +457,8 @@ Conceptual example:
 
 ```text
 Timing
-  First Seen:       12:34:56.123456
-  Last Seen:        12:34:58.654321
+  First Packet:     12:34:56.123456
+  Last Packet:      12:34:58.654321
   Duration:         2.53 s
   Largest Gap:      740 ms
 ```

@@ -6,8 +6,8 @@ This document describes the PcapFlowLab CLI v2 architecture direction.
 
 - It remains primarily architectural.
 - Some deferred commands still remain design-only.
-- The current production CLI includes v2-style `summary`, `flows`, and
-  `export-flows` paths, while other public commands remain legacy and may not
+- The current production CLI includes v2-style `summary`, `flows`,
+  `export-flows`, and `flow-info` paths, while other public commands remain legacy and may not
   yet match this design.
 
 ## Goals
@@ -187,7 +187,7 @@ source-capture, manifest, or output-directory semantics.
 - It operates on one selected canonical flow.
 - It is documented in detail in
   [commands/flow-info.md](./commands/flow-info.md).
-- It remains planned and is not yet implemented in the current production CLI.
+- It is implemented in the current production CLI.
 
 ### `packet-info`
 
@@ -706,7 +706,7 @@ At this stage:
 - `docs/cli/commands/summary.md` is defined
 - `docs/cli/commands/flows.md` is defined
 - `docs/cli/commands/export-flows.md` is defined and implemented
-- `docs/cli/commands/flow-info.md` is now defined as planned-only
+- `docs/cli/commands/flow-info.md` is defined and implemented
 
 The remaining `packet-info` command document is still intentionally deferred.
 

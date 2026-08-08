@@ -620,4 +620,45 @@ struct FrontendSelectedFlowAnalysisDto {
     std::vector<FrontendAnalysisSequencePreviewRowDto> sequence_preview_rows {};
 };
 
+struct FrontendFlowInfoDto {
+    bool has_capture {false};
+    bool flow_available {false};
+    bool analysis_available {false};
+    std::size_t flow_index {0};
+    std::uint64_t total_packets {0};
+    std::uint64_t total_bytes {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t bytes_a_to_b {0};
+    std::uint64_t bytes_b_to_a {0};
+    std::string endpoint_a {};
+    std::string endpoint_b {};
+    std::string endpoint_summary_text {};
+    std::string family_text {};
+    std::string protocol_text {};
+    std::string protocol_hint_display {};
+    std::string service_hint_text {};
+    std::string protocol_path_text {};
+    std::string first_packet_time_text {};
+    std::string last_packet_time_text {};
+    std::string duration_text {};
+    std::string largest_gap_text {};
+    std::string total_packets_text {};
+    std::string total_bytes_text {};
+    std::string captured_bytes_text {};
+    std::string max_captured_packet_size_text {};
+    std::string packets_a_to_b_text {};
+    std::string packets_b_to_a_text {};
+    std::string total_direction_packets_text {};
+    std::string bytes_a_to_b_text {};
+    std::string bytes_b_to_a_text {};
+    std::string total_direction_bytes_text {};
+    std::string packet_direction_text {};
+    std::string data_direction_text {};
+    std::string unavailable_text {};
+    std::string error_text {};
+    std::vector<FrontendAnalysisHistogramRowDto> packet_size_histogram_rows {};
+};
+
 }  // namespace pfl
