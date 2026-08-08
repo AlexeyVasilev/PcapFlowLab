@@ -109,7 +109,7 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(result.stderr_text.empty());
         PFL_EXPECT(contains_text(result.stdout_text, "Commands"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Legacy flow list command"));
+        PFL_EXPECT(contains_text(result.stdout_text, "List, filter, sort, and export flow metadata."));
         PFL_EXPECT(result.stdout_text == global_help_stdout);
     }
 
@@ -206,8 +206,9 @@ void expect_summary_dispatch_and_parse_rules() {
     {
         const std::vector<std::string_view> args {"flows", "capture.pcap"};
         const auto decision = cli::classify_cli_invocation(args);
-        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::legacy);
-        PFL_EXPECT(decision.legacy_command == "flows");
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::flows);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
     }
 
     {

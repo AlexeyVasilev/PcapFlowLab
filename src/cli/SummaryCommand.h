@@ -11,19 +11,17 @@
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/FlowRows.h"
+#include "cli/CliCommandSupport.h"
 
 namespace pfl::cli {
 
 enum class SummaryDispatchKind : std::uint8_t {
     summary,
+    flows,
     legacy,
 };
 
-enum class SummaryCommandProgressMode : std::uint8_t {
-    auto_mode,
-    on,
-    off,
-};
+using SummaryCommandProgressMode = CliProgressMode;
 
 struct SummaryDispatchDecision {
     SummaryDispatchKind kind {SummaryDispatchKind::summary};
@@ -50,13 +48,6 @@ struct SummaryCommandParseResult {
 };
 
 struct SummaryCommandExecutionResult {
-    int exit_code {1};
-    std::string stdout_text {};
-    std::string stderr_text {};
-};
-
-struct CliInvocationResult {
-    bool handled {false};
     int exit_code {1};
     std::string stdout_text {};
     std::string stderr_text {};

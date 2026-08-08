@@ -67,6 +67,7 @@ enum class FlowQueryStatus : std::uint8_t {
 struct FlowQueryResult {
     FlowQueryStatus status {FlowQueryStatus::ok};
     std::vector<std::size_t> ordered_flow_indices {};
+    std::size_t result_count_before_limit {0U};
     std::optional<std::size_t> invalid_flow_index {};
 };
 
@@ -84,6 +85,7 @@ std::optional<FlowRow> make_flow_row(
     const ListedConnectionRef& connection,
     const AnalysisSettings& settings
 );
+std::string format_flow_protocol_hint_display(std::string_view value);
 [[nodiscard]] bool flow_row_matches_text_filter(const FlowRow& row, std::string_view filter) noexcept;
 [[nodiscard]] FlowQueryResult query_flow_indices(
     std::span<const ListedConnectionRef> connections,

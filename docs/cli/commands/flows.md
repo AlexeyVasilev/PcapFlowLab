@@ -8,16 +8,12 @@ This document defines the target CLI v2 contract for:
 pcap-flow-lab flows
 ```
 
-The current production CLI still uses the legacy explicit `flows` command
- implementation.
+The current production CLI now routes the explicit `flows` command through the
+documented v2-style parser, help, query, preview, and subset CSV export path.
 
-Shared groundwork for canonical flow querying and subset flow-metadata CSV
-export is now implemented in shared session/backend code.
-
-This document remains a design contract for the CLI surface itself.
-
-No production CLI v2 `flows` parser, stdout presentation, or help behavior is
-implemented by this pass.
+Shared canonical flow querying and subset flow-metadata CSV export remain
+implemented in shared session/backend code and are reused by the production CLI
+surface.
 
 ## Purpose
 
@@ -411,15 +407,12 @@ shows only the first 25 rows.
 Conceptual footer:
 
 ```text
-Showing 25 of 3 412 matching flows.
+Showing 25 of 3 412 flows.
 Use --limit <N> to show more rows or --out-flows-list <path> to export the result.
 ```
 
-When there is no filter, a simpler form is acceptable:
-
-```text
-Showing 25 of 102 031 flows.
-```
+This footer is required only when the default 25-row stdout preview truncates
+non-empty output.
 
 ### Interaction With Explicit `--limit`
 
@@ -433,6 +426,21 @@ Therefore:
 
 - no explicit limit -> safe 25-row preview
 - explicit limit -> show up to the requested result limit
+- explicit limit with non-empty output -> always print `Showing X of Y flows.`
+
+For this footer:
+
+- `X` is the final post-limit result size rendered to stdout
+- `Y` is the result count after selectors/filter/sort and before explicit limit
+- CSV remains post-limit and is unaffected by the footer
+
+Examples:
+
+```text
+Showing 30 of 64 393 flows.
+Showing 50 of 3 412 flows.
+Showing 7 of 7 flows.
+```
 
 Example:
 
@@ -448,7 +456,12 @@ Example:
 pcap-flow-lab flows capture.pcap --filter TLS --limit 50
 ```
 
-has a logical result of at most 50 flows and may show all 50 rows.
+has a logical result of at most 50 flows, may show all 50 rows, and should
+print:
+
+```text
+Showing 50 of 3 412 flows.
+```
 
 ## Default Stdout Table
 
@@ -896,18 +909,16 @@ matching from the flow text filter.
 
 This pass does not modify GUI behavior.
 
-## Legacy `flows`
+## Legacy Replacement
 
-The current explicit legacy command:
+The previous explicit legacy command:
 
 ```text
 pcap-flow-lab flows <input>
 ```
 
-already exists.
-
-The future v2 implementation will replace its presentation and argument
-handling while preserving important capabilities:
+has now been replaced by the production v2-style `flows` implementation while
+preserving important capabilities:
 
 - raw capture input
 - index input

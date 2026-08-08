@@ -2,12 +2,8 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
-#include <cstdio>
 #include <sstream>
 #include <string>
-#include <system_error>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -15,18 +11,11 @@
 #include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "cli/FlowsCommand.h"
 #include "core/index/CaptureIndex.h"
-
-#if defined(_WIN32)
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 namespace pfl::cli {
 namespace {
-
-using Clock = std::chrono::steady_clock;
 
 constexpr std::array<std::string_view, 8> kSummaryInvalidSelectorOptions {
     "--filter",
@@ -46,7 +35,6 @@ constexpr std::array<std::string_view, 3> kSummaryUnsupportedOptions {
 };
 
 constexpr std::array<std::string_view, 8> kLegacyCliCommands {
-    "flows",
     "inspect-packet",
     "hex",
     "export-flow",
@@ -75,24 +63,11 @@ struct SummaryExecutionEnvironment {
     bool stderr_is_terminal {false};
 };
 
-bool contains_option(
-    const std::span<const std::string_view> options,
-    const std::string_view candidate
-) noexcept {
-    return std::find(options.begin(), options.end(), candidate) != options.end();
-}
-
-bool contains_help_option(const std::span<const std::string_view> args) noexcept {
-    return std::any_of(args.begin(), args.end(), [](const std::string_view arg) {
-        return contains_option(kHelpOptions, arg);
-    });
-}
-
 std::string render_command_list() {
     std::ostringstream out {};
     out << "Commands\n";
     out << "  summary             Show whole-capture or whole-index overview and statistics.\n";
-    out << "  flows               Legacy flow list command.\n";
+    out << "  flows               List, filter, sort, and export flow metadata.\n";
     out << "  inspect-packet      Legacy packet details command.\n";
     out << "  hex                 Legacy packet hex dump command.\n";
     out << "  export-flow         Legacy single-flow PCAP export command.\n";
@@ -113,14 +88,6 @@ std::string render_summary_examples() {
     out << "  pcap-flow-lab summary capture.pcap --out-index capture.pflidx\n";
     out << "  pcap-flow-lab summary capture.idx --out-protocol-path-tree protocol-path.txt\n";
     return out.str();
-}
-
-bool stderr_supports_interactive_updates() noexcept {
-#if defined(_WIN32)
-    return _isatty(_fileno(stderr)) != 0;
-#else
-    return isatty(fileno(stderr)) != 0;
-#endif
 }
 
 std::string input_kind_display_text(const FrontendInputKind kind) {
@@ -220,45 +187,6 @@ std::optional<ProtocolPathStatisticsMode> parse_protocol_path_mode(const std::st
         return ProtocolPathStatisticsMode::terminal_paths;
     }
     return std::nullopt;
-}
-
-std::optional<SummaryCommandProgressMode> parse_progress_mode(const std::string_view value) noexcept {
-    if (value == "auto") {
-        return SummaryCommandProgressMode::auto_mode;
-    }
-    if (value == "on") {
-        return SummaryCommandProgressMode::on;
-    }
-    if (value == "off") {
-        return SummaryCommandProgressMode::off;
-    }
-    return std::nullopt;
-}
-
-std::filesystem::path normalized_comparison_path(const std::filesystem::path& path) {
-    if (path.empty()) {
-        return {};
-    }
-
-    std::error_code error {};
-    const auto current_path = std::filesystem::current_path(error);
-    error.clear();
-    const auto absolute_path = current_path.empty() ? path : (current_path / path);
-
-    if (std::filesystem::exists(absolute_path, error) && !error) {
-        error.clear();
-        const auto canonical_path = std::filesystem::weakly_canonical(absolute_path, error);
-        if (!error) {
-            return canonical_path.lexically_normal();
-        }
-    }
-
-    return absolute_path.lexically_normal();
-}
-
-bool is_existing_directory(const std::filesystem::path& path) {
-    std::error_code error {};
-    return std::filesystem::is_directory(path, error) && !error;
 }
 
 std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
@@ -511,84 +439,32 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
 }
 
 OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& options) {
-    OutputPreflightResult result {
-        .ok = true,
-    };
-
-    std::vector<std::pair<std::string_view, std::filesystem::path>> outputs {};
+    std::array<CliOutputTarget, 2> outputs {};
+    std::size_t output_count = 0U;
     if (options.out_index_path.has_value()) {
-        outputs.push_back({"--out-index", *options.out_index_path});
+        outputs[output_count++] = CliOutputTarget {
+            .label = "--out-index",
+            .path = *options.out_index_path,
+        };
     }
     if (options.out_protocol_path_tree_path.has_value()) {
-        outputs.push_back({"--out-protocol-path-tree", *options.out_protocol_path_tree_path});
+        outputs[output_count++] = CliOutputTarget {
+            .label = "--out-protocol-path-tree",
+            .path = *options.out_protocol_path_tree_path,
+        };
     }
 
-    const auto normalized_input_path = normalized_comparison_path(options.input_path);
+    const auto generic_result = preflight_output_targets(
+        options.input_path,
+        std::span<const CliOutputTarget>(outputs.data(), output_count),
+        options.force,
+        std::string_view {"--out-index and --out-protocol-path-tree must not target the same path."}
+    );
 
-    for (const auto& [label, output_path] : outputs) {
-        const auto normalized_output_path = normalized_comparison_path(output_path);
-        if (!normalized_input_path.empty() && normalized_output_path == normalized_input_path) {
-            result.ok = false;
-            result.error_text = std::string {label} + " cannot overwrite the input path.";
-            return result;
-        }
-
-        const auto parent_path = output_path.parent_path();
-        if (!parent_path.empty()) {
-            std::error_code error {};
-            const bool parent_exists = std::filesystem::exists(parent_path, error);
-            if (error || !parent_exists || !std::filesystem::is_directory(parent_path, error) || error) {
-                result.ok = false;
-                result.error_text = std::string {label} + " parent directory does not exist.";
-                return result;
-            }
-        }
-
-        std::error_code exists_error {};
-        const bool output_exists = std::filesystem::exists(output_path, exists_error);
-        if (exists_error) {
-            result.ok = false;
-            result.error_text = std::string {label} + " path is not usable.";
-            return result;
-        }
-        if (output_exists && is_existing_directory(output_path)) {
-            result.ok = false;
-            result.error_text = std::string {label} + " must be a regular file path.";
-            return result;
-        }
-        if (output_exists && !options.force) {
-            result.ok = false;
-            result.error_text = std::string {label} + " already exists. Re-run with --force to overwrite.";
-            return result;
-        }
-    }
-
-    if (options.out_index_path.has_value() && options.out_protocol_path_tree_path.has_value()) {
-        if (normalized_comparison_path(*options.out_index_path)
-            == normalized_comparison_path(*options.out_protocol_path_tree_path)) {
-            result.ok = false;
-            result.error_text = "--out-index and --out-protocol-path-tree must not target the same path.";
-            return result;
-        }
-    }
-
-    return result;
-}
-
-std::string render_open_progress_text(const FrontendOpenProgressDto& progress) {
-    std::ostringstream out {};
-    out << "Opening " << (progress.opening_as_index ? "index" : "capture") << ": ";
-    const auto percent = std::clamp(progress.percent * 100.0, 0.0, 100.0);
-    out << static_cast<int>(percent + 0.5);
-    out << '%';
-    if (progress.total_bytes > 0U) {
-        out << " ("
-            << session_detail::format_statistics_compact_size_value(progress.bytes_processed)
-            << " / "
-            << session_detail::format_statistics_compact_size_value(progress.total_bytes)
-            << ')';
-    }
-    return out.str();
+    return OutputPreflightResult {
+        .ok = generic_result.ok,
+        .error_text = generic_result.error_text,
+    };
 }
 
 FrontendOpenResult open_summary_input(
@@ -597,52 +473,13 @@ FrontendOpenResult open_summary_input(
     std::string& stderr_text,
     const SummaryExecutionEnvironment& environment
 ) {
-    if (!should_enable_summary_progress(options.progress_mode, environment.stderr_is_terminal)) {
-        return adapter.open_capture(options.input_path);
-    }
-
-    const auto start_result = adapter.start_open_capture(options.input_path);
-    if (!start_result.started) {
-        return FrontendOpenResult {
-            .opened = false,
-            .error_text = start_result.error_text,
-        };
-    }
-
-    const bool interactive = environment.stderr_is_terminal;
-    const auto update_interval = interactive ? std::chrono::milliseconds {120} : std::chrono::milliseconds {250};
-    auto last_update = Clock::time_point {};
-    std::string last_line {};
-    bool emitted_progress = false;
-
-    while (true) {
-        const auto poll = adapter.poll_open_capture();
-        if (poll.ready) {
-            if (interactive && emitted_progress) {
-                stderr_text += '\n';
-            }
-            return poll.result;
-        }
-
-        const auto now = Clock::now();
-        if (last_update.time_since_epoch().count() == 0 || now - last_update >= update_interval) {
-            const auto line = render_open_progress_text(poll.progress);
-            if (line != last_line) {
-                if (interactive) {
-                    stderr_text += '\r';
-                    stderr_text += line;
-                } else {
-                    stderr_text += line;
-                    stderr_text += '\n';
-                }
-                last_line = line;
-                emitted_progress = true;
-            }
-            last_update = now;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds {50});
-    }
+    return open_input_with_progress(
+        adapter,
+        options.input_path,
+        options.progress_mode,
+        environment.stderr_is_terminal,
+        stderr_text
+    );
 }
 
 SummaryCommandExecutionResult execute_summary_command_with_environment(
@@ -846,6 +683,14 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
         };
     }
 
+    if (args.front() == "flows") {
+        return SummaryDispatchDecision {
+            .kind = SummaryDispatchKind::flows,
+            .legacy_command = {},
+            .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
+        };
+    }
+
     if (is_legacy_cli_command_name(args.front())) {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::legacy,
@@ -991,7 +836,7 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
                     .error_text = "--progress requires one of: auto, on, off.",
                 };
             }
-            const auto mode = parse_progress_mode(args[++index]);
+            const auto mode = parse_cli_progress_mode(args[++index]);
             if (!mode.has_value()) {
                 return {
                     .ok = false,
@@ -1088,15 +933,7 @@ bool should_enable_summary_progress(
     const SummaryCommandProgressMode mode,
     const bool stderr_is_terminal
 ) noexcept {
-    switch (mode) {
-    case SummaryCommandProgressMode::on:
-        return true;
-    case SummaryCommandProgressMode::off:
-        return false;
-    case SummaryCommandProgressMode::auto_mode:
-    default:
-        return stderr_is_terminal;
-    }
+    return should_enable_cli_progress(mode, stderr_is_terminal);
 }
 
 std::string render_protocol_path_preview_text(
@@ -1162,7 +999,7 @@ SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOption
     return execute_summary_command_with_environment(
         options,
         SummaryExecutionEnvironment {
-            .stderr_is_terminal = stderr_supports_interactive_updates(),
+            .stderr_is_terminal = pfl::cli::stderr_supports_interactive_updates(),
         }
     );
 }
@@ -1188,6 +1025,42 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
 
     const auto dispatch = classify_cli_invocation(args);
     if (dispatch.kind != SummaryDispatchKind::summary) {
+        if (dispatch.kind == SummaryDispatchKind::flows) {
+            if (contains_help_option(dispatch.summary_args)) {
+                return {
+                    .handled = true,
+                    .exit_code = 0,
+                    .stdout_text = render_flows_command_help(),
+                    .stderr_text = {},
+                };
+            }
+
+            const auto parse_result = parse_flows_command_arguments(dispatch.summary_args);
+            if (!parse_result.ok || !parse_result.options.has_value()) {
+                std::string stderr_text {};
+                if (!parse_result.error_text.empty()) {
+                    stderr_text += parse_result.error_text;
+                    stderr_text += '\n';
+                    stderr_text += '\n';
+                }
+                stderr_text += render_flows_command_help();
+                return {
+                    .handled = true,
+                    .exit_code = 1,
+                    .stdout_text = {},
+                    .stderr_text = std::move(stderr_text),
+                };
+            }
+
+            const auto result = execute_flows_command(*parse_result.options);
+            return {
+                .handled = true,
+                .exit_code = result.exit_code,
+                .stdout_text = result.stdout_text,
+                .stderr_text = result.stderr_text,
+            };
+        }
+
         return {
             .handled = false,
         };

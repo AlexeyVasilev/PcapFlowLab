@@ -144,6 +144,8 @@ add_executable(
     pcap_flow_lab_cli
     src/cli/main.cpp
     src/cli/CliFormatting.cpp
+    src/cli/CliCommandSupport.cpp
+    src/cli/FlowsCommand.cpp
     src/cli/SummaryCommand.cpp
 )
 
@@ -381,6 +383,7 @@ if(BUILD_TESTING)
         tests/unit/FlowAnalysisTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/CliFlowsTests.cpp
         tests/unit/CliSummaryTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
@@ -434,6 +437,8 @@ if(BUILD_TESTING)
         tests/unit/UnrecognizedPacketTests.cpp
         src/app/frontend/FrontendSessionAdapterBridge.cpp
         src/app/frontend/FrontendSettingsJson.cpp
+        src/cli/CliCommandSupport.cpp
+        src/cli/FlowsCommand.cpp
         src/cli/SummaryCommand.cpp
     )
 

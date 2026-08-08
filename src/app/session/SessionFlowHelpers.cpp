@@ -212,6 +212,14 @@ std::string flow_family_text(const FlowAddressFamily family) {
     return family == FlowAddressFamily::ipv6 ? "IPv6" : "IPv4";
 }
 
+std::string upper_ascii(const std::string_view value) {
+    std::string formatted {value};
+    std::transform(formatted.begin(), formatted.end(), formatted.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return formatted;
+}
+
 int compare_endpoint_fields(
     const FlowAddressFamily left_family,
     const std::string_view left_address,
@@ -761,6 +769,29 @@ std::optional<FlowRow> make_flow_row(
     };
 }
 
+std::string format_flow_protocol_hint_display(const std::string_view value) {
+    if (value == "possible_tls") {
+        return "Possible TLS";
+    }
+    if (value == "possible_quic") {
+        return "Possible QUIC";
+    }
+    if (value == "igmp") {
+        return "IGMP";
+    }
+    if (value == "igmpv1") {
+        return "IGMPv1";
+    }
+    if (value == "igmpv2") {
+        return "IGMPv2";
+    }
+    if (value == "igmpv3") {
+        return "IGMPv3";
+    }
+
+    return upper_ascii(value);
+}
+
 bool flow_row_matches_text_filter(const FlowRow& row, const std::string_view filter) noexcept {
     if (filter.empty()) {
         return true;
@@ -811,6 +842,7 @@ FlowQueryResult query_flow_indices(
     }
 
     if (query.text_filter.empty() && !query.sort.has_value()) {
+        result.result_count_before_limit = candidate_indices.size();
         if (query.limit.has_value() && candidate_indices.size() > *query.limit) {
             candidate_indices.resize(*query.limit);
         }
@@ -853,6 +885,7 @@ FlowQueryResult query_flow_indices(
         });
     }
 
+    result.result_count_before_limit = candidates.size();
     if (query.limit.has_value() && candidates.size() > *query.limit) {
         candidates.resize(*query.limit);
     }

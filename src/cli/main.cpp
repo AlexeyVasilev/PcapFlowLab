@@ -44,22 +44,11 @@ struct ParsedArgs {
     std::vector<std::string_view> remaining_args {};
 };
 
-struct PrintableFlowRow {
-    std::size_t index {0};
-    std::string family {};
-    std::string protocol {};
-    std::string endpoint_a {};
-    std::string endpoint_b {};
-    std::uint64_t packet_count {0};
-    std::uint64_t total_bytes {0};
-};
-
 void print_usage() {
     std::cout
         << "Usage:\n"
         << "  pcap-flow-lab [summary] <input>\n"
         << "  pcap-flow-lab summary --input <input>\n"
-        << "  pcap-flow-lab flows <input>\n"
         << "  pcap-flow-lab inspect-packet <input> --packet-index <N>\n"
         << "  pcap-flow-lab hex <input> --packet-index <N>\n"
         << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap>\n"
@@ -252,18 +241,6 @@ bool load_index_only(const char* index_file, pfl::CaptureSession& session) {
 
     std::cerr << "Failed to load index: " << index_file << '\n';
     return false;
-}
-
-PrintableFlowRow make_printable_flow_row(const pfl::FlowRow& row) {
-    return PrintableFlowRow {
-        .index = row.index,
-        .family = (row.family == pfl::FlowAddressFamily::ipv4) ? "v4" : "v6",
-        .protocol = row.protocol_text,
-        .endpoint_a = row.endpoint_a,
-        .endpoint_b = row.endpoint_b,
-        .packet_count = row.packet_count,
-        .total_bytes = row.total_bytes,
-    };
 }
 
 void print_packet_details(const pfl::PacketDetails& details) {
@@ -471,36 +448,6 @@ int main(int argc, char* argv[]) {
         }
 
         print_summary(session, "Index", input);
-        return 0;
-    }
-
-    if (command == "flows") {
-        if (!parsed_args.remaining_args.empty()) {
-            print_usage();
-            return 1;
-        }
-
-        pfl::CaptureSession session {};
-        if (!open_analysis_input(input, parsed_args, session)) {
-            return 1;
-        }
-
-        const auto rows = session.list_flows();
-        std::cout << "Index  Family  Proto  Endpoint A                      Endpoint B                      Packets  Bytes\n";
-        for (const auto& row : rows) {
-            const auto printable = make_printable_flow_row(row);
-            std::cout << std::left
-                      << std::setw(7) << printable.index
-                      << std::setw(8) << printable.family
-                      << std::setw(7) << printable.protocol
-                      << std::setw(32) << printable.endpoint_a
-                      << std::setw(32) << printable.endpoint_b
-                      << std::right
-                      << std::setw(8) << printable.packet_count
-                      << std::setw(7) << printable.total_bytes
-                      << '\n';
-        }
-
         return 0;
     }
 

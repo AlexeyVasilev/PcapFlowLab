@@ -160,33 +160,6 @@ std::string format_partial_open_warning_message(const OpenFailureInfo& failure) 
     return message;
 }
 
-std::string format_protocol_hint_display(const std::string& value) {
-    if (value == "possible_tls") {
-        return "Possible TLS";
-    }
-    if (value == "possible_quic") {
-        return "Possible QUIC";
-    }
-    if (value == "igmp") {
-        return "IGMP";
-    }
-    if (value == "igmpv1") {
-        return "IGMPv1";
-    }
-    if (value == "igmpv2") {
-        return "IGMPv2";
-    }
-    if (value == "igmpv3") {
-        return "IGMPv3";
-    }
-
-    std::string formatted = value;
-    std::transform(formatted.begin(), formatted.end(), formatted.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::toupper(ch));
-    });
-    return formatted;
-}
-
 FrontendProtocolStatsDto make_frontend_protocol_stats(const ProtocolStats& stats) {
     return FrontendProtocolStatsDto {
         .flow_count = stats.flow_count,
@@ -2357,6 +2330,33 @@ FrontendExportAllFlowsInfoCsvResult FrontendSessionAdapter::export_all_flows_inf
     return result;
 }
 
+FrontendExportAllFlowsInfoCsvResult FrontendSessionAdapter::export_flows_info_csv(
+    const std::filesystem::path& output_path,
+    const std::vector<std::size_t>& flow_indices
+) const {
+    FrontendExportAllFlowsInfoCsvResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_flows_info_csv(flow_indices, output_path, &error_text)) {
+        result.error_text = error_text.empty() ? "Failed to export flows info CSV." : error_text;
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendExportProtocolPathTreeResult FrontendSessionAdapter::export_protocol_path_tree(
     const ProtocolPathStatisticsMode mode,
     const std::filesystem::path& output_path
@@ -2626,6 +2626,18 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
     }
 
     return flows;
+}
+
+session_detail::FlowQueryResult FrontendSessionAdapter::query_flows(const session_detail::FlowQuery& query) const {
+    return session_.query_flows(query);
+}
+
+std::optional<FlowRow> FrontendSessionAdapter::flow_row(const std::size_t flow_index) const {
+    return session_.flow_row(flow_index);
+}
+
+std::string FrontendSessionAdapter::protocol_path_compact_text(const ProtocolPathId protocol_path_id) const {
+    return session_.protocol_path_compact_text(protocol_path_id);
 }
 
 std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_protocol_path_legend() const {
@@ -3036,8 +3048,8 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.endpoint_summary_text = build_analysis_endpoint_summary(*row);
     result.protocol_text = row->protocol_text;
     result.protocol_hint_display = !analysis->protocol_hint.empty()
-        ? format_protocol_hint_display(analysis->protocol_hint)
-        : format_protocol_hint_display(row->protocol_hint);
+        ? session_detail::format_flow_protocol_hint_display(analysis->protocol_hint)
+        : session_detail::format_flow_protocol_hint_display(row->protocol_hint);
     result.service_hint_text = !analysis->service_hint.empty()
         ? analysis->service_hint
         : (!row->service_hint.empty() ? row->service_hint : analysis->protocol_panel_service_text);
@@ -3175,7 +3187,7 @@ FrontendAnalysisSequenceExportResultDto FrontendSessionAdapter::export_selected_
         return result;
     }
 
-    const auto protocol_hint_text = format_protocol_hint_display(row->protocol_hint);
+    const auto protocol_hint_text = session_detail::format_flow_protocol_hint_display(row->protocol_hint);
     const auto rows = build_analysis_sequence_export_rows(session_, flow_index, protocol_hint_text);
     if (!rows.has_value()) {
         result.error_text = "Failed to prepare flow sequence export.";
@@ -3641,7 +3653,7 @@ FrontendFlowDto FrontendSessionAdapter::to_frontend_flow(const FlowRow& row) {
         .family = row.family,
         .protocol_text = row.protocol_text,
         .protocol_hint = row.protocol_hint,
-        .protocol_hint_display = format_protocol_hint_display(row.protocol_hint),
+        .protocol_hint_display = session_detail::format_flow_protocol_hint_display(row.protocol_hint),
         .service_hint = row.service_hint,
         .protocol_path_id = row.protocol_path_id,
         .has_fragmented_packets = row.has_fragmented_packets,

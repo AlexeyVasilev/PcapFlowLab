@@ -710,6 +710,7 @@ void run_query_tests() {
         auto result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({0U, 1U, 2U, 3U}));
+        PFL_EXPECT(result.result_count_before_limit == 4U);
 
         query.selected_flow_indices = std::vector<std::size_t> {*dns_index, *http_index, *dns_index};
         query.text_filter.clear();
@@ -718,28 +719,33 @@ void run_query_tests() {
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*http_index, *dns_index}));
+        PFL_EXPECT(result.result_count_before_limit == 2U);
 
         query.selected_flow_indices = std::vector<std::size_t> {99U};
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::invalid_flow_index);
         PFL_EXPECT(result.invalid_flow_index == std::optional<std::size_t> {99U});
         PFL_EXPECT(result.ordered_flow_indices.empty());
+        PFL_EXPECT(result.result_count_before_limit == 0U);
 
         query.selected_flow_indices.reset();
         query.text_filter = "no-such-flow";
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices.empty());
+        PFL_EXPECT(result.result_count_before_limit == 0U);
 
         query.text_filter = "beta.example";
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*dns_index}));
+        PFL_EXPECT(result.result_count_before_limit == 1U);
 
         query.text_filter = "VXLAN";
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices.empty());
+        PFL_EXPECT(result.result_count_before_limit == 0U);
 
         query.text_filter.clear();
         query.sort = session_detail::FlowQuerySortSpec {
@@ -748,6 +754,7 @@ void run_query_tests() {
         };
         result = query_session.query_flows(query);
         PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({3U, 2U, 1U, 0U}));
+        PFL_EXPECT(result.result_count_before_limit == 4U);
 
         query.sort = session_detail::FlowQuerySortSpec {
             .key = session_detail::FlowQuerySortKey::protocol,
@@ -804,6 +811,7 @@ void run_query_tests() {
         };
         result = query_session.query_flows(query);
         PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*ipv6_index, *dns_index, *http_index, *tcp_heavy_index}));
+        PFL_EXPECT(result.result_count_before_limit == 4U);
         const auto& http_row = rows[*http_index];
         const auto& dns_row = rows[*dns_index];
         PFL_REQUIRE(dns_row.total_bytes < http_row.total_bytes);
@@ -819,10 +827,23 @@ void run_query_tests() {
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*http_index}));
+        PFL_EXPECT(result.result_count_before_limit == 2U);
 
         query.limit = 0U;
         result = query_session.query_flows(query);
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::invalid_limit);
+        PFL_EXPECT(result.result_count_before_limit == 0U);
+
+        query.limit = 10U;
+        query.text_filter = "beta.example";
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::service,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        result = query_session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({*dns_index}));
+        PFL_EXPECT(result.result_count_before_limit == 1U);
 
         PFL_EXPECT(query_session.protocol_path_compact_text(rows[*http_index].protocol_path_id) == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
         const auto direct_compact_text =

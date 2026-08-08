@@ -6,7 +6,8 @@ This document describes the planned PcapFlowLab CLI v2 architecture.
 
 - It is a forward-looking design document.
 - Implementation has not yet caught up to this contract.
-- The current production CLI remains legacy and may not match this design.
+- The current production CLI includes v2-style `summary` and `flows` paths,
+  while other public commands remain legacy and may not yet match this design.
 
 ## Goals
 

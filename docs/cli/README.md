@@ -4,7 +4,7 @@ This directory documents the PcapFlowLab CLI v2 architecture and staged
 implementation direction.
 
 - It is not current command help.
-- The current production CLI now includes an initial v2-style `summary` path.
+- The current production CLI now includes v2-style `summary` and `flows` paths.
 - Other public CLI commands remain legacy.
 - Implementation may not yet match the documents in this folder.
 

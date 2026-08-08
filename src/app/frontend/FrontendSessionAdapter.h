@@ -37,6 +37,10 @@ public:
     [[nodiscard]] FrontendExportAllFlowsInfoCsvResult export_all_flows_info_csv(
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] FrontendExportAllFlowsInfoCsvResult export_flows_info_csv(
+        const std::filesystem::path& output_path,
+        const std::vector<std::size_t>& flow_indices
+    ) const;
     [[nodiscard]] FrontendExportProtocolPathTreeResult export_protocol_path_tree(
         ProtocolPathStatisticsMode mode,
         const std::filesystem::path& output_path
@@ -94,6 +98,9 @@ public:
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
+    [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
+    [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
 
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] std::optional<std::size_t> selected_flow_index() const noexcept;
