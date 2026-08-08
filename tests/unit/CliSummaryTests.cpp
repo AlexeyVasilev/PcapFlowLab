@@ -66,6 +66,58 @@ std::filesystem::path write_temp_text_file(const std::string& filename, const st
     return path;
 }
 
+std::vector<std::string> read_text_file_lines(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+
+    std::vector<std::string> lines {};
+    std::string line {};
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> fields {};
+    std::string current {};
+    bool in_quotes = false;
+
+    for (std::size_t index = 0U; index < line.size(); ++index) {
+        const char ch = line[index];
+        if (in_quotes) {
+            if (ch == '"') {
+                if (index + 1U < line.size() && line[index + 1U] == '"') {
+                    current.push_back('"');
+                    ++index;
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                current.push_back(ch);
+            }
+            continue;
+        }
+
+        if (ch == ',') {
+            fields.push_back(current);
+            current.clear();
+            continue;
+        }
+        if (ch == '"') {
+            in_quotes = true;
+            continue;
+        }
+        current.push_back(ch);
+    }
+
+    fields.push_back(current);
+    return fields;
+}
+
 std::string settings_json(
     const bool ignore_gtpu_teids_when_grouping_inner_flows,
     const bool ignore_vlan_and_mpls_layers_when_grouping_flows = false,
@@ -135,12 +187,12 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "--protocol-path-tree"));
         PFL_EXPECT(contains_text(result.stdout_text, "kind-overview|identity-tree|terminal-paths"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-index <path>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--out-flows-list <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--out-protocol-path-tree <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--progress <auto|on|off>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--force"));
         PFL_EXPECT(contains_text(result.stdout_text, "-h, --help"));
         PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab capture.pcap"));
-        PFL_EXPECT(!contains_text(result.stdout_text, "--out-flows-list"));
         PFL_EXPECT(!contains_text(result.stdout_text, "--format"));
         PFL_EXPECT(!contains_text(result.stdout_text, "\\--input"));
         PFL_EXPECT(!contains_text(result.stdout_text, "\\<input>"));
@@ -275,8 +327,24 @@ void expect_summary_dispatch_and_parse_rules() {
     {
         const std::vector<std::string_view> args {"capture.pcap", "--out-flows-list", "flows.csv"};
         const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_REQUIRE(parse_result.options->out_flows_list_path.has_value());
+        PFL_EXPECT(parse_result.options->out_flows_list_path->filename() == "flows.csv");
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--out-flows-list"};
+        const auto parse_result = cli::parse_summary_command_arguments(args);
         PFL_EXPECT(!parse_result.ok);
-        PFL_EXPECT(contains_text(parse_result.error_text, "not implemented"));
+        PFL_EXPECT(contains_text(parse_result.error_text, "--out-flows-list requires a path"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--out-flows-list", "a.csv", "--out-flows-list", "b.csv"};
+        const auto parse_result = cli::parse_summary_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "Duplicate --out-flows-list"));
     }
 
     {
@@ -956,6 +1024,171 @@ void expect_protocol_path_export_contracts() {
     }
 }
 
+void expect_flow_list_export_contracts() {
+    const auto capture_path = fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap");
+    const auto settings_path = write_temp_text_file(
+        "pfl_cli_summary_settings_for_flow_list.json",
+        settings_json(true)
+    );
+    const auto flow_list_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_flows.csv";
+    std::filesystem::remove(flow_list_path);
+
+    FrontendSessionAdapter default_adapter {};
+    PFL_REQUIRE(default_adapter.open_capture(capture_path).opened);
+    const auto default_overview = default_adapter.get_overview();
+
+    FrontendSessionAdapter grouped_adapter {};
+    [[maybe_unused]] const auto grouped_settings = grouped_adapter.update_settings(FrontendSettingsDto {
+        .ignore_gtpu_teids_when_grouping_inner_flows = true,
+        .show_wireshark_filter_for_selected_flow = true,
+    });
+    PFL_REQUIRE(grouped_adapter.open_capture(capture_path).opened);
+    const auto grouped_overview = grouped_adapter.get_overview();
+    PFL_EXPECT(grouped_overview.summary.flow_count < default_overview.summary.flow_count);
+
+    cli::SummaryCommandOptions options {};
+    options.input_path = capture_path;
+    options.settings_path = settings_path;
+    options.out_flows_list_path = flow_list_path;
+    const auto result = cli::execute_summary_command(options);
+    PFL_EXPECT(result.exit_code == 0);
+    PFL_EXPECT(contains_text(result.stderr_text, "Flow list written to:"));
+
+    const auto csv_lines = read_text_file_lines(flow_list_path);
+    PFL_EXPECT(csv_lines.size() == grouped_overview.summary.flow_count + 1U);
+    PFL_REQUIRE(csv_lines.size() >= 2U);
+    PFL_EXPECT(csv_lines.front() ==
+        "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+    const auto first_row = split_csv_line(csv_lines[1]);
+    PFL_REQUIRE(first_row.size() == 16U);
+    PFL_EXPECT(first_row[0] == "1");
+
+    {
+        const auto flows_csv_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_flows_parity.csv";
+        std::filesystem::remove(flows_csv_path);
+        const auto capture_path_text = capture_path.string();
+        const auto settings_path_text = settings_path.string();
+        const auto flows_csv_path_text = flows_csv_path.string();
+        const std::vector<std::string_view> flow_args {
+            "flows",
+            capture_path_text,
+            "--settings",
+            settings_path_text,
+            "--out-flows-list",
+            flows_csv_path_text,
+        };
+        const auto flows_result = cli::process_cli_invocation(flow_args);
+        PFL_EXPECT(flows_result.handled);
+        PFL_EXPECT(flows_result.exit_code == 0);
+
+        const auto flow_lines = read_text_file_lines(flows_csv_path);
+        PFL_EXPECT(flow_lines == csv_lines);
+    }
+
+    {
+        FrontendSessionAdapter raw_adapter {};
+        PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_flows.idx";
+        std::filesystem::remove(index_path);
+        PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+
+        const auto index_flow_list_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_flows_from_index.csv";
+        std::filesystem::remove(index_flow_list_path);
+
+        cli::SummaryCommandOptions index_options {};
+        index_options.input_path = index_path;
+        index_options.out_flows_list_path = index_flow_list_path;
+        const auto index_result = cli::execute_summary_command(index_options);
+        PFL_EXPECT(index_result.exit_code == 0);
+        PFL_EXPECT(contains_text(index_result.stderr_text, "Flow list written to:"));
+
+        const auto index_lines = read_text_file_lines(index_flow_list_path);
+        PFL_EXPECT(index_lines.size() == default_overview.summary.flow_count + 1U);
+    }
+
+    {
+        const auto existing_target = write_temp_text_file("pfl_cli_summary_existing_flows.csv", "old");
+        cli::SummaryCommandOptions existing_options {};
+        existing_options.input_path = capture_path;
+        existing_options.out_flows_list_path = existing_target;
+        const auto existing_result = cli::execute_summary_command(existing_options);
+        PFL_EXPECT(existing_result.exit_code == 1);
+        PFL_EXPECT(contains_text(existing_result.stderr_text, "--out-flows-list already exists"));
+
+        cli::SummaryCommandOptions force_options {};
+        force_options.input_path = capture_path;
+        force_options.out_flows_list_path = existing_target;
+        force_options.force = true;
+        const auto force_result = cli::execute_summary_command(force_options);
+        PFL_EXPECT(force_result.exit_code == 0);
+        PFL_EXPECT(contains_text(force_result.stderr_text, "Flow list written to:"));
+    }
+
+    {
+        cli::SummaryCommandOptions same_path_options {};
+        same_path_options.input_path = capture_path;
+        same_path_options.out_flows_list_path = capture_path;
+        const auto same_path_result = cli::execute_summary_command(same_path_options);
+        PFL_EXPECT(same_path_result.exit_code == 1);
+        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite the input path"));
+    }
+
+    {
+        cli::SummaryCommandOptions missing_parent_options {};
+        missing_parent_options.input_path = capture_path;
+        missing_parent_options.out_flows_list_path =
+            std::filesystem::temp_directory_path() / "pfl_cli_missing_dir" / "flows.csv";
+        const auto missing_parent_result = cli::execute_summary_command(missing_parent_options);
+        PFL_EXPECT(missing_parent_result.exit_code == 1);
+        PFL_EXPECT(contains_text(missing_parent_result.stderr_text, "parent directory does not exist"));
+    }
+}
+
+void expect_combined_side_output_preflight_contracts() {
+    const auto capture_path = fixture_path("parsing/packet_byte_views/01_ethernet_ipv4_udp.pcap");
+    const auto shared_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_duplicate_output.txt";
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_triplet.idx";
+    const auto flow_list_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_triplet.csv";
+    const auto protocol_tree_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_triplet.txt";
+    std::filesystem::remove(shared_path);
+    std::filesystem::remove(index_path);
+    std::filesystem::remove(flow_list_path);
+    std::filesystem::remove(protocol_tree_path);
+
+    {
+        cli::SummaryCommandOptions conflict_options {};
+        conflict_options.input_path = capture_path;
+        conflict_options.out_index_path = shared_path;
+        conflict_options.out_flows_list_path = shared_path;
+        const auto result = cli::execute_summary_command(conflict_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Summary side outputs must target distinct paths."));
+    }
+
+    {
+        cli::SummaryCommandOptions conflict_options {};
+        conflict_options.input_path = capture_path;
+        conflict_options.out_flows_list_path = shared_path;
+        conflict_options.out_protocol_path_tree_path = shared_path;
+        const auto result = cli::execute_summary_command(conflict_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Summary side outputs must target distinct paths."));
+    }
+
+    {
+        cli::SummaryCommandOptions all_outputs_options {};
+        all_outputs_options.input_path = capture_path;
+        all_outputs_options.out_index_path = index_path;
+        all_outputs_options.out_flows_list_path = flow_list_path;
+        all_outputs_options.out_protocol_path_tree_path = protocol_tree_path;
+        const auto result = cli::execute_summary_command(all_outputs_options);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stderr_text, "Index written to:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Flow list written to:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Protocol Path Tree written to:"));
+    }
+}
+
 void expect_preflight_fails_before_opening_input() {
     const auto existing_target = write_temp_text_file("pfl_cli_summary_preflight_existing.txt", "old");
     cli::SummaryCommandOptions options {};
@@ -983,6 +1216,8 @@ void run_cli_summary_tests() {
     expect_settings_file_contracts();
     expect_index_output_contracts();
     expect_protocol_path_export_contracts();
+    expect_flow_list_export_contracts();
+    expect_combined_side_output_preflight_contracts();
     expect_preflight_fails_before_opening_input();
 }
 

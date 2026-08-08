@@ -28,8 +28,7 @@ constexpr std::array<std::string_view, 8> kSummaryInvalidSelectorOptions {
     "--source-capture",
 };
 
-constexpr std::array<std::string_view, 3> kSummaryUnsupportedOptions {
-    "--out-flows-list",
+constexpr std::array<std::string_view, 2> kSummaryUnsupportedOptions {
     "--format",
     "--source-capture",
 };
@@ -84,6 +83,7 @@ std::string render_summary_examples() {
     out << "Examples\n";
     out << "  pcap-flow-lab capture.pcap\n";
     out << "  pcap-flow-lab summary capture.pcap --extended\n";
+    out << "  pcap-flow-lab summary capture.pcap --out-flows-list flows.csv\n";
     out << "  pcap-flow-lab summary capture.idx --protocol-path-tree --protocol-path-mode identity-tree\n";
     out << "  pcap-flow-lab summary capture.pcap --out-index capture.pflidx\n";
     out << "  pcap-flow-lab summary capture.idx --out-protocol-path-tree protocol-path.txt\n";
@@ -439,12 +439,18 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
 }
 
 OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& options) {
-    std::array<CliOutputTarget, 2> outputs {};
+    std::array<CliOutputTarget, 3> outputs {};
     std::size_t output_count = 0U;
     if (options.out_index_path.has_value()) {
         outputs[output_count++] = CliOutputTarget {
             .label = "--out-index",
             .path = *options.out_index_path,
+        };
+    }
+    if (options.out_flows_list_path.has_value()) {
+        outputs[output_count++] = CliOutputTarget {
+            .label = "--out-flows-list",
+            .path = *options.out_flows_list_path,
         };
     }
     if (options.out_protocol_path_tree_path.has_value()) {
@@ -458,7 +464,7 @@ OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& option
         options.input_path,
         std::span<const CliOutputTarget>(outputs.data(), output_count),
         options.force,
-        std::string_view {"--out-index and --out-protocol-path-tree must not target the same path."}
+        std::string_view {"Summary side outputs must target distinct paths."}
     );
 
     return OutputPreflightResult {
@@ -591,6 +597,21 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
         stderr_text += "Index written to: " + save_result.output_path + '\n';
     }
 
+    if (options.out_flows_list_path.has_value()) {
+        const auto export_result = adapter.export_all_flows_info_csv(*options.out_flows_list_path);
+        if (!export_result.exported) {
+            stderr_text += export_result.error_text.empty()
+                ? "Failed to export flow list.\n"
+                : export_result.error_text + '\n';
+            return {
+                .exit_code = 1,
+                .stdout_text = stdout_builder.str(),
+                .stderr_text = std::move(stderr_text),
+            };
+        }
+        stderr_text += "Flow list written to: " + export_result.output_path + '\n';
+    }
+
     if (options.out_protocol_path_tree_path.has_value()) {
         const auto export_result = adapter.export_protocol_path_tree(
             options.protocol_path_mode,
@@ -656,6 +677,7 @@ std::string render_summary_command_help() {
     out << "  --protocol-path-mode <kind-overview|identity-tree|terminal-paths>\n\n";
     out << "Side outputs\n";
     out << "  --out-index <path>\n";
+    out << "  --out-flows-list <path>\n";
     out << "  --out-protocol-path-tree <path>\n\n";
     out << "Runtime\n";
     out << "  --progress <auto|on|off>\n";
@@ -712,6 +734,7 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
     bool explicit_input_seen = false;
     bool explicit_settings_seen = false;
     bool out_index_seen = false;
+    bool out_flows_list_seen = false;
     bool out_protocol_path_tree_seen = false;
     bool protocol_path_mode_seen = false;
     bool progress_seen = false;
@@ -798,6 +821,26 @@ SummaryCommandParseResult parse_summary_command_arguments(const std::span<const 
             }
             out_index_seen = true;
             options.out_index_path = std::filesystem::path {std::string {args[++index]}};
+            continue;
+        }
+
+        if (token == "--out-flows-list") {
+            if (out_flows_list_seen) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "Duplicate --out-flows-list is invalid.",
+                };
+            }
+            if (index + 1U >= args.size()) {
+                return {
+                    .ok = false,
+                    .options = std::nullopt,
+                    .error_text = "--out-flows-list requires a path.",
+                };
+            }
+            out_flows_list_seen = true;
+            options.out_flows_list_path = std::filesystem::path {std::string {args[++index]}};
             continue;
         }
 

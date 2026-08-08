@@ -36,6 +36,7 @@ struct SummaryCommandOptions {
     bool protocol_path_tree {false};
     ProtocolPathStatisticsMode protocol_path_mode {ProtocolPathStatisticsMode::kind_overview};
     std::optional<std::filesystem::path> out_index_path {};
+    std::optional<std::filesystem::path> out_flows_list_path {};
     std::optional<std::filesystem::path> out_protocol_path_tree_path {};
     SummaryCommandProgressMode progress_mode {SummaryCommandProgressMode::auto_mode};
     bool force {false};

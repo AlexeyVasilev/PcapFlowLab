@@ -17,13 +17,13 @@ The current production CLI now implements:
 - `--extended`
 - Protocol Path Tree stdout preview and mode selection
 - `--out-index`
+- `--out-flows-list`
 - `--out-protocol-path-tree`
 - `--progress`
 - `--force`
 
 The following remain pending in later passes:
 
-- `--out-flows-list`
 - structured `--format` output
 
 The current production CLI also supports:
@@ -99,6 +99,7 @@ Side outputs:
 
 ```text
 --out-index <path>
+--out-flows-list <path>
 --out-protocol-path-tree <path>
 ```
 
