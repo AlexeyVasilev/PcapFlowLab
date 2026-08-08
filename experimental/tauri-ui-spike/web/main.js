@@ -381,6 +381,7 @@
     analysisPacketSizeHistogramSection: document.getElementById("analysisPacketSizeHistogramSection"),
     analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
     analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
+    analysisPacketSizeCapturedSummary: document.getElementById("analysisPacketSizeCapturedSummary"),
     analysisPacketSizeHistogramModeAll: document.getElementById("analysisPacketSizeHistogramModeAll"),
     analysisPacketSizeHistogramModeAToB: document.getElementById("analysisPacketSizeHistogramModeAToB"),
     analysisPacketSizeHistogramModeBToA: document.getElementById("analysisPacketSizeHistogramModeBToA"),
@@ -1224,6 +1225,7 @@
     clearHtml(elements.analysisTimingSize);
     clearHtml(elements.analysisBurstIdleSummary);
     clearHtml(elements.analysisPacketSizeHistogramRows);
+    clearHtml(elements.analysisPacketSizeCapturedSummary);
     clearHtml(elements.analysisInterArrivalHistogramRows);
     clearText(elements.packetDetailsBytesText);
     clearText(elements.packetDetailsBytesStateText);
@@ -5242,6 +5244,7 @@
     elements.analysisRateGraphLegend.style.display = "none";
     elements.analysisPacketSizeHistogramRows.innerHTML = "";
     elements.analysisPacketSizeHistogramMax.textContent = "";
+    elements.analysisPacketSizeCapturedSummary.innerHTML = "";
     elements.analysisInterArrivalHistogramRows.innerHTML = "";
     elements.analysisInterArrivalHistogramMax.textContent = "";
     elements.analysisSequencePreviewBody.innerHTML = "";
@@ -5422,6 +5425,10 @@
       state.analysisPacketSizeHistogramMode,
       "is-packet-size"
     );
+    renderSummaryRows(elements.analysisPacketSizeCapturedSummary, [[
+      "Max captured packet size",
+      analysis.max_captured_packet_size_text || "-",
+    ]]);
 
     renderAnalysisHistogramModeButtons("analysisInterArrivalHistogram", state.analysisInterArrivalHistogramMode);
     renderAnalysisHistogram(

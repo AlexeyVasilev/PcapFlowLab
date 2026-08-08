@@ -3180,6 +3180,7 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         result.min_packet_size_b_to_a_text = format_size_value(analysis->min_packet_size_b_to_a_bytes);
     }
     result.max_packet_size_text = format_size_value(analysis->max_packet_size_bytes);
+    result.max_captured_packet_size_text = format_size_value(analysis->max_captured_packet_size_bytes);
     if (analysis->packets_a_to_b > 0U) {
         result.max_packet_size_a_to_b_text = format_size_value(analysis->max_packet_size_a_to_b_bytes);
     }

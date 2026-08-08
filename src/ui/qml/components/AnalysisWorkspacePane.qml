@@ -45,6 +45,7 @@ Item {
     property string analysisMinPacketSizeAToBText: ""
     property string analysisMinPacketSizeBToAText: ""
     property string analysisMaxPacketSizeText: ""
+    property string analysisMaxCapturedPacketSizeText: ""
     property string analysisMaxPacketSizeAToBText: ""
     property string analysisMaxPacketSizeBToAText: ""
     property string analysisPacketRatioText: ""
@@ -317,6 +318,7 @@ Item {
             minPacketSizeAToBText: root.analysisMinPacketSizeAToBText
             minPacketSizeBToAText: root.analysisMinPacketSizeBToAText
             maxPacketSizeText: root.analysisMaxPacketSizeText
+            maxCapturedPacketSizeText: root.analysisMaxCapturedPacketSizeText
             maxPacketSizeAToBText: root.analysisMaxPacketSizeAToBText
             maxPacketSizeBToAText: root.analysisMaxPacketSizeBToAText
             packetRatioText: root.analysisPacketRatioText

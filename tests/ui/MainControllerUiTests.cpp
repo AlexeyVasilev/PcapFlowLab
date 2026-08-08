@@ -1112,6 +1112,7 @@ int main(int argc, char* argv[]) {
         });
         pane.object->setProperty("endpointSummaryText", QString::fromUtf8("10.0.0.1:40000 \xE2\x86\x92 10.0.0.2:80 TCP"));
         pane.object->setProperty("protocolHint", QStringLiteral("HTTP"));
+        pane.object->setProperty("maxCapturedPacketSizeText", QStringLiteral("200 B"));
         pane.object->setProperty("rateGraphAvailable", true);
         pane.object->setProperty("rateGraphStatusText", QStringLiteral(""));
         pane.object->setProperty("rateGraphWindowText", QStringLiteral("Window: 10 ms (auto)"));
@@ -1153,6 +1154,11 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(pane.object.get(), "analysisProtocolSummaryLabel")->property("text").toString() == QStringLiteral("Protocol: TCP (HTTP)"));
         UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMaxLabel") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 3"));
+        UI_EXPECT(named_object(pane.object.get(), "analysisMaxCapturedPacketSizeLabel") != nullptr);
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisMaxCapturedPacketSizeLabel")->property("text").toString() ==
+            QStringLiteral("200 B")
+        );
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 4"));
         UI_EXPECT(pane.object->property("packetSizeHistogramMode").toInt() == 0);
@@ -1456,6 +1462,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisMinPacketSizeAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMinPacketSizeBToAText().isEmpty());
     UI_EXPECT(controller.analysisMaxPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
+    UI_EXPECT(controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMaxPacketSizeAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMaxPacketSizeBToAText().isEmpty());
     UI_EXPECT(controller.analysisPacketRatioText() == QStringLiteral("1 : 0"));
@@ -1556,6 +1563,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisMinPacketSizeAToBText().isEmpty());
     UI_EXPECT(controller.analysisMinPacketSizeBToAText().isEmpty());
     UI_EXPECT(controller.analysisMaxPacketSizeText().isEmpty());
+    UI_EXPECT(controller.analysisMaxCapturedPacketSizeText().isEmpty());
     UI_EXPECT(controller.analysisMaxPacketSizeAToBText().isEmpty());
     UI_EXPECT(controller.analysisMaxPacketSizeBToAText().isEmpty());
     UI_EXPECT(controller.analysisPacketRatioText().isEmpty());
@@ -1723,6 +1731,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(formatting_controller.analysisAveragePacketSizeText() == QStringLiteral("768 B"));
     UI_EXPECT(formatting_controller.analysisMinPacketSizeText() == QStringLiteral("512 B"));
     UI_EXPECT(formatting_controller.analysisMaxPacketSizeText() == QStringLiteral("1 KB"));
+    UI_EXPECT(formatting_controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("1 KB"));
     UI_EXPECT(formatting_controller.analysisBytesAToBText() == QStringLiteral("1.5 KB"));
     UI_EXPECT(formatting_controller.analysisBytesBToAText() == QStringLiteral("0 B"));
 
@@ -1769,6 +1778,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(metrics_controller.analysisMinPacketSizeAToBText() == QStringLiteral("100 B"));
     UI_EXPECT(metrics_controller.analysisMinPacketSizeBToAText() == QStringLiteral("200 B"));
     UI_EXPECT(metrics_controller.analysisMaxPacketSizeText() == QStringLiteral("200 B"));
+    UI_EXPECT(metrics_controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("200 B"));
     UI_EXPECT(metrics_controller.analysisMaxPacketSizeAToBText() == QStringLiteral("100 B"));
     UI_EXPECT(metrics_controller.analysisMaxPacketSizeBToAText() == QStringLiteral("200 B"));
 

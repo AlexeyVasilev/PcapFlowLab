@@ -597,6 +597,7 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string min_packet_size_a_to_b_text {};
     std::string min_packet_size_b_to_a_text {};
     std::string max_packet_size_text {};
+    std::string max_captured_packet_size_text {};
     std::string max_packet_size_a_to_b_text {};
     std::string max_packet_size_b_to_a_text {};
     std::string tcp_syn_packets_text {};

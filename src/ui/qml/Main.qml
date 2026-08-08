@@ -1180,6 +1180,7 @@ ApplicationWindow {
                 analysisMinPacketSizeAToBText: mainController.analysisMinPacketSizeAToBText
                 analysisMinPacketSizeBToAText: mainController.analysisMinPacketSizeBToAText
                 analysisMaxPacketSizeText: mainController.analysisMaxPacketSizeText
+                analysisMaxCapturedPacketSizeText: mainController.analysisMaxCapturedPacketSizeText
                 analysisMaxPacketSizeAToBText: mainController.analysisMaxPacketSizeAToBText
                 analysisMaxPacketSizeBToAText: mainController.analysisMaxPacketSizeBToAText
                 analysisPacketRatioText: mainController.analysisPacketRatioText

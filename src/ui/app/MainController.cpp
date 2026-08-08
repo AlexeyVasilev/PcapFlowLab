@@ -2460,6 +2460,12 @@ QString MainController::analysisMaxPacketSizeText() const {
         : QString {};
 }
 
+QString MainController::analysisMaxCapturedPacketSizeText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->max_captured_packet_size_bytes)
+        : QString {};
+}
+
 QString MainController::analysisMaxPacketSizeAToBText() const {
     return current_flow_analysis_.has_value() && current_flow_analysis_->packets_a_to_b > 0U
         ? format_size_value(current_flow_analysis_->max_packet_size_a_to_b_bytes)

@@ -1233,6 +1233,7 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"min_packet_size_a_to_b_text\":" << json_string(analysis.min_packet_size_a_to_b_text) << ','
         << "\"min_packet_size_b_to_a_text\":" << json_string(analysis.min_packet_size_b_to_a_text) << ','
         << "\"max_packet_size_text\":" << json_string(analysis.max_packet_size_text) << ','
+        << "\"max_captured_packet_size_text\":" << json_string(analysis.max_captured_packet_size_text) << ','
         << "\"max_packet_size_a_to_b_text\":" << json_string(analysis.max_packet_size_a_to_b_text) << ','
         << "\"max_packet_size_b_to_a_text\":" << json_string(analysis.max_packet_size_b_to_a_text) << ','
         << "\"tcp_syn_packets_text\":" << json_string(analysis.tcp_syn_packets_text) << ','

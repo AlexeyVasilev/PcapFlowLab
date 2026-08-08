@@ -138,6 +138,7 @@ private:
     Q_PROPERTY(QString analysisMinPacketSizeAToBText READ analysisMinPacketSizeAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMinPacketSizeBToAText READ analysisMinPacketSizeBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeText READ analysisMaxPacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMaxCapturedPacketSizeText READ analysisMaxCapturedPacketSizeText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeAToBText READ analysisMaxPacketSizeAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeBToAText READ analysisMaxPacketSizeBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketRatioText READ analysisPacketRatioText NOTIFY analysisStateChanged)
@@ -397,6 +398,7 @@ public:
     [[nodiscard]] QString analysisMinPacketSizeAToBText() const;
     [[nodiscard]] QString analysisMinPacketSizeBToAText() const;
     [[nodiscard]] QString analysisMaxPacketSizeText() const;
+    [[nodiscard]] QString analysisMaxCapturedPacketSizeText() const;
     [[nodiscard]] QString analysisMaxPacketSizeAToBText() const;
     [[nodiscard]] QString analysisMaxPacketSizeBToAText() const;
     [[nodiscard]] QString analysisPacketRatioText() const;

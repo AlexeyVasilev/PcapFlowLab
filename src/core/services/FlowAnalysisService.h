@@ -74,6 +74,7 @@ struct FlowAnalysisResult {
     std::string data_direction_text {};
     std::uint32_t min_packet_size_bytes {0};
     std::uint32_t max_packet_size_bytes {0};
+    std::uint32_t max_captured_packet_size_bytes {0};
     std::uint32_t min_packet_size_a_to_b_bytes {0};
     std::uint32_t max_packet_size_a_to_b_bytes {0};
     std::uint32_t min_packet_size_b_to_a_bytes {0};
