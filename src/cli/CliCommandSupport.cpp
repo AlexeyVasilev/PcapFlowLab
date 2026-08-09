@@ -158,12 +158,12 @@ std::optional<std::size_t> parse_cli_flow_number(const std::string_view value) n
     return *flow_number - 1U;
 }
 
-std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(const std::string_view value) noexcept {
+std::optional<std::vector<CliFlowNumberRange>> parse_cli_flow_numbers(const std::string_view value) noexcept {
     if (value.empty()) {
         return std::nullopt;
     }
 
-    std::vector<std::size_t> flow_indices {};
+    std::vector<CliFlowNumberRange> ranges {};
     std::size_t start = 0U;
     while (start < value.size()) {
         const auto comma = value.find(',', start);
@@ -174,11 +174,14 @@ std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(const std::string
 
         const auto dash = token.find('-');
         if (dash == std::string_view::npos) {
-            const auto flow_index = parse_cli_flow_number(token);
-            if (!flow_index.has_value()) {
+            const auto flow_number = parse_cli_positive_size(token);
+            if (!flow_number.has_value()) {
                 return std::nullopt;
             }
-            flow_indices.push_back(*flow_index);
+            ranges.push_back(CliFlowNumberRange {
+                .first = *flow_number,
+                .last = *flow_number,
+            });
         } else {
             if (token.find('-', dash + 1U) != std::string_view::npos) {
                 return std::nullopt;
@@ -192,12 +195,10 @@ std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(const std::string
                 return std::nullopt;
             }
 
-            for (std::size_t flow_number = *lower; flow_number <= *upper; ++flow_number) {
-                flow_indices.push_back(flow_number - 1U);
-                if (flow_number == std::numeric_limits<std::size_t>::max()) {
-                    break;
-                }
-            }
+            ranges.push_back(CliFlowNumberRange {
+                .first = *lower,
+                .last = *upper,
+            });
         }
 
         if (comma == std::string_view::npos) {
@@ -206,9 +207,49 @@ std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(const std::string
         start = comma + 1U;
     }
 
+    return ranges;
+}
+
+CliFlowNumberResolutionResult resolve_cli_flow_numbers(
+    const std::span<const CliFlowNumberRange> ranges,
+    const std::size_t flow_count
+) {
+    CliFlowNumberResolutionResult result {
+        .ok = false,
+        .flow_indices = {},
+        .invalid_flow_index = std::nullopt,
+    };
+
+    std::vector<std::size_t> flow_indices {};
+    for (const auto& range : ranges) {
+        if (range.first == 0U || range.last == 0U || range.last < range.first) {
+            result.invalid_flow_index = 0U;
+            return result;
+        }
+
+        if (range.first > flow_count) {
+            result.invalid_flow_index = range.first - 1U;
+            return result;
+        }
+
+        if (range.last > flow_count) {
+            result.invalid_flow_index = flow_count;
+            return result;
+        }
+
+        for (std::size_t flow_number = range.first; flow_number <= range.last; ++flow_number) {
+            flow_indices.push_back(flow_number - 1U);
+            if (flow_number == std::numeric_limits<std::size_t>::max()) {
+                break;
+            }
+        }
+    }
+
     std::sort(flow_indices.begin(), flow_indices.end());
     flow_indices.erase(std::unique(flow_indices.begin(), flow_indices.end()), flow_indices.end());
-    return flow_indices;
+    result.ok = true;
+    result.flow_indices = std::move(flow_indices);
+    return result;
 }
 
 std::optional<CliProgressMode> parse_cli_progress_mode(const std::string_view value) noexcept {

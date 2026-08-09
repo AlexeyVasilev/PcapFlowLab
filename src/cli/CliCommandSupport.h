@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -37,6 +38,19 @@ struct CliOutputPreflightResult {
     std::string error_text {};
 };
 
+struct CliFlowNumberRange {
+    std::size_t first {0U};
+    std::size_t last {0U};
+
+    auto operator<=>(const CliFlowNumberRange&) const = default;
+};
+
+struct CliFlowNumberResolutionResult {
+    bool ok {false};
+    std::vector<std::size_t> flow_indices {};
+    std::optional<std::size_t> invalid_flow_index {};
+};
+
 struct CliInvocationResult {
     bool handled {false};
     int exit_code {1};
@@ -51,7 +65,11 @@ struct CliInvocationResult {
 [[nodiscard]] bool contains_help_option(std::span<const std::string_view> args) noexcept;
 [[nodiscard]] std::optional<std::size_t> parse_cli_positive_size(std::string_view value) noexcept;
 [[nodiscard]] std::optional<std::size_t> parse_cli_flow_number(std::string_view value) noexcept;
-[[nodiscard]] std::optional<std::vector<std::size_t>> parse_cli_flow_numbers(std::string_view value) noexcept;
+[[nodiscard]] std::optional<std::vector<CliFlowNumberRange>> parse_cli_flow_numbers(std::string_view value) noexcept;
+[[nodiscard]] CliFlowNumberResolutionResult resolve_cli_flow_numbers(
+    std::span<const CliFlowNumberRange> ranges,
+    std::size_t flow_count
+);
 [[nodiscard]] std::optional<CliProgressMode> parse_cli_progress_mode(std::string_view value) noexcept;
 [[nodiscard]] bool stderr_supports_interactive_updates() noexcept;
 [[nodiscard]] bool should_enable_cli_progress(

@@ -1360,7 +1360,9 @@
   }
 
   function canAttachSourceCapture() {
-    return state.openState === "opened" && !currentSourceAvailability().byte_backed_inspection_available;
+    return state.openState === "opened"
+      && !state.protocolPathExportInProgress
+      && !currentSourceAvailability().byte_backed_inspection_available;
   }
 
   function canSaveIndex() {
@@ -1368,6 +1370,7 @@
     return state.openState === "opened"
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1384,6 +1387,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1398,6 +1402,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1412,6 +1417,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1425,6 +1431,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1450,6 +1457,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -2520,6 +2528,7 @@
       && Array.isArray(state.analysis?.sequence_preview_rows)
       && state.analysis.sequence_preview_rows.length > 0
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.analysisSequenceExportInProgress;
   }
 
@@ -2655,6 +2664,7 @@
             || state.attachSourceInProgress
             || state.saveIndexInProgress
             || state.exportAllFlowsInfoCsvInProgress
+            || state.protocolPathExportInProgress
             || state.exportCurrentFlowInProgress
             || state.exportSelectedFlowsInProgress
             || state.exportUnselectedFlowsInProgress

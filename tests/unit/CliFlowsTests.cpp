@@ -400,9 +400,9 @@ void expect_flows_help_and_parser_behavior() {
         const auto parse_result = cli::parse_flows_command_arguments(args);
         PFL_REQUIRE(parse_result.ok);
         PFL_REQUIRE(parse_result.options.has_value());
-        PFL_REQUIRE(parse_result.options->selected_flow_indices.has_value());
-        const auto expected = std::vector<std::size_t> {41U};
-        PFL_EXPECT(*parse_result.options->selected_flow_indices == expected);
+        PFL_REQUIRE(parse_result.options->selected_flow_number_ranges.has_value());
+        const auto expected = std::vector<cli::CliFlowNumberRange> {{.first = 42U, .last = 42U}};
+        PFL_EXPECT(*parse_result.options->selected_flow_number_ranges == expected);
     }
 
     {
@@ -417,9 +417,14 @@ void expect_flows_help_and_parser_behavior() {
         const auto parse_result = cli::parse_flows_command_arguments(args);
         PFL_REQUIRE(parse_result.ok);
         PFL_REQUIRE(parse_result.options.has_value());
-        PFL_REQUIRE(parse_result.options->selected_flow_indices.has_value());
-        const auto expected = std::vector<std::size_t> {0U, 1U, 2U};
-        PFL_EXPECT(*parse_result.options->selected_flow_indices == expected);
+        PFL_REQUIRE(parse_result.options->selected_flow_number_ranges.has_value());
+        const auto expected = std::vector<cli::CliFlowNumberRange> {
+            {.first = 1U, .last = 1U},
+            {.first = 1U, .last = 1U},
+            {.first = 2U, .last = 3U},
+            {.first = 2U, .last = 2U},
+        };
+        PFL_EXPECT(*parse_result.options->selected_flow_number_ranges == expected);
     }
 
     {
@@ -576,18 +581,57 @@ void expect_shared_cli_flow_selector_helpers() {
     {
         const auto single = cli::parse_cli_flow_numbers("42");
         PFL_REQUIRE(single.has_value());
-        const auto expected = std::vector<std::size_t> {41U};
+        const auto expected = std::vector<cli::CliFlowNumberRange> {{.first = 42U, .last = 42U}};
         PFL_EXPECT(*single == expected);
 
         const auto ranges = cli::parse_cli_flow_numbers("1-3,5,7-8");
         PFL_REQUIRE(ranges.has_value());
-        const auto expected_ranges = std::vector<std::size_t> {0U, 1U, 2U, 4U, 6U, 7U};
+        const auto expected_ranges = std::vector<cli::CliFlowNumberRange> {
+            {.first = 1U, .last = 3U},
+            {.first = 5U, .last = 5U},
+            {.first = 7U, .last = 8U},
+        };
         PFL_EXPECT(*ranges == expected_ranges);
 
         const auto deduped = cli::parse_cli_flow_numbers("1,1,2-3,2");
         PFL_REQUIRE(deduped.has_value());
-        const auto expected_deduped = std::vector<std::size_t> {0U, 1U, 2U};
+        const auto expected_deduped = std::vector<cli::CliFlowNumberRange> {
+            {.first = 1U, .last = 1U},
+            {.first = 1U, .last = 1U},
+            {.first = 2U, .last = 3U},
+            {.first = 2U, .last = 2U},
+        };
         PFL_EXPECT(*deduped == expected_deduped);
+
+        const auto resolved_single = cli::resolve_cli_flow_numbers(
+            std::span<const cli::CliFlowNumberRange>(single->data(), single->size()),
+            100U
+        );
+        PFL_EXPECT(resolved_single.ok);
+        PFL_EXPECT((resolved_single.flow_indices == std::vector<std::size_t> {41U}));
+
+        const auto resolved_ranges = cli::resolve_cli_flow_numbers(
+            std::span<const cli::CliFlowNumberRange>(ranges->data(), ranges->size()),
+            8U
+        );
+        PFL_EXPECT(resolved_ranges.ok);
+        PFL_EXPECT((resolved_ranges.flow_indices == std::vector<std::size_t> {0U, 1U, 2U, 4U, 6U, 7U}));
+
+        const auto resolved_deduped = cli::resolve_cli_flow_numbers(
+            std::span<const cli::CliFlowNumberRange>(deduped->data(), deduped->size()),
+            4U
+        );
+        PFL_EXPECT(resolved_deduped.ok);
+        PFL_EXPECT((resolved_deduped.flow_indices == std::vector<std::size_t> {0U, 1U, 2U}));
+
+        const auto huge = cli::parse_cli_flow_numbers("1-1000000000000");
+        PFL_REQUIRE(huge.has_value());
+        const auto huge_resolved = cli::resolve_cli_flow_numbers(
+            std::span<const cli::CliFlowNumberRange>(huge->data(), huge->size()),
+            4U
+        );
+        PFL_EXPECT(!huge_resolved.ok);
+        PFL_EXPECT(huge_resolved.invalid_flow_index == std::optional<std::size_t> {4U});
 
         PFL_EXPECT(!cli::parse_cli_flow_numbers("0").has_value());
         PFL_EXPECT(!cli::parse_cli_flow_numbers("-1").has_value());
@@ -607,6 +651,15 @@ void expect_flows_runtime_behavior() {
     PFL_REQUIRE(baseline_query.status == session_detail::FlowQueryStatus::ok);
     PFL_REQUIRE(baseline_query.ordered_flow_indices.size() == 4U);
     PFL_EXPECT(baseline_query.result_count_before_limit == 4U);
+
+    {
+        const std::vector<std::string> args {"flows", capture_path.string(), "--flow-numbers", "1-1000000000000"};
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "outside the available canonical flow range"));
+    }
 
     {
         const auto canonical = invoke_cli({

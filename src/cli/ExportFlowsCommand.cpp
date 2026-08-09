@@ -289,7 +289,6 @@ FrontendSmartExportOptions build_unrecognized_export_options(const ExportFlowsCo
 session_detail::FlowQuery build_flow_query(const ExportFlowsCommandOptions& options) {
     session_detail::FlowQuery query {};
     if (!options.all_flows) {
-        query.selected_flow_indices = options.selected_flow_indices;
         query.text_filter = options.text_filter;
     }
     query.limit = options.limit;
@@ -513,7 +512,38 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
         };
     }
 
-    const auto query_result = adapter.query_flows(build_flow_query(options));
+    auto query = build_flow_query(options);
+    if (options.selected_flow_number_ranges.has_value()) {
+        const auto flow_count_result = adapter.query_flows(session_detail::FlowQuery {});
+        if (flow_count_result.status != session_detail::FlowQueryStatus::ok) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Failed to determine the canonical flow count.\n",
+            };
+        }
+
+        const auto resolved = resolve_cli_flow_numbers(
+            std::span<const CliFlowNumberRange>(
+                options.selected_flow_number_ranges->data(),
+                options.selected_flow_number_ranges->size()
+            ),
+            flow_count_result.result_count_before_limit
+        );
+        if (!resolved.ok) {
+            const auto canonical_number = resolved.invalid_flow_index.has_value()
+                ? session_detail::format_statistics_count_value(*resolved.invalid_flow_index + 1U)
+                : std::string {"unknown"};
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Requested flow number is outside the available canonical flow range: " + canonical_number + '\n',
+            };
+        }
+        query.selected_flow_indices = std::move(resolved.flow_indices);
+    }
+
+    const auto query_result = adapter.query_flows(query);
     if (query_result.status == session_detail::FlowQueryStatus::invalid_limit) {
         return {
             .exit_code = 1,
@@ -873,7 +903,10 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
                 return {.ok = false, .options = std::nullopt, .error_text = "Invalid --flow-number value. Expected a positive one-based flow number."};
             }
             flow_number_seen = true;
-            options.selected_flow_indices = std::vector<std::size_t> {*flow_index};
+            options.selected_flow_number_ranges = std::vector<CliFlowNumberRange> {{
+                .first = *flow_index + 1U,
+                .last = *flow_index + 1U,
+            }};
             continue;
         }
 
@@ -898,7 +931,7 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
                 return {.ok = false, .options = std::nullopt, .error_text = "Invalid --flow-numbers value. Expected inclusive positive one-based ranges such as 1-10,24,31-35."};
             }
             flow_numbers_seen = true;
-            options.selected_flow_indices = *parsed;
+            options.selected_flow_number_ranges = *parsed;
             continue;
         }
 
@@ -1155,7 +1188,7 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
     const bool has_selector =
         options.unrecognized_packets ||
         options.all_flows ||
-        options.selected_flow_indices.has_value() ||
+        options.selected_flow_number_ranges.has_value() ||
         !options.text_filter.empty();
     if (!has_selector) {
         return {.ok = false, .options = std::nullopt, .error_text = "export-flows requires at least one selector: --unrecognized-packets, --flow-number, --flow-numbers, --filter, or --all-flows."};

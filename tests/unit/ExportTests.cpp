@@ -387,6 +387,32 @@ void run_export_tests() {
         PFL_EXPECT(exported_packets[3].ts_usec == 400);
     }
 
+    {
+        const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 1, 1), ipv4(192, 168, 1, 2), 22345, 443);
+        const auto reverse_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 1, 2), ipv4(192, 168, 1, 1), 443, 22345);
+        const auto source_path = write_temp_pcap(
+            "pfl_export_direct_initial_cancel_source.pcap",
+            make_classic_pcap({{100, forward_packet}, {200, reverse_packet}})
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_export_direct_initial_cancel_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+
+        std::atomic_bool cancel_requested {true};
+        const SmartSingleFileExportOptions options {
+            .cancel_requested = [&]() {
+                return cancel_requested.load();
+            },
+        };
+
+        PFL_EXPECT(!session.export_flows_to_pcap({0U}, output_path, options));
+        if (std::filesystem::exists(output_path)) {
+            PFL_EXPECT(read_all_packets(output_path).empty());
+        }
+    }
+
 
     {
         const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(

@@ -371,9 +371,9 @@ void expect_parser_and_help_behavior() {
         const auto parse_result = cli::parse_export_flows_command_arguments(args);
         PFL_REQUIRE(parse_result.ok);
         PFL_REQUIRE(parse_result.options.has_value());
-        PFL_REQUIRE(parse_result.options->selected_flow_indices.has_value());
-        const std::vector<std::size_t> expected {41U};
-        PFL_EXPECT(*parse_result.options->selected_flow_indices == expected);
+        PFL_REQUIRE(parse_result.options->selected_flow_number_ranges.has_value());
+        const std::vector<cli::CliFlowNumberRange> expected {{.first = 42U, .last = 42U}};
+        PFL_EXPECT(*parse_result.options->selected_flow_number_ranges == expected);
     }
 
     {
@@ -470,9 +470,9 @@ void expect_parser_and_help_behavior() {
         PFL_REQUIRE(parse_result.ok);
         PFL_REQUIRE(parse_result.options.has_value());
         PFL_EXPECT(parse_result.options->text_filter == "TLS");
-        PFL_REQUIRE(parse_result.options->selected_flow_indices.has_value());
-        const std::vector<std::size_t> expected {1U};
-        PFL_EXPECT(*parse_result.options->selected_flow_indices == expected);
+        PFL_REQUIRE(parse_result.options->selected_flow_number_ranges.has_value());
+        const std::vector<cli::CliFlowNumberRange> expected {{.first = 2U, .last = 2U}};
+        PFL_EXPECT(*parse_result.options->selected_flow_number_ranges == expected);
     }
 
     {
@@ -731,6 +731,23 @@ void expect_runtime_direct_and_smart_export_behavior() {
         PFL_EXPECT(exported_packets[0].ts_usec == 100U);
         PFL_EXPECT(exported_packets[1].ts_usec == 200U);
         PFL_EXPECT(exported_packets[7].ts_usec == 800U);
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_huge_range_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto result = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--flow-numbers",
+            "1-1000000000000",
+            "--out",
+            output_path.string(),
+        });
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "outside the available canonical flow range"));
+        PFL_EXPECT(!std::filesystem::exists(output_path));
     }
 
     {

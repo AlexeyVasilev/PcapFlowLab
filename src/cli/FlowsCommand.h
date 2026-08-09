@@ -16,7 +16,7 @@ namespace pfl::cli {
 struct FlowsCommandOptions {
     std::filesystem::path input_path {};
     std::optional<std::filesystem::path> settings_path {};
-    std::optional<std::vector<std::size_t>> selected_flow_indices {};
+    std::optional<std::vector<CliFlowNumberRange>> selected_flow_number_ranges {};
     std::string text_filter {};
     std::optional<session_detail::FlowQuerySortSpec> sort {};
     std::optional<std::size_t> limit {};

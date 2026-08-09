@@ -21,7 +21,7 @@ struct ExportFlowsCommandOptions {
     bool unrecognized_packets {false};
     std::optional<std::size_t> packet_limit {};
     bool all_flows {false};
-    std::optional<std::vector<std::size_t>> selected_flow_indices {};
+    std::optional<std::vector<CliFlowNumberRange>> selected_flow_number_ranges {};
     std::string text_filter {};
     std::optional<std::size_t> limit {};
     SmartFlowExportBaseMode base_mode {SmartFlowExportBaseMode::all_packets};

@@ -723,6 +723,10 @@ bool FlowExportService::export_packets_to_pcap(const std::filesystem::path& outp
             .total_selected_packets = total_packets_to_scan,
         });
     }
+    if (options.cancel_requested && options.cancel_requested()) {
+        writer.close();
+        return false;
+    }
 
     std::uint64_t exported_packets_written = 0U;
     for (std::size_t index = 0U; index < packets.size(); ++index) {
