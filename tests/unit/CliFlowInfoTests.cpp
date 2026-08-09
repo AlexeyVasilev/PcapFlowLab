@@ -221,6 +221,25 @@ void expect_flow_info_help_and_parser_behavior() {
 
 void expect_shared_flow_info_model_and_cli_output() {
     const auto capture_path = build_cli_flow_info_capture_path();
+    const auto request_one = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 1, 0, 10),
+        ipv4(10, 1, 0, 20),
+        41000,
+        80,
+        make_http_request_payload(),
+        0x18
+    );
+    const auto response_one = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 1, 0, 20),
+        ipv4(10, 1, 0, 10),
+        80,
+        41000,
+        make_http_response_payload(),
+        0x18
+    );
+    const auto expected_max_captured_packet_size_text = session_detail::format_statistics_size_value(
+        std::max<std::size_t>(request_one.size(), response_one.size())
+    );
 
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
@@ -243,7 +262,7 @@ void expect_shared_flow_info_model_and_cli_output() {
     PFL_EXPECT(info.packets_b_to_a == 1U);
     PFL_EXPECT(info.captured_bytes < info.total_bytes);
     PFL_EXPECT(!info.protocol_path_text.empty());
-    PFL_EXPECT(!info.max_captured_packet_size_text.empty());
+    PFL_EXPECT(info.max_captured_packet_size_text == expected_max_captured_packet_size_text);
     PFL_EXPECT(!info.packet_direction_text.empty());
     PFL_EXPECT(!info.data_direction_text.empty());
     PFL_EXPECT(!info.packet_size_histogram_rows.empty());
@@ -271,7 +290,10 @@ void expect_shared_flow_info_model_and_cli_output() {
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoint A: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoint B: "));
         PFL_EXPECT(contains_text(result.stdout_text, "Protocol Path: "));
-        PFL_EXPECT(contains_text(result.stdout_text, "Max Captured Packet Size: "));
+        PFL_EXPECT(contains_text(
+            result.stdout_text,
+            "Max Captured Packet Size: " + expected_max_captured_packet_size_text
+        ));
         PFL_EXPECT(contains_text(result.stdout_text, "First Packet: "));
         PFL_EXPECT(contains_text(result.stdout_text, "Last Packet: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "First Seen: "));

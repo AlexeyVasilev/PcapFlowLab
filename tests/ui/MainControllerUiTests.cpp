@@ -1731,7 +1731,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(formatting_controller.analysisAveragePacketSizeText() == QStringLiteral("768 B"));
     UI_EXPECT(formatting_controller.analysisMinPacketSizeText() == QStringLiteral("512 B"));
     UI_EXPECT(formatting_controller.analysisMaxPacketSizeText() == QStringLiteral("1 KB"));
-    UI_EXPECT(formatting_controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("1 KB"));
+    UI_EXPECT(formatting_controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("1 KB (1 024 B)"));
     UI_EXPECT(formatting_controller.analysisBytesAToBText() == QStringLiteral("1.5 KB"));
     UI_EXPECT(formatting_controller.analysisBytesBToAText() == QStringLiteral("0 B"));
 

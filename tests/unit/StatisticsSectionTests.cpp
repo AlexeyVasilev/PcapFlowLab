@@ -249,6 +249,8 @@ void expect_shared_statistics_formatting_helpers() {
     PFL_EXPECT(format_statistics_compact_size_value(15716610U) == "15 MB");
 
     PFL_EXPECT(format_statistics_size_value(0U) == "0 B");
+    PFL_EXPECT(format_statistics_size_value(1490U) == "1.5 KB (1 490 B)");
+    PFL_EXPECT(format_statistics_size_value(1522U) == "1.5 KB (1 522 B)");
     PFL_EXPECT(format_statistics_size_value(1536U) == "1.5 KB (1 536 B)");
 
     PFL_EXPECT(format_statistics_percent_text(0.0) == "0%");

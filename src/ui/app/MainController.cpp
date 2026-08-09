@@ -2462,7 +2462,9 @@ QString MainController::analysisMaxPacketSizeText() const {
 
 QString MainController::analysisMaxCapturedPacketSizeText() const {
     return current_flow_analysis_.has_value()
-        ? format_size_value(current_flow_analysis_->max_captured_packet_size_bytes)
+        ? QString::fromStdString(session_detail::format_statistics_size_value(
+            current_flow_analysis_->max_captured_packet_size_bytes
+        ))
         : QString {};
 }
 
