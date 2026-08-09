@@ -57,6 +57,7 @@ struct FlowAnalysisRateGraph {
 struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t duration_us {0};
     double packets_per_second {0.0};
     double bytes_per_second {0.0};

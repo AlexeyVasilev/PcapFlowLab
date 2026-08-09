@@ -399,8 +399,8 @@ PacketInfoCommandExecutionResult execute_packet_info_command(
         return {.exit_code = 1, .stdout_text = {}, .stderr_text = out.str()};
     }
     const auto info = flow_scoped_selection
-        ? adapter.get_packet_info_by_flow(*options.flow_index, *options.packet_in_flow)
-        : adapter.get_packet_info_by_file(*options.packet_in_file - 1U);
+        ? adapter.get_packet_info_by_flow(*options.flow_index, *options.packet_in_flow, options.include_bytes)
+        : adapter.get_packet_info_by_file(*options.packet_in_file - 1U, options.include_bytes);
 
     if (!info.has_capture) {
         return {

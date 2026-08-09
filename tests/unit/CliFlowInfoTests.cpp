@@ -252,6 +252,10 @@ void expect_shared_flow_info_model_and_cli_output() {
     const auto expected_max_captured_packet_size_text = session_detail::format_statistics_size_value(
         std::max<std::size_t>(request_one.size(), response_one.size())
     );
+    const auto expected_captured_bytes =
+        static_cast<std::uint64_t>(request_one.size()) +
+        static_cast<std::uint64_t>(response_one.size()) +
+        54U;
 
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
@@ -272,6 +276,8 @@ void expect_shared_flow_info_model_and_cli_output() {
     PFL_EXPECT(info.total_packets_text == "3");
     PFL_EXPECT(info.packets_a_to_b == 2U);
     PFL_EXPECT(info.packets_b_to_a == 1U);
+    PFL_EXPECT(info.captured_bytes == expected_captured_bytes);
+    PFL_EXPECT(!info.captured_bytes_text.empty());
     PFL_EXPECT(info.captured_bytes < info.total_bytes);
     PFL_EXPECT(!info.protocol_path_text.empty());
     PFL_EXPECT(info.max_captured_packet_size_text == expected_max_captured_packet_size_text);

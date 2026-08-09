@@ -597,6 +597,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     bool current_run_is_burst = false;
     for (const auto& ordered_packet : ordered_packets) {
         const auto* packet = ordered_packet.packet;
+        result.captured_bytes += packet->captured_length;
         result.min_packet_size_bytes = std::min(result.min_packet_size_bytes, packet->original_length);
         result.max_packet_size_bytes = std::max(result.max_packet_size_bytes, packet->original_length);
         result.max_captured_packet_size_bytes = std::max(result.max_captured_packet_size_bytes, packet->captured_length);

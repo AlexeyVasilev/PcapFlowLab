@@ -3144,22 +3144,11 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         return result;
     }
 
-    const auto flow_packets = session_.flow_packets(flow_index);
-    if (!flow_packets.has_value()) {
-        result.unavailable_text = "Analysis is unavailable because the selected flow packets cannot be read.";
-        return result;
-    }
-
-    std::uint64_t captured_bytes = 0U;
-    for (const auto& packet : *flow_packets) {
-        captured_bytes += packet.captured_length;
-    }
-
     result.analysis_available = true;
     result.has_tcp_control_counts = analysis->has_tcp_control_counts;
     result.total_packets = analysis->total_packets;
     result.total_bytes = analysis->total_bytes;
-    result.captured_bytes = captured_bytes;
+    result.captured_bytes = analysis->captured_bytes;
     result.packets_a_to_b = analysis->packets_a_to_b;
     result.packets_b_to_a = analysis->packets_b_to_a;
     result.bytes_a_to_b = analysis->bytes_a_to_b;
@@ -3193,7 +3182,7 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.packets_considered_text = format_grouped_integer(analysis->timeline_packet_count_considered);
     result.total_packets_text = format_grouped_integer(analysis->total_packets);
     result.total_bytes_text = format_size_value(analysis->total_bytes);
-    result.captured_bytes_text = format_size_value(captured_bytes);
+    result.captured_bytes_text = format_size_value(analysis->captured_bytes);
     result.packets_a_to_b_text = format_grouped_integer(analysis->packets_a_to_b);
     result.packets_b_to_a_text = format_grouped_integer(analysis->packets_b_to_a);
     result.bytes_a_to_b_text = format_size_value(analysis->bytes_a_to_b);
@@ -3315,23 +3304,15 @@ FrontendFlowInfoDto FrontendSessionAdapter::get_flow_info(const std::size_t flow
         return result;
     }
 
-    const auto connections = session_detail::list_connections(session_.state());
-    if (flow_index >= connections.size()) {
-        result.error_text = "The requested flow is unavailable.";
-        result.flow_available = false;
-        return result;
-    }
-
     const auto protocol_path = session_detail::build_protocol_path_presentation(
         session_.state().protocol_path_registry,
         row->protocol_path_id
     );
-    const auto captured_bytes = session_detail::captured_bytes(connections[flow_index]);
 
     result.analysis_available = true;
     result.total_packets = analysis->total_packets;
     result.total_bytes = analysis->total_bytes;
-    result.captured_bytes = captured_bytes;
+    result.captured_bytes = analysis->captured_bytes;
     result.packets_a_to_b = analysis->packets_a_to_b;
     result.packets_b_to_a = analysis->packets_b_to_a;
     result.bytes_a_to_b = analysis->bytes_a_to_b;
@@ -3354,7 +3335,7 @@ FrontendFlowInfoDto FrontendSessionAdapter::get_flow_info(const std::size_t flow
     result.largest_gap_text = format_duration_us(analysis->largest_gap_us);
     result.total_packets_text = format_grouped_integer(analysis->total_packets);
     result.total_bytes_text = format_size_value(analysis->total_bytes);
-    result.captured_bytes_text = format_size_value(captured_bytes);
+    result.captured_bytes_text = format_size_value(analysis->captured_bytes);
     result.max_captured_packet_size_text = session_detail::format_statistics_size_value(
         analysis->max_captured_packet_size_bytes
     );
@@ -3679,7 +3660,8 @@ FrontendSessionAdapter::build_frontend_captured_packet_byte_view_content_from_ma
 
 FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
     const std::size_t flow_index,
-    const std::uint64_t flow_packet_index
+    const std::uint64_t flow_packet_index,
+    const bool include_bytes
 ) {
     FrontendPacketInfoDto result {
         .has_capture = session_.has_capture(),
@@ -3710,15 +3692,16 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
         return result;
     }
 
-    const auto details = build_frontend_packet_details(
+    const auto packet_bytes = session_.read_packet_data(packet_context->packet);
+    const auto decoded_details = session_.read_packet_details(packet_context->packet);
+    const auto details = build_frontend_packet_details_from_materialized_packet(
         packet_context->packet,
+        packet_bytes,
+        decoded_details,
         flow_index,
-        packet_context->flow_packet_index
-    );
-    const auto bytes = build_frontend_captured_packet_byte_view_content(
-        packet_context->packet,
-        flow_index,
-        packet_context->flow_packet_index
+        packet_context->flow_packet_index,
+        std::nullopt,
+        false
     );
 
     result.packet_available = true;
@@ -3734,7 +3717,15 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
     result.captured_length = details.captured_length;
     result.original_length = details.original_length;
     result.summary_layers = details.summary_layers;
-    result.captured_packet_bytes = bytes;
+    if (include_bytes) {
+        result.captured_packet_bytes = build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+            packet_context->packet,
+            packet_bytes,
+            decoded_details,
+            flow_index,
+            packet_context->flow_packet_index
+        );
+    }
     result.unavailable_text = details.unavailable_text;
     result.error_text = details.error_text;
     result.source_capture_accessible = details.source_capture_accessible;
@@ -3742,7 +3733,10 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
     return result;
 }
 
-FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(const std::uint64_t packet_index) {
+FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(
+    const std::uint64_t packet_index,
+    const bool include_bytes
+) {
     FrontendPacketInfoDto result {
         .has_capture = session_.has_capture(),
         .packet_available = false,
@@ -3778,14 +3772,9 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(const std:
         packet_bytes,
         decoded_details,
         std::nullopt,
-        std::nullopt
-    );
-    const auto bytes = build_frontend_captured_packet_byte_view_content_from_materialized_packet(
-        packet,
-        packet_bytes,
-        decoded_details,
         std::nullopt,
-        std::nullopt
+        std::nullopt,
+        false
     );
 
     const auto unrecognized_packet = std::lower_bound(
@@ -3807,7 +3796,15 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(const std:
     result.captured_length = details.captured_length;
     result.original_length = details.original_length;
     result.summary_layers = details.summary_layers;
-    result.captured_packet_bytes = bytes;
+    if (include_bytes) {
+        result.captured_packet_bytes = build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+            packet,
+            packet_bytes,
+            decoded_details,
+            std::nullopt,
+            std::nullopt
+        );
+    }
     result.unavailable_text = details.unavailable_text;
     result.error_text = details.error_text;
     result.source_capture_accessible = details.source_capture_accessible;
@@ -3855,8 +3852,15 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         return result;
     }
 
-    const auto details = session_.read_packet_details(packet);
     const auto packet_bytes = session_.read_packet_data(packet);
+    std::optional<PacketDetails> details {};
+    if (!packet_bytes.empty()) {
+        PacketDetailsService packet_details_service {};
+        details = packet_details_service.decode_best_effort(
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            packet
+        );
+    }
     return build_frontend_packet_details_from_materialized_packet(
         packet,
         packet_bytes,
@@ -3873,7 +3877,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
     const std::optional<PacketDetails>& details,
     const std::optional<std::size_t> flow_index,
     const std::optional<std::uint64_t> flow_packet_index,
-    const std::optional<std::size_t> loaded_packet_window_count
+    const std::optional<std::size_t> loaded_packet_window_count,
+    const bool include_selected_byte_view
 ) {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
@@ -3938,55 +3943,57 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
         result.unavailable_text = "Only partial packet details are available for this packet.";
     }
 
-    if (const auto packet_byte_presentation = derive_frontend_packet_byte_presentation(
-            session_,
-            packet,
-            packet_bytes,
-            details,
-            flow_index,
-            flow_packet_index,
-            loaded_packet_window_count);
-        packet_byte_presentation.has_value()) {
-        const auto prepared_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
-        result.byte_view_descriptors = build_frontend_packet_byte_view_descriptors(prepared_descriptors);
-        if (const auto selected_id = select_default_packet_byte_view_id(prepared_descriptors); selected_id.has_value()) {
-            HexDumpService hex_dump_service {};
-            if (const auto content = session_detail::format_selected_packet_byte_view_content(
-                    *packet_byte_presentation,
-                    *selected_id,
-                    std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
-                    hex_dump_service);
-                content.has_value()) {
-                result.selected_byte_view = FrontendPacketDetailsDto::PacketByteViewContent {
-                    .available = true,
-                    .stable_id = content->stable_id,
-                    .label = content->label,
-                    .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
-                        ? "payload_only"
-                        : "whole_unit",
-                    .assembly_kind = content->assembly_kind,
-                    .available_length = content->available_length,
-                    .declared_length = content->declared_length,
-                    .state = content->state,
-                    .contributing_unit_count = content->contributing_unit_count,
-                    .contributing_unit_kind = content->contributing_unit_kind,
-                    .status_text = packet_byte_view_status_text(
-                        content->state,
-                        content->assembly_kind,
-                        content->contributing_unit_count,
-                        content->contributing_unit_kind,
-                        content->available_length,
-                        content->declared_length
-                    ),
-                    .formatted_text = content->formatted_text,
-                    .unavailable_text = {},
-                };
+    if (include_selected_byte_view) {
+        if (const auto packet_byte_presentation = derive_frontend_packet_byte_presentation(
+                session_,
+                packet,
+                packet_bytes,
+                details,
+                flow_index,
+                flow_packet_index,
+                loaded_packet_window_count);
+            packet_byte_presentation.has_value()) {
+            const auto prepared_descriptors = session_detail::build_selected_packet_byte_view_descriptors(*packet_byte_presentation);
+            result.byte_view_descriptors = build_frontend_packet_byte_view_descriptors(prepared_descriptors);
+            if (const auto selected_id = select_default_packet_byte_view_id(prepared_descriptors); selected_id.has_value()) {
+                HexDumpService hex_dump_service {};
+                if (const auto content = session_detail::format_selected_packet_byte_view_content(
+                        *packet_byte_presentation,
+                        *selected_id,
+                        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                        hex_dump_service);
+                    content.has_value()) {
+                    result.selected_byte_view = FrontendPacketDetailsDto::PacketByteViewContent {
+                        .available = true,
+                        .stable_id = content->stable_id,
+                        .label = content->label,
+                        .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
+                            ? "payload_only"
+                            : "whole_unit",
+                        .assembly_kind = content->assembly_kind,
+                        .available_length = content->available_length,
+                        .declared_length = content->declared_length,
+                        .state = content->state,
+                        .contributing_unit_count = content->contributing_unit_count,
+                        .contributing_unit_kind = content->contributing_unit_kind,
+                        .status_text = packet_byte_view_status_text(
+                            content->state,
+                            content->assembly_kind,
+                            content->contributing_unit_count,
+                            content->contributing_unit_kind,
+                            content->available_length,
+                            content->declared_length
+                        ),
+                        .formatted_text = content->formatted_text,
+                        .unavailable_text = {},
+                    };
+                }
             }
         }
     }
 
     result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
-    if (!result.selected_byte_view.available && result.unavailable_text.empty()) {
+    if (include_selected_byte_view && !result.selected_byte_view.available && result.unavailable_text.empty()) {
         result.selected_byte_view.unavailable_text = result.byte_view_descriptors.empty()
             ? "No byte views are available for this packet."
             : "The selected byte view is unavailable for this packet.";

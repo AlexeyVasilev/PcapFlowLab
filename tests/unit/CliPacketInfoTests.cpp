@@ -376,7 +376,7 @@ void expect_shared_packet_info_model_behavior() {
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
 
-    const auto flow_scoped = adapter.get_packet_info_by_flow(0U, 2U);
+    const auto flow_scoped = adapter.get_packet_info_by_flow(0U, 2U, false);
     PFL_EXPECT(flow_scoped.has_capture);
     PFL_EXPECT(flow_scoped.packet_available);
     PFL_EXPECT(flow_scoped.recognized_flow);
@@ -386,8 +386,10 @@ void expect_shared_packet_info_model_behavior() {
     PFL_EXPECT(flow_scoped.direction_text == "B -> A");
     PFL_EXPECT(!flow_scoped.endpoint_summary_text.empty());
     PFL_EXPECT(!flow_scoped.summary_layers.empty());
+    PFL_EXPECT(!flow_scoped.captured_packet_bytes.available);
+    PFL_EXPECT(flow_scoped.captured_packet_bytes.formatted_text.empty());
 
-    const auto global_recognized = adapter.get_packet_info_by_file(1U);
+    const auto global_recognized = adapter.get_packet_info_by_file(1U, false);
     PFL_EXPECT(global_recognized.has_capture);
     PFL_EXPECT(global_recognized.packet_available);
     PFL_EXPECT(global_recognized.recognized_flow);
@@ -397,11 +399,23 @@ void expect_shared_packet_info_model_behavior() {
     PFL_EXPECT(global_recognized.direction_text.empty());
     PFL_EXPECT(global_recognized.endpoint_summary_text.empty());
     PFL_EXPECT(!global_recognized.summary_layers.empty());
+    PFL_EXPECT(!global_recognized.captured_packet_bytes.available);
+    PFL_EXPECT(global_recognized.captured_packet_bytes.formatted_text.empty());
+
+    const auto flow_scoped_with_bytes = adapter.get_packet_info_by_flow(0U, 2U, true);
+    PFL_EXPECT(flow_scoped_with_bytes.packet_available);
+    PFL_EXPECT(flow_scoped_with_bytes.captured_packet_bytes.available);
+    PFL_EXPECT(!flow_scoped_with_bytes.captured_packet_bytes.formatted_text.empty());
+
+    const auto global_recognized_with_bytes = adapter.get_packet_info_by_file(1U, true);
+    PFL_EXPECT(global_recognized_with_bytes.packet_available);
+    PFL_EXPECT(global_recognized_with_bytes.captured_packet_bytes.available);
+    PFL_EXPECT(!global_recognized_with_bytes.captured_packet_bytes.formatted_text.empty());
 
     FrontendSessionAdapter unrecognized_adapter {};
     const auto unrecognized_capture_path = build_cli_packet_info_unrecognized_capture_path();
     PFL_REQUIRE(unrecognized_adapter.open_capture(unrecognized_capture_path).opened);
-    const auto global_unrecognized = unrecognized_adapter.get_packet_info_by_file(1U);
+    const auto global_unrecognized = unrecognized_adapter.get_packet_info_by_file(1U, false);
     PFL_EXPECT(global_unrecognized.has_capture);
     PFL_EXPECT(global_unrecognized.packet_available);
     PFL_EXPECT(!global_unrecognized.recognized_flow);
@@ -421,7 +435,7 @@ void expect_shared_packet_info_model_behavior() {
 
     FrontendSessionAdapter indexed_adapter {};
     PFL_REQUIRE(indexed_adapter.open_capture(index_path).opened);
-    const auto missing_source_packet = indexed_adapter.get_packet_info_by_file(1U);
+    const auto missing_source_packet = indexed_adapter.get_packet_info_by_file(1U, false);
     PFL_EXPECT(missing_source_packet.has_capture);
     PFL_EXPECT(!missing_source_packet.packet_available);
     PFL_EXPECT(contains_text(missing_source_packet.error_text, "source capture cannot be read"));

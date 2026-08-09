@@ -117,9 +117,10 @@ public:
     );
     [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_flow(
         std::size_t flow_index,
-        std::uint64_t flow_packet_index
+        std::uint64_t flow_packet_index,
+        bool include_bytes
     );
-    [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_file(std::uint64_t packet_index);
+    [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_file(std::uint64_t packet_index, bool include_bytes);
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
     [[nodiscard]] FrontendFlowInfoDto get_flow_info(std::size_t flow_index) const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
@@ -162,7 +163,8 @@ private:
         const std::optional<PacketDetails>& details,
         std::optional<std::size_t> flow_index,
         std::optional<std::uint64_t> flow_packet_index,
-        std::optional<std::size_t> loaded_packet_window_count = std::nullopt
+        std::optional<std::size_t> loaded_packet_window_count = std::nullopt,
+        bool include_selected_byte_view = true
     );
     [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_packet_byte_view_content(
         const PacketRef& packet,

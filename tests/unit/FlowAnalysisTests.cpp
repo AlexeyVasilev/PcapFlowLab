@@ -243,6 +243,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis.has_value());
     PFL_EXPECT(analysis->total_packets == 3U);
     PFL_EXPECT(analysis->total_bytes == static_cast<std::uint64_t>(request_packet.size() + response_packet.size() + follow_up_packet.size()));
+    PFL_EXPECT(analysis->captured_bytes ==
+        static_cast<std::uint64_t>(request_packet.size() + response_packet.size() + follow_up_packet.size()));
     PFL_EXPECT(analysis->duration_us == 2000350U);
     PFL_EXPECT(analysis->packets_a_to_b == 2U);
     PFL_EXPECT(analysis->packets_b_to_a == 1U);
