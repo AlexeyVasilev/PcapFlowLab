@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "core/domain/Connection.h"
 #include "core/io/PcapReader.h"
@@ -69,6 +70,15 @@ std::vector<std::string> read_text_file_lines(const std::filesystem::path& path)
     return lines;
 }
 
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+    return {
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()
+    };
+}
+
 std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> fields {};
     std::string field {};
@@ -106,6 +116,200 @@ std::vector<std::string> split_csv_line(const std::string& line) {
 
     fields.push_back(field);
     return fields;
+}
+
+std::vector<std::vector<std::string>> parse_csv_file(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+
+    const std::string text {
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()
+    };
+
+    std::vector<std::vector<std::string>> rows {};
+    std::vector<std::string> current_row {};
+    std::string current_field {};
+    bool in_quotes = false;
+
+    for (std::size_t index = 0U; index < text.size(); ++index) {
+        const char ch = text[index];
+        if (in_quotes) {
+            if (ch == '"') {
+                if (index + 1U < text.size() && text[index + 1U] == '"') {
+                    current_field.push_back('"');
+                    ++index;
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                current_field.push_back(ch);
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_quotes = true;
+            continue;
+        }
+
+        if (ch == ',') {
+            current_row.push_back(current_field);
+            current_field.clear();
+            continue;
+        }
+
+        if (ch == '\r') {
+            continue;
+        }
+
+        if (ch == '\n') {
+            current_row.push_back(current_field);
+            current_field.clear();
+            rows.push_back(current_row);
+            current_row.clear();
+            continue;
+        }
+
+        current_field.push_back(ch);
+    }
+
+    if (!current_field.empty() || !current_row.empty()) {
+        current_row.push_back(current_field);
+        rows.push_back(current_row);
+    }
+
+    return rows;
+}
+
+std::optional<std::size_t> find_flow_index_by_service_hint(
+    const std::vector<FlowRow>& rows,
+    const std::string_view service_hint
+) {
+    for (const auto& row : rows) {
+        if (row.service_hint == service_hint) {
+            return row.index;
+        }
+    }
+
+    return std::nullopt;
+}
+
+CaptureSession build_flow_info_export_session() {
+    CaptureSession session {};
+    auto& state = session.state();
+
+    const auto vxlan_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::udp(), LayerKey::vxlan(100U), LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+    const auto gtpu_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::udp(), LayerKey::gtpu(0x01020304U), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+
+    const FlowKeyV4 alpha_flow {
+        .src_addr = ipv4(192, 0, 2, 10),
+        .dst_addr = ipv4(198, 51, 100, 20),
+        .src_port = 41000,
+        .dst_port = 80,
+        .protocol = ProtocolId::tcp,
+    };
+    ConnectionV4 alpha_connection {};
+    alpha_connection.key = make_connection_key(alpha_flow);
+    alpha_connection.key.protocol_path_id = vxlan_path_id;
+    alpha_connection.protocol_hint = FlowProtocolHint::http;
+    alpha_connection.service_hint = "alpha,\"quoted\",example";
+    alpha_connection.add_packet(
+        alpha_flow,
+        PacketRef {
+            .packet_index = 0U,
+            .captured_length = 120U,
+            .original_length = 120U,
+            .ts_sec = 1U,
+            .ts_usec = 100U,
+        }
+    );
+    alpha_connection.add_packet(
+        alpha_flow,
+        PacketRef {
+            .packet_index = 1U,
+            .captured_length = 120U,
+            .original_length = 120U,
+            .ts_sec = 1U,
+            .ts_usec = 250U,
+        }
+    );
+    state.ipv4_connections.get_or_create(alpha_connection.key) = alpha_connection;
+
+    const FlowKeyV4 beta_flow {
+        .src_addr = ipv4(203, 0, 113, 10),
+        .dst_addr = ipv4(203, 0, 113, 20),
+        .src_port = 53000,
+        .dst_port = 443,
+        .protocol = ProtocolId::tcp,
+    };
+    ConnectionV4 beta_connection {};
+    beta_connection.key = make_connection_key(beta_flow);
+    beta_connection.key.protocol_path_id = gtpu_path_id;
+    beta_connection.protocol_hint = FlowProtocolHint::tls;
+    beta_connection.service_hint = "beta.example";
+    beta_connection.add_packet(
+        beta_flow,
+        PacketRef {
+            .packet_index = 2U,
+            .captured_length = 90U,
+            .original_length = 90U,
+            .ts_sec = 2U,
+            .ts_usec = 100U,
+        }
+    );
+    state.ipv4_connections.get_or_create(beta_connection.key) = beta_connection;
+
+    return session;
+}
+
+CaptureSession build_flow_info_export_session_with_control_characters() {
+    CaptureSession session {};
+    auto& state = session.state();
+
+    const auto protocol_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+
+    const FlowKeyV4 flow {
+        .src_addr = ipv4(198, 18, 0, 10),
+        .dst_addr = ipv4(198, 18, 0, 20),
+        .src_port = 45000,
+        .dst_port = 80,
+        .protocol = ProtocolId::tcp,
+    };
+    ConnectionV4 connection {};
+    connection.key = make_connection_key(flow);
+    connection.key.protocol_path_id = protocol_path_id;
+    connection.protocol_hint = FlowProtocolHint::http;
+    connection.service_hint = "tab\tcomma,value \"quoted\"\r\nnext line";
+    connection.add_packet(
+        flow,
+        PacketRef {
+            .packet_index = 0U,
+            .captured_length = 96U,
+            .original_length = 96U,
+            .ts_sec = 5U,
+            .ts_usec = 10U,
+        }
+    );
+    connection.add_packet(
+        flow,
+        PacketRef {
+            .packet_index = 1U,
+            .captured_length = 96U,
+            .original_length = 96U,
+            .ts_sec = 5U,
+            .ts_usec = 40U,
+        }
+    );
+    state.ipv4_connections.get_or_create(connection.key) = connection;
+
+    return session;
 }
 
 }  // namespace
@@ -181,6 +385,32 @@ void run_export_tests() {
         PFL_EXPECT(exported_packets[1].ts_usec == 200);
         PFL_EXPECT(exported_packets[2].ts_usec == 300);
         PFL_EXPECT(exported_packets[3].ts_usec == 400);
+    }
+
+    {
+        const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 1, 1), ipv4(192, 168, 1, 2), 22345, 443);
+        const auto reverse_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 1, 2), ipv4(192, 168, 1, 1), 443, 22345);
+        const auto source_path = write_temp_pcap(
+            "pfl_export_direct_initial_cancel_source.pcap",
+            make_classic_pcap({{100, forward_packet}, {200, reverse_packet}})
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_export_direct_initial_cancel_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+
+        std::atomic_bool cancel_requested {true};
+        const SmartSingleFileExportOptions options {
+            .cancel_requested = [&]() {
+                return cancel_requested.load();
+            },
+        };
+
+        PFL_EXPECT(!session.export_flows_to_pcap({0U}, output_path, options));
+        if (std::filesystem::exists(output_path)) {
+            PFL_EXPECT(read_all_packets(output_path).empty());
+        }
     }
 
 
@@ -823,6 +1053,227 @@ void run_export_tests() {
     }
 
     {
+        auto session = build_flow_info_export_session();
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+
+        const auto alpha_index = find_flow_index_by_service_hint(rows, "alpha,\"quoted\",example");
+        const auto beta_index = find_flow_index_by_service_hint(rows, "beta.example");
+        PFL_REQUIRE(alpha_index.has_value());
+        PFL_REQUIRE(beta_index.has_value());
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_explicit_order.csv";
+        std::filesystem::remove(output_path);
+
+        const std::vector<std::size_t> explicit_subset {*beta_index, *alpha_index};
+        PFL_EXPECT(session.export_flows_info_csv(explicit_subset, output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 3U);
+        PFL_EXPECT(csv_lines.front() ==
+            "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+
+        const auto first_row = split_csv_line(csv_lines[1]);
+        const auto second_row = split_csv_line(csv_lines[2]);
+        PFL_REQUIRE(first_row.size() == 16U);
+        PFL_REQUIRE(second_row.size() == 16U);
+        PFL_EXPECT(first_row[0] == std::to_string(*beta_index + 1U));
+        PFL_EXPECT(second_row[0] == std::to_string(*alpha_index + 1U));
+        PFL_EXPECT(first_row[4] == "beta.example");
+        PFL_EXPECT(second_row[4] == "alpha,\"quoted\",example");
+        PFL_EXPECT(first_row[15] == "EthernetII->IPv4->UDP->GTP-U(teid=16909060)->IPv4->TCP");
+        PFL_EXPECT(second_row[15] == "EthernetII->IPv4->UDP->VXLAN(vni=100)->EthernetII->IPv4->TCP");
+    }
+
+    {
+        auto session = build_flow_info_export_session();
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_empty.csv";
+        std::filesystem::remove(output_path);
+
+        const std::vector<std::size_t> empty_subset {};
+        PFL_EXPECT(session.export_flows_info_csv(empty_subset, output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 1U);
+        PFL_EXPECT(csv_lines.front() ==
+            "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+    }
+
+    {
+        auto session = build_flow_info_export_session();
+        session_detail::FlowQuery query {};
+        query.selected_flow_indices = std::vector<std::size_t> {0U, 1U};
+        query.text_filter = "example";
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::service,
+            .direction = session_detail::FlowQuerySortDirection::descending,
+        };
+        query.limit = 1U;
+
+        const auto query_result = session.query_flows(query);
+        PFL_REQUIRE(query_result.status == session_detail::FlowQueryStatus::ok);
+        PFL_REQUIRE(query_result.ordered_flow_indices.size() == 1U);
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_query_result.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(session.export_flows_info_csv(query_result.ordered_flow_indices, output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        const auto only_row = split_csv_line(csv_lines[1]);
+        PFL_REQUIRE(only_row.size() == 16U);
+        PFL_EXPECT(only_row[0] == std::to_string(query_result.ordered_flow_indices.front() + 1U));
+        PFL_EXPECT(only_row[4] == "beta.example");
+    }
+
+    {
+        const auto source_path = write_temp_pcap(
+            "pfl_subset_flows_info_index_only_source.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_udp_packet(ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 40123, 53)},
+                {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 120, 0, 2), ipv4(10, 120, 0, 1), 53, 40123)},
+            })
+        );
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_index_only.idx";
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_index_only.csv";
+        std::filesystem::remove(index_path);
+        std::filesystem::remove(output_path);
+
+        CaptureSession source_session {};
+        PFL_REQUIRE(source_session.open_capture(source_path));
+        PFL_REQUIRE(source_session.save_index(index_path));
+        std::filesystem::remove(source_path);
+
+        CaptureSession indexed_session {};
+        PFL_REQUIRE(indexed_session.load_index(index_path));
+        PFL_EXPECT(indexed_session.opened_from_index());
+        PFL_EXPECT(!indexed_session.has_source_capture());
+
+        const auto query_result = indexed_session.query_flows(session_detail::FlowQuery {});
+        PFL_REQUIRE(query_result.status == session_detail::FlowQueryStatus::ok);
+        PFL_REQUIRE(query_result.ordered_flow_indices.size() == 1U);
+        PFL_EXPECT(indexed_session.export_flows_info_csv(query_result.ordered_flow_indices, output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        const auto only_row = split_csv_line(csv_lines[1]);
+        PFL_REQUIRE(only_row.size() == 16U);
+        PFL_EXPECT(only_row[0] == "1");
+        PFL_EXPECT(only_row[2] == "UDP");
+    }
+
+    {
+        CaptureSession arp_session {};
+        PFL_REQUIRE(arp_session.open_capture(fixture_path("parsing/arp/01_arp_request_ipv4.pcap")));
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_arp.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(arp_session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        PFL_EXPECT(csv_lines[1].find("\"Who has 10.10.12.1? Tell 10.10.12.2\"") != std::string::npos);
+
+        const auto rows = parse_csv_file(output_path);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_REQUIRE(rows[0].size() == 16U);
+        PFL_REQUIRE(rows[1].size() == 16U);
+        PFL_EXPECT(rows[1][1] == "IPv4");
+        PFL_EXPECT(rows[1][2] == "ARP");
+        PFL_EXPECT(rows[1][4] == "Who has 10.10.12.1? Tell 10.10.12.2");
+        PFL_EXPECT(rows[1][5] == "10.10.12.2");
+        PFL_EXPECT(rows[1][6] == "0");
+        PFL_EXPECT(rows[1][7] == "10.10.12.1");
+        PFL_EXPECT(rows[1][8] == "0");
+        PFL_EXPECT(rows[1][9] == "1");
+        PFL_EXPECT(!rows[1][10].empty());
+        PFL_EXPECT(!rows[1][11].empty());
+        PFL_EXPECT(!rows[1][12].empty());
+        PFL_EXPECT(!rows[1][13].empty());
+        PFL_EXPECT(!rows[1][14].empty());
+        PFL_EXPECT(!rows[1][15].empty());
+    }
+
+    {
+        CaptureSession igmp_session {};
+        PFL_REQUIRE(igmp_session.open_capture(fixture_path("parsing/igmp/02_igmpv2_membership_report_mdns_group.pcap")));
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_igmp.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(igmp_session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 2U);
+        PFL_EXPECT(csv_lines[1].find("\"Membership Report 224.0.0.251\"") != std::string::npos);
+
+        const auto rows = parse_csv_file(output_path);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_REQUIRE(rows[0].size() == 16U);
+        PFL_REQUIRE(rows[1].size() == 16U);
+        PFL_EXPECT(rows[1][1] == "IPv4");
+        PFL_EXPECT(rows[1][2] == "IGMP");
+        PFL_EXPECT(rows[1][3] == "igmpv2");
+        PFL_EXPECT(rows[1][4] == "Membership Report 224.0.0.251");
+        PFL_EXPECT(rows[1][5] == "192.0.2.10");
+        PFL_EXPECT(rows[1][6] == "0");
+        PFL_EXPECT(rows[1][7] == "224.0.0.251");
+        PFL_EXPECT(rows[1][8] == "0");
+        PFL_EXPECT(rows[1][9] == "1");
+        PFL_EXPECT(!rows[1][10].empty());
+        PFL_EXPECT(!rows[1][11].empty());
+        PFL_EXPECT(!rows[1][12].empty());
+        PFL_EXPECT(!rows[1][13].empty());
+        PFL_EXPECT(!rows[1][14].empty());
+        PFL_EXPECT(!rows[1][15].empty());
+    }
+
+    {
+        auto session = build_flow_info_export_session_with_control_characters();
+        const auto all_output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_controls.csv";
+        const auto subset_output_path = std::filesystem::temp_directory_path() / "pfl_subset_flows_info_controls.csv";
+        std::filesystem::remove(all_output_path);
+        std::filesystem::remove(subset_output_path);
+
+        PFL_EXPECT(session.export_all_flows_info_csv(all_output_path));
+        PFL_EXPECT(session.export_flows_info_csv(std::vector<std::size_t> {0U}, subset_output_path));
+
+        const auto all_csv_text = read_text_file(all_output_path);
+        const auto subset_csv_text = read_text_file(subset_output_path);
+        PFL_EXPECT(all_csv_text.find("\"tab\tcomma,value \"\"quoted\"\"\r\nnext line\"") != std::string::npos);
+        PFL_EXPECT(subset_csv_text.find("\"tab\tcomma,value \"\"quoted\"\"\r\nnext line\"") != std::string::npos);
+
+        const auto all_rows = parse_csv_file(all_output_path);
+        const auto subset_rows = parse_csv_file(subset_output_path);
+        PFL_REQUIRE(all_rows.size() == 2U);
+        PFL_REQUIRE(subset_rows.size() == 2U);
+        PFL_REQUIRE(all_rows[1].size() == 16U);
+        PFL_REQUIRE(subset_rows[1].size() == 16U);
+        PFL_EXPECT(all_rows[1] == subset_rows[1]);
+        PFL_EXPECT(all_rows[1][0] == "1");
+        PFL_EXPECT(all_rows[1][3] == "http");
+        PFL_EXPECT(all_rows[1][4] == "tab\tcomma,value \"quoted\"\r\nnext line");
+        PFL_EXPECT(all_rows[1][5] == "198.18.0.10");
+        PFL_EXPECT(all_rows[1][6] == "45000");
+        PFL_EXPECT(all_rows[1][7] == "198.18.0.20");
+        PFL_EXPECT(all_rows[1][8] == "80");
+        PFL_EXPECT(all_rows[1][9] == "2");
+        PFL_EXPECT(all_rows[1][15] == "EthernetII->IPv4->TCP");
+    }
+
+    {
+        auto session = build_flow_info_export_session();
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_single_token_quote_policy.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 3U);
+        PFL_EXPECT(csv_lines[1].find("\"alpha,\"\"quoted\"\",example\"") != std::string::npos);
+        PFL_EXPECT(csv_lines[2].find(",beta.example,") != std::string::npos);
+        PFL_EXPECT(csv_lines[2].find("\"beta.example\"") == std::string::npos);
+    }
+
+    {
         const auto packet_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
             ipv4(192, 0, 2, 10), ipv4(198, 51, 100, 20), 40001, 443, std::vector<std::uint8_t>{0x11}, 0x18);
         const auto packet_2 = make_ethernet_ipv6_udp_with_hop_by_hop_packet(
@@ -1026,6 +1477,219 @@ void run_export_tests() {
         std::string retry_error_text {};
         PFL_EXPECT(session.export_smart_flows_to_folder(request, output_directory, SmartPerFlowExportOptions {}, &retry_error_text));
         PFL_EXPECT(std::filesystem::exists(output_directory / "flows_manifest.csv"));
+    }
+
+    {
+        const auto first_packet = make_ethernet_ipv4_udp_packet(
+            ipv4(10, 100, 0, 1), ipv4(10, 100, 0, 2), 41001, 53);
+        const auto second_packet = make_ethernet_ipv4_tcp_packet(
+            ipv4(10, 101, 0, 1), ipv4(10, 101, 0, 2), 41002, 443);
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_direct_export_source.pcap",
+            make_classic_pcap({
+                {100U, first_packet},
+                {200U, second_packet},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_adapter_direct_export_output.pcap";
+        std::filesystem::remove(output_path);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        const auto flows = adapter.get_flows();
+        PFL_REQUIRE(flows.size() == 2U);
+
+        const auto result = adapter.export_flows_to_pcap(output_path, {flows[1].flow_index, flows[0].flow_index});
+        PFL_EXPECT(result.exported);
+        PFL_EXPECT(result.output_path == output_path.string());
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].bytes == first_packet);
+        PFL_EXPECT(exported_packets[1].bytes == second_packet);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+    }
+
+    {
+        const auto flow_a_packet_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA1}, 0x18);
+        const auto flow_a_packet_2 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA2}, 0x18);
+        const auto flow_a_packet_3 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA3}, 0x18);
+        const auto flow_a_packet_4 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 110, 0, 1), ipv4(10, 110, 0, 2), 42001, 443, std::vector<std::uint8_t>{0xA4}, 0x18);
+        const auto flow_b_packet_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB1});
+        const auto flow_b_packet_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB2});
+        const auto flow_b_packet_3 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB3});
+        const auto flow_b_packet_4 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 120, 0, 1), ipv4(10, 120, 0, 2), 43001, 53, std::vector<std::uint8_t>{0xB4});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_smart_single_source.pcap",
+            make_classic_pcap({
+                {100U, flow_a_packet_1},
+                {200U, flow_b_packet_1},
+                {300U, flow_a_packet_2},
+                {400U, flow_b_packet_2},
+                {500U, flow_a_packet_3},
+                {600U, flow_b_packet_3},
+                {700U, flow_a_packet_4},
+                {800U, flow_b_packet_4},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_adapter_smart_single_output.pcap";
+        std::filesystem::remove(output_path);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        const auto flows = adapter.get_flows();
+        PFL_REQUIRE(flows.size() == 2U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices = {flows[0].flow_index, flows[1].flow_index};
+        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.first_n_packets = 1U;
+        request.include_last_packet = true;
+        request.include_every_kth_packet_after_base = true;
+        request.every_kth_packet = 2U;
+
+        std::uint64_t progress_updates = 0U;
+        const auto result = adapter.export_smart_flows_to_pcap(
+            output_path,
+            request,
+            SmartSingleFileExportOptions {
+                .progress_callback = [&](const SmartSingleFileExportProgress&) {
+                    ++progress_updates;
+                },
+            }
+        );
+        PFL_EXPECT(result.exported);
+        PFL_EXPECT(progress_updates >= 1U);
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 6U);
+        PFL_EXPECT(exported_packets[0].bytes == flow_a_packet_1);
+        PFL_EXPECT(exported_packets[1].bytes == flow_b_packet_1);
+        PFL_EXPECT(exported_packets[2].bytes == flow_a_packet_3);
+        PFL_EXPECT(exported_packets[3].bytes == flow_b_packet_3);
+        PFL_EXPECT(exported_packets[4].bytes == flow_a_packet_4);
+        PFL_EXPECT(exported_packets[5].bytes == flow_b_packet_4);
+    }
+
+    {
+        const auto flow_a_packet = make_ethernet_ipv4_tcp_packet(
+            ipv4(10, 130, 0, 1), ipv4(10, 130, 0, 2), 44001, 443);
+        const auto flow_b_packet = make_ethernet_ipv4_udp_packet(
+            ipv4(10, 131, 0, 1), ipv4(10, 131, 0, 2), 45001, 53);
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_smart_folder_source.pcap",
+            make_classic_pcap({
+                {100U, flow_a_packet},
+                {200U, flow_b_packet},
+            })
+        );
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_adapter_smart_folder_output";
+        std::filesystem::remove_all(output_directory);
+        std::filesystem::create_directories(output_directory);
+        {
+            std::ofstream keep_stream(output_directory / "keep.txt", std::ios::binary | std::ios::trunc);
+            keep_stream << "keep";
+        }
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        const auto flows = adapter.get_flows();
+        PFL_REQUIRE(flows.size() == 2U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices = {flows[0].flow_index, flows[1].flow_index};
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        std::uint64_t progress_updates = 0U;
+        const auto result = adapter.export_smart_flows_to_folder(
+            output_directory,
+            request,
+            SmartPerFlowExportOptions {
+                .buffer_budget_bytes = 1U * 1024U * 1024U,
+                .progress_callback = [&](const SmartPerFlowExportProgress&) {
+                    ++progress_updates;
+                },
+            }
+        );
+        PFL_EXPECT(result.exported);
+        PFL_EXPECT(progress_updates >= 1U);
+        PFL_EXPECT(std::filesystem::exists(output_directory / "keep.txt"));
+
+        const auto exported_pcaps = list_exported_pcaps(output_directory);
+        PFL_EXPECT(exported_pcaps.size() == 2U);
+
+        const auto manifest_rows = parse_csv_file(output_directory / "flows_manifest.csv");
+        PFL_REQUIRE(manifest_rows.size() == 3U);
+        PFL_REQUIRE(manifest_rows[1].size() >= 2U);
+        PFL_REQUIRE(manifest_rows[2].size() >= 2U);
+        PFL_EXPECT(manifest_rows[1][0] == "1");
+        PFL_EXPECT(manifest_rows[2][0] == "2");
+    }
+
+    {
+        const auto source_path = write_temp_pcap(
+            "pfl_adapter_attach_source_original.pcap",
+            make_classic_pcap({{100U, tcp_packet}, {200U, udp_packet}})
+        );
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source.idx";
+        const auto moved_source_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source_moved.pcap";
+        const auto mismatched_source_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source_mismatch.pcap";
+        const auto export_path = std::filesystem::temp_directory_path() / "pfl_adapter_attach_source_export.pcap";
+        std::filesystem::remove(index_path);
+        std::filesystem::remove(moved_source_path);
+        std::filesystem::remove(mismatched_source_path);
+        std::filesystem::remove(export_path);
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(source_path));
+        PFL_REQUIRE(session.save_index(index_path));
+        std::filesystem::rename(source_path, moved_source_path);
+
+        auto mismatched_bytes = make_classic_pcap({{100U, tcp_packet}, {200U, udp_packet}});
+        PFL_REQUIRE(!mismatched_bytes.empty());
+        mismatched_bytes.back() ^= 0xFFU;
+        {
+            std::ofstream mismatched_stream(mismatched_source_path, std::ios::binary | std::ios::trunc);
+            mismatched_stream.write(
+                reinterpret_cast<const char*>(mismatched_bytes.data()),
+                static_cast<std::streamsize>(mismatched_bytes.size())
+            );
+        }
+        std::filesystem::last_write_time(mismatched_source_path, std::filesystem::last_write_time(moved_source_path));
+
+        FrontendSessionAdapter adapter {};
+        const auto open_result = adapter.open_capture(index_path);
+        PFL_REQUIRE(open_result.opened);
+        PFL_EXPECT(open_result.opened_from_index);
+
+        const auto unavailable = adapter.source_availability();
+        PFL_EXPECT(unavailable.opened_from_index);
+        PFL_EXPECT(!unavailable.has_source_capture);
+        PFL_EXPECT(!unavailable.source_capture_accessible);
+
+        const auto export_without_source = adapter.export_flows_to_pcap(export_path, {0U});
+        PFL_EXPECT(!export_without_source.exported);
+        PFL_EXPECT(export_without_source.error_text == "Original source capture is unavailable. Reattach the capture file to export flows.");
+
+        const auto mismatched_attach = adapter.attach_source_capture(mismatched_source_path);
+        PFL_EXPECT(!mismatched_attach.attached);
+        PFL_EXPECT(mismatched_attach.error_text == "Selected file does not match the expected source capture.");
+        PFL_EXPECT(!mismatched_attach.source_availability.has_source_capture);
+
+        const auto valid_attach = adapter.attach_source_capture(moved_source_path);
+        PFL_EXPECT(valid_attach.attached);
+        PFL_EXPECT(valid_attach.source_availability.has_source_capture);
+        PFL_EXPECT(valid_attach.source_availability.source_capture_accessible);
     }
 }
 

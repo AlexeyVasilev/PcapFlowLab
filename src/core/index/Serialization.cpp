@@ -1034,12 +1034,66 @@ bool read_unrecognized_packet_records(
     return true;
 }
 
+bool write_capture_packet_locator(
+    std::ostream& stream,
+    std::span<const CapturePacketLocatorEntry> entries
+) {
+    if (!write_u64(stream, static_cast<std::uint64_t>(entries.size()))) {
+        return false;
+    }
+
+    for (const auto& entry : entries) {
+        if (!write_u64(stream, entry.packet_index) || !write_u64(stream, entry.file_offset)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_capture_packet_locator(
+    std::istream& stream,
+    std::vector<CapturePacketLocatorEntry>& entries
+) {
+    std::uint64_t entry_count {0};
+    if (!read_u64(stream, entry_count) ||
+        entry_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+
+    entries.clear();
+    entries.reserve(static_cast<std::size_t>(entry_count));
+
+    std::optional<std::uint64_t> previous_packet_index {};
+    std::optional<std::uint64_t> previous_file_offset {};
+    for (std::uint64_t index = 0U; index < entry_count; ++index) {
+        CapturePacketLocatorEntry entry {};
+        if (!read_u64(stream, entry.packet_index) || !read_u64(stream, entry.file_offset)) {
+            entries.clear();
+            return false;
+        }
+
+        if ((previous_packet_index.has_value() && entry.packet_index <= *previous_packet_index) ||
+            (previous_file_offset.has_value() && entry.file_offset <= *previous_file_offset)) {
+            entries.clear();
+            return false;
+        }
+
+        previous_packet_index = entry.packet_index;
+        previous_file_offset = entry.file_offset;
+        entries.push_back(entry);
+    }
+
+    return true;
+}
+
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {
     return write_capture_summary(stream, state.summary) &&
            write_protocol_path_registry(stream, state.protocol_path_registry) &&
            write_connection_table(stream, state.ipv4_connections) &&
            write_connection_table(stream, state.ipv6_connections) &&
-           write_unrecognized_packet_records(stream, state.unrecognized_packets);
+           write_unrecognized_packet_records(stream, state.unrecognized_packets) &&
+           write_capture_packet_locator(stream, state.packet_locator);
 }
 
 bool read_capture_state(
@@ -1052,7 +1106,8 @@ bool read_capture_state(
            read_protocol_path_registry(stream, state.protocol_path_registry) &&
            read_connection_table(stream, state.ipv4_connections, packet_size_statistics) &&
            read_connection_table(stream, state.ipv6_connections, packet_size_statistics) &&
-           read_unrecognized_packet_records(stream, state.unrecognized_packets, packet_size_statistics);
+           read_unrecognized_packet_records(stream, state.unrecognized_packets, packet_size_statistics) &&
+           read_capture_packet_locator(stream, state.packet_locator);
 }
 
 }  // namespace pfl::detail

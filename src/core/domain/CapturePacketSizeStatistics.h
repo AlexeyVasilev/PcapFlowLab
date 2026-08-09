@@ -38,6 +38,7 @@ make_capture_packet_size_statistics_buckets() {
 
 struct CapturePacketSizeStatistics {
     std::uint64_t total_packet_count {0};
+    std::uint64_t total_captured_bytes {0};
     std::uint64_t maximum_bucket_packet_count {0};
     std::uint32_t maximum_captured_packet_length {0};
     std::array<CapturePacketSizeStatisticsBucket, kCapturePacketSizeStatisticsBucketCount> buckets {
@@ -93,6 +94,7 @@ inline void accumulate_capture_packet_size(
     auto& bucket = statistics.buckets[bucket_index];
     ++bucket.packet_count;
     ++statistics.total_packet_count;
+    statistics.total_captured_bytes += captured_length;
     if (bucket.packet_count > statistics.maximum_bucket_packet_count) {
         statistics.maximum_bucket_packet_count = bucket.packet_count;
     }

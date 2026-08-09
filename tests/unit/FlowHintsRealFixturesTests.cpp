@@ -860,6 +860,7 @@ void expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_expl
     const auto analysis = adapter.get_selected_flow_analysis();
     PFL_EXPECT(analysis.analysis_available);
     PFL_EXPECT(analysis.service_hint_text == "www.youtube.com");
+    PFL_EXPECT(!analysis.max_captured_packet_size_text.empty());
 }
 
 void expect_frontend_adapter_selected_flow_tls_service_hint_preserves_existing_value() {

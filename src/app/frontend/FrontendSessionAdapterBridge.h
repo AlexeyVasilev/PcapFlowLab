@@ -47,6 +47,11 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     std::uint8_t mode,
     std::uint64_t node_id
 );
+char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode,
+    const char* path_utf8
+);
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t http_use_path_as_service_hint,

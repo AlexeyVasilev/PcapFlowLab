@@ -105,6 +105,13 @@ pub struct ExportAllFlowsInfoCsvResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportProtocolPathTreeResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartExportResultDto {
     pub exported: bool,
     pub output_path: String,
@@ -627,6 +634,7 @@ pub struct SelectedFlowAnalysisDto {
     pub min_packet_size_a_to_b_text: String,
     pub min_packet_size_b_to_a_text: String,
     pub max_packet_size_text: String,
+    pub max_captured_packet_size_text: String,
     pub max_packet_size_a_to_b_text: String,
     pub max_packet_size_b_to_a_text: String,
     pub tcp_syn_packets_text: String,

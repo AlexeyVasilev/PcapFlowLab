@@ -264,6 +264,11 @@ void expect_matching_states(const CaptureState& left, const CaptureState& right)
     PFL_EXPECT(left.summary.packet_count == right.summary.packet_count);
     PFL_EXPECT(left.summary.flow_count == right.summary.flow_count);
     PFL_EXPECT(left.summary.total_bytes == right.summary.total_bytes);
+    PFL_EXPECT(left.packet_locator.size() == right.packet_locator.size());
+    for (std::size_t index = 0U; index < left.packet_locator.size(); ++index) {
+        PFL_EXPECT(left.packet_locator[index].packet_index == right.packet_locator[index].packet_index);
+        PFL_EXPECT(left.packet_locator[index].file_offset == right.packet_locator[index].file_offset);
+    }
     expect_matching_protocol_path_registries(left.protocol_path_registry, right.protocol_path_registry);
     expect_matching_tables(left.ipv4_connections, right.ipv4_connections);
     expect_matching_tables(left.ipv6_connections, right.ipv6_connections);
@@ -513,6 +518,50 @@ void run_index_format_tests() {
     PFL_EXPECT(!index_reader.read(legacy_version_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
     PFL_EXPECT(index_reader.last_error().reason == "unsupported index version; rebuild the index from the source capture");
 
+    {
+        auto invalid_locator_state = state;
+        invalid_locator_state.packet_locator = {
+            CapturePacketLocatorEntry {.packet_index = 0U, .file_offset = 24U},
+            CapturePacketLocatorEntry {.packet_index = 1U, .file_offset = 16U},
+        };
+
+        const auto invalid_locator_index_path =
+            std::filesystem::temp_directory_path() / "pfl_index_invalid_packet_locator.idx";
+        std::filesystem::remove(invalid_locator_index_path);
+
+        CaptureIndexWriter invalid_locator_writer {};
+        PFL_REQUIRE(invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path));
+        PFL_EXPECT(!index_reader.read(
+            invalid_locator_index_path,
+            loaded_state,
+            loaded_capture_path,
+            &loaded_source_info
+        ));
+        PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
+    }
+
+    {
+        auto invalid_locator_state = state;
+        invalid_locator_state.packet_locator = {
+            CapturePacketLocatorEntry {.packet_index = 0U, .file_offset = 24U},
+            CapturePacketLocatorEntry {.packet_index = 1U, .file_offset = 24U},
+        };
+
+        const auto invalid_locator_index_path =
+            std::filesystem::temp_directory_path() / "pfl_index_invalid_packet_locator_equal_offset.idx";
+        std::filesystem::remove(invalid_locator_index_path);
+
+        CaptureIndexWriter invalid_locator_writer {};
+        PFL_REQUIRE(invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path));
+        PFL_EXPECT(!index_reader.read(
+            invalid_locator_index_path,
+            loaded_state,
+            loaded_capture_path,
+            &loaded_source_info
+        ));
+        PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
+    }
+
     ImportCheckpoint checkpoint {};
     PFL_EXPECT(read_capture_source_info(source_path, checkpoint.source_info));
     checkpoint.packets_processed = 2;
@@ -563,6 +612,13 @@ void run_index_format_tests() {
     );
     PFL_EXPECT(!index_reader.read(
         missing_protocol_paths_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+
+    const auto missing_unrecognized_packets_index_path = write_temp_binary_file(
+        "pfl_index_missing_unrecognized_packets.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_packets))
+    );
+    PFL_EXPECT(!index_reader.read(
+        missing_unrecognized_packets_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
 
     const auto duplicate_index_path = write_temp_binary_file(
         "pfl_index_duplicate_summary.idx",

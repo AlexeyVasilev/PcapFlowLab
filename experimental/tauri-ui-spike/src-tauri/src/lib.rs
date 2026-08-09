@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -523,6 +523,38 @@ fn pick_save_analysis_sequence_csv_path(_app: AppHandle) -> Result<Option<String
     }
 }
 
+#[tauri::command]
+fn pick_save_protocol_path_tree_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Export Protocol Path Tree".to_string(),
+            format!("--filename={}", current_dir_prefill("protocol-path-tree.txt")),
+            "--file-filter=Text files | *.txt".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "txt").to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Text files", &["txt"])
+            .set_file_name("protocol-path-tree.txt")
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "txt").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
 fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
     if path.extension().is_some() {
         return path;
@@ -890,6 +922,18 @@ fn export_all_flows_info_csv(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn export_protocol_path_tree(
+    state: State<'_, Mutex<AdapterState>>,
+    mode: u8,
+    path: String,
+) -> Result<ExportProtocolPathTreeResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_protocol_path_tree(mode, &path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 #[allow(clippy::too_many_arguments)]
 fn export_smart_flows(
     state: State<'_, Mutex<AdapterState>>,
@@ -984,6 +1028,7 @@ pub fn run() {
             pick_smart_export_destination_folder,
             pick_save_all_flows_info_csv_path,
             pick_save_analysis_sequence_csv_path,
+            pick_save_protocol_path_tree_path,
             open_capture,
             start_open_capture,
             poll_open_capture,
@@ -993,6 +1038,7 @@ pub fn run() {
             export_current_flow,
             export_selected_flows,
             export_all_flows_info_csv,
+            export_protocol_path_tree,
             export_smart_flows,
             export_smart_unrecognized_packets,
             exit_app,

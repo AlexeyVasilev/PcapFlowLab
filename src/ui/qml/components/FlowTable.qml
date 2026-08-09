@@ -346,7 +346,7 @@ Frame {
                             Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: root.indexColumnWidth; onClicked: root.sortRequested(0) }
                             Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: root.familyColumnWidth; onClicked: root.sortRequested(1) }
                             Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: root.protocolColumnWidth; onClicked: root.sortRequested(2) }
-                            Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: root.protocolHintColumnWidth; onClicked: root.sortRequested(3) }
+                            Button { text: "Detected" + root.sortIndicator(3); Layout.preferredWidth: root.protocolHintColumnWidth; onClicked: root.sortRequested(3) }
                             Button { text: "Service" + root.sortIndicator(4); Layout.preferredWidth: root.serviceColumnWidth; Layout.minimumWidth: root.serviceColumnWidth; Layout.maximumWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
                             Button { text: "Endpoint A" + root.sortIndicator(6); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(6) }
                             Button { text: "Endpoint B" + root.sortIndicator(8); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(8) }

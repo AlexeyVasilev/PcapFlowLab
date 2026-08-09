@@ -11,13 +11,16 @@
 #include <array>
 
 #include "app/session/FlowRows.h"
+#include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/CaptureState.h"
+#include "core/domain/Direction.h"
 #include "core/domain/PacketDetails.h"
+#include "core/io/PcapReader.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/open_failure_info.h"
@@ -132,6 +135,34 @@ struct CaptureStorageSummary {
     std::uint64_t approx_protocol_path_layer_payload_bytes {0};
 };
 
+struct SelectedFlowPacketContext {
+    PacketRef packet {};
+    std::uint64_t flow_packet_index {0};
+    Direction direction {Direction::a_to_b};
+};
+
+struct PacketOwnershipContext {
+    PacketRef packet {};
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<Direction> direction {};
+};
+
+enum class SourcePacketLookupStatus : std::uint8_t {
+    found,
+    out_of_range,
+    source_unavailable,
+    locator_unavailable,
+    unsupported_format,
+    source_read_failed,
+};
+
+struct SourcePacketLookupResult {
+    SourcePacketLookupStatus status {SourcePacketLookupStatus::out_of_range};
+    std::optional<PacketRef> packet {};
+    std::optional<RawPcapPacket> source_packet {};
+};
+
 class CaptureSession {
 public:
     using IndexSaveProgress = pfl::IndexSaveProgress;
@@ -168,6 +199,9 @@ public:
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& attached_source_capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
+    [[nodiscard]] const std::filesystem::path& input_path() const noexcept;
+    [[nodiscard]] std::uint64_t input_file_size() const noexcept;
+    [[nodiscard]] const CaptureSourceInfo& source_info() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_vlan_and_mpls_layers() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_gtpu_teids() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
@@ -181,6 +215,12 @@ public:
         ProtocolPathStatisticsMode mode,
         std::uint64_t node_id
     ) const;
+    bool export_protocol_path_tree_text(
+        ProtocolPathStatisticsMode mode,
+        const std::filesystem::path& output_path,
+        session_detail::TextExportOverwritePolicy overwrite_policy = session_detail::TextExportOverwritePolicy::overwrite_existing,
+        std::string* out_error_text = nullptr
+    ) const;
     void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
@@ -189,6 +229,8 @@ public:
     [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
+    [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
+    [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
     [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
         const PacketRef& packet
     ) const;
@@ -217,6 +259,7 @@ public:
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_payload_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_protocol_details_text(const PacketRef& packet) const;
+    [[nodiscard]] SourcePacketLookupResult lookup_source_packet(std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(const ReassemblyRequest& request) const;
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(
         const ReassemblyRequest& request,
@@ -287,13 +330,21 @@ public:
     [[nodiscard]] std::size_t flow_stream_item_count(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::optional<PacketRef> selected_flow_packet_at(std::size_t flow_index, std::uint64_t flow_packet_index) const;
+    [[nodiscard]] std::optional<SelectedFlowPacketContext> selected_flow_packet_context_at(
+        std::size_t flow_index,
+        std::uint64_t flow_packet_index
+    ) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_packet_number(std::size_t flow_index, std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_exact_packet_number(
         std::size_t flow_index,
         std::uint64_t packet_index
     ) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
-    bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
+    bool export_flows_to_pcap(
+        const std::vector<std::size_t>& flow_indices,
+        const std::filesystem::path& output_path,
+        const SmartSingleFileExportOptions& options = {}
+    ) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(
         const SmartFlowExportRequest& request,
@@ -322,9 +373,18 @@ public:
         const SmartPerFlowExportOptions& options,
         std::string* out_error_text
     ) const;
+    bool export_flows_info_csv(std::span<const std::size_t> flow_indices, const std::filesystem::path& output_path) const;
+    bool export_flows_info_csv(
+        std::span<const std::size_t> flow_indices,
+        const std::filesystem::path& output_path,
+        std::string* out_error_text
+    ) const;
     bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;
     bool export_all_flows_info_csv(const std::filesystem::path& output_path, std::string* out_error_text) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
+    [[nodiscard]] std::optional<PacketOwnershipContext> resolve_packet_ownership_context(
+        std::uint64_t packet_index
+    ) const;
     [[nodiscard]] CaptureStorageSummary storage_summary() const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
@@ -468,7 +528,9 @@ private:
 
     std::filesystem::path capture_path_ {};
     std::filesystem::path source_capture_path_ {};
+    std::filesystem::path input_path_ {};
     CaptureSourceInfo source_info_ {};
+    std::uint64_t input_file_size_ {0};
     CaptureState state_ {};
     AnalysisSettings analysis_settings_ {};
     bool opened_from_index_ {false};

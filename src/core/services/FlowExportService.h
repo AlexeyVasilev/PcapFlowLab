@@ -54,7 +54,8 @@ class FlowExportService {
 public:
     bool export_packets_to_pcap(const std::filesystem::path& output_path,
                                 std::span<const PacketRef> packets,
-                                const std::filesystem::path& source_capture_path) const;
+                                const std::filesystem::path& source_capture_path,
+                                const MarkedPacketExportOptions& options = {}) const;
     bool export_marked_packets_to_pcap(const std::filesystem::path& output_path,
                                        std::span<const std::uint8_t> packet_selection,
                                        const std::filesystem::path& source_capture_path) const;

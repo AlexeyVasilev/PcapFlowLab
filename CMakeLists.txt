@@ -109,8 +109,10 @@ add_library(
     src/core/services/QuicInitialParser.cpp
     src/core/services/HexDumpService.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
+    src/app/frontend/FrontendSettingsJson.cpp
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
+    src/app/session/ProtocolPathTextExport.cpp
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
@@ -142,6 +144,12 @@ add_executable(
     pcap_flow_lab_cli
     src/cli/main.cpp
     src/cli/CliFormatting.cpp
+    src/cli/CliCommandSupport.cpp
+    src/cli/ExportFlowsCommand.cpp
+    src/cli/FlowInfoCommand.cpp
+    src/cli/FlowsCommand.cpp
+    src/cli/PacketInfoCommand.cpp
+    src/cli/SummaryCommand.cpp
 )
 
 set_target_properties(pcap_flow_lab_cli PROPERTIES OUTPUT_NAME "pcap-flow-lab")
@@ -378,6 +386,10 @@ if(BUILD_TESTING)
         tests/unit/FlowAnalysisTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/CliFlowsTests.cpp
+        tests/unit/CliExportFlowsTests.cpp
+        tests/unit/CliFlowInfoTests.cpp
+        tests/unit/CliSummaryTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
         tests/unit/PacketPayloadTests.cpp
@@ -429,6 +441,14 @@ if(BUILD_TESTING)
         tests/unit/ProtocolRecognitionStatsTests.cpp
         tests/unit/UnrecognizedPacketTests.cpp
         src/app/frontend/FrontendSessionAdapterBridge.cpp
+        src/app/frontend/FrontendSettingsJson.cpp
+        src/cli/CliCommandSupport.cpp
+        src/cli/ExportFlowsCommand.cpp
+        src/cli/FlowInfoCommand.cpp
+        src/cli/FlowsCommand.cpp
+        src/cli/PacketInfoCommand.cpp
+        src/cli/SummaryCommand.cpp
+        tests/unit/CliPacketInfoTests.cpp
     )
 
     target_link_libraries(

@@ -100,6 +100,12 @@ struct FrontendExportAllFlowsInfoCsvResult {
     std::string error_text {};
 };
 
+struct FrontendExportProtocolPathTreeResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 enum class FrontendSmartExportOutputMode : std::uint8_t {
     single_file = 0,
     separate_file_per_flow = 1,
@@ -160,6 +166,29 @@ struct FrontendOverviewSummaryDto {
     std::uint64_t total_bytes {0};
 };
 
+enum class FrontendInputKind : std::uint8_t {
+    unknown = 0,
+    classic_pcap = 1,
+    pcapng = 2,
+    pcap_flow_lab_index = 3,
+};
+
+struct FrontendInputMetadataDto {
+    std::string input_path {};
+    FrontendInputKind input_kind {FrontendInputKind::unknown};
+    std::uint64_t input_file_size {0};
+    std::optional<std::string> source_capture_path {};
+    bool source_capture_accessible {false};
+};
+
+struct FrontendWholeCaptureTotalsDto {
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
 struct FrontendOverviewProtocolSummaryDto {
     FrontendProtocolStatsDto tcp {};
     FrontendProtocolStatsDto udp {};
@@ -187,8 +216,12 @@ struct FrontendFlowPacketCountHistogramBucketDto {
     std::uint64_t lower_bound_inclusive {0};
     std::optional<std::uint64_t> upper_bound_inclusive {};
     std::uint64_t flow_count {0};
+    std::string flow_count_with_total_percent_text {};
     std::uint64_t original_byte_count {0};
     std::string original_byte_count_text {};
+    std::string original_byte_count_with_total_percent_text {};
+    double total_flow_fraction {0.0};
+    double total_original_byte_fraction {0.0};
     double normalized_flow_fraction {0.0};
     double normalized_original_byte_fraction {0.0};
 };
@@ -210,6 +243,9 @@ struct FrontendCapturePacketSizeStatisticsBucketDto {
     std::uint32_t lower_bound_inclusive {0};
     std::optional<std::uint32_t> upper_bound_inclusive {};
     std::uint64_t packet_count {0};
+    std::string packet_count_text {};
+    double total_fraction {0.0};
+    std::string total_percent_text {};
     double normalized_fraction {0.0};
 };
 
@@ -271,6 +307,8 @@ struct FrontendProtocolPathPresentationDto {
 struct FrontendOverviewDto {
     bool has_capture {false};
     FrontendOverviewSummaryDto summary {};
+    FrontendWholeCaptureTotalsDto whole_capture_totals {};
+    FrontendInputMetadataDto input_metadata {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
     std::uint64_t unrecognized_packet_count {0};
@@ -477,6 +515,28 @@ struct FrontendPacketDetailsDto {
     FrontendSourceAvailabilityDto source_availability {};
 };
 
+struct FrontendPacketInfoDto {
+    bool has_capture {false};
+    bool packet_available {false};
+    bool recognized_flow {false};
+    bool source_capture_accessible {false};
+    bool details_available {false};
+    std::uint64_t packet_index {0};
+    std::uint64_t packet_in_file {0};
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> packet_in_flow {};
+    std::string endpoint_summary_text {};
+    std::string direction_text {};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::vector<session_detail::PacketSummaryLayer> summary_layers {};
+    FrontendPacketDetailsDto::PacketByteViewContent captured_packet_bytes {};
+    std::string unavailable_text {};
+    std::string error_text {};
+    FrontendSourceAvailabilityDto source_availability {};
+};
+
 struct FrontendAnalysisSequencePreviewRowDto {
     std::uint64_t flow_packet_number {0};
     std::string direction_text {};
@@ -559,6 +619,7 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string min_packet_size_a_to_b_text {};
     std::string min_packet_size_b_to_a_text {};
     std::string max_packet_size_text {};
+    std::string max_captured_packet_size_text {};
     std::string max_packet_size_a_to_b_text {};
     std::string max_packet_size_b_to_a_text {};
     std::string tcp_syn_packets_text {};
@@ -579,6 +640,47 @@ struct FrontendSelectedFlowAnalysisDto {
     std::vector<FrontendAnalysisHistogramRowDto> inter_arrival_histogram_rows {};
     std::vector<FrontendAnalysisHistogramRowDto> packet_size_histogram_rows {};
     std::vector<FrontendAnalysisSequencePreviewRowDto> sequence_preview_rows {};
+};
+
+struct FrontendFlowInfoDto {
+    bool has_capture {false};
+    bool flow_available {false};
+    bool analysis_available {false};
+    std::size_t flow_index {0};
+    std::uint64_t total_packets {0};
+    std::uint64_t total_bytes {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t bytes_a_to_b {0};
+    std::uint64_t bytes_b_to_a {0};
+    std::string endpoint_a {};
+    std::string endpoint_b {};
+    std::string endpoint_summary_text {};
+    std::string family_text {};
+    std::string protocol_text {};
+    std::string protocol_hint_display {};
+    std::string service_hint_text {};
+    std::string protocol_path_text {};
+    std::string first_packet_time_text {};
+    std::string last_packet_time_text {};
+    std::string duration_text {};
+    std::string largest_gap_text {};
+    std::string total_packets_text {};
+    std::string total_bytes_text {};
+    std::string captured_bytes_text {};
+    std::string max_captured_packet_size_text {};
+    std::string packets_a_to_b_text {};
+    std::string packets_b_to_a_text {};
+    std::string total_direction_packets_text {};
+    std::string bytes_a_to_b_text {};
+    std::string bytes_b_to_a_text {};
+    std::string total_direction_bytes_text {};
+    std::string packet_direction_text {};
+    std::string data_direction_text {};
+    std::string unavailable_text {};
+    std::string error_text {};
+    std::vector<FrontendAnalysisHistogramRowDto> packet_size_histogram_rows {};
 };
 
 }  // namespace pfl

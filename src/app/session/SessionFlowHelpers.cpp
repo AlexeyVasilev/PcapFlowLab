@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cctype>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -151,6 +152,159 @@ const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountH
     {"packets_1001_5000", 1001U, 5000U},
     {"packets_5001_plus", 5001U, std::nullopt},
 }};
+
+char ascii_lower(const char value) noexcept {
+    if (value >= 'A' && value <= 'Z') {
+        return static_cast<char>(value - 'A' + 'a');
+    }
+    return value;
+}
+
+int compare_case_insensitive_text(const std::string_view left, const std::string_view right) {
+    const auto shared_length = std::min(left.size(), right.size());
+    for (std::size_t index = 0; index < shared_length; ++index) {
+        const auto folded_left = ascii_lower(left[index]);
+        const auto folded_right = ascii_lower(right[index]);
+        if (folded_left < folded_right) {
+            return -1;
+        }
+        if (folded_left > folded_right) {
+            return 1;
+        }
+    }
+    if (left.size() < right.size()) {
+        return -1;
+    }
+    if (left.size() > right.size()) {
+        return 1;
+    }
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+
+bool contains_case_insensitive_text(const std::string_view haystack, const std::string_view needle) {
+    if (needle.empty()) {
+        return true;
+    }
+    if (haystack.size() < needle.size()) {
+        return false;
+    }
+
+    for (std::size_t offset = 0; offset + needle.size() <= haystack.size(); ++offset) {
+        bool matches = true;
+        for (std::size_t index = 0; index < needle.size(); ++index) {
+            if (ascii_lower(haystack[offset + index]) != ascii_lower(needle[index])) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::string flow_family_text(const FlowAddressFamily family) {
+    return family == FlowAddressFamily::ipv6 ? "IPv6" : "IPv4";
+}
+
+std::string upper_ascii(const std::string_view value) {
+    std::string formatted {value};
+    std::transform(formatted.begin(), formatted.end(), formatted.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return formatted;
+}
+
+int compare_endpoint_fields(
+    const FlowAddressFamily left_family,
+    const std::string_view left_address,
+    const std::uint16_t left_port,
+    const FlowAddressFamily right_family,
+    const std::string_view right_address,
+    const std::uint16_t right_port
+) {
+    if (left_family != right_family) {
+        return left_family < right_family ? -1 : 1;
+    }
+
+    if (const auto address_compare = compare_case_insensitive_text(left_address, right_address); address_compare != 0) {
+        return address_compare;
+    }
+
+    if (left_port < right_port) {
+        return -1;
+    }
+    if (left_port > right_port) {
+        return 1;
+    }
+    return 0;
+}
+
+int compare_flow_rows_for_sort(const FlowRow& left, const FlowRow& right, const FlowQuerySortKey key) {
+    switch (key) {
+    case FlowQuerySortKey::canonical_index:
+        break;
+    case FlowQuerySortKey::protocol:
+        return compare_case_insensitive_text(left.protocol_text, right.protocol_text);
+    case FlowQuerySortKey::service:
+        return compare_case_insensitive_text(left.service_hint, right.service_hint);
+    case FlowQuerySortKey::endpoint_a:
+        return compare_endpoint_fields(
+            left.family,
+            left.address_a,
+            left.port_a,
+            right.family,
+            right.address_a,
+            right.port_a
+        );
+    case FlowQuerySortKey::endpoint_b:
+        return compare_endpoint_fields(
+            left.family,
+            left.address_b,
+            left.port_b,
+            right.family,
+            right.address_b,
+            right.port_b
+        );
+    case FlowQuerySortKey::packets:
+        if (left.packet_count < right.packet_count) {
+            return -1;
+        }
+        if (left.packet_count > right.packet_count) {
+            return 1;
+        }
+        return 0;
+    case FlowQuerySortKey::bytes:
+        if (left.total_bytes < right.total_bytes) {
+            return -1;
+        }
+        if (left.total_bytes > right.total_bytes) {
+            return 1;
+        }
+        return 0;
+    }
+
+    if (left.index < right.index) {
+        return -1;
+    }
+    if (left.index > right.index) {
+        return 1;
+    }
+    return 0;
+}
+
+struct FlowQueryCandidate {
+    std::size_t index {0};
+    FlowRow row {};
+};
 
 std::string group_integer_part(std::string text) {
     const auto sign_offset = !text.empty() && text.front() == '-' ? std::size_t {1} : std::size_t {0};
@@ -616,6 +770,134 @@ std::optional<FlowRow> make_flow_row(
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };
+}
+
+std::string format_flow_protocol_hint_display(const std::string_view value) {
+    if (value == "possible_tls") {
+        return "Possible TLS";
+    }
+    if (value == "possible_quic") {
+        return "Possible QUIC";
+    }
+    if (value == "igmp") {
+        return "IGMP";
+    }
+    if (value == "igmpv1") {
+        return "IGMPv1";
+    }
+    if (value == "igmpv2") {
+        return "IGMPv2";
+    }
+    if (value == "igmpv3") {
+        return "IGMPv3";
+    }
+
+    return upper_ascii(value);
+}
+
+bool flow_row_matches_text_filter(const FlowRow& row, const std::string_view filter) noexcept {
+    if (filter.empty()) {
+        return true;
+    }
+
+    return contains_case_insensitive_text(flow_family_text(row.family), filter)
+        || contains_case_insensitive_text(row.protocol_text, filter)
+        || contains_case_insensitive_text(row.protocol_hint, filter)
+        || contains_case_insensitive_text(row.service_hint, filter)
+        || contains_case_insensitive_text(row.address_a, filter)
+        || contains_case_insensitive_text(row.address_b, filter)
+        || contains_case_insensitive_text(row.endpoint_a, filter)
+        || contains_case_insensitive_text(row.endpoint_b, filter)
+        || contains_case_insensitive_text(std::to_string(row.port_a), filter)
+        || contains_case_insensitive_text(std::to_string(row.port_b), filter);
+}
+
+FlowQueryResult query_flow_indices(
+    const std::span<const ListedConnectionRef> connections,
+    const AnalysisSettings& settings,
+    const FlowQuery& query
+) {
+    FlowQueryResult result {};
+
+    if (query.limit.has_value() && *query.limit == 0U) {
+        result.status = FlowQueryStatus::invalid_limit;
+        return result;
+    }
+
+    std::vector<std::size_t> candidate_indices {};
+    if (query.selected_flow_indices.has_value()) {
+        candidate_indices = *query.selected_flow_indices;
+        for (const auto flow_index : candidate_indices) {
+            if (flow_index >= connections.size()) {
+                result.status = FlowQueryStatus::invalid_flow_index;
+                result.invalid_flow_index = flow_index;
+                return result;
+            }
+        }
+
+        std::sort(candidate_indices.begin(), candidate_indices.end());
+        candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+    } else {
+        candidate_indices.resize(connections.size());
+        for (std::size_t index = 0; index < connections.size(); ++index) {
+            candidate_indices[index] = index;
+        }
+    }
+
+    if (query.text_filter.empty() && !query.sort.has_value()) {
+        result.result_count_before_limit = candidate_indices.size();
+        if (query.limit.has_value() && candidate_indices.size() > *query.limit) {
+            candidate_indices.resize(*query.limit);
+        }
+        result.ordered_flow_indices = std::move(candidate_indices);
+        return result;
+    }
+
+    std::vector<FlowQueryCandidate> candidates {};
+    candidates.reserve(candidate_indices.size());
+    for (const auto flow_index : candidate_indices) {
+        const auto row = make_flow_row(flow_index, connections[flow_index], settings);
+        if (!row.has_value()) {
+            result.status = FlowQueryStatus::invalid_flow_index;
+            result.invalid_flow_index = flow_index;
+            return result;
+        }
+        candidates.push_back(FlowQueryCandidate {
+            .index = flow_index,
+            .row = *row,
+        });
+    }
+
+    if (!query.text_filter.empty()) {
+        std::erase_if(candidates, [&](const FlowQueryCandidate& candidate) {
+            return !flow_row_matches_text_filter(candidate.row, query.text_filter);
+        });
+    }
+
+    if (query.sort.has_value()) {
+        const auto sort_spec = *query.sort;
+        std::stable_sort(candidates.begin(), candidates.end(), [&](const FlowQueryCandidate& left, const FlowQueryCandidate& right) {
+            const auto comparison = compare_flow_rows_for_sort(left.row, right.row, sort_spec.key);
+            if (comparison == 0) {
+                return left.index < right.index;
+            }
+
+            return sort_spec.direction == FlowQuerySortDirection::ascending
+                ? comparison < 0
+                : comparison > 0;
+        });
+    }
+
+    result.result_count_before_limit = candidates.size();
+    if (query.limit.has_value() && candidates.size() > *query.limit) {
+        candidates.resize(*query.limit);
+    }
+
+    result.ordered_flow_indices.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        result.ordered_flow_indices.push_back(candidate.index);
+    }
+    return result;
 }
 
 FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections) {

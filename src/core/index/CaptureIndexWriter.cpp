@@ -22,7 +22,7 @@ namespace pfl {
 
 namespace {
 
-constexpr std::uint64_t kFixedIndexSectionCountExcludingConnections = 4U;
+constexpr std::uint64_t kFixedIndexSectionCountExcludingConnections = 5U;
 constexpr std::uint64_t kMinimumConnectionSectionPayloadBytes = 8U;
 
 [[nodiscard]] std::uint64_t stream_offset(std::ofstream& stream) {
@@ -872,6 +872,24 @@ bool CaptureIndexWriter::write(
             static_cast<std::uint64_t>(state.unrecognized_packets.size()),
             [&](std::ostream& payload, const detail::SerializationProgressCallback& callback) {
                 return detail::write_unrecognized_packet_records(payload, state.unrecognized_packets, callback);
+            },
+            out_error_text)) {
+        cleanup_temp();
+        return false;
+    }
+    ++completed_sections;
+
+    if (!write_marshaled_section(
+            stream,
+            detail::CaptureIndexSectionId::packet_locator,
+            options,
+            progress_reporter,
+            "packet locator section",
+            completed_sections,
+            total_sections,
+            static_cast<std::uint64_t>(state.packet_locator.size()),
+            [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
+                return detail::write_capture_packet_locator(payload, state.packet_locator);
             },
             out_error_text)) {
         cleanup_temp();

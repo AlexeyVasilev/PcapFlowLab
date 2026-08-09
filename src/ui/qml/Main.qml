@@ -1180,6 +1180,7 @@ ApplicationWindow {
                 analysisMinPacketSizeAToBText: mainController.analysisMinPacketSizeAToBText
                 analysisMinPacketSizeBToAText: mainController.analysisMinPacketSizeBToAText
                 analysisMaxPacketSizeText: mainController.analysisMaxPacketSizeText
+                analysisMaxCapturedPacketSizeText: mainController.analysisMaxCapturedPacketSizeText
                 analysisMaxPacketSizeAToBText: mainController.analysisMaxPacketSizeAToBText
                 analysisMaxPacketSizeBToAText: mainController.analysisMaxPacketSizeBToAText
                 analysisPacketRatioText: mainController.analysisPacketRatioText
@@ -1334,6 +1335,9 @@ ApplicationWindow {
                 }
                 onShowFlowsRequested: function() {
                     mainController.showSelectedProtocolPathFlows()
+                }
+                onProtocolPathExportRequested: function() {
+                    mainController.browseExportProtocolPathTree()
                 }
                 onStatisticsSectionExpandedChanged: function(section, expanded) {
                     mainController.setStatisticsSectionExpanded(section, expanded)

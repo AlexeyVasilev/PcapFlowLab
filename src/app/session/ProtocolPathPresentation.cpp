@@ -267,6 +267,13 @@ ProtocolPathPresentation build_protocol_path_presentation(
     return build_protocol_path_presentation(registry.find(protocol_path_id));
 }
 
+std::string protocol_path_compact_text(
+    const ProtocolPathRegistry& registry,
+    const ProtocolPathId protocol_path_id
+) {
+    return build_protocol_path_presentation(registry, protocol_path_id).compact_text;
+}
+
 std::vector<ProtocolPathLegendEntry> protocol_path_legend_entries() {
     std::vector<ProtocolPathLegendEntry> legend {};
     legend.reserve(kProtocolPathDescriptors.size());

@@ -59,6 +59,9 @@ bool ImportCheckpointWriter::write(const std::filesystem::path& checkpoint_path,
         }) ||
         !write_marshaled_section(stream, detail::ImportCheckpointSectionId::unrecognized_packets, [&](std::ostream& payload) {
             return detail::write_unrecognized_packet_records(payload, checkpoint.state.unrecognized_packets);
+        }) ||
+        !write_marshaled_section(stream, detail::ImportCheckpointSectionId::packet_locator, [&](std::ostream& payload) {
+            return detail::write_capture_packet_locator(payload, checkpoint.state.packet_locator);
         })) {
         return false;
     }

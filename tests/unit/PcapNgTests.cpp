@@ -32,6 +32,13 @@ void run_pcapng_tests() {
         PFL_EXPECT(packet->ts_sec == 1);
         PFL_EXPECT(packet->ts_usec == 100);
         PFL_EXPECT(session.read_packet_data(*packet) == tcp_packet);
+
+        const auto source_packet = session.lookup_source_packet(0U);
+        PFL_EXPECT(source_packet.status == SourcePacketLookupStatus::found);
+        PFL_REQUIRE(source_packet.packet.has_value());
+        PFL_REQUIRE(source_packet.source_packet.has_value());
+        PFL_EXPECT(source_packet.packet->packet_index == 0U);
+        PFL_EXPECT(source_packet.source_packet->bytes == tcp_packet);
     }
 
     {
@@ -76,6 +83,14 @@ void run_pcapng_tests() {
         PFL_EXPECT(flow_packets->size() == 2U);
         PFL_EXPECT(session.read_packet_data((*flow_packets)[0]) == tcp_packet);
         PFL_EXPECT(session.read_packet_data((*flow_packets)[1]) == reverse_tcp_packet);
+
+        const auto source_packet = session.lookup_source_packet(1U);
+        PFL_EXPECT(source_packet.status == SourcePacketLookupStatus::found);
+        PFL_REQUIRE(source_packet.packet.has_value());
+        PFL_REQUIRE(source_packet.source_packet.has_value());
+        PFL_EXPECT(source_packet.packet->packet_index == 1U);
+        PFL_EXPECT(source_packet.packet->ts_usec == 200U);
+        PFL_EXPECT(source_packet.source_packet->bytes == reverse_tcp_packet);
     }
 
     {

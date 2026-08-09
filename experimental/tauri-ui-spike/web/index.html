@@ -145,7 +145,7 @@
                       <th id="flowSortIndex" class="sortable-header" data-flow-sort-key="index">#</th>
                       <th id="flowSortFamily" class="sortable-header" data-flow-sort-key="family">Family</th>
                       <th id="flowSortProtocol" class="sortable-header" data-flow-sort-key="protocol">Protocol</th>
-                      <th id="flowSortHint" class="sortable-header" data-flow-sort-key="hint">Hint</th>
+                      <th id="flowSortHint" class="sortable-header" data-flow-sort-key="hint">Detected</th>
                       <th id="flowSortService" class="sortable-header" data-flow-sort-key="service">Service</th>
                       <th id="flowSortFrag" class="sortable-header" data-flow-sort-key="frag">Frag</th>
                       <th id="flowSortEndpointA" class="sortable-header" data-flow-sort-key="endpoint_a">Endpoint A</th>
@@ -425,6 +425,7 @@
                         <button id="protocolPathStatsModeTerminalPaths" type="button" class="secondary-button">Terminal paths</button>
                       </div>
                       <div class="statistics-mode-actions">
+                        <button id="protocolPathExportButton" type="button" class="secondary-button">Export</button>
                         <button id="protocolPathExpandAllButton" type="button" class="secondary-button">Expand all</button>
                         <button id="protocolPathCollapseAllButton" type="button" class="secondary-button">Collapse all</button>
                       </div>
@@ -588,7 +589,7 @@
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Hint</th>
+                      <th>Detected</th>
                       <th>Service</th>
                       <th>Packets</th>
                       <th>Bytes</th>
@@ -698,6 +699,7 @@
                       </div>
                     </div>
                     <div id="analysisPacketSizeHistogramRows" class="analysis-histogram-rows"></div>
+                    <div id="analysisPacketSizeCapturedSummary" class="summary-grid summary-grid-inline"></div>
                   </section>
                   <section id="analysisInterArrivalHistogramSection" class="analysis-section">
                     <div class="analysis-histogram-header">

@@ -57,6 +57,7 @@ struct FlowAnalysisRateGraph {
 struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t duration_us {0};
     double packets_per_second {0.0};
     double bytes_per_second {0.0};
@@ -74,6 +75,7 @@ struct FlowAnalysisResult {
     std::string data_direction_text {};
     std::uint32_t min_packet_size_bytes {0};
     std::uint32_t max_packet_size_bytes {0};
+    std::uint32_t max_captured_packet_size_bytes {0};
     std::uint32_t min_packet_size_a_to_b_bytes {0};
     std::uint32_t max_packet_size_a_to_b_bytes {0};
     std::uint32_t min_packet_size_b_to_a_bytes {0};

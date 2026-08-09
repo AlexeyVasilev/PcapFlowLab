@@ -121,6 +121,25 @@ PacketRef make_analysis_packet_ref(
     };
 }
 
+PacketRef make_analysis_packet_ref_with_original_length(
+    const std::uint64_t packet_index,
+    const std::uint32_t ts_usec,
+    const std::uint32_t captured_length,
+    const std::uint32_t original_length,
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags = 0U
+) {
+    return PacketRef {
+        .packet_index = packet_index,
+        .captured_length = captured_length,
+        .original_length = original_length,
+        .ts_sec = 1U,
+        .ts_usec = ts_usec,
+        .payload_length = payload_length,
+        .tcp_flags = tcp_flags,
+    };
+}
+
 PacketRef make_analysis_packet_ref_at(
     const std::uint64_t packet_index,
     const std::uint64_t timestamp_us,
@@ -224,6 +243,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis.has_value());
     PFL_EXPECT(analysis->total_packets == 3U);
     PFL_EXPECT(analysis->total_bytes == static_cast<std::uint64_t>(request_packet.size() + response_packet.size() + follow_up_packet.size()));
+    PFL_EXPECT(analysis->captured_bytes ==
+        static_cast<std::uint64_t>(request_packet.size() + response_packet.size() + follow_up_packet.size()));
     PFL_EXPECT(analysis->duration_us == 2000350U);
     PFL_EXPECT(analysis->packets_a_to_b == 2U);
     PFL_EXPECT(analysis->packets_b_to_a == 1U);
@@ -249,6 +270,7 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(nearly_equal(analysis->average_inter_arrival_us, 1000175.0));
     PFL_EXPECT(analysis->min_packet_size_bytes == follow_up_packet.size());
     PFL_EXPECT(analysis->max_packet_size_bytes == request_packet.size());
+    PFL_EXPECT(analysis->max_captured_packet_size_bytes == request_packet.size());
     PFL_EXPECT(analysis->min_packet_size_a_to_b_bytes == follow_up_packet.size());
     PFL_EXPECT(analysis->max_packet_size_a_to_b_bytes == request_packet.size());
     PFL_EXPECT(analysis->min_packet_size_b_to_a_bytes == response_packet.size());
@@ -399,6 +421,65 @@ void run_flow_analysis_tests() {
         packet_histogram_count(*histogram_analysis, "5001+") == histogram_analysis->total_packets
     );
 
+    ConnectionV4 truncated_connection {};
+    truncated_connection.key.protocol = ProtocolId::tcp;
+    truncated_connection.flow_a.packets = {
+        make_analysis_packet_ref_with_original_length(0U, 0U, 80U, 160U, 26U),
+        make_analysis_packet_ref_with_original_length(1U, 500U, 120U, 400U, 66U),
+    };
+    truncated_connection.flow_a.packet_count = static_cast<std::uint64_t>(truncated_connection.flow_a.packets.size());
+    for (const auto& packet : truncated_connection.flow_a.packets) {
+        truncated_connection.flow_a.total_bytes += packet.captured_length;
+    }
+    truncated_connection.packet_count = truncated_connection.flow_a.packet_count;
+    truncated_connection.total_bytes = truncated_connection.flow_a.total_bytes;
+
+    FlowAnalysisService direct_service {};
+    const auto truncated_analysis = direct_service.analyze(truncated_connection);
+    PFL_EXPECT(truncated_analysis.max_packet_size_bytes == 400U);
+    PFL_EXPECT(truncated_analysis.max_captured_packet_size_bytes == 120U);
+    PFL_EXPECT(packet_histogram_count(truncated_analysis, "64-127") == 2U);
+
+    const auto truncated_request_payload = std::vector<std::uint8_t>(40U, 0x41U);
+    const auto truncated_response_payload = std::vector<std::uint8_t>(80U, 0x42U);
+    const auto truncated_request_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 58000, 443, truncated_request_payload, 0x18
+    );
+    const auto truncated_response_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 90, 0, 2), ipv4(10, 90, 0, 1), 443, 58000, truncated_response_payload, 0x18
+    );
+    const auto truncated_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_max_captured_size_raw_index_parity.pcap",
+        make_classic_pcap({
+            {400U, truncated_request_packet},
+            {200U, truncated_response_packet},
+        })
+    );
+
+    CaptureSession raw_truncated_session {};
+    PFL_REQUIRE(raw_truncated_session.open_capture(truncated_capture_path));
+    const auto raw_truncated_rows = raw_truncated_session.list_flows();
+    PFL_REQUIRE(raw_truncated_rows.size() == 1U);
+    const auto raw_truncated_analysis = raw_truncated_session.get_flow_analysis(raw_truncated_rows.front().index);
+    PFL_REQUIRE(raw_truncated_analysis.has_value());
+    PFL_EXPECT(raw_truncated_analysis->max_packet_size_bytes == 400U);
+    PFL_EXPECT(raw_truncated_analysis->max_captured_packet_size_bytes == truncated_response_packet.size());
+
+    const auto truncated_index_path =
+        std::filesystem::temp_directory_path() / "pfl_flow_analysis_max_captured_size_raw_index_parity.pflidx";
+    PFL_REQUIRE(raw_truncated_session.save_index(truncated_index_path));
+    CaptureSession indexed_truncated_session {};
+    PFL_REQUIRE(indexed_truncated_session.load_index(truncated_index_path));
+    const auto indexed_truncated_rows = indexed_truncated_session.list_flows();
+    PFL_REQUIRE(indexed_truncated_rows.size() == 1U);
+    const auto indexed_truncated_analysis = indexed_truncated_session.get_flow_analysis(indexed_truncated_rows.front().index);
+    PFL_REQUIRE(indexed_truncated_analysis.has_value());
+    PFL_EXPECT(indexed_truncated_analysis->max_packet_size_bytes == raw_truncated_analysis->max_packet_size_bytes);
+    PFL_EXPECT(
+        indexed_truncated_analysis->max_captured_packet_size_bytes ==
+        raw_truncated_analysis->max_captured_packet_size_bytes
+    );
+
     const auto inter_arrival_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 42000, 8080, 12, 0x18
     );
@@ -530,6 +611,7 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(nearly_equal(single_packet_analysis->average_inter_arrival_us, 0.0));
     PFL_EXPECT(single_packet_analysis->min_packet_size_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->max_packet_size_bytes == request_packet.size());
+    PFL_EXPECT(single_packet_analysis->max_captured_packet_size_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->min_packet_size_a_to_b_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->max_packet_size_a_to_b_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->min_packet_size_b_to_a_bytes == 0U);

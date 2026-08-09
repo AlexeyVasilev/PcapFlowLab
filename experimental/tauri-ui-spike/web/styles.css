@@ -2333,6 +2333,19 @@ select:disabled {
   gap: 6px 10px;
 }
 
+.summary-grid-inline {
+  grid-template-columns: max-content max-content;
+}
+
+.summary-grid-inline .summary-row {
+  grid-template-columns: max-content max-content;
+  justify-content: start;
+}
+
+.summary-grid-inline .summary-value {
+  text-align: left;
+}
+
 .packet-summary-panel {
   min-height: 0;
 }

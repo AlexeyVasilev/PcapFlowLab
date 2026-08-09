@@ -159,6 +159,34 @@ PacketRef packet_ref_from_raw_packet(const RawPcapPacket& packet) {
     };
 }
 
+void append_capture_packet_locator_entry(
+    CaptureState& state,
+    const std::uint64_t packet_index,
+    const std::uint64_t file_offset
+) {
+    if (state.packet_locator.empty()) {
+        state.packet_locator.push_back(CapturePacketLocatorEntry {
+            .packet_index = packet_index,
+            .file_offset = file_offset,
+        });
+        return;
+    }
+
+    const auto& last_entry = state.packet_locator.back();
+    if (file_offset < last_entry.file_offset) {
+        return;
+    }
+
+    if ((file_offset - last_entry.file_offset) < kCapturePacketLocatorStrideBytes) {
+        return;
+    }
+
+    state.packet_locator.push_back(CapturePacketLocatorEntry {
+        .packet_index = packet_index,
+        .file_offset = file_offset,
+    });
+}
+
 std::string classify_unrecognized_packet_reason(
     const RawPcapPacket& packet,
     const std::span<const std::uint8_t> packet_bytes

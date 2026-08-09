@@ -27,11 +27,15 @@
 
 #include "../../../core/open_context.h"
 #include "core/debug_logging.h"
+#include "core/decode/PacketDecoder.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/reassembly/ReassemblyService.h"
 #include "core/io/CaptureFilePacketReader.h"
+#include "core/io/PcapNgReader.h"
+#include "core/io/PcapReader.h"
+#include "core/services/CaptureImportApplication.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowExportService.h"
@@ -1761,6 +1765,193 @@ std::optional<std::uint64_t> connection_packet_number(
     return std::nullopt;
 }
 
+std::optional<PacketRef> find_packet_in_state_metadata(const CaptureState& state, const std::uint64_t packet_index) {
+    for (const auto* connection : state.ipv4_connections.list()) {
+        const auto packet = find_packet_in_connection(*connection, packet_index);
+        if (packet.has_value()) {
+            return packet;
+        }
+    }
+
+    for (const auto* connection : state.ipv6_connections.list()) {
+        const auto packet = find_packet_in_connection(*connection, packet_index);
+        if (packet.has_value()) {
+            return packet;
+        }
+    }
+
+    const auto unrecognized_packet = std::find_if(
+        state.unrecognized_packets.begin(),
+        state.unrecognized_packets.end(),
+        [packet_index](const UnrecognizedPacketRecord& record) {
+            return record.packet.packet_index == packet_index;
+        }
+    );
+    if (unrecognized_packet != state.unrecognized_packets.end()) {
+        return unrecognized_packet->packet;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<CapturePacketLocatorEntry> find_packet_locator_entry(
+    const std::span<const CapturePacketLocatorEntry> entries,
+    const std::uint64_t packet_index
+) {
+    if (entries.empty()) {
+        return std::nullopt;
+    }
+
+    const auto it = std::upper_bound(
+        entries.begin(),
+        entries.end(),
+        packet_index,
+        [](const std::uint64_t target_packet_index, const CapturePacketLocatorEntry& entry) {
+            return target_packet_index < entry.packet_index;
+        }
+    );
+    if (it == entries.begin()) {
+        return std::nullopt;
+    }
+
+    return *std::prev(it);
+}
+
+PacketRef build_packet_ref_from_located_packet(const RawPcapPacket& packet) {
+    PacketDecoder decoder {};
+    const auto decoded = decoder.decode(packet);
+    if (decoded.ipv4.has_value()) {
+        return decoded.ipv4->packet_ref;
+    }
+    if (decoded.ipv6.has_value()) {
+        return decoded.ipv6->packet_ref;
+    }
+
+    return packet_ref_from_raw_packet(packet);
+}
+
+template <typename Reader>
+SourcePacketLookupResult find_packet_via_locator_with_reader(
+    Reader& reader,
+    const std::filesystem::path& source_capture_path,
+    const std::span<const CapturePacketLocatorEntry> entries,
+    const std::uint64_t packet_index
+) {
+    const auto anchor = find_packet_locator_entry(entries, packet_index);
+    if (!anchor.has_value()) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::locator_unavailable,
+        };
+    }
+    if (!reader.open(source_capture_path, anchor->file_offset, anchor->packet_index)) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::source_read_failed,
+        };
+    }
+
+    while (const auto packet = reader.read_next()) {
+        if (packet->packet_index == packet_index) {
+            auto source_packet = std::move(*packet);
+            return SourcePacketLookupResult {
+                .status = SourcePacketLookupStatus::found,
+                .packet = build_packet_ref_from_located_packet(source_packet),
+                .source_packet = std::move(source_packet),
+            };
+        }
+        if (packet->packet_index > packet_index) {
+            return SourcePacketLookupResult {
+                .status = SourcePacketLookupStatus::source_read_failed,
+            };
+        }
+    }
+
+    return SourcePacketLookupResult {
+        .status = SourcePacketLookupStatus::source_read_failed,
+    };
+}
+
+SourcePacketLookupResult find_packet_in_source_capture(
+    const CaptureSourceInfo& source_info,
+    const std::filesystem::path& source_capture_path,
+    const std::span<const CapturePacketLocatorEntry> entries,
+    const std::uint64_t packet_index
+) {
+    switch (source_info.format) {
+    case CaptureSourceFormat::classic_pcap: {
+        PcapReader reader {};
+        return find_packet_via_locator_with_reader(reader, source_capture_path, entries, packet_index);
+    }
+    case CaptureSourceFormat::pcapng: {
+        PcapNgReader reader {};
+        return find_packet_via_locator_with_reader(reader, source_capture_path, entries, packet_index);
+    }
+    default:
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::unsupported_format,
+        };
+    }
+}
+
+template <typename Connection>
+std::optional<SelectedFlowPacketContext> connection_packet_context_at(
+    const Connection& connection,
+    const std::uint64_t flow_packet_index
+) {
+    if (flow_packet_index == 0U) {
+        return std::nullopt;
+    }
+
+    std::uint64_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        ++row_number;
+        if (row_number == flow_packet_index) {
+            return SelectedFlowPacketContext {
+                .packet = packet,
+                .flow_packet_index = row_number,
+                .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
+            };
+        }
+    }
+
+    return std::nullopt;
+}
+
+template <typename Connection>
+std::optional<SelectedFlowPacketContext> find_packet_context_in_connection(
+    const Connection& connection,
+    const std::uint64_t packet_index
+) {
+    std::uint64_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        ++row_number;
+        if (packet.packet_index == packet_index) {
+            return SelectedFlowPacketContext {
+                .packet = packet,
+                .flow_packet_index = row_number,
+                .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
+            };
+        }
+    }
+
+    return std::nullopt;
+}
+
 template <typename Connection>
 std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
     const Connection& connection,
@@ -2149,7 +2340,9 @@ std::size_t first_unstable_stream_row_index(const std::vector<BuiltStreamRow>& r
 void CaptureSession::reset_runtime_state() noexcept {
     capture_path_.clear();
     source_capture_path_.clear();
+    input_path_.clear();
     source_info_ = {};
+    input_file_size_ = 0;
     state_ = {};
     analysis_settings_ = {};
     opened_from_index_ = false;
@@ -2194,7 +2387,9 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
 
     swap(capture_path_, other.capture_path_);
     swap(source_capture_path_, other.source_capture_path_);
+    swap(input_path_, other.input_path_);
     swap(source_info_, other.source_info_);
+    swap(input_file_size_, other.input_file_size_);
     swap(state_, other.state_);
     swap(analysis_settings_, other.analysis_settings_);
     swap(opened_from_index_, other.opened_from_index_);
@@ -2268,6 +2463,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 
     capture_path_ = path;
     source_capture_path_ = path;
+    input_path_ = path;
     state_ = imported_state;
     analysis_settings_ = options.settings;
     opened_from_index_ = false;
@@ -2289,6 +2485,15 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
+        std::error_code error {};
+        input_file_size_ = std::filesystem::is_regular_file(path, error) && !error
+            ? std::filesystem::file_size(path, error)
+            : 0U;
+        if (error) {
+            input_file_size_ = 0U;
+        }
+    } else {
+        input_file_size_ = source_info_.file_size;
     }
 
     debug::log_if<debug::kDebugOpen>([&]() {
@@ -2381,6 +2586,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
 
     capture_path_.clear();
     source_capture_path_ = std::move(loaded_capture_path);
+    input_path_ = index_path;
     source_info_ = std::move(loaded_source_info);
     state_ = std::move(loaded_state);
     analysis_settings_ = {};
@@ -2390,6 +2596,15 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     has_loaded_state_ = true;
     partial_open_ = false;
     partial_open_failure_ = {};
+    {
+        std::error_code error {};
+        input_file_size_ = std::filesystem::is_regular_file(index_path, error) && !error
+            ? std::filesystem::file_size(index_path, error)
+            : 0U;
+        if (error) {
+            input_file_size_ = 0U;
+        }
+    }
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
@@ -2506,6 +2721,18 @@ const std::filesystem::path& CaptureSession::attached_source_capture_path() cons
 
 const std::filesystem::path& CaptureSession::expected_source_capture_path() const noexcept {
     return source_capture_path_;
+}
+
+const std::filesystem::path& CaptureSession::input_path() const noexcept {
+    return input_path_;
+}
+
+std::uint64_t CaptureSession::input_file_size() const noexcept {
+    return input_file_size_;
+}
+
+const CaptureSourceInfo& CaptureSession::source_info() const noexcept {
+    return source_info_;
 }
 
 const CaptureSummary& CaptureSession::summary() const noexcept {
@@ -3576,6 +3803,14 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
     return service.decode_best_effort(bytes, packet);
 }
 
+session_detail::FlowQueryResult CaptureSession::query_flows(const session_detail::FlowQuery& query) const {
+    return session_detail::query_flow_indices(listed_connections(), analysis_settings_, query);
+}
+
+std::string CaptureSession::protocol_path_compact_text(const ProtocolPathId protocol_path_id) const {
+    return session_detail::protocol_path_compact_text(state_.protocol_path_registry, protocol_path_id);
+}
+
 std::optional<session_detail::SelectedPacketBytePresentation> CaptureSession::derive_selected_packet_byte_presentation(
     const PacketRef& packet
 ) const {
@@ -4579,6 +4814,20 @@ std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
         : connection_packet_at(*connections[flow_index].ipv6, flow_packet_index);
 }
 
+std::optional<SelectedFlowPacketContext> CaptureSession::selected_flow_packet_context_at(
+    const std::size_t flow_index,
+    const std::uint64_t flow_packet_index
+) const {
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    return connections[flow_index].family == FlowAddressFamily::ipv4
+        ? connection_packet_context_at(*connections[flow_index].ipv4, flow_packet_index)
+        : connection_packet_context_at(*connections[flow_index].ipv6, flow_packet_index);
+}
+
 std::optional<std::uint64_t> CaptureSession::selected_flow_packet_number(
     const std::size_t flow_index,
     const std::uint64_t packet_index
@@ -4840,7 +5089,10 @@ constexpr std::string_view kAllFlowsInfoCsvHeader =
     "packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path\n";
 
 std::string escape_csv_field(std::string_view text) {
-    if (text.find_first_of(",\"\n\r") == std::string_view::npos) {
+    const auto requires_quoting = std::any_of(text.begin(), text.end(), [](const char ch) {
+        return ch == ',' || ch == '"' || ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ';
+    });
+    if (!requires_quoting) {
         return std::string(text);
     }
 
@@ -5210,6 +5462,80 @@ bool write_flow_manifest_csv(
     return true;
 }
 
+bool export_flow_info_csv_rows(
+    const CaptureState& state,
+    const AnalysisSettings& analysis_settings,
+    const std::span<const ListedConnectionRef> connections,
+    const std::span<const std::size_t> flow_indices,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) {
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to create flows manifest CSV.";
+        }
+        return false;
+    }
+
+    if (!write_flow_manifest_csv_header(stream, FlowManifestCsvProfile::all_flows_info)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    for (const auto flow_index : flow_indices) {
+        if (flow_index >= connections.size()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to resolve flow info CSV row.";
+            }
+            return false;
+        }
+
+        const auto row = make_flow_row(flow_index, connections[flow_index], analysis_settings);
+        if (!row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare flow info CSV row.";
+            }
+            return false;
+        }
+
+        const auto packets = connections[flow_index].family == FlowAddressFamily::ipv4
+            ? collect_packets(*connections[flow_index].ipv4)
+            : collect_packets(*connections[flow_index].ipv6);
+        const auto manifest_row = build_flow_manifest_csv_row(
+            state,
+            *row,
+            static_cast<std::uint32_t>(flow_index + 1U),
+            std::span<const PacketRef>(packets),
+            {}
+        );
+        if (!manifest_row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare flow info CSV row.";
+            }
+            return false;
+        }
+
+        if (!write_flow_manifest_csv_row(stream, *manifest_row, FlowManifestCsvProfile::all_flows_info)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to write flows manifest CSV.";
+            }
+            return false;
+        }
+    }
+
+    if (!stream.good()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    return true;
+}
+
 [[nodiscard]] std::vector<PacketRef> collect_selected_smart_export_packets(
     const std::vector<PacketRef>& packets,
     const SmartPacketRetentionOptions& options
@@ -5297,7 +5623,11 @@ bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::file
     return export_flows_to_pcap({flow_index}, output_path);
 }
 
-bool CaptureSession::export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const {
+bool CaptureSession::export_flows_to_pcap(
+    const std::vector<std::size_t>& flow_indices,
+    const std::filesystem::path& output_path,
+    const SmartSingleFileExportOptions& options
+) const {
     if (!has_source_capture() || flow_indices.empty()) {
         return false;
     }
@@ -5324,7 +5654,7 @@ bool CaptureSession::export_flows_to_pcap(const std::vector<std::size_t>& flow_i
     }), packets.end());
 
     FlowExportService service {};
-    return service.export_packets_to_pcap(output_path, packets, capture_path());
+    return service.export_packets_to_pcap(output_path, packets, capture_path(), options);
 }
 
 bool CaptureSession::export_smart_flows_to_pcap(
@@ -5767,84 +6097,116 @@ bool CaptureSession::export_all_flows_info_csv(const std::filesystem::path& outp
     return export_all_flows_info_csv(output_path, nullptr);
 }
 
+bool CaptureSession::export_flows_info_csv(
+    const std::span<const std::size_t> flow_indices,
+    const std::filesystem::path& output_path
+) const {
+    return export_flows_info_csv(flow_indices, output_path, nullptr);
+}
+
+bool CaptureSession::export_protocol_path_tree_text(
+    const ProtocolPathStatisticsMode mode,
+    const std::filesystem::path& output_path,
+    const session_detail::TextExportOverwritePolicy overwrite_policy,
+    std::string* out_error_text
+) const {
+    if (!has_capture()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No capture is open.";
+        }
+        return false;
+    }
+
+    return session_detail::export_protocol_path_tree_text(
+        protocol_path_summary(mode),
+        output_path,
+        overwrite_policy,
+        out_error_text
+    );
+}
+
 bool CaptureSession::export_all_flows_info_csv(
     const std::filesystem::path& output_path,
     std::string* out_error_text
 ) const {
-    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
-    if (!stream.is_open()) {
-        if (out_error_text != nullptr) {
-            *out_error_text = "Failed to create flows manifest CSV.";
-        }
-        return false;
-    }
-
-    if (!write_flow_manifest_csv_header(stream, FlowManifestCsvProfile::all_flows_info)) {
-        if (out_error_text != nullptr) {
-            *out_error_text = "Failed to write flows manifest CSV.";
-        }
-        return false;
-    }
-
-    const auto connections = list_connections(state_);
-    std::uint32_t export_flow_id = 1U;
+    const auto& connections = listed_connections();
+    std::vector<std::size_t> flow_indices {};
+    flow_indices.resize(connections.size());
     for (std::size_t index = 0; index < connections.size(); ++index) {
-        const auto row = make_flow_row(index, connections[index], analysis_settings_);
-        if (!row.has_value()) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to prepare flow info CSV row.";
-            }
-            return false;
-        }
-        const auto packets = connections[index].family == FlowAddressFamily::ipv4
-            ? collect_packets(*connections[index].ipv4)
-            : collect_packets(*connections[index].ipv6);
-        const auto manifest_row = build_flow_manifest_csv_row(
-            state_,
-            *row,
-            export_flow_id,
-            std::span<const PacketRef>(packets),
-            {}
-        );
-        if (!manifest_row.has_value()) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to prepare flow info CSV row.";
-            }
-            return false;
-        }
-
-        if (!write_flow_manifest_csv_row(stream, *manifest_row, FlowManifestCsvProfile::all_flows_info)) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to write flows manifest CSV.";
-            }
-            return false;
-        }
-
-        ++export_flow_id;
+        flow_indices[index] = index;
     }
 
-    if (!stream.good()) {
-        if (out_error_text != nullptr) {
-            *out_error_text = "Failed to write flows manifest CSV.";
-        }
-        return false;
-    }
+    return export_flow_info_csv_rows(
+        state_,
+        analysis_settings_,
+        connections,
+        flow_indices,
+        output_path,
+        out_error_text
+    );
+}
 
-    return true;
+bool CaptureSession::export_flows_info_csv(
+    const std::span<const std::size_t> flow_indices,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    return export_flow_info_csv_rows(
+        state_,
+        analysis_settings_,
+        listed_connections(),
+        flow_indices,
+        output_path,
+        out_error_text
+    );
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {
-    for (const auto* connection : state_.ipv4_connections.list()) {
-        const auto packet = find_packet_in_connection(*connection, packet_index);
-        if (packet.has_value()) {
-            return packet;
-        }
+    return find_packet_in_state_metadata(state_, packet_index);
+}
+
+SourcePacketLookupResult CaptureSession::lookup_source_packet(const std::uint64_t packet_index) const {
+    if (packet_index >= state_.summary.packet_count) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::out_of_range,
+        };
     }
 
-    for (const auto* connection : state_.ipv6_connections.list()) {
-        const auto packet = find_packet_in_connection(*connection, packet_index);
-        if (packet.has_value()) {
-            return packet;
+    if (!source_capture_accessible()) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::source_unavailable,
+        };
+    }
+
+    if (state_.packet_locator.empty()) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::locator_unavailable,
+        };
+    }
+
+    return find_packet_in_source_capture(
+        source_info_,
+        source_capture_path_,
+        state_.packet_locator,
+        packet_index
+    );
+}
+
+std::optional<PacketOwnershipContext> CaptureSession::resolve_packet_ownership_context(
+    const std::uint64_t packet_index
+) const {
+    const auto& connections = listed_connections();
+    for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
+        const auto packet_context = connections[flow_index].family == FlowAddressFamily::ipv4
+            ? find_packet_context_in_connection(*connections[flow_index].ipv4, packet_index)
+            : find_packet_context_in_connection(*connections[flow_index].ipv6, packet_index);
+        if (packet_context.has_value()) {
+            return PacketOwnershipContext {
+                .packet = packet_context->packet,
+                .flow_index = flow_index,
+                .flow_packet_index = packet_context->flow_packet_index,
+                .direction = packet_context->direction,
+            };
         }
     }
 
@@ -5855,11 +6217,16 @@ std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index)
             return record.packet.packet_index == packet_index;
         }
     );
-    if (unrecognized_packet != state_.unrecognized_packets.end()) {
-        return unrecognized_packet->packet;
+    if (unrecognized_packet == state_.unrecognized_packets.end()) {
+        return std::nullopt;
     }
 
-    return std::nullopt;
+    return PacketOwnershipContext {
+        .packet = unrecognized_packet->packet,
+        .flow_index = std::nullopt,
+        .flow_packet_index = std::nullopt,
+        .direction = std::nullopt,
+    };
 }
 
 CaptureStorageSummary CaptureSession::storage_summary() const {

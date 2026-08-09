@@ -100,6 +100,7 @@
     attachSourceInProgress: false,
     saveIndexInProgress: false,
     exportAllFlowsInfoCsvInProgress: false,
+    protocolPathExportInProgress: false,
     exportCurrentFlowInProgress: false,
     exportSelectedFlowsInProgress: false,
     exportUnselectedFlowsInProgress: false,
@@ -380,6 +381,7 @@
     analysisPacketSizeHistogramSection: document.getElementById("analysisPacketSizeHistogramSection"),
     analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
     analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
+    analysisPacketSizeCapturedSummary: document.getElementById("analysisPacketSizeCapturedSummary"),
     analysisPacketSizeHistogramModeAll: document.getElementById("analysisPacketSizeHistogramModeAll"),
     analysisPacketSizeHistogramModeAToB: document.getElementById("analysisPacketSizeHistogramModeAToB"),
     analysisPacketSizeHistogramModeBToA: document.getElementById("analysisPacketSizeHistogramModeBToA"),
@@ -423,6 +425,7 @@
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
     protocolPathShowFlowsButton: document.getElementById("protocolPathShowFlowsButton"),
+    protocolPathExportButton: document.getElementById("protocolPathExportButton"),
     protocolPathExpandAllButton: document.getElementById("protocolPathExpandAllButton"),
     protocolPathCollapseAllButton: document.getElementById("protocolPathCollapseAllButton"),
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
@@ -1222,6 +1225,7 @@
     clearHtml(elements.analysisTimingSize);
     clearHtml(elements.analysisBurstIdleSummary);
     clearHtml(elements.analysisPacketSizeHistogramRows);
+    clearHtml(elements.analysisPacketSizeCapturedSummary);
     clearHtml(elements.analysisInterArrivalHistogramRows);
     clearText(elements.packetDetailsBytesText);
     clearText(elements.packetDetailsBytesStateText);
@@ -1356,7 +1360,9 @@
   }
 
   function canAttachSourceCapture() {
-    return state.openState === "opened" && !currentSourceAvailability().byte_backed_inspection_available;
+    return state.openState === "opened"
+      && !state.protocolPathExportInProgress
+      && !currentSourceAvailability().byte_backed_inspection_available;
   }
 
   function canSaveIndex() {
@@ -1364,6 +1370,7 @@
     return state.openState === "opened"
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1380,6 +1387,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1394,6 +1402,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1408,6 +1417,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1421,6 +1431,19 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
+  }
+
+  function canExportProtocolPathTree() {
+    return state.openState === "opened"
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1434,6 +1457,7 @@
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -2356,6 +2380,9 @@
     if (elements.protocolPathShowFlowsButton) {
       elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
     }
+    if (elements.protocolPathExportButton) {
+      elements.protocolPathExportButton.disabled = !canExportProtocolPathTree();
+    }
     if (elements.protocolPathExpandAllButton) {
       elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
       elements.protocolPathExpandAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
@@ -2501,6 +2528,7 @@
       && Array.isArray(state.analysis?.sequence_preview_rows)
       && state.analysis.sequence_preview_rows.length > 0
       && !state.exportAllFlowsInfoCsvInProgress
+      && !state.protocolPathExportInProgress
       && !state.analysisSequenceExportInProgress;
   }
 
@@ -2547,6 +2575,7 @@
     state.attachSourceInProgress = false;
     state.saveIndexInProgress = false;
     state.exportAllFlowsInfoCsvInProgress = false;
+    state.protocolPathExportInProgress = false;
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
@@ -2635,6 +2664,7 @@
             || state.attachSourceInProgress
             || state.saveIndexInProgress
             || state.exportAllFlowsInfoCsvInProgress
+            || state.protocolPathExportInProgress
             || state.exportCurrentFlowInProgress
             || state.exportSelectedFlowsInProgress
             || state.exportUnselectedFlowsInProgress
@@ -4912,7 +4942,7 @@
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
       ["Captured Bytes", analysis.captured_bytes_text || formatNumber(analysis.captured_bytes)],
-      ["Protocol Hint", analysis.protocol_hint_display || "-"],
+      ["Detected Protocol", analysis.protocol_hint_display || "-"],
       ["Service Hint", serviceHint || "-"],
     ];
     const rightRows = [
@@ -5224,6 +5254,7 @@
     elements.analysisRateGraphLegend.style.display = "none";
     elements.analysisPacketSizeHistogramRows.innerHTML = "";
     elements.analysisPacketSizeHistogramMax.textContent = "";
+    elements.analysisPacketSizeCapturedSummary.innerHTML = "";
     elements.analysisInterArrivalHistogramRows.innerHTML = "";
     elements.analysisInterArrivalHistogramMax.textContent = "";
     elements.analysisSequencePreviewBody.innerHTML = "";
@@ -5404,6 +5435,10 @@
       state.analysisPacketSizeHistogramMode,
       "is-packet-size"
     );
+    renderSummaryRows(elements.analysisPacketSizeCapturedSummary, [[
+      "Max captured packet size",
+      analysis.max_captured_packet_size_text || "-",
+    ]]);
 
     renderAnalysisHistogramModeButtons("analysisInterArrivalHistogram", state.analysisInterArrivalHistogramMode);
     renderAnalysisHistogram(
@@ -7144,6 +7179,45 @@
     }
   }
 
+  async function exportProtocolPathTreeFromStatistics() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canExportProtocolPathTree()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_protocol_path_tree_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.protocolPathExportInProgress = true;
+      setStatus("Exporting Protocol Path Tree...", "neutral");
+      render();
+
+      const result = await invoke("export_protocol_path_tree", {
+        mode: currentProtocolPathMode(),
+        path: selectedPath,
+      });
+
+      if (result?.exported) {
+        setStatus("Protocol Path Tree exported successfully.", "success");
+      } else {
+        setStatus(result?.error_text || "Failed to export Protocol Path Tree.", "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to export Protocol Path Tree: ${String(error)}`, "error");
+    } finally {
+      state.protocolPathExportInProgress = false;
+      render();
+    }
+  }
+
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
   elements.openCancelButton?.addEventListener("click", async () => {
     if (state.openState !== "opening") {
@@ -7333,6 +7407,9 @@
   });
   elements.protocolPathShowFlowsButton?.addEventListener("click", () => {
     void showSelectedProtocolPathFlows();
+  });
+  elements.protocolPathExportButton?.addEventListener("click", () => {
+    void exportProtocolPathTreeFromStatistics();
   });
   elements.protocolPathExpandAllButton?.addEventListener("click", () => {
     const protocolPathMode = currentProtocolPathMode();

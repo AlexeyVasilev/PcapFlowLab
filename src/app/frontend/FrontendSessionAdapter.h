@@ -25,11 +25,17 @@ public:
     [[nodiscard]] FrontendOpenStartResult start_open_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendOpenPollResultDto poll_open_capture();
     [[nodiscard]] bool cancel_open_capture();
+    [[nodiscard]] FrontendSourceAvailabilityDto source_availability() const;
     [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendSaveIndexResult save_index(const std::filesystem::path& output_path) const;
     [[nodiscard]] FrontendSettingsDto get_settings() const noexcept;
     [[nodiscard]] FrontendSettingsDto update_settings(const FrontendSettingsDto& settings);
     [[nodiscard]] FrontendExportCurrentFlowResult export_current_flow(const std::filesystem::path& output_path) const;
+    [[nodiscard]] FrontendExportSelectedFlowsResult export_flows_to_pcap(
+        const std::filesystem::path& output_path,
+        const std::vector<std::size_t>& flow_indices,
+        const SmartSingleFileExportOptions& options = {}
+    ) const;
     [[nodiscard]] FrontendExportSelectedFlowsResult export_selected_flows(
         const std::filesystem::path& output_path,
         const std::vector<std::size_t>& flow_indices
@@ -37,14 +43,37 @@ public:
     [[nodiscard]] FrontendExportAllFlowsInfoCsvResult export_all_flows_info_csv(
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] FrontendExportAllFlowsInfoCsvResult export_flows_info_csv(
+        const std::filesystem::path& output_path,
+        const std::vector<std::size_t>& flow_indices
+    ) const;
+    [[nodiscard]] FrontendExportProtocolPathTreeResult export_protocol_path_tree(
+        ProtocolPathStatisticsMode mode,
+        const std::filesystem::path& output_path
+    ) const;
     [[nodiscard]] FrontendSmartExportResult export_smart_flows(
         const std::filesystem::path& output_path,
         const std::vector<std::size_t>& flow_indices,
         const FrontendSmartExportOptions& options
     ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_flows_to_pcap(
+        const std::filesystem::path& output_path,
+        const SmartFlowExportRequest& request,
+        const SmartSingleFileExportOptions& options = {}
+    ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_flows_to_folder(
+        const std::filesystem::path& output_path,
+        const SmartFlowExportRequest& request,
+        const SmartPerFlowExportOptions& options = {}
+    ) const;
     [[nodiscard]] FrontendSmartExportResult export_smart_unrecognized_packets(
         const std::filesystem::path& output_path,
         const FrontendSmartExportOptions& options
+    ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_unrecognized_packets(
+        const std::filesystem::path& output_path,
+        const FrontendSmartExportOptions& options,
+        const SmartSingleFileExportOptions& export_options
     ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] FrontendCapturePacketSizeStatisticsDto get_capture_packet_size_statistics() const;
@@ -86,10 +115,20 @@ public:
         std::uint64_t packet_index,
         const std::string& stable_id
     );
+    [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_flow(
+        std::size_t flow_index,
+        std::uint64_t flow_packet_index,
+        bool include_bytes
+    );
+    [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_file(std::uint64_t packet_index, bool include_bytes);
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
+    [[nodiscard]] FrontendFlowInfoDto get_flow_info(std::size_t flow_index) const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
+    [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
+    [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
 
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] std::optional<std::size_t> selected_flow_index() const noexcept;
@@ -118,9 +157,33 @@ private:
         std::optional<std::uint64_t> flow_packet_index,
         std::optional<std::size_t> loaded_packet_window_count = std::nullopt
     );
+    [[nodiscard]] FrontendPacketDetailsDto build_frontend_packet_details_from_materialized_packet(
+        const PacketRef& packet,
+        const std::vector<std::uint8_t>& packet_bytes,
+        const std::optional<PacketDetails>& details,
+        std::optional<std::size_t> flow_index,
+        std::optional<std::uint64_t> flow_packet_index,
+        std::optional<std::size_t> loaded_packet_window_count = std::nullopt,
+        bool include_selected_byte_view = true
+    );
     [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_packet_byte_view_content(
         const PacketRef& packet,
         const std::string& stable_id,
+        std::optional<std::uint64_t> flow_packet_index = {},
+        std::optional<std::size_t> loaded_packet_window_count = {}
+    );
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_captured_packet_byte_view_content(
+        const PacketRef& packet,
+        std::optional<std::size_t> flow_index = {},
+        std::optional<std::uint64_t> flow_packet_index = {},
+        std::optional<std::size_t> loaded_packet_window_count = {}
+    );
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent
+    build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+        const PacketRef& packet,
+        const std::vector<std::uint8_t>& packet_bytes,
+        const std::optional<PacketDetails>& details,
+        std::optional<std::size_t> flow_index = {},
         std::optional<std::uint64_t> flow_packet_index = {},
         std::optional<std::size_t> loaded_packet_window_count = {}
     );

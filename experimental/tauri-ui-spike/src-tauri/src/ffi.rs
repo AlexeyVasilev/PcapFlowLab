@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -69,6 +69,11 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
         node_id: u64,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+        path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_update_settings_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -369,6 +374,18 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_export_all_flows_info_csv_json(self.handle, path.as_ptr())
         };
         parse_json_owned::<ExportAllFlowsInfoCsvResultDto>(json)
+    }
+
+    pub fn export_protocol_path_tree(
+        &self,
+        mode: u8,
+        path: &str,
+    ) -> Result<ExportProtocolPathTreeResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_protocol_path_tree_json(self.handle, mode, path.as_ptr())
+        };
+        parse_json_owned::<ExportProtocolPathTreeResultDto>(json)
     }
 
     #[allow(clippy::too_many_arguments)]

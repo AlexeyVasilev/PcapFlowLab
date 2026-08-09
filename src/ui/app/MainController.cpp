@@ -2460,6 +2460,14 @@ QString MainController::analysisMaxPacketSizeText() const {
         : QString {};
 }
 
+QString MainController::analysisMaxCapturedPacketSizeText() const {
+    return current_flow_analysis_.has_value()
+        ? QString::fromStdString(session_detail::format_statistics_size_value(
+            current_flow_analysis_->max_captured_packet_size_bytes
+        ))
+        : QString {};
+}
+
 QString MainController::analysisMaxPacketSizeAToBText() const {
     return current_flow_analysis_.has_value() && current_flow_analysis_->packets_a_to_b > 0U
         ? format_size_value(current_flow_analysis_->max_packet_size_a_to_b_bytes)
@@ -3797,6 +3805,55 @@ bool MainController::exportAllFlowsInfoCsv(const QString& path) {
     return true;
 }
 
+bool MainController::exportProtocolPathTree(const QString& path) {
+    if (is_opening_) {
+        setStatusText(QStringLiteral("Wait for the current open operation to finish before exporting Protocol Path Tree."), true);
+        return false;
+    }
+
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before exporting Protocol Path Tree."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_ || index_save_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before exporting Protocol Path Tree."), true);
+        return false;
+    }
+
+    if (!hasCapture()) {
+        setStatusText(QStringLiteral("No capture is open."), true);
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+
+    std::string error_text {};
+    if (!session_.export_protocol_path_tree_text(
+            protocol_path_statistics_mode_from_int(statistics_mode_),
+            filesystemPath,
+            session_detail::TextExportOverwritePolicy::overwrite_existing,
+            &error_text)) {
+        setStatusText(
+            error_text.empty()
+                ? QStringLiteral("Failed to export Protocol Path Tree.")
+                : QString::fromStdString(error_text),
+            true
+        );
+        return false;
+    }
+
+    setStatusText(QStringLiteral("Protocol Path Tree exported successfully."));
+    return true;
+}
+
 bool MainController::exportSmartFlows(
     const QString& path,
     const int outputMode,
@@ -4195,6 +4252,13 @@ void MainController::browseExportAllFlowsInfoCsv() {
     const QString path = chooseFlowInfoCsvSaveFile();
     if (!path.isEmpty()) {
         exportAllFlowsInfoCsv(path);
+    }
+}
+
+void MainController::browseExportProtocolPathTree() {
+    const QString path = chooseProtocolPathTreeSaveFile();
+    if (!path.isEmpty()) {
+        exportProtocolPathTree(path);
     }
 }
 
@@ -6656,6 +6720,25 @@ QString MainController::chooseFlowInfoCsvSaveFile() const {
     dialog.setNameFilter(QStringLiteral("CSV Files (*.csv);;All Files (*)"));
     dialog.setDefaultSuffix(QStringLiteral("csv"));
     dialog.selectFile(QStringLiteral("flows_manifest.csv"));
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseProtocolPathTreeSaveFile() const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(QStringLiteral("Export Protocol Path Tree"));
+    dialog.setNameFilter(QStringLiteral("Text Files (*.txt);;All Files (*)"));
+    dialog.setDefaultSuffix(QStringLiteral("txt"));
+    dialog.selectFile(QStringLiteral("protocol-path-tree.txt"));
 
     if (dialog.exec() != QFileDialog::Accepted) {
         return {};

@@ -191,6 +191,10 @@ Presentation notes:
 
 - the Qt Statistics tab shows a compact indented `Layer / Flows / Packets / Original Bytes` tree plus a mode selector;
 - in tree modes, both frontends expose per-row expanders plus `Expand all` / `Collapse all` controls;
+- both frontends now also expose a shared plain-text Protocol Path Tree export for the currently selected statistics mode;
+- that export is produced by shared C++ formatting logic, not by QML or JavaScript text rendering;
+- export content always represents the complete logical result for the selected mode, independent of whether the UI tree is currently collapsed or expanded;
+- terminal-path export remains flat and uses the authoritative complete terminal path text already prepared by the backend model;
 - visible tree rows now display readable per-layer names such as `Ethernet II`, `IPv4`, `TCP`, `VLAN (VID 200)`, `MPLS (label 102)`, `VXLAN (VNI 100)`, and `GTP-U (TEID 0x01020384)`;
 - count and original-byte columns now use centralized formatted `value (percent)` text in both frontends;
 - full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;

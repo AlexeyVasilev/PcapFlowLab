@@ -339,6 +339,7 @@ Frame {
     property string minPacketSizeAToBText: ""
     property string minPacketSizeBToAText: ""
     property string maxPacketSizeText: ""
+    property string maxCapturedPacketSizeText: ""
     property string maxPacketSizeAToBText: ""
     property string maxPacketSizeBToAText: ""
     property string packetRatioText: ""
@@ -632,7 +633,7 @@ Frame {
                                     Label { text: "Captured bytes" }
                                     Label { text: root.capturedBytesText.length > 0 ? root.capturedBytesText : "0 B" }
 
-                                    Label { text: "Protocol hint" }
+                                    Label { text: "Detected Protocol" }
                                     Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
 
                                     Label { text: "Service hint" }
@@ -1287,6 +1288,26 @@ Frame {
                                     Layout.alignment: Qt.AlignVCenter
                                     horizontalAlignment: Text.AlignRight
                                 }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Label {
+                                text: "Max captured packet size:"
+                                color: "#475569"
+                            }
+
+                            Label {
+                                objectName: "analysisMaxCapturedPacketSizeLabel"
+                                text: root.maxCapturedPacketSizeText.length > 0 ? root.maxCapturedPacketSizeText : "-"
+                                font.bold: true
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
                             }
                         }
                     }
