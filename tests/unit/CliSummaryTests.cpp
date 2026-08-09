@@ -146,6 +146,17 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab <capture-or-index> [summary options]"));
         PFL_EXPECT(contains_text(result.stdout_text, "summary"));
         PFL_EXPECT(contains_text(result.stdout_text, "flows"));
+        PFL_EXPECT(contains_text(result.stdout_text, "export-flows"));
+        PFL_EXPECT(contains_text(result.stdout_text, "flow-info"));
+        PFL_EXPECT(contains_text(result.stdout_text, "packet-info"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "inspect-packet"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "hex                 Legacy"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "export-flow"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "save-index"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "load-index-summary"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "chunked-import"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "resume-import"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "finalize-import"));
         PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab <command> --help"));
         PFL_EXPECT(!contains_text(result.stdout_text, "\\--input"));
         PFL_EXPECT(!contains_text(result.stdout_text, "\\<input>"));
@@ -236,6 +247,14 @@ void expect_summary_dispatch_and_parse_rules() {
         PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::summary);
         PFL_REQUIRE(decision.summary_args.size() == 1U);
         PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
+    }
+
+    {
+        const std::vector<std::string_view> args {"hex"};
+        const auto decision = cli::classify_cli_invocation(args);
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::summary);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "hex");
     }
 
     {

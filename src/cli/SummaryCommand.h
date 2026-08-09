@@ -21,14 +21,12 @@ enum class SummaryDispatchKind : std::uint8_t {
     export_flows,
     flow_info,
     packet_info,
-    legacy,
 };
 
 using SummaryCommandProgressMode = CliProgressMode;
 
 struct SummaryDispatchDecision {
     SummaryDispatchKind kind {SummaryDispatchKind::summary};
-    std::string_view legacy_command {};
     std::vector<std::string_view> summary_args {};
 };
 
@@ -57,7 +55,6 @@ struct SummaryCommandExecutionResult {
     std::string stderr_text {};
 };
 
-[[nodiscard]] bool is_legacy_cli_command_name(std::string_view name) noexcept;
 [[nodiscard]] SummaryDispatchDecision classify_cli_invocation(std::span<const std::string_view> args);
 [[nodiscard]] SummaryCommandParseResult parse_summary_command_arguments(std::span<const std::string_view> args);
 [[nodiscard]] SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOptions& options);

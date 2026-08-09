@@ -4,8 +4,8 @@ This directory documents the PcapFlowLab CLI v2 architecture and staged
 implementation direction.
 
 - It is not current command help.
-- The current production CLI now includes v2-style `summary`, `flows`, `export-flows`, `flow-info`, and `packet-info` paths.
-- Other public CLI commands still remain legacy.
+- The current production CLI exposes the five-command v2-style public surface:
+  `summary`, `flows`, `export-flows`, `flow-info`, and `packet-info`.
 - Implementation may not yet match the documents in this folder.
 
 For the full architecture contract, see [architecture.md](./architecture.md).

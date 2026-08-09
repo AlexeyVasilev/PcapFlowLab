@@ -19,14 +19,6 @@ this command is intended to expose:
 - `flows_manifest.csv` generation
 - source-capture validation and reattachment
 
-The current production CLI still exposes the legacy command:
-
-```text
-pcap-flow-lab export-flow
-```
-
-That legacy command remains in place during the migration to CLI v2.
-
 ## Purpose
 
 `export-flows` exports actual packet data for explicitly selected canonical
@@ -774,27 +766,6 @@ CLI equivalents are explicit canonical selectors:
 
 The CLI exposes unrecognized-packet export only through the explicit
 `--unrecognized-packets` selector mode.
-
-## Legacy `export-flow`
-
-The current legacy command:
-
-```text
-pcap-flow-lab export-flow
-```
-
-remains temporarily.
-
-The planned v2 command:
-
-```text
-pcap-flow-lab export-flows
-```
-
-is intended to cover both single-flow and multi-flow export while also
-exposing the existing Smart Export retention and per-flow output capabilities.
-
-This document does not remove or redefine the legacy command.
 
 ## Examples
 

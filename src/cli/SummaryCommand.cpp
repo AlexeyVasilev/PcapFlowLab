@@ -36,16 +36,6 @@ constexpr std::array<std::string_view, 2> kSummaryUnsupportedOptions {
     "--source-capture",
 };
 
-constexpr std::array<std::string_view, 8> kLegacyCliCommands {
-    "inspect-packet",
-    "hex",
-    "export-flow",
-    "save-index",
-    "load-index-summary",
-    "chunked-import",
-    "resume-import",
-};
-
 constexpr std::array<std::string_view, 2> kHelpOptions {
     "-h",
     "--help",
@@ -73,14 +63,6 @@ std::string render_command_list() {
     out << "  export-flows        Export packet data for selected canonical flows.\n";
     out << "  flow-info           Show detailed analysis for exactly one canonical flow.\n";
     out << "  packet-info         Inspect exactly one captured packet.\n";
-    out << "  inspect-packet      Legacy packet details command.\n";
-    out << "  hex                 Legacy packet hex dump command.\n";
-    out << "  export-flow         Legacy single-flow PCAP export command.\n";
-    out << "  save-index          Legacy raw-capture to index command.\n";
-    out << "  load-index-summary  Legacy index summary command.\n";
-    out << "  chunked-import      Legacy chunked import command.\n";
-    out << "  resume-import       Legacy chunked import resume command.\n";
-    out << "  finalize-import     Legacy checkpoint finalize command.\n";
     return out.str();
 }
 
@@ -694,10 +676,6 @@ std::string render_summary_command_help() {
     return out.str();
 }
 
-bool is_legacy_cli_command_name(const std::string_view name) noexcept {
-    return name == "finalize-import" || contains_option(kLegacyCliCommands, name);
-}
-
 SummaryDispatchDecision classify_cli_invocation(const std::span<const std::string_view> args) {
     if (args.empty()) {
         return {};
@@ -706,7 +684,6 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
     if (args.front() == "summary") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::summary,
-            .legacy_command = {},
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
@@ -714,7 +691,6 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
     if (args.front() == "flows") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::flows,
-            .legacy_command = {},
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
@@ -722,7 +698,6 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
     if (args.front() == "export-flows") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::export_flows,
-            .legacy_command = {},
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
@@ -730,7 +705,6 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
     if (args.front() == "flow-info") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::flow_info,
-            .legacy_command = {},
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
@@ -738,22 +712,12 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
     if (args.front() == "packet-info") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::packet_info,
-            .legacy_command = {},
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
-        };
-    }
-
-    if (is_legacy_cli_command_name(args.front())) {
-        return SummaryDispatchDecision {
-            .kind = SummaryDispatchKind::legacy,
-            .legacy_command = args.front(),
-            .summary_args = {},
         };
     }
 
     return SummaryDispatchDecision {
         .kind = SummaryDispatchKind::summary,
-        .legacy_command = {},
         .summary_args = std::vector<std::string_view>(args.begin(), args.end()),
     };
 }
@@ -1243,7 +1207,10 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
         }
 
         return {
-            .handled = false,
+            .handled = true,
+            .exit_code = 1,
+            .stdout_text = {},
+            .stderr_text = render_global_cli_help(),
         };
     }
 

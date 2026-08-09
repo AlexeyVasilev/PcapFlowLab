@@ -6,9 +6,8 @@ This document describes the PcapFlowLab CLI v2 architecture direction.
 
 - It remains primarily architectural.
 - Some deferred commands still remain design-only.
-- The current production CLI includes v2-style `summary`, `flows`,
-  `export-flows`, `flow-info`, and `packet-info` paths, while other public commands remain legacy and may not
-  yet match this design.
+- The current production CLI public surface is:
+  `summary`, `flows`, `export-flows`, `flow-info`, and `packet-info`.
 
 ## Goals
 
@@ -52,9 +51,6 @@ Global help should:
 - show the default-summary invocation shape
 - list current commands with short descriptions
 - point to command-specific help through `pcap-flow-lab <command> --help`
-
-During the transition period, global help may still list preserved legacy
-commands alongside v2-oriented commands.
 
 ### Command-specific help
 
@@ -606,29 +602,25 @@ CLI v2 should have stable exit semantics for:
 The numeric exit-code mapping is intentionally deferred unless a later design
 pass decides to standardize a public contract.
 
-## Legacy CLI Migration Direction
+## Removed Legacy Surface
 
-The current CLI contains legacy commands and options.
+The public CLI no longer exposes the old top-level commands:
 
-CLI v2 does not require preserving the following as top-level public commands:
-
-- `load-index-summary`
+- `inspect-packet`
 - `hex`
+- `export-flow`
 - `save-index`
+- `load-index-summary`
 - `chunked-import`
 - `resume-import`
 - `finalize-import`
 
-Conceptual replacement direction:
+The current user-facing surface is the five-command CLI listed above.
 
-- `load-index-summary` -> `summary <index>`
-- `hex` -> future `packet-info` byte or hex presentation mode
-- `save-index` -> `summary <capture> --out-index <index>`
-
-Checkpoint-oriented commands expose lower-level implementation mechanics and
-are not part of the planned primary CLI v2 public surface.
-
-This document does not remove them from production code.
+Some shared backend capabilities that those commands used still remain in
+production code where they are needed by current CLI commands, frontend code,
+or internal infrastructure. That backend retention does not imply that the old
+command names remain supported.
 
 ## Shared Architecture Direction
 

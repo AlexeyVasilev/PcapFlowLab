@@ -1422,22 +1422,6 @@ void expect_unrecognized_export_behavior() {
     }
 }
 
-void expect_legacy_export_flow_remains_unaffected() {
-    const auto capture_path = build_export_cli_capture_path();
-    const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_legacy_export_flow_output.pcap";
-    std::filesystem::remove(output_path);
-
-    const auto result = invoke_cli({
-        "export-flow",
-        capture_path.string(),
-        "--flow-index",
-        "0",
-        "--out",
-        output_path.string(),
-    });
-    PFL_EXPECT(!result.handled);
-}
-
 }  // namespace
 
 void run_cli_export_flows_tests() {
@@ -1448,7 +1432,6 @@ void run_cli_export_flows_tests() {
     expect_runtime_folder_and_preflight_behavior();
     expect_empty_selection_and_source_behavior();
     expect_unrecognized_export_behavior();
-    expect_legacy_export_flow_remains_unaffected();
 }
 
 }  // namespace pfl::tests
