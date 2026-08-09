@@ -15,6 +15,8 @@ The current production CLI implements:
 - `packet-info` help
 - `packet-info` stdout rendering
 
+Alias: `packets-info`
+
 The command is documented here so the implemented path can continue to reuse
 the current shared packet-inspection and packet-presentation architecture
 without adding a second semantics layer.

@@ -62,6 +62,22 @@ std::string render_command_list() {
     return out.str();
 }
 
+std::string_view canonicalize_cli_command_name(const std::string_view command) noexcept {
+    if (command == "flow") {
+        return "flows";
+    }
+    if (command == "export-flow") {
+        return "export-flows";
+    }
+    if (command == "flows-info") {
+        return "flow-info";
+    }
+    if (command == "packets-info") {
+        return "packet-info";
+    }
+    return command;
+}
+
 std::string render_summary_examples() {
     std::ostringstream out {};
     out << "Examples\n";
@@ -677,35 +693,37 @@ SummaryDispatchDecision classify_cli_invocation(const std::span<const std::strin
         return {};
     }
 
-    if (args.front() == "summary") {
+    const auto command = canonicalize_cli_command_name(args.front());
+
+    if (command == "summary") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::summary,
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
 
-    if (args.front() == "flows") {
+    if (command == "flows") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::flows,
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
 
-    if (args.front() == "export-flows") {
+    if (command == "export-flows") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::export_flows,
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
 
-    if (args.front() == "flow-info") {
+    if (command == "flow-info") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::flow_info,
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),
         };
     }
 
-    if (args.front() == "packet-info") {
+    if (command == "packet-info") {
         return SummaryDispatchDecision {
             .kind = SummaryDispatchKind::packet_info,
             .summary_args = std::vector<std::string_view>(args.begin() + 1, args.end()),

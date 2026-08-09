@@ -214,6 +214,18 @@ void expect_packet_info_help_and_parser_behavior() {
     }
 
     {
+        const auto canonical = invoke_cli({"packet-info", "--help"});
+        const auto alias = invoke_cli({"packets-info", "--help"});
+        PFL_EXPECT(canonical.handled);
+        PFL_EXPECT(alias.handled);
+        PFL_EXPECT(canonical.exit_code == 0);
+        PFL_EXPECT(alias.exit_code == 0);
+        PFL_EXPECT(alias.stdout_text == canonical.stdout_text);
+        PFL_EXPECT(alias.stderr_text == canonical.stderr_text);
+        PFL_EXPECT(contains_text(alias.stdout_text, "PcapFlowLab CLI - packet-info"));
+    }
+
+    {
         const std::vector<std::string_view> args {"capture.pcap", "--packet-in-file", "7"};
         const auto parse_result = cli::parse_packet_info_command_arguments(args);
         PFL_REQUIRE(parse_result.ok);
@@ -401,6 +413,29 @@ void expect_shared_packet_info_model_behavior() {
 
 void expect_packet_info_runtime_and_output_behavior() {
     const auto capture_path = build_cli_packet_info_capture_path("pfl_cli_packet_info_runtime_capture.pcap");
+
+    {
+        const auto canonical = invoke_cli({
+            "packet-info",
+            capture_path.string(),
+            "--packet-in-file",
+            "2",
+            "--progress",
+            "off",
+        });
+        const auto alias = invoke_cli({
+            "packets-info",
+            capture_path.string(),
+            "--packet-in-file",
+            "2",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(alias.handled);
+        PFL_EXPECT(alias.exit_code == canonical.exit_code);
+        PFL_EXPECT(alias.stdout_text == canonical.stdout_text);
+        PFL_EXPECT(alias.stderr_text == canonical.stderr_text);
+    }
 
     {
         const std::vector<std::string> args {

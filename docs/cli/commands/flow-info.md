@@ -15,6 +15,8 @@ The current production CLI implements:
 - `flow-info` help
 - `flow-info` stdout rendering
 
+Alias: `flows-info`
+
 The command is documented here so the implemented path can continue to reuse
 the current shared flow-analysis and flow-presentation architecture without
 adding a second semantics layer.

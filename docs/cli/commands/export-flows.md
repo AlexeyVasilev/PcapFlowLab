@@ -10,6 +10,8 @@ pcap-flow-lab export-flows
 
 The current production CLI implements this v2 command.
 
+Alias: `export-flow`
+
 The current repository already contains the shared backend capabilities that
 this command is intended to expose:
 

@@ -11,6 +11,8 @@ pcap-flow-lab flows
 The current production CLI now routes the explicit `flows` command through the
 documented v2-style parser, help, query, preview, and subset CSV export path.
 
+Alias: `flow`
+
 Shared canonical flow querying and subset flow-metadata CSV export remain
 implemented in shared session/backend code and are reused by the production CLI
 surface.

@@ -322,6 +322,18 @@ void expect_flows_help_and_parser_behavior() {
     }
 
     {
+        const auto canonical = invoke_cli({"flows", "--help"});
+        const auto alias = invoke_cli({"flow", "--help"});
+        PFL_EXPECT(canonical.handled);
+        PFL_EXPECT(alias.handled);
+        PFL_EXPECT(canonical.exit_code == 0);
+        PFL_EXPECT(alias.exit_code == 0);
+        PFL_EXPECT(alias.stdout_text == canonical.stdout_text);
+        PFL_EXPECT(alias.stderr_text == canonical.stderr_text);
+        PFL_EXPECT(contains_text(alias.stdout_text, "pcap-flow-lab flows <input> [options]"));
+    }
+
+    {
         const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_help_should_not_exist.csv";
         std::filesystem::remove(output_path);
         const std::vector<std::string> args {
@@ -595,6 +607,37 @@ void expect_flows_runtime_behavior() {
     PFL_REQUIRE(baseline_query.status == session_detail::FlowQueryStatus::ok);
     PFL_REQUIRE(baseline_query.ordered_flow_indices.size() == 4U);
     PFL_EXPECT(baseline_query.result_count_before_limit == 4U);
+
+    {
+        const auto canonical = invoke_cli({
+            "flows",
+            capture_path.string(),
+            "--filter",
+            "10.0.0.10",
+            "--sort",
+            "bytes:desc",
+            "--limit",
+            "1",
+            "--progress",
+            "off",
+        });
+        const auto alias = invoke_cli({
+            "flow",
+            capture_path.string(),
+            "--filter",
+            "10.0.0.10",
+            "--sort",
+            "bytes:desc",
+            "--limit",
+            "1",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(alias.handled);
+        PFL_EXPECT(alias.exit_code == canonical.exit_code);
+        PFL_EXPECT(alias.stdout_text == canonical.stdout_text);
+        PFL_EXPECT(alias.stderr_text == canonical.stderr_text);
+    }
 
     {
         const std::vector<std::string> args {"flows", capture_path.string(), "--progress", "off"};

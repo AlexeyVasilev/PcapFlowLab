@@ -269,9 +269,12 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "export-flows"));
         PFL_EXPECT(contains_text(result.stdout_text, "flow-info"));
         PFL_EXPECT(contains_text(result.stdout_text, "packet-info"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Aliases"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "export-flow"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "flows-info"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "packets-info"));
         PFL_EXPECT(!contains_text(result.stdout_text, "inspect-packet"));
         PFL_EXPECT(!contains_text(result.stdout_text, "hex                 Legacy"));
-        PFL_EXPECT(!contains_text(result.stdout_text, "export-flow"));
         PFL_EXPECT(!contains_text(result.stdout_text, "save-index"));
         PFL_EXPECT(!contains_text(result.stdout_text, "load-index-summary"));
         PFL_EXPECT(!contains_text(result.stdout_text, "chunked-import"));
@@ -400,6 +403,46 @@ void expect_summary_dispatch_and_parse_rules() {
         PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::flows);
         PFL_REQUIRE(decision.summary_args.size() == 1U);
         PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
+    }
+
+    {
+        const std::vector<std::string_view> args {"flow", "capture.pcap"};
+        const auto decision = cli::classify_cli_invocation(args);
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::flows);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
+    }
+
+    {
+        const std::vector<std::string_view> args {"export-flow", "capture.pcap"};
+        const auto decision = cli::classify_cli_invocation(args);
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::export_flows);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
+    }
+
+    {
+        const std::vector<std::string_view> args {"flows-info", "capture.pcap"};
+        const auto decision = cli::classify_cli_invocation(args);
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::flow_info);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
+    }
+
+    {
+        const std::vector<std::string_view> args {"packets-info", "capture.pcap"};
+        const auto decision = cli::classify_cli_invocation(args);
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::packet_info);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "capture.pcap");
+    }
+
+    {
+        const std::vector<std::string_view> args {"summary", "flow"};
+        const auto decision = cli::classify_cli_invocation(args);
+        PFL_EXPECT(decision.kind == cli::SummaryDispatchKind::summary);
+        PFL_REQUIRE(decision.summary_args.size() == 1U);
+        PFL_EXPECT(decision.summary_args[0] == "flow");
     }
 
     {

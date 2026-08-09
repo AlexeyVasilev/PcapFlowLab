@@ -423,6 +423,18 @@ void expect_parser_and_help_behavior() {
     }
 
     {
+        const auto canonical = invoke_cli({"export-flows", "--help"});
+        const auto alias = invoke_cli({"export-flow", "--help"});
+        PFL_EXPECT(canonical.handled);
+        PFL_EXPECT(alias.handled);
+        PFL_EXPECT(canonical.exit_code == 0);
+        PFL_EXPECT(alias.exit_code == 0);
+        PFL_EXPECT(alias.stdout_text == canonical.stdout_text);
+        PFL_EXPECT(alias.stderr_text == canonical.stderr_text);
+        PFL_EXPECT(contains_text(alias.stdout_text, "pcap-flow-lab export-flows <input>"));
+    }
+
+    {
         const auto global_help = invoke_cli({"--help"});
         PFL_EXPECT(global_help.handled);
         PFL_EXPECT(global_help.exit_code == 0);
@@ -644,6 +656,56 @@ void expect_packet_retention_and_output_parser_behavior() {
 
 void expect_runtime_direct_and_smart_export_behavior() {
     const auto capture_path = build_export_cli_capture_path();
+
+    {
+        const auto canonical_output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_alias_canonical_output.pcap";
+        const auto alias_output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_alias_output.pcap";
+        std::filesystem::remove(canonical_output_path);
+        std::filesystem::remove(alias_output_path);
+
+        const auto canonical = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--flow-number",
+            "1",
+            "--out",
+            canonical_output_path.string(),
+            "--progress",
+            "off",
+        });
+        const auto alias = invoke_cli({
+            "export-flow",
+            capture_path.string(),
+            "--flow-number",
+            "1",
+            "--out",
+            alias_output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(alias.handled);
+        PFL_EXPECT(alias.exit_code == canonical.exit_code);
+        PFL_EXPECT(alias.stdout_text == canonical.stdout_text);
+        PFL_EXPECT(contains_text(canonical.stderr_text, "Exported 1 flows to:"));
+        PFL_EXPECT(contains_text(alias.stderr_text, "Exported 1 flows to:"));
+    }
+
+    {
+        const auto invalid_output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_alias_invalid_output.pcap";
+        std::filesystem::remove(invalid_output_path);
+        const auto result = invoke_cli({
+            "export-flow",
+            capture_path.string(),
+            "--flow-number",
+            "0",
+            "--out",
+            invalid_output_path.string(),
+        });
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid --flow-number"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "zero-based"));
+    }
 
     {
         const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_direct_output.pcap";
