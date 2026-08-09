@@ -145,17 +145,23 @@ FrontendSettingsJsonParseResult parse_frontend_settings_json_file(const std::fil
     }
 
     FrontendSettingsDto settings {};
-    bool first = true;
+    bool expect_member = true;
+    bool object_empty = true;
     while (true) {
         cursor.skip_whitespace();
         if (cursor.consume('}')) {
+            if (expect_member && !object_empty) {
+                result.error_text = parse_error_prefix(cursor) + "expected string property name.";
+                return result;
+            }
             break;
         }
-        if (!first) {
+        if (!expect_member) {
             result.error_text = parse_error_prefix(cursor) + "expected ',' or '}'.";
             return result;
         }
-        first = false;
+        expect_member = false;
+        object_empty = false;
 
         const auto key = cursor.parse_string();
         if (!key.has_value()) {
@@ -193,7 +199,7 @@ FrontendSettingsJsonParseResult parse_frontend_settings_json_file(const std::fil
             result.error_text = parse_error_prefix(cursor) + "expected ',' or '}'.";
             return result;
         }
-        first = true;
+        expect_member = true;
     }
 
     cursor.skip_whitespace();

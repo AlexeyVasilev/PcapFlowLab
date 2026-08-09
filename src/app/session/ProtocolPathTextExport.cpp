@@ -104,7 +104,13 @@ bool export_protocol_path_tree_text(
 
     std::error_code exists_error {};
     const bool path_exists = std::filesystem::exists(output_path, exists_error);
-    if (!exists_error && path_exists && overwrite_policy == TextExportOverwritePolicy::fail_if_exists) {
+    if (exists_error) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to inspect Protocol Path Tree export path: " + exists_error.message();
+        }
+        return false;
+    }
+    if (path_exists && overwrite_policy == TextExportOverwritePolicy::fail_if_exists) {
         if (out_error_text != nullptr) {
             *out_error_text = "Output file already exists.";
         }

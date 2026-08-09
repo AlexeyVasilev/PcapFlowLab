@@ -942,6 +942,19 @@ void expect_settings_file_contracts() {
     }
 
     {
+        const auto trailing_comma_settings_path = write_temp_text_file(
+            "pfl_cli_summary_settings_trailing_comma.json",
+            "{\n  \"validate_selected_packet_checksums\": true,\n}"
+        );
+        cli::SummaryCommandOptions trailing_comma_options {};
+        trailing_comma_options.input_path = capture_path;
+        trailing_comma_options.settings_path = trailing_comma_settings_path;
+        const auto result = cli::execute_summary_command(trailing_comma_options);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid settings JSON"));
+    }
+
+    {
         const auto invalid_type_settings_path = write_temp_text_file(
             "pfl_cli_summary_settings_invalid_type.json",
             "{\"ignore_gtpu_teids_when_grouping_inner_flows\":1}"

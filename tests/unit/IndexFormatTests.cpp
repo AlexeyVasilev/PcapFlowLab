@@ -591,6 +591,13 @@ void run_index_format_tests() {
     PFL_EXPECT(!index_reader.read(
         missing_protocol_paths_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
 
+    const auto missing_unrecognized_packets_index_path = write_temp_binary_file(
+        "pfl_index_missing_unrecognized_packets.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_packets))
+    );
+    PFL_EXPECT(!index_reader.read(
+        missing_unrecognized_packets_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+
     const auto duplicate_index_path = write_temp_binary_file(
         "pfl_index_duplicate_summary.idx",
         duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::summary))

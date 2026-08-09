@@ -361,7 +361,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         }
 
         if (!has_source_info || !has_summary || !has_protocol_paths || !has_ipv4_connections ||
-            !has_ipv6_connections || !has_packet_locator) {
+            !has_ipv6_connections || !has_unrecognized_packets || !has_packet_locator) {
             set_error_context(current_offset(stream), "index file is incomplete or was not finalized");
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);
