@@ -311,7 +311,7 @@ Each flow row should expose at least the following user-facing fields:
   - IPv6 without port: `address`;
   - missing/zero/invalid port: address only.
 - Endpoint address/port are treated as key identifiers and should remain fully visible through adequate column width and horizontal scrolling rather than endpoint overlap as the normal display path.
-- Protocol hint is presentation-formatted:
+- Detected Protocol is presentation-formatted from `protocol_hint`:
   - `possible_tls` -> `Possible TLS`;
   - `possible_quic` -> `Possible QUIC`;
   - other values are rendered in a user-facing uppercase/title form.

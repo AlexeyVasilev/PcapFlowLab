@@ -472,7 +472,7 @@ No.
 Endpoint A
 Endpoint B
 Protocol
-Protocol Hint
+Detected Protocol
 Service
 Path
 Packets
@@ -484,12 +484,12 @@ Conceptual output:
 ```text
 Flows
 
-No.  Endpoint A            Endpoint B            Protocol  Protocol Hint  Service      Path         Packets  Original Bytes
+No.  Endpoint A            Endpoint B            Protocol  Detected Protocol  Service      Path         Packets  Original Bytes
 1    10.10.205.13:51988   91.185.14.204:443    QUIC      ...            googlevideo  EII-Ip4-UDP  4 920    5.7 MB
 ...
 ```
 
-Protocol Hint and Service are required default columns.
+Detected Protocol and Service are required default columns.
 
 Do not remove them from the initial flow table.
 
@@ -512,9 +512,9 @@ the column to raw transport only.
 
 The CLI must not create new protocol classification logic.
 
-## Protocol Hint
+## Detected Protocol
 
-Use the existing protocol hint presentation.
+Use the existing detected-protocol presentation.
 
 The CLI must not reclassify or infer protocols.
 
@@ -566,7 +566,7 @@ Requirements:
 - no semantic truncation based on terminal width
 - preserve complete canonical flow number
 - preserve endpoint text
-- preserve Protocol Hint, Service, and compact Path values
+- preserve Detected Protocol, Service, and compact Path values
 
 If very long strings make the table wide, the first implementation should
 prefer complete data over hidden semantic truncation.
@@ -927,7 +927,7 @@ preserving important capabilities:
 Intentional v2 changes include:
 
 - one-based public flow numbers
-- Protocol Hint
+- Detected Protocol
 - Service
 - compact Protocol Path
 - explicit selectors

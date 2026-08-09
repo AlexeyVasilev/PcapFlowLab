@@ -194,7 +194,7 @@ std::string render_flows_table(
             {.header = "Endpoint A", .right_align = false},
             {.header = "Endpoint B", .right_align = false},
             {.header = "Protocol", .right_align = false},
-            {.header = "Protocol Hint", .right_align = false},
+            {.header = "Detected Protocol", .right_align = false},
             {.header = "Service", .right_align = false},
             {.header = "Path", .right_align = false},
             {.header = "Packets", .right_align = true},

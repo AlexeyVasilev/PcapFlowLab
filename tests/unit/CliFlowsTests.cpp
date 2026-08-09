@@ -607,7 +607,7 @@ void expect_flows_runtime_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "Endpoint A"));
         PFL_EXPECT(contains_text(result.stdout_text, "Endpoint B"));
         PFL_EXPECT(contains_text(result.stdout_text, "Protocol"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Protocol Hint"));
+        PFL_EXPECT(contains_text(result.stdout_text, "Detected Protocol"));
         PFL_EXPECT(contains_text(result.stdout_text, "Service"));
         PFL_EXPECT(contains_text(result.stdout_text, "Path"));
         PFL_EXPECT(contains_text(result.stdout_text, "Packets"));

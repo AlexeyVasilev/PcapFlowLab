@@ -4932,7 +4932,7 @@
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
       ["Captured Bytes", analysis.captured_bytes_text || formatNumber(analysis.captured_bytes)],
-      ["Protocol Hint", analysis.protocol_hint_display || "-"],
+      ["Detected Protocol", analysis.protocol_hint_display || "-"],
       ["Service Hint", serviceHint || "-"],
     ];
     const rightRows = [

@@ -163,7 +163,7 @@ Item {
                     spacing: 10
 
                     Label { text: "Index"; Layout.preferredWidth: 44 }
-                    Label { text: "Hint"; Layout.preferredWidth: 70 }
+                    Label { text: "Detected"; Layout.preferredWidth: 70 }
                     Label { text: "Service"; Layout.fillWidth: true }
                     Label { text: "Packets"; Layout.preferredWidth: 58; horizontalAlignment: Text.AlignRight }
                     Label { text: "Bytes"; Layout.preferredWidth: 72; horizontalAlignment: Text.AlignRight }

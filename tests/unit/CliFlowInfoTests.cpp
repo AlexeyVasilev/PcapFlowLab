@@ -289,6 +289,8 @@ void expect_shared_flow_info_model_and_cli_output() {
         PFL_EXPECT(contains_text(result.stdout_text, "Endpoints: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoint A: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoint B: "));
+        PFL_EXPECT(contains_text(result.stdout_text, "Detected Protocol: "));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Protocol Hint: "));
         PFL_EXPECT(contains_text(result.stdout_text, "Protocol Path: "));
         PFL_EXPECT(contains_text(
             result.stdout_text,
@@ -388,6 +390,8 @@ void expect_flow_info_runtime_and_index_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "Endpoints: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoint A: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoint B: "));
+        PFL_EXPECT(contains_text(result.stdout_text, "Detected Protocol: "));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Protocol Hint: "));
         PFL_EXPECT(contains_text(result.stdout_text, "First Packet: "));
         PFL_EXPECT(contains_text(result.stdout_text, "Last Packet: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "First Seen: "));

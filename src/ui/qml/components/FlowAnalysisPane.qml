@@ -633,7 +633,7 @@ Frame {
                                     Label { text: "Captured bytes" }
                                     Label { text: root.capturedBytesText.length > 0 ? root.capturedBytesText : "0 B" }
 
-                                    Label { text: "Protocol hint" }
+                                    Label { text: "Detected Protocol" }
                                     Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
 
                                     Label { text: "Service hint" }

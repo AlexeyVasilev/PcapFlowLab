@@ -173,7 +173,7 @@ The Identity section contains:
 - `Endpoints`
 - `Family`
 - `Protocol`
-- `Protocol Hint`
+- `Detected Protocol`
 - `Service`
 - `Protocol Path`
 
@@ -184,7 +184,7 @@ Identity
   Endpoints:        10.10.205.13:46368 <-> 216.58.209.174:443
   Family:           IPv4
   Protocol:         UDP
-  Protocol Hint:    QUIC
+  Detected Protocol: QUIC
   Service:          www.youtube.com
   Protocol Path:    EthernetII -> IPv4 -> UDP
 ```
@@ -201,7 +201,7 @@ The initial CLI must not relabel them as:
 
 unless a future shared model provides those semantics explicitly.
 
-### Protocol, Protocol Hint, and Service
+### Protocol, Detected Protocol, and Service
 
 Reuse the same shared user-facing values already used by:
 
@@ -209,7 +209,7 @@ Reuse the same shared user-facing values already used by:
 - Tauri
 - CLI `flows`
 
-Do not expose raw internal hint tokens when a shared display formatter exists.
+Do not expose raw internal detected-protocol tokens when a shared display formatter exists.
 
 ### Protocol Path
 

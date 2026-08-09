@@ -117,7 +117,7 @@ std::string render_flow_info_report(const FrontendFlowInfoDto& info) {
     append_key_value_line(out, "Endpoints", info.endpoint_summary_text);
     append_key_value_line(out, "Family", info.family_text);
     append_key_value_line(out, "Protocol", info.protocol_text);
-    append_key_value_line(out, "Protocol Hint", info.protocol_hint_display);
+    append_key_value_line(out, "Detected Protocol", info.protocol_hint_display);
     append_key_value_line(out, "Service", info.service_hint_text.empty() ? std::string_view {"-"} : std::string_view {info.service_hint_text});
     append_key_value_line(out, "Protocol Path", info.protocol_path_text.empty() ? std::string_view {"-"} : std::string_view {info.protocol_path_text});
     out << '\n';
