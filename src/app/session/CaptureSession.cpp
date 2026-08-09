@@ -1762,6 +1762,66 @@ std::optional<std::uint64_t> connection_packet_number(
 }
 
 template <typename Connection>
+std::optional<SelectedFlowPacketContext> connection_packet_context_at(
+    const Connection& connection,
+    const std::uint64_t flow_packet_index
+) {
+    if (flow_packet_index == 0U) {
+        return std::nullopt;
+    }
+
+    std::uint64_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        ++row_number;
+        if (row_number == flow_packet_index) {
+            return SelectedFlowPacketContext {
+                .packet = packet,
+                .flow_packet_index = row_number,
+                .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
+            };
+        }
+    }
+
+    return std::nullopt;
+}
+
+template <typename Connection>
+std::optional<SelectedFlowPacketContext> find_packet_context_in_connection(
+    const Connection& connection,
+    const std::uint64_t packet_index
+) {
+    std::uint64_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        ++row_number;
+        if (packet.packet_index == packet_index) {
+            return SelectedFlowPacketContext {
+                .packet = packet,
+                .flow_packet_index = row_number,
+                .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
+            };
+        }
+    }
+
+    return std::nullopt;
+}
+
+template <typename Connection>
 std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
     const Connection& connection,
     const std::size_t max_packets_to_scan
@@ -4623,6 +4683,20 @@ std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
         : connection_packet_at(*connections[flow_index].ipv6, flow_packet_index);
 }
 
+std::optional<SelectedFlowPacketContext> CaptureSession::selected_flow_packet_context_at(
+    const std::size_t flow_index,
+    const std::uint64_t flow_packet_index
+) const {
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    return connections[flow_index].family == FlowAddressFamily::ipv4
+        ? connection_packet_context_at(*connections[flow_index].ipv4, flow_packet_index)
+        : connection_packet_context_at(*connections[flow_index].ipv6, flow_packet_index);
+}
+
 std::optional<std::uint64_t> CaptureSession::selected_flow_packet_number(
     const std::size_t flow_index,
     const std::uint64_t packet_index
@@ -5979,6 +6053,43 @@ std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index)
     }
 
     return std::nullopt;
+}
+
+std::optional<PacketOwnershipContext> CaptureSession::resolve_packet_ownership_context(
+    const std::uint64_t packet_index
+) const {
+    const auto& connections = listed_connections();
+    for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
+        const auto packet_context = connections[flow_index].family == FlowAddressFamily::ipv4
+            ? find_packet_context_in_connection(*connections[flow_index].ipv4, packet_index)
+            : find_packet_context_in_connection(*connections[flow_index].ipv6, packet_index);
+        if (packet_context.has_value()) {
+            return PacketOwnershipContext {
+                .packet = packet_context->packet,
+                .flow_index = flow_index,
+                .flow_packet_index = packet_context->flow_packet_index,
+                .direction = packet_context->direction,
+            };
+        }
+    }
+
+    const auto unrecognized_packet = std::find_if(
+        state_.unrecognized_packets.begin(),
+        state_.unrecognized_packets.end(),
+        [packet_index](const UnrecognizedPacketRecord& record) {
+            return record.packet.packet_index == packet_index;
+        }
+    );
+    if (unrecognized_packet == state_.unrecognized_packets.end()) {
+        return std::nullopt;
+    }
+
+    return PacketOwnershipContext {
+        .packet = unrecognized_packet->packet,
+        .flow_index = std::nullopt,
+        .flow_packet_index = std::nullopt,
+        .direction = std::nullopt,
+    };
 }
 
 CaptureStorageSummary CaptureSession::storage_summary() const {

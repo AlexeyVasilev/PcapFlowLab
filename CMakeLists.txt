@@ -148,6 +148,7 @@ add_executable(
     src/cli/ExportFlowsCommand.cpp
     src/cli/FlowInfoCommand.cpp
     src/cli/FlowsCommand.cpp
+    src/cli/PacketInfoCommand.cpp
     src/cli/SummaryCommand.cpp
 )
 
@@ -445,7 +446,9 @@ if(BUILD_TESTING)
         src/cli/ExportFlowsCommand.cpp
         src/cli/FlowInfoCommand.cpp
         src/cli/FlowsCommand.cpp
+        src/cli/PacketInfoCommand.cpp
         src/cli/SummaryCommand.cpp
+        tests/unit/CliPacketInfoTests.cpp
     )
 
     target_link_libraries(

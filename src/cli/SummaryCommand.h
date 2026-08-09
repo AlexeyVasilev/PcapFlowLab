@@ -20,6 +20,7 @@ enum class SummaryDispatchKind : std::uint8_t {
     flows,
     export_flows,
     flow_info,
+    packet_info,
     legacy,
 };
 

@@ -109,6 +109,11 @@ public:
         std::uint64_t packet_index,
         const std::string& stable_id
     );
+    [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_flow(
+        std::size_t flow_index,
+        std::uint64_t flow_packet_index
+    );
+    [[nodiscard]] FrontendPacketInfoDto get_packet_info_by_file(std::uint64_t packet_index);
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
     [[nodiscard]] FrontendFlowInfoDto get_flow_info(std::size_t flow_index) const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
@@ -148,6 +153,12 @@ private:
     [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_packet_byte_view_content(
         const PacketRef& packet,
         const std::string& stable_id,
+        std::optional<std::uint64_t> flow_packet_index = {},
+        std::optional<std::size_t> loaded_packet_window_count = {}
+    );
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_captured_packet_byte_view_content(
+        const PacketRef& packet,
+        std::optional<std::size_t> flow_index = {},
         std::optional<std::uint64_t> flow_packet_index = {},
         std::optional<std::size_t> loaded_packet_window_count = {}
     );

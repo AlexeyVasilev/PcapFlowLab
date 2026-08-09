@@ -2,15 +2,22 @@
 
 ## Status
 
-This document defines the planned CLI v2 contract for:
+This document defines the current CLI v2 contract for:
 
 ```text
 pcap-flow-lab packet-info
 ```
 
-The command is not yet implemented in the current production CLI.
+The current production CLI implements:
 
-This is a design contract for the initial release stage only.
+- `packet-info` parsing
+- `packet-info` dispatch
+- `packet-info` help
+- `packet-info` stdout rendering
+
+The command is documented here so the implemented path can continue to reuse
+the current shared packet-inspection and packet-presentation architecture
+without adding a second semantics layer.
 
 ## Purpose
 
@@ -540,14 +547,15 @@ Do not support:
 - `--list-byte-views`
 - `--bytes-layer`
 
-The authoritative byte descriptor is the existing root or fallback captured
-packet view:
+The authoritative byte view is the existing shared whole-captured-packet
+presentation labeled:
 
 ```text
-kind:       SelectedPacketByteViewKind::frame
-stable_id:  frame:0:0
 label:      Captured Packet
 ```
+
+Its internal stable id may differ between normal protocol-aware presentations
+and fallback-only presentations.
 
 Use shared byte-presentation APIs.
 
@@ -605,7 +613,7 @@ Reuse the shared hex format:
 
 Do not add a separate CLI hex formatter.
 
-Do not expose `frame:0:0` to the user in normal output.
+Do not expose internal stable ids to the user in normal output.
 
 ## Bytes Size Policy
 

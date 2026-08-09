@@ -227,6 +227,9 @@ struct SelectedPacketByteViewContent {
     SelectedPacketByteRangeMode mode = SelectedPacketByteRangeMode::whole_unit
 );
 
+[[nodiscard]] std::optional<SelectedPacketByteViewId> select_whole_captured_packet_view_id(
+    const SelectedPacketBytePresentation& presentation
+) noexcept;
 [[nodiscard]] std::string format_selected_packet_byte_view_stable_id(const SelectedPacketByteViewId& id);
 [[nodiscard]] std::optional<SelectedPacketByteViewId> parse_selected_packet_byte_view_stable_id(std::string_view stable_id);
 [[nodiscard]] std::vector<SelectedPacketByteViewPresentationDescriptor> build_selected_packet_byte_view_descriptors(

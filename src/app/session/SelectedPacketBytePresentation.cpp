@@ -3225,6 +3225,43 @@ std::optional<std::string> format_selected_packet_byte_view_hex_dump(
     return hex_dump_service.format(materialized->bytes);
 }
 
+std::optional<SelectedPacketByteViewId> select_whole_captured_packet_view_id(
+    const SelectedPacketBytePresentation& presentation
+) noexcept {
+    const auto frame_it = std::find_if(
+        presentation.views.begin(),
+        presentation.views.end(),
+        [&](const SelectedPacketByteViewDescriptor& view) {
+            return view.id.kind == SelectedPacketByteViewKind::frame &&
+                view.owner_kind == SelectedPacketByteOwnerKind::captured_packet &&
+                view.role == SelectedPacketByteViewRole::protocol_unit &&
+                !view.parent_id.has_value() &&
+                view.offset == 0U &&
+                view.captured_length == presentation.owner_captured_length;
+        }
+    );
+    if (frame_it != presentation.views.end()) {
+        return frame_it->id;
+    }
+
+    const auto full_packet_root_it = std::find_if(
+        presentation.views.begin(),
+        presentation.views.end(),
+        [&](const SelectedPacketByteViewDescriptor& view) {
+            return view.owner_kind == SelectedPacketByteOwnerKind::captured_packet &&
+                view.role == SelectedPacketByteViewRole::protocol_unit &&
+                !view.parent_id.has_value() &&
+                view.offset == 0U &&
+                view.captured_length == presentation.owner_captured_length;
+        }
+    );
+    if (full_packet_root_it != presentation.views.end()) {
+        return full_packet_root_it->id;
+    }
+
+    return std::nullopt;
+}
+
 std::string format_selected_packet_byte_view_stable_id(const SelectedPacketByteViewId& id) {
     std::ostringstream out {};
     out << view_kind_key(id.kind) << ':' << static_cast<unsigned int>(id.scope) << ':' << static_cast<unsigned int>(id.occurrence);

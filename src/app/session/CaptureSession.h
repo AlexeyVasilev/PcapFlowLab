@@ -18,6 +18,7 @@
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/CaptureState.h"
+#include "core/domain/Direction.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexWriter.h"
@@ -131,6 +132,19 @@ struct CaptureStorageSummary {
     std::uint64_t approx_unrecognized_record_bytes {0};
     std::uint64_t approx_unrecognized_reason_text_bytes {0};
     std::uint64_t approx_protocol_path_layer_payload_bytes {0};
+};
+
+struct SelectedFlowPacketContext {
+    PacketRef packet {};
+    std::uint64_t flow_packet_index {0};
+    Direction direction {Direction::a_to_b};
+};
+
+struct PacketOwnershipContext {
+    PacketRef packet {};
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<Direction> direction {};
 };
 
 class CaptureSession {
@@ -299,6 +313,10 @@ public:
     [[nodiscard]] std::size_t flow_stream_item_count(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::optional<PacketRef> selected_flow_packet_at(std::size_t flow_index, std::uint64_t flow_packet_index) const;
+    [[nodiscard]] std::optional<SelectedFlowPacketContext> selected_flow_packet_context_at(
+        std::size_t flow_index,
+        std::uint64_t flow_packet_index
+    ) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_packet_number(std::size_t flow_index, std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_exact_packet_number(
         std::size_t flow_index,
@@ -343,6 +361,9 @@ public:
     bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;
     bool export_all_flows_info_csv(const std::filesystem::path& output_path, std::string* out_error_text) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
+    [[nodiscard]] std::optional<PacketOwnershipContext> resolve_packet_ownership_context(
+        std::uint64_t packet_index
+    ) const;
     [[nodiscard]] CaptureStorageSummary storage_summary() const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;

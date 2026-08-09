@@ -7,7 +7,7 @@ This document describes the PcapFlowLab CLI v2 architecture direction.
 - It remains primarily architectural.
 - Some deferred commands still remain design-only.
 - The current production CLI includes v2-style `summary`, `flows`,
-  `export-flows`, and `flow-info` paths, while other public commands remain legacy and may not
+  `export-flows`, `flow-info`, and `packet-info` paths, while other public commands remain legacy and may not
   yet match this design.
 
 ## Goals
@@ -193,7 +193,7 @@ source-capture, manifest, or output-directory semantics.
 
 `packet-info` is the packet inspection command.
 
-It is still planned and not yet implemented in the current production CLI.
+It is implemented in the current production CLI.
 
 The detailed contract is documented in
 [commands/packet-info.md](./commands/packet-info.md).
@@ -694,7 +694,7 @@ At this stage:
 - `docs/cli/commands/flows.md` is defined
 - `docs/cli/commands/export-flows.md` is defined and implemented
 - `docs/cli/commands/flow-info.md` is defined and implemented
-- `docs/cli/commands/packet-info.md` is now defined as planned, not implemented
+- `docs/cli/commands/packet-info.md` is now defined and implemented
 
 ## Intentionally Deferred Decisions
 

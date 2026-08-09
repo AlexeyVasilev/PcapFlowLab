@@ -515,6 +515,28 @@ struct FrontendPacketDetailsDto {
     FrontendSourceAvailabilityDto source_availability {};
 };
 
+struct FrontendPacketInfoDto {
+    bool has_capture {false};
+    bool packet_available {false};
+    bool recognized_flow {false};
+    bool source_capture_accessible {false};
+    bool details_available {false};
+    std::uint64_t packet_index {0};
+    std::uint64_t packet_in_file {0};
+    std::optional<std::size_t> flow_index {};
+    std::optional<std::uint64_t> packet_in_flow {};
+    std::string endpoint_summary_text {};
+    std::string direction_text {};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::vector<session_detail::PacketSummaryLayer> summary_layers {};
+    FrontendPacketDetailsDto::PacketByteViewContent captured_packet_bytes {};
+    std::string unavailable_text {};
+    std::string error_text {};
+    FrontendSourceAvailabilityDto source_availability {};
+};
+
 struct FrontendAnalysisSequencePreviewRowDto {
     std::uint64_t flow_packet_number {0};
     std::string direction_text {};

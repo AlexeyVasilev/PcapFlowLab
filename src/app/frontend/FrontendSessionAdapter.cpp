@@ -545,6 +545,17 @@ std::string packet_details_title() {
     return "Packet Details";
 }
 
+std::string flow_packet_direction_text(const Direction direction) {
+    switch (direction) {
+    case Direction::a_to_b:
+        return "A -> B";
+    case Direction::b_to_a:
+        return "B -> A";
+    default:
+        return {};
+    }
+}
+
 std::string format_hex16_value(const std::uint16_t value) {
     std::ostringstream out {};
     out << "0x" << std::hex << std::nouppercase << std::setw(4) << std::setfill('0') << value;
@@ -3534,6 +3545,214 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::get_unre
     }
 
     return build_frontend_packet_byte_view_content(*packet, stable_id);
+}
+
+FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_frontend_captured_packet_byte_view_content(
+    const PacketRef& packet,
+    const std::optional<std::size_t> flow_index,
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count
+) {
+    if (!session_.source_capture_accessible()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "Byte-backed packet details are unavailable because the original source capture cannot be read.",
+        };
+    }
+
+    const auto packet_bytes = session_.read_packet_data(packet);
+    const auto details = session_.read_packet_details(packet);
+    const auto packet_byte_presentation = derive_frontend_packet_byte_presentation(
+        session_,
+        packet,
+        packet_bytes,
+        details,
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count
+    );
+    if (!packet_byte_presentation.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "No byte views are available for this packet.",
+        };
+    }
+
+    const auto selected_id = session_detail::select_whole_captured_packet_view_id(*packet_byte_presentation);
+    if (!selected_id.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The requested byte view is unavailable for this packet.",
+        };
+    }
+
+    HexDumpService hex_dump_service {};
+    const auto content = session_detail::format_selected_packet_byte_view_content(
+        *packet_byte_presentation,
+        *selected_id,
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        hex_dump_service
+    );
+    if (!content.has_value()) {
+        return FrontendPacketDetailsDto::PacketByteViewContent {
+            .available = false,
+            .unavailable_text = "The requested byte view is unavailable for this packet.",
+        };
+    }
+
+    return FrontendPacketDetailsDto::PacketByteViewContent {
+        .available = true,
+        .stable_id = content->stable_id,
+        .label = content->label,
+        .mode = content->mode == session_detail::SelectedPacketByteRangeMode::payload_only
+            ? "payload_only"
+            : "whole_unit",
+        .assembly_kind = content->assembly_kind,
+        .available_length = content->available_length,
+        .declared_length = content->declared_length,
+        .state = content->state,
+        .contributing_unit_count = content->contributing_unit_count,
+        .contributing_unit_kind = content->contributing_unit_kind,
+        .status_text = packet_byte_view_status_text(
+            content->state,
+            content->assembly_kind,
+            content->contributing_unit_count,
+            content->contributing_unit_kind,
+            content->available_length,
+            content->declared_length
+        ),
+        .formatted_text = content->formatted_text,
+        .unavailable_text = {},
+    };
+}
+
+FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_flow(
+    const std::size_t flow_index,
+    const std::uint64_t flow_packet_index
+) {
+    FrontendPacketInfoDto result {
+        .has_capture = session_.has_capture(),
+        .packet_available = false,
+        .recognized_flow = false,
+        .source_capture_accessible = session_.source_capture_accessible(),
+        .details_available = false,
+        .source_availability = current_source_availability(),
+    };
+
+    if (!result.has_capture) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    auto row = session_.flow_row(flow_index);
+    if (row.has_value()) {
+        row = apply_service_hint_override(*row, flow_service_hint_overrides_);
+    }
+    if (!row.has_value()) {
+        result.error_text = "The requested flow is unavailable.";
+        return result;
+    }
+
+    const auto packet_context = session_.selected_flow_packet_context_at(flow_index, flow_packet_index);
+    if (!packet_context.has_value()) {
+        result.error_text = "The requested packet is unavailable in the selected flow.";
+        return result;
+    }
+
+    const auto details = build_frontend_packet_details(
+        packet_context->packet,
+        flow_index,
+        packet_context->flow_packet_index
+    );
+    const auto bytes = build_frontend_captured_packet_byte_view_content(
+        packet_context->packet,
+        flow_index,
+        packet_context->flow_packet_index
+    );
+
+    result.packet_available = true;
+    result.recognized_flow = true;
+    result.details_available = details.details_available;
+    result.packet_index = packet_context->packet.packet_index;
+    result.packet_in_file = packet_context->packet.packet_index + 1U;
+    result.flow_index = flow_index;
+    result.packet_in_flow = packet_context->flow_packet_index;
+    result.endpoint_summary_text = build_analysis_endpoint_summary(*row);
+    result.direction_text = flow_packet_direction_text(packet_context->direction);
+    result.timestamp_text = details.timestamp_text;
+    result.captured_length = details.captured_length;
+    result.original_length = details.original_length;
+    result.summary_layers = details.summary_layers;
+    result.captured_packet_bytes = bytes;
+    result.unavailable_text = details.unavailable_text;
+    result.error_text = details.error_text;
+    result.source_capture_accessible = details.source_capture_accessible;
+    result.source_availability = details.source_availability;
+    return result;
+}
+
+FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(const std::uint64_t packet_index) {
+    FrontendPacketInfoDto result {
+        .has_capture = session_.has_capture(),
+        .packet_available = false,
+        .recognized_flow = false,
+        .source_capture_accessible = session_.source_capture_accessible(),
+        .details_available = false,
+        .source_availability = current_source_availability(),
+    };
+
+    if (!result.has_capture) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    const auto packet_context = session_.resolve_packet_ownership_context(packet_index);
+    if (!packet_context.has_value()) {
+        result.error_text = "The requested packet is unavailable.";
+        return result;
+    }
+
+    auto details = build_frontend_packet_details(
+        packet_context->packet,
+        packet_context->flow_index,
+        packet_context->flow_packet_index
+    );
+    const auto bytes = build_frontend_captured_packet_byte_view_content(
+        packet_context->packet,
+        packet_context->flow_index,
+        packet_context->flow_packet_index
+    );
+
+    result.packet_available = true;
+    result.recognized_flow = packet_context->flow_index.has_value();
+    result.details_available = details.details_available;
+    result.packet_index = packet_context->packet.packet_index;
+    result.packet_in_file = packet_context->packet.packet_index + 1U;
+    result.flow_index = packet_context->flow_index;
+    result.packet_in_flow = packet_context->flow_packet_index;
+    result.timestamp_text = details.timestamp_text;
+    result.captured_length = details.captured_length;
+    result.original_length = details.original_length;
+    result.summary_layers = details.summary_layers;
+    result.captured_packet_bytes = bytes;
+    result.unavailable_text = details.unavailable_text;
+    result.error_text = details.error_text;
+    result.source_capture_accessible = details.source_capture_accessible;
+    result.source_availability = details.source_availability;
+
+    if (packet_context->flow_index.has_value()) {
+        auto row = session_.flow_row(*packet_context->flow_index);
+        if (row.has_value()) {
+            row = apply_service_hint_override(*row, flow_service_hint_overrides_);
+            result.endpoint_summary_text = build_analysis_endpoint_summary(*row);
+        }
+    }
+
+    if (packet_context->direction.has_value()) {
+        result.direction_text = flow_packet_direction_text(*packet_context->direction);
+    }
+
+    return result;
 }
 
 FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
