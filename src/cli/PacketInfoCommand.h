@@ -37,6 +37,10 @@ struct PacketInfoCommandExecutionResult {
 
 [[nodiscard]] std::string render_packet_info_command_help();
 [[nodiscard]] PacketInfoCommandParseResult parse_packet_info_command_arguments(std::span<const std::string_view> args);
+[[nodiscard]] PacketInfoCommandExecutionResult execute_packet_info_command(
+    const PacketInfoCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+);
 [[nodiscard]] PacketInfoCommandExecutionResult execute_packet_info_command(const PacketInfoCommandOptions& options);
 
 }  // namespace pfl::cli

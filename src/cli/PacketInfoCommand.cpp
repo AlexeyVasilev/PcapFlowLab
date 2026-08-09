@@ -309,6 +309,18 @@ PacketInfoCommandParseResult parse_packet_info_command_arguments(const std::span
 }
 
 PacketInfoCommandExecutionResult execute_packet_info_command(const PacketInfoCommandOptions& options) {
+    return execute_packet_info_command(
+        options,
+        CliRuntimeEnvironment {
+            .stderr_is_terminal = stderr_supports_interactive_updates(),
+        }
+    );
+}
+
+PacketInfoCommandExecutionResult execute_packet_info_command(
+    const PacketInfoCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+) {
     const bool input_looks_like_index = looks_like_index_file(options.input_path);
     if (!input_looks_like_index && options.source_capture_path.has_value()) {
         return {
@@ -344,7 +356,7 @@ PacketInfoCommandExecutionResult execute_packet_info_command(const PacketInfoCom
         adapter,
         options.input_path,
         options.progress_mode,
-        stderr_supports_interactive_updates(),
+        environment,
         stderr_text
     );
     if (!open_result.opened) {

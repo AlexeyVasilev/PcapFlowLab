@@ -700,7 +700,8 @@ bool export_owned_packets_with_reader(
 
 bool FlowExportService::export_packets_to_pcap(const std::filesystem::path& output_path,
                                                std::span<const PacketRef> packets,
-                                               const std::filesystem::path& source_capture_path) const {
+                                               const std::filesystem::path& source_capture_path,
+                                               const MarkedPacketExportOptions& options) const {
     CaptureFilePacketReader reader {source_capture_path};
     if (!reader.is_open()) {
         return false;
@@ -713,7 +714,27 @@ bool FlowExportService::export_packets_to_pcap(const std::filesystem::path& outp
     }
 
     std::vector<std::uint8_t> bytes {};
-    for (const auto& packet : packets) {
+    const auto total_packets_to_scan = static_cast<std::uint64_t>(packets.size());
+    if (options.progress_callback) {
+        options.progress_callback(MarkedPacketExportProgress {
+            .packets_processed = 0U,
+            .total_packets_to_scan = total_packets_to_scan,
+            .exported_packets_written = 0U,
+            .total_selected_packets = total_packets_to_scan,
+        });
+    }
+
+    std::uint64_t exported_packets_written = 0U;
+    for (std::size_t index = 0U; index < packets.size(); ++index) {
+        const auto& packet = packets[index];
+        const auto processed_packets = static_cast<std::uint64_t>(index + 1U);
+        if (options.cancel_requested &&
+            ((processed_packets % kCancellationCheckPacketInterval) == 0U) &&
+            options.cancel_requested()) {
+            writer.close();
+            return false;
+        }
+
         if (!reader.read_packet_data(packet, bytes)) {
             writer.close();
             return false;
@@ -722,6 +743,17 @@ bool FlowExportService::export_packets_to_pcap(const std::filesystem::path& outp
         if (!writer.write_packet(packet, bytes)) {
             writer.close();
             return false;
+        }
+
+        ++exported_packets_written;
+        if (options.progress_callback &&
+            ((processed_packets % kProgressReportPacketInterval) == 0U || processed_packets >= total_packets_to_scan)) {
+            options.progress_callback(MarkedPacketExportProgress {
+                .packets_processed = processed_packets,
+                .total_packets_to_scan = total_packets_to_scan,
+                .exported_packets_written = exported_packets_written,
+                .total_selected_packets = total_packets_to_scan,
+            });
         }
     }
 

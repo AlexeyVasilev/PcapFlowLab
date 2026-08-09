@@ -150,9 +150,11 @@ CLI v2 reserves:
 
 Default behavior is planned to be `auto`.
 
-- long-running interactive operations may show progress
-- non-interactive contexts should avoid noisy terminal-style progress output
+- `auto`: show live progress only when `stderr` is an interactive terminal
+- `on`: force live progress, including when `stderr` is redirected
+- `off`: disable progress
 - progress belongs on `stderr`
+- requested command data remains on `stdout`
 
 ## Examples
 

@@ -32,6 +32,10 @@ struct FlowInfoCommandExecutionResult {
 
 [[nodiscard]] std::string render_flow_info_command_help();
 [[nodiscard]] FlowInfoCommandParseResult parse_flow_info_command_arguments(std::span<const std::string_view> args);
+[[nodiscard]] FlowInfoCommandExecutionResult execute_flow_info_command(
+    const FlowInfoCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+);
 [[nodiscard]] FlowInfoCommandExecutionResult execute_flow_info_command(const FlowInfoCommandOptions& options);
 
 }  // namespace pfl::cli

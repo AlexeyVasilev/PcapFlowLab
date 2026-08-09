@@ -55,7 +55,7 @@ bool is_existing_directory(const std::filesystem::path& path) {
     return std::filesystem::is_directory(path, error) && !error;
 }
 
-std::string render_open_progress_text(const FrontendOpenProgressDto& progress) {
+std::string render_open_progress_text_impl(const FrontendOpenProgressDto& progress) {
     std::ostringstream out {};
     out << "Opening " << (progress.opening_as_index ? "index" : "capture") << ": ";
     const auto percent = std::clamp(progress.percent * 100.0, 0.0, 100.0);
@@ -70,7 +70,47 @@ std::string render_open_progress_text(const FrontendOpenProgressDto& progress) {
     return out.str();
 }
 
+std::string render_interactive_progress_update_impl(
+    const std::string_view current_line,
+    const std::size_t previous_visible_length
+) {
+    std::string update {};
+    if (previous_visible_length > 0U) {
+        update.reserve(previous_visible_length + current_line.size() + 2U);
+        update += '\r';
+        update.append(previous_visible_length, ' ');
+        update += '\r';
+    } else {
+        update.reserve(current_line.size() + 1U);
+        update += '\r';
+    }
+    update += current_line;
+    return update;
+}
+
+void emit_progress_text(
+    const CliProgressSink& sink,
+    const std::string_view text
+) {
+    if (!sink || text.empty()) {
+        return;
+    }
+
+    sink(text);
+}
+
 }  // namespace
+
+std::string render_open_progress_text(const FrontendOpenProgressDto& progress) {
+    return render_open_progress_text_impl(progress);
+}
+
+std::string render_interactive_progress_update(
+    const std::string_view current_line,
+    const std::size_t previous_visible_length
+) {
+    return render_interactive_progress_update_impl(current_line, previous_visible_length);
+}
 
 bool contains_option(
     const std::span<const std::string_view> options,
@@ -207,6 +247,23 @@ bool should_enable_cli_progress(
     }
 }
 
+FrontendOpenProgressDto normalize_successful_open_progress(
+    const FrontendOpenProgressDto& progress,
+    const FrontendOpenResult& result
+) noexcept {
+    if (!result.opened || result.partial_open || result.cancelled) {
+        return progress;
+    }
+
+    auto normalized = progress;
+    normalized.in_progress = false;
+    normalized.percent = 1.0;
+    if (normalized.total_bytes > 0U) {
+        normalized.bytes_processed = std::max(normalized.bytes_processed, normalized.total_bytes);
+    }
+    return normalized;
+}
+
 CliOutputPreflightResult preflight_output_targets(
     const std::filesystem::path& input_path,
     const std::span<const CliOutputTarget> outputs,
@@ -280,10 +337,11 @@ FrontendOpenResult open_input_with_progress(
     FrontendSessionAdapter& adapter,
     const std::filesystem::path& input_path,
     const CliProgressMode progress_mode,
-    const bool stderr_is_terminal,
-    std::string& stderr_text
+    const CliRuntimeEnvironment& environment,
+    [[maybe_unused]] std::string& stderr_text
 ) {
-    if (!should_enable_cli_progress(progress_mode, stderr_is_terminal)) {
+    const bool progress_enabled = should_enable_cli_progress(progress_mode, environment.stderr_is_terminal);
+    if (!progress_enabled || !environment.progress_sink) {
         return adapter.open_capture(input_path);
     }
 
@@ -295,17 +353,36 @@ FrontendOpenResult open_input_with_progress(
         };
     }
 
-    const bool interactive = stderr_is_terminal;
+    const bool interactive = environment.stderr_is_terminal;
     const auto update_interval = interactive ? std::chrono::milliseconds {120} : std::chrono::milliseconds {250};
     auto last_update = Clock::time_point {};
     std::string last_line {};
+    std::size_t last_visible_length = 0U;
     bool emitted_progress = false;
 
     while (true) {
         const auto poll = adapter.poll_open_capture();
         if (poll.ready) {
+            const auto final_progress = normalize_successful_open_progress(poll.progress, poll.result);
+            const bool completed_successfully = poll.result.opened && !poll.result.partial_open && !poll.result.cancelled;
+            if (completed_successfully) {
+                const auto line = render_open_progress_text(final_progress);
+                if (line != last_line) {
+                    if (interactive) {
+                        emit_progress_text(
+                            environment.progress_sink,
+                            render_interactive_progress_update(line, last_visible_length)
+                        );
+                    } else {
+                        emit_progress_text(environment.progress_sink, line + '\n');
+                    }
+                    last_line = line;
+                    last_visible_length = line.size();
+                    emitted_progress = true;
+                }
+            }
             if (interactive && emitted_progress) {
-                stderr_text += '\n';
+                emit_progress_text(environment.progress_sink, "\n");
             }
             return poll.result;
         }
@@ -315,13 +392,15 @@ FrontendOpenResult open_input_with_progress(
             const auto line = render_open_progress_text(poll.progress);
             if (line != last_line) {
                 if (interactive) {
-                    stderr_text += '\r';
-                    stderr_text += line;
+                    emit_progress_text(
+                        environment.progress_sink,
+                        render_interactive_progress_update(line, last_visible_length)
+                    );
                 } else {
-                    stderr_text += line;
-                    stderr_text += '\n';
+                    emit_progress_text(environment.progress_sink, line + '\n');
                 }
                 last_line = line;
+                last_visible_length = line.size();
                 emitted_progress = true;
             }
             last_update = now;

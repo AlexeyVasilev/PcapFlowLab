@@ -60,6 +60,10 @@ struct SummaryCommandExecutionResult {
 [[nodiscard]] SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOptions& options);
 [[nodiscard]] std::string render_global_cli_help();
 [[nodiscard]] std::string render_summary_command_help();
+[[nodiscard]] CliInvocationResult process_cli_invocation(
+    std::span<const std::string_view> args,
+    const CliRuntimeEnvironment& environment
+);
 [[nodiscard]] CliInvocationResult process_cli_invocation(std::span<const std::string_view> args);
 [[nodiscard]] bool should_enable_summary_progress(
     SummaryCommandProgressMode mode,

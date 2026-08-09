@@ -118,6 +118,126 @@ std::vector<std::string> split_csv_line(const std::string& line) {
     return fields;
 }
 
+struct CapturedCliInvocation {
+    cli::CliInvocationResult result {};
+    std::string progress_text {};
+};
+
+CapturedCliInvocation invoke_cli_with_runtime(
+    const std::vector<std::string>& args_storage,
+    const bool stderr_is_terminal,
+    const bool collect_progress = true
+) {
+    std::vector<std::string_view> args {};
+    args.reserve(args_storage.size());
+    for (const auto& arg : args_storage) {
+        args.push_back(arg);
+    }
+
+    CapturedCliInvocation invocation {};
+    invocation.result = cli::process_cli_invocation(
+        args,
+        cli::CliRuntimeEnvironment {
+            .stderr_is_terminal = stderr_is_terminal,
+            .progress_sink = collect_progress
+                ? cli::CliProgressSink {[&invocation](const std::string_view text) {
+                    invocation.progress_text.append(text);
+                }}
+                : cli::CliProgressSink {},
+        }
+    );
+    return invocation;
+}
+
+std::string last_progress_line(const std::string_view progress_text) {
+    std::string last_line {};
+    std::size_t start = 0U;
+    while (start < progress_text.size()) {
+        const auto end = progress_text.find_first_of("\r\n", start);
+        const auto line = progress_text.substr(
+            start,
+            end == std::string_view::npos ? progress_text.size() - start : end - start
+        );
+        if (!line.empty()) {
+            last_line = std::string {line};
+        }
+        if (end == std::string_view::npos) {
+            break;
+        }
+        start = end + 1U;
+    }
+    return last_line;
+}
+
+std::size_t count_text_occurrences(const std::string_view haystack, const std::string_view needle) {
+    if (needle.empty()) {
+        return 0U;
+    }
+
+    std::size_t count = 0U;
+    std::size_t offset = 0U;
+    while ((offset = haystack.find(needle, offset)) != std::string_view::npos) {
+        ++count;
+        offset += needle.size();
+    }
+    return count;
+}
+
+std::filesystem::path build_cli_progress_capture_path() {
+    return write_temp_pcap(
+        "pfl_cli_progress_capture.pcap",
+        make_classic_pcap({
+            {
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 80, 0, 1),
+                    ipv4(10, 80, 0, 2),
+                    48000,
+                    443,
+                    std::vector<std::uint8_t> {'G', 'E', 'T'},
+                    0x18
+                )
+            },
+            {
+                200U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 80, 0, 2),
+                    ipv4(10, 80, 0, 1),
+                    443,
+                    48000,
+                    std::vector<std::uint8_t> {'O', 'K'},
+                    0x18
+                )
+            },
+        })
+    );
+}
+
+std::filesystem::path build_partial_open_capture_path() {
+    auto bytes = make_classic_pcap({
+        {
+            100U,
+            make_ethernet_ipv4_udp_packet(
+                ipv4(10, 81, 0, 1),
+                ipv4(10, 81, 0, 2),
+                48100,
+                53
+            )
+        },
+        {
+            200U,
+            make_ethernet_ipv4_udp_packet(
+                ipv4(10, 81, 0, 3),
+                ipv4(10, 81, 0, 4),
+                48101,
+                54
+            )
+        },
+    });
+    bytes.resize(bytes.size() - 8U);
+    return write_temp_pcap("pfl_cli_progress_partial_open.pcap", bytes);
+}
+
 std::string settings_json(
     const bool ignore_gtpu_teids_when_grouping_inner_flows,
     const bool ignore_vlan_and_mpls_layers_when_grouping_flows = false,
@@ -1219,6 +1339,117 @@ void expect_preflight_fails_before_opening_input() {
     PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input"));
 }
 
+void expect_open_progress_helper_behavior() {
+    FrontendOpenProgressDto stale_success_progress {
+        .in_progress = true,
+        .opening_as_index = false,
+        .bytes_processed = 980U,
+        .total_bytes = 1000U,
+        .percent = 0.98,
+    };
+    FrontendOpenResult success_result {
+        .opened = true,
+    };
+    const auto normalized_success = cli::normalize_successful_open_progress(stale_success_progress, success_result);
+    PFL_EXPECT(!normalized_success.in_progress);
+    PFL_EXPECT(normalized_success.percent == 1.0);
+    PFL_EXPECT(normalized_success.bytes_processed == 1000U);
+    PFL_EXPECT(contains_text(cli::render_open_progress_text(normalized_success), "100%"));
+
+    FrontendOpenResult partial_result {
+        .opened = true,
+        .partial_open = true,
+    };
+    const auto partial_progress = cli::normalize_successful_open_progress(stale_success_progress, partial_result);
+    PFL_EXPECT(partial_progress.in_progress == stale_success_progress.in_progress);
+    PFL_EXPECT(partial_progress.percent == stale_success_progress.percent);
+    PFL_EXPECT(partial_progress.bytes_processed == stale_success_progress.bytes_processed);
+
+    {
+        const auto update = cli::render_interactive_progress_update("Opening capture: 100%", 0U);
+        PFL_EXPECT(update == "\rOpening capture: 100%");
+    }
+
+    {
+        const auto update = cli::render_interactive_progress_update("Opening capture: 100%", 32U);
+        const auto expected = std::string {"\r"} + std::string(32U, ' ') + "\rOpening capture: 100%";
+        PFL_EXPECT(update == expected);
+    }
+}
+
+void expect_live_progress_runtime_contracts() {
+    const auto capture_path = build_cli_progress_capture_path();
+    const auto export_path = std::filesystem::temp_directory_path() / "pfl_cli_progress_export_output.pcap";
+    std::filesystem::remove(export_path);
+
+    const std::vector<std::vector<std::string>> command_args {
+        {"summary", capture_path.string(), "--progress", "on"},
+        {capture_path.string(), "--progress", "on"},
+        {"flows", capture_path.string(), "--progress", "on"},
+        {"export-flows", capture_path.string(), "--flow-number", "1", "--first-packets", "1", "--out", export_path.string(), "--progress", "on"},
+        {"flow-info", capture_path.string(), "--flow-number", "1", "--progress", "on"},
+        {"packet-info", capture_path.string(), "--packet-in-file", "1", "--progress", "on"},
+    };
+
+    for (const auto& args : command_args) {
+        const auto invocation = invoke_cli_with_runtime(args, false);
+        PFL_EXPECT(invocation.result.handled);
+        PFL_EXPECT(invocation.result.exit_code == 0);
+        PFL_EXPECT(!invocation.progress_text.empty());
+        PFL_EXPECT(contains_text(invocation.progress_text, "Opening capture: "));
+        PFL_EXPECT(!contains_text(invocation.result.stderr_text, "Opening capture: "));
+        const auto final_line = last_progress_line(invocation.progress_text);
+        PFL_EXPECT(contains_text(final_line, "100%"));
+        PFL_EXPECT(count_text_occurrences(invocation.progress_text, final_line) == 1U);
+    }
+
+    const auto off_invocation = invoke_cli_with_runtime(
+        {"summary", capture_path.string(), "--progress", "off"},
+        true
+    );
+    PFL_EXPECT(off_invocation.result.exit_code == 0);
+    PFL_EXPECT(off_invocation.progress_text.empty());
+
+    const auto auto_terminal_invocation = invoke_cli_with_runtime(
+        {"summary", capture_path.string(), "--progress", "auto"},
+        true
+    );
+    PFL_EXPECT(auto_terminal_invocation.result.exit_code == 0);
+    PFL_EXPECT(contains_text(auto_terminal_invocation.progress_text, "Opening capture: "));
+
+    const auto auto_redirected_invocation = invoke_cli_with_runtime(
+        {"summary", capture_path.string(), "--progress", "auto"},
+        false
+    );
+    PFL_EXPECT(auto_redirected_invocation.result.exit_code == 0);
+    PFL_EXPECT(auto_redirected_invocation.progress_text.empty());
+}
+
+void expect_progress_failure_and_partial_open_contracts() {
+    const auto failed_invocation = invoke_cli_with_runtime(
+        {"summary", "pfl_cli_progress_missing_input_capture.pcap", "--progress", "on"},
+        true
+    );
+    PFL_EXPECT(failed_invocation.result.handled);
+    PFL_EXPECT(failed_invocation.result.exit_code == 1);
+    PFL_EXPECT(failed_invocation.progress_text.empty());
+    PFL_EXPECT(!failed_invocation.result.stderr_text.empty());
+    PFL_EXPECT(!contains_text(failed_invocation.result.stderr_text, "100%"));
+
+    const auto partial_capture_path = build_partial_open_capture_path();
+    const auto partial_invocation = invoke_cli_with_runtime(
+        {"summary", partial_capture_path.string(), "--progress", "on"},
+        true
+    );
+    PFL_EXPECT(partial_invocation.result.handled);
+    PFL_EXPECT(partial_invocation.result.exit_code == 0);
+    PFL_EXPECT(!partial_invocation.progress_text.empty());
+    PFL_EXPECT(!partial_invocation.result.stderr_text.empty());
+    PFL_EXPECT(!contains_text(last_progress_line(partial_invocation.progress_text), "100%"));
+    PFL_EXPECT(!contains_text(partial_invocation.result.stderr_text, "Opening capture: "));
+    PFL_EXPECT(partial_invocation.progress_text.back() == '\n');
+}
+
 }  // namespace
 
 void run_cli_summary_tests() {
@@ -1238,6 +1469,9 @@ void run_cli_summary_tests() {
     expect_flow_list_export_contracts();
     expect_combined_side_output_preflight_contracts();
     expect_preflight_fails_before_opening_input();
+    expect_open_progress_helper_behavior();
+    expect_live_progress_runtime_contracts();
+    expect_progress_failure_and_partial_open_contracts();
 }
 
 }  // namespace pfl::tests

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -17,6 +18,13 @@ enum class CliProgressMode : std::uint8_t {
     auto_mode = 0,
     on,
     off,
+};
+
+using CliProgressSink = std::function<void(std::string_view)>;
+
+struct CliRuntimeEnvironment {
+    bool stderr_is_terminal {false};
+    CliProgressSink progress_sink {};
 };
 
 struct CliOutputTarget {
@@ -50,6 +58,15 @@ struct CliInvocationResult {
     CliProgressMode mode,
     bool stderr_is_terminal
 ) noexcept;
+[[nodiscard]] FrontendOpenProgressDto normalize_successful_open_progress(
+    const FrontendOpenProgressDto& progress,
+    const FrontendOpenResult& result
+) noexcept;
+[[nodiscard]] std::string render_open_progress_text(const FrontendOpenProgressDto& progress);
+[[nodiscard]] std::string render_interactive_progress_update(
+    std::string_view current_line,
+    std::size_t previous_visible_length
+);
 [[nodiscard]] CliOutputPreflightResult preflight_output_targets(
     const std::filesystem::path& input_path,
     std::span<const CliOutputTarget> outputs,
@@ -60,7 +77,7 @@ struct CliInvocationResult {
     FrontendSessionAdapter& adapter,
     const std::filesystem::path& input_path,
     CliProgressMode progress_mode,
-    bool stderr_is_terminal,
+    const CliRuntimeEnvironment& environment,
     std::string& stderr_text
 );
 

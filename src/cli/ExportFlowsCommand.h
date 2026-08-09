@@ -51,6 +51,7 @@ struct ExportFlowsCommandExecutionResult {
 
 enum class SmartExportCliProgressPhase {
     none,
+    direct_single_file,
     single_file,
     per_flow_preparing,
     per_flow_writing,
@@ -67,6 +68,10 @@ struct SmartExportCliProgressRenderState {
 [[nodiscard]] std::string render_export_flows_command_help();
 [[nodiscard]] ExportFlowsCommandParseResult parse_export_flows_command_arguments(
     std::span<const std::string_view> args
+);
+[[nodiscard]] ExportFlowsCommandExecutionResult execute_export_flows_command(
+    const ExportFlowsCommandOptions& options,
+    const CliRuntimeEnvironment& environment
 );
 [[nodiscard]] ExportFlowsCommandExecutionResult execute_export_flows_command(
     const ExportFlowsCommandOptions& options

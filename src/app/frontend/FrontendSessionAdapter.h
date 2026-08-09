@@ -33,7 +33,8 @@ public:
     [[nodiscard]] FrontendExportCurrentFlowResult export_current_flow(const std::filesystem::path& output_path) const;
     [[nodiscard]] FrontendExportSelectedFlowsResult export_flows_to_pcap(
         const std::filesystem::path& output_path,
-        const std::vector<std::size_t>& flow_indices
+        const std::vector<std::size_t>& flow_indices,
+        const SmartSingleFileExportOptions& options = {}
     ) const;
     [[nodiscard]] FrontendExportSelectedFlowsResult export_selected_flows(
         const std::filesystem::path& output_path,

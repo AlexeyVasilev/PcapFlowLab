@@ -714,6 +714,12 @@ Support:
 
 Reuse normal input-open progress.
 
+`auto` shows live progress only when `stderr` is an interactive terminal.
+
+`on` forces live progress even when `stderr` is redirected.
+
+`off` disables progress.
+
 Do not introduce:
 
 - packet lookup progress

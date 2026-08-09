@@ -588,6 +588,12 @@ Support:
 
 using the normal existing CLI input-open progress behavior.
 
+`auto` shows live progress only when `stderr` is an interactive terminal.
+
+`on` forces live progress even when `stderr` is redirected.
+
+`off` disables progress.
+
 Do not add a separate flow-analysis-specific progress model.
 
 Point lookup and selected-flow analysis are expected to be sufficiently small.

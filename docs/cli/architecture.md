@@ -571,13 +571,13 @@ auto
 
 Intended behavior:
 
-- interactive terminal plus long-running operation: show progress
-- non-interactive or scripted contexts: avoid terminal-style dynamic output
-  where appropriate
-- `on`: explicitly request progress
+- `auto`: show live progress only when `stderr` is an interactive terminal
+- `on`: explicitly request live progress even when `stderr` is redirected
 - `off`: disable progress
 
 Progress must be written to `stderr`.
+
+Normal command data remains buffered for `stdout`.
 
 An example conceptual progress line is:
 

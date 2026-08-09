@@ -21,10 +21,6 @@ namespace {
 constexpr std::size_t kMebibyte = 1024U * 1024U;
 constexpr auto kSmartExportProgressThrottleInterval = std::chrono::milliseconds(750);
 
-struct ExportExecutionEnvironment {
-    bool stderr_is_terminal {false};
-};
-
 struct DirectoryPreflightResult {
     bool ok {false};
     std::string error_text {};
@@ -159,6 +155,22 @@ std::string render_smart_single_file_progress_line(const SmartSingleFileExportPr
     return out.str();
 }
 
+std::string render_direct_single_file_progress_line(const SmartSingleFileExportProgress& progress) {
+    std::ostringstream out {};
+    out << "Exporting packets: scanned "
+        << session_detail::format_statistics_count_value(progress.packets_processed);
+    if (progress.total_packets_to_scan > 0U) {
+        out << " / " << session_detail::format_statistics_count_value(progress.total_packets_to_scan);
+    }
+    out << ", wrote "
+        << session_detail::format_statistics_count_value(progress.exported_packets_written);
+    if (progress.total_selected_packets > 0U) {
+        out << " of " << session_detail::format_statistics_count_value(progress.total_selected_packets);
+    }
+    out << '.';
+    return out.str();
+}
+
 std::string render_smart_per_flow_progress_line(const SmartPerFlowExportProgress& progress) {
     std::ostringstream out {};
     if (progress.phase == SmartPerFlowExportPhase::preparing) {
@@ -239,16 +251,15 @@ std::optional<std::string> maybe_emit_throttled_progress_line(
     return line;
 }
 
-void append_progress_line(
-    std::string& stderr_text,
+void emit_progress_line(
+    const CliProgressSink& sink,
     const std::optional<std::string>& line
 ) {
-    if (!line.has_value() || line->empty()) {
+    if (!sink || !line.has_value() || line->empty()) {
         return;
     }
 
-    stderr_text += *line;
-    stderr_text += '\n';
+    sink(*line + '\n');
 }
 
 SmartFlowExportRequest build_export_request(const ExportFlowsCommandOptions& options, std::vector<std::size_t> flow_indices) {
@@ -287,7 +298,7 @@ session_detail::FlowQuery build_flow_query(const ExportFlowsCommandOptions& opti
 
 ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
     const ExportFlowsCommandOptions& options,
-    const ExportExecutionEnvironment& environment
+    const CliRuntimeEnvironment& environment
 ) {
     const bool input_looks_like_index = looks_like_index_file(options.input_path);
     if (input_looks_like_index && options.settings_path.has_value()) {
@@ -385,7 +396,7 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
         adapter,
         options.input_path,
         options.progress_mode,
-        environment.stderr_is_terminal,
+        environment,
         stderr_text
     );
     if (!open_result.opened) {
@@ -462,10 +473,10 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
         SmartExportCliProgressRenderState progress_state {};
         SmartSingleFileExportOptions export_options {};
         const auto progress_enabled = should_enable_cli_progress(options.progress_mode, environment.stderr_is_terminal);
-        if (progress_enabled) {
+        if (progress_enabled && environment.progress_sink) {
             export_options.progress_callback = [&](const SmartSingleFileExportProgress& progress) {
-                append_progress_line(
-                    stderr_text,
+                emit_progress_line(
+                    environment.progress_sink,
                     render_throttled_smart_single_file_progress_line(
                         progress,
                         progress_state,
@@ -539,7 +550,28 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
 
     if (options.out_path.has_value() &&
         options.base_mode == SmartFlowExportBaseMode::all_packets) {
-        const auto export_result = adapter.export_flows_to_pcap(*options.out_path, query_result.ordered_flow_indices);
+        SmartExportCliProgressRenderState progress_state {};
+        SmartSingleFileExportOptions export_options {};
+        if (progress_enabled && environment.progress_sink) {
+            export_options.progress_callback = [&](const SmartSingleFileExportProgress& progress) {
+                emit_progress_line(
+                    environment.progress_sink,
+                    maybe_emit_throttled_progress_line(
+                        SmartExportCliProgressPhase::direct_single_file,
+                        render_direct_single_file_progress_line(progress),
+                        is_completed_single_file_progress(progress),
+                        progress_state,
+                        std::chrono::steady_clock::now()
+                    )
+                );
+            };
+        }
+
+        const auto export_result = adapter.export_flows_to_pcap(
+            *options.out_path,
+            query_result.ordered_flow_indices,
+            export_options
+        );
         if (!export_result.exported) {
             stderr_text += export_result.error_text.empty()
                 ? "Failed to export flows.\n"
@@ -564,10 +596,10 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
     if (options.out_path.has_value()) {
         SmartExportCliProgressRenderState progress_state {};
         SmartSingleFileExportOptions export_options {};
-        if (progress_enabled) {
+        if (progress_enabled && environment.progress_sink) {
             export_options.progress_callback = [&](const SmartSingleFileExportProgress& progress) {
-                append_progress_line(
-                    stderr_text,
+                emit_progress_line(
+                    environment.progress_sink,
                     render_throttled_smart_single_file_progress_line(
                         progress,
                         progress_state,
@@ -601,10 +633,10 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
     SmartPerFlowExportOptions export_options {
         .buffer_budget_bytes = options.buffer_memory_bytes,
     };
-    if (progress_enabled) {
+    if (progress_enabled && environment.progress_sink) {
         export_options.progress_callback = [&](const SmartPerFlowExportProgress& progress) {
-            append_progress_line(
-                stderr_text,
+            emit_progress_line(
+                environment.progress_sink,
                 render_throttled_smart_per_flow_progress_line(
                     progress,
                     progress_state,
@@ -1195,12 +1227,19 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
 }
 
 ExportFlowsCommandExecutionResult execute_export_flows_command(const ExportFlowsCommandOptions& options) {
-    return execute_export_flows_command_with_environment(
+    return execute_export_flows_command(
         options,
-        ExportExecutionEnvironment {
+        CliRuntimeEnvironment {
             .stderr_is_terminal = stderr_supports_interactive_updates(),
         }
     );
+}
+
+ExportFlowsCommandExecutionResult execute_export_flows_command(
+    const ExportFlowsCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+) {
+    return execute_export_flows_command_with_environment(options, environment);
 }
 
 }  // namespace pfl::cli

@@ -685,15 +685,22 @@ Progress belongs to `stderr`.
 
 The command should reuse existing CLI input-open progress policy.
 
-Current backend export-progress reality is not uniform:
+`auto` shows live input-open and export progress only when `stderr` is an
+interactive terminal.
 
-- direct full-flow export does not currently expose dedicated progress callbacks
+`on` forces live progress even when `stderr` is redirected.
+
+`off` disables progress.
+
+Current backend export-progress coverage is:
+
+- direct single-file full-flow export exposes packet-scan / packet-write progress
 - Smart single-file export exposes packet-scan / packet-write progress
 - per-flow folder export exposes preparing/writing progress plus cancellation
 
 The CLI must not promise fake uniform percentages across all export paths.
 
-When Smart Export progress is enabled, CLI rendering should throttle callback
+When export progress is enabled, CLI rendering should throttle callback
 output so terminal and redirected log output remain readable.
 
 ## Success Reporting

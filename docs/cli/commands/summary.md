@@ -828,6 +828,12 @@ Default:
 auto
 ```
 
+`auto` shows live progress only when `stderr` is an interactive terminal.
+
+`on` forces live progress even when `stderr` is redirected.
+
+`off` disables progress.
+
 Progress belongs to `stderr`.
 
 Requested summary content belongs to `stdout`.

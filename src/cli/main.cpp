@@ -11,7 +11,15 @@ int main(int argc, char* argv[]) {
         cli_args.push_back(argv[index]);
     }
 
-    const auto cli_result = pfl::cli::process_cli_invocation(cli_args);
+    const auto cli_result = pfl::cli::process_cli_invocation(
+        cli_args,
+        pfl::cli::CliRuntimeEnvironment {
+            .stderr_is_terminal = pfl::cli::stderr_supports_interactive_updates(),
+            .progress_sink = [](const std::string_view text) {
+                std::cerr << text << std::flush;
+            },
+        }
+    );
     if (!cli_result.stdout_text.empty()) {
         std::cout << cli_result.stdout_text;
     }

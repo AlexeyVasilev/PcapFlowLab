@@ -39,6 +39,10 @@ struct FlowsCommandExecutionResult {
 
 [[nodiscard]] std::string render_flows_command_help();
 [[nodiscard]] FlowsCommandParseResult parse_flows_command_arguments(std::span<const std::string_view> args);
+[[nodiscard]] FlowsCommandExecutionResult execute_flows_command(
+    const FlowsCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+);
 [[nodiscard]] FlowsCommandExecutionResult execute_flows_command(const FlowsCommandOptions& options);
 
 }  // namespace pfl::cli

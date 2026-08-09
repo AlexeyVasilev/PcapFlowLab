@@ -51,10 +51,6 @@ struct OutputPreflightResult {
     std::string error_text {};
 };
 
-struct SummaryExecutionEnvironment {
-    bool stderr_is_terminal {false};
-};
-
 std::string render_command_list() {
     std::ostringstream out {};
     out << "Commands\n";
@@ -465,20 +461,20 @@ FrontendOpenResult open_summary_input(
     FrontendSessionAdapter& adapter,
     const SummaryCommandOptions& options,
     std::string& stderr_text,
-    const SummaryExecutionEnvironment& environment
+    const CliRuntimeEnvironment& environment
 ) {
     return open_input_with_progress(
         adapter,
         options.input_path,
         options.progress_mode,
-        environment.stderr_is_terminal,
+        environment,
         stderr_text
     );
 }
 
 SummaryCommandExecutionResult execute_summary_command_with_environment(
     const SummaryCommandOptions& options,
-    const SummaryExecutionEnvironment& environment
+    const CliRuntimeEnvironment& environment
 ) {
     const bool input_looks_like_index = looks_like_index_file(options.input_path);
     if (input_looks_like_index && options.settings_path.has_value()) {
@@ -1035,13 +1031,16 @@ std::string render_protocol_path_preview_text(
 SummaryCommandExecutionResult execute_summary_command(const SummaryCommandOptions& options) {
     return execute_summary_command_with_environment(
         options,
-        SummaryExecutionEnvironment {
+        CliRuntimeEnvironment {
             .stderr_is_terminal = pfl::cli::stderr_supports_interactive_updates(),
         }
     );
 }
 
-CliInvocationResult process_cli_invocation(const std::span<const std::string_view> args) {
+CliInvocationResult process_cli_invocation(
+    const std::span<const std::string_view> args,
+    const CliRuntimeEnvironment& environment
+) {
     if (args.empty()) {
         return {
             .handled = true,
@@ -1089,7 +1088,7 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
                 };
             }
 
-            const auto result = execute_flows_command(*parse_result.options);
+            const auto result = execute_flows_command(*parse_result.options, environment);
             return {
                 .handled = true,
                 .exit_code = result.exit_code,
@@ -1125,7 +1124,7 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
                 };
             }
 
-            const auto result = execute_export_flows_command(*parse_result.options);
+            const auto result = execute_export_flows_command(*parse_result.options, environment);
             return {
                 .handled = true,
                 .exit_code = result.exit_code,
@@ -1161,7 +1160,7 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
                 };
             }
 
-            const auto result = execute_flow_info_command(*parse_result.options);
+            const auto result = execute_flow_info_command(*parse_result.options, environment);
             return {
                 .handled = true,
                 .exit_code = result.exit_code,
@@ -1197,7 +1196,7 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
                 };
             }
 
-            const auto result = execute_packet_info_command(*parse_result.options);
+            const auto result = execute_packet_info_command(*parse_result.options, environment);
             return {
                 .handled = true,
                 .exit_code = result.exit_code,
@@ -1240,13 +1239,22 @@ CliInvocationResult process_cli_invocation(const std::span<const std::string_vie
         };
     }
 
-    const auto result = execute_summary_command(*parse_result.options);
+    const auto result = execute_summary_command_with_environment(*parse_result.options, environment);
     return {
         .handled = true,
         .exit_code = result.exit_code,
         .stdout_text = result.stdout_text,
         .stderr_text = result.stderr_text,
     };
+}
+
+CliInvocationResult process_cli_invocation(const std::span<const std::string_view> args) {
+    return process_cli_invocation(
+        args,
+        CliRuntimeEnvironment {
+            .stderr_is_terminal = stderr_supports_interactive_updates(),
+        }
+    );
 }
 
 }  // namespace pfl::cli

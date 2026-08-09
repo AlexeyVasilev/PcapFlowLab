@@ -135,6 +135,37 @@ cli::CliInvocationResult invoke_cli(const std::vector<std::string>& args_storage
     return cli::process_cli_invocation(args);
 }
 
+struct CapturedCliInvocation {
+    cli::CliInvocationResult result {};
+    std::string progress_text {};
+};
+
+CapturedCliInvocation invoke_cli_with_runtime(
+    const std::vector<std::string>& args_storage,
+    const bool stderr_is_terminal,
+    const bool collect_progress = true
+) {
+    std::vector<std::string_view> args {};
+    args.reserve(args_storage.size());
+    for (const auto& arg : args_storage) {
+        args.push_back(arg);
+    }
+
+    CapturedCliInvocation invocation {};
+    invocation.result = cli::process_cli_invocation(
+        args,
+        cli::CliRuntimeEnvironment {
+            .stderr_is_terminal = stderr_is_terminal,
+            .progress_sink = collect_progress
+                ? cli::CliProgressSink {[&invocation](const std::string_view text) {
+                    invocation.progress_text.append(text);
+                }}
+                : cli::CliProgressSink {},
+        }
+    );
+    return invocation;
+}
+
 std::string settings_json(
     const bool ignore_gtpu_teids_when_grouping_inner_flows,
     const bool ignore_vlan_and_mpls_layers_when_grouping_flows = false,
@@ -1422,6 +1453,82 @@ void expect_unrecognized_export_behavior() {
     }
 }
 
+void expect_smart_export_live_progress_behavior() {
+    const auto capture_path = build_export_cli_capture_path();
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_direct_progress_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto invocation = invoke_cli_with_runtime({
+            "export-flows",
+            capture_path.string(),
+            "--flow-number",
+            "1",
+            "--all-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "on",
+        }, false);
+        PFL_EXPECT(invocation.result.handled);
+        PFL_EXPECT(invocation.result.exit_code == 0);
+        PFL_EXPECT(contains_text(invocation.progress_text, "Opening capture: "));
+        PFL_EXPECT(contains_text(invocation.progress_text, "Exporting packets: scanned "));
+        PFL_EXPECT(!contains_text(invocation.result.stderr_text, "Opening capture: "));
+        PFL_EXPECT(!contains_text(invocation.result.stderr_text, "Exporting packets: scanned "));
+        PFL_EXPECT(contains_text(invocation.result.stderr_text, "Exported 1 flows to:"));
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_smart_progress_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto invocation = invoke_cli_with_runtime({
+            "export-flows",
+            capture_path.string(),
+            "--flow-number",
+            "1",
+            "--first-packets",
+            "1",
+            "--include-last-packet",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "on",
+        }, false);
+        PFL_EXPECT(invocation.result.handled);
+        PFL_EXPECT(invocation.result.exit_code == 0);
+        PFL_EXPECT(contains_text(invocation.progress_text, "Opening capture: "));
+        PFL_EXPECT(contains_text(invocation.progress_text, "Smart export: scanned "));
+        PFL_EXPECT(!contains_text(invocation.result.stderr_text, "Opening capture: "));
+        PFL_EXPECT(!contains_text(invocation.result.stderr_text, "Smart export: scanned "));
+        PFL_EXPECT(contains_text(invocation.result.stderr_text, "Exported 1 flows to:"));
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_progress_output.pcap";
+        std::filesystem::remove(output_path);
+        const auto unrecognized_capture_path = build_unrecognized_export_cli_capture_path();
+
+        const auto invocation = invoke_cli_with_runtime({
+            "export-flows",
+            unrecognized_capture_path.string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "on",
+        }, false);
+        PFL_EXPECT(invocation.result.handled);
+        PFL_EXPECT(invocation.result.exit_code == 0);
+        PFL_EXPECT(contains_text(invocation.progress_text, "Opening capture: "));
+        PFL_EXPECT(contains_text(invocation.progress_text, "Smart export: scanned "));
+        PFL_EXPECT(!contains_text(invocation.result.stderr_text, "Smart export: scanned "));
+        PFL_EXPECT(contains_text(invocation.result.stderr_text, "Exported 2 unrecognized packets to:"));
+    }
+}
+
 }  // namespace
 
 void run_cli_export_flows_tests() {
@@ -1432,6 +1539,7 @@ void run_cli_export_flows_tests() {
     expect_runtime_folder_and_preflight_behavior();
     expect_empty_selection_and_source_behavior();
     expect_unrecognized_export_behavior();
+    expect_smart_export_live_progress_behavior();
 }
 
 }  // namespace pfl::tests

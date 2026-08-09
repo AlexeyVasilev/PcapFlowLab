@@ -206,7 +206,7 @@ std::string render_flows_table(
 
 FlowsCommandExecutionResult execute_flows_command_with_environment(
     const FlowsCommandOptions& options,
-    const bool stderr_is_terminal
+    const CliRuntimeEnvironment& environment
 ) {
     const bool input_looks_like_index = looks_like_index_file(options.input_path);
     if (input_looks_like_index && options.settings_path.has_value()) {
@@ -271,7 +271,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         adapter,
         options.input_path,
         options.progress_mode,
-        stderr_is_terminal,
+        environment,
         stderr_text
     );
     if (!open_result.opened) {
@@ -618,7 +618,19 @@ FlowsCommandParseResult parse_flows_command_arguments(const std::span<const std:
 }
 
 FlowsCommandExecutionResult execute_flows_command(const FlowsCommandOptions& options) {
-    return execute_flows_command_with_environment(options, stderr_supports_interactive_updates());
+    return execute_flows_command(
+        options,
+        CliRuntimeEnvironment {
+            .stderr_is_terminal = stderr_supports_interactive_updates(),
+        }
+    );
+}
+
+FlowsCommandExecutionResult execute_flows_command(
+    const FlowsCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+) {
+    return execute_flows_command_with_environment(options, environment);
 }
 
 }  // namespace pfl::cli

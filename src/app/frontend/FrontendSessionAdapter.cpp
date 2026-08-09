@@ -2291,7 +2291,8 @@ FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_selected_flows(
 
 FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_flows_to_pcap(
     const std::filesystem::path& output_path,
-    const std::vector<std::size_t>& flow_indices
+    const std::vector<std::size_t>& flow_indices,
+    const SmartSingleFileExportOptions& options
 ) const {
     FrontendExportSelectedFlowsResult result {};
 
@@ -2315,7 +2316,7 @@ FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_flows_to_pcap(
         return result;
     }
 
-    if (!session_.export_flows_to_pcap(flow_indices, output_path)) {
+    if (!session_.export_flows_to_pcap(flow_indices, output_path, options)) {
         result.error_text = "Failed to export selected flows.";
         return result;
     }

@@ -5492,7 +5492,11 @@ bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::file
     return export_flows_to_pcap({flow_index}, output_path);
 }
 
-bool CaptureSession::export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const {
+bool CaptureSession::export_flows_to_pcap(
+    const std::vector<std::size_t>& flow_indices,
+    const std::filesystem::path& output_path,
+    const SmartSingleFileExportOptions& options
+) const {
     if (!has_source_capture() || flow_indices.empty()) {
         return false;
     }
@@ -5519,7 +5523,7 @@ bool CaptureSession::export_flows_to_pcap(const std::vector<std::size_t>& flow_i
     }), packets.end());
 
     FlowExportService service {};
-    return service.export_packets_to_pcap(output_path, packets, capture_path());
+    return service.export_packets_to_pcap(output_path, packets, capture_path(), options);
 }
 
 bool CaptureSession::export_smart_flows_to_pcap(

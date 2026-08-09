@@ -322,6 +322,18 @@ FlowInfoCommandParseResult parse_flow_info_command_arguments(const std::span<con
 }
 
 FlowInfoCommandExecutionResult execute_flow_info_command(const FlowInfoCommandOptions& options) {
+    return execute_flow_info_command(
+        options,
+        CliRuntimeEnvironment {
+            .stderr_is_terminal = stderr_supports_interactive_updates(),
+        }
+    );
+}
+
+FlowInfoCommandExecutionResult execute_flow_info_command(
+    const FlowInfoCommandOptions& options,
+    const CliRuntimeEnvironment& environment
+) {
     const bool input_looks_like_index = looks_like_index_file(options.input_path);
     if (input_looks_like_index && options.settings_path.has_value()) {
         return {
@@ -365,7 +377,7 @@ FlowInfoCommandExecutionResult execute_flow_info_command(const FlowInfoCommandOp
         adapter,
         options.input_path,
         options.progress_mode,
-        stderr_supports_interactive_updates(),
+        environment,
         stderr_text
     );
     if (!open_result.opened) {
