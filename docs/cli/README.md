@@ -1,12 +1,13 @@
 # CLI V2 Overview
 
-This directory documents the PcapFlowLab CLI v2 architecture and staged
-implementation direction.
+This directory documents the current PcapFlowLab CLI v2 architecture and
+command contracts.
 
 - It is not current command help.
 - The current production CLI exposes the five-command v2-style public surface:
   `summary`, `flows`, `export-flows`, `flow-info`, and `packet-info`.
-- Implementation may not yet match the documents in this folder.
+- The command documents in this folder describe the current implemented CLI.
+- Runtime `--help` remains the authoritative syntax reference.
 
 For the full architecture contract, see [architecture.md](./architecture.md).
 For the detailed `summary` command contract, see
@@ -22,7 +23,7 @@ For the detailed `packet-info` command contract, see
 
 ## What The CLI Is For
 
-CLI v2 is intended to support:
+CLI v2 supports:
 
 - complete capture or index summary work
 - flow-list querying
@@ -30,7 +31,7 @@ CLI v2 is intended to support:
 - selected-flow analysis
 - packet inspection
 
-The five planned primary public commands are:
+The five primary public commands are:
 
 - `summary`
 - `flows`
@@ -38,11 +39,11 @@ The five planned primary public commands are:
 - `flow-info`
 - `packet-info`
 
-There is no separate top-level `statistics` command in the planned v2 model.
+There is no separate top-level `statistics` command in the current v2 model.
 
 ## Default Command Behavior
 
-These forms are conceptually equivalent:
+These forms are equivalent:
 
 ```text
 pcap-flow-lab capture.pcap
@@ -54,7 +55,7 @@ The default command is `summary`.
 
 ## Input Forms
 
-CLI v2 is planned to support:
+CLI v2 supports:
 
 - positional input path
 - `--input <path>`
@@ -76,7 +77,7 @@ For byte-backed operations against an index, CLI v2 also reserves:
 
 ## Common Option Concepts
 
-| Option | Planned role |
+| Option | Role |
 | --- | --- |
 | `--input <path>` | Explicit input path |
 | `--source-capture <path>` | Source-capture override for byte-backed index operations |
@@ -128,7 +129,7 @@ The documented `flows` contract also defines:
 
 ## stdout And stderr
 
-Planned stream contract:
+Current stream contract:
 
 `stdout`
 : requested command data
@@ -148,7 +149,7 @@ CLI v2 reserves:
 --progress off
 ```
 
-Default behavior is planned to be `auto`.
+Default behavior is `auto`.
 
 - `auto`: show live progress only when `stderr` is an interactive terminal
 - `on`: force live progress, including when `stderr` is redirected
@@ -203,11 +204,11 @@ pcap-flow-lab packet-info capture.pcap \
 
 ## Next Documentation Layer
 
-Detailed command documentation is intended to be added incrementally as
-individual command designs are finalized:
+Detailed command documentation is available here for the current implemented
+commands:
 
-- `docs/cli/commands/summary.md` (now defined)
-- `docs/cli/commands/flows.md` (now defined)
+- `docs/cli/commands/summary.md`
+- `docs/cli/commands/flows.md`
 - `docs/cli/commands/export-flows.md` (now defined and implemented in production)
 - `docs/cli/commands/flow-info.md` (now defined and implemented in production)
 - `docs/cli/commands/packet-info.md` (now defined and implemented in production)

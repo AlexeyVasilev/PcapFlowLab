@@ -35,13 +35,13 @@ pcap-flow-lab flows
 
 which lists and queries multiple flows.
 
-It is also intentionally different from the future:
+It is also intentionally different from:
 
 ```text
 pcap-flow-lab packet-info
 ```
 
-which will own packet-specific inspection.
+which owns individual captured-packet inspection.
 
 The initial command must work:
 
@@ -705,7 +705,7 @@ The following do not belong in the initial `flow-info` surface:
 - stream reassembly
 - TLS, HTTP, or QUIC deep packet or stream detail
 
-Those belong to the future packet-inspection surface.
+Those belong to the separate `packet-info` packet-inspection surface.
 
 ## Structured Output
 

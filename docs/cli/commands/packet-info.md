@@ -48,7 +48,7 @@ The initial contract does not expose arbitrary byte-view selection.
 
 ## Input Forms
 
-These forms are planned conceptually:
+These forms are supported:
 
 ```text
 pcap-flow-lab packet-info capture.pcap --packet-in-file 2574112

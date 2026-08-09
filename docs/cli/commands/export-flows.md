@@ -54,7 +54,7 @@ It does not support:
 
 ## Input Forms
 
-These forms are planned conceptually:
+These forms are supported:
 
 ```text
 pcap-flow-lab export-flows capture.pcap ...
@@ -73,7 +73,7 @@ Input may be:
 
 Input-kind detection should reuse the existing project input-detection path.
 
-## Initial Planned Syntax
+## Syntax
 
 ```text
 pcap-flow-lab export-flows <input>
