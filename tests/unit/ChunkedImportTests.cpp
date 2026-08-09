@@ -66,6 +66,8 @@ void run_chunked_import_tests() {
         PFL_EXPECT(checkpoint.state.summary.flow_count == 1);
         PFL_EXPECT(checkpoint.state.packet_size_statistics.total_packet_count == 1U);
         PFL_EXPECT(checkpoint.state.packet_size_statistics.maximum_bucket_packet_count == 1U);
+        PFL_EXPECT(!checkpoint.state.packet_locator.empty());
+        PFL_EXPECT(checkpoint.state.packet_locator.front().packet_index == 0U);
         PFL_EXPECT(
             checkpoint.state.packet_size_statistics.maximum_captured_packet_length ==
             static_cast<std::uint32_t>(forward_packet.size())
@@ -79,6 +81,11 @@ void run_chunked_import_tests() {
         PFL_EXPECT(checkpoint.state.summary.packet_count == one_shot_session.summary().packet_count);
         PFL_EXPECT(checkpoint.state.summary.flow_count == one_shot_session.summary().flow_count);
         PFL_EXPECT(checkpoint.state.summary.total_bytes == one_shot_session.summary().total_bytes);
+        PFL_EXPECT(checkpoint.state.packet_locator.size() == one_shot_session.state().packet_locator.size());
+        for (std::size_t index = 0U; index < checkpoint.state.packet_locator.size(); ++index) {
+            PFL_EXPECT(checkpoint.state.packet_locator[index].packet_index == one_shot_session.state().packet_locator[index].packet_index);
+            PFL_EXPECT(checkpoint.state.packet_locator[index].file_offset == one_shot_session.state().packet_locator[index].file_offset);
+        }
         expect_packet_size_statistics_equal(
             checkpoint.state.packet_size_statistics,
             one_shot_session.packet_size_statistics()
@@ -98,6 +105,11 @@ void run_chunked_import_tests() {
             indexed_session.packet_size_statistics(),
             one_shot_session.packet_size_statistics()
         );
+        PFL_EXPECT(indexed_session.state().packet_locator.size() == one_shot_session.state().packet_locator.size());
+        for (std::size_t index = 0U; index < indexed_session.state().packet_locator.size(); ++index) {
+            PFL_EXPECT(indexed_session.state().packet_locator[index].packet_index == one_shot_session.state().packet_locator[index].packet_index);
+            PFL_EXPECT(indexed_session.state().packet_locator[index].file_offset == one_shot_session.state().packet_locator[index].file_offset);
+        }
     }
 
     {

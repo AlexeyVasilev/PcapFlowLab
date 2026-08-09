@@ -165,6 +165,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         bool has_ipv4_connections {false};
         bool has_ipv6_connections {false};
         bool has_unrecognized_packets {false};
+        bool has_packet_locator {false};
 
         failure_offset = current_offset(stream);
         if (!detail::read_u64(stream, magic) ||
@@ -333,6 +334,18 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 }
                 has_unrecognized_packets = true;
                 break;
+            case detail::CaptureIndexSectionId::packet_locator:
+                if (has_packet_locator || !parse_section_payload(payload, [&](std::istream& section_stream) {
+                    return detail::read_capture_packet_locator(section_stream, state.packet_locator);
+                })) {
+                    set_error_context(section_header_offset, "invalid packet-locator section");
+                    if (ctx != nullptr) {
+                        ctx->set_failure(last_error_);
+                    }
+                    return false;
+                }
+                has_packet_locator = true;
+                break;
             default:
                 set_error_context(section_header_offset, "unknown index section");
                 if (ctx != nullptr) {
@@ -347,7 +360,8 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             return false;
         }
 
-        if (!has_source_info || !has_summary || !has_protocol_paths || !has_ipv4_connections || !has_ipv6_connections) {
+        if (!has_source_info || !has_summary || !has_protocol_paths || !has_ipv4_connections ||
+            !has_ipv6_connections || !has_packet_locator) {
             set_error_context(current_offset(stream), "index file is incomplete or was not finalized");
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);

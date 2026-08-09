@@ -31,6 +31,8 @@ struct UnifiedImportPacketResult {
     DissectionImportDecision decision {};
 };
 
+inline constexpr std::uint64_t kCapturePacketLocatorStrideBytes = 400ULL * 1024ULL * 1024ULL;
+
 [[nodiscard]] ProtocolPathId intern_protocol_path_id_for_flow_identity(
     CaptureState& state,
     const ProtocolPathBuilder& decoded_protocol_path,
@@ -43,6 +45,12 @@ struct UnifiedImportPacketResult {
 );
 
 [[nodiscard]] PacketRef packet_ref_from_raw_packet(const RawPcapPacket& packet);
+
+void append_capture_packet_locator_entry(
+    CaptureState& state,
+    std::uint64_t packet_index,
+    std::uint64_t file_offset
+);
 
 [[nodiscard]] std::string classify_unrecognized_packet_reason(
     const RawPcapPacket& packet,

@@ -10,6 +10,7 @@
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/Serialization.h"
+#include "core/services/CaptureImportApplication.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
@@ -56,6 +57,17 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].payload_length == right[index].payload_length);
         PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
         PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
+    }
+}
+
+void expect_matching_packet_locator_entries(
+    const std::vector<CapturePacketLocatorEntry>& left,
+    const std::vector<CapturePacketLocatorEntry>& right
+) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0U; index < left.size(); ++index) {
+        PFL_EXPECT(left[index].packet_index == right[index].packet_index);
+        PFL_EXPECT(left[index].file_offset == right[index].file_offset);
     }
 }
 
@@ -160,6 +172,20 @@ void run_index_tests() {
     PFL_EXPECT(std::filesystem::exists(index_path));
 
     {
+        CaptureState locator_state {};
+        append_capture_packet_locator_entry(locator_state, 0U, 24U);
+        append_capture_packet_locator_entry(locator_state, 1U, 24U + kCapturePacketLocatorStrideBytes - 1U);
+        append_capture_packet_locator_entry(locator_state, 2U, 24U + kCapturePacketLocatorStrideBytes);
+        append_capture_packet_locator_entry(locator_state, 3U, 24U + kCapturePacketLocatorStrideBytes + 128U);
+
+        PFL_EXPECT(locator_state.packet_locator.size() == 2U);
+        PFL_EXPECT(locator_state.packet_locator[0].packet_index == 0U);
+        PFL_EXPECT(locator_state.packet_locator[0].file_offset == 24U);
+        PFL_EXPECT(locator_state.packet_locator[1].packet_index == 2U);
+        PFL_EXPECT(locator_state.packet_locator[1].file_offset == 24U + kCapturePacketLocatorStrideBytes);
+    }
+
+    {
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
         PFL_EXPECT(loaded_session.has_capture());
@@ -184,6 +210,20 @@ void run_index_tests() {
         PFL_EXPECT(second_packet.has_value());
         PFL_EXPECT(second_packet->ts_usec == 200);
         PFL_EXPECT(second_packet->captured_length == reverse_packet.size());
+
+        const auto first_source_packet = loaded_session.lookup_source_packet(0U);
+        PFL_EXPECT(first_source_packet.status == SourcePacketLookupStatus::found);
+        PFL_REQUIRE(first_source_packet.packet.has_value());
+        PFL_REQUIRE(first_source_packet.source_packet.has_value());
+        PFL_EXPECT(first_source_packet.packet->packet_index == 0U);
+        PFL_EXPECT(first_source_packet.packet->ts_usec == 100U);
+        PFL_EXPECT(first_source_packet.packet->captured_length == forward_packet.size());
+        PFL_EXPECT(first_source_packet.source_packet->bytes == forward_packet);
+
+        const auto out_of_range_source_packet = loaded_session.lookup_source_packet(2U);
+        PFL_EXPECT(out_of_range_source_packet.status == SourcePacketLookupStatus::out_of_range);
+        PFL_EXPECT(!out_of_range_source_packet.packet.has_value());
+        PFL_EXPECT(!out_of_range_source_packet.source_packet.has_value());
 
         const auto reloaded_bytes = loaded_session.read_packet_data(*first_packet);
         PFL_EXPECT(reloaded_bytes == forward_packet);
@@ -239,6 +279,7 @@ void run_index_tests() {
         PFL_EXPECT(loaded_state.summary.flow_count == 1);
         PFL_EXPECT(loaded_state.ipv4_connections.size() == 1);
         PFL_EXPECT(loaded_state.ipv6_connections.size() == 0);
+        expect_matching_packet_locator_entries(loaded_state.packet_locator, original_session.state().packet_locator);
         PFL_EXPECT(source_info.content_fingerprint != 0U);
         PFL_EXPECT(validate_capture_source(source_info));
 
@@ -316,7 +357,7 @@ void run_index_tests() {
         PFL_EXPECT(decoded_bidirectional.has_flow_b);
         PFL_EXPECT(first_observed_endpoint_a(decoded_bidirectional)->addr == one_direction_flow.src_addr);
         PFL_EXPECT(first_observed_endpoint_b(decoded_bidirectional)->addr == one_direction_flow.dst_addr);
-        PFL_EXPECT(kCaptureIndexVersion == 13U);
+        PFL_EXPECT(kCaptureIndexVersion == 14U);
     }
     {
         OpenContext ctx {};
@@ -419,6 +460,11 @@ void run_index_tests() {
         PFL_EXPECT(!loaded_session.attach_source_capture(mismatched_source_path));
         PFL_EXPECT(!loaded_session.has_source_capture());
         PFL_EXPECT(loaded_session.capture_path() == missing_source_path);
+
+        const auto missing_source_packet = loaded_session.lookup_source_packet(0U);
+        PFL_EXPECT(missing_source_packet.status == SourcePacketLookupStatus::source_unavailable);
+        PFL_EXPECT(!missing_source_packet.packet.has_value());
+        PFL_EXPECT(!missing_source_packet.source_packet.has_value());
 
         PFL_EXPECT(loaded_session.attach_source_capture(moved_source_path));
         PFL_EXPECT(loaded_session.has_source_capture());

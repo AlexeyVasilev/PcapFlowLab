@@ -156,6 +156,14 @@ private:
         std::optional<std::uint64_t> flow_packet_index,
         std::optional<std::size_t> loaded_packet_window_count = std::nullopt
     );
+    [[nodiscard]] FrontendPacketDetailsDto build_frontend_packet_details_from_materialized_packet(
+        const PacketRef& packet,
+        const std::vector<std::uint8_t>& packet_bytes,
+        const std::optional<PacketDetails>& details,
+        std::optional<std::size_t> flow_index,
+        std::optional<std::uint64_t> flow_packet_index,
+        std::optional<std::size_t> loaded_packet_window_count = std::nullopt
+    );
     [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_packet_byte_view_content(
         const PacketRef& packet,
         const std::string& stable_id,
@@ -164,6 +172,15 @@ private:
     );
     [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent build_frontend_captured_packet_byte_view_content(
         const PacketRef& packet,
+        std::optional<std::size_t> flow_index = {},
+        std::optional<std::uint64_t> flow_packet_index = {},
+        std::optional<std::size_t> loaded_packet_window_count = {}
+    );
+    [[nodiscard]] FrontendPacketDetailsDto::PacketByteViewContent
+    build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+        const PacketRef& packet,
+        const std::vector<std::uint8_t>& packet_bytes,
+        const std::optional<PacketDetails>& details,
         std::optional<std::size_t> flow_index = {},
         std::optional<std::uint64_t> flow_packet_index = {},
         std::optional<std::size_t> loaded_packet_window_count = {}

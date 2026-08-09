@@ -10,6 +10,7 @@
 #include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
@@ -1163,6 +1164,24 @@ std::optional<session_detail::SelectedPacketBytePresentation> derive_frontend_pa
             .quic_presentation = std::move(packet_summary_preparation.quic_presentation),
         }
     );
+}
+
+std::string packet_lookup_error_text(const SourcePacketLookupStatus status) {
+    switch (status) {
+    case SourcePacketLookupStatus::found:
+    case SourcePacketLookupStatus::out_of_range:
+        return {};
+    case SourcePacketLookupStatus::source_unavailable:
+        return "Byte-backed packet details are unavailable because the original source capture cannot be read.";
+    case SourcePacketLookupStatus::locator_unavailable:
+        return "The requested packet cannot be located because source packet locators are unavailable for this input.";
+    case SourcePacketLookupStatus::unsupported_format:
+        return "The requested packet cannot be located because this source capture format is not supported by sparse packet lookup.";
+    case SourcePacketLookupStatus::source_read_failed:
+        return "The requested packet could not be read from the source capture.";
+    }
+
+    return "The requested packet could not be read from the source capture.";
 }
 
 std::string checksum_status_text(const ChecksumValidationStatus status) {
@@ -3575,6 +3594,25 @@ FrontendPacketDetailsDto::PacketByteViewContent FrontendSessionAdapter::build_fr
 
     const auto packet_bytes = session_.read_packet_data(packet);
     const auto details = session_.read_packet_details(packet);
+    return build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+        packet,
+        packet_bytes,
+        details,
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count
+    );
+}
+
+FrontendPacketDetailsDto::PacketByteViewContent
+FrontendSessionAdapter::build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+    const PacketRef& packet,
+    const std::vector<std::uint8_t>& packet_bytes,
+    const std::optional<PacketDetails>& details,
+    const std::optional<std::size_t> flow_index,
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count
+) {
     const auto packet_byte_presentation = derive_frontend_packet_byte_presentation(
         session_,
         packet,
@@ -3719,30 +3757,52 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(const std:
         return result;
     }
 
-    const auto packet_context = session_.resolve_packet_ownership_context(packet_index);
-    if (!packet_context.has_value()) {
-        result.error_text = "The requested packet is unavailable.";
+    const auto packet_lookup = session_.lookup_source_packet(packet_index);
+    if (packet_lookup.status != SourcePacketLookupStatus::found ||
+        !packet_lookup.packet.has_value() ||
+        !packet_lookup.source_packet.has_value()) {
+        result.error_text = packet_lookup_error_text(packet_lookup.status);
         return result;
     }
 
-    auto details = build_frontend_packet_details(
-        packet_context->packet,
-        packet_context->flow_index,
-        packet_context->flow_packet_index
+    PacketDetailsService packet_details_service {};
+    const auto packet = *packet_lookup.packet;
+    const auto& packet_bytes = packet_lookup.source_packet->bytes;
+    const auto decoded_details = packet_details_service.decode_best_effort(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet
     );
-    const auto bytes = build_frontend_captured_packet_byte_view_content(
-        packet_context->packet,
-        packet_context->flow_index,
-        packet_context->flow_packet_index
+
+    auto details = build_frontend_packet_details_from_materialized_packet(
+        packet,
+        packet_bytes,
+        decoded_details,
+        std::nullopt,
+        std::nullopt
+    );
+    const auto bytes = build_frontend_captured_packet_byte_view_content_from_materialized_packet(
+        packet,
+        packet_bytes,
+        decoded_details,
+        std::nullopt,
+        std::nullopt
+    );
+
+    const auto unrecognized_packet = std::lower_bound(
+        session_.state().unrecognized_packets.begin(),
+        session_.state().unrecognized_packets.end(),
+        packet_index,
+        [](const UnrecognizedPacketRecord& record, const std::uint64_t target_packet_index) {
+            return record.packet.packet_index < target_packet_index;
+        }
     );
 
     result.packet_available = true;
-    result.recognized_flow = packet_context->flow_index.has_value();
+    result.recognized_flow = unrecognized_packet == session_.state().unrecognized_packets.end() ||
+        unrecognized_packet->packet.packet_index != packet_index;
     result.details_available = details.details_available;
-    result.packet_index = packet_context->packet.packet_index;
-    result.packet_in_file = packet_context->packet.packet_index + 1U;
-    result.flow_index = packet_context->flow_index;
-    result.packet_in_flow = packet_context->flow_packet_index;
+    result.packet_index = packet.packet_index;
+    result.packet_in_file = packet.packet_index + 1U;
     result.timestamp_text = details.timestamp_text;
     result.captured_length = details.captured_length;
     result.original_length = details.original_length;
@@ -3752,18 +3812,6 @@ FrontendPacketInfoDto FrontendSessionAdapter::get_packet_info_by_file(const std:
     result.error_text = details.error_text;
     result.source_capture_accessible = details.source_capture_accessible;
     result.source_availability = details.source_availability;
-
-    if (packet_context->flow_index.has_value()) {
-        auto row = session_.flow_row(*packet_context->flow_index);
-        if (row.has_value()) {
-            row = apply_service_hint_override(*row, flow_service_hint_overrides_);
-            result.endpoint_summary_text = build_analysis_endpoint_summary(*row);
-        }
-    }
-
-    if (packet_context->direction.has_value()) {
-        result.direction_text = flow_packet_direction_text(*packet_context->direction);
-    }
 
     return result;
 }
@@ -3809,6 +3857,44 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
 
     const auto details = session_.read_packet_details(packet);
     const auto packet_bytes = session_.read_packet_data(packet);
+    return build_frontend_packet_details_from_materialized_packet(
+        packet,
+        packet_bytes,
+        details,
+        flow_index,
+        flow_packet_index,
+        loaded_packet_window_count
+    );
+}
+
+FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_from_materialized_packet(
+    const PacketRef& packet,
+    const std::vector<std::uint8_t>& packet_bytes,
+    const std::optional<PacketDetails>& details,
+    const std::optional<std::size_t> flow_index,
+    const std::optional<std::uint64_t> flow_packet_index,
+    const std::optional<std::size_t> loaded_packet_window_count
+) {
+    FrontendPacketDetailsDto result {
+        .has_capture = session_.has_capture(),
+        .has_selected_flow = flow_index.has_value(),
+        .packet_found = true,
+        .source_capture_accessible = session_.source_capture_accessible(),
+        .details_available = false,
+        .checksum_validation_enabled = settings_.validate_selected_packet_checksums,
+        .flow_index = flow_index.value_or(0U),
+        .packet_index = packet.packet_index,
+        .details_title = packet_details_title(),
+        .summary_text = {},
+        .timestamp_text = session_detail::format_packet_timestamp_full(packet),
+        .captured_length = packet.captured_length,
+        .original_length = packet.original_length,
+        .payload_length = packet.payload_length,
+        .is_ip_fragmented = packet.is_ip_fragmented,
+        .tcp_flags_text = session_detail::format_tcp_flags_text(packet.tcp_flags),
+        .source_availability = current_source_availability(),
+    };
+
     PacketChecksumSections checksum_sections {};
     if (details.has_value() && result.checksum_validation_enabled) {
         checksum_sections =

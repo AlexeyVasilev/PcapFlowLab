@@ -391,11 +391,11 @@ void expect_shared_packet_info_model_behavior() {
     PFL_EXPECT(global_recognized.has_capture);
     PFL_EXPECT(global_recognized.packet_available);
     PFL_EXPECT(global_recognized.recognized_flow);
-    PFL_EXPECT(global_recognized.flow_index == std::optional<std::size_t> {0U});
-    PFL_EXPECT(global_recognized.packet_in_flow == std::optional<std::uint64_t> {2U});
+    PFL_EXPECT(!global_recognized.flow_index.has_value());
+    PFL_EXPECT(!global_recognized.packet_in_flow.has_value());
     PFL_EXPECT(global_recognized.packet_in_file == 2U);
-    PFL_EXPECT(global_recognized.direction_text == "B -> A");
-    PFL_EXPECT(!global_recognized.endpoint_summary_text.empty());
+    PFL_EXPECT(global_recognized.direction_text.empty());
+    PFL_EXPECT(global_recognized.endpoint_summary_text.empty());
     PFL_EXPECT(!global_recognized.summary_layers.empty());
 
     FrontendSessionAdapter unrecognized_adapter {};
@@ -409,6 +409,22 @@ void expect_shared_packet_info_model_behavior() {
     PFL_EXPECT(!global_unrecognized.packet_in_flow.has_value());
     PFL_EXPECT(global_unrecognized.endpoint_summary_text.empty());
     PFL_EXPECT(global_unrecognized.direction_text.empty());
+
+    const auto indexed_capture_path = build_cli_packet_info_capture_path("pfl_cli_packet_info_missing_source_capture.pcap");
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_packet_info_missing_source.idx";
+    std::filesystem::remove(index_path);
+
+    FrontendSessionAdapter indexed_capture_adapter {};
+    PFL_REQUIRE(indexed_capture_adapter.open_capture(indexed_capture_path).opened);
+    PFL_REQUIRE(indexed_capture_adapter.save_index(index_path).saved);
+    std::filesystem::remove(indexed_capture_path);
+
+    FrontendSessionAdapter indexed_adapter {};
+    PFL_REQUIRE(indexed_adapter.open_capture(index_path).opened);
+    const auto missing_source_packet = indexed_adapter.get_packet_info_by_file(1U);
+    PFL_EXPECT(missing_source_packet.has_capture);
+    PFL_EXPECT(!missing_source_packet.packet_available);
+    PFL_EXPECT(contains_text(missing_source_packet.error_text, "source capture cannot be read"));
 }
 
 void expect_packet_info_runtime_and_output_behavior() {
@@ -484,10 +500,10 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(result.stderr_text.empty());
         PFL_EXPECT(contains_text(result.stdout_text, "Packet 2"));
-        PFL_EXPECT(contains_text(result.stdout_text, "\nFlow Context\n"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Flow: 1"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Packet in Flow: 2"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Direction: B -> A"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "\nFlow Context\n"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Flow: 1"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Packet in Flow: 2"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Direction: B -> A"));
         PFL_EXPECT(contains_text(result.stdout_text, "Packet in File: 2"));
         PFL_EXPECT(contains_text(result.stdout_text, "Ethernet II"));
         PFL_EXPECT(contains_text(result.stdout_text, "IPv4"));
@@ -611,7 +627,8 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(result.stderr_text.empty());
         PFL_EXPECT(contains_text(result.stdout_text, "Packet 2"));
-        PFL_EXPECT(contains_text(result.stdout_text, "Recognized Flow: No"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "\nFlow Context\n"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Recognized Flow: No"));
         PFL_EXPECT(!contains_text(result.stdout_text, "\nFlow: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Endpoints: "));
         PFL_EXPECT(!contains_text(result.stdout_text, "Direction: "));

@@ -223,6 +223,7 @@ ClassicImportPacketDisposition CaptureImportProcessor::process_classic_import_pa
     if (!applied) {
         return ClassicImportPacketDisposition::failure_before_packet_surfaced;
     }
+    append_capture_packet_locator_entry(state, packet.packet_index, packet.record_file_offset);
     accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
 
     return finalize_prefix_packet()
@@ -237,6 +238,7 @@ void CaptureImportProcessor::process_packet(RawPcapPacket& packet, CaptureState&
         *registry_,
         hint_service_
     ));
+    append_capture_packet_locator_entry(state, packet.packet_index, packet.record_file_offset);
     accumulate_capture_packet_size(state.packet_size_statistics, packet.captured_length);
 }
 

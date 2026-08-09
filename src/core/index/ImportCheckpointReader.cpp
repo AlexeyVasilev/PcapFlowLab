@@ -61,6 +61,7 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
     bool has_ipv4_connections {false};
     bool has_ipv6_connections {false};
     bool has_unrecognized_packets {false};
+    bool has_packet_locator {false};
 
     if (!detail::read_u64(stream, magic) ||
         !detail::read_u16(stream, version) ||
@@ -164,13 +165,21 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
             }
             has_unrecognized_packets = true;
             break;
+        case detail::ImportCheckpointSectionId::packet_locator:
+            if (has_packet_locator || !parse_section_payload(payload, [&](std::istream& section_stream) {
+                return detail::read_capture_packet_locator(section_stream, checkpoint.state.packet_locator);
+            })) {
+                return false;
+            }
+            has_packet_locator = true;
+            break;
         default:
             return false;
         }
     }
 
     if (!has_source_info || !has_progress || !has_summary || !has_protocol_paths ||
-        !has_ipv4_connections || !has_ipv6_connections || !has_unrecognized_packets) {
+        !has_ipv4_connections || !has_ipv6_connections || !has_unrecognized_packets || !has_packet_locator) {
         return false;
     }
 

@@ -280,6 +280,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
             .ts_usec = ts_usec,
             .captured_length = captured_length,
             .original_length = original_length,
+            .record_file_offset = block_start,
             .data_offset = block_start + 28U,
             .data_link_type = interface_info.linktype,
             .bytes = std::move(bytes),

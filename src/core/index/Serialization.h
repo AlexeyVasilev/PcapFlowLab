@@ -20,6 +20,7 @@ enum class CaptureIndexSectionId : std::uint32_t {
     ipv4_connections = 4,
     ipv6_connections = 5,
     unrecognized_packets = 6,
+    packet_locator = 7,
 };
 
 enum class ImportCheckpointSectionId : std::uint32_t {
@@ -30,6 +31,7 @@ enum class ImportCheckpointSectionId : std::uint32_t {
     ipv4_connections = 5,
     ipv6_connections = 6,
     unrecognized_packets = 7,
+    packet_locator = 8,
 };
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes);
@@ -127,6 +129,15 @@ bool read_unrecognized_packet_records(
     std::istream& stream,
     std::vector<UnrecognizedPacketRecord>& records,
     CapturePacketSizeStatistics* packet_size_statistics = nullptr
+);
+
+bool write_capture_packet_locator(
+    std::ostream& stream,
+    std::span<const CapturePacketLocatorEntry> entries
+);
+bool read_capture_packet_locator(
+    std::istream& stream,
+    std::vector<CapturePacketLocatorEntry>& entries
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

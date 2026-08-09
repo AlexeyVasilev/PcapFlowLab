@@ -196,6 +196,7 @@ std::optional<RawPcapPacket> PcapReader::read_next() {
         .ts_usec = packet_header.ts_usec,
         .captured_length = packet_header.included_length,
         .original_length = packet_header.original_length,
+        .record_file_offset = packet_header_offset,
         .data_offset = data_offset,
         .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
@@ -259,6 +260,7 @@ std::optional<RawPcapPacket> PcapReader::read_next_prefix(const std::size_t pref
         .ts_usec = packet_header.ts_usec,
         .captured_length = packet_header.included_length,
         .original_length = packet_header.original_length,
+        .record_file_offset = packet_header_offset,
         .data_offset = data_offset,
         .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
@@ -313,6 +315,7 @@ std::optional<RawPcapPacket> PcapReader::read_next_import_packet(
             .ts_usec = packet_header.ts_usec,
             .captured_length = packet_header.included_length,
             .original_length = packet_header.original_length,
+            .record_file_offset = packet_header_offset,
             .data_offset = data_offset,
             .data_link_type = global_header_.network,
             .bytes = std::move(bytes),
@@ -352,6 +355,7 @@ std::optional<RawPcapPacket> PcapReader::read_next_import_packet(
         .ts_usec = packet_header.ts_usec,
         .captured_length = packet_header.included_length,
         .original_length = packet_header.original_length,
+        .record_file_offset = packet_header_offset,
         .data_offset = data_offset,
         .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
@@ -409,6 +413,7 @@ bool PcapReader::read_next_import_packet_into(
         packet.ts_usec = packet_header.ts_usec;
         packet.captured_length = packet_header.included_length;
         packet.original_length = packet_header.original_length;
+        packet.record_file_offset = packet_header_offset;
         packet.data_offset = data_offset;
         packet.data_link_type = global_header_.network;
 
@@ -449,6 +454,7 @@ bool PcapReader::read_next_import_packet_into(
     packet.ts_usec = packet_header.ts_usec;
     packet.captured_length = packet_header.included_length;
     packet.original_length = packet_header.original_length;
+    packet.record_file_offset = packet_header_offset;
     packet.data_offset = data_offset;
     packet.data_link_type = global_header_.network;
 

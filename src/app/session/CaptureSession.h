@@ -20,6 +20,7 @@
 #include "core/domain/CaptureState.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketDetails.h"
+#include "core/io/PcapReader.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/open_failure_info.h"
@@ -147,6 +148,21 @@ struct PacketOwnershipContext {
     std::optional<Direction> direction {};
 };
 
+enum class SourcePacketLookupStatus : std::uint8_t {
+    found,
+    out_of_range,
+    source_unavailable,
+    locator_unavailable,
+    unsupported_format,
+    source_read_failed,
+};
+
+struct SourcePacketLookupResult {
+    SourcePacketLookupStatus status {SourcePacketLookupStatus::out_of_range};
+    std::optional<PacketRef> packet {};
+    std::optional<RawPcapPacket> source_packet {};
+};
+
 class CaptureSession {
 public:
     using IndexSaveProgress = pfl::IndexSaveProgress;
@@ -243,6 +259,7 @@ public:
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_payload_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_protocol_details_text(const PacketRef& packet) const;
+    [[nodiscard]] SourcePacketLookupResult lookup_source_packet(std::uint64_t packet_index) const;
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(const ReassemblyRequest& request) const;
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(
         const ReassemblyRequest& request,

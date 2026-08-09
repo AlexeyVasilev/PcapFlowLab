@@ -60,22 +60,13 @@ std::string render_packet_info_report(
     std::ostringstream out {};
     if (flow_scoped_selection) {
         out << "Flow " << (*info.flow_index + 1U) << " / Packet " << *info.packet_in_flow << "\n\n";
+        out << "Flow Context\n";
+        append_key_value_line(out, "Endpoints", info.endpoint_summary_text);
+        append_key_value_line(out, "Direction", info.direction_text);
+        out << '\n';
     } else {
         out << "Packet " << info.packet_in_file << "\n\n";
     }
-
-    out << "Flow Context\n";
-    if (!info.recognized_flow) {
-        append_key_value_line(out, "Recognized Flow", "No");
-    } else {
-        if (!flow_scoped_selection) {
-            append_key_value_line(out, "Flow", std::to_string(*info.flow_index + 1U));
-            append_key_value_line(out, "Packet in Flow", std::to_string(*info.packet_in_flow));
-        }
-        append_key_value_line(out, "Endpoints", info.endpoint_summary_text);
-        append_key_value_line(out, "Direction", info.direction_text);
-    }
-    out << '\n';
 
     out << "Packet\n";
     append_key_value_line(out, "Packet in File", session_detail::format_statistics_count_value(info.packet_in_file));
@@ -419,6 +410,13 @@ PacketInfoCommandExecutionResult execute_packet_info_command(
         };
     }
     if (!info.packet_available) {
+        if (!flow_scoped_selection && !info.error_text.empty()) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = info.error_text + '\n',
+            };
+        }
         std::ostringstream out {};
         if (flow_scoped_selection) {
             out << "Packet " << *options.packet_in_flow

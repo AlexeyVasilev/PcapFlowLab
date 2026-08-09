@@ -27,11 +27,15 @@
 
 #include "../../../core/open_context.h"
 #include "core/debug_logging.h"
+#include "core/decode/PacketDecoder.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/reassembly/ReassemblyService.h"
 #include "core/io/CaptureFilePacketReader.h"
+#include "core/io/PcapNgReader.h"
+#include "core/io/PcapReader.h"
+#include "core/services/CaptureImportApplication.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowExportService.h"
@@ -1759,6 +1763,133 @@ std::optional<std::uint64_t> connection_packet_number(
     }
 
     return std::nullopt;
+}
+
+std::optional<PacketRef> find_packet_in_state_metadata(const CaptureState& state, const std::uint64_t packet_index) {
+    for (const auto* connection : state.ipv4_connections.list()) {
+        const auto packet = find_packet_in_connection(*connection, packet_index);
+        if (packet.has_value()) {
+            return packet;
+        }
+    }
+
+    for (const auto* connection : state.ipv6_connections.list()) {
+        const auto packet = find_packet_in_connection(*connection, packet_index);
+        if (packet.has_value()) {
+            return packet;
+        }
+    }
+
+    const auto unrecognized_packet = std::find_if(
+        state.unrecognized_packets.begin(),
+        state.unrecognized_packets.end(),
+        [packet_index](const UnrecognizedPacketRecord& record) {
+            return record.packet.packet_index == packet_index;
+        }
+    );
+    if (unrecognized_packet != state.unrecognized_packets.end()) {
+        return unrecognized_packet->packet;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<CapturePacketLocatorEntry> find_packet_locator_entry(
+    const std::span<const CapturePacketLocatorEntry> entries,
+    const std::uint64_t packet_index
+) {
+    if (entries.empty()) {
+        return std::nullopt;
+    }
+
+    const auto it = std::upper_bound(
+        entries.begin(),
+        entries.end(),
+        packet_index,
+        [](const std::uint64_t target_packet_index, const CapturePacketLocatorEntry& entry) {
+            return target_packet_index < entry.packet_index;
+        }
+    );
+    if (it == entries.begin()) {
+        return std::nullopt;
+    }
+
+    return *std::prev(it);
+}
+
+PacketRef build_packet_ref_from_located_packet(const RawPcapPacket& packet) {
+    PacketDecoder decoder {};
+    const auto decoded = decoder.decode(packet);
+    if (decoded.ipv4.has_value()) {
+        return decoded.ipv4->packet_ref;
+    }
+    if (decoded.ipv6.has_value()) {
+        return decoded.ipv6->packet_ref;
+    }
+
+    return packet_ref_from_raw_packet(packet);
+}
+
+template <typename Reader>
+SourcePacketLookupResult find_packet_via_locator_with_reader(
+    Reader& reader,
+    const std::filesystem::path& source_capture_path,
+    const std::span<const CapturePacketLocatorEntry> entries,
+    const std::uint64_t packet_index
+) {
+    const auto anchor = find_packet_locator_entry(entries, packet_index);
+    if (!anchor.has_value()) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::locator_unavailable,
+        };
+    }
+    if (!reader.open(source_capture_path, anchor->file_offset, anchor->packet_index)) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::source_read_failed,
+        };
+    }
+
+    while (const auto packet = reader.read_next()) {
+        if (packet->packet_index == packet_index) {
+            auto source_packet = std::move(*packet);
+            return SourcePacketLookupResult {
+                .status = SourcePacketLookupStatus::found,
+                .packet = build_packet_ref_from_located_packet(source_packet),
+                .source_packet = std::move(source_packet),
+            };
+        }
+        if (packet->packet_index > packet_index) {
+            return SourcePacketLookupResult {
+                .status = SourcePacketLookupStatus::source_read_failed,
+            };
+        }
+    }
+
+    return SourcePacketLookupResult {
+        .status = SourcePacketLookupStatus::source_read_failed,
+    };
+}
+
+SourcePacketLookupResult find_packet_in_source_capture(
+    const CaptureSourceInfo& source_info,
+    const std::filesystem::path& source_capture_path,
+    const std::span<const CapturePacketLocatorEntry> entries,
+    const std::uint64_t packet_index
+) {
+    switch (source_info.format) {
+    case CaptureSourceFormat::classic_pcap: {
+        PcapReader reader {};
+        return find_packet_via_locator_with_reader(reader, source_capture_path, entries, packet_index);
+    }
+    case CaptureSourceFormat::pcapng: {
+        PcapNgReader reader {};
+        return find_packet_via_locator_with_reader(reader, source_capture_path, entries, packet_index);
+    }
+    default:
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::unsupported_format,
+        };
+    }
 }
 
 template <typename Connection>
@@ -6031,32 +6162,34 @@ bool CaptureSession::export_flows_info_csv(
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {
-    for (const auto* connection : state_.ipv4_connections.list()) {
-        const auto packet = find_packet_in_connection(*connection, packet_index);
-        if (packet.has_value()) {
-            return packet;
-        }
+    return find_packet_in_state_metadata(state_, packet_index);
+}
+
+SourcePacketLookupResult CaptureSession::lookup_source_packet(const std::uint64_t packet_index) const {
+    if (packet_index >= state_.summary.packet_count) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::out_of_range,
+        };
     }
 
-    for (const auto* connection : state_.ipv6_connections.list()) {
-        const auto packet = find_packet_in_connection(*connection, packet_index);
-        if (packet.has_value()) {
-            return packet;
-        }
+    if (!source_capture_accessible()) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::source_unavailable,
+        };
     }
 
-    const auto unrecognized_packet = std::find_if(
-        state_.unrecognized_packets.begin(),
-        state_.unrecognized_packets.end(),
-        [packet_index](const UnrecognizedPacketRecord& record) {
-            return record.packet.packet_index == packet_index;
-        }
+    if (state_.packet_locator.empty()) {
+        return SourcePacketLookupResult {
+            .status = SourcePacketLookupStatus::locator_unavailable,
+        };
+    }
+
+    return find_packet_in_source_capture(
+        source_info_,
+        source_capture_path_,
+        state_.packet_locator,
+        packet_index
     );
-    if (unrecognized_packet != state_.unrecognized_packets.end()) {
-        return unrecognized_packet->packet;
-    }
-
-    return std::nullopt;
 }
 
 std::optional<PacketOwnershipContext> CaptureSession::resolve_packet_ownership_context(
