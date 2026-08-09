@@ -69,6 +69,11 @@ public:
         const std::filesystem::path& output_path,
         const FrontendSmartExportOptions& options
     ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_unrecognized_packets(
+        const std::filesystem::path& output_path,
+        const FrontendSmartExportOptions& options,
+        const SmartSingleFileExportOptions& export_options
+    ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] FrontendCapturePacketSizeStatisticsDto get_capture_packet_size_statistics() const;
     [[nodiscard]] FrontendFlowPacketCountHistogramDto get_flow_packet_count_histogram() const;

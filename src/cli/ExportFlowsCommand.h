@@ -18,6 +18,8 @@ struct ExportFlowsCommandOptions {
     std::filesystem::path input_path {};
     std::optional<std::filesystem::path> settings_path {};
     std::optional<std::filesystem::path> source_capture_path {};
+    bool unrecognized_packets {false};
+    std::optional<std::size_t> packet_limit {};
     bool all_flows {false};
     std::optional<std::vector<std::size_t>> selected_flow_indices {};
     std::string text_filter {};

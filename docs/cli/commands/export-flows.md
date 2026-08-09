@@ -45,6 +45,7 @@ which exports flow metadata CSV only.
 `export-flows` supports:
 
 - canonical flow selection
+- unrecognized-packet selection
 - shared flow text filtering
 - flow-count limiting
 - per-flow packet-retention policies
@@ -55,7 +56,6 @@ It does not support:
 
 - flow sorting
 - frontend-state concepts such as current/selected/unselected UI rows
-- unrecognized-packet export
 - PCAPNG output
 
 ## Input Forms
@@ -83,9 +83,11 @@ Input-kind detection should reuse the existing project input-detection path.
 
 ```text
 pcap-flow-lab export-flows <input>
-    [--flow-number <N> | --flow-numbers <ranges>]
-    [--filter <text>]
-    [--all-flows]
+    [--flow-number <N> | --flow-numbers <ranges> |
+     [--filter <text>] |
+     [--all-flows] |
+     [--unrecognized-packets
+      [--packet-limit <N>]]
     [--limit <N>]
 
     [--all-packets |
@@ -144,14 +146,18 @@ and return non-zero.
 
 ## Flow Selector Requirement
 
-The user must explicitly identify the flow set.
+The user must explicitly identify the export set.
 
-At least one of the following is required:
+Recognized-flow mode requires one of:
 
 - `--flow-number <N>`
 - `--flow-numbers <ranges>`
 - `--filter <text>`
 - `--all-flows`
+
+Unrecognized-packet mode uses:
+
+- `--unrecognized-packets`
 
 This is invalid:
 
@@ -165,6 +171,12 @@ This is valid:
 pcap-flow-lab export-flows capture.pcap --all-flows --out output.pcap
 ```
 
+This is also valid:
+
+```text
+pcap-flow-lab export-flows capture.pcap --unrecognized-packets --out unrecognized.pcap
+```
+
 `--all-flows` is mutually exclusive with:
 
 - `--flow-number`
@@ -174,6 +186,14 @@ pcap-flow-lab export-flows capture.pcap --all-flows --out output.pcap
 `--flow-number` and `--flow-numbers` are mutually exclusive.
 
 An explicit canonical number selector may still be combined with `--filter`.
+
+`--unrecognized-packets` is mutually exclusive with:
+
+- `--flow-number`
+- `--flow-numbers`
+- `--filter`
+- `--all-flows`
+- `--limit`
 
 ## Canonical Flow Numbering
 
@@ -247,6 +267,42 @@ means:
 
 - select at most 20 canonical TLS-matching flows
 - retain up to the first 30 packets from each selected flow
+
+## Unrecognized-Packet Mode
+
+```text
+--unrecognized-packets
+```
+
+This is an alternative selector mode for exporting packets that are not part of
+the canonical flow set.
+
+It does not create synthetic flows and does not use `FlowQuery`.
+
+Export ordering remains original capture order.
+
+### `--packet-limit <N>`
+
+```text
+--packet-limit <N>
+```
+
+`N` must be positive.
+
+This option is valid only with:
+
+```text
+--unrecognized-packets
+```
+
+It exports the first `N` unrecognized packets in original capture order.
+
+If `N` exceeds the available unrecognized count, all available unrecognized
+packets are exported successfully.
+
+`--packet-limit` does not reuse `--limit`.
+
+`--limit` remains flow-count selection for recognized-flow mode only.
 
 ## Flow Filter
 
@@ -355,6 +411,17 @@ threshold-crossing packet, because that packet is part of the base prefix.
 If a packet is already selected by the base prefix or by `--include-last-packet`,
 it is still written at most once.
 
+These additional retention options are not available with:
+
+```text
+--unrecognized-packets
+```
+
+Unrecognized-packet mode supports only:
+
+- all unrecognized packets
+- first `N` unrecognized packets via `--packet-limit`
+
 ## All-Packets Interaction
 
 When the base mode is:
@@ -388,6 +455,8 @@ Flow-selection order does not affect packet order.
 
 A packet is written at most once.
 
+For unrecognized-packet mode, `--out` is required.
+
 The current shared backend authority for this behavior is:
 
 - direct multi-flow export sorts by `packet_index` and deduplicates
@@ -410,6 +479,12 @@ The output directory contains:
 `--out` and `--out-dir` are mutually exclusive.
 
 Exactly one is required.
+
+`--out-dir` is not available with:
+
+```text
+--unrecognized-packets
+```
 
 ### Existing Per-Flow Filename Convention
 
@@ -501,6 +576,12 @@ If omitted, the current backend default remains:
 The CLI contract should reuse that existing default rather than define a
 different buffering policy.
 
+`--buffer-memory-mib` is not available with:
+
+```text
+--unrecognized-packets
+```
+
 ## Empty Selection
 
 If selection/filtering produces zero flows:
@@ -517,6 +598,12 @@ No flows matched the export selection.
 ```
 
 This differs from metadata-only `flows`, where an empty result is valid.
+
+For unrecognized-packet mode, the corresponding runtime error is:
+
+```text
+No unrecognized packets to export.
+```
 
 ## Raw, Index, And Source-Capture Behavior
 
@@ -685,17 +772,8 @@ CLI equivalents are explicit canonical selectors:
 - `--filter`
 - `--all-flows`
 
-The CLI also does not expose the UI-only unrecognized-packets Smart Export
-target here.
-
-## Unrecognized Packets
-
-Unrecognized packets are intentionally not part of `export-flows`.
-
-They are not canonical flows.
-
-Any future export surface for them belongs to a packet-oriented command, not to
-flow export.
+The CLI exposes unrecognized-packet export only through the explicit
+`--unrecognized-packets` selector mode.
 
 ## Legacy `export-flow`
 
@@ -776,6 +854,23 @@ pcap-flow-lab export-flows capture.pcap \
     --out-dir sampled-flows
 ```
 
+Unrecognized packets:
+
+```text
+pcap-flow-lab export-flows capture.pcap \
+    --unrecognized-packets \
+    --out unrecognized.pcap
+```
+
+Limited unrecognized packets:
+
+```text
+pcap-flow-lab export-flows capture.pcap \
+    --unrecognized-packets \
+    --packet-limit 1000 \
+    --out unrecognized-first-1000.pcap
+```
+
 Index with source override:
 
 ```text
@@ -790,6 +885,8 @@ pcap-flow-lab export-flows capture.pflidx \
 
 | Capability | Raw capture | Index with valid source | Index without valid source |
 | --- | --- | --- | --- |
+| `--unrecognized-packets` | yes | yes | yes |
+| `--packet-limit` | yes, only with `--unrecognized-packets` | yes, only with `--unrecognized-packets` | yes, only with `--unrecognized-packets` |
 | flow selectors | yes | yes | yes |
 | `--filter` | yes | yes | yes |
 | `--all-flows` | yes | yes | yes |
@@ -819,6 +916,5 @@ The following remain deferred:
 - export to stdout
 - structured `--format`
 - `--sort`
-- unrecognized-packet export
 - exact packet-count success reporting where backend does not already expose it
 - frontend-state concepts such as selected/unselected current UI rows

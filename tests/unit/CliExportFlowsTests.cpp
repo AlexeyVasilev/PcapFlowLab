@@ -279,6 +279,39 @@ std::filesystem::path build_original_bytes_capture_path() {
     );
 }
 
+std::filesystem::path build_unrecognized_export_cli_capture_path() {
+    const auto malformed_packets =
+        read_all_packets(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
+    PFL_REQUIRE(!malformed_packets.empty());
+    const auto& malformed_packet = malformed_packets.front();
+    const auto recognized_packet_a = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 90, 0, 1),
+        ipv4(10, 90, 0, 2),
+        49001,
+        49002,
+        std::vector<std::uint8_t> {0xA1}
+    );
+    const auto recognized_packet_b = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 90, 0, 2),
+        ipv4(10, 90, 0, 1),
+        49002,
+        49001,
+        std::vector<std::uint8_t> {0xA2}
+    );
+
+    const std::vector<ClassicPcapCapturedRecord> packets {
+        {.ts_usec = 100U, .captured_bytes = recognized_packet_a, .original_length = static_cast<std::uint32_t>(recognized_packet_a.size())},
+        {.ts_usec = 200U, .captured_bytes = malformed_packet.bytes, .original_length = malformed_packet.original_length},
+        {.ts_usec = 300U, .captured_bytes = recognized_packet_b, .original_length = static_cast<std::uint32_t>(recognized_packet_b.size())},
+        {.ts_usec = 400U, .captured_bytes = malformed_packet.bytes, .original_length = malformed_packet.original_length},
+    };
+
+    return write_temp_pcap(
+        "pfl_cli_export_unrecognized_source.pcap",
+        make_classic_pcap_with_captured_lengths(packets)
+    );
+}
+
 void expect_parser_and_help_behavior() {
     {
         const std::vector<std::string_view> args {"export-flows", "capture.pcap"};
@@ -349,6 +382,8 @@ void expect_parser_and_help_behavior() {
         PFL_EXPECT(help_result.exit_code == 0);
         PFL_EXPECT(help_result.stderr_text.empty());
         PFL_EXPECT(contains_text(help_result.stdout_text, "PcapFlowLab CLI - export-flows"));
+        PFL_EXPECT(contains_text(help_result.stdout_text, "--unrecognized-packets"));
+        PFL_EXPECT(contains_text(help_result.stdout_text, "--packet-limit <N>"));
         PFL_EXPECT(contains_text(help_result.stdout_text, "--flow-number <N>"));
         PFL_EXPECT(contains_text(help_result.stdout_text, "--out-dir <path>"));
         PFL_EXPECT(!contains_text(help_result.stdout_text, "\\--input"));
@@ -504,6 +539,75 @@ void expect_packet_retention_and_output_parser_behavior() {
         const auto parse_result = parse_export_args({"capture.pcap", "--all-flows", "--out", "x.pcap", "--out-dir", "exports"});
         PFL_EXPECT(!parse_result.ok);
         PFL_EXPECT(contains_text(parse_result.error_text, "Exactly one of --out or --out-dir is required"));
+    }
+
+    {
+        const auto parse_result = parse_export_args({"capture.pcap", "--unrecognized-packets", "--out", "x.pcap"});
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_EXPECT(parse_result.options->unrecognized_packets);
+        PFL_EXPECT(!parse_result.options->packet_limit.has_value());
+    }
+
+    {
+        const auto parse_result = parse_export_args({
+            "capture.pcap", "--unrecognized-packets", "--packet-limit", "3", "--out", "x.pcap"
+        });
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_EXPECT(parse_result.options->packet_limit == std::optional<std::size_t> {3U});
+    }
+
+    {
+        const auto parse_result = parse_export_args({"capture.pcap", "--unrecognized-packets"});
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "Exactly one of --out or --out-dir is required"));
+    }
+
+    for (const auto& args : {
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--flow-number", "1", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--flow-numbers", "1-2", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--filter", "TLS", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--all-flows", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--limit", "1", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--out-dir", "exports"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--out", "x.pcap", "--buffer-memory-mib", "16"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--all-packets", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--first-packets", "1", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--first-original-bytes", "10", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--include-last-packet", "--out", "x.pcap"},
+        std::vector<std::string_view> {"capture.pcap", "--unrecognized-packets", "--every-kth-packet", "2", "--out", "x.pcap"},
+    }) {
+        const auto parse_result = cli::parse_export_flows_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "--unrecognized-packets"));
+    }
+
+    {
+        const auto parse_result = parse_export_args({"capture.pcap", "--packet-limit", "1", "--out", "x.pcap"});
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "--packet-limit is valid only with --unrecognized-packets"));
+    }
+
+    for (const auto invalid_limit : {"0", "-1"}) {
+        const auto parse_result = parse_export_args({"capture.pcap", "--unrecognized-packets", "--packet-limit", invalid_limit, "--out", "x.pcap"});
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "Invalid --packet-limit"));
+    }
+
+    {
+        const auto huge_limit = std::to_string(std::numeric_limits<std::size_t>::max()) + '0';
+        const auto parse_result = parse_export_args({"capture.pcap", "--unrecognized-packets", "--packet-limit", huge_limit, "--out", "x.pcap"});
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "Invalid --packet-limit"));
+    }
+
+    {
+        const auto parse_result = parse_export_args({
+            "capture.pcap", "--unrecognized-packets", "--packet-limit", "1", "--packet-limit", "2", "--out", "x.pcap"
+        });
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "Duplicate --packet-limit"));
     }
 }
 
@@ -1127,6 +1231,197 @@ void expect_empty_selection_and_source_behavior() {
     }
 }
 
+void expect_unrecognized_export_behavior() {
+    const auto capture_path = build_unrecognized_export_cli_capture_path();
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto result = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(!contains_text(result.stderr_text, "Smart export:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Exported 2 unrecognized packets to:"));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 200U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 400U);
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_first_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto result = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--unrecognized-packets",
+            "--packet-limit",
+            "1",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stderr_text, "Exported 1 unrecognized packets to:"));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 1U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 200U);
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_all_available_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto result = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--unrecognized-packets",
+            "--packet-limit",
+            "100",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stderr_text, "Exported 2 unrecognized packets to:"));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_REQUIRE(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 200U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 400U);
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_empty_output.pcap";
+        std::filesystem::remove(output_path);
+
+        const auto result = invoke_cli({
+            "export-flows",
+            build_export_cli_capture_path().string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "No unrecognized packets to export"));
+        PFL_EXPECT(!std::filesystem::exists(output_path));
+    }
+
+    {
+        const auto source_path = capture_path;
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_source.idx";
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_index_output.pcap";
+        std::filesystem::remove(index_path);
+        std::filesystem::remove(output_path);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(source_path).opened);
+        PFL_REQUIRE(adapter.save_index(index_path).saved);
+
+        const auto auto_result = invoke_cli({
+            "export-flows",
+            index_path.string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(auto_result.exit_code == 0);
+        PFL_EXPECT(std::filesystem::exists(output_path));
+        PFL_EXPECT(contains_text(auto_result.stderr_text, "Exported 2 unrecognized packets to:"));
+
+        std::filesystem::remove(output_path);
+        const auto explicit_result = invoke_cli({
+            "export-flows",
+            index_path.string(),
+            "--unrecognized-packets",
+            "--source-capture",
+            source_path.string(),
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(explicit_result.exit_code == 0);
+        PFL_EXPECT(std::filesystem::exists(output_path));
+
+        const auto moved_source_path = std::filesystem::temp_directory_path() / "pfl_cli_export_unrecognized_source_moved.pcap";
+        std::filesystem::remove(moved_source_path);
+        std::filesystem::rename(source_path, moved_source_path);
+        std::filesystem::remove(output_path);
+
+        const auto missing_source_result = invoke_cli({
+            "export-flows",
+            index_path.string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(missing_source_result.exit_code == 1);
+        PFL_EXPECT(contains_text(missing_source_result.stderr_text, "requires a valid source capture"));
+        PFL_EXPECT(!std::filesystem::exists(output_path));
+
+        const auto explicit_after_move_result = invoke_cli({
+            "export-flows",
+            index_path.string(),
+            "--unrecognized-packets",
+            "--source-capture",
+            moved_source_path.string(),
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(explicit_after_move_result.exit_code == 0);
+        PFL_EXPECT(std::filesystem::exists(output_path));
+    }
+
+    {
+        const auto output_path = write_temp_text_file("pfl_cli_export_unrecognized_existing_output.pcap", "old");
+        const auto rejected = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(rejected.exit_code == 1);
+        PFL_EXPECT(contains_text(rejected.stderr_text, "--out already exists"));
+
+        const auto forced = invoke_cli({
+            "export-flows",
+            capture_path.string(),
+            "--unrecognized-packets",
+            "--out",
+            output_path.string(),
+            "--force",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(forced.exit_code == 0);
+    }
+}
+
 void expect_legacy_export_flow_remains_unaffected() {
     const auto capture_path = build_export_cli_capture_path();
     const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_legacy_export_flow_output.pcap";
@@ -1152,6 +1447,7 @@ void run_cli_export_flows_tests() {
     expect_runtime_direct_and_smart_export_behavior();
     expect_runtime_folder_and_preflight_behavior();
     expect_empty_selection_and_source_behavior();
+    expect_unrecognized_export_behavior();
     expect_legacy_export_flow_remains_unaffected();
 }
 

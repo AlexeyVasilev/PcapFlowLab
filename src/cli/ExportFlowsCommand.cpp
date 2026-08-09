@@ -36,6 +36,8 @@ std::string render_export_flows_examples() {
     out << "  pcap-flow-lab export-flows capture.pcap --flow-number 42 --out flow-42.pcap\n";
     out << "  pcap-flow-lab export-flows capture.pcap --flow-numbers 1-10,24 --out selected.pcap\n";
     out << "  pcap-flow-lab export-flows capture.pcap --filter TLS --first-packets 30 --include-last-packet --out tls-sample.pcap\n";
+    out << "  pcap-flow-lab export-flows capture.pcap --unrecognized-packets --out unrecognized.pcap\n";
+    out << "  pcap-flow-lab export-flows capture.pcap --unrecognized-packets --packet-limit 1000 --out unrecognized-first-1000.pcap\n";
     out << "  pcap-flow-lab export-flows capture.idx --source-capture original.pcapng --flow-numbers 10-20 --first-packets 50 --out selected.pcap\n";
     return out.str();
 }
@@ -261,6 +263,18 @@ SmartFlowExportRequest build_export_request(const ExportFlowsCommandOptions& opt
     };
 }
 
+FrontendSmartExportOptions build_unrecognized_export_options(const ExportFlowsCommandOptions& options) {
+    FrontendSmartExportOptions export_options {};
+    export_options.output_mode = FrontendSmartExportOutputMode::single_file;
+    if (options.packet_limit.has_value()) {
+        export_options.base_mode = FrontendSmartExportBaseMode::first_n_packets;
+        export_options.first_n_packets = static_cast<std::uint64_t>(*options.packet_limit);
+    } else {
+        export_options.base_mode = FrontendSmartExportBaseMode::all_packets;
+    }
+    return export_options;
+}
+
 session_detail::FlowQuery build_flow_query(const ExportFlowsCommandOptions& options) {
     session_detail::FlowQuery query {};
     if (!options.all_flows) {
@@ -428,6 +442,66 @@ ExportFlowsCommandExecutionResult execute_export_flows_command_with_environment(
         };
     }
 
+    if (options.unrecognized_packets) {
+        const auto unrecognized_result = adapter.get_unrecognized_packets(0U, 0U);
+        const auto available_unrecognized_count = unrecognized_result.total_count;
+        if (available_unrecognized_count == 0U) {
+            stderr_text += "No unrecognized packets to export.\n";
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = std::move(stderr_text),
+            };
+        }
+
+        const auto exported_packet_count = options.packet_limit.has_value()
+            ? std::min(available_unrecognized_count, *options.packet_limit)
+            : available_unrecognized_count;
+        const auto exported_packet_count_text = session_detail::format_statistics_count_value(exported_packet_count);
+
+        SmartExportCliProgressRenderState progress_state {};
+        SmartSingleFileExportOptions export_options {};
+        const auto progress_enabled = should_enable_cli_progress(options.progress_mode, environment.stderr_is_terminal);
+        if (progress_enabled) {
+            export_options.progress_callback = [&](const SmartSingleFileExportProgress& progress) {
+                append_progress_line(
+                    stderr_text,
+                    render_throttled_smart_single_file_progress_line(
+                        progress,
+                        progress_state,
+                        std::chrono::steady_clock::now()
+                    )
+                );
+            };
+        }
+
+        const auto export_result = adapter.export_smart_unrecognized_packets(
+            *options.out_path,
+            build_unrecognized_export_options(options),
+            export_options
+        );
+        if (!export_result.exported) {
+            const auto error_text = export_result.error_text == "No unrecognized packets available for smart export."
+                ? "No unrecognized packets to export."
+                : export_result.error_text;
+            stderr_text += error_text.empty()
+                ? "Failed to export unrecognized packets.\n"
+                : error_text + '\n';
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = std::move(stderr_text),
+            };
+        }
+
+        stderr_text += "Exported " + exported_packet_count_text + " unrecognized packets to: " + export_result.output_path + '\n';
+        return {
+            .exit_code = 0,
+            .stdout_text = {},
+            .stderr_text = std::move(stderr_text),
+        };
+    }
+
     const auto query_result = adapter.query_flows(build_flow_query(options));
     if (query_result.status == session_detail::FlowQueryStatus::invalid_limit) {
         return {
@@ -575,7 +649,12 @@ std::string render_export_flows_command_help() {
     out << "  --filter <text>\n";
     out << "  --all-flows\n";
     out << "  --limit <N>\n";
-    out << "    Flow numbers are one-based canonical identities.\n\n";
+    out << "    Flow numbers are one-based canonical identities.\n";
+    out << "    --limit limits flows, not packets.\n\n";
+    out << "  --unrecognized-packets\n";
+    out << "  --packet-limit <N>\n";
+    out << "    Alternative mode for exporting unrecognized packets.\n";
+    out << "    --packet-limit limits the number of unrecognized packets exported.\n\n";
     out << "Packet retention\n";
     out << "  --all-packets\n";
     out << "  --first-packets <N>\n";
@@ -586,7 +665,8 @@ std::string render_export_flows_command_help() {
     out << "  --out <path>\n";
     out << "  --out-dir <path>\n";
     out << "  --buffer-memory-mib <N>\n";
-    out << "    --out writes one classic PCAP. --out-dir writes one PCAP per flow plus flows_manifest.csv.\n\n";
+    out << "    --out writes one classic PCAP. --out-dir writes one PCAP per flow plus flows_manifest.csv.\n";
+    out << "    Unrecognized-packet mode requires --out.\n\n";
     out << "Input and import\n";
     out << "  --input <path>\n";
     out << "  --source-capture <path>\n";
@@ -599,8 +679,9 @@ std::string render_export_flows_command_help() {
     out << "Help\n";
     out << "  -h, --help\n\n";
     out << "Notes\n";
-    out << "  At least one selector is required: --flow-number, --flow-numbers, --filter, or --all-flows.\n";
-    out << "  --limit limits flows, not packets.\n";
+    out << "  A selection mode is required: a flow selector or --unrecognized-packets.\n";
+    out << "  Flow selectors are --flow-number, --flow-numbers, --filter, and --all-flows.\n";
+    out << "  --unrecognized-packets is an alternative selector mode and is mutually exclusive with flow selectors.\n";
     out << "  If no packet base mode is supplied, the effective default is --all-packets.\n\n";
     out << render_export_flows_examples();
     return out.str();
@@ -642,6 +723,8 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
     bool explicit_input_seen = false;
     bool explicit_settings_seen = false;
     bool explicit_source_capture_seen = false;
+    bool unrecognized_packets_seen = false;
+    bool packet_limit_seen = false;
     bool flow_number_seen = false;
     bool flow_numbers_seen = false;
     bool filter_seen = false;
@@ -709,9 +792,40 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             continue;
         }
 
+        if (token == "--unrecognized-packets") {
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --unrecognized-packets is invalid."};
+            }
+            if (flow_number_seen || flow_numbers_seen || filter_seen || all_flows_seen || limit_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--unrecognized-packets is mutually exclusive with flow selectors and --limit."};
+            }
+            unrecognized_packets_seen = true;
+            options.unrecognized_packets = true;
+            continue;
+        }
+
+        if (token == "--packet-limit") {
+            if (packet_limit_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --packet-limit is invalid."};
+            }
+            if (index + 1U >= args.size()) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--packet-limit requires a positive unrecognized packet count."};
+            }
+            const auto packet_limit = parse_cli_positive_size(args[++index]);
+            if (!packet_limit.has_value()) {
+                return {.ok = false, .options = std::nullopt, .error_text = "Invalid --packet-limit value. Expected a positive unrecognized packet count."};
+            }
+            packet_limit_seen = true;
+            options.packet_limit = *packet_limit;
+            continue;
+        }
+
         if (token == "--flow-number") {
             if (flow_number_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --flow-number is invalid."};
+            }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--flow-number is invalid with --unrecognized-packets."};
             }
             if (flow_numbers_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--flow-number and --flow-numbers are mutually exclusive."};
@@ -735,6 +849,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (flow_numbers_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --flow-numbers is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--flow-numbers is invalid with --unrecognized-packets."};
+            }
             if (flow_number_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--flow-number and --flow-numbers are mutually exclusive."};
             }
@@ -757,6 +874,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (filter_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --filter is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--filter is invalid with --unrecognized-packets."};
+            }
             if (all_flows_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--all-flows is mutually exclusive with --filter."};
             }
@@ -772,6 +892,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (all_flows_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --all-flows is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--all-flows is invalid with --unrecognized-packets."};
+            }
             if (flow_number_seen || flow_numbers_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--all-flows is mutually exclusive with explicit flow-number selectors."};
             }
@@ -786,6 +909,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
         if (token == "--limit") {
             if (limit_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --limit is invalid."};
+            }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--limit is invalid with --unrecognized-packets. Use --packet-limit instead."};
             }
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--limit requires a positive flow count."};
@@ -803,6 +929,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (all_packets_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --all-packets is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--all-packets is invalid with --unrecognized-packets."};
+            }
             if (first_packets_seen || first_original_bytes_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--all-packets, --first-packets, and --first-original-bytes are mutually exclusive."};
             }
@@ -814,6 +943,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
         if (token == "--first-packets") {
             if (first_packets_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --first-packets is invalid."};
+            }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--first-packets is invalid with --unrecognized-packets."};
             }
             if (all_packets_seen || first_original_bytes_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--all-packets, --first-packets, and --first-original-bytes are mutually exclusive."};
@@ -835,6 +967,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (first_original_bytes_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --first-original-bytes is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--first-original-bytes is invalid with --unrecognized-packets."};
+            }
             if (all_packets_seen || first_packets_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--all-packets, --first-packets, and --first-original-bytes are mutually exclusive."};
             }
@@ -855,6 +990,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (include_last_packet_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --include-last-packet is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--include-last-packet is invalid with --unrecognized-packets."};
+            }
             include_last_packet_seen = true;
             options.include_last_packet = true;
             continue;
@@ -863,6 +1001,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
         if (token == "--every-kth-packet") {
             if (every_kth_packet_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --every-kth-packet is invalid."};
+            }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--every-kth-packet is invalid with --unrecognized-packets."};
             }
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--every-kth-packet requires a positive packet interval."};
@@ -896,6 +1037,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
             if (out_dir_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --out-dir is invalid."};
             }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--out-dir is invalid with --unrecognized-packets. Use --out <path>."};
+            }
             if (out_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Exactly one of --out or --out-dir is required."};
             }
@@ -910,6 +1054,9 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
         if (token == "--buffer-memory-mib") {
             if (buffer_memory_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --buffer-memory-mib is invalid."};
+            }
+            if (unrecognized_packets_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--buffer-memory-mib is invalid with --unrecognized-packets."};
             }
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--buffer-memory-mib requires a positive integer number of MiB."};
@@ -969,12 +1116,56 @@ ExportFlowsCommandParseResult parse_export_flows_command_arguments(const std::sp
         return {.ok = false, .options = std::nullopt, .error_text = "export-flows requires an input path."};
     }
 
+    if (!options.unrecognized_packets && options.packet_limit.has_value()) {
+        return {.ok = false, .options = std::nullopt, .error_text = "--packet-limit is valid only with --unrecognized-packets."};
+    }
+
     const bool has_selector =
+        options.unrecognized_packets ||
         options.all_flows ||
         options.selected_flow_indices.has_value() ||
         !options.text_filter.empty();
     if (!has_selector) {
-        return {.ok = false, .options = std::nullopt, .error_text = "export-flows requires at least one selector: --flow-number, --flow-numbers, --filter, or --all-flows."};
+        return {.ok = false, .options = std::nullopt, .error_text = "export-flows requires at least one selector: --unrecognized-packets, --flow-number, --flow-numbers, --filter, or --all-flows."};
+    }
+
+    if (options.unrecognized_packets) {
+        if (flow_number_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--flow-number is invalid with --unrecognized-packets."};
+        }
+        if (flow_numbers_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--flow-numbers is invalid with --unrecognized-packets."};
+        }
+        if (filter_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--filter is invalid with --unrecognized-packets."};
+        }
+        if (all_flows_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--all-flows is invalid with --unrecognized-packets."};
+        }
+        if (limit_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--limit is invalid with --unrecognized-packets. Use --packet-limit instead."};
+        }
+        if (all_packets_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--all-packets is invalid with --unrecognized-packets."};
+        }
+        if (first_packets_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--first-packets is invalid with --unrecognized-packets."};
+        }
+        if (first_original_bytes_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--first-original-bytes is invalid with --unrecognized-packets."};
+        }
+        if (include_last_packet_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--include-last-packet is invalid with --unrecognized-packets."};
+        }
+        if (every_kth_packet_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--every-kth-packet is invalid with --unrecognized-packets."};
+        }
+        if (options.out_dir_path.has_value()) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--out-dir is invalid with --unrecognized-packets. Use --out <path>."};
+        }
+        if (buffer_memory_seen) {
+            return {.ok = false, .options = std::nullopt, .error_text = "--buffer-memory-mib is invalid with --unrecognized-packets."};
+        }
     }
 
     if (!options.out_path.has_value() && !options.out_dir_path.has_value()) {
