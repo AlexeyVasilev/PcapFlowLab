@@ -103,6 +103,19 @@ std::string missing_source_capture_error_text() {
            "Use --source-capture <path> to attach the capture used to create this index.\n";
 }
 
+void append_stderr_diagnostic(std::string& stderr_text, const std::string_view diagnostic) {
+    if (diagnostic.empty()) {
+        return;
+    }
+    if (!stderr_text.empty() && stderr_text.back() != '\n') {
+        stderr_text.push_back('\n');
+    }
+    stderr_text += diagnostic;
+    if (stderr_text.back() != '\n') {
+        stderr_text.push_back('\n');
+    }
+}
+
 }  // namespace
 
 std::string render_packet_info_command_help() {
@@ -352,43 +365,35 @@ PacketInfoCommandExecutionResult execute_packet_info_command(
     );
     if (!open_result.opened) {
         if (!open_result.error_text.empty()) {
-            stderr_text += open_result.error_text;
-            if (stderr_text.empty() || stderr_text.back() != '\n') {
-                stderr_text.push_back('\n');
-            }
+            append_stderr_diagnostic(stderr_text, open_result.error_text);
         }
         return {.exit_code = 1, .stdout_text = {}, .stderr_text = std::move(stderr_text)};
     }
 
     if (open_result.partial_open && !open_result.partial_open_warning_text.empty()) {
-        if (!stderr_text.empty() && stderr_text.back() != '\n') {
-            stderr_text.push_back('\n');
-        }
-        stderr_text += open_result.partial_open_warning_text;
-        if (stderr_text.back() != '\n') {
-            stderr_text.push_back('\n');
-        }
+        append_stderr_diagnostic(stderr_text, open_result.partial_open_warning_text);
     }
 
     if (options.source_capture_path.has_value()) {
         const auto attach_result = adapter.attach_source_capture(*options.source_capture_path);
         if (!attach_result.attached) {
-            stderr_text += attach_result.error_text;
-            if (stderr_text.empty() || stderr_text.back() != '\n') {
-                stderr_text.push_back('\n');
-            }
+            append_stderr_diagnostic(stderr_text, attach_result.error_text);
             return {.exit_code = 1, .stdout_text = {}, .stderr_text = std::move(stderr_text)};
         }
     }
 
     const auto source_availability = adapter.source_availability();
     if (!source_availability.byte_backed_inspection_available) {
+        append_stderr_diagnostic(
+            stderr_text,
+            source_availability.opened_from_index
+                ? missing_source_capture_error_text()
+                : "Packet inspection requires readable source capture data.\n"
+        );
         return {
             .exit_code = 1,
             .stdout_text = {},
-            .stderr_text = source_availability.opened_from_index
-                ? missing_source_capture_error_text()
-                : "Packet inspection requires readable source capture data.\n",
+            .stderr_text = std::move(stderr_text),
         };
     }
 
@@ -396,7 +401,8 @@ PacketInfoCommandExecutionResult execute_packet_info_command(
     if (flow_scoped_selection && !adapter.flow_row(*options.flow_index).has_value()) {
         std::ostringstream out {};
         out << "Flow " << (*options.flow_index + 1U) << " is out of range for this input.\n";
-        return {.exit_code = 1, .stdout_text = {}, .stderr_text = out.str()};
+        append_stderr_diagnostic(stderr_text, out.str());
+        return {.exit_code = 1, .stdout_text = {}, .stderr_text = std::move(stderr_text)};
     }
     const auto info = flow_scoped_selection
         ? adapter.get_packet_info_by_flow(*options.flow_index, *options.packet_in_flow, options.include_bytes)
@@ -411,10 +417,11 @@ PacketInfoCommandExecutionResult execute_packet_info_command(
     }
     if (!info.packet_available) {
         if (!flow_scoped_selection && !info.error_text.empty()) {
+            append_stderr_diagnostic(stderr_text, info.error_text);
             return {
                 .exit_code = 1,
                 .stdout_text = {},
-                .stderr_text = info.error_text + '\n',
+                .stderr_text = std::move(stderr_text),
             };
         }
         std::ostringstream out {};
@@ -424,28 +431,33 @@ PacketInfoCommandExecutionResult execute_packet_info_command(
         } else {
             out << "Packet " << *options.packet_in_file << " is out of range for this input.\n";
         }
-        return {.exit_code = 1, .stdout_text = {}, .stderr_text = out.str()};
+        append_stderr_diagnostic(stderr_text, out.str());
+        return {.exit_code = 1, .stdout_text = {}, .stderr_text = std::move(stderr_text)};
     }
     if (!info.details_available) {
         const auto error_text = !info.unavailable_text.empty() ? info.unavailable_text : info.error_text;
+        append_stderr_diagnostic(
+            stderr_text,
+            error_text.empty() ? "Packet inspection is unavailable for the requested packet.\n" : error_text
+        );
         return {
             .exit_code = 1,
             .stdout_text = {},
-            .stderr_text = error_text.empty()
-                ? "Packet inspection is unavailable for the requested packet.\n"
-                : error_text + '\n',
+            .stderr_text = std::move(stderr_text),
         };
     }
     if (options.include_bytes && !info.captured_packet_bytes.available) {
         const auto error_text = !info.captured_packet_bytes.unavailable_text.empty()
             ? info.captured_packet_bytes.unavailable_text
             : info.unavailable_text;
+        append_stderr_diagnostic(
+            stderr_text,
+            error_text.empty() ? "Captured packet bytes are unavailable for the requested packet.\n" : error_text
+        );
         return {
             .exit_code = 1,
             .stdout_text = {},
-            .stderr_text = error_text.empty()
-                ? "Captured packet bytes are unavailable for the requested packet.\n"
-                : error_text + '\n',
+            .stderr_text = std::move(stderr_text),
         };
     }
 

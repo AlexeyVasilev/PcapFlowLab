@@ -1074,7 +1074,7 @@ bool read_capture_packet_locator(
         }
 
         if ((previous_packet_index.has_value() && entry.packet_index <= *previous_packet_index) ||
-            (previous_file_offset.has_value() && entry.file_offset < *previous_file_offset)) {
+            (previous_file_offset.has_value() && entry.file_offset <= *previous_file_offset)) {
             entries.clear();
             return false;
         }

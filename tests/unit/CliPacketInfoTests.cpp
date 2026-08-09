@@ -152,6 +152,32 @@ std::filesystem::path build_cli_packet_info_capture_path(
     );
 }
 
+std::filesystem::path build_partial_open_packet_info_capture_path() {
+    const auto request = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 7, 0, 1),
+        ipv4(10, 7, 0, 2),
+        47000,
+        80,
+        make_http_request_payload(),
+        0x18
+    );
+    const auto response = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 7, 0, 2),
+        ipv4(10, 7, 0, 1),
+        80,
+        47000,
+        make_http_response_payload(),
+        0x18
+    );
+    auto bytes = make_classic_pcap_with_captured_lengths({
+        {.ts_usec = 100U, .captured_bytes = request, .original_length = static_cast<std::uint32_t>(request.size())},
+        {.ts_usec = 200U, .captured_bytes = response, .original_length = static_cast<std::uint32_t>(response.size())},
+    });
+    PFL_REQUIRE(!bytes.empty());
+    bytes.pop_back();
+    return write_temp_pcap("pfl_cli_packet_info_partial_open.pcap", bytes);
+}
+
 std::filesystem::path build_cli_packet_info_unrecognized_capture_path() {
     const auto recognized_packet = make_ethernet_ipv4_udp_packet(
         ipv4(10, 3, 0, 1),
@@ -812,6 +838,25 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(result.stderr_text.empty());
         PFL_EXPECT(result.stdout_text == raw_stdout);
+    }
+
+    {
+        const auto partial_capture_path = build_partial_open_packet_info_capture_path();
+        const std::vector<std::string> args {
+            "packet-info",
+            partial_capture_path.string(),
+            "--packet-in-file",
+            "99",
+            "--progress",
+            "off",
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Capture opened partially."));
+        PFL_EXPECT(contains_text(result.stderr_text, "Packet 99 is out of range for this input."));
+        PFL_EXPECT(result.stderr_text.find("Capture opened partially.") < result.stderr_text.find("Packet 99 is out of range for this input."));
     }
 
     {

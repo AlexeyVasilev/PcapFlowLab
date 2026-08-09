@@ -154,25 +154,28 @@ const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountH
 }};
 
 char ascii_lower(const char value) noexcept {
-    return static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
-}
-
-std::string ascii_fold(std::string_view text) {
-    std::string folded {};
-    folded.reserve(text.size());
-    for (const auto ch : text) {
-        folded.push_back(ascii_lower(ch));
+    if (value >= 'A' && value <= 'Z') {
+        return static_cast<char>(value - 'A' + 'a');
     }
-    return folded;
+    return value;
 }
 
 int compare_case_insensitive_text(const std::string_view left, const std::string_view right) {
-    const auto folded_left = ascii_fold(left);
-    const auto folded_right = ascii_fold(right);
-    if (folded_left < folded_right) {
+    const auto shared_length = std::min(left.size(), right.size());
+    for (std::size_t index = 0; index < shared_length; ++index) {
+        const auto folded_left = ascii_lower(left[index]);
+        const auto folded_right = ascii_lower(right[index]);
+        if (folded_left < folded_right) {
+            return -1;
+        }
+        if (folded_left > folded_right) {
+            return 1;
+        }
+    }
+    if (left.size() < right.size()) {
         return -1;
     }
-    if (folded_left > folded_right) {
+    if (left.size() > right.size()) {
         return 1;
     }
     if (left < right) {

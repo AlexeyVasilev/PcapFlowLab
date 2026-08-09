@@ -853,6 +853,74 @@ void run_query_tests() {
             ).compact_text;
         PFL_EXPECT(query_session.protocol_path_compact_text(rows[*http_index].protocol_path_id) == direct_compact_text);
     }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+        const auto simple_tcp_path_id = state.protocol_path_registry.intern(ProtocolPath {
+            {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+        });
+
+        const auto add_connection = [&](const std::uint8_t host_octet, const std::string& service_hint) {
+            const FlowKeyV4 flow {
+                .src_addr = ipv4(10, 20, 0, host_octet),
+                .dst_addr = ipv4(10, 20, 1, host_octet),
+                .src_port = static_cast<std::uint16_t>(40000U + host_octet),
+                .dst_port = 443U,
+                .protocol = ProtocolId::tcp,
+            };
+            ConnectionV4 connection {};
+            connection.key = make_connection_key(flow);
+            connection.key.protocol_path_id = simple_tcp_path_id;
+            connection.service_hint = service_hint;
+            connection.add_packet(
+                flow,
+                PacketRef {
+                    .packet_index = host_octet,
+                    .captured_length = 64U,
+                    .original_length = 64U,
+                    .ts_sec = 5U,
+                    .ts_usec = host_octet,
+                }
+            );
+            state.ipv4_connections.get_or_create(connection.key) = connection;
+        };
+
+        add_connection(1U, "bravo");
+        add_connection(2U, "alpha");
+        add_connection(3U, "Alpha");
+        add_connection(4U, "alphabet");
+        add_connection(5U, "");
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 5U);
+
+        const auto empty_index = find_flow_index_by_service_hint(rows, "");
+        const auto alpha_lower_index = find_flow_index_by_service_hint(rows, "alpha");
+        const auto alpha_upper_index = find_flow_index_by_service_hint(rows, "Alpha");
+        const auto alphabet_index = find_flow_index_by_service_hint(rows, "alphabet");
+        const auto bravo_index = find_flow_index_by_service_hint(rows, "bravo");
+        PFL_REQUIRE(empty_index.has_value());
+        PFL_REQUIRE(alpha_lower_index.has_value());
+        PFL_REQUIRE(alpha_upper_index.has_value());
+        PFL_REQUIRE(alphabet_index.has_value());
+        PFL_REQUIRE(bravo_index.has_value());
+
+        session_detail::FlowQuery query {};
+        query.sort = session_detail::FlowQuerySortSpec {
+            .key = session_detail::FlowQuerySortKey::service,
+            .direction = session_detail::FlowQuerySortDirection::ascending,
+        };
+        const auto result = session.query_flows(query);
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == std::vector<std::size_t>({
+            *empty_index,
+            *alpha_upper_index,
+            *alpha_lower_index,
+            *alphabet_index,
+            *bravo_index,
+        }));
+    }
 }
 
 }  // namespace pfl::tests

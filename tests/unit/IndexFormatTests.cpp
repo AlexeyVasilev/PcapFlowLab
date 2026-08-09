@@ -540,6 +540,28 @@ void run_index_format_tests() {
         PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
     }
 
+    {
+        auto invalid_locator_state = state;
+        invalid_locator_state.packet_locator = {
+            CapturePacketLocatorEntry {.packet_index = 0U, .file_offset = 24U},
+            CapturePacketLocatorEntry {.packet_index = 1U, .file_offset = 24U},
+        };
+
+        const auto invalid_locator_index_path =
+            std::filesystem::temp_directory_path() / "pfl_index_invalid_packet_locator_equal_offset.idx";
+        std::filesystem::remove(invalid_locator_index_path);
+
+        CaptureIndexWriter invalid_locator_writer {};
+        PFL_REQUIRE(invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path));
+        PFL_EXPECT(!index_reader.read(
+            invalid_locator_index_path,
+            loaded_state,
+            loaded_capture_path,
+            &loaded_source_info
+        ));
+        PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
+    }
+
     ImportCheckpoint checkpoint {};
     PFL_EXPECT(read_capture_source_info(source_path, checkpoint.source_info));
     checkpoint.packets_processed = 2;
