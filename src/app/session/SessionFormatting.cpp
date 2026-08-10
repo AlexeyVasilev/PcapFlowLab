@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string_view>
 
+#include "app/session/DnsSummaryPresentation.h"
 #include "core/io/LinkType.h"
 
 namespace pfl::session_detail {
@@ -3295,34 +3296,6 @@ void append_protocol_field_if_present(
     }
 }
 
-std::string dns_message_type_text(const DnsDetails& details) {
-    return details.is_response ? "Response" : "Query";
-}
-
-std::string dns_query_type_text(const std::uint16_t query_type) {
-    switch (query_type) {
-    case 1U:
-        return "A (1)";
-    case 28U:
-        return "AAAA (28)";
-    case 33U:
-        return "SRV (33)";
-    case 64U:
-        return "SVCB (64)";
-    case 65U:
-        return "HTTPS (65)";
-    default:
-        return std::to_string(query_type);
-    }
-}
-
-std::optional<std::string> dns_query_name_text(const DnsDetails& details) {
-    if (details.query_name.empty() || details.query_name == ".") {
-        return std::nullopt;
-    }
-    return details.query_name;
-}
-
 std::optional<PacketSummaryLayer> build_icmp_summary_layer(const PacketDetails& details) {
     if (!details.has_icmp) {
         return std::nullopt;
@@ -5471,7 +5444,10 @@ std::vector<PacketSummaryLayer> build_quic_summary_layers(
     );
 }
 
-std::optional<PacketSummaryLayer> build_protocol_summary_layer(const PacketDetails& details) {
+std::optional<PacketSummaryLayer> build_protocol_summary_layer(
+    const PacketDetails& details,
+    const PacketSummaryOptions& options
+) {
     if (details.has_pppoe || details.has_arp || details.has_igmp) {
         return std::nullopt;
     }
@@ -5484,31 +5460,11 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(const PacketDetai
     }
 
     if (details.has_dns) {
-        std::vector<PacketSummaryField> fields {};
-        const auto message_type = std::optional<std::string> {dns_message_type_text(details.dns)};
-        const auto qname = dns_query_name_text(details.dns);
-        const auto qtype = std::optional<std::string> {dns_query_type_text(details.dns.query_type)};
-        append_protocol_field_if_present(fields, "Message Type", message_type);
-        append_protocol_field_if_present(fields, "QName", qname);
-        append_protocol_field_if_present(fields, "QType", qtype);
-        fields.push_back(make_summary_field("Transaction ID", format_hex16_value(details.dns.transaction_id)));
-        if (details.dns.response_code.has_value() && details.dns.is_response) {
-            fields.push_back(make_summary_field("Response Code", std::to_string(*details.dns.response_code)));
+        const auto presentation_kind =
+            options.dns_summary_presentation_kind.value_or(DnsSummaryPresentationKind::dns);
+        if (const auto dns_layer = build_dns_summary_layer(details, presentation_kind); dns_layer.has_value()) {
+            return dns_layer;
         }
-
-        std::string title = "Domain Name System";
-        if (message_type.has_value()) {
-            title += ", " + *message_type;
-            if (qtype.has_value() && qname.has_value() && *message_type == "Query") {
-                title += " " + *qtype + " " + *qname;
-            }
-        }
-
-        return PacketSummaryLayer {
-            .id = "dns",
-            .title = std::move(title),
-            .fields = std::move(fields),
-        };
     }
 
     if (details.has_http) {
@@ -7446,7 +7402,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     insert_packet_data_summary_layer(layers, options);
 
-    const auto protocol_layer = build_protocol_summary_layer(details);
+    const auto protocol_layer = build_protocol_summary_layer(details, options);
     if (!appended_tls_summary && protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
     }

@@ -27,6 +27,7 @@ struct SelectedPacketSummaryPreparation {
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
     std::vector<PacketSummaryLayer> tls_summary_layers {};
     std::optional<QuicPresentationResult> quic_presentation {};
+    std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind {};
     std::optional<PacketDataPresentation> packet_data {};
 
     // Creates short-lived spans/views over this owner's bounded buffers for

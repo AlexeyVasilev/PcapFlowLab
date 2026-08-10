@@ -4,8 +4,10 @@
 #include <span>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/DnsInspectionParser.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
+#include "core/services/PacketPayloadService.h"
 
 namespace pfl {
 
@@ -140,6 +142,7 @@ void populate_application_protocol_details(
 ) {
     details.has_dns = false;
     details.dns = {};
+    details.dns_message = std::nullopt;
     details.has_http = false;
     details.http = {};
 
@@ -153,6 +156,13 @@ void populate_application_protocol_details(
             .response_code = dns->response_code,
             .query_name = dns->query_name,
         };
+
+        PacketPayloadService payload_service {};
+        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet_ref.data_link_type);
+        DnsInspectionParser dns_parser {};
+        details.dns_message = dns_parser.inspect(
+            std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
+        );
     }
 
     HttpPacketProtocolAnalyzer http_analyzer {};

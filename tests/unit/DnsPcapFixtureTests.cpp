@@ -6,6 +6,7 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFormatting.h"
 
@@ -16,8 +17,6 @@ namespace {
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
 }
-
-#if defined(PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS)
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
@@ -45,6 +44,16 @@ const session_detail::PacketSummaryField* find_summary_field(
     return it != layer.fields.end() ? &(*it) : nullptr;
 }
 
+const session_detail::PacketSummaryLayer* find_summary_child(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& id
+) {
+    const auto it = std::find_if(layer.children.begin(), layer.children.end(), [&](const auto& child) {
+        return child.id == id;
+    });
+    return it != layer.children.end() ? &(*it) : nullptr;
+}
+
 std::string require_summary_field_value(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& label
@@ -68,6 +77,24 @@ const session_detail::PacketSummaryField* find_descendant_summary_field(
         }
     }
     return nullptr;
+}
+
+const session_detail::PacketSummaryLayer* require_summary_child(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& id
+) {
+    const auto* child = find_summary_child(layer, id);
+    PFL_REQUIRE(child != nullptr);
+    return child;
+}
+
+std::string require_descendant_summary_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto* field = find_descendant_summary_field(layer, label);
+    PFL_REQUIRE(field != nullptr);
+    return field->value;
 }
 
 struct SelectedPacketTransportPayloadLengths {
@@ -158,7 +185,24 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
     return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
 }
 
-#endif
+std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers_without_flow_context(
+    const std::filesystem::path& relative_fixture_path
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_fixture_path)));
+    const auto packet = require_packet(session, 0U);
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+    auto packet_summary_preparation = prepare_selected_packet_summary_with_production_lengths(
+        session,
+        *details,
+        packet,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt
+    );
+    return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
+}
 
 void expect_flow_hint_fixture(
     const std::filesystem::path& relative_fixture_path,
@@ -197,36 +241,48 @@ void expect_current_default_mdns_detector_scope() {
     expect_flow_hint_fixture("parsing/mdns/13_mdns_wrong_multicast_destination_negative.pcap", "", std::nullopt);
 }
 
-#if defined(PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS)
-
-void expect_pending_dns_summary_contracts() {
+void expect_dns_summary_contracts() {
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/dns/03_dns_ipv4_a_query.pcap");
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title == "Domain Name System, Query");
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Transaction ID") == "0x1001");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Opcode") == "Query");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Question Count") == "1");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answer Count") == "0");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Opcode") == "Standard query (0)");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Questions") == "1");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answers") == "0");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QName") == "a-query.example.test");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QType") == "A (1)");
+        const auto* questions_layer = require_summary_child(*dns_layer, "dns_questions");
+        PFL_REQUIRE(questions_layer->children.size() == 1U);
+        PFL_EXPECT(questions_layer->children[0].title == "a-query.example.test");
+        PFL_EXPECT(require_summary_field_value(questions_layer->children[0], "Type") == "A (1)");
+        PFL_EXPECT(require_summary_field_value(questions_layer->children[0], "Class") == "IN (1)");
+        PFL_EXPECT(find_descendant_summary_field(*dns_layer, "Unicast Response Requested") == nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/dns/04_dns_ipv4_a_response_compressed.pcap");
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title == "Domain Name System, Response");
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Transaction ID") == "0x1002");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Response Code") == "NoError (0)");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answer Count") == "1");
-        PFL_REQUIRE(find_descendant_summary_field(*dns_layer, "IPv4 Address") != nullptr);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Response Code") == "No error (0)");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answers") == "1");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QName") == "www.example.test");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QType") == "A (1)");
+        const auto* answers_layer = require_summary_child(*dns_layer, "dns_answers");
+        PFL_REQUIRE(answers_layer->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(answers_layer->children[0], "Address") == "192.0.2.44");
+        PFL_EXPECT(find_descendant_summary_field(*dns_layer, "Cache Flush") == nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/dns/07_dns_ipv4_cname_response_compressed.pcap");
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answer Count") == "1");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Compression") == "Used");
-        const auto* cname_target = find_descendant_summary_field(*dns_layer, "CNAME Target");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answers") == "1");
+        const auto* cname_target = find_descendant_summary_field(*dns_layer, "Canonical Name");
         PFL_REQUIRE(cname_target != nullptr);
         PFL_EXPECT(cname_target->value == "real.example.test");
     }
@@ -235,7 +291,11 @@ void expect_pending_dns_summary_contracts() {
         const auto summary_layers = build_fixture_summary_layers("parsing/dns/08_dns_ipv4_multiple_answers_response.pcap");
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answer Count") == "2");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answers") == "2");
+        const auto* answers_layer = require_summary_child(*dns_layer, "dns_answers");
+        PFL_REQUIRE(answers_layer->children.size() == 2U);
+        PFL_EXPECT(require_summary_field_value(answers_layer->children[0], "Address") == "192.0.2.80");
+        PFL_EXPECT(require_summary_field_value(answers_layer->children[1], "Address") == "192.0.2.81");
     }
 
     {
@@ -243,7 +303,49 @@ void expect_pending_dns_summary_contracts() {
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Response Code") == "NXDOMAIN (3)");
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answer Count") == "0");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Answers") == "0");
+        PFL_EXPECT(find_summary_child(*dns_layer, "dns_answers") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/10_dns_ipv4_https_query.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QType") == "HTTPS (65)");
+        const auto* questions_layer = require_summary_child(*dns_layer, "dns_questions");
+        PFL_REQUIRE(questions_layer->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(questions_layer->children[0], "Type") == "HTTPS (65)");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/12_dns_ipv4_srv_response.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        const auto* srv_target = find_descendant_summary_field(*dns_layer, "Target");
+        PFL_REQUIRE(srv_target != nullptr);
+        PFL_EXPECT(require_descendant_summary_field_value(*dns_layer, "Priority") == "0");
+        PFL_EXPECT(require_descendant_summary_field_value(*dns_layer, "Weight") == "0");
+        PFL_EXPECT(require_descendant_summary_field_value(*dns_layer, "Port") == "12345");
+        PFL_EXPECT(srv_target->value == "service-host.example.test");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/13_dns_ipv4_txt_response.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(require_descendant_summary_field_value(*dns_layer, "TXT[0]") == "path=/demo");
+        PFL_EXPECT(require_descendant_summary_field_value(*dns_layer, "TXT[1]") == "ver=1");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/17_dns_ipv4_unknown_rr_response.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        const auto* answers_layer = require_summary_child(*dns_layer, "dns_answers");
+        PFL_REQUIRE(answers_layer->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(answers_layer->children[0], "Type") == "Unknown (65280)");
+        PFL_EXPECT(require_summary_field_value(answers_layer->children[0], "RDATA Length") == "4");
+        PFL_EXPECT(require_summary_field_value(answers_layer->children[0], "RDATA Status") == "Opaque / not parsed");
     }
 
     {
@@ -251,29 +353,69 @@ void expect_pending_dns_summary_contracts() {
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
         PFL_EXPECT(dns_layer->warning);
-        PFL_EXPECT(require_summary_field_value(*dns_layer, "Compression Error") == "Pointer outside message bounds");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message malformed");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Questions") == "1");
+        PFL_EXPECT(find_summary_child(*dns_layer, "dns_questions") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/14_dns_ipv4_truncated_message.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->warning);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message truncated");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Questions") == "1");
+        PFL_EXPECT(find_summary_child(*dns_layer, "dns_questions") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/dns/16_dns_ipv4_malformed_pointer_loop.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->warning);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message malformed");
     }
 }
 
-void expect_pending_mdns_summary_contracts() {
+void expect_mdns_summary_contracts() {
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/mdns/01_mdns_ipv4_ptr_query.pcap");
         const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
         PFL_REQUIRE(mdns_layer != nullptr);
-        PFL_EXPECT(mdns_layer->title.find("Multicast Domain Name System") != std::string::npos);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Query");
         PFL_EXPECT(require_summary_field_value(*mdns_layer, "Message Type") == "Query");
+        PFL_EXPECT(require_descendant_summary_field_value(*mdns_layer, "Class") == "IN (1)");
+        PFL_EXPECT(require_descendant_summary_field_value(*mdns_layer, "Unicast Response Requested") == "No");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/mdns/02_mdns_ipv6_ptr_query.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Query");
+        const auto* questions_layer = require_summary_child(*mdns_layer, "dns_questions");
+        PFL_REQUIRE(questions_layer->children.size() == 1U);
+        PFL_EXPECT(questions_layer->children[0].title == "_demo-service._tcp.local");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/mdns/03_mdns_ipv4_ptr_response.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Response");
+        PFL_EXPECT(require_descendant_summary_field_value(*mdns_layer, "PTR Target") == "Example Device._demo-service._tcp.local");
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/mdns/04_mdns_ipv4_dns_sd_response.pcap");
         const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
         PFL_REQUIRE(mdns_layer != nullptr);
-        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Answer Count") == "1");
-        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Additional Count") == "3");
+        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Answers") == "1");
+        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Additional RRs") == "3");
         const auto* ptr_target = find_descendant_summary_field(*mdns_layer, "PTR Target");
-        const auto* srv_target = find_descendant_summary_field(*mdns_layer, "SRV Target");
+        const auto* srv_target = find_descendant_summary_field(*mdns_layer, "Target");
         const auto* txt0 = find_descendant_summary_field(*mdns_layer, "TXT[0]");
-        const auto* ipv4_address = find_descendant_summary_field(*mdns_layer, "IPv4 Address");
+        const auto* ipv4_address = find_descendant_summary_field(*mdns_layer, "Address");
         PFL_REQUIRE(ptr_target != nullptr);
         PFL_REQUIRE(srv_target != nullptr);
         PFL_REQUIRE(txt0 != nullptr);
@@ -285,12 +427,35 @@ void expect_pending_mdns_summary_contracts() {
     }
 
     {
+        const auto summary_layers = build_fixture_summary_layers("parsing/mdns/05_mdns_ipv6_dns_sd_response_aaaa.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(require_descendant_summary_field_value(*mdns_layer, "Address") == "2001:db8::44");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/mdns/06_mdns_ipv4_multiple_questions.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        const auto* questions_layer = require_summary_child(*mdns_layer, "dns_questions");
+        PFL_REQUIRE(questions_layer->children.size() == 2U);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/mdns/07_mdns_ipv4_multiple_answers.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        const auto* answers_layer = require_summary_child(*mdns_layer, "dns_answers");
+        PFL_REQUIRE(answers_layer->children.size() == 2U);
+    }
+
+    {
         const auto summary_layers = build_fixture_summary_layers("parsing/mdns/08_mdns_ipv4_cache_flush_response.pcap");
         const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
         PFL_REQUIRE(mdns_layer != nullptr);
         const auto* cache_flush = find_descendant_summary_field(*mdns_layer, "Cache Flush");
         PFL_REQUIRE(cache_flush != nullptr);
-        PFL_EXPECT(cache_flush->value == "true");
+        PFL_EXPECT(cache_flush->value == "Yes");
     }
 
     {
@@ -299,7 +464,7 @@ void expect_pending_mdns_summary_contracts() {
         PFL_REQUIRE(mdns_layer != nullptr);
         const auto* qu = find_descendant_summary_field(*mdns_layer, "Unicast Response Requested");
         PFL_REQUIRE(qu != nullptr);
-        PFL_EXPECT(qu->value == "true");
+        PFL_EXPECT(qu->value == "Yes");
     }
 
     {
@@ -315,22 +480,92 @@ void expect_pending_mdns_summary_contracts() {
         const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
         PFL_REQUIRE(mdns_layer != nullptr);
         PFL_EXPECT(mdns_layer->warning);
-        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Compression Error") == "Pointer outside message bounds");
+        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Warning") == "DNS message malformed");
     }
 }
 
-#endif
+void expect_dns_mdns_presentation_isolation() {
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/mdns/09_mdns_ipv4_qu_question.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        session_detail::PacketSummaryOptions options {};
+        options.dns_summary_presentation_kind = session_detail::DnsSummaryPresentationKind::dns;
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, options);
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(find_descendant_summary_field(*dns_layer, "Unicast Response Requested") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/mdns/08_mdns_ipv4_cache_flush_response.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        session_detail::PacketSummaryOptions options {};
+        options.dns_summary_presentation_kind = session_detail::DnsSummaryPresentationKind::dns;
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, options);
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(find_descendant_summary_field(*dns_layer, "Cache Flush") == nullptr);
+    }
+}
+
+void expect_dns_mdns_summary_context_without_flow_lookup() {
+    {
+        const auto summary_layers = build_fixture_summary_layers_without_flow_context("parsing/dns/03_dns_ipv4_a_query.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title == "Domain Name System, Query");
+        PFL_EXPECT(find_summary_layer(summary_layers, "mdns") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers_without_flow_context("parsing/mdns/01_mdns_ipv4_ptr_query.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Query");
+        PFL_EXPECT(find_summary_layer(summary_layers, "dns") == nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers_without_flow_context("parsing/mdns/02_mdns_ipv6_ptr_query.pcap");
+        const auto* mdns_layer = find_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Query");
+    }
+
+    {
+        const auto summary_layers =
+            build_fixture_summary_layers_without_flow_context("parsing/mdns/12_mdns_wrong_port_negative.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(find_summary_layer(summary_layers, "mdns") == nullptr);
+    }
+
+    {
+        const auto summary_layers =
+            build_fixture_summary_layers_without_flow_context("parsing/mdns/13_mdns_wrong_multicast_destination_negative.pcap");
+        const auto* dns_layer = find_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(find_summary_layer(summary_layers, "mdns") == nullptr);
+    }
+}
 
 }  // namespace
 
 void run_dns_pcap_fixture_tests() {
     expect_current_default_dns_baseline();
     expect_current_default_mdns_detector_scope();
-
-#if defined(PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS)
-    expect_pending_dns_summary_contracts();
-    expect_pending_mdns_summary_contracts();
-#endif
+    expect_dns_summary_contracts();
+    expect_mdns_summary_contracts();
+    expect_dns_mdns_presentation_isolation();
+    expect_dns_mdns_summary_context_without_flow_lookup();
 }
 
 }  // namespace pfl::tests

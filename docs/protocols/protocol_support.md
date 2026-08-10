@@ -281,7 +281,7 @@ Current parsing fixture directories under `tests/data/parsing/` include:
 - `igmp`
   - IGMPv1/v2 reports and queries, same-group/source grouping cases, Router Alert / IPv4 IHL handling, safe unknown-type handling, partial IGMPv3 membership reports, bad checksum, and truncated / snaplen-truncated IGMP fixtures.
 - `dns`
-  - basic DNS request/response coverage.
+  - structured DNS and mDNS parser / selected-packet Summary coverage, plus legacy DNS request/response baselines.
 - `http`
   - request/response and multi-message / partial-response coverage.
 - `mpls`

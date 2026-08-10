@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "core/services/DnsInspectionParser.h"
+
 namespace pfl {
 
 enum class NetworkAddressFamily : std::uint8_t {
@@ -750,6 +752,7 @@ struct PacketDetails {
 
     bool has_dns {false};
     DnsDetails dns {};
+    std::optional<DnsMessage> dns_message {};
 
     bool has_http {false};
     HttpDetails http {};

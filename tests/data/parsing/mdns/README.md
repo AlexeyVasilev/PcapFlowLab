@@ -4,14 +4,15 @@ This directory contains classic PCAP fixtures for current mDNS detector-scope re
 
 Current production behavior intentionally remains limited in this stage:
 - mDNS hint detection depends on UDP/5353 plus the common multicast destination path;
-- selected-packet and stream presentation are still generic UDP/DNS-adjacent surfaces rather than a dedicated structured mDNS layer;
+- selected-packet Summary now uses the shared structured DNS wire model with an mDNS-specific layer title and class-bit presentation;
+- stream presentation is still generic UDP/DNS-adjacent rather than a dedicated structured mDNS surface;
 - observed service hint behavior is currently empty;
 - user-facing detected text may still appear as `MDNS` in some surfaces.
 
-Future structured DNS/mDNS inspection work should remain guarded behind:
+Future Stream / service-hint follow-up work may still remain guarded behind:
 - `PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS`
 
-Current backend parser/model coverage is now default-on for shared DNS wire parsing.
+Current backend parser/model coverage is now default-on for shared DNS wire parsing and selected-packet Summary mapping.
 
 The remaining guarded work is mDNS-specific presentation layered on top of the shared bounded DNS wire parser.
 

@@ -11,6 +11,7 @@
 
 namespace pfl {
 
+struct PacketDetails;
 class PacketPayloadService;
 
 class FlowHintService {
@@ -38,6 +39,8 @@ private:
     mutable std::unordered_map<FlowKeyV4, QuicInitialFlowState> quic_initial_ipv4_states_ {};
     mutable std::unordered_map<FlowKeyV6, QuicInitialFlowState> quic_initial_ipv6_states_ {};
 };
+
+[[nodiscard]] bool packet_matches_mdns_hint(const PacketDetails& details) noexcept;
 
 }  // namespace pfl
 

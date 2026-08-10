@@ -11,6 +11,7 @@
 #include <type_traits>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketPayloadService.h"
@@ -1071,6 +1072,25 @@ FlowHintService::FlowHintService(const AnalysisSettings settings, const bool ena
 
 const AnalysisSettings& FlowHintService::settings() const noexcept {
     return settings_;
+}
+
+bool packet_matches_mdns_hint(const PacketDetails& details) noexcept {
+    if (!details.has_udp || !has_port(details.udp.src_port, details.udp.dst_port, kMdnsPort)) {
+        return false;
+    }
+
+    const bool has_mdns_destination = details.has_ipv4
+        ? is_mdns_multicast_destination(details.ipv4.dst_addr)
+        : details.has_ipv6 && is_mdns_multicast_destination(details.ipv6.dst_addr);
+    if (!has_mdns_destination || !details.dns_message.has_value()) {
+        return false;
+    }
+
+    const auto& message = *details.dns_message;
+    return message.declared_question_count != 0U ||
+        message.declared_answer_count != 0U ||
+        message.declared_authority_count != 0U ||
+        message.declared_additional_count != 0U;
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const {

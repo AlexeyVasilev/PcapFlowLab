@@ -5,12 +5,12 @@ This directory contains classic PCAP fixtures for current DNS hinting/presentati
 Current behavior already covered elsewhere in default-on tests:
 - DNS hint detection on known request/response fixtures;
 - QNAME-based service hinting where already supported;
-- basic packet-local DNS Summary / Packet Bytes behavior.
+- structured selected-packet DNS Summary plus existing Packet Bytes behavior.
 
-Current backend parser/model coverage is now default-on:
+Current backend parser/model and selected-packet Summary coverage are now default-on:
 - `DNS payload -> DnsInspectionParser -> DnsMessage(header, questions, answers, authorities, additionals)`
 
-Future Packet Summary / Stream presentation contracts should remain guarded behind:
+Future Stream / service-hint follow-up contracts may still remain guarded behind:
 - `PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS`
 
 ## Scenario Matrix

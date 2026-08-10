@@ -28,6 +28,11 @@ struct PacketSummaryField {
     std::string value {};
 };
 
+enum class DnsSummaryPresentationKind : std::uint8_t {
+    dns = 0,
+    mdns,
+};
+
 enum class PacketDataRole : std::uint8_t {
     none = 0,
     transport_payload,
@@ -90,6 +95,7 @@ struct PacketSummaryOptions {
     std::vector<TlsSelectedPacketRecordContext> reconstructed_tls_records {};
     std::vector<PacketSummaryLayer> tls_summary_layers {};
     std::optional<QuicPresentationResult> quic_presentation {};
+    std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind {};
     std::optional<PacketDataPresentation> packet_data {};
 };
 
