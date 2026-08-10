@@ -75,6 +75,13 @@ constexpr std::size_t kPacketDataPreviewMaxBytes = 32U;
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 
+std::string format_capture_link_type_value(const std::uint32_t link_type) {
+    if (const auto known_name = capture_link_type_name(link_type); !known_name.empty()) {
+        return std::string {known_name};
+    }
+    return "Unknown (" + std::to_string(link_type) + ")";
+}
+
 bool has_complete_arp_sender_ipv4(const PacketDetails& details) {
     return details.has_arp &&
            details.arp.protocol_type == kArpProtocolTypeIpv4 &&
@@ -6149,6 +6156,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
     frame_fields.push_back(make_summary_field("Packet number in file", std::to_string(packet_number_in_file)));
     frame_fields.push_back(make_summary_field("Timestamp", format_packet_timestamp_full(packet)));
+    frame_fields.push_back(make_summary_field("Encapsulation Type", format_capture_link_type_value(packet.data_link_type)));
     frame_fields.push_back(make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"));
     frame_fields.push_back(make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"));
 
