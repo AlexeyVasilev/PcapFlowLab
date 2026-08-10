@@ -51,23 +51,31 @@ std::optional<DnsSummaryPresentationKind> resolve_dns_summary_presentation_kind(
     const PacketDetails& details,
     const std::optional<std::size_t> flow_index
 ) {
-    if (!details.has_dns) {
-        return std::nullopt;
-    }
+    const bool has_meaningful_structured_dns =
+        details.dns_message.has_value() &&
+        details.dns_message->status != DnsInspectionStatus::not_enough_header;
 
     if (flow_index.has_value()) {
         if (const auto row = session.flow_row(*flow_index); row.has_value()) {
-            if (const auto kind = dns_summary_presentation_kind_from_hint(row->protocol_hint); kind.has_value()) {
+            if (const auto kind = dns_summary_presentation_kind_from_hint(row->protocol_hint);
+                kind.has_value() && (details.has_dns || has_meaningful_structured_dns)) {
                 return kind;
             }
         }
     }
 
-    if (packet_matches_mdns_hint(details)) {
+    if (details.has_dns) {
+        if (packet_matches_mdns_hint(details)) {
+            return DnsSummaryPresentationKind::mdns;
+        }
+        return DnsSummaryPresentationKind::dns;
+    }
+
+    if (has_meaningful_structured_dns && packet_matches_mdns_hint(details)) {
         return DnsSummaryPresentationKind::mdns;
     }
 
-    return DnsSummaryPresentationKind::dns;
+    return std::nullopt;
 }
 
 bool has_confirmed_tls_summary_context(
@@ -311,6 +319,11 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
     }
 
     if (details.has_udp) {
+        if (options.dns_summary_presentation_kind.has_value() &&
+            details.dns_message.has_value() &&
+            details.dns_message->status != DnsInspectionStatus::not_enough_header) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
         DnsPacketProtocolAnalyzer dns_analyzer {};
         if (dns_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
             return TransportPayloadDisposition::claimed_by_supported_protocol;

@@ -146,6 +146,18 @@ void populate_application_protocol_details(
     details.has_http = false;
     details.http = {};
 
+    PacketPayloadService payload_service {};
+    if (details.has_udp) {
+        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet_ref.data_link_type);
+        DnsInspectionParser dns_parser {};
+        const auto dns_message = dns_parser.inspect(
+            std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
+        );
+        if (dns_message.status != DnsInspectionStatus::not_enough_header) {
+            details.dns_message = std::move(dns_message);
+        }
+    }
+
     DnsPacketProtocolAnalyzer dns_analyzer {};
     if (const auto dns = dns_analyzer.inspect_message(packet_bytes, packet_ref.data_link_type); dns.has_value()) {
         details.has_dns = true;
@@ -156,13 +168,6 @@ void populate_application_protocol_details(
             .response_code = dns->response_code,
             .query_name = dns->query_name,
         };
-
-        PacketPayloadService payload_service {};
-        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet_ref.data_link_type);
-        DnsInspectionParser dns_parser {};
-        details.dns_message = dns_parser.inspect(
-            std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
-        );
     }
 
     HttpPacketProtocolAnalyzer http_analyzer {};

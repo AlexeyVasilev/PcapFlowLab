@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "PcapTestUtils.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -204,6 +205,33 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers_wit
     return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
 }
 
+std::vector<session_detail::PacketSummaryLayer> build_summary_layers_for_packet_bytes(
+    const std::string& file_name,
+    const std::vector<std::uint8_t>& packet_bytes
+) {
+    const auto capture_path = write_temp_pcap(
+        file_name,
+        make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+            {100U, packet_bytes},
+        })
+    );
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+    const auto packet = require_packet(session, 0U);
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+    auto packet_summary_preparation = prepare_selected_packet_summary_with_production_lengths(
+        session,
+        *details,
+        packet,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt
+    );
+    return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
+}
+
 void expect_flow_hint_fixture(
     const std::filesystem::path& relative_fixture_path,
     const std::string& expected_protocol_hint,
@@ -356,16 +384,22 @@ void expect_dns_summary_contracts() {
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message malformed");
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Questions") == "1");
         PFL_EXPECT(find_summary_child(*dns_layer, "dns_questions") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/dns/14_dns_ipv4_truncated_message.pcap");
         const auto* dns_layer = find_summary_layer(summary_layers, "dns");
         PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title == "Domain Name System, Query");
+        PFL_EXPECT(find_summary_field(*dns_layer, "Transaction ID") != nullptr);
+        PFL_EXPECT(find_summary_field(*dns_layer, "Flags") != nullptr);
+        PFL_EXPECT(find_summary_field(*dns_layer, "Opcode") != nullptr);
         PFL_EXPECT(dns_layer->warning);
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message truncated");
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Questions") == "1");
         PFL_EXPECT(find_summary_child(*dns_layer, "dns_questions") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
@@ -374,6 +408,8 @@ void expect_dns_summary_contracts() {
         PFL_REQUIRE(dns_layer != nullptr);
         PFL_EXPECT(dns_layer->warning);
         PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message malformed");
+        PFL_EXPECT(find_summary_child(*dns_layer, "dns_questions") == nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 }
 
@@ -473,6 +509,7 @@ void expect_mdns_summary_contracts() {
         PFL_REQUIRE(mdns_layer != nullptr);
         PFL_EXPECT(mdns_layer->warning);
         PFL_EXPECT(require_summary_field_value(*mdns_layer, "Warning") == "DNS message truncated");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 
     {
@@ -481,6 +518,7 @@ void expect_mdns_summary_contracts() {
         PFL_REQUIRE(mdns_layer != nullptr);
         PFL_EXPECT(mdns_layer->warning);
         PFL_EXPECT(require_summary_field_value(*mdns_layer, "Warning") == "DNS message malformed");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 }
 
@@ -557,6 +595,24 @@ void expect_dns_mdns_summary_context_without_flow_lookup() {
     }
 }
 
+void expect_non_dns_udp_payload_stays_non_dns() {
+    const auto packet_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 0, 50, 1),
+        ipv4(10, 0, 50, 2),
+        54050,
+        40050,
+        std::vector<std::uint8_t> {
+            0x10U, 0x01U, 0x00U, 0x00U,
+            0x00U, 0x00U, 0x00U, 0x00U,
+            0xdeU, 0xadU, 0xbeU, 0xefU,
+        }
+    );
+    const auto summary_layers =
+        build_summary_layers_for_packet_bytes("pfl_non_dns_udp_summary_negative.pcap", packet_bytes);
+    PFL_EXPECT(find_summary_layer(summary_layers, "dns") == nullptr);
+    PFL_EXPECT(find_summary_layer(summary_layers, "mdns") == nullptr);
+}
+
 }  // namespace
 
 void run_dns_pcap_fixture_tests() {
@@ -566,6 +622,7 @@ void run_dns_pcap_fixture_tests() {
     expect_mdns_summary_contracts();
     expect_dns_mdns_presentation_isolation();
     expect_dns_mdns_summary_context_without_flow_lookup();
+    expect_non_dns_udp_payload_stays_non_dns();
 }
 
 }  // namespace pfl::tests

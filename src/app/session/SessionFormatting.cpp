@@ -5459,7 +5459,7 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(
         return icmpv6_layer;
     }
 
-    if (details.has_dns) {
+    if (options.dns_summary_presentation_kind.has_value() || details.has_dns) {
         const auto presentation_kind =
             options.dns_summary_presentation_kind.value_or(DnsSummaryPresentationKind::dns);
         if (const auto dns_layer = build_dns_summary_layer(details, presentation_kind); dns_layer.has_value()) {

@@ -386,10 +386,11 @@ std::optional<PacketSummaryLayer> build_dns_summary_layer(
     const PacketDetails& details,
     const DnsSummaryPresentationKind presentation_kind
 ) {
-    if (!details.has_dns) {
-        return std::nullopt;
-    }
-    if (!details.dns_message.has_value()) {
+    if (!details.dns_message.has_value() ||
+        details.dns_message->status == DnsInspectionStatus::not_enough_header) {
+        if (!details.has_dns) {
+            return std::nullopt;
+        }
         return build_legacy_dns_summary_layer(details, presentation_kind);
     }
 
