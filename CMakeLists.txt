@@ -109,6 +109,7 @@ add_library(
     src/core/services/FlowHintService.cpp
     src/core/services/QuicInitialParser.cpp
     src/core/services/HexDumpService.cpp
+    src/core/services/DnsInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/frontend/FrontendSettingsJson.cpp
     src/app/session/CaptureSession.cpp
@@ -387,6 +388,7 @@ if(BUILD_TESTING)
         tests/unit/FlowAnalysisTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/DnsInspectionParserTests.cpp
         tests/unit/DnsPcapFixtureTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp

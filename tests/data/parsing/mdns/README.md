@@ -1,6 +1,6 @@
 # mDNS Fixture Contracts
 
-This directory contains classic PCAP fixtures for current mDNS detector-scope regressions and for future guarded shared DNS/mDNS inspection contracts.
+This directory contains classic PCAP fixtures for current mDNS detector-scope regressions, for the now-implemented shared backend `DnsInspectionParser`, and for future guarded mDNS presentation contracts.
 
 Current production behavior intentionally remains limited in this stage:
 - mDNS hint detection depends on UDP/5353 plus the common multicast destination path;
@@ -11,7 +11,9 @@ Current production behavior intentionally remains limited in this stage:
 Future structured DNS/mDNS inspection work should remain guarded behind:
 - `PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS`
 
-The intended future architecture is one shared bounded DNS wire parser reused by mDNS presentation with mDNS-specific semantics layered on top.
+Current backend parser/model coverage is now default-on for shared DNS wire parsing.
+
+The remaining guarded work is mDNS-specific presentation layered on top of the shared bounded DNS wire parser.
 
 ## Scenario Matrix
 

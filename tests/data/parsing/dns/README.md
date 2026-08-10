@@ -1,17 +1,17 @@
 # DNS Fixture Contracts
 
-This directory contains classic PCAP fixtures for current DNS hinting/presentation baselines and for future guarded structured DNS inspection contracts.
+This directory contains classic PCAP fixtures for current DNS hinting/presentation baselines, for the now-implemented shared backend `DnsInspectionParser`, and for future guarded DNS presentation contracts.
 
 Current behavior already covered elsewhere in default-on tests:
 - DNS hint detection on known request/response fixtures;
 - QNAME-based service hinting where already supported;
 - basic packet-local DNS Summary / Packet Bytes behavior.
 
-Future structured DNS parser/model work should remain guarded behind:
-- `PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS`
-
-The future shared architecture is one bounded DNS wire parser reused later by both DNS and mDNS presentation:
+Current backend parser/model coverage is now default-on:
 - `DNS payload -> DnsInspectionParser -> DnsMessage(header, questions, answers, authorities, additionals)`
+
+Future Packet Summary / Stream presentation contracts should remain guarded behind:
+- `PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS`
 
 ## Scenario Matrix
 
