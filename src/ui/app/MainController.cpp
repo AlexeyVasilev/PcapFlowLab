@@ -391,6 +391,9 @@ QString format_protocol_hint_display(const QString& protocol_hint) {
     if (protocol_hint.compare(QStringLiteral("igmpv3"), Qt::CaseInsensitive) == 0) {
         return QStringLiteral("IGMPv3");
     }
+    if (protocol_hint.compare(QStringLiteral("mdns"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("mDNS");
+    }
 
     return protocol_hint.toUpper();
 }

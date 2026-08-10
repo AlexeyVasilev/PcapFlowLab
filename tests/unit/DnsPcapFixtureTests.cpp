@@ -9,6 +9,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 
 namespace pfl::tests {
@@ -263,10 +264,35 @@ void expect_current_default_dns_baseline() {
 }
 
 void expect_current_default_mdns_detector_scope() {
-    expect_flow_hint_fixture("parsing/mdns/01_mdns_ipv4_ptr_query.pcap", "mdns", std::nullopt);
-    expect_flow_hint_fixture("parsing/mdns/02_mdns_ipv6_ptr_query.pcap", "mdns", std::nullopt);
+    expect_flow_hint_fixture(
+        "parsing/mdns/01_mdns_ipv4_ptr_query.pcap",
+        "mdns",
+        std::optional<std::string> {"_demo-service._tcp.local"}
+    );
+    expect_flow_hint_fixture(
+        "parsing/mdns/02_mdns_ipv6_ptr_query.pcap",
+        "mdns",
+        std::optional<std::string> {"_demo-service._tcp.local"}
+    );
+    expect_flow_hint_fixture(
+        "parsing/mdns/03_mdns_ipv4_ptr_response.pcap",
+        "mdns",
+        std::optional<std::string> {"_demo-service._tcp.local"}
+    );
+    expect_flow_hint_fixture(
+        "parsing/mdns/04_mdns_ipv4_dns_sd_response.pcap",
+        "mdns",
+        std::optional<std::string> {"_demo-service._tcp.local"}
+    );
+    expect_flow_hint_fixture("parsing/mdns/10_mdns_ipv4_truncated_message.pcap", "mdns", std::nullopt);
+    expect_flow_hint_fixture("parsing/mdns/11_mdns_ipv4_malformed_pointer.pcap", "mdns", std::nullopt);
     expect_flow_hint_fixture("parsing/mdns/12_mdns_wrong_port_negative.pcap", "", std::nullopt);
     expect_flow_hint_fixture("parsing/mdns/13_mdns_wrong_multicast_destination_negative.pcap", "", std::nullopt);
+}
+
+void expect_mdns_display_text() {
+    PFL_EXPECT(session_detail::format_flow_protocol_hint_display("mdns") == "mDNS");
+    PFL_EXPECT(session_detail::format_flow_protocol_hint_display("dns") == "DNS");
 }
 
 void expect_dns_summary_contracts() {
@@ -618,6 +644,7 @@ void expect_non_dns_udp_payload_stays_non_dns() {
 void run_dns_pcap_fixture_tests() {
     expect_current_default_dns_baseline();
     expect_current_default_mdns_detector_scope();
+    expect_mdns_display_text();
     expect_dns_summary_contracts();
     expect_mdns_summary_contracts();
     expect_dns_mdns_presentation_isolation();

@@ -6,8 +6,12 @@ Current production behavior intentionally remains limited in this stage:
 - mDNS hint detection depends on UDP/5353 plus the common multicast destination path;
 - selected-packet Summary now uses the shared structured DNS wire model with an mDNS-specific layer title and class-bit presentation;
 - stream presentation is still generic UDP/DNS-adjacent rather than a dedicated structured mDNS surface;
-- observed service hint behavior is currently empty;
-- user-facing detected text may still appear as `MDNS` in some surfaces.
+- flow-level Service now uses a bounded best-effort name hint:
+  1. first meaningful Question name;
+  2. otherwise first meaningful PTR owner name;
+  3. otherwise first meaningful RR owner name;
+  4. otherwise empty;
+- user-facing detected text now appears as `mDNS`.
 
 Future Stream / service-hint follow-up work may still remain guarded behind:
 - `PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS`
@@ -20,8 +24,8 @@ The remaining guarded work is mDNS-specific presentation layered on top of the s
 
 | Fixture | Transport | Msg | Structure | Compression | RR types | Malformed / detector note | Current behavior | Planned contract |
 |---|---|---|---|---|---|---|---|---|
-| `01_mdns_ipv4_ptr_query.pcap` | IPv4 UDP/5353 to `224.0.0.251` | Query | one question | none | PTR | none | should detect as mDNS; service currently empty | future structured mDNS PTR-query contract |
-| `02_mdns_ipv6_ptr_query.pcap` | IPv6 UDP/5353 to `ff02::fb` | Query | one question | none | PTR | none | should detect as mDNS; service currently empty | future IPv6 mDNS PTR-query contract |
+| `01_mdns_ipv4_ptr_query.pcap` | IPv4 UDP/5353 to `224.0.0.251` | Query | one question | none | PTR | none | should detect as mDNS; Service = `_demo-service._tcp.local` | future structured mDNS PTR-query contract |
+| `02_mdns_ipv6_ptr_query.pcap` | IPv6 UDP/5353 to `ff02::fb` | Query | one question | none | PTR | none | should detect as mDNS; Service = `_demo-service._tcp.local` | future IPv6 mDNS PTR-query contract |
 | `03_mdns_ipv4_ptr_response.pcap` | IPv4 UDP/5353 multicast | Response | one answer | none | PTR | none | packet remains structurally valid | future PTR owner/instance contract |
 | `04_mdns_ipv4_dns_sd_response.pcap` | IPv4 UDP/5353 multicast | Response | answer + additionals | none | PTR, SRV, TXT, A | none | packet remains structurally valid | future DNS-SD multi-record contract |
 | `05_mdns_ipv6_dns_sd_response_aaaa.pcap` | IPv6 UDP/5353 multicast | Response | answer + additionals | none | PTR, SRV, TXT, AAAA | none | packet remains structurally valid | future IPv6 DNS-SD additional AAAA contract |
@@ -41,9 +45,9 @@ The remaining guarded work is mDNS-specific presentation layered on top of the s
   - service type: `_demo-service._tcp.local`
   - instance: `Example Device._demo-service._tcp.local`
   - host: `example-device.local` / `example-device-v6.local`
-- Future best-effort mDNS service-hint rule for guarded expectations:
+- Implemented best-effort mDNS service-hint rule:
   1. first meaningful Question name;
   2. otherwise first meaningful PTR owner name;
   3. otherwise first meaningful RR owner name;
   4. otherwise empty.
-- Future user-facing detected terminology should be `mDNS`, not `MDNS`.
+- User-facing detected terminology is `mDNS`.

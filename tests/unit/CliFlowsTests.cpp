@@ -645,6 +645,21 @@ void expect_shared_cli_flow_selector_helpers() {
 void expect_flows_runtime_behavior() {
     const auto capture_path = build_cli_flows_capture_path();
 
+    {
+        const std::vector<std::string> args {
+            "flows",
+            fixture_path("parsing/mdns/01_mdns_ipv4_ptr_query.pcap").string(),
+            "--progress",
+            "off",
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stdout_text, "mDNS"));
+        PFL_EXPECT(contains_text(result.stdout_text, "_demo-service._tcp.local"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "MDNS"));
+    }
+
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
     const auto baseline_query = adapter.query_flows(session_detail::FlowQuery {});
