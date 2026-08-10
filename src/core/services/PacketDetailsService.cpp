@@ -3442,6 +3442,17 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             .protocol_type = detail::read_be16(packet_bytes, 14U),
             .packet_type = detail::read_be16(packet_bytes, 0U),
             .hardware_type = detail::read_be16(packet_bytes, 2U),
+            .address_length = detail::read_be16(packet_bytes, 4U),
+            .address_bytes = {
+                packet_bytes[6U],
+                packet_bytes[7U],
+                packet_bytes[8U],
+                packet_bytes[9U],
+                packet_bytes[10U],
+                packet_bytes[11U],
+                packet_bytes[12U],
+                packet_bytes[13U],
+            },
         };
 
         return LinkLayerView {
@@ -3461,6 +3472,17 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             .protocol_type = detail::read_be16(packet_bytes, 0U),
             .packet_type = packet_bytes[10U],
             .hardware_type = detail::read_be16(packet_bytes, 8U),
+            .address_length = packet_bytes[11U],
+            .address_bytes = {
+                packet_bytes[12U],
+                packet_bytes[13U],
+                packet_bytes[14U],
+                packet_bytes[15U],
+                packet_bytes[16U],
+                packet_bytes[17U],
+                packet_bytes[18U],
+                packet_bytes[19U],
+            },
         };
 
         return LinkLayerView {

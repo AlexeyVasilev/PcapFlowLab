@@ -35,6 +35,7 @@ struct SelectedPacketByteOwnerId {
 
 enum class SelectedPacketByteViewKind : std::uint8_t {
     frame = 0,
+    linux_sll,
     ethernet_payload,
     ieee8023_payload,
     vlan_payload,

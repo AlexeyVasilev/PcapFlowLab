@@ -3318,6 +3318,53 @@ void run_packet_details_tests() {
     }
 
     {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/01_sll_ipv4_tcp.pcap");
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "frame") == 0U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "linux-cooked") == 1U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "ipv4") == 2U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp") == 3U);
+
+        const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(linux_sll_layer != nullptr);
+        PFL_EXPECT(linux_sll_layer->title == "Linux cooked capture v1");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Packet Type") == "0x1234");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Type") == "0x3456");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Length") == "6");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address") == "10:20:30:40:50:60");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Protocol") == "IPv4 (0x0800)");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/13_sll_truncated_inner_ipv4.pcap");
+        const auto* warning_layer = find_summary_layer(summary_layers, "warnings");
+        const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(warning_layer != nullptr);
+        PFL_REQUIRE(linux_sll_layer != nullptr);
+        PFL_EXPECT(linux_sll_layer->title == "Linux cooked capture v1");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Packet Type") == "0x0a0b");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Type") == "0x0c0d");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Protocol") == "IPv4 (0x0800)");
+        const auto has_truncation_warning = std::any_of(
+            warning_layer->fields.begin(),
+            warning_layer->fields.end(),
+            [](const session_detail::PacketSummaryField& field) {
+                return field.value == "Packet is truncated in capture";
+            }
+        );
+        PFL_EXPECT(has_truncation_warning);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/16_sll_addrlen_12_ipv4_tcp.pcap");
+        const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(linux_sll_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Length") == "12");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Warning") ==
+            "Declared link-layer address length exceeds the fixed 8-byte SLL address field");
+    }
+
+    {
         PacketDetailsService service {};
         auto short_arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U);
         short_arp_packet.resize(14U + 6U);

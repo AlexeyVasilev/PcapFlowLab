@@ -433,6 +433,79 @@ void run_selected_packet_byte_presentation_tests_impl() {
     }
 
     {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/linux_cooked/01_sll_ipv4_tcp.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+        const auto descriptors = session_detail::build_selected_packet_byte_view_descriptors(presentation);
+
+        const auto* frame = require_view(presentation, SelectedPacketByteViewKind::frame);
+        const auto* linux_sll = require_view(presentation, SelectedPacketByteViewKind::linux_sll);
+        const auto* ipv4_payload = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
+        const auto* tcp_payload = require_view(presentation, SelectedPacketByteViewKind::tcp_payload);
+        const std::vector<std::string> expected_labels {
+            "Captured Packet",
+            "Linux cooked capture v1",
+            "IPv4 Packet",
+            "TCP Segment",
+        };
+        PFL_EXPECT(collect_labels(presentation) == expected_labels);
+        PFL_REQUIRE(descriptors.size() == 4U);
+        PFL_EXPECT(descriptors[0].stable_id == "frame:0:0");
+        PFL_EXPECT(descriptors[1].stable_id == "linux_sll:0:0");
+        PFL_EXPECT(descriptors[2].stable_id == "ipv4:0:0");
+        PFL_EXPECT(descriptors[3].stable_id == "tcp:0:0");
+        PFL_EXPECT(!frame->parent_id.has_value());
+        PFL_EXPECT(frame->offset == 0U);
+        PFL_EXPECT(frame->captured_length == 56U);
+        PFL_EXPECT(frame->declared_length == std::optional<std::uint32_t> {56U});
+        expect_parent(*linux_sll, SelectedPacketByteViewKind::frame);
+        PFL_EXPECT(linux_sll->offset == 0U);
+        PFL_EXPECT(linux_sll->captured_length == 56U);
+        PFL_EXPECT(linux_sll->declared_length == std::optional<std::uint32_t> {56U});
+        PFL_REQUIRE(linux_sll->payload_range.has_value());
+        PFL_EXPECT(linux_sll->payload_range->offset == 16U);
+        PFL_EXPECT(linux_sll->payload_range->captured_length == 40U);
+        PFL_EXPECT(linux_sll->payload_range->declared_length == std::optional<std::uint32_t> {40U});
+        expect_parent(*ipv4_payload, SelectedPacketByteViewKind::linux_sll);
+        expect_parent(*tcp_payload, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_EXPECT(ipv4_payload->offset == 16U);
+        PFL_EXPECT(ipv4_payload->captured_length == 40U);
+        PFL_EXPECT(ipv4_payload->declared_length == std::optional<std::uint32_t> {40U});
+        PFL_EXPECT(tcp_payload->offset == 36U);
+        expect_materialized_view_aliases_owner_bytes(
+            presentation,
+            SelectedPacketByteViewId {.kind = SelectedPacketByteViewKind::frame, .occurrence = 0U},
+            bytes
+        );
+        expect_materialized_view_aliases_owner_bytes(
+            presentation,
+            linux_sll->id,
+            bytes
+        );
+        expect_hex_prefix(
+            presentation,
+            linux_sll->id,
+            bytes,
+            {
+                0x12U, 0x34U,
+                0x34U, 0x56U,
+                0x00U, 0x06U,
+                0x10U, 0x20U, 0x30U, 0x40U, 0x50U, 0x60U, 0x70U, 0x80U,
+                0x08U, 0x00U,
+            }
+        );
+        expect_hex_prefix(
+            presentation,
+            linux_sll->id,
+            bytes,
+            {0x45U, 0x00U},
+            session_detail::SelectedPacketByteRangeMode::payload_only
+        );
+    }
+
+    {
         const std::vector<std::uint8_t> captured_packet {
             0x00U, 0x11U, 0x22U, 0x33U, 0x44U,
             0x55U, 0x66U, 0x77U, 0x88U, 0x99U,

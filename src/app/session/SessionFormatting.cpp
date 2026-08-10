@@ -6,6 +6,8 @@
 #include <sstream>
 #include <string_view>
 
+#include "core/io/LinkType.h"
+
 namespace pfl::session_detail {
 
 std::vector<TlsRecordModel> inspect_tls_summary_records(
@@ -375,6 +377,102 @@ std::string format_vlan_tpid_name(const std::uint16_t tpid) {
     default:
         return "VLAN";
     }
+}
+
+PacketSummaryField make_summary_field(std::string label, std::string value);
+
+std::optional<std::string_view> linux_sll_packet_type_name(const std::uint16_t packet_type) noexcept {
+    switch (packet_type) {
+    case 0x0000U:
+        return "Host";
+    case 0x0001U:
+        return "Broadcast";
+    case 0x0002U:
+        return "Multicast";
+    case 0x0003U:
+        return "Other host";
+    case 0x0004U:
+        return "Outgoing";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string_view> linux_sll_hardware_type_name(const std::uint16_t hardware_type) noexcept {
+    switch (hardware_type) {
+    case 0x0001U:
+        return "Ethernet";
+    case 0x0304U:
+        return "Loopback";
+    case 0x0320U:
+        return "IEEE 802.11";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_linux_sll_named_u16(
+    const std::uint16_t value,
+    const std::optional<std::string_view> name
+) {
+    if (!name.has_value()) {
+        return format_hex16_value(value);
+    }
+    return std::string(*name) + " (" + format_hex16_value(value) + ")";
+}
+
+std::optional<PacketSummaryLayer> build_linux_sll_summary_layer(const PacketDetails& details) {
+    if (!details.has_linux_cooked || details.linux_cooked.link_type != kLinkTypeLinuxSll) {
+        return std::nullopt;
+    }
+
+    const auto bounded_address_length = std::min<std::size_t>(
+        static_cast<std::size_t>(details.linux_cooked.address_length),
+        details.linux_cooked.address_bytes.size()
+    );
+    const auto address_text = bounded_address_length == 0U
+        ? std::string {"none"}
+        : format_hex_byte_sequence(std::span<const std::uint8_t>(
+            details.linux_cooked.address_bytes.data(),
+            bounded_address_length
+        ));
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field(
+            "Packet Type",
+            format_linux_sll_named_u16(
+                details.linux_cooked.packet_type,
+                linux_sll_packet_type_name(details.linux_cooked.packet_type)
+            )
+        ),
+        make_summary_field(
+            "Link-layer Address Type",
+            format_linux_sll_named_u16(
+                details.linux_cooked.hardware_type,
+                linux_sll_hardware_type_name(details.linux_cooked.hardware_type)
+            )
+        ),
+        make_summary_field("Link-layer Address Length", std::to_string(details.linux_cooked.address_length)),
+        make_summary_field("Link-layer Address", address_text),
+        make_summary_field("Protocol", format_ether_type_value(details.linux_cooked.protocol_type)),
+    };
+
+    if (details.linux_cooked.address_length > details.linux_cooked.address_bytes.size()) {
+        fields.push_back(make_summary_field(
+            "Warning",
+            "Declared link-layer address length exceeds the fixed 8-byte SLL address field"
+        ));
+    }
+
+    return PacketSummaryLayer {
+        .id = "linux-cooked",
+        .title = "Linux cooked capture v1",
+        .fields = std::move(fields),
+        .warning = details.linux_cooked.address_length > details.linux_cooked.address_bytes.size(),
+        .marker_text = details.linux_cooked.address_length > details.linux_cooked.address_bytes.size()
+            ? std::string {"Warning"}
+            : std::string {},
+    };
 }
 
 std::string format_vlan_summary_title(const VlanTagDetails& tag) {
@@ -6100,6 +6198,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 ", Dst: " + format_mac_address(details.ethernet.dst_mac),
             .fields = std::move(ethernet_fields),
         });
+    }
+
+    if (const auto linux_sll_layer = build_linux_sll_summary_layer(details); linux_sll_layer.has_value()) {
+        append_layer_if_not_empty(layers, *linux_sll_layer);
     }
 
     const bool has_nested_inner_ethernet = details.has_inner_ethernet && (details.has_mpls || details.has_pbb);
