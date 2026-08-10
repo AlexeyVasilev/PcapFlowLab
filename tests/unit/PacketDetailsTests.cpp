@@ -3373,6 +3373,67 @@ void run_packet_details_tests() {
     }
 
     {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/05_sll2_ipv4_tcp.pcap");
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "frame") == 0U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "linux-cooked") == 1U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "ipv4") == 2U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp") == 3U);
+
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*frame_layer, "Encapsulation Type") == "Linux cooked capture v2");
+        PFL_EXPECT(linux_sll2_layer->title == "Linux cooked capture v2");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Protocol") == "IPv4 (0x0800)");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Reserved") == "0x0000");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Interface Index") == "16909060");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address Type") == "0x0f0e");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Packet Type") == "0x007f");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address Length") == "6");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address") == "21:22:23:24:25:26");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/12_sll2_unknown_protocol.pcap");
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*frame_layer, "Encapsulation Type") == "Linux cooked capture v2");
+        PFL_EXPECT(linux_sll2_layer->title == "Linux cooked capture v2");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Protocol") == "0x4321");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/18_sll2_addrlen_12_ipv6_udp.pcap");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address Length") == "12");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Warning") ==
+            "Declared link-layer address length exceeds the fixed 8-byte SLL2 address field");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/14_sll2_truncated_inner_ipv6.pcap");
+        const auto* warning_layer = find_summary_layer(summary_layers, "warnings");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(warning_layer != nullptr);
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(linux_sll2_layer->title == "Linux cooked capture v2");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Protocol") == "IPv6 (0x86dd)");
+        const auto has_truncation_warning = std::any_of(
+            warning_layer->fields.begin(),
+            warning_layer->fields.end(),
+            [](const auto& field) {
+                return field.value.find("IPv6 header truncated") != std::string::npos;
+            }
+        );
+        PFL_EXPECT(has_truncation_warning);
+    }
+
+    {
         const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/13_sll_truncated_inner_ipv4.pcap");
         const auto* warning_layer = find_summary_layer(summary_layers, "warnings");
         const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");

@@ -428,11 +428,14 @@ std::string format_linux_sll_named_u16(
     return std::string(*name) + " (" + format_hex16_value(value) + ")";
 }
 
-std::optional<PacketSummaryLayer> build_linux_sll_summary_layer(const PacketDetails& details) {
-    if (!details.has_linux_cooked || details.linux_cooked.link_type != kLinkTypeLinuxSll) {
+std::optional<PacketSummaryLayer> build_linux_cooked_summary_layer(const PacketDetails& details) {
+    if (!details.has_linux_cooked ||
+        (details.linux_cooked.link_type != kLinkTypeLinuxSll &&
+            details.linux_cooked.link_type != kLinkTypeLinuxSll2)) {
         return std::nullopt;
     }
 
+    const bool is_sll2 = details.linux_cooked.link_type == kLinkTypeLinuxSll2;
     const auto bounded_address_length = std::min<std::size_t>(
         static_cast<std::size_t>(details.linux_cooked.address_length),
         details.linux_cooked.address_bytes.size()
@@ -444,39 +447,72 @@ std::optional<PacketSummaryLayer> build_linux_sll_summary_layer(const PacketDeta
             bounded_address_length
         ));
 
-    std::vector<PacketSummaryField> fields {
-        make_summary_field(
-            "Packet Type",
-            format_linux_sll_named_u16(
-                details.linux_cooked.packet_type,
-                linux_sll_packet_type_name(details.linux_cooked.packet_type)
-            )
-        ),
-        make_summary_field(
-            "Link-layer Address Type",
-            format_linux_sll_named_u16(
-                details.linux_cooked.hardware_type,
-                linux_sll_hardware_type_name(details.linux_cooked.hardware_type)
-            )
-        ),
-        make_summary_field("Link-layer Address Length", std::to_string(details.linux_cooked.address_length)),
-        make_summary_field("Link-layer Address", address_text),
-        make_summary_field("Protocol", format_ether_type_value(details.linux_cooked.protocol_type)),
-    };
+    std::vector<PacketSummaryField> fields {};
+    if (is_sll2) {
+        fields = {
+            make_summary_field("Protocol", format_ether_type_value(details.linux_cooked.protocol_type)),
+            make_summary_field("Reserved", format_hex16_value(details.linux_cooked.reserved)),
+            make_summary_field("Interface Index", std::to_string(details.linux_cooked.interface_index)),
+            make_summary_field(
+                "Link-layer Address Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.hardware_type,
+                    linux_sll_hardware_type_name(details.linux_cooked.hardware_type)
+                )
+            ),
+            make_summary_field(
+                "Packet Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.packet_type,
+                    linux_sll_packet_type_name(details.linux_cooked.packet_type)
+                )
+            ),
+            make_summary_field("Link-layer Address Length", std::to_string(details.linux_cooked.address_length)),
+            make_summary_field("Link-layer Address", address_text),
+        };
+    } else {
+        fields = {
+            make_summary_field(
+                "Packet Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.packet_type,
+                    linux_sll_packet_type_name(details.linux_cooked.packet_type)
+                )
+            ),
+            make_summary_field(
+                "Link-layer Address Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.hardware_type,
+                    linux_sll_hardware_type_name(details.linux_cooked.hardware_type)
+                )
+            ),
+            make_summary_field("Link-layer Address Length", std::to_string(details.linux_cooked.address_length)),
+            make_summary_field("Link-layer Address", address_text),
+            make_summary_field("Protocol", format_ether_type_value(details.linux_cooked.protocol_type)),
+        };
+    }
 
+    bool warning = false;
     if (details.linux_cooked.address_length > details.linux_cooked.address_bytes.size()) {
         fields.push_back(make_summary_field(
             "Warning",
-            "Declared link-layer address length exceeds the fixed 8-byte SLL address field"
+            is_sll2
+                ? "Declared link-layer address length exceeds the fixed 8-byte SLL2 address field"
+                : "Declared link-layer address length exceeds the fixed 8-byte SLL address field"
         ));
+        warning = true;
+    }
+    if (is_sll2 && details.linux_cooked.reserved != 0U) {
+        fields.push_back(make_summary_field("Warning", "SLL2 reserved field is non-zero"));
+        warning = true;
     }
 
     return PacketSummaryLayer {
         .id = "linux-cooked",
-        .title = "Linux cooked capture v1",
+        .title = is_sll2 ? "Linux cooked capture v2" : "Linux cooked capture v1",
         .fields = std::move(fields),
-        .warning = details.linux_cooked.address_length > details.linux_cooked.address_bytes.size(),
-        .marker_text = details.linux_cooked.address_length > details.linux_cooked.address_bytes.size()
+        .warning = warning,
+        .marker_text = warning
             ? std::string {"Warning"}
             : std::string {},
     };
@@ -6208,8 +6244,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (const auto linux_sll_layer = build_linux_sll_summary_layer(details); linux_sll_layer.has_value()) {
-        append_layer_if_not_empty(layers, *linux_sll_layer);
+    if (const auto linux_cooked_layer = build_linux_cooked_summary_layer(details); linux_cooked_layer.has_value()) {
+        append_layer_if_not_empty(layers, *linux_cooked_layer);
     }
 
     const bool has_nested_inner_ethernet = details.has_inner_ethernet && (details.has_mpls || details.has_pbb);

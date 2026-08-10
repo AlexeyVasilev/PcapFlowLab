@@ -70,6 +70,8 @@ struct LinuxCookedDetails {
     std::uint16_t protocol_type {0};
     std::uint16_t packet_type {0};
     std::uint16_t hardware_type {0};
+    std::uint16_t reserved {0};
+    std::uint32_t interface_index {0};
     std::uint16_t address_length {0};
     std::array<std::uint8_t, 8> address_bytes {};
 };

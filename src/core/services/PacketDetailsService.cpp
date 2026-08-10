@@ -3472,6 +3472,8 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             .protocol_type = detail::read_be16(packet_bytes, 0U),
             .packet_type = packet_bytes[10U],
             .hardware_type = detail::read_be16(packet_bytes, 8U),
+            .reserved = detail::read_be16(packet_bytes, 2U),
+            .interface_index = detail::read_be32(packet_bytes, 4U),
             .address_length = packet_bytes[11U],
             .address_bytes = {
                 packet_bytes[12U],
