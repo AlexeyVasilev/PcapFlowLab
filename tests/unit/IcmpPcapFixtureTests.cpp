@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
@@ -81,6 +82,40 @@ const session_detail::PacketSummaryField* find_field(
         return field.label == label;
     });
     return it == layer.fields.end() ? nullptr : &(*it);
+}
+
+const session_detail::PacketSummaryLayer* require_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    const auto* layer = find_layer(layers, id);
+    PFL_REQUIRE(layer != nullptr);
+    return layer;
+}
+
+std::string require_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto* field = find_field(layer, label);
+    PFL_REQUIRE(field != nullptr);
+    return field->value;
+}
+
+void expect_field_absent(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    PFL_EXPECT(find_field(layer, label) == nullptr);
+}
+
+bool layer_contains_text(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view needle
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label.find(needle) != std::string::npos || field.value.find(needle) != std::string::npos;
+    });
 }
 
 std::string require_protocol_path_text(const CaptureSession& session, const FlowRow& row) {
@@ -161,17 +196,16 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(protocol_text.find("Destination: 198.51.100.20") != std::string::npos);
 
         const auto layers = build_summary_layers(*details, packet);
-        const auto* icmp_layer = find_layer(layers, "icmp");
-        PFL_REQUIRE(icmp_layer != nullptr);
-        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol");
-        PFL_REQUIRE(find_field(*icmp_layer, "Type") != nullptr);
-        PFL_REQUIRE(find_field(*icmp_layer, "Code") != nullptr);
-        PFL_REQUIRE(find_field(*icmp_layer, "Source") != nullptr);
-        PFL_REQUIRE(find_field(*icmp_layer, "Destination") != nullptr);
-        PFL_EXPECT(find_field(*icmp_layer, "Type")->value == "8");
-        PFL_EXPECT(find_field(*icmp_layer, "Code")->value == "0");
-        PFL_EXPECT(find_field(*icmp_layer, "Source")->value == "192.0.2.10");
-        PFL_EXPECT(find_field(*icmp_layer, "Destination")->value == "198.51.100.20");
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Echo Request");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Echo Request (8)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "0");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Source") == "192.0.2.10");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Destination") == "198.51.100.20");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Checksum").rfind("0x", 0U) == 0U);
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Identifier").empty());
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Sequence Number").empty());
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Payload Length").empty());
 
         const auto presentation = session.derive_selected_packet_byte_presentation(packet);
         PFL_REQUIRE(presentation.has_value());
@@ -192,6 +226,57 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(details->has_icmp);
         PFL_EXPECT(details->icmp.type == 0U);
         PFL_EXPECT(details->icmp.code == 0U);
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Echo Reply");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Echo Reply (0)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "0");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Checksum").rfind("0x", 0U) == 0U);
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Identifier").empty());
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Sequence Number").empty());
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Payload Length").empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/03_icmp_dest_unreachable_network.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Destination Unreachable");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Destination Unreachable (3)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Network Unreachable (0)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Checksum").rfind("0x", 0U) == 0U);
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/04_icmp_dest_unreachable_host.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Host Unreachable (1)");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/05_icmp_dest_unreachable_port.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Port Unreachable (3)");
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
     }
 
     {
@@ -209,6 +294,69 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(details->has_icmp);
         PFL_EXPECT(details->icmp.type == 3U);
         PFL_EXPECT(details->icmp.code == 4U);
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Fragmentation Needed (4)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Next-Hop MTU") == "1400");
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/07_icmp_time_exceeded_ttl.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Time Exceeded");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Time Exceeded (11)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "TTL Exceeded in Transit (0)");
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/08_icmp_time_exceeded_reassembly.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Fragment Reassembly Time Exceeded (1)");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/09_icmp_redirect_host_gateway.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Redirect");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Redirect Datagram for the Host (1)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Gateway Address") == "192.0.2.254");
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/10_icmp_parameter_problem_pointer_5.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Parameter Problem");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Pointer Indicates Error (0)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Pointer") == "5");
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
     }
 
     {
@@ -224,10 +372,26 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(details->icmp.code == 1U);
 
         const auto layers = build_summary_layers(*details, packet);
-        const auto* icmp_layer = find_layer(layers, "icmp");
-        PFL_REQUIRE(icmp_layer != nullptr);
-        PFL_EXPECT(find_field(*icmp_layer, "Type")->value == "99");
-        PFL_EXPECT(find_field(*icmp_layer, "Code")->value == "1");
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Unknown (99)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "1");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/12_icmp_echo_request_unknown_code_7.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Echo Request (8)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "7");
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Identifier").empty());
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Sequence Number").empty());
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Payload Length").empty());
     }
 
     {
@@ -245,6 +409,18 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(details->has_icmp);
         PFL_EXPECT(details->icmp.type == 8U);
         PFL_EXPECT(details->icmp.code == 0U);
+
+        const auto layers = build_summary_layers(*details, make_packet_ref(packet));
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->warning);
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Echo Request");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Echo Request (8)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "0");
+        expect_field_absent(*icmp_layer, "Checksum");
+        expect_field_absent(*icmp_layer, "Identifier");
+        expect_field_absent(*icmp_layer, "Sequence Number");
+        expect_field_absent(*icmp_layer, "Payload Length");
+        PFL_EXPECT(layer_contains_text(*icmp_layer, "incomplete") || layer_contains_text(*icmp_layer, "truncated"));
     }
 
     {
@@ -259,6 +435,35 @@ void run_icmp_pcap_fixture_tests() {
         PFL_EXPECT(details->has_icmp);
         PFL_EXPECT(details->icmp.type == 8U);
         PFL_EXPECT(details->icmp.code == 0U);
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->warning);
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Echo Request (8)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "0");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Checksum").rfind("0x", 0U) == 0U);
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Identifier").empty());
+        expect_field_absent(*icmp_layer, "Sequence Number");
+        expect_field_absent(*icmp_layer, "Payload Length");
+        PFL_EXPECT(layer_contains_text(*icmp_layer, "truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/15_icmp_truncated_error_quote.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+
+        const auto layers = build_summary_layers(*details, packet);
+        const auto* icmp_layer = require_layer(layers, "icmp");
+        PFL_EXPECT(icmp_layer->warning);
+        PFL_EXPECT(icmp_layer->title == "Internet Control Message Protocol, Destination Unreachable");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Type") == "Destination Unreachable (3)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Code") == "Port Unreachable (3)");
+        PFL_EXPECT(require_field_value(*icmp_layer, "Checksum").rfind("0x", 0U) == 0U);
+        PFL_EXPECT(!require_field_value(*icmp_layer, "Quoted Data Length").empty());
+        PFL_EXPECT(layer_contains_text(*icmp_layer, "truncated"));
     }
 
     {

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/services/DnsInspectionParser.h"
+#include "core/services/IcmpInspectionParser.h"
 
 namespace pfl {
 
@@ -743,6 +744,7 @@ struct PacketDetails {
 
     bool has_icmp {false};
     IcmpDetails icmp {};
+    std::optional<IcmpMessage> icmp_message {};
 
     bool has_icmpv6 {false};
     IcmpV6Details icmpv6 {};

@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "app/session/DnsSummaryPresentation.h"
+#include "app/session/IcmpSummaryPresentation.h"
 #include "core/io/LinkType.h"
 
 namespace pfl::session_detail {
@@ -3294,27 +3295,6 @@ void append_protocol_field_if_present(
     if (value.has_value() && !value->empty()) {
         fields.push_back(make_summary_field(std::move(label), *value));
     }
-}
-
-std::optional<PacketSummaryLayer> build_icmp_summary_layer(const PacketDetails& details) {
-    if (!details.has_icmp) {
-        return std::nullopt;
-    }
-
-    std::vector<PacketSummaryField> fields {
-        make_summary_field("Type", std::to_string(details.icmp.type)),
-        make_summary_field("Code", std::to_string(details.icmp.code)),
-    };
-    if (details.has_ipv4) {
-        fields.push_back(make_summary_field("Source", format_ipv4_address(details.ipv4.src_addr)));
-        fields.push_back(make_summary_field("Destination", format_ipv4_address(details.ipv4.dst_addr)));
-    }
-
-    return PacketSummaryLayer {
-        .id = "icmp",
-        .title = "Internet Control Message Protocol",
-        .fields = std::move(fields),
-    };
 }
 
 std::string format_igmp_type_text(const IgmpDetails& igmp) {

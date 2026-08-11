@@ -14,11 +14,10 @@ Current shared production support already covers:
 - flow recognition as protocol `ICMP`;
 - portless flow identity keyed by the outer effective IPv4 endpoints;
 - Packet Details text with basic `Type`, `Code`, `Source`, and `Destination`;
-- layered Packet Summary with a conservative `icmp` layer after IPv4;
+- layered Packet Summary driven by the bounded `IcmpInspectionParser -> IcmpMessage` path after IPv4;
 - Packet Bytes `ICMP Message` protocol-unit view for recognized ICMP packets.
 
-Current production behavior intentionally does not yet cover:
-- structured ICMPv4 type-specific parsing beyond common `Type` / `Code`;
+Current production behavior intentionally does not cover:
 - checksum validation reporting;
 - quoted-inner-datagram recursive decoding;
 - Echo request/reply correlation;
@@ -31,18 +30,18 @@ Current flow identity contract remains unchanged:
 - quoted/original datagrams inside ICMP errors do not affect flow identity;
 - persistent protocol-path identity still stops at `IPv4` for top-level ICMP flows.
 
-## Future v1 ICMP Summary contract
+## Current ICMP Summary contract
 
-The next implementation stage is expected to preserve the current shared pipeline:
+Current shared pipeline is:
 
 `IPv4 payload (protocol 1)` -> bounded `IcmpInspectionParser` -> `IcmpMessage` -> structured Packet Summary + `ICMP Message` byte view.
 
-Future Summary should continue to expose the common fixed header:
+Current Summary exposes the common fixed header:
 - `Type`
 - `Code`
 - `Checksum`
 
-and add useful type-specific fields where available:
+and useful type-specific fields where available:
 - Echo Request / Echo Reply:
   - `Identifier`
   - `Sequence Number`
@@ -63,11 +62,11 @@ and add useful type-specific fields where available:
 
 Unknown `Type` / `Code` values must remain visible numerically.
 Malformed and truncated packets must remain bounded.
-Deep recursive parsing of the quoted/original datagram is explicitly out of scope for v1.
+Deep recursive parsing of the quoted/original datagram remains explicitly out of scope.
 
-## Future ICMP Bytes contract
+## Current ICMP Bytes contract
 
-For a normal top-level IPv4 ICMP packet, intended Packet Bytes views remain conceptually:
+For a normal top-level IPv4 ICMP packet, Packet Bytes views remain conceptually:
 - `Captured Packet` when needed by generic fallback logic;
 - existing link-layer view such as `Ethernet II Frame`;
 - `IPv4 Packet`;
@@ -86,7 +85,7 @@ Error-message fixtures intentionally carry realistic quoted bytes, usually:
 - original IPv4 header;
 - enough original transport bytes to show that the quoted packet was UDP or TCP.
 
-The future guaranteed contract is only:
+The guaranteed contract is:
 - quoted/original data is bounded;
 - quoted/original data length is known.
 
@@ -107,7 +106,7 @@ It is not treated as a trivial renumbering of ICMPv4 because useful ICMPv6 suppo
 
 ## Scenario Matrix
 
-| Fixture | Type | Code | Purpose | Type-specific fields present on wire | Quoted data | Malformed/truncated | Future Summary expectation |
+| Fixture | Type | Code | Purpose | Type-specific fields present on wire | Quoted data | Malformed/truncated | Summary expectation |
 |---|---:|---:|---|---|---|---|---|
 | `01_icmp_echo_request.pcap` | 8 | 0 | Echo Request baseline | Identifier, Sequence Number, payload | no | no | common header + echo fields + payload length |
 | `02_icmp_echo_reply.pcap` | 0 | 0 | Echo Reply baseline | Identifier, Sequence Number, payload | no | no | common header + echo fields + payload length |

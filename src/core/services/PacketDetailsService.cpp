@@ -7,6 +7,7 @@
 #include "core/services/DnsInspectionParser.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
+#include "core/services/IcmpInspectionParser.h"
 #include "core/services/PacketPayloadService.h"
 
 namespace pfl {
@@ -4291,15 +4292,33 @@ std::optional<PacketDetails> decode_packet_details(
         }
 
         if (details.ipv4.protocol == detail::kIpProtocolIcmp) {
-            if (transport_offset + 2U > packet_end || network_packet_bytes.size() < transport_offset + 2U) {
+            const auto captured_icmp_length = packet_end > transport_offset ? packet_end - transport_offset : 0U;
+            const auto declared_icmp_length = ipv4_bounds->nominal_packet_end > transport_offset
+                ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - transport_offset}
+                : std::optional<std::size_t> {};
+
+            const IcmpInspectionParser parser {};
+            const auto icmp_message = parser.inspect(
+                std::span<const std::uint8_t>(
+                    network_packet_bytes.data() + transport_offset,
+                    captured_icmp_length
+                ),
+                declared_icmp_length
+            );
+
+            if (icmp_message.type.has_value() && icmp_message.code.has_value()) {
+                details.has_icmp = true;
+                details.icmp = IcmpDetails {
+                    .type = *icmp_message.type,
+                    .code = *icmp_message.code,
+                };
+            }
+            details.icmp_message = icmp_message;
+
+            if (!icmp_common_header_complete(icmp_message)) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
-            details.has_icmp = true;
-            details.icmp = IcmpDetails {
-                .type = network_packet_bytes[transport_offset],
-                .code = network_packet_bytes[transport_offset + 1U],
-            };
             return details;
         }
 

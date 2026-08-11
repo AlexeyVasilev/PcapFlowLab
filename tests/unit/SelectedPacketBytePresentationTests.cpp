@@ -1181,17 +1181,15 @@ void run_selected_packet_byte_presentation_tests_impl() {
     }
 
     {
-        const auto path = write_temp_pcap(
-            "pfl_selected_packet_byte_icmp_unit.pcap",
-            make_classic_pcap({{
-                100U,
-                make_ethernet_ipv4_icmp_packet(ipv4(10, 30, 0, 1), ipv4(10, 30, 0, 2), 8U, 0U)
-            }})
-        );
-
         CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(path));
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/01_icmp_echo_request.pcap")));
         const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_ipv4);
+        PFL_REQUIRE(details->ipv4.payload_range.has_value());
+
+        const auto bytes = session.read_packet_data(packet);
         const auto presentation = require_presentation(session, packet);
 
         const std::vector<std::string> expected_labels {
@@ -1200,10 +1198,56 @@ void run_selected_packet_byte_presentation_tests_impl() {
             "ICMP Message",
         };
         PFL_EXPECT(collect_labels(presentation) == expected_labels);
+
+        const auto* ipv4_view = require_view(presentation, SelectedPacketByteViewKind::ipv4_payload);
         const auto* icmp_view = require_view(presentation, SelectedPacketByteViewKind::icmp);
         expect_parent(*icmp_view, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_EXPECT(icmp_view->offset == details->ipv4.payload_range->offset);
+        PFL_EXPECT(icmp_view->captured_length == details->ipv4.payload_range->captured_length);
+        PFL_REQUIRE(icmp_view->declared_length.has_value());
+        PFL_REQUIRE(details->ipv4.payload_range->declared_length.has_value());
+        PFL_EXPECT(*icmp_view->declared_length == *details->ipv4.payload_range->declared_length);
         PFL_REQUIRE(icmp_view->payload_range.has_value());
         PFL_EXPECT(icmp_view->payload_range->offset == icmp_view->offset + 4U);
+        PFL_EXPECT(icmp_view->offset == ipv4_view->payload_range->offset);
+
+        const auto icmp_materialized = require_materialized_view(presentation, icmp_view->id, bytes);
+        PFL_EXPECT(icmp_materialized.bytes.size() == icmp_view->captured_length);
+        PFL_EXPECT(std::equal(
+            icmp_materialized.bytes.begin(),
+            icmp_materialized.bytes.end(),
+            bytes.begin() + static_cast<std::ptrdiff_t>(details->ipv4.payload_range->offset)
+        ));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/icmp/14_icmp_truncated_echo_body.pcap")));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_ipv4);
+        PFL_REQUIRE(details->ipv4.payload_range.has_value());
+
+        const auto bytes = session.read_packet_data(packet);
+        const auto presentation = require_presentation(session, packet);
+        const auto* icmp_view = require_view(presentation, SelectedPacketByteViewKind::icmp);
+        expect_parent(*icmp_view, SelectedPacketByteViewKind::ipv4_payload);
+        PFL_EXPECT(icmp_view->offset == details->ipv4.payload_range->offset);
+        PFL_EXPECT(icmp_view->captured_length == details->ipv4.payload_range->captured_length);
+        PFL_REQUIRE(icmp_view->declared_length.has_value());
+        PFL_REQUIRE(details->ipv4.payload_range->declared_length.has_value());
+        PFL_EXPECT(*icmp_view->declared_length == *details->ipv4.payload_range->declared_length);
+        PFL_REQUIRE(icmp_view->payload_range.has_value());
+        PFL_EXPECT(icmp_view->payload_range->offset == icmp_view->offset + 4U);
+
+        const auto icmp_materialized = require_materialized_view(presentation, icmp_view->id, bytes);
+        PFL_EXPECT(icmp_materialized.bytes.size() == icmp_view->captured_length);
+        PFL_EXPECT(std::equal(
+            icmp_materialized.bytes.begin(),
+            icmp_materialized.bytes.end(),
+            bytes.begin() + static_cast<std::ptrdiff_t>(details->ipv4.payload_range->offset)
+        ));
     }
 
     {
