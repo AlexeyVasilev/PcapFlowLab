@@ -401,6 +401,7 @@ if(BUILD_TESTING)
         tests/unit/PacketProtocolDetailsTests.cpp
         tests/unit/TlsInspectionParserTests.cpp
         tests/unit/ArpPcapFixtureTests.cpp
+        tests/unit/IcmpPcapFixtureTests.cpp
         tests/unit/IgmpPcapFixtureTests.cpp
         tests/unit/Ipv4OptionsPcapFixtureTests.cpp
         tests/unit/MplsPcapFixtureTests.cpp
