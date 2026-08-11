@@ -713,8 +713,243 @@ void run_stream_query_tests() {
     PFL_EXPECT(dns_session.open_capture(dns_path));
     const auto dns_rows = dns_session.list_flow_stream_items(0);
     PFL_EXPECT(dns_rows.size() == 1);
-    PFL_EXPECT(dns_rows[0].label == "DNS Query");
+    PFL_EXPECT(starts_with(dns_rows[0].label, "DNS Query"));
+    PFL_EXPECT(dns_rows[0].label.find("A") != std::string::npos);
+    PFL_EXPECT(dns_rows[0].label.find("api.example") != std::string::npos);
     PFL_EXPECT(dns_rows[0].byte_count == dns_payload.size());
+    PFL_EXPECT(dns_rows[0].semantic_family == StreamItemSemanticFamily::dns);
+    PFL_REQUIRE(dns_rows[0].dns_summary.has_value());
+    PFL_EXPECT(dns_rows[0].dns_summary->semantic_kind == DnsStreamItemSemanticKind::dns_query);
+    const auto dns_summary_layers = build_stream_summary_layers(dns_rows[0], dns_session.list_flow_packets(0));
+    const auto* dns_item_layer = find_top_level_summary_layer(dns_summary_layers, "stream_item");
+    const auto* dns_layer = find_top_level_summary_layer(dns_summary_layers, "dns");
+    PFL_REQUIRE(dns_item_layer != nullptr);
+    PFL_REQUIRE(dns_layer != nullptr);
+    PFL_EXPECT(require_summary_field_value(*dns_item_layer, "Details source") == "Packet fallback");
+    PFL_EXPECT(require_summary_field_value(*dns_layer, "Message Type") == "Query");
+    PFL_EXPECT(require_summary_field_value(*dns_layer, "QType") == "A (1)");
+    PFL_REQUIRE(find_summary_child(*dns_layer, "dns_questions") != nullptr);
+
+    CaptureImportOptions fast_options {};
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/03_dns_ipv4_a_query.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Query"));
+        PFL_EXPECT(rows[0].label.find("A") != std::string::npos);
+        PFL_EXPECT(rows[0].semantic_family == StreamItemSemanticFamily::dns);
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->semantic_kind == DnsStreamItemSemanticKind::dns_query);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Message Type") == "Query");
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QType") == "A (1)");
+        const auto* questions = require_summary_child(*dns_layer, "dns_questions");
+        PFL_EXPECT(questions->children.size() == 1U);
+        PFL_EXPECT(require_summary_field_value(questions->children[0], "Type") == "A (1)");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/08_dns_ipv4_multiple_answers_response.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Response"));
+        PFL_EXPECT(rows[0].label.find("A") != std::string::npos);
+        PFL_EXPECT(rows[0].label.find("2 answers") != std::string::npos);
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->compact_answer_count == 2U);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Message Type") == "Response");
+        const auto* answers = require_summary_child(*dns_layer, "dns_answers");
+        PFL_EXPECT(answers->children.size() == 2U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/12_dns_ipv4_srv_response.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Response"));
+        PFL_EXPECT(rows[0].label.find("SRV") != std::string::npos);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        const auto* answers = require_summary_child(*dns_layer, "dns_answers");
+        PFL_REQUIRE(!answers->children.empty());
+        PFL_EXPECT(find_summary_field(answers->children[0], "Priority") != nullptr);
+        PFL_EXPECT(find_summary_field(answers->children[0], "Weight") != nullptr);
+        PFL_EXPECT(find_summary_field(answers->children[0], "Port") != nullptr);
+        PFL_EXPECT(find_summary_field(answers->children[0], "Target") != nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/13_dns_ipv4_txt_response.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Response"));
+        PFL_EXPECT(rows[0].label.find("TXT") != std::string::npos);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        const auto* answers = require_summary_child(*dns_layer, "dns_answers");
+        PFL_REQUIRE(!answers->children.empty());
+        PFL_EXPECT(find_summary_field(answers->children[0], "TXT[0]") != nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/10_dns_ipv4_https_query.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Query"));
+        PFL_EXPECT(rows[0].label.find("HTTPS") != std::string::npos);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "QType") == "HTTPS (65)");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/14_dns_ipv4_truncated_message.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Query"));
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->message.status == DnsInspectionStatus::truncated);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* stream_item_layer = find_top_level_summary_layer(summary_layers, "stream_item");
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(stream_item_layer != nullptr);
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Packet fallback");
+        PFL_EXPECT(dns_layer->warning);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message truncated");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/15_dns_ipv4_malformed_pointer_oob.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "DNS Query"));
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->message.status == DnsInspectionStatus::malformed);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* dns_layer = find_top_level_summary_layer(summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->warning);
+        PFL_EXPECT(require_summary_field_value(*dns_layer, "Warning") == "DNS message malformed");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/01_mdns_ipv4_ptr_query.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "mDNS Query"));
+        PFL_EXPECT(rows[0].label.find("PTR") != std::string::npos);
+        PFL_EXPECT(rows[0].label.find("_demo-service._tcp.local") != std::string::npos);
+        PFL_EXPECT(rows[0].semantic_family == StreamItemSemanticFamily::dns);
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_query);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* mdns_layer = find_top_level_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Message Type") == "Query");
+        const auto* questions = require_summary_child(*mdns_layer, "dns_questions");
+        PFL_REQUIRE(!questions->children.empty());
+        PFL_EXPECT(require_summary_field_value(questions->children[0], "Type") == "PTR (12)");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/04_mdns_ipv4_dns_sd_response.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(starts_with(rows[0].label, "mDNS Response"));
+        PFL_EXPECT(rows[0].label.find("PTR") != std::string::npos);
+        PFL_EXPECT(rows[0].label.find("_demo-service._tcp.local") != std::string::npos);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* mdns_layer = find_top_level_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        const auto* answers = require_summary_child(*mdns_layer, "dns_answers");
+        const auto* additionals = require_summary_child(*mdns_layer, "dns_additionals");
+        PFL_EXPECT(!answers->children.empty());
+        PFL_EXPECT(!additionals->children.empty());
+        PFL_EXPECT(find_summary_field(answers->children[0], "PTR Target") != nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/08_mdns_ipv4_cache_flush_response.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* mdns_layer = find_top_level_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        const auto* answers = require_summary_child(*mdns_layer, "dns_answers");
+        PFL_REQUIRE(!answers->children.empty());
+        PFL_EXPECT(require_summary_field_value(answers->children[0], "Cache Flush") == "Yes");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/09_mdns_ipv4_qu_question.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* mdns_layer = find_top_level_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        const auto* questions = require_summary_child(*mdns_layer, "dns_questions");
+        PFL_REQUIRE(!questions->children.empty());
+        PFL_EXPECT(require_summary_field_value(questions->children[0], "Unicast Response Requested") == "Yes");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/10_mdns_ipv4_truncated_message.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_query);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* mdns_layer = find_top_level_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->warning);
+        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Warning") == "DNS message truncated");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/11_mdns_ipv4_malformed_pointer.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows[0].dns_summary.has_value());
+        PFL_EXPECT(rows[0].dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_query);
+        const auto summary_layers = build_stream_summary_layers(rows[0], session.list_flow_packets(0));
+        const auto* mdns_layer = find_top_level_summary_layer(summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->warning);
+        PFL_EXPECT(require_summary_field_value(*mdns_layer, "Warning") == "DNS message malformed");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mdns/12_mdns_wrong_port_negative.pcap"), fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].semantic_family == StreamItemSemanticFamily::generic);
+        PFL_EXPECT(!rows[0].dns_summary.has_value());
+    }
 
     const auto server_hello_record = make_tls_handshake_record(0x02U, {0xAA, 0xBB, 0xCC, 0xDD});
     const auto change_cipher_spec_record = make_tls_change_cipher_spec_record();
@@ -727,7 +962,6 @@ void run_stream_query_tests() {
     );
 
     CaptureSession tls_multi_session {};
-    CaptureImportOptions fast_options {};
 
     constexpr std::string_view split_http_request_text =
         "GET /split HTTP/1.1\r\n"

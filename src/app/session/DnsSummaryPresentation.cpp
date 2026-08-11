@@ -85,30 +85,50 @@ std::string format_dns_response_code(const std::uint8_t code) {
     }
 }
 
-std::string format_dns_type(const std::uint16_t type) {
+std::string dns_type_name(const std::uint16_t type) {
     switch (type) {
     case 1U:
-        return "A (1)";
+        return "A";
     case 2U:
-        return "NS (2)";
+        return "NS";
     case 5U:
-        return "CNAME (5)";
+        return "CNAME";
     case 12U:
-        return "PTR (12)";
+        return "PTR";
     case 15U:
-        return "MX (15)";
+        return "MX";
     case 16U:
-        return "TXT (16)";
+        return "TXT";
     case 28U:
-        return "AAAA (28)";
+        return "AAAA";
     case 33U:
-        return "SRV (33)";
+        return "SRV";
     case 64U:
-        return "SVCB (64)";
+        return "SVCB";
     case 65U:
-        return "HTTPS (65)";
+        return "HTTPS";
     default:
-        return "Unknown (" + std::to_string(type) + ")";
+        return {};
+    }
+}
+
+std::string format_dns_type(const std::uint16_t type) {
+    const auto type_name = dns_type_name(type);
+    if (!type_name.empty()) {
+        return type_name + " (" + std::to_string(type) + ")";
+    }
+    return "Unknown (" + std::to_string(type) + ")";
+}
+
+std::string format_dns_type_compact(const std::uint16_t type) {
+    const auto type_name = dns_type_name(type);
+    return type_name.empty() ? ("TYPE" + std::to_string(type)) : type_name;
+}
+
+std::string format_dns_type_text_impl(const std::uint16_t type) {
+    switch (type) {
+    default:
+        return format_dns_type(type);
     }
 }
 
@@ -204,7 +224,7 @@ PacketSummaryLayer build_dns_question_layer(
     const DnsSummaryPresentationKind presentation_kind
 ) {
     std::vector<PacketSummaryField> fields {
-        make_summary_field("Type", format_dns_type(question.type)),
+        make_summary_field("Type", format_dns_type_text_impl(question.type)),
         make_summary_field(
             "Class",
             format_dns_class(
@@ -289,7 +309,7 @@ PacketSummaryLayer build_dns_resource_record_layer(
     const DnsSummaryPresentationKind presentation_kind
 ) {
     std::vector<PacketSummaryField> fields {
-        make_summary_field("Type", format_dns_type(record.type)),
+        make_summary_field("Type", format_dns_type_text_impl(record.type)),
         make_summary_field(
             "Class",
             format_dns_class(
@@ -367,7 +387,7 @@ std::optional<PacketSummaryLayer> build_legacy_dns_summary_layer(
     std::vector<PacketSummaryField> fields {
         make_summary_field("Transaction ID", format_hex16_value(details.dns.transaction_id)),
         make_summary_field("QName", details.dns.query_name),
-        make_summary_field("QType", format_dns_type(details.dns.query_type)),
+        make_summary_field("QType", format_dns_type_text_impl(details.dns.query_type)),
     };
     if (details.dns.is_response && details.dns.response_code.has_value()) {
         fields.push_back(make_summary_field("Response Code", format_dns_response_code(*details.dns.response_code)));
@@ -394,7 +414,21 @@ std::optional<PacketSummaryLayer> build_dns_summary_layer(
         return build_legacy_dns_summary_layer(details, presentation_kind);
     }
 
-    const auto& message = *details.dns_message;
+    return build_dns_summary_layer(*details.dns_message, presentation_kind);
+}
+
+std::string format_dns_type_text(const std::uint16_t type) {
+    return format_dns_type_text_impl(type);
+}
+
+std::string format_dns_type_compact_text(const std::uint16_t type) {
+    return format_dns_type_compact(type);
+}
+
+std::optional<PacketSummaryLayer> build_dns_summary_layer(
+    const DnsMessage& message,
+    const DnsSummaryPresentationKind presentation_kind
+) {
     std::vector<PacketSummaryField> fields {
         make_summary_field("Message Type", dns_message_type_text(message)),
         make_summary_field("Transaction ID", format_hex16_value(message.transaction_id)),

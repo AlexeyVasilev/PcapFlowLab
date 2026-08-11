@@ -93,6 +93,7 @@ constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol detail
 constexpr std::string_view kFragmentedProtocolDetailsMessage = "Protocol details are unavailable for fragmented packets until reassembly is implemented.";
 constexpr std::string_view kDirectionAToB = "A\xE2\x86\x92" "B";
 constexpr std::string_view kDirectionBToA = "B\xE2\x86\x92" "A";
+constexpr std::string_view kCompactLabelSeparator = " \xE2\x80\xA2 ";
 PacketRow make_packet_row(const PacketRef& packet, const std::string_view direction_text) {
     return PacketRow {
         .row_number = 0,
@@ -207,14 +208,138 @@ std::string dns_stream_label(const DnsDetails& details) {
     return details.is_response ? "DNS Response" : "DNS Query";
 }
 
+bool is_dns_stream_hint(const FlowProtocolHint hint) noexcept {
+    return hint == FlowProtocolHint::dns || hint == FlowProtocolHint::mdns;
+}
+
+bool is_meaningful_dns_name(const std::string_view name) noexcept {
+    return !name.empty() && name != ".";
+}
+
+DnsStreamItemSemanticKind dns_stream_semantic_kind(
+    const DnsMessage& message,
+    const FlowProtocolHint hint
+) noexcept {
+    if (hint == FlowProtocolHint::mdns) {
+        return message.is_response
+            ? DnsStreamItemSemanticKind::mdns_response
+            : DnsStreamItemSemanticKind::mdns_query;
+    }
+    return message.is_response
+        ? DnsStreamItemSemanticKind::dns_response
+        : DnsStreamItemSemanticKind::dns_query;
+}
+
+std::string dns_stream_base_label(const DnsStreamItemSemanticKind semantic_kind) {
+    switch (semantic_kind) {
+    case DnsStreamItemSemanticKind::dns_query:
+        return "DNS Query";
+    case DnsStreamItemSemanticKind::dns_response:
+        return "DNS Response";
+    case DnsStreamItemSemanticKind::mdns_query:
+        return "mDNS Query";
+    case DnsStreamItemSemanticKind::mdns_response:
+        return "mDNS Response";
+    case DnsStreamItemSemanticKind::none:
+    default:
+        return "DNS";
+    }
+}
+
+std::optional<std::string> dns_primary_name_from_message(const DnsMessage& message) {
+    if (!message.questions.empty() && is_meaningful_dns_name(message.questions[0].name)) {
+        return message.questions[0].name;
+    }
+
+    for (const auto* section : {&message.answers, &message.authorities, &message.additionals}) {
+        const auto ptr_it = std::find_if(section->begin(), section->end(), [](const DnsResourceRecord& record) {
+            return record.type == 12U && is_meaningful_dns_name(record.name);
+        });
+        if (ptr_it != section->end()) {
+            return ptr_it->name;
+        }
+    }
+
+    for (const auto* section : {&message.answers, &message.authorities, &message.additionals}) {
+        const auto rr_it = std::find_if(section->begin(), section->end(), [](const DnsResourceRecord& record) {
+            return is_meaningful_dns_name(record.name);
+        });
+        if (rr_it != section->end()) {
+            return rr_it->name;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::uint16_t> dns_primary_type_from_message(const DnsMessage& message) {
+    if (!message.questions.empty()) {
+        return message.questions[0].type;
+    }
+    if (!message.answers.empty()) {
+        return message.answers[0].type;
+    }
+    if (!message.authorities.empty()) {
+        return message.authorities[0].type;
+    }
+    if (!message.additionals.empty()) {
+        return message.additionals[0].type;
+    }
+    return std::nullopt;
+}
+
+std::string build_dns_stream_label(const DnsStreamItemSummaryDetails& summary) {
+    std::string label = dns_stream_base_label(summary.semantic_kind);
+    if (summary.primary_type.has_value()) {
+        label += std::string {kCompactLabelSeparator} +
+            session_detail::format_dns_type_compact_text(*summary.primary_type);
+    }
+    if (!summary.primary_name.empty()) {
+        label += std::string {kCompactLabelSeparator} + summary.primary_name;
+    }
+    if (summary.compact_answer_count.has_value()) {
+        label += std::string {kCompactLabelSeparator} + std::to_string(*summary.compact_answer_count) +
+            (*summary.compact_answer_count == 1U ? " answer" : " answers");
+    }
+    return label;
+}
+
+std::optional<DnsStreamItemSummaryDetails> make_dns_stream_summary_from_packet_details(
+    const PacketDetails& details,
+    const FlowProtocolHint flow_hint
+) {
+    if (!is_dns_stream_hint(flow_hint) ||
+        !details.dns_message.has_value() ||
+        details.dns_message->status == DnsInspectionStatus::not_enough_header) {
+        return std::nullopt;
+    }
+
+    DnsStreamItemSummaryDetails summary {
+        .semantic_kind = dns_stream_semantic_kind(*details.dns_message, flow_hint),
+        .message = *details.dns_message,
+        .primary_name = dns_primary_name_from_message(*details.dns_message).value_or(std::string {}),
+        .primary_type = dns_primary_type_from_message(*details.dns_message),
+    };
+
+    if (details.dns_message->is_response &&
+        details.dns_message->status == DnsInspectionStatus::complete &&
+        !details.dns_message->answers.empty()) {
+        summary.compact_answer_count = static_cast<std::uint16_t>(details.dns_message->answers.size());
+    }
+
+    return summary;
+}
+
 struct PacketLocalStreamClassification {
     std::string label {};
     std::optional<HttpStreamItemSummaryDetails> http_summary {};
+    std::optional<DnsStreamItemSummaryDetails> dns_summary {};
 };
 
 PacketLocalStreamClassification classify_packet_local_stream_item(
     const PacketDetails& details,
-    const ProtocolId protocol
+    const ProtocolId protocol,
+    const FlowProtocolHint flow_hint
 ) {
     if (protocol == ProtocolId::tcp && details.has_http) {
         const auto http_summary = make_http_stream_summary_from_packet_details(details.http);
@@ -226,10 +351,19 @@ PacketLocalStreamClassification classify_packet_local_stream_item(
         }
     }
 
-    if (protocol == ProtocolId::udp && details.has_dns) {
-        return PacketLocalStreamClassification {
-            .label = dns_stream_label(details.dns),
-        };
+    if (protocol == ProtocolId::udp) {
+        if (const auto dns_summary = make_dns_stream_summary_from_packet_details(details, flow_hint);
+            dns_summary.has_value()) {
+            return PacketLocalStreamClassification {
+                .label = build_dns_stream_label(*dns_summary),
+                .dns_summary = dns_summary,
+            };
+        }
+        if (details.has_dns && flow_hint == FlowProtocolHint::dns) {
+            return PacketLocalStreamClassification {
+                .label = dns_stream_label(details.dns),
+            };
+        }
     }
 
     return PacketLocalStreamClassification {
@@ -1453,6 +1587,7 @@ void append_connection_stream_items_bounded(
     std::size_t scanned_packets = 0U;
     bool gap_item_emitted_a = direction_policy_a.explicit_gap_item_emitted;
     bool gap_item_emitted_b = direction_policy_b.explicit_gap_item_emitted;
+    const auto connection_flow_hint = connection.protocol_hint;
     while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) &&
            rows.size() < target_count &&
            scanned_packets < max_packets_to_scan) {
@@ -1606,6 +1741,7 @@ void append_connection_stream_items_bounded(
 
         std::string label = fallback_stream_label(flow_protocol);
         std::optional<HttpStreamItemSummaryDetails> http_summary {};
+        std::optional<DnsStreamItemSummaryDetails> dns_summary {};
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
@@ -1615,9 +1751,11 @@ void append_connection_stream_items_bounded(
             if (!packet_bytes.empty()) {
                 PacketDetailsService details_service {};
                 if (const auto details = details_service.decode(packet_bytes, packet); details.has_value()) {
-                    const auto classification = classify_packet_local_stream_item(*details, flow_protocol);
+                    const auto classification =
+                        classify_packet_local_stream_item(*details, flow_protocol, connection_flow_hint);
                     label = classification.label;
                     http_summary = classification.http_summary;
+                    dns_summary = classification.dns_summary;
                 }
             }
         }
@@ -1653,6 +1791,9 @@ void append_connection_stream_items_bounded(
             if (http_summary.has_value()) {
                 row.semantic_family = StreamItemSemanticFamily::http;
                 row.http_summary = std::move(http_summary);
+            } else if (dns_summary.has_value()) {
+                row.semantic_family = StreamItemSemanticFamily::dns;
+                row.dns_summary = std::move(dns_summary);
             } else {
                 row.semantic_family = StreamItemSemanticFamily::generic;
                 row.generic_summary = generic_stream_summary_for_protocol(flow_protocol);

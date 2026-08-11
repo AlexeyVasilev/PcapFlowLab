@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/services/DnsInspectionParser.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
@@ -99,6 +100,7 @@ enum class StreamMaterializationStability : std::uint8_t {
 enum class StreamItemSemanticFamily : std::uint8_t {
     generic = 0,
     http,
+    dns,
     tls,
     quic,
     arp,
@@ -122,6 +124,14 @@ enum class HttpStreamItemSemanticKind : std::uint8_t {
     gap,
 };
 
+enum class DnsStreamItemSemanticKind : std::uint8_t {
+    none = 0,
+    dns_query,
+    dns_response,
+    mdns_query,
+    mdns_response,
+};
+
 struct GenericStreamItemSummaryDetails {
     GenericStreamItemSemanticKind semantic_kind {GenericStreamItemSemanticKind::none};
     std::string diagnostic {};
@@ -135,6 +145,14 @@ struct HttpStreamItemSummaryDetails {
     std::optional<std::uint16_t> status_code {};
     std::string reason_phrase {};
     std::string diagnostic {};
+};
+
+struct DnsStreamItemSummaryDetails {
+    DnsStreamItemSemanticKind semantic_kind {DnsStreamItemSemanticKind::none};
+    DnsMessage message {};
+    std::string primary_name {};
+    std::optional<std::uint16_t> primary_type {};
+    std::optional<std::uint16_t> compact_answer_count {};
 };
 
 struct ArpStreamItemSummaryDetails {
@@ -164,6 +182,7 @@ struct StreamItemRow {
     std::vector<std::uint8_t> summary_payload_bytes {};
     std::optional<GenericStreamItemSummaryDetails> generic_summary {};
     std::optional<HttpStreamItemSummaryDetails> http_summary {};
+    std::optional<DnsStreamItemSummaryDetails> dns_summary {};
     std::optional<ArpStreamItemSummaryDetails> arp_summary {};
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};
     std::vector<TlsRecordModel> tls_summary_records {};

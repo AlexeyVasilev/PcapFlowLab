@@ -4847,6 +4847,12 @@ TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKi
 }
 
 bool stream_item_uses_packet_fallback_impl(const StreamItemRow& row) {
+    if (row.packet_indices.size() == 1U &&
+        row.semantic_family == StreamItemSemanticFamily::dns &&
+        row.dns_summary.has_value()) {
+        return true;
+    }
+
     return row.packet_indices.size() == 1U &&
         row.semantic_family == StreamItemSemanticFamily::generic &&
         row.generic_summary.has_value() &&
@@ -4898,6 +4904,19 @@ std::string stream_item_state_text(const StreamItemRow& row) {
             return "Truncated";
         }
         return "Complete";
+    }
+
+    if (row.dns_summary.has_value()) {
+        switch (row.dns_summary->message.status) {
+        case DnsInspectionStatus::truncated:
+            return "Truncated";
+        case DnsInspectionStatus::malformed:
+            return "Malformed";
+        case DnsInspectionStatus::complete:
+        case DnsInspectionStatus::not_enough_header:
+        default:
+            break;
+        }
     }
 
     if (row.quic_stream_presentation.has_value()) {
@@ -5099,6 +5118,19 @@ std::optional<PacketSummaryLayer> build_arp_stream_summary_layer(const StreamIte
             ? "Warning"
             : std::string {},
     };
+}
+
+std::optional<PacketSummaryLayer> build_dns_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.dns_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto presentation_kind =
+        row.dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_query ||
+            row.dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_response
+        ? DnsSummaryPresentationKind::mdns
+        : DnsSummaryPresentationKind::dns;
+    return build_dns_summary_layer(row.dns_summary->message, presentation_kind);
 }
 
 std::optional<PacketSummaryLayer> build_generic_stream_summary_layer(const StreamItemRow& row) {
@@ -6046,6 +6078,8 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     if (tls_layers.empty()) {
         if (const auto http_layer = build_http_stream_summary_layer(row); http_layer.has_value()) {
             layers.push_back(*http_layer);
+        } else if (const auto dns_layer = build_dns_stream_summary_layer(row); dns_layer.has_value()) {
+            layers.push_back(*dns_layer);
         } else if (const auto arp_layer = build_arp_stream_summary_layer(row); arp_layer.has_value()) {
             layers.push_back(*arp_layer);
         } else if (const auto generic_layer = build_generic_stream_summary_layer(row); generic_layer.has_value()) {

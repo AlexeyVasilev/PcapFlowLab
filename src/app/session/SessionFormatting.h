@@ -112,6 +112,8 @@ std::string format_arp_protocol_address(std::uint16_t protocol_type, std::span<c
 std::string format_arp_hardware_type(std::uint16_t hardware_type);
 std::string format_arp_protocol_type(std::uint16_t protocol_type);
 std::string format_arp_opcode(std::uint16_t opcode);
+std::string format_dns_type_text(std::uint16_t type);
+std::string format_dns_type_compact_text(std::uint16_t type);
 std::optional<ArpPresentation> describe_arp_packet(const PacketDetails& details);
 std::vector<std::string> build_basic_summary_lines(const PacketDetails& details);
 std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes);

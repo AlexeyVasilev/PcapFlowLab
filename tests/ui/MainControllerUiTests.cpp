@@ -4260,8 +4260,25 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_model->rowCount() == 1);
     UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("DNS Query"));
+    const auto dns_stream_label =
+        stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString();
+    UI_EXPECT(dns_stream_label.startsWith(QStringLiteral("DNS Query")));
+    UI_EXPECT(dns_stream_label.contains(QStringLiteral("A")));
+    UI_EXPECT(dns_stream_label.contains(QStringLiteral("api.example")));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_dns_query_payload().size());
+    const auto dns_stream_item_index = stream_model->data(
+        stream_model->index(0, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    stream_controller.setSelectedStreamItemIndex(dns_stream_item_index);
+    UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Details source: Packet fallback")));
+    const auto dns_stream_layers = stream_details_model->summaryLayers();
+    const auto dns_stream_layer = find_top_level_summary_layer(dns_stream_layers, QStringLiteral("dns"));
+    UI_EXPECT(!dns_stream_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(dns_stream_layer, QStringLiteral("Message Type")) == QStringLiteral("Query"));
+    UI_EXPECT(find_summary_field_value(dns_stream_layer, QStringLiteral("QType")) == QStringLiteral("A (1)"));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
     auto* dns_packet_model = qobject_cast<PacketListModel*>(stream_controller.packetModel());
     UI_EXPECT(dns_packet_model != nullptr);
     UI_EXPECT(dns_packet_model->rowCount() == 1);
