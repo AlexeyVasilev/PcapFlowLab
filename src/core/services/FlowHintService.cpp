@@ -1042,6 +1042,7 @@ template <typename FlowKey, typename QuicStateMap>
 FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes,
                                       const std::uint32_t data_link_type,
                                       const FlowKey& flow_key,
+                                      const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds,
                                       const FlowHintDetectionSettings& settings,
                                       QuicStateMap& quic_state) {
     if (flow_key.protocol == ProtocolId::arp) {
@@ -1057,7 +1058,9 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
     }
 
     PacketPayloadService payload_service {};
-    const auto payload = payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
+    const auto payload = terminal_transport_payload_bounds.has_value()
+        ? payload_service.extract_terminal_transport_payload_view(packet_bytes, *terminal_transport_payload_bounds)
+        : payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
     if (!payload.found) {
         return {};
     }
@@ -1194,10 +1197,24 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
                                        const std::uint32_t data_link_type,
                                        const FlowKeyV4& flow_key) const {
-    return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
-        .analysis_settings = settings_,
-        .enable_quic_initial_sni = enable_quic_initial_sni_,
-    }, quic_initial_ipv4_states_);
+    return detect(packet_bytes, data_link_type, flow_key, std::nullopt);
+}
+
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
+                                       const std::uint32_t data_link_type,
+                                       const FlowKeyV4& flow_key,
+                                       const std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds) const {
+    return detect_transport_hints(
+        packet_bytes,
+        data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds,
+        FlowHintDetectionSettings {
+            .analysis_settings = settings_,
+            .enable_quic_initial_sni = enable_quic_initial_sni_,
+        },
+        quic_initial_ipv4_states_
+    );
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const {
@@ -1207,10 +1224,24 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
                                        const std::uint32_t data_link_type,
                                        const FlowKeyV6& flow_key) const {
-    return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
-        .analysis_settings = settings_,
-        .enable_quic_initial_sni = enable_quic_initial_sni_,
-    }, quic_initial_ipv6_states_);
+    return detect(packet_bytes, data_link_type, flow_key, std::nullopt);
+}
+
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
+                                       const std::uint32_t data_link_type,
+                                       const FlowKeyV6& flow_key,
+                                       const std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds) const {
+    return detect_transport_hints(
+        packet_bytes,
+        data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds,
+        FlowHintDetectionSettings {
+            .analysis_settings = settings_,
+            .enable_quic_initial_sni = enable_quic_initial_sni_,
+        },
+        quic_initial_ipv6_states_
+    );
 }
 
 }  // namespace pfl

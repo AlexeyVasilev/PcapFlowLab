@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "PcapTestUtils.h"
@@ -52,6 +53,24 @@ bool has_matching_flow(const std::vector<FlowRow>& rows,
     }
 
     return false;
+}
+
+const FlowRow* find_matching_flow(const std::vector<FlowRow>& rows,
+                                  const std::string& protocol_hint,
+                                  const std::optional<std::string>& service_hint) {
+    for (const auto& row : rows) {
+        if (row.protocol_hint != protocol_hint) {
+            continue;
+        }
+
+        if (service_hint.has_value() && row.service_hint != *service_hint) {
+            continue;
+        }
+
+        return &row;
+    }
+
+    return nullptr;
 }
 
 std::optional<std::size_t> find_flow_index_with_protocol_hint(const std::vector<FlowRow>& rows,
@@ -149,6 +168,35 @@ void expect_fixture(const FixtureExpectation& expectation) {
     }
 
     PFL_EXPECT(has_matching_flow(rows, expectation.expected_protocol_hint, expectation.expected_service_hint));
+}
+
+void expect_gre_inner_tcp_tls_flow_hint_fixture() {
+    constexpr auto kFixturePath = "parsing/gre/24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap";
+    constexpr auto kExpectedSni = "gre-tls.example.test";
+
+    for (const bool ignore_vlan_and_mpls_layers_when_grouping_flows : {false, true}) {
+        CaptureImportOptions options {};
+        options.settings.ignore_vlan_and_mpls_layers_when_grouping_flows =
+            ignore_vlan_and_mpls_layers_when_grouping_flows;
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path(kFixturePath), options));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+
+        const auto* row = find_matching_flow(
+            rows,
+            "tls",
+            std::optional<std::string> {kExpectedSni}
+        );
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(row->protocol_text == "TCP");
+        PFL_EXPECT(row->protocol_hint == "tls");
+        PFL_EXPECT(row->service_hint == kExpectedSni);
+        PFL_EXPECT(row->packet_count == 1U);
+    }
 }
 
 void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
@@ -955,6 +1003,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/tls/tls_1_3_split_client_hello_10.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/tls/ipv6_tls_constricted_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/tls/ipv6_tls_strong_constrict_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
+        {.relative_path = "parsing/gre/24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "gre-tls.example.test"},
         {.relative_path = "parsing/quic/quic_initial_ch_1.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_initial_sh_2.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_handshake_3.pcap", .expected_protocol_hint = "quic"},
@@ -997,6 +1046,7 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_selected_flow_tls_service_hint_enrichment_uses_explicit_window();
     expect_frontend_adapter_selected_flow_tls_service_hint_preserves_existing_value();
     expect_frontend_adapter_selected_flow_packet_details_require_explicit_tls_window();
+    expect_gre_inner_tcp_tls_flow_hint_fixture();
     expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers("parsing/arp/03_arp_request_reply_ipv4.pcap");
     expect_flow_row_accessor_matches_list_flows("parsing/quic/quic_test_1.pcap");
 }

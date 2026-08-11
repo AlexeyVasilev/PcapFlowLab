@@ -452,7 +452,12 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
 ) {
     const auto packet_bytes = session.read_packet_data(packet);
     PacketPayloadService payload_service {};
-    auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    const auto transport_payload_view = details.effective_transport_payload.has_value()
+        ? payload_service.extract_effective_transport_payload_view(packet_bytes, *details.effective_transport_payload)
+        : payload_service.extract_transport_payload_view(packet_bytes, packet.data_link_type);
+    auto transport_payload = transport_payload_view.found
+        ? std::vector<std::uint8_t>(transport_payload_view.payload.begin(), transport_payload_view.payload.end())
+        : std::vector<std::uint8_t> {};
 
     auto tls_packet_analysis =
         flow_index.has_value() &&

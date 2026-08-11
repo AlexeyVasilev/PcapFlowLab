@@ -3083,6 +3083,47 @@ void run_packet_details_tests() {
     }
 
     {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/gre/24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap"),
+            CaptureImportOptions {}
+        ));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_tcp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == 81U);
+
+        const auto packet_bytes = session.read_packet_data(packet);
+        const auto packet_bytes_span = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size());
+        const auto payload_offset = details->effective_transport_payload->payload_offset;
+        PFL_REQUIRE(payload_offset + 5U <= packet_bytes.size());
+        PFL_REQUIRE(payload_offset >= 20U);
+        PFL_EXPECT(format_expected_hex_byte_list(packet_bytes_span.subspan(payload_offset, 5U)) == "16 03 03 00 4c");
+        PFL_EXPECT(format_expected_hex_byte_list(packet_bytes_span.subspan(payload_offset - 20U, 4U)) == "c0 00 01 bb");
+
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        const auto* gre_layer = find_summary_layer(summary_layers, "gre");
+        const auto* inner_ipv4_layer = find_summary_layer(summary_layers, "ipv4-inner");
+        const auto* inner_tcp_layer = find_summary_layer(summary_layers, "tcp-inner");
+        PFL_REQUIRE(gre_layer != nullptr);
+        PFL_REQUIRE(inner_ipv4_layer != nullptr);
+        PFL_REQUIRE(inner_tcp_layer != nullptr);
+        PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp-inner") + 1U == find_summary_layer_index(summary_layers, "tls"));
+        PFL_EXPECT(require_summary_field_value(*inner_tcp_layer, "Payload Length") == "81 bytes");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "SNI") == "gre-tls.example.test");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Total Record Size") == "81 bytes");
+    }
+
+    {
         const auto summary_layers = build_fixture_summary_layers("parsing/ah/12_ipv4_ah_inner_ipv4_udp.pcap");
         const auto data_layers = find_summary_layers(summary_layers, "data");
         const auto* ah_layer = find_summary_layer(summary_layers, "ah");

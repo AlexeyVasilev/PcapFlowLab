@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <cstdint>
 #include <span>
 #include <unordered_map>
@@ -7,6 +8,7 @@
 
 #include "core/domain/FlowHints.h"
 #include "core/domain/FlowKey.h"
+#include "core/domain/TerminalTransportPayloadBounds.h"
 #include "core/services/AnalysisSettings.h"
 
 namespace pfl {
@@ -23,10 +25,18 @@ public:
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,
                                         std::uint32_t data_link_type,
                                         const FlowKeyV4& flow_key) const;
+    [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,
+                                        std::uint32_t data_link_type,
+                                        const FlowKeyV4& flow_key,
+                                        std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds) const;
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const;
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,
                                         std::uint32_t data_link_type,
                                         const FlowKeyV6& flow_key) const;
+    [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,
+                                        std::uint32_t data_link_type,
+                                        const FlowKeyV6& flow_key,
+                                        std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds) const;
 
 private:
     struct QuicInitialFlowState {

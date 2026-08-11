@@ -93,6 +93,7 @@ template <typename Connection, typename FlowKey>
     const FlowKey& flow_key,
     PacketRef& packet_ref,
     const FlowHintService& hint_service,
+    const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds,
     const PacketBytesMaterializer materializer
 ) {
     auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
@@ -104,7 +105,12 @@ template <typename Connection, typename FlowKey>
         }
 
         packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-        connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, flow_key));
+        connection.apply_hints(hint_service.detect(
+            packet_bytes,
+            packet.data_link_type,
+            flow_key,
+            terminal_transport_payload_bounds
+        ));
         connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
         return true;
     }
@@ -115,7 +121,8 @@ template <typename Connection, typename FlowKey>
         packet_ref,
         connection,
         flow_key,
-        hint_service
+        hint_service,
+        terminal_transport_payload_bounds
     );
     return true;
 }
@@ -614,6 +621,7 @@ bool apply_decoded_packet_import(
             decoded.ipv4->flow_key,
             decoded.ipv4->packet_ref,
             hint_service,
+            decoded.terminal_transport_payload_bounds,
             materializer
         );
     }
@@ -633,6 +641,7 @@ bool apply_decoded_packet_import(
             decoded.ipv6->flow_key,
             decoded.ipv6->packet_ref,
             hint_service,
+            decoded.terminal_transport_payload_bounds,
             materializer
         );
     }
