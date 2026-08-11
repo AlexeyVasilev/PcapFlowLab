@@ -3330,6 +3330,10 @@ bool MainController::selectedFlowHasWiresharkFilter() const {
     return !selectedFlowWiresharkFilter().isEmpty();
 }
 
+bool MainController::selectedFlowUsesTcp() const {
+    return !unrecognized_packets_selected_ && selected_flow_uses_tcp(flow_model_, selected_flow_index_);
+}
+
 bool MainController::hasProtocolPathFlowFilter() const noexcept {
     return has_active_protocol_path_filter_;
 }

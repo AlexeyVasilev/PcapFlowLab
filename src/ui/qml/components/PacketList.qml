@@ -15,10 +15,38 @@ Frame {
     property var totalPacketRowCount: 0
     property bool canLoadMorePackets: false
     property bool showToolbar: true
+    property bool showFlagsColumn: false
     readonly property bool showMarkerColumn: !!root.packetModel && root.packetModel.hasVisibleMarkers
     readonly property bool unrecognizedMode: !!root.packetModel && root.packetModel.unrecognizedMode
+    readonly property bool showTrailingColumn: root.unrecognizedMode || root.showFlagsColumn
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
+    readonly property real columnSpacing: 10
+    readonly property real contentHorizontalMargin: 8
+    readonly property real frameInnerMargin: 1
+    readonly property real indexColumnWidth: 50
+    readonly property real directionColumnWidth: root.unrecognizedMode ? 0 : 68
+    readonly property real timeColumnWidth: 126
+    readonly property real capturedColumnWidth: 72
+    readonly property real payloadColumnWidth: 68
+    readonly property real markerColumnWidth: root.showMarkerColumn ? 168 : 0
+    readonly property real verticalScrollbarWidth: packetScrollBar.visible ? packetScrollBar.width : 0
+    readonly property real packetViewportWidth: Math.max(0, packetListView.width - root.verticalScrollbarWidth)
+    readonly property int visibleColumnCount:
+        4 + (root.unrecognizedMode ? 0 : 1) + (root.showTrailingColumn ? 1 : 0) + (root.showMarkerColumn ? 1 : 0)
+    readonly property real totalSpacingWidth: Math.max(0, root.visibleColumnCount - 1) * root.columnSpacing
+    readonly property real fixedColumnWidth:
+        root.indexColumnWidth
+        + root.directionColumnWidth
+        + root.timeColumnWidth
+        + root.capturedColumnWidth
+        + root.payloadColumnWidth
+        + root.markerColumnWidth
+    readonly property real trailingColumnWidth: root.showTrailingColumn
+        ? Math.max(0, root.packetViewportWidth - (2 * root.contentHorizontalMargin) - root.fixedColumnWidth - root.totalSpacingWidth)
+        : 0
+    readonly property real headerContentX: root.frameInnerMargin + root.contentHorizontalMargin
+    readonly property real headerContentWidth: Math.max(0, root.packetViewportWidth - (2 * root.contentHorizontalMargin))
 
     signal packetSelected(var packetIndex)
     signal loadMoreRequested()
@@ -190,56 +218,65 @@ Frame {
             }
         }
 
-        RowLayout {
+        Item {
             Layout.fillWidth: true
-            spacing: 8
+            implicitHeight: headerRow.implicitHeight
 
-            Label {
-                text: "#"
-                font.bold: true
-                Layout.preferredWidth: 50
-                horizontalAlignment: Text.AlignRight
-            }
+            RowLayout {
+                id: headerRow
+                x: root.headerContentX
+                width: root.headerContentWidth
+                spacing: root.columnSpacing
 
-            Label {
-                text: "Direction"
-                font.bold: true
-                Layout.preferredWidth: 68
-                horizontalAlignment: Text.AlignHCenter
-                visible: !root.unrecognizedMode
-            }
+                Label {
+                    text: "#"
+                    font.bold: true
+                    Layout.preferredWidth: root.indexColumnWidth
+                    horizontalAlignment: Text.AlignRight
+                }
 
-            Label {
-                text: "Time"
-                font.bold: true
-                Layout.preferredWidth: 126
-            }
+                Label {
+                    text: "Direction"
+                    font.bold: true
+                    Layout.preferredWidth: root.directionColumnWidth
+                    horizontalAlignment: Text.AlignHCenter
+                    visible: !root.unrecognizedMode
+                }
 
-            Label {
-                text: "Captured"
-                font.bold: true
-                Layout.preferredWidth: 72
-                horizontalAlignment: Text.AlignRight
-            }
+                Label {
+                    text: "Time"
+                    font.bold: true
+                    Layout.preferredWidth: root.timeColumnWidth
+                }
 
-            Label {
-                text: root.unrecognizedMode ? "Original" : "Payload"
-                font.bold: true
-                Layout.preferredWidth: 68
-                horizontalAlignment: Text.AlignRight
-            }
+                Label {
+                    text: "Captured"
+                    font.bold: true
+                    Layout.preferredWidth: root.capturedColumnWidth
+                    horizontalAlignment: Text.AlignRight
+                }
 
-            Label {
-                text: root.unrecognizedMode ? "Parsed up to / Reason" : "Flags"
-                font.bold: true
-                Layout.fillWidth: true
-            }
+                Label {
+                    text: root.unrecognizedMode ? "Original" : "Payload"
+                    font.bold: true
+                    Layout.preferredWidth: root.payloadColumnWidth
+                    horizontalAlignment: Text.AlignRight
+                }
 
-            Label {
-                text: "Marker"
-                font.bold: true
-                Layout.preferredWidth: 168
-                visible: root.showMarkerColumn
+                Label {
+                    objectName: "packetFlagsHeaderLabel"
+                    text: root.unrecognizedMode ? "Parsed up to / Reason" : "Flags"
+                    font.bold: true
+                    Layout.preferredWidth: root.trailingColumnWidth
+                    visible: root.showTrailingColumn
+                }
+
+                Label {
+                    text: "Marker"
+                    font.bold: true
+                    Layout.preferredWidth: root.markerColumnWidth
+                    visible: root.showMarkerColumn
+                }
             }
         }
 
@@ -262,6 +299,7 @@ Frame {
                 onModelChanged: root.syncCurrentSelection()
 
                 ScrollBar.vertical: ScrollBar {
+                    id: packetScrollBar
                     policy: packetListView.contentHeight > packetListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 
@@ -281,25 +319,25 @@ Frame {
 
                     readonly property bool selected: index === packetListView.currentIndex
 
-                    width: packetListView.width
+                    width: root.packetViewportWidth
                     height: 30
                     color: root.rowBackgroundColor(index, capturedLength, originalLength, selected)
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 10
+                        anchors.leftMargin: root.contentHorizontalMargin
+                        anchors.rightMargin: root.contentHorizontalMargin
+                        spacing: root.columnSpacing
 
                         Text {
                             text: rowNumber
-                            Layout.preferredWidth: 50
+                            Layout.preferredWidth: root.indexColumnWidth
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }
 
                         Rectangle {
-                            Layout.preferredWidth: 68
+                            Layout.preferredWidth: root.directionColumnWidth
                             implicitHeight: 20
                             radius: 4
                             color: root.directionBackgroundColor(directionText, selected)
@@ -320,13 +358,13 @@ Frame {
 
                         Text {
                             text: timestamp
-                            Layout.preferredWidth: 126
+                            Layout.preferredWidth: root.timeColumnWidth
                             font.family: "Consolas"
                             verticalAlignment: Text.AlignVCenter
                         }
 
                         Rectangle {
-                            Layout.preferredWidth: 72
+                            Layout.preferredWidth: root.capturedColumnWidth
                             implicitHeight: 20
                             radius: 4
                             color: root.capturedBackgroundColor(isIpFragmented, selected)
@@ -345,15 +383,16 @@ Frame {
 
                         Text {
                             text: root.unrecognizedMode ? originalLength : payloadLength
-                            Layout.preferredWidth: 68
+                            Layout.preferredWidth: root.payloadColumnWidth
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }
 
                         Rectangle {
-                            Layout.fillWidth: true
+                            Layout.preferredWidth: root.trailingColumnWidth
                             implicitHeight: 20
                             radius: 4
+                            visible: root.showTrailingColumn
                             color: root.unrecognizedMode
                                 ? "transparent"
                                 : root.flagBackgroundColor(tcpFlagsText, payloadLength, selected)
@@ -386,7 +425,7 @@ Frame {
                         }
 
                         Rectangle {
-                            Layout.preferredWidth: 168
+                            Layout.preferredWidth: root.markerColumnWidth
                             implicitHeight: 20
                             visible: root.showMarkerColumn
                             radius: 4

@@ -15,6 +15,7 @@ Item {
     property bool protocolPathFilterVisible: false
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
+    property bool packetFlagsColumnVisible: false
     property bool showProtocolPathColumn: true
     property int sortColumn: 0
     property bool sortAscending: true
@@ -271,6 +272,7 @@ Item {
                                 ? "Select the unrecognized packets list to inspect packets"
                                 : "Select a flow to inspect packets"
                             packetModel: root.packetModel
+                            showFlagsColumn: root.packetFlagsColumnVisible
                             selectedPacketIndex: root.selectedPacketIndex
                             packetsLoading: root.packetsLoading
                             packetsPartiallyLoaded: root.packetsPartiallyLoaded

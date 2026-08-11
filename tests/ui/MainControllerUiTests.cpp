@@ -645,6 +645,28 @@ int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& h
     return -1;
 }
 
+int find_flow_index_by_protocol(pfl::FlowListModel* model, const QString& protocol) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::ProtocolRole).toString() == protocol) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
+
+int find_flow_index_by_service_hint(pfl::FlowListModel* model, const QString& service_hint) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::ServiceHintRole).toString() == service_hint) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
+
 int find_flow_index_by_packet_count(pfl::FlowListModel* model, const qulonglong packetCount) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -2938,6 +2960,81 @@ int main(int argc, char* argv[]) {
         flow_table.object->setProperty("showProtocolPathColumn", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
+    });
+
+    run_ui_section("packet_list_flags_column_visibility", [&]() {
+        auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+        UI_REQUIRE(flow_model != nullptr);
+        UI_REQUIRE(packet_model != nullptr);
+        controller.setFlowFilterText(QStringLiteral(""));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        auto packet_list = load_qml_component("src/ui/qml/components/PacketList.qml", "PacketList");
+        packet_list.object->setProperty("packetModel", QVariant::fromValue(static_cast<QObject*>(packet_model)));
+
+        const auto sync_packet_list = [&]() {
+            packet_list.object->setProperty("showFlagsColumn", controller.selectedFlowUsesTcp());
+            packet_list.object->setProperty("selectedPacketIndex", QVariant::fromValue(controller.selectedPacketIndex()));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        };
+
+        const int tcp_flow_index = find_flow_index_by_service_hint(flow_model, QStringLiteral("ui.example"));
+        const int udp_flow_index = find_flow_index_by_protocol_hint(flow_model, QStringLiteral("DNS"));
+        UI_REQUIRE(tcp_flow_index >= 0);
+        UI_REQUIRE(udp_flow_index >= 0);
+
+        controller.setSelectedFlowIndex(tcp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !controller.packetsLoading() && packet_model->rowCount() >= 1;
+        }));
+        UI_EXPECT(controller.selectedFlowUsesTcp());
+        sync_packet_list();
+        UI_EXPECT(item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+        UI_EXPECT(packet_model->data(packet_model->index(0, 0), PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
+
+        controller.setSelectedFlowIndex(udp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !controller.packetsLoading() && packet_model->rowCount() >= 1;
+        }));
+        UI_EXPECT(!controller.selectedFlowUsesTcp());
+        sync_packet_list();
+        UI_EXPECT(!item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+
+        controller.setSelectedFlowIndex(tcp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !controller.packetsLoading() && packet_model->rowCount() >= 1;
+        }));
+        UI_EXPECT(controller.selectedFlowUsesTcp());
+        sync_packet_list();
+        UI_EXPECT(item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+    });
+
+    run_ui_section("packet_list_flags_column_hidden_for_icmp", [&]() {
+        MainController icmp_controller {};
+        UI_EXPECT(open_capture_and_wait(
+            app,
+            icmp_controller,
+            ui_test_root() / "data" / "parsing" / "icmp" / "01_icmp_echo_request.pcap"));
+        auto* icmp_flow_model = qobject_cast<FlowListModel*>(icmp_controller.flowModel());
+        auto* icmp_packet_model = qobject_cast<PacketListModel*>(icmp_controller.packetModel());
+        UI_REQUIRE(icmp_flow_model != nullptr);
+        UI_REQUIRE(icmp_packet_model != nullptr);
+        UI_REQUIRE(icmp_flow_model->rowCount() >= 1);
+
+        auto packet_list = load_qml_component("src/ui/qml/components/PacketList.qml", "PacketList");
+        packet_list.object->setProperty("packetModel", QVariant::fromValue(static_cast<QObject*>(icmp_packet_model)));
+
+        const int icmp_flow_index = find_flow_index_by_protocol(icmp_flow_model, QStringLiteral("ICMP"));
+        UI_REQUIRE(icmp_flow_index >= 0);
+        icmp_controller.setSelectedFlowIndex(icmp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !icmp_controller.packetsLoading() && icmp_packet_model->rowCount() >= 1;
+        }));
+        packet_list.object->setProperty("showFlagsColumn", icmp_controller.selectedFlowUsesTcp());
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!icmp_controller.selectedFlowUsesTcp());
+        UI_EXPECT(!item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
     });
 
     run_ui_section("packet_details_tabs_protocol_removed", [&]() {
