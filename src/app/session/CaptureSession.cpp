@@ -108,6 +108,16 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
     };
 }
 
+RawPcapPacket make_raw_pcap_packet(const PacketRef& packet, std::vector<std::uint8_t> bytes) {
+    return RawPcapPacket {
+        .packet_index = packet.packet_index,
+        .captured_length = packet.captured_length,
+        .original_length = packet.original_length,
+        .data_link_type = packet.data_link_type,
+        .bytes = std::move(bytes),
+    };
+}
+
 UnrecognizedPacketRow make_unrecognized_packet_row(
     const UnrecognizedPacketRecord& record,
     const std::uint64_t row_number
@@ -3299,6 +3309,30 @@ std::vector<std::uint8_t> CaptureSession::read_transport_payload_direct(const Pa
     return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
 }
 
+std::vector<std::uint8_t> CaptureSession::read_transport_payload_terminal(const PacketRef& packet) const {
+    const auto packet_bytes = read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return {};
+    }
+
+    PacketPayloadService payload_service {};
+    PacketDecoder decoder {};
+    const auto decoded = decoder.decode(make_raw_pcap_packet(packet, packet_bytes));
+    if (decoded.terminal_transport_payload_bounds.has_value()) {
+        const auto payload = payload_service.extract_terminal_transport_payload_view(
+            packet_bytes,
+            *decoded.terminal_transport_payload_bounds
+        );
+        if (payload.found) {
+            return std::vector<std::uint8_t>(payload.payload.begin(), payload.payload.end());
+        }
+
+        return {};
+    }
+
+    return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+}
+
 void CaptureSession::prepare_selected_flow_full_packet_cache(
     const std::size_t flow_index,
     const std::span<const PacketRef> packets
@@ -3576,7 +3610,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         }
 
         const auto& packet = window_packet.packet;
-        auto payload_bytes = packet.payload_length == 0U ? std::vector<std::uint8_t> {} : read_transport_payload_direct(packet);
+        auto payload_bytes = packet.payload_length == 0U ? std::vector<std::uint8_t> {} : read_transport_payload_terminal(packet);
         const bool payload_cached = packet.payload_length == 0U ||
             (!payload_bytes.empty() && payload_bytes.size() == packet.payload_length);
         if (!payload_cached) {
@@ -3868,10 +3902,10 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload(
             return std::vector<std::uint8_t>(begin, end);
         }
 
-        return read_transport_payload_direct(packet);
+        return read_transport_payload_terminal(packet);
     }
 
-    return read_transport_payload_direct(packet);
+    return read_transport_payload_terminal(packet);
 }
 
 std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_prefix(
@@ -3921,7 +3955,7 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_s
         return payload;
     }
 
-    auto payload = read_transport_payload_direct(packet);
+    auto payload = read_transport_payload_terminal(packet);
     if (payload_offset >= payload.size()) {
         return {};
     }

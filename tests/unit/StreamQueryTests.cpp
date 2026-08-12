@@ -2380,6 +2380,42 @@ void run_stream_query_tests() {
     }
 
     {
+        constexpr auto kFixturePath = "parsing/gre/24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap";
+        constexpr auto kExpectedSni = "gre-tls.example.test";
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path(kFixturePath), fast_options));
+
+        const auto flows = session.list_flows();
+        PFL_REQUIRE(flows.size() == 1U);
+        PFL_EXPECT(flows[0].protocol_text == "TCP");
+        PFL_EXPECT(flows[0].protocol_hint == "tls");
+        PFL_EXPECT(flows[0].service_hint == kExpectedSni);
+
+        const auto packet_rows = session.list_flow_packets(0U);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        const auto rows = session.list_flow_stream_items(0U);
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "TLS ClientHello");
+        PFL_EXPECT(rows[0].tls_semantic_kind == TlsStreamItemSemanticKind::plaintext_handshake);
+        PFL_EXPECT(rows[0].packet_count == 1U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(!rows[0].summary_payload_bytes.empty());
+
+        const auto summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* stream_item_layer = find_top_level_summary_layer(summary_layers, "stream_item");
+        const auto* tls_layer = find_top_level_summary_layer(summary_layers, "tls");
+        PFL_REQUIRE(stream_item_layer != nullptr);
+        PFL_REQUIRE(tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Label") == "TLS ClientHello");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "State") == "Complete");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Assembly") == "Packet-local");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Stream item");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layer, "SNI") == kExpectedSni);
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_client_hello_5.pcap"), fast_options));
 
