@@ -5,7 +5,11 @@
 #include <span>
 #include <vector>
 
+#include "core/domain/TerminalTransportPayloadBounds.h"
+
 namespace pfl {
+
+struct EffectiveTransportPayloadDetails;
 
 struct TransportPayloadView {
     bool found {false};
@@ -19,6 +23,14 @@ public:
     [[nodiscard]] TransportPayloadView extract_transport_payload_view(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] TransportPayloadView extract_transport_payload_view(std::span<const std::uint8_t> packet_bytes,
                                                                       std::uint32_t data_link_type) const;
+    [[nodiscard]] TransportPayloadView extract_terminal_transport_payload_view(
+        std::span<const std::uint8_t> packet_bytes,
+        const TerminalTransportPayloadBounds& bounds
+    ) const;
+    [[nodiscard]] TransportPayloadView extract_effective_transport_payload_view(
+        std::span<const std::uint8_t> packet_bytes,
+        const EffectiveTransportPayloadDetails& effective_payload
+    ) const;
     [[nodiscard]] std::vector<std::uint8_t> extract_transport_payload(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::vector<std::uint8_t> extract_transport_payload(std::span<const std::uint8_t> packet_bytes,
                                                                       std::uint32_t data_link_type) const;

@@ -46,6 +46,58 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: truly truncated UDP packet with preserved captured/original packet lengths.
 - Used by: import visibility regression and UI checksum/details regression for conservative truncation handling.
 
+## ICMP
+
+`icmp/01_icmp_echo_request.pcap`
+- Purpose: deterministic ICMPv4 Echo Request baseline.
+- Used by: fixture-first regression coverage for current ICMP flow recognition, Summary, and Packet Bytes behavior.
+
+`icmp/02_icmp_echo_reply.pcap`
+- Purpose: deterministic ICMPv4 Echo Reply baseline.
+- Used by: fixture-first regression coverage for current ICMP details decoding.
+
+`icmp/03_icmp_dest_unreachable_network.pcap`
+- Purpose: Destination Unreachable / Network Unreachable with realistic quoted IPv4+UDP bytes.
+
+`icmp/04_icmp_dest_unreachable_host.pcap`
+- Purpose: Destination Unreachable / Host Unreachable with realistic quoted IPv4+UDP bytes.
+
+`icmp/05_icmp_dest_unreachable_port.pcap`
+- Purpose: Destination Unreachable / Port Unreachable with realistic quoted IPv4+UDP bytes.
+
+`icmp/06_icmp_dest_unreachable_frag_needed_mtu_1400.pcap`
+- Purpose: Destination Unreachable / Fragmentation Needed with deterministic Next-Hop MTU value.
+
+`icmp/07_icmp_time_exceeded_ttl.pcap`
+- Purpose: Time Exceeded / TTL exceeded in transit with quoted IPv4+UDP bytes.
+
+`icmp/08_icmp_time_exceeded_reassembly.pcap`
+- Purpose: Time Exceeded / fragment reassembly timeout with quoted IPv4+UDP bytes.
+
+`icmp/09_icmp_redirect_host_gateway.pcap`
+- Purpose: Redirect / host redirect with deterministic gateway address and quoted original datagram bytes.
+
+`icmp/10_icmp_parameter_problem_pointer_5.pcap`
+- Purpose: Parameter Problem with deterministic pointer value and quoted IPv4+TCP bytes.
+
+`icmp/11_icmp_unknown_type_99.pcap`
+- Purpose: unknown numeric ICMP Type baseline that remains structurally long enough for current common-header decoding.
+
+`icmp/12_icmp_echo_request_unknown_code_7.pcap`
+- Purpose: known Echo Request Type with uncommon numeric Code preserved on wire.
+
+`icmp/13_icmp_truncated_common_header_3_bytes.pcap`
+- Purpose: outer Ethernet/IPv4 remains valid while ICMP common header is truncated below 4 bytes.
+
+`icmp/14_icmp_truncated_echo_body.pcap`
+- Purpose: common header present but Echo Identifier/Sequence body intentionally incomplete.
+
+`icmp/15_icmp_truncated_error_quote.pcap`
+- Purpose: error-message header present with intentionally incomplete quoted/original data.
+
+`icmp/16_icmp_same_endpoints_different_identifiers.pcap`
+- Purpose: flow-identity regression showing that differing Echo Identifier/Sequence values do not split the current endpoint-based ICMP flow key.
+
 ## AH
 
 `ah/01_ipv4_ah_tcp.pcap`

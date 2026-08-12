@@ -2645,7 +2645,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes;
     const auto whole_capture_packet_count = packet_size_statistics.total_packet_count;
     const auto whole_capture_captured_bytes = packet_size_statistics.total_captured_bytes;
-    const auto whole_capture_original_bytes = session_.summary().total_bytes;
+    const auto whole_capture_original_bytes = session_.summary().total_bytes + unrecognized_packets.original_bytes;
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = FrontendOverviewSummaryDto {

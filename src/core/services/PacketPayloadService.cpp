@@ -5,6 +5,7 @@
 #include <span>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/domain/PacketDetails.h"
 #include "core/io/LinkType.h"
 
 namespace pfl {
@@ -34,6 +35,20 @@ TransportPayloadView make_payload_view(std::span<const std::uint8_t> bytes,
         .length = length,
         .payload = bytes.subspan(offset, length),
     };
+}
+
+TransportPayloadView make_bounded_payload_view(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t offset,
+    const std::size_t captured_length
+) {
+    if (offset >= packet_bytes.size()) {
+        return {};
+    }
+
+    const auto available_length = packet_bytes.size() - offset;
+    const auto bounded_length = std::min(captured_length, available_length);
+    return make_payload_view(packet_bytes, offset, bounded_length);
 }
 
 }  // namespace
@@ -146,6 +161,32 @@ TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::s
     }
 
     return {};
+}
+
+TransportPayloadView PacketPayloadService::extract_terminal_transport_payload_view(
+    std::span<const std::uint8_t> packet_bytes,
+    const TerminalTransportPayloadBounds& bounds
+) const {
+    if (bounds.declared_end_offset < bounds.payload_offset) {
+        return {};
+    }
+
+    return make_bounded_payload_view(
+        packet_bytes,
+        bounds.payload_offset,
+        bounds.declared_end_offset - bounds.payload_offset
+    );
+}
+
+TransportPayloadView PacketPayloadService::extract_effective_transport_payload_view(
+    std::span<const std::uint8_t> packet_bytes,
+    const EffectiveTransportPayloadDetails& effective_payload
+) const {
+    return make_bounded_payload_view(
+        packet_bytes,
+        effective_payload.payload_offset,
+        effective_payload.captured_payload_length
+    );
 }
 
 std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes) const {

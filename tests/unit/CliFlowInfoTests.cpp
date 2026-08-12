@@ -15,6 +15,10 @@ namespace pfl::tests {
 
 namespace {
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
 bool contains_text(const std::string_view haystack, const std::string_view needle) {
     return haystack.find(needle) != std::string_view::npos;
 }
@@ -330,6 +334,23 @@ void expect_shared_flow_info_model_and_cli_output() {
 
 void expect_flow_info_runtime_and_index_behavior() {
     const auto capture_path = build_cli_flow_info_capture_path();
+
+    {
+        const std::vector<std::string> args {
+            "flow-info",
+            fixture_path("parsing/mdns/01_mdns_ipv4_ptr_query.pcap").string(),
+            "--flow-number",
+            "1",
+            "--progress",
+            "off",
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stdout_text, "Detected Protocol: mDNS"));
+        PFL_EXPECT(contains_text(result.stdout_text, "Service: _demo-service._tcp.local"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Detected Protocol: MDNS"));
+    }
 
     {
         const auto canonical = invoke_cli({

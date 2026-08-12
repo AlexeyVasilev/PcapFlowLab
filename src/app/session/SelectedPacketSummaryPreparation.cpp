@@ -1,9 +1,10 @@
 #include "app/session/SelectedPacketSummaryPreparation.h"
 
-#include <algorithm>
+#include <string_view>
 
 #include "app/session/CaptureSession.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
+#include "core/services/FlowHintService.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/TlsInspectionParser.h"
@@ -32,6 +33,50 @@ namespace {
 
 constexpr std::size_t kTlsSummaryRecordHeaderSize = 5U;
 constexpr std::size_t kTlsSummaryMinimumPartialHandshakeBytes = 7U;
+
+std::optional<DnsSummaryPresentationKind> dns_summary_presentation_kind_from_hint(
+    const std::string_view protocol_hint
+) noexcept {
+    if (protocol_hint == "mdns") {
+        return DnsSummaryPresentationKind::mdns;
+    }
+    if (protocol_hint == "dns") {
+        return DnsSummaryPresentationKind::dns;
+    }
+    return std::nullopt;
+}
+
+std::optional<DnsSummaryPresentationKind> resolve_dns_summary_presentation_kind(
+    CaptureSession& session,
+    const PacketDetails& details,
+    const std::optional<std::size_t> flow_index
+) {
+    const bool has_meaningful_structured_dns =
+        details.dns_message.has_value() &&
+        details.dns_message->status != DnsInspectionStatus::not_enough_header;
+
+    if (flow_index.has_value()) {
+        if (const auto row = session.flow_row(*flow_index); row.has_value()) {
+            if (const auto kind = dns_summary_presentation_kind_from_hint(row->protocol_hint);
+                kind.has_value() && (details.has_dns || has_meaningful_structured_dns)) {
+                return kind;
+            }
+        }
+    }
+
+    if (details.has_dns) {
+        if (packet_matches_mdns_hint(details)) {
+            return DnsSummaryPresentationKind::mdns;
+        }
+        return DnsSummaryPresentationKind::dns;
+    }
+
+    if (has_meaningful_structured_dns && packet_matches_mdns_hint(details)) {
+        return DnsSummaryPresentationKind::mdns;
+    }
+
+    return std::nullopt;
+}
 
 bool has_confirmed_tls_summary_context(
     const TlsInspectionParserContext& initial_parser_context
@@ -274,6 +319,11 @@ TransportPayloadDisposition detect_supported_transport_payload_ownership(
     }
 
     if (details.has_udp) {
+        if (options.dns_summary_presentation_kind.has_value() &&
+            details.dns_message.has_value() &&
+            details.dns_message->status != DnsInspectionStatus::not_enough_header) {
+            return TransportPayloadDisposition::claimed_by_supported_protocol;
+        }
         DnsPacketProtocolAnalyzer dns_analyzer {};
         if (dns_analyzer.analyze(packet_bytes, data_link_type).has_value()) {
             return TransportPayloadDisposition::claimed_by_supported_protocol;
@@ -383,6 +433,7 @@ PacketSummaryOptions SelectedPacketSummaryPreparation::make_options() const {
     options.reconstructed_tls_records = reconstructed_tls_records;
     options.tls_summary_layers = tls_summary_layers;
     options.quic_presentation = quic_presentation;
+    options.dns_summary_presentation_kind = dns_summary_presentation_kind;
     options.packet_data = packet_data;
     return options;
 }
@@ -401,7 +452,12 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
 ) {
     const auto packet_bytes = session.read_packet_data(packet);
     PacketPayloadService payload_service {};
-    auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    const auto transport_payload_view = details.effective_transport_payload.has_value()
+        ? payload_service.extract_effective_transport_payload_view(packet_bytes, *details.effective_transport_payload)
+        : payload_service.extract_transport_payload_view(packet_bytes, packet.data_link_type);
+    auto transport_payload = transport_payload_view.found
+        ? std::vector<std::uint8_t>(transport_payload_view.payload.begin(), transport_payload_view.payload.end())
+        : std::vector<std::uint8_t> {};
 
     auto tls_packet_analysis =
         flow_index.has_value() &&
@@ -436,6 +492,7 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
         .reconstructed_tls_records = std::move(tls_packet_analysis.reconstructed_records),
         .tls_summary_layers = {},
         .quic_presentation = std::move(quic_presentation),
+        .dns_summary_presentation_kind = resolve_dns_summary_presentation_kind(session, details, flow_index),
         .packet_data = std::nullopt,
     };
 

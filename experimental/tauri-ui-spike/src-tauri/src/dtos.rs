@@ -140,6 +140,15 @@ pub struct OverviewSummaryDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WholeCaptureTotalsDto {
+    pub packet_count: u64,
+    pub captured_bytes: u64,
+    pub captured_bytes_text: String,
+    pub original_bytes: u64,
+    pub original_bytes_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewProtocolSummaryDto {
     pub tcp: ProtocolStatsDto,
     pub udp: ProtocolStatsDto,
@@ -307,6 +316,7 @@ pub struct OverviewDto {
     pub unrecognized_packet_count: u64,
     pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
+    pub whole_capture_totals: WholeCaptureTotalsDto,
     pub protocol_summary: OverviewProtocolSummaryDto,
     pub protocol_path_statistics_default_mode: u8,
     pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,

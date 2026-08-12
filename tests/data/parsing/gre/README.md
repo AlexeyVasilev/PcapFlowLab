@@ -81,7 +81,7 @@ Implemented in the current GRE pass:
 Still staged for later work:
 - GRE version 1 / PPTP-like handling beyond conservative unsupported behavior.
 
-Active regression coverage now expects successful flow extraction for fixtures `01`-`15`, `21`, `22`, and `23`, excluding only the unsupported/truncation cases.
+Active regression coverage now expects successful flow extraction for fixtures `01`-`15`, `21`, `22`, `23`, and `24`, excluding only the unsupported/truncation cases.
 GRE key-aware protocol-path identity is now supported when the GRE key flag is present and the full 32-bit key is available:
 - same inner tuple + different GRE keys split into distinct flows;
 - same inner tuple + same GRE key remains one flow;
@@ -233,6 +233,13 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 - GRE key: `0x11111111`
 - Current behavior: recognized as a portless ICMP flow with persistent protocol path `EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4`; selected-packet details still show the inner ICMP structure.
 
+### 24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer VLAN / MPLS / MPLS / IPv4 / GRE / inner IPv4 / TCP / TLS ClientHello
+- Synthetic SNI: `gre-tls.example.test`
+- Current behavior: inner TCP remains the flow protocol, import-time TLS hinting recognizes the packet as `Detected: TLS`, service hint extraction returns `gre-tls.example.test`, and selected-packet Summary shows a structured TLS ClientHello layer instead of leaving the application payload as generic Data only.
+
 ## Expected generated file list
 
 - `01_gre_ipv4_tcp.pcap`
@@ -258,3 +265,4 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 - `21_gre_same_inner_tuple_different_keys.pcap`
 - `22_gre_same_inner_tuple_same_key_two_packets.pcap`
 - `23_gre_key_ipv4_icmp.pcap`
+- `24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap`

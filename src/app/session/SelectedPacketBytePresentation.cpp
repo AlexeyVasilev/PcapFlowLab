@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <sstream>
 
+#include "core/io/LinkType.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/TlsInspectionParser.h"
@@ -12,6 +13,8 @@ namespace pfl::session_detail {
 namespace {
 
 constexpr std::size_t kMaxViewOccurrence = 0xFFU;
+constexpr std::uint32_t kLinuxSllHeaderSize = 16U;
+constexpr std::uint32_t kLinuxSll2HeaderSize = 20U;
 constexpr std::uint32_t kLlcHeaderSize = 3U;
 constexpr std::uint32_t kSnapHeaderSize = 5U;
 constexpr std::uint32_t kPbbHeaderSize = 4U;
@@ -190,6 +193,10 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
     switch (kind) {
     case SelectedPacketByteViewKind::frame:
         return "frame";
+    case SelectedPacketByteViewKind::linux_sll:
+        return "linux_sll";
+    case SelectedPacketByteViewKind::linux_sll2:
+        return "linux_sll2";
     case SelectedPacketByteViewKind::ethernet_payload:
         return "ethernet";
     case SelectedPacketByteViewKind::ieee8023_payload:
@@ -298,6 +305,8 @@ std::string view_kind_key(const SelectedPacketByteViewKind kind) {
 std::optional<SelectedPacketByteViewKind> parse_view_kind_key(const std::string_view key) {
     constexpr std::pair<std::string_view, SelectedPacketByteViewKind> kKinds[] {
         {"frame", SelectedPacketByteViewKind::frame},
+        {"linux_sll", SelectedPacketByteViewKind::linux_sll},
+        {"linux_sll2", SelectedPacketByteViewKind::linux_sll2},
         {"ethernet", SelectedPacketByteViewKind::ethernet_payload},
         {"ieee8023", SelectedPacketByteViewKind::ieee8023_payload},
         {"vlan", SelectedPacketByteViewKind::vlan_payload},
@@ -377,6 +386,14 @@ std::string base_view_label(const SelectedPacketByteViewDescriptor& descriptor) 
     switch (descriptor.id.kind) {
     case SelectedPacketByteViewKind::frame:
         return "Captured Packet";
+    case SelectedPacketByteViewKind::linux_sll:
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "Linux cooked capture v1"
+            : "Linux SLL Payload";
+    case SelectedPacketByteViewKind::linux_sll2:
+        return descriptor.role == SelectedPacketByteViewRole::protocol_unit
+            ? "Linux cooked capture v2"
+            : "Linux SLL2 Payload";
     case SelectedPacketByteViewKind::ethernet_payload:
         return descriptor.role == SelectedPacketByteViewRole::protocol_unit
             ? "Ethernet II Frame"
@@ -890,7 +907,6 @@ bool is_complete_captured_packet_root(
     return !view.parent_id.has_value() &&
         view.owner_kind == SelectedPacketByteOwnerKind::captured_packet &&
         view.role == SelectedPacketByteViewRole::protocol_unit &&
-        view.id.kind != SelectedPacketByteViewKind::frame &&
         view.offset == 0U &&
         view.captured_length == owner_captured_length;
 }
@@ -900,6 +916,10 @@ void ensure_captured_packet_root_when_needed(SelectedPacketBytePresentation& pre
         presentation.views.begin(),
         presentation.views.end(),
         [&](const SelectedPacketByteViewDescriptor& view) {
+            if (view.id.kind == SelectedPacketByteViewKind::linux_sll ||
+                view.id.kind == SelectedPacketByteViewKind::linux_sll2) {
+                return false;
+            }
             return is_complete_captured_packet_root(view, presentation.owner_captured_length);
         }
     );
@@ -2803,7 +2823,71 @@ SelectedPacketBytePresentation build_selected_packet_byte_presentation(
         ? details.encapsulating_vlan_tags.size()
         : details.vlan_tags.size();
 
-    if (details.has_ethernet && details.ethernet.payload_range.has_value()) {
+    if (details.has_linux_cooked &&
+        details.linux_cooked.link_type == kLinkTypeLinuxSll &&
+        packet.captured_length >= kLinuxSllHeaderSize) {
+        const PacketByteRange sll_payload_range {
+            .offset = kLinuxSllHeaderSize,
+            .declared_length = packet.original_length >= kLinuxSllHeaderSize
+                ? std::optional<std::uint32_t> {packet.original_length - kLinuxSllHeaderSize}
+                : std::optional<std::uint32_t> {0U},
+            .captured_length = packet.captured_length - kLinuxSllHeaderSize,
+            .truncated = packet.captured_length < packet.original_length,
+        };
+        const auto sll_id = append_protocol_unit_view(
+            presentation.views,
+            outer_parent,
+            kCapturedPacketOwnerId,
+            presentation.owner_kind,
+            SelectedPacketByteViewRole::protocol_unit,
+            SelectedPacketByteViewKind::linux_sll,
+            0U,
+            presentation.owner_captured_length,
+            PacketByteRange {
+                .offset = 0U,
+                .declared_length = std::optional<std::uint32_t> {packet.original_length},
+                .captured_length = packet.captured_length,
+                .truncated = packet.captured_length < packet.original_length,
+            },
+            sll_payload_range
+        );
+        if (sll_id.has_value()) {
+            outer_parent = sll_id;
+        }
+        outer_payload_range = sll_payload_range;
+    } else if (details.has_linux_cooked &&
+        details.linux_cooked.link_type == kLinkTypeLinuxSll2 &&
+        packet.captured_length >= kLinuxSll2HeaderSize) {
+        const PacketByteRange sll2_payload_range {
+            .offset = kLinuxSll2HeaderSize,
+            .declared_length = packet.original_length >= kLinuxSll2HeaderSize
+                ? std::optional<std::uint32_t> {packet.original_length - kLinuxSll2HeaderSize}
+                : std::optional<std::uint32_t> {0U},
+            .captured_length = packet.captured_length - kLinuxSll2HeaderSize,
+            .truncated = packet.captured_length < packet.original_length,
+        };
+        const auto sll2_id = append_protocol_unit_view(
+            presentation.views,
+            outer_parent,
+            kCapturedPacketOwnerId,
+            presentation.owner_kind,
+            SelectedPacketByteViewRole::protocol_unit,
+            SelectedPacketByteViewKind::linux_sll2,
+            0U,
+            presentation.owner_captured_length,
+            PacketByteRange {
+                .offset = 0U,
+                .declared_length = std::optional<std::uint32_t> {packet.original_length},
+                .captured_length = packet.captured_length,
+                .truncated = packet.captured_length < packet.original_length,
+            },
+            sll2_payload_range
+        );
+        if (sll2_id.has_value()) {
+            outer_parent = sll2_id;
+        }
+        outer_payload_range = sll2_payload_range;
+    } else if (details.has_ethernet && details.ethernet.payload_range.has_value()) {
         outer_payload_range = details.ethernet.payload_range;
         const auto outer_ethernet_kind = details.ethernet.uses_length_field
             ? SelectedPacketByteViewKind::ieee8023_payload

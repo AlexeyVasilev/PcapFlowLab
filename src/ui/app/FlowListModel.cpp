@@ -22,6 +22,9 @@ QString format_protocol_hint(const std::string& value) {
     if (hint == QStringLiteral("possible_quic")) {
         return QStringLiteral("Possible QUIC");
     }
+    if (hint == QStringLiteral("mdns")) {
+        return QStringLiteral("mDNS");
+    }
 
     return hint.toUpper();
 }

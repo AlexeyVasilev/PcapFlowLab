@@ -501,6 +501,7 @@ private:
     };
 
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
+    [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_terminal(const PacketRef& packet) const;
     void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
     [[nodiscard]] SelectedFlowTcpPrefixResolution prepare_selected_flow_tcp_prefix_context(
         std::size_t flow_index,

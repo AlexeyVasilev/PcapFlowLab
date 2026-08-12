@@ -87,12 +87,18 @@ void apply_import_hints_if_needed(const RawPcapPacket& packet,
                                   const PacketRef& packet_ref,
                                   Connection& connection,
                                   const FlowKey& flow_key,
-                                  const FlowHintService& hint_service) {
+                                  const FlowHintService& hint_service,
+                                  const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds = std::nullopt) {
     if (packet_ref.is_ip_fragmented || !connection.should_attempt_hint_detection(packet_ref, flow_key.protocol)) {
         return;
     }
 
-    connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, flow_key));
+    connection.apply_hints(hint_service.detect(
+        packet_bytes,
+        packet.data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds
+    ));
     connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
 }
 

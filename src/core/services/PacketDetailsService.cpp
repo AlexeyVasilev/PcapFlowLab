@@ -4,8 +4,11 @@
 #include <span>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/DnsInspectionParser.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
+#include "core/services/IcmpInspectionParser.h"
+#include "core/services/PacketPayloadService.h"
 
 namespace pfl {
 
@@ -31,11 +34,22 @@ constexpr std::uint16_t kPppoeDiscoveryTagEndOfList = 0x0000U;
 constexpr std::uint16_t kPppProtocolLcp = 0xc021U;
 constexpr std::uint16_t kPppProtocolIpcp = 0x8021U;
 constexpr std::uint16_t kPppProtocolIpv6cp = 0x8057U;
+constexpr std::uint16_t kDnsPort = 53U;
+constexpr std::uint16_t kMdnsPort = 5353U;
 
 bool is_ppp_control_protocol(const std::uint16_t protocol) noexcept {
     return protocol == kPppProtocolLcp ||
         protocol == kPppProtocolIpcp ||
         protocol == kPppProtocolIpv6cp;
+}
+
+bool is_dns_candidate_udp_port(const std::uint16_t port) noexcept {
+    return port == kDnsPort || port == kMdnsPort;
+}
+
+bool should_inspect_dns_message(const PacketDetails& details) noexcept {
+    return details.has_udp &&
+        (is_dns_candidate_udp_port(details.udp.src_port) || is_dns_candidate_udp_port(details.udp.dst_port));
 }
 
 struct LinkLayerView {
@@ -140,8 +154,23 @@ void populate_application_protocol_details(
 ) {
     details.has_dns = false;
     details.dns = {};
+    details.dns_message = std::nullopt;
     details.has_http = false;
     details.http = {};
+
+    PacketPayloadService payload_service {};
+    if (should_inspect_dns_message(details)) {
+        const auto transport_payload = payload_service.extract_transport_payload_view(packet_bytes, packet_ref.data_link_type);
+        if (transport_payload.found) {
+            DnsInspectionParser dns_parser {};
+            const auto dns_message = dns_parser.inspect(
+                transport_payload.payload
+            );
+            if (dns_message.status != DnsInspectionStatus::not_enough_header) {
+                details.dns_message = std::move(dns_message);
+            }
+        }
+    }
 
     DnsPacketProtocolAnalyzer dns_analyzer {};
     if (const auto dns = dns_analyzer.inspect_message(packet_bytes, packet_ref.data_link_type); dns.has_value()) {
@@ -3442,6 +3471,17 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             .protocol_type = detail::read_be16(packet_bytes, 14U),
             .packet_type = detail::read_be16(packet_bytes, 0U),
             .hardware_type = detail::read_be16(packet_bytes, 2U),
+            .address_length = detail::read_be16(packet_bytes, 4U),
+            .address_bytes = {
+                packet_bytes[6U],
+                packet_bytes[7U],
+                packet_bytes[8U],
+                packet_bytes[9U],
+                packet_bytes[10U],
+                packet_bytes[11U],
+                packet_bytes[12U],
+                packet_bytes[13U],
+            },
         };
 
         return LinkLayerView {
@@ -3461,6 +3501,19 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             .protocol_type = detail::read_be16(packet_bytes, 0U),
             .packet_type = packet_bytes[10U],
             .hardware_type = detail::read_be16(packet_bytes, 8U),
+            .reserved = detail::read_be16(packet_bytes, 2U),
+            .interface_index = detail::read_be32(packet_bytes, 4U),
+            .address_length = packet_bytes[11U],
+            .address_bytes = {
+                packet_bytes[12U],
+                packet_bytes[13U],
+                packet_bytes[14U],
+                packet_bytes[15U],
+                packet_bytes[16U],
+                packet_bytes[17U],
+                packet_bytes[18U],
+                packet_bytes[19U],
+            },
         };
 
         return LinkLayerView {
@@ -4252,15 +4305,33 @@ std::optional<PacketDetails> decode_packet_details(
         }
 
         if (details.ipv4.protocol == detail::kIpProtocolIcmp) {
-            if (transport_offset + 2U > packet_end || network_packet_bytes.size() < transport_offset + 2U) {
+            const auto captured_icmp_length = packet_end > transport_offset ? packet_end - transport_offset : 0U;
+            const auto declared_icmp_length = ipv4_bounds->nominal_packet_end > transport_offset
+                ? std::optional<std::size_t> {ipv4_bounds->nominal_packet_end - transport_offset}
+                : std::optional<std::size_t> {};
+
+            const IcmpInspectionParser parser {};
+            const auto icmp_message = parser.inspect(
+                std::span<const std::uint8_t>(
+                    network_packet_bytes.data() + transport_offset,
+                    captured_icmp_length
+                ),
+                declared_icmp_length
+            );
+
+            if (icmp_message.type.has_value() && icmp_message.code.has_value()) {
+                details.has_icmp = true;
+                details.icmp = IcmpDetails {
+                    .type = *icmp_message.type,
+                    .code = *icmp_message.code,
+                };
+            }
+            details.icmp_message = icmp_message;
+
+            if (!icmp_common_header_complete(icmp_message)) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
-            details.has_icmp = true;
-            details.icmp = IcmpDetails {
-                .type = network_packet_bytes[transport_offset],
-                .code = network_packet_bytes[transport_offset + 1U],
-            };
             return details;
         }
 

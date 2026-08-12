@@ -6,6 +6,10 @@
 #include <sstream>
 #include <string_view>
 
+#include "app/session/DnsSummaryPresentation.h"
+#include "app/session/IcmpSummaryPresentation.h"
+#include "core/io/LinkType.h"
+
 namespace pfl::session_detail {
 
 std::vector<TlsRecordModel> inspect_tls_summary_records(
@@ -72,6 +76,13 @@ constexpr std::uint8_t kIpv4OptionRouterAlert = 148U;
 constexpr std::size_t kPacketDataPreviewMaxBytes = 32U;
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
+
+std::string format_capture_link_type_value(const std::uint32_t link_type) {
+    if (const auto known_name = capture_link_type_name(link_type); !known_name.empty()) {
+        return std::string {known_name};
+    }
+    return "Unknown (" + std::to_string(link_type) + ")";
+}
 
 bool has_complete_arp_sender_ipv4(const PacketDetails& details) {
     return details.has_arp &&
@@ -375,6 +386,138 @@ std::string format_vlan_tpid_name(const std::uint16_t tpid) {
     default:
         return "VLAN";
     }
+}
+
+PacketSummaryField make_summary_field(std::string label, std::string value);
+
+std::optional<std::string_view> linux_sll_packet_type_name(const std::uint16_t packet_type) noexcept {
+    switch (packet_type) {
+    case 0x0000U:
+        return "Host";
+    case 0x0001U:
+        return "Broadcast";
+    case 0x0002U:
+        return "Multicast";
+    case 0x0003U:
+        return "Other host";
+    case 0x0004U:
+        return "Outgoing";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string_view> linux_sll_hardware_type_name(const std::uint16_t hardware_type) noexcept {
+    switch (hardware_type) {
+    case 0x0001U:
+        return "Ethernet";
+    case 0x0304U:
+        return "Loopback";
+    case 0x0320U:
+        return "IEEE 802.11";
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_linux_sll_named_u16(
+    const std::uint16_t value,
+    const std::optional<std::string_view> name
+) {
+    if (!name.has_value()) {
+        return format_hex16_value(value);
+    }
+    return std::string(*name) + " (" + format_hex16_value(value) + ")";
+}
+
+std::optional<PacketSummaryLayer> build_linux_cooked_summary_layer(const PacketDetails& details) {
+    if (!details.has_linux_cooked ||
+        (details.linux_cooked.link_type != kLinkTypeLinuxSll &&
+            details.linux_cooked.link_type != kLinkTypeLinuxSll2)) {
+        return std::nullopt;
+    }
+
+    const bool is_sll2 = details.linux_cooked.link_type == kLinkTypeLinuxSll2;
+    const auto bounded_address_length = std::min<std::size_t>(
+        static_cast<std::size_t>(details.linux_cooked.address_length),
+        details.linux_cooked.address_bytes.size()
+    );
+    const auto address_text = bounded_address_length == 0U
+        ? std::string {"none"}
+        : format_hex_byte_sequence(std::span<const std::uint8_t>(
+            details.linux_cooked.address_bytes.data(),
+            bounded_address_length
+        ));
+
+    std::vector<PacketSummaryField> fields {};
+    if (is_sll2) {
+        fields = {
+            make_summary_field("Protocol", format_ether_type_value(details.linux_cooked.protocol_type)),
+            make_summary_field("Reserved", format_hex16_value(details.linux_cooked.reserved)),
+            make_summary_field("Interface Index", std::to_string(details.linux_cooked.interface_index)),
+            make_summary_field(
+                "Link-layer Address Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.hardware_type,
+                    linux_sll_hardware_type_name(details.linux_cooked.hardware_type)
+                )
+            ),
+            make_summary_field(
+                "Packet Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.packet_type,
+                    linux_sll_packet_type_name(details.linux_cooked.packet_type)
+                )
+            ),
+            make_summary_field("Link-layer Address Length", std::to_string(details.linux_cooked.address_length)),
+            make_summary_field("Link-layer Address", address_text),
+        };
+    } else {
+        fields = {
+            make_summary_field(
+                "Packet Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.packet_type,
+                    linux_sll_packet_type_name(details.linux_cooked.packet_type)
+                )
+            ),
+            make_summary_field(
+                "Link-layer Address Type",
+                format_linux_sll_named_u16(
+                    details.linux_cooked.hardware_type,
+                    linux_sll_hardware_type_name(details.linux_cooked.hardware_type)
+                )
+            ),
+            make_summary_field("Link-layer Address Length", std::to_string(details.linux_cooked.address_length)),
+            make_summary_field("Link-layer Address", address_text),
+            make_summary_field("Protocol", format_ether_type_value(details.linux_cooked.protocol_type)),
+        };
+    }
+
+    bool warning = false;
+    if (details.linux_cooked.address_length > details.linux_cooked.address_bytes.size()) {
+        fields.push_back(make_summary_field(
+            "Warning",
+            is_sll2
+                ? "Declared link-layer address length exceeds the fixed 8-byte SLL2 address field"
+                : "Declared link-layer address length exceeds the fixed 8-byte SLL address field"
+        ));
+        warning = true;
+    }
+    if (is_sll2 && details.linux_cooked.reserved != 0U) {
+        fields.push_back(make_summary_field("Warning", "SLL2 reserved field is non-zero"));
+        warning = true;
+    }
+
+    return PacketSummaryLayer {
+        .id = "linux-cooked",
+        .title = is_sll2 ? "Linux cooked capture v2" : "Linux cooked capture v1",
+        .fields = std::move(fields),
+        .warning = warning,
+        .marker_text = warning
+            ? std::string {"Warning"}
+            : std::string {},
+    };
 }
 
 std::string format_vlan_summary_title(const VlanTagDetails& tag) {
@@ -3154,55 +3297,6 @@ void append_protocol_field_if_present(
     }
 }
 
-std::string dns_message_type_text(const DnsDetails& details) {
-    return details.is_response ? "Response" : "Query";
-}
-
-std::string dns_query_type_text(const std::uint16_t query_type) {
-    switch (query_type) {
-    case 1U:
-        return "A (1)";
-    case 28U:
-        return "AAAA (28)";
-    case 33U:
-        return "SRV (33)";
-    case 64U:
-        return "SVCB (64)";
-    case 65U:
-        return "HTTPS (65)";
-    default:
-        return std::to_string(query_type);
-    }
-}
-
-std::optional<std::string> dns_query_name_text(const DnsDetails& details) {
-    if (details.query_name.empty() || details.query_name == ".") {
-        return std::nullopt;
-    }
-    return details.query_name;
-}
-
-std::optional<PacketSummaryLayer> build_icmp_summary_layer(const PacketDetails& details) {
-    if (!details.has_icmp) {
-        return std::nullopt;
-    }
-
-    std::vector<PacketSummaryField> fields {
-        make_summary_field("Type", std::to_string(details.icmp.type)),
-        make_summary_field("Code", std::to_string(details.icmp.code)),
-    };
-    if (details.has_ipv4) {
-        fields.push_back(make_summary_field("Source", format_ipv4_address(details.ipv4.src_addr)));
-        fields.push_back(make_summary_field("Destination", format_ipv4_address(details.ipv4.dst_addr)));
-    }
-
-    return PacketSummaryLayer {
-        .id = "icmp",
-        .title = "Internet Control Message Protocol",
-        .fields = std::move(fields),
-    };
-}
-
 std::string format_igmp_type_text(const IgmpDetails& igmp) {
     switch (igmp.type) {
     case kIgmpTypeMembershipQuery:
@@ -4733,6 +4827,12 @@ TlsStreamSummaryContext tls_stream_summary_context(const TlsStreamItemSemanticKi
 }
 
 bool stream_item_uses_packet_fallback_impl(const StreamItemRow& row) {
+    if (row.packet_indices.size() == 1U &&
+        row.semantic_family == StreamItemSemanticFamily::dns &&
+        row.dns_summary.has_value()) {
+        return true;
+    }
+
     return row.packet_indices.size() == 1U &&
         row.semantic_family == StreamItemSemanticFamily::generic &&
         row.generic_summary.has_value() &&
@@ -4784,6 +4884,19 @@ std::string stream_item_state_text(const StreamItemRow& row) {
             return "Truncated";
         }
         return "Complete";
+    }
+
+    if (row.dns_summary.has_value()) {
+        switch (row.dns_summary->message.status) {
+        case DnsInspectionStatus::truncated:
+            return "Truncated";
+        case DnsInspectionStatus::malformed:
+            return "Malformed";
+        case DnsInspectionStatus::complete:
+        case DnsInspectionStatus::not_enough_header:
+        default:
+            break;
+        }
     }
 
     if (row.quic_stream_presentation.has_value()) {
@@ -4985,6 +5098,19 @@ std::optional<PacketSummaryLayer> build_arp_stream_summary_layer(const StreamIte
             ? "Warning"
             : std::string {},
     };
+}
+
+std::optional<PacketSummaryLayer> build_dns_stream_summary_layer(const StreamItemRow& row) {
+    if (!row.dns_summary.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto presentation_kind =
+        row.dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_query ||
+            row.dns_summary->semantic_kind == DnsStreamItemSemanticKind::mdns_response
+        ? DnsSummaryPresentationKind::mdns
+        : DnsSummaryPresentationKind::dns;
+    return build_dns_summary_layer(row.dns_summary->message, presentation_kind);
 }
 
 std::optional<PacketSummaryLayer> build_generic_stream_summary_layer(const StreamItemRow& row) {
@@ -5330,7 +5456,10 @@ std::vector<PacketSummaryLayer> build_quic_summary_layers(
     );
 }
 
-std::optional<PacketSummaryLayer> build_protocol_summary_layer(const PacketDetails& details) {
+std::optional<PacketSummaryLayer> build_protocol_summary_layer(
+    const PacketDetails& details,
+    const PacketSummaryOptions& options
+) {
     if (details.has_pppoe || details.has_arp || details.has_igmp) {
         return std::nullopt;
     }
@@ -5342,32 +5471,12 @@ std::optional<PacketSummaryLayer> build_protocol_summary_layer(const PacketDetai
         return icmpv6_layer;
     }
 
-    if (details.has_dns) {
-        std::vector<PacketSummaryField> fields {};
-        const auto message_type = std::optional<std::string> {dns_message_type_text(details.dns)};
-        const auto qname = dns_query_name_text(details.dns);
-        const auto qtype = std::optional<std::string> {dns_query_type_text(details.dns.query_type)};
-        append_protocol_field_if_present(fields, "Message Type", message_type);
-        append_protocol_field_if_present(fields, "QName", qname);
-        append_protocol_field_if_present(fields, "QType", qtype);
-        fields.push_back(make_summary_field("Transaction ID", format_hex16_value(details.dns.transaction_id)));
-        if (details.dns.response_code.has_value() && details.dns.is_response) {
-            fields.push_back(make_summary_field("Response Code", std::to_string(*details.dns.response_code)));
+    if (options.dns_summary_presentation_kind.has_value() || details.has_dns) {
+        const auto presentation_kind =
+            options.dns_summary_presentation_kind.value_or(DnsSummaryPresentationKind::dns);
+        if (const auto dns_layer = build_dns_summary_layer(details, presentation_kind); dns_layer.has_value()) {
+            return dns_layer;
         }
-
-        std::string title = "Domain Name System";
-        if (message_type.has_value()) {
-            title += ", " + *message_type;
-            if (qtype.has_value() && qname.has_value() && *message_type == "Query") {
-                title += " " + *qtype + " " + *qname;
-            }
-        }
-
-        return PacketSummaryLayer {
-            .id = "dns",
-            .title = std::move(title),
-            .fields = std::move(fields),
-        };
     }
 
     if (details.has_http) {
@@ -5949,6 +6058,8 @@ std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
     if (tls_layers.empty()) {
         if (const auto http_layer = build_http_stream_summary_layer(row); http_layer.has_value()) {
             layers.push_back(*http_layer);
+        } else if (const auto dns_layer = build_dns_stream_summary_layer(row); dns_layer.has_value()) {
+            layers.push_back(*dns_layer);
         } else if (const auto arp_layer = build_arp_stream_summary_layer(row); arp_layer.has_value()) {
             layers.push_back(*arp_layer);
         } else if (const auto generic_layer = build_generic_stream_summary_layer(row); generic_layer.has_value()) {
@@ -6051,6 +6162,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
     frame_fields.push_back(make_summary_field("Packet number in file", std::to_string(packet_number_in_file)));
     frame_fields.push_back(make_summary_field("Timestamp", format_packet_timestamp_full(packet)));
+    frame_fields.push_back(make_summary_field("Encapsulation Type", format_capture_link_type_value(packet.data_link_type)));
     frame_fields.push_back(make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"));
     frame_fields.push_back(make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"));
 
@@ -6100,6 +6212,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 ", Dst: " + format_mac_address(details.ethernet.dst_mac),
             .fields = std::move(ethernet_fields),
         });
+    }
+
+    if (const auto linux_cooked_layer = build_linux_cooked_summary_layer(details); linux_cooked_layer.has_value()) {
+        append_layer_if_not_empty(layers, *linux_cooked_layer);
     }
 
     const bool has_nested_inner_ethernet = details.has_inner_ethernet && (details.has_mpls || details.has_pbb);
@@ -7300,7 +7416,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     insert_packet_data_summary_layer(layers, options);
 
-    const auto protocol_layer = build_protocol_summary_layer(details);
+    const auto protocol_layer = build_protocol_summary_layer(details, options);
     if (!appended_tls_summary && protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
     }

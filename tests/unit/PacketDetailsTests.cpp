@@ -17,6 +17,8 @@
 #include "app/session/SessionTlsPresentation.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
+#include "core/io/PcapReader.h"
+#include "core/io/LinkType.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
@@ -121,6 +123,14 @@ std::vector<std::uint8_t> make_minimal_server_hello_body_with_extensions(
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
+    PFL_REQUIRE(packet.has_value());
+    return *packet;
+}
+
+RawPcapPacket require_first_raw_packet(const std::filesystem::path& capture_path) {
+    PcapReader reader {};
+    PFL_REQUIRE(reader.open(capture_path));
+    const auto packet = reader.read_next();
     PFL_REQUIRE(packet.has_value());
     return *packet;
 }
@@ -478,6 +488,27 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
     return build_fixture_summary_layers(relative_fixture_path, CaptureImportOptions {}, 0U);
 }
 
+std::vector<session_detail::PacketSummaryLayer> build_capture_summary_layers(
+    const std::filesystem::path& capture_path,
+    const std::uint64_t packet_index = 0U
+) {
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(capture_path));
+    const auto packet = require_packet(session, packet_index);
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+    const auto flow_context = resolve_selected_packet_flow_context(session, packet);
+    auto packet_summary_preparation = prepare_selected_packet_summary_with_production_lengths(
+        session,
+        *details,
+        packet,
+        flow_context.flow_index,
+        flow_context.flow_packet_index,
+        flow_context.loaded_packet_window_count
+    );
+    return session_detail::build_packet_summary_layers(*details, packet, packet_summary_preparation.make_options());
+}
+
 std::vector<session_detail::PacketSummaryLayer> build_flow_packet_summary_layers(
     CaptureSession& session,
     const std::size_t flow_index,
@@ -670,6 +701,7 @@ void run_packet_details_tests() {
         PFL_REQUIRE(tcp_layer != nullptr);
         const auto* frame_in_flow_field = find_summary_field(*frame_layer, "Packet number in flow");
         const auto* frame_in_file_field = find_summary_field(*frame_layer, "Packet number in file");
+        const auto* frame_encapsulation_type_field = find_summary_field(*frame_layer, "Encapsulation Type");
         const auto* frame_captured_length_field = find_summary_field(*frame_layer, "Captured Length");
         const auto* frame_original_length_field = find_summary_field(*frame_layer, "Original Length");
         const auto* ethernet_source_field = find_summary_field(*ethernet_layer, "Source");
@@ -697,6 +729,7 @@ void run_packet_details_tests() {
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
         PFL_REQUIRE(frame_in_flow_field != nullptr);
         PFL_REQUIRE(frame_in_file_field != nullptr);
+        PFL_REQUIRE(frame_encapsulation_type_field != nullptr);
         PFL_REQUIRE(frame_captured_length_field != nullptr);
         PFL_REQUIRE(frame_original_length_field != nullptr);
         PFL_REQUIRE(ethernet_source_field != nullptr);
@@ -724,6 +757,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(tcp_options_layer == nullptr);
         PFL_EXPECT(frame_in_flow_field->value == "4");
         PFL_EXPECT(frame_in_file_field->value == "8");
+        PFL_EXPECT(frame_encapsulation_type_field->value == "Ethernet");
         PFL_EXPECT(frame_captured_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
         PFL_EXPECT(frame_original_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
         PFL_EXPECT(ethernet_source_field->value == "66:77:88:99:aa:bb");
@@ -3049,6 +3083,47 @@ void run_packet_details_tests() {
     }
 
     {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/gre/24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap"),
+            CaptureImportOptions {}
+        ));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->effective_transport_payload->summary_placement ==
+            EffectiveTransportSummaryPlacement::after_inner_tcp);
+        PFL_EXPECT(details->effective_transport_payload->captured_payload_length == 81U);
+
+        const auto packet_bytes = session.read_packet_data(packet);
+        const auto packet_bytes_span = std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size());
+        const auto payload_offset = details->effective_transport_payload->payload_offset;
+        PFL_REQUIRE(payload_offset + 5U <= packet_bytes.size());
+        PFL_REQUIRE(payload_offset >= 20U);
+        PFL_EXPECT(format_expected_hex_byte_list(packet_bytes_span.subspan(payload_offset, 5U)) == "16 03 03 00 4c");
+        PFL_EXPECT(format_expected_hex_byte_list(packet_bytes_span.subspan(payload_offset - 20U, 4U)) == "c0 00 01 bb");
+
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        const auto tls_layers = find_summary_layers(summary_layers, "tls");
+        const auto* gre_layer = find_summary_layer(summary_layers, "gre");
+        const auto* inner_ipv4_layer = find_summary_layer(summary_layers, "ipv4-inner");
+        const auto* inner_tcp_layer = find_summary_layer(summary_layers, "tcp-inner");
+        PFL_REQUIRE(gre_layer != nullptr);
+        PFL_REQUIRE(inner_ipv4_layer != nullptr);
+        PFL_REQUIRE(inner_tcp_layer != nullptr);
+        PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp-inner") + 1U == find_summary_layer_index(summary_layers, "tls"));
+        PFL_EXPECT(require_summary_field_value(*inner_tcp_layer, "Payload Length") == "81 bytes");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Handshake Type") == "ClientHello");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "SNI") == "gre-tls.example.test");
+        PFL_EXPECT(require_summary_field_value(*tls_layers[0], "Total Record Size") == "81 bytes");
+    }
+
+    {
         const auto summary_layers = build_fixture_summary_layers("parsing/ah/12_ipv4_ah_inner_ipv4_udp.pcap");
         const auto data_layers = find_summary_layers(summary_layers, "data");
         const auto* ah_layer = find_summary_layer(summary_layers, "ah");
@@ -3144,6 +3219,26 @@ void run_packet_details_tests() {
         PFL_REQUIRE(udp_original_payload_length_field != nullptr);
         PFL_EXPECT(udp_captured_payload_length_field->value == "4 bytes");
         PFL_EXPECT(udp_original_payload_length_field->value == "7 bytes");
+    }
+
+    {
+        const auto udp_packet = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), 54000, 443, 5);
+
+        PacketDetailsService service {};
+        const PacketRef packet_ref {
+            .packet_index = 19,
+            .byte_offset = 96,
+            .captured_length = static_cast<std::uint32_t>(udp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(udp_packet.size()),
+        };
+
+        const auto details = service.decode(udp_packet, packet_ref);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_udp);
+        PFL_EXPECT(details->udp.src_port == 54000);
+        PFL_EXPECT(details->udp.dst_port == 443);
+        PFL_EXPECT(!details->dns_message.has_value());
     }
 
     {
@@ -3318,6 +3413,117 @@ void run_packet_details_tests() {
     }
 
     {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/01_sll_ipv4_tcp.pcap");
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "frame") == 0U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "linux-cooked") == 1U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "ipv4") == 2U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp") == 3U);
+
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(linux_sll_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*frame_layer, "Encapsulation Type") == "Linux cooked capture v1");
+        PFL_EXPECT(linux_sll_layer->title == "Linux cooked capture v1");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Packet Type") == "0x1234");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Type") == "0x3456");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Length") == "6");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address") == "10:20:30:40:50:60");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Protocol") == "IPv4 (0x0800)");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/05_sll2_ipv4_tcp.pcap");
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "frame") == 0U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "linux-cooked") == 1U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "ipv4") == 2U);
+        PFL_EXPECT(find_summary_layer_index(summary_layers, "tcp") == 3U);
+
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*frame_layer, "Encapsulation Type") == "Linux cooked capture v2");
+        PFL_EXPECT(linux_sll2_layer->title == "Linux cooked capture v2");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Protocol") == "IPv4 (0x0800)");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Reserved") == "0x0000");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Interface Index") == "16909060");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address Type") == "0x0f0e");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Packet Type") == "0x007f");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address Length") == "6");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address") == "21:22:23:24:25:26");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/12_sll2_unknown_protocol.pcap");
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*frame_layer, "Encapsulation Type") == "Linux cooked capture v2");
+        PFL_EXPECT(linux_sll2_layer->title == "Linux cooked capture v2");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Protocol") == "0x4321");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/18_sll2_addrlen_12_ipv6_udp.pcap");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Link-layer Address Length") == "12");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Warning") ==
+            "Declared link-layer address length exceeds the fixed 8-byte SLL2 address field");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/14_sll2_truncated_inner_ipv6.pcap");
+        const auto* warning_layer = find_summary_layer(summary_layers, "warnings");
+        const auto* linux_sll2_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(warning_layer != nullptr);
+        PFL_REQUIRE(linux_sll2_layer != nullptr);
+        PFL_EXPECT(linux_sll2_layer->title == "Linux cooked capture v2");
+        PFL_EXPECT(require_summary_field_value(*linux_sll2_layer, "Protocol") == "IPv6 (0x86dd)");
+        const auto has_truncation_warning = std::any_of(
+            warning_layer->fields.begin(),
+            warning_layer->fields.end(),
+            [](const auto& field) {
+                return field.value.find("IPv6 header truncated") != std::string::npos;
+            }
+        );
+        PFL_EXPECT(has_truncation_warning);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/13_sll_truncated_inner_ipv4.pcap");
+        const auto* warning_layer = find_summary_layer(summary_layers, "warnings");
+        const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(warning_layer != nullptr);
+        PFL_REQUIRE(linux_sll_layer != nullptr);
+        PFL_EXPECT(linux_sll_layer->title == "Linux cooked capture v1");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Packet Type") == "0x0a0b");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Type") == "0x0c0d");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Protocol") == "IPv4 (0x0800)");
+        const auto has_truncation_warning = std::any_of(
+            warning_layer->fields.begin(),
+            warning_layer->fields.end(),
+            [](const session_detail::PacketSummaryField& field) {
+                return field.value == "Packet is truncated in capture";
+            }
+        );
+        PFL_EXPECT(has_truncation_warning);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/linux_cooked/16_sll_addrlen_12_ipv4_tcp.pcap");
+        const auto* linux_sll_layer = find_summary_layer(summary_layers, "linux-cooked");
+        PFL_REQUIRE(linux_sll_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Link-layer Address Length") == "12");
+        PFL_EXPECT(require_summary_field_value(*linux_sll_layer, "Warning") ==
+            "Declared link-layer address length exceeds the fixed 8-byte SLL address field");
+    }
+
+    {
         PacketDetailsService service {};
         auto short_arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U);
         short_arp_packet.resize(14U + 6U);
@@ -3332,6 +3538,57 @@ void run_packet_details_tests() {
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.fixed_header_truncated);
+    }
+
+    {
+        PacketDetails details {
+            .packet_index = 30U,
+            .captured_length = 10U,
+            .original_length = 10U,
+        };
+        const PacketRef packet_ref {
+            .packet_index = 30U,
+            .byte_offset = 300U,
+            .data_link_type = 999U,
+            .captured_length = 10U,
+            .original_length = 10U,
+        };
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet_ref);
+        PFL_REQUIRE(summary_layers.size() == 1U);
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*frame_layer, "Encapsulation Type") == "Unknown (999)");
+    }
+
+    {
+        const auto ethernet_packet = make_ethernet_ipv4_tcp_packet(
+            ipv4(10, 1, 0, 1),
+            ipv4(10, 1, 0, 2),
+            12345,
+            443
+        );
+        const auto sll2_packet =
+            require_first_raw_packet(fixture_path("parsing/linux_cooked/05_sll2_ipv4_tcp.pcap"));
+        const auto pcapng_path = write_temp_pcap(
+            "pfl_packet_details_multi_interface_encapsulation.pcapng",
+            make_pcapng({
+                make_pcapng_section_header_block(),
+                make_pcapng_interface_description_block(static_cast<std::uint16_t>(kLinkTypeEthernet)),
+                make_pcapng_interface_description_block(static_cast<std::uint16_t>(kLinkTypeLinuxSll2)),
+                make_pcapng_enhanced_packet_block(0U, 1U, 100U, ethernet_packet),
+                make_pcapng_enhanced_packet_block(1U, 1U, 200U, sll2_packet.bytes),
+            })
+        );
+
+        const auto ethernet_summary_layers = build_capture_summary_layers(pcapng_path, 0U);
+        const auto sll2_summary_layers = build_capture_summary_layers(pcapng_path, 1U);
+        const auto* ethernet_frame_layer = find_summary_layer(ethernet_summary_layers, "frame");
+        const auto* sll2_frame_layer = find_summary_layer(sll2_summary_layers, "frame");
+        PFL_REQUIRE(ethernet_frame_layer != nullptr);
+        PFL_REQUIRE(sll2_frame_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*ethernet_frame_layer, "Encapsulation Type") == "Ethernet");
+        PFL_EXPECT(require_summary_field_value(*sll2_frame_layer, "Encapsulation Type") == "Linux cooked capture v2");
     }
 
     {

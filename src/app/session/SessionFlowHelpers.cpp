@@ -791,6 +791,9 @@ std::string format_flow_protocol_hint_display(const std::string_view value) {
     if (value == "igmpv3") {
         return "IGMPv3";
     }
+    if (value == "mdns") {
+        return "mDNS";
+    }
 
     return upper_ascii(value);
 }

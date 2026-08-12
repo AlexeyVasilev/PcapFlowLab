@@ -517,6 +517,44 @@ void run_selected_stream_item_data_presentation_tests() {
     }
 
     {
+        constexpr auto kFixturePath = "parsing/gre/24_outer_vlan_mpls_mpls_gre_inner_ipv4_tcp_tls_client_hello.pcap";
+        constexpr auto kExpectedSni = "gre-tls.example.test";
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path(kFixturePath), fast_options()));
+
+        const auto flows = session.list_flows();
+        PFL_REQUIRE(flows.size() == 1U);
+        PFL_EXPECT(flows[0].protocol_text == "TCP");
+        PFL_EXPECT(flows[0].protocol_hint == "tls");
+        PFL_EXPECT(flows[0].service_hint == kExpectedSni);
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto* row = find_stream_row_by_label(rows, "TLS ClientHello");
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(row->packet_indices.size() == 1U);
+        PFL_EXPECT(!row->summary_payload_bytes.empty());
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row->stream_item_index);
+        PFL_EXPECT(presentation.semantic_kind == session_detail::StreamItemDataSemanticKind::tls_record);
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::captured_packet_range);
+        PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::complete);
+        PFL_EXPECT(presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::packet_local);
+        PFL_EXPECT(presentation.available_length == row->summary_payload_bytes.size());
+        PFL_EXPECT(presentation.declared_length == std::optional<std::uint32_t> {
+            static_cast<std::uint32_t>(row->summary_payload_bytes.size())});
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row->stream_item_index
+        );
+        PFL_EXPECT(materialized == row->summary_payload_bytes);
+    }
+
+    {
         FrontendSessionAdapter adapter {};
         const auto opened = adapter.open_capture(fixture_path("parsing/tls/tls_1_3_split_client_hello_10.pcap"));
         PFL_REQUIRE(opened.opened);

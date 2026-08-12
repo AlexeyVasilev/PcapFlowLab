@@ -108,6 +108,8 @@ add_library(
     src/core/services/FlowHintService.cpp
     src/core/services/QuicInitialParser.cpp
     src/core/services/HexDumpService.cpp
+    src/core/services/DnsInspectionParser.cpp
+    src/core/services/IcmpInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/frontend/FrontendSettingsJson.cpp
     src/app/session/CaptureSession.cpp
@@ -116,6 +118,8 @@ add_library(
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
+    src/app/session/DnsSummaryPresentation.cpp
+    src/app/session/IcmpSummaryPresentation.cpp
     src/app/session/SelectedPacketSummaryPreparation.cpp
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp
@@ -386,6 +390,8 @@ if(BUILD_TESTING)
         tests/unit/FlowAnalysisTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/DnsInspectionParserTests.cpp
+        tests/unit/DnsPcapFixtureTests.cpp
         tests/unit/CliFlowsTests.cpp
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp
@@ -396,6 +402,7 @@ if(BUILD_TESTING)
         tests/unit/PacketProtocolDetailsTests.cpp
         tests/unit/TlsInspectionParserTests.cpp
         tests/unit/ArpPcapFixtureTests.cpp
+        tests/unit/IcmpPcapFixtureTests.cpp
         tests/unit/IgmpPcapFixtureTests.cpp
         tests/unit/Ipv4OptionsPcapFixtureTests.cpp
         tests/unit/MplsPcapFixtureTests.cpp

@@ -1080,6 +1080,7 @@ ApplicationWindow {
                 protocolPathFilterVisible: mainController.hasProtocolPathFlowFilter
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
+                packetFlagsColumnVisible: mainController.selectedFlowUsesTcp
                 showProtocolPathColumn: mainController.showProtocolPathColumn
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending

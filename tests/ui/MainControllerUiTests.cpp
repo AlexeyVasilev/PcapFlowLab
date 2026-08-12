@@ -645,6 +645,28 @@ int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& h
     return -1;
 }
 
+int find_flow_index_by_protocol(pfl::FlowListModel* model, const QString& protocol) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::ProtocolRole).toString() == protocol) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
+
+int find_flow_index_by_service_hint(pfl::FlowListModel* model, const QString& service_hint) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::ServiceHintRole).toString() == service_hint) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
+
 int find_flow_index_by_packet_count(pfl::FlowListModel* model, const qulonglong packetCount) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -2940,6 +2962,81 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
     });
 
+    run_ui_section("packet_list_flags_column_visibility", [&]() {
+        auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+        UI_REQUIRE(flow_model != nullptr);
+        UI_REQUIRE(packet_model != nullptr);
+        controller.setFlowFilterText(QStringLiteral(""));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        auto packet_list = load_qml_component("src/ui/qml/components/PacketList.qml", "PacketList");
+        packet_list.object->setProperty("packetModel", QVariant::fromValue(static_cast<QObject*>(packet_model)));
+
+        const auto sync_packet_list = [&]() {
+            packet_list.object->setProperty("showFlagsColumn", controller.selectedFlowUsesTcp());
+            packet_list.object->setProperty("selectedPacketIndex", QVariant::fromValue(controller.selectedPacketIndex()));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        };
+
+        const int tcp_flow_index = find_flow_index_by_service_hint(flow_model, QStringLiteral("ui.example"));
+        const int udp_flow_index = find_flow_index_by_protocol_hint(flow_model, QStringLiteral("DNS"));
+        UI_REQUIRE(tcp_flow_index >= 0);
+        UI_REQUIRE(udp_flow_index >= 0);
+
+        controller.setSelectedFlowIndex(tcp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !controller.packetsLoading() && packet_model->rowCount() >= 1;
+        }));
+        UI_EXPECT(controller.selectedFlowUsesTcp());
+        sync_packet_list();
+        UI_EXPECT(item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+        UI_EXPECT(packet_model->data(packet_model->index(0, 0), PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
+
+        controller.setSelectedFlowIndex(udp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !controller.packetsLoading() && packet_model->rowCount() >= 1;
+        }));
+        UI_EXPECT(!controller.selectedFlowUsesTcp());
+        sync_packet_list();
+        UI_EXPECT(!item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+
+        controller.setSelectedFlowIndex(tcp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !controller.packetsLoading() && packet_model->rowCount() >= 1;
+        }));
+        UI_EXPECT(controller.selectedFlowUsesTcp());
+        sync_packet_list();
+        UI_EXPECT(item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+    });
+
+    run_ui_section("packet_list_flags_column_hidden_for_icmp", [&]() {
+        MainController icmp_controller {};
+        UI_EXPECT(open_capture_and_wait(
+            app,
+            icmp_controller,
+            ui_test_root() / "data" / "parsing" / "icmp" / "01_icmp_echo_request.pcap"));
+        auto* icmp_flow_model = qobject_cast<FlowListModel*>(icmp_controller.flowModel());
+        auto* icmp_packet_model = qobject_cast<PacketListModel*>(icmp_controller.packetModel());
+        UI_REQUIRE(icmp_flow_model != nullptr);
+        UI_REQUIRE(icmp_packet_model != nullptr);
+        UI_REQUIRE(icmp_flow_model->rowCount() >= 1);
+
+        auto packet_list = load_qml_component("src/ui/qml/components/PacketList.qml", "PacketList");
+        packet_list.object->setProperty("packetModel", QVariant::fromValue(static_cast<QObject*>(icmp_packet_model)));
+
+        const int icmp_flow_index = find_flow_index_by_protocol(icmp_flow_model, QStringLiteral("ICMP"));
+        UI_REQUIRE(icmp_flow_index >= 0);
+        icmp_controller.setSelectedFlowIndex(icmp_flow_index);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !icmp_controller.packetsLoading() && icmp_packet_model->rowCount() >= 1;
+        }));
+        packet_list.object->setProperty("showFlagsColumn", icmp_controller.selectedFlowUsesTcp());
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!icmp_controller.selectedFlowUsesTcp());
+        UI_EXPECT(!item_visible(packet_list.object.get(), "packetFlagsHeaderLabel"));
+    });
+
     run_ui_section("packet_details_tabs_protocol_removed", [&]() {
         auto packet_details_pane = load_qml_component("src/ui/qml/components/PacketDetailsPane.qml", "PacketDetailsPane");
         PacketDetailsViewModel packet_model {};
@@ -3181,10 +3278,12 @@ int main(int argc, char* argv[]) {
     const int top_endpoints_ports_section = static_cast<int>(MainController::StatisticsOptionalSection::top_endpoints_ports);
     const int section_not_requested = static_cast<int>(MainController::StatisticsSectionRequestState::not_requested);
     const int section_ready = static_cast<int>(MainController::StatisticsSectionRequestState::ready);
+    const auto zero_unrecognized_tcp_packet =
+        make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 0, 1), ipv4(10, 42, 0, 2), 46001, 443);
     const auto zero_unrecognized_capture_path = write_temp_pcap(
         "pfl_ui_statistics_unrecognized_zero.pcap",
         make_classic_pcap({
-            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 0, 1), ipv4(10, 42, 0, 2), 46001, 443)},
+            {100, zero_unrecognized_tcp_packet},
         })
     );
     const std::vector<std::uint8_t> unrecognized_ethernet_packet {
@@ -3193,10 +3292,12 @@ int main(int argc, char* argv[]) {
         0x88, 0xb5,
         0x01, 0x02, 0x03, 0x04,
     };
+    const auto nonzero_unrecognized_tcp_packet =
+        make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 1, 1), ipv4(10, 42, 1, 2), 46002, 443);
     const auto nonzero_unrecognized_capture_path = write_temp_pcap(
         "pfl_ui_statistics_unrecognized_nonzero.pcap",
         make_classic_pcap({
-            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 1, 1), ipv4(10, 42, 1, 2), 46002, 443)},
+            {100, nonzero_unrecognized_tcp_packet},
             {200, unrecognized_ethernet_packet},
         })
     );
@@ -3427,6 +3528,11 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(unrecognized_controller.tcpPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4FlowCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4PacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.packetCount() == 2U);
+        UI_EXPECT(unrecognized_controller.capturedBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
+        UI_EXPECT(unrecognized_controller.originalBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
         UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 18U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 18U);
@@ -3436,11 +3542,19 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(unrecognized_controller.tcpPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4FlowCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4PacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.packetCount() == 1U);
+        UI_EXPECT(unrecognized_controller.capturedBytes() == static_cast<qulonglong>(zero_unrecognized_tcp_packet.size()));
+        UI_EXPECT(unrecognized_controller.originalBytes() == static_cast<qulonglong>(zero_unrecognized_tcp_packet.size()));
         UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 0U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 0U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 0U);
 
         UI_EXPECT(open_capture_and_wait(app, unrecognized_controller, nonzero_unrecognized_capture_path));
+        UI_EXPECT(unrecognized_controller.packetCount() == 2U);
+        UI_EXPECT(unrecognized_controller.capturedBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
+        UI_EXPECT(unrecognized_controller.originalBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
         UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 18U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 18U);
@@ -4260,8 +4374,25 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_model->rowCount() == 1);
     UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("DNS Query"));
+    const auto dns_stream_label =
+        stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString();
+    UI_EXPECT(dns_stream_label.startsWith(QStringLiteral("DNS Query")));
+    UI_EXPECT(dns_stream_label.contains(QStringLiteral("A")));
+    UI_EXPECT(dns_stream_label.contains(QStringLiteral("api.example")));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_dns_query_payload().size());
+    const auto dns_stream_item_index = stream_model->data(
+        stream_model->index(0, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    stream_controller.setSelectedStreamItemIndex(dns_stream_item_index);
+    UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Details source: Packet fallback")));
+    const auto dns_stream_layers = stream_details_model->summaryLayers();
+    const auto dns_stream_layer = find_top_level_summary_layer(dns_stream_layers, QStringLiteral("dns"));
+    UI_EXPECT(!dns_stream_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(dns_stream_layer, QStringLiteral("Message Type")) == QStringLiteral("Query"));
+    UI_EXPECT(find_summary_field_value(dns_stream_layer, QStringLiteral("QType")) == QStringLiteral("A (1)"));
+    UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
     auto* dns_packet_model = qobject_cast<PacketListModel*>(stream_controller.packetModel());
     UI_EXPECT(dns_packet_model != nullptr);
     UI_EXPECT(dns_packet_model->rowCount() == 1);

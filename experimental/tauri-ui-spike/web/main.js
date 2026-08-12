@@ -2959,6 +2959,10 @@
     return state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
   }
 
+  function selectedFlowUsesTcp() {
+    return String(getSelectedFlow()?.protocol_text || "").trim().toUpperCase() === "TCP";
+  }
+
   function isUnknownAnalysisValue(value) {
     return String(value || "").trim().toLowerCase() === "unknown";
   }
@@ -3600,10 +3604,14 @@
     ] : [];
     const unrecognizedStats = overview?.unrecognized_packets || null;
 
-    elements.metricPackets.textContent = overview ? formatNumber(overview.summary?.packet_count) : "-";
+    elements.metricPackets.textContent = overview ? formatNumber(overview.whole_capture_totals?.packet_count ?? overview.summary?.packet_count ?? 0) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
-    elements.metricCapturedBytes.textContent = overview ? String(overview.summary?.captured_bytes_text ?? "-") : "-";
-    elements.metricOriginalBytes.textContent = overview ? String(overview.summary?.original_bytes_text ?? "-") : "-";
+    elements.metricCapturedBytes.textContent = overview
+      ? String(overview.whole_capture_totals?.captured_bytes_text ?? overview.summary?.captured_bytes_text ?? "-")
+      : "-";
+    elements.metricOriginalBytes.textContent = overview
+      ? String(overview.whole_capture_totals?.original_bytes_text ?? overview.summary?.original_bytes_text ?? "-")
+      : "-";
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";
@@ -4163,8 +4171,11 @@
     }
 
     const unrecognizedMode = state.unrecognizedPacketsSelected;
+    const showFlagsColumn = !unrecognizedMode && selectedFlowUsesTcp();
     const showMarkerColumn = loadedPacketsHaveMarkers();
-    const packetTableColspan = unrecognizedMode ? 5 : (showMarkerColumn ? 7 : 6);
+    const packetTableColspan = unrecognizedMode
+      ? 5
+      : 5 + (showFlagsColumn ? 1 : 0) + (showMarkerColumn ? 1 : 0);
     if (elements.packetDirectionHeader) {
       elements.packetDirectionHeader.style.display = unrecognizedMode ? "none" : "";
     }
@@ -4173,6 +4184,7 @@
     }
     if (elements.packetFlagsHeader) {
       elements.packetFlagsHeader.textContent = unrecognizedMode ? "Parsed up to / Reason" : "Flags";
+      elements.packetFlagsHeader.style.display = (unrecognizedMode || showFlagsColumn) ? "" : "none";
     }
     if (elements.packetMarkerHeader) {
       elements.packetMarkerHeader.style.display = !unrecognizedMode && showMarkerColumn ? "" : "none";
@@ -4262,7 +4274,7 @@
             <td>${escapeHtml(packet.timestamp_text)}</td>
             <td>${packet.captured_length}</td>
             <td>${packet.payload_length}</td>
-            <td class="packet-flags-cell">${renderPacketFlagsChip(packet.tcp_flags_text)}</td>
+            ${showFlagsColumn ? `<td class="packet-flags-cell">${renderPacketFlagsChip(packet.tcp_flags_text)}</td>` : ""}
             ${showMarkerColumn ? `<td class="packet-marker-cell">${markerContent}</td>` : ""}
           </tr>
         `;

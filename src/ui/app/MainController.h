@@ -287,6 +287,7 @@ private:
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
+    Q_PROPERTY(bool selectedFlowUsesTcp READ selectedFlowUsesTcp NOTIFY selectedFlowIndexChanged)
     Q_PROPERTY(bool hasProtocolPathFlowFilter READ hasProtocolPathFlowFilter NOTIFY protocolPathFlowFilterChanged)
     Q_PROPERTY(QString protocolPathFlowFilterText READ protocolPathFlowFilterText NOTIFY protocolPathFlowFilterChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
@@ -547,6 +548,7 @@ public:
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
+    [[nodiscard]] bool selectedFlowUsesTcp() const;
     [[nodiscard]] bool hasProtocolPathFlowFilter() const noexcept;
     [[nodiscard]] QString protocolPathFlowFilterText() const;
     [[nodiscard]] int currentTabIndex() const noexcept;
@@ -775,6 +777,9 @@ private:
     QVariantList flow_packet_histogram_rows_ {};
     QVariantList protocol_hint_distribution_ {};
     UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
+    std::uint64_t whole_capture_packet_count_ {0U};
+    std::uint64_t whole_capture_captured_bytes_ {0U};
+    std::uint64_t whole_capture_original_bytes_ {0U};
     CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};

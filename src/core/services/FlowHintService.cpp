@@ -11,6 +11,7 @@
 #include <type_traits>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketPayloadService.h"
@@ -623,20 +624,41 @@ std::optional<std::string> extract_tls_sni_from_client_hello_prefix(std::span<co
 std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message, std::size_t& offset) {
     std::string name {};
     bool first_label = true;
+    bool jumped = false;
+    auto cursor = offset;
 
     for (std::size_t label_count = 0; label_count < 32U; ++label_count) {
-        if (offset >= message.size()) {
+        if (cursor >= message.size()) {
             return std::nullopt;
         }
 
-        const auto label_length = static_cast<std::size_t>(message[offset]);
-        ++offset;
-
+        const auto label_length = static_cast<std::size_t>(message[cursor]);
         if (label_length == 0U) {
+            if (!jumped) {
+                offset = cursor + 1U;
+            }
             return name.empty() ? std::optional<std::string> {std::string(".")} : std::optional<std::string> {name};
         }
 
-        if ((label_length & 0xC0U) != 0U || offset + label_length > message.size()) {
+        if ((label_length & 0xC0U) == 0xC0U) {
+            if (cursor + 1U >= message.size()) {
+                return std::nullopt;
+            }
+
+            const auto pointer = static_cast<std::size_t>(((label_length & 0x3FU) << 8U) | message[cursor + 1U]);
+            if (pointer >= message.size()) {
+                return std::nullopt;
+            }
+
+            if (!jumped) {
+                offset = cursor + 2U;
+                jumped = true;
+            }
+            cursor = pointer;
+            continue;
+        }
+
+        if ((label_length & 0xC0U) != 0U || cursor + 1U + label_length > message.size()) {
             return std::nullopt;
         }
 
@@ -646,17 +668,85 @@ std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message,
         first_label = false;
 
         for (std::size_t index = 0U; index < label_length; ++index) {
-            const auto character = static_cast<char>(message[offset + index]);
+            const auto character = static_cast<char>(message[cursor + 1U + index]);
             if (!is_plausible_service_name_char(character)) {
                 return std::nullopt;
             }
             name.push_back(character);
         }
 
-        offset += label_length;
+        cursor += 1U + label_length;
+        if (!jumped) {
+            offset = cursor;
+        }
     }
 
     return std::nullopt;
+}
+
+std::optional<std::string> extract_mdns_service_hint(std::span<const std::uint8_t> message) {
+    if (message.size() < kDnsHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto question_count = read_be16(message, 4U);
+    const auto answer_count = read_be16(message, 6U);
+    const auto authority_count = read_be16(message, 8U);
+    const auto additional_count = read_be16(message, 10U);
+
+    std::size_t offset = kDnsHeaderSize;
+    for (std::uint16_t question_index = 0U; question_index < question_count; ++question_index) {
+        const auto question_name = parse_dns_name(message, offset);
+        if (!question_name.has_value()) {
+            return std::nullopt;
+        }
+        if (*question_name != ".") {
+            return question_name;
+        }
+        if (!has_available_range(message, offset, 4U)) {
+            return std::nullopt;
+        }
+        offset += 4U;
+    }
+
+    std::optional<std::string> first_ptr_owner {};
+    std::optional<std::string> first_rr_owner {};
+    const auto resource_record_count =
+        static_cast<std::size_t>(answer_count) +
+        static_cast<std::size_t>(authority_count) +
+        static_cast<std::size_t>(additional_count);
+    for (std::size_t record_index = 0U; record_index < resource_record_count; ++record_index) {
+        const auto owner_name = parse_dns_name(message, offset);
+        if (!owner_name.has_value()) {
+            return std::nullopt;
+        }
+        if (!has_available_range(message, offset, 10U)) {
+            return std::nullopt;
+        }
+
+        const auto rr_type = read_be16(message, offset);
+        const auto rdlength = static_cast<std::size_t>(read_be16(message, offset + 8U));
+        offset += 10U;
+        if (!has_available_range(message, offset, rdlength)) {
+            return std::nullopt;
+        }
+
+        if (*owner_name != ".") {
+            if (!first_rr_owner.has_value()) {
+                first_rr_owner = *owner_name;
+            }
+            if (rr_type == 12U && !first_ptr_owner.has_value()) {
+                first_ptr_owner = *owner_name;
+            }
+        }
+
+        offset += rdlength;
+    }
+
+    if (first_ptr_owner.has_value()) {
+        return first_ptr_owner;
+    }
+    return first_rr_owner;
 }
 
 std::optional<std::span<const std::uint8_t>> dns_message(std::span<const std::uint8_t> payload, const bool tcp) {
@@ -713,21 +803,26 @@ FlowHintUpdate detect_mdns_hint(std::span<const std::uint8_t> payload, const Flo
         return {};
     }
 
-    if (payload.size() < kDnsHeaderSize) {
+    const auto message = dns_message(payload, false);
+    if (!message.has_value()) {
         return {};
     }
 
-    const auto question_count = read_be16(payload, 4U);
-    const auto answer_count = read_be16(payload, 6U);
-    const auto authority_count = read_be16(payload, 8U);
-    const auto additional_count = read_be16(payload, 10U);
+    const auto question_count = read_be16(*message, 4U);
+    const auto answer_count = read_be16(*message, 6U);
+    const auto authority_count = read_be16(*message, 8U);
+    const auto additional_count = read_be16(*message, 10U);
     if (question_count == 0U && answer_count == 0U && authority_count == 0U && additional_count == 0U) {
         return {};
     }
 
-    return FlowHintUpdate {
+    FlowHintUpdate hint {
         .protocol_hint = FlowProtocolHint::mdns,
     };
+    if (const auto service_hint = extract_mdns_service_hint(*message); service_hint.has_value() && *service_hint != ".") {
+        hint.service_hint = *service_hint;
+    }
+    return hint;
 }
 
 FlowHintUpdate detect_http_hint(std::span<const std::uint8_t> payload, const AnalysisSettings& settings) {
@@ -947,6 +1042,7 @@ template <typename FlowKey, typename QuicStateMap>
 FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes,
                                       const std::uint32_t data_link_type,
                                       const FlowKey& flow_key,
+                                      const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds,
                                       const FlowHintDetectionSettings& settings,
                                       QuicStateMap& quic_state) {
     if (flow_key.protocol == ProtocolId::arp) {
@@ -962,7 +1058,9 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
     }
 
     PacketPayloadService payload_service {};
-    const auto payload = payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
+    const auto payload = terminal_transport_payload_bounds.has_value()
+        ? payload_service.extract_terminal_transport_payload_view(packet_bytes, *terminal_transport_payload_bounds)
+        : payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
     if (!payload.found) {
         return {};
     }
@@ -1073,6 +1171,25 @@ const AnalysisSettings& FlowHintService::settings() const noexcept {
     return settings_;
 }
 
+bool packet_matches_mdns_hint(const PacketDetails& details) noexcept {
+    if (!details.has_udp || !has_port(details.udp.src_port, details.udp.dst_port, kMdnsPort)) {
+        return false;
+    }
+
+    const bool has_mdns_destination = details.has_ipv4
+        ? is_mdns_multicast_destination(details.ipv4.dst_addr)
+        : details.has_ipv6 && is_mdns_multicast_destination(details.ipv6.dst_addr);
+    if (!has_mdns_destination || !details.dns_message.has_value()) {
+        return false;
+    }
+
+    const auto& message = *details.dns_message;
+    return message.declared_question_count != 0U ||
+        message.declared_answer_count != 0U ||
+        message.declared_authority_count != 0U ||
+        message.declared_additional_count != 0U;
+}
+
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const {
     return detect(packet_bytes, kLinkTypeEthernet, flow_key);
 }
@@ -1080,10 +1197,24 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
                                        const std::uint32_t data_link_type,
                                        const FlowKeyV4& flow_key) const {
-    return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
-        .analysis_settings = settings_,
-        .enable_quic_initial_sni = enable_quic_initial_sni_,
-    }, quic_initial_ipv4_states_);
+    return detect(packet_bytes, data_link_type, flow_key, std::nullopt);
+}
+
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
+                                       const std::uint32_t data_link_type,
+                                       const FlowKeyV4& flow_key,
+                                       const std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds) const {
+    return detect_transport_hints(
+        packet_bytes,
+        data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds,
+        FlowHintDetectionSettings {
+            .analysis_settings = settings_,
+            .enable_quic_initial_sni = enable_quic_initial_sni_,
+        },
+        quic_initial_ipv4_states_
+    );
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const {
@@ -1093,10 +1224,24 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
                                        const std::uint32_t data_link_type,
                                        const FlowKeyV6& flow_key) const {
-    return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
-        .analysis_settings = settings_,
-        .enable_quic_initial_sni = enable_quic_initial_sni_,
-    }, quic_initial_ipv6_states_);
+    return detect(packet_bytes, data_link_type, flow_key, std::nullopt);
+}
+
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
+                                       const std::uint32_t data_link_type,
+                                       const FlowKeyV6& flow_key,
+                                       const std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds) const {
+    return detect_transport_hints(
+        packet_bytes,
+        data_link_type,
+        flow_key,
+        terminal_transport_payload_bounds,
+        FlowHintDetectionSettings {
+            .analysis_settings = settings_,
+            .enable_quic_initial_sni = enable_quic_initial_sni_,
+        },
+        quic_initial_ipv6_states_
+    );
 }
 
 }  // namespace pfl

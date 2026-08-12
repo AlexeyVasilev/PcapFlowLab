@@ -25,6 +25,16 @@ bool contains_text(const std::string_view haystack, const std::string_view needl
     return haystack.find(needle) != std::string_view::npos;
 }
 
+const session_detail::PacketSummaryLayer* find_summary_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string_view id
+) {
+    const auto it = std::find_if(layers.begin(), layers.end(), [id](const auto& layer) {
+        return layer.id == id;
+    });
+    return it != layers.end() ? &(*it) : nullptr;
+}
+
 bool has_no_tabs_or_trailing_spaces(const std::string_view text) {
     std::size_t line_start = 0U;
     while (line_start < text.size()) {
@@ -438,6 +448,60 @@ void expect_shared_packet_info_model_behavior() {
     PFL_EXPECT(global_recognized_with_bytes.captured_packet_bytes.available);
     PFL_EXPECT(!global_recognized_with_bytes.captured_packet_bytes.formatted_text.empty());
 
+    {
+        FrontendSessionAdapter dns_adapter {};
+        PFL_REQUIRE(dns_adapter.open_capture(fixture_path("parsing/dns/03_dns_ipv4_a_query.pcap")).opened);
+        const auto info = dns_adapter.get_packet_info_by_file(0U, false);
+        PFL_REQUIRE(info.packet_available);
+        const auto* dns_layer = find_summary_layer(info.summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title == "Domain Name System, Query");
+        PFL_EXPECT(find_summary_layer(info.summary_layers, "mdns") == nullptr);
+    }
+
+    {
+        FrontendSessionAdapter mdns_adapter {};
+        PFL_REQUIRE(mdns_adapter.open_capture(fixture_path("parsing/mdns/01_mdns_ipv4_ptr_query.pcap")).opened);
+        const auto info = mdns_adapter.get_packet_info_by_file(0U, false);
+        PFL_REQUIRE(info.packet_available);
+        const auto* mdns_layer = find_summary_layer(info.summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Query");
+        PFL_EXPECT(find_summary_layer(info.summary_layers, "dns") == nullptr);
+    }
+
+    {
+        FrontendSessionAdapter mdns_ipv6_adapter {};
+        PFL_REQUIRE(mdns_ipv6_adapter.open_capture(fixture_path("parsing/mdns/02_mdns_ipv6_ptr_query.pcap")).opened);
+        const auto info = mdns_ipv6_adapter.get_packet_info_by_file(0U, false);
+        PFL_REQUIRE(info.packet_available);
+        const auto* mdns_layer = find_summary_layer(info.summary_layers, "mdns");
+        PFL_REQUIRE(mdns_layer != nullptr);
+        PFL_EXPECT(mdns_layer->title == "Multicast Domain Name System, Query");
+    }
+
+    {
+        FrontendSessionAdapter wrong_port_adapter {};
+        PFL_REQUIRE(wrong_port_adapter.open_capture(fixture_path("parsing/mdns/12_mdns_wrong_port_negative.pcap")).opened);
+        const auto info = wrong_port_adapter.get_packet_info_by_file(0U, false);
+        PFL_REQUIRE(info.packet_available);
+        const auto* dns_layer = find_summary_layer(info.summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(find_summary_layer(info.summary_layers, "mdns") == nullptr);
+    }
+
+    {
+        FrontendSessionAdapter wrong_destination_adapter {};
+        PFL_REQUIRE(wrong_destination_adapter.open_capture(fixture_path("parsing/mdns/13_mdns_wrong_multicast_destination_negative.pcap")).opened);
+        const auto info = wrong_destination_adapter.get_packet_info_by_file(0U, false);
+        PFL_REQUIRE(info.packet_available);
+        const auto* dns_layer = find_summary_layer(info.summary_layers, "dns");
+        PFL_REQUIRE(dns_layer != nullptr);
+        PFL_EXPECT(dns_layer->title.find("Domain Name System") != std::string::npos);
+        PFL_EXPECT(find_summary_layer(info.summary_layers, "mdns") == nullptr);
+    }
+
     FrontendSessionAdapter unrecognized_adapter {};
     const auto unrecognized_capture_path = build_cli_packet_info_unrecognized_capture_path();
     PFL_REQUIRE(unrecognized_adapter.open_capture(unrecognized_capture_path).opened);
@@ -548,6 +612,65 @@ void expect_packet_info_runtime_and_output_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "Ethernet II"));
         PFL_EXPECT(contains_text(result.stdout_text, "IPv4"));
         PFL_EXPECT(contains_text(result.stdout_text, "TCP"));
+    }
+
+    {
+        const auto result = invoke_cli({
+            "packet-info",
+            fixture_path("parsing/dns/03_dns_ipv4_a_query.pcap").string(),
+            "--packet-in-file",
+            "1",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stdout_text, "Domain Name System, Query"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Multicast Domain Name System"));
+    }
+
+    {
+        const auto result = invoke_cli({
+            "packet-info",
+            fixture_path("parsing/mdns/01_mdns_ipv4_ptr_query.pcap").string(),
+            "--packet-in-file",
+            "1",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stdout_text, "Multicast Domain Name System, Query"));
+    }
+
+    {
+        const auto result = invoke_cli({
+            "packet-info",
+            fixture_path("parsing/mdns/12_mdns_wrong_port_negative.pcap").string(),
+            "--packet-in-file",
+            "1",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stdout_text, "Domain Name System"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Multicast Domain Name System"));
+    }
+
+    {
+        const auto result = invoke_cli({
+            "packet-info",
+            fixture_path("parsing/mdns/13_mdns_wrong_multicast_destination_negative.pcap").string(),
+            "--packet-in-file",
+            "1",
+            "--progress",
+            "off",
+        });
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stdout_text, "Domain Name System"));
+        PFL_EXPECT(!contains_text(result.stdout_text, "Multicast Domain Name System"));
     }
 
     {
