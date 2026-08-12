@@ -1,0 +1,2419 @@
+{
+  "capture_id": "pcap-flow-lab-showcase",
+  "capture_version": "1.0.0",
+  "description": "Deterministic long-lived showcase capture for PcapFlowLab v1 materialization pass. Uses a single classic Ethernet PCAP timeline with overlapping hero flows, application demos, protocol-family coverage, grouping identity cases, and edge scenarios.",
+  "scenarios": [
+    {
+      "scenario_id": "AN-TLS-BULK-01",
+      "name": "Bulk TLS analysis hero",
+      "purpose": "Strongest Analysis demo with TLS, SNI, rate phases, bursts, idle gap, pagination, and byte asymmetry.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "TLS",
+      "expected_service": "bulk-download.example.test",
+      "endpoints": [
+        "192.0.2.10:41000",
+        "198.51.100.10:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 457,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "packet-size histogram",
+        "inter-arrival histogram",
+        "rate graph",
+        "burst regions",
+        "idle gap",
+        "downstream byte asymmetry"
+      ],
+      "special_packets": [
+        "TCP SYN/SYN-ACK/ACK",
+        "TLS ClientHello with SNI",
+        "TLS ServerHello",
+        "FIN teardown"
+      ],
+      "notes": [
+        "Hero flow intentionally spans multiple rate phases over ~45 seconds.",
+        "Materialized packet count: 457",
+        "Materialized duration: 45.750 s"
+      ]
+    },
+    {
+      "scenario_id": "AN-TCP6-INTERACTIVE-01",
+      "name": "IPv6 interactive TCP analysis hero",
+      "purpose": "IPv6 generic TCP/Data flow with packet-balanced but byte-skewed traffic and visible ACK-only packets.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "[2001:db8:10::10]:42000",
+        "[2001:db8:20::20]:9000"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv6 -> TCP",
+      "approximate_packet_count": 284,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Analysis"
+      ],
+      "analysis_features": [
+        "IPv6 analysis",
+        "packet-balanced flow",
+        "byte skew",
+        "ACK-only packets",
+        "idle intervals"
+      ],
+      "special_packets": [
+        "SYN/SYN-ACK/ACK",
+        "PSH/ACK data",
+        "ACK-only packets",
+        "FIN teardown"
+      ],
+      "notes": [
+        "Payload bytes are opaque and deterministic to avoid accidental HTTP/TLS detection.",
+        "Materialized packet count: 284",
+        "Materialized duration: 70.311 s"
+      ]
+    },
+    {
+      "scenario_id": "AN-UDP-TELEMETRY-01",
+      "name": "VLAN telemetry UDP analysis hero",
+      "purpose": "Non-TCP Analysis demo with VLAN path metadata and recurring telemetry packet sizes.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.30:50000",
+        "198.51.100.30:7000"
+      ],
+      "expected_protocol_path": "EthernetII -> VLAN(vid=300) -> IPv4 -> UDP",
+      "approximate_packet_count": 320,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "non-TCP comparison",
+        "multiple packet-size buckets",
+        "periodic traffic",
+        "temporary higher-rate period"
+      ],
+      "special_packets": [
+        "VLAN-tagged UDP packets"
+      ],
+      "notes": [
+        "Telemetry uses deterministic small, medium, large, and near-MTU payload sizes.",
+        "Materialized packet count: 320",
+        "Materialized duration: 102.540 s"
+      ]
+    },
+    {
+      "scenario_id": "AN-GRE-TLS-01",
+      "name": "Nested GRE/TLS analysis hero",
+      "purpose": "Complex protocol-path analysis hero with VLAN, stacked MPLS, GRE, inner TCP, and TLS/SNI.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "TLS",
+      "expected_service": "gre-analysis.example.test",
+      "endpoints": [
+        "outer 203.0.113.40 -> 198.51.100.40, inner 192.0.2.140:43000 -> 198.51.100.140:443"
+      ],
+      "expected_protocol_path": "EthernetII -> VLAN(vid=320) -> MPLS(label=16010) -> MPLS(label=16011) -> IPv4 -> GRE -> IPv4 -> TCP",
+      "approximate_packet_count": 226,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "nested protocol path",
+        "TLS stream rows",
+        "TCP flags",
+        "rate phases"
+      ],
+      "special_packets": [
+        "Inner TCP handshake",
+        "TLS ClientHello with SNI",
+        "stacked MPLS labels",
+        "FIN teardown"
+      ],
+      "notes": [
+        "Both directions intentionally preserve the same VLAN/MPLS identifiers to avoid accidental flow split.",
+        "Materialized packet count: 226",
+        "Materialized duration: 49.080 s"
+      ]
+    },
+    {
+      "scenario_id": "AN-LARGEPKT-2500-01",
+      "name": "Large captured packet size demo (~2.5 KB)",
+      "purpose": "Short UDP flow with exact large captured records around 2.5 KB for Analysis min/avg/max and capture packet-size distribution coverage.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.200:52000",
+        "198.51.100.200:9200"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "min/avg/max packet size contrast",
+        "1551-2499 bucket coverage",
+        "2500-5000 bucket coverage"
+      ],
+      "special_packets": [
+        "exact 2500-byte captured/original packet"
+      ],
+      "notes": [
+        "Synthetic large/offload-style captured records with caplen == origlen on the maximum packet.",
+        "EDGE-SNAPLEN-01 remains the separate truncated-capture example.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.490 s"
+      ]
+    },
+    {
+      "scenario_id": "AN-LARGEPKT-7500-01",
+      "name": "Large captured packet size demo (~7.5 KB)",
+      "purpose": "Short UDP flow with one exact ~7.5 KB captured record for large-bucket statistics and per-flow size analysis.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.201:52001",
+        "198.51.100.201:9201"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 3,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "max packet size around 7.5 KB",
+        "5001-9000 bucket coverage"
+      ],
+      "special_packets": [
+        "exact 7500-byte captured/original packet"
+      ],
+      "notes": [
+        "Synthetic large/offload-style captured records with caplen == origlen on the maximum packet.",
+        "No detected application protocol is expected.",
+        "Materialized packet count: 3",
+        "Materialized duration: 0.380 s"
+      ]
+    },
+    {
+      "scenario_id": "AN-LARGEPKT-60000-01",
+      "name": "Large captured packet size demo (~60 KB)",
+      "purpose": "Short UDP flow with very large captured records up to ~60 KB to exercise capture-wide maximum packet handling and upper packet-size buckets.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.202:52002",
+        "198.51.100.202:9202"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "capture-wide maximum packet size",
+        "9001-16000 bucket coverage",
+        "16001-25000 bucket coverage",
+        "25001+ bucket coverage"
+      ],
+      "special_packets": [
+        "exact 60000-byte captured/original packet"
+      ],
+      "notes": [
+        "Synthetic jumbo/offload-style captured records with caplen == origlen on the maximum packet.",
+        "This scenario is intentionally unfragmented; EDGE-FRAG-01 remains the fragment example.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.680 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-HTTP-01",
+      "name": "Structured HTTP request/response",
+      "purpose": "Short IPv4 HTTP flow showing structured HTTP Stream behavior.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "HTTP",
+      "expected_service": "http.example.test",
+      "endpoints": [
+        "192.0.2.40:44000",
+        "198.51.100.40:80"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 16,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream"
+      ],
+      "analysis_features": [
+        "short request/response"
+      ],
+      "special_packets": [
+        "HTTP GET",
+        "HTTP response"
+      ],
+      "notes": [
+        "Materialized packet count: 16",
+        "Materialized duration: 1.550 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-HTTP-02",
+      "name": "Structured HTTP POST request/response",
+      "purpose": "Second short HTTP flow showing another confirmed HTTP/service case without introducing the later large-body scenario.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "HTTP",
+      "expected_service": "api.example.test",
+      "endpoints": [
+        "192.0.2.41:44010",
+        "198.51.100.41:8080"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 11,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "short request/response"
+      ],
+      "special_packets": [
+        "HTTP POST",
+        "HTTP 201 response"
+      ],
+      "notes": [
+        "Intentionally small; the dedicated large-body HTTP showcase remains a separate later pass.",
+        "Materialized packet count: 11",
+        "Materialized duration: 0.620 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-HTTP-LARGEBODY-01",
+      "name": "Large multi-packet HTTP response reassembly",
+      "purpose": "Clean in-order HTTP response whose body spans many normal-MTU TCP packets to exercise Stream reassembly, packet pagination, and Analysis byte dominance.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "HTTP",
+      "expected_service": "large-http.example.test",
+      "endpoints": [
+        "192.0.2.180:48180",
+        "198.51.100.180:80"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 26,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Analysis",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "HTTP stream reassembly",
+        "server-to-client byte dominance",
+        "near-MTU packet sizes",
+        "packet pagination"
+      ],
+      "special_packets": [
+        "HTTP GET /large-demo.bin",
+        "HTTP 200 OK with 20 KB body",
+        "body continuation segments",
+        "FIN teardown"
+      ],
+      "notes": [
+        "Response headers intentionally remain in the first response data segment; only the body is segmented.",
+        "HTTP Stream Item Data currently remains unavailable by design because HTTP rows do not retain authoritative item-owned bytes.",
+        "Materialized packet count: 26",
+        "Materialized duration: 1.470 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-DNS-01",
+      "name": "Structured DNS query/response with warning",
+      "purpose": "DNS flow with valid multi-answer behavior plus one truncated message warning.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "DNS",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.50:53050",
+        "198.51.100.53:53"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 8,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "A query",
+        "CNAME + A response",
+        "truncated DNS message"
+      ],
+      "notes": [
+        "Materialized packet count: 8",
+        "Materialized duration: 1.230 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-DNS-02",
+      "name": "Structured DNS PTR query/response",
+      "purpose": "Second short DNS flow using PTR lookup semantics instead of another A/CNAME story.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "DNS",
+      "expected_service": "_cache._tcp.example.test",
+      "endpoints": [
+        "192.0.2.51:53051",
+        "198.51.100.54:53"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "PTR query",
+        "PTR response"
+      ],
+      "notes": [
+        "Materialized packet count: 4",
+        "Materialized duration: 0.330 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-MDNS-01",
+      "name": "Structured mDNS / DNS-SD",
+      "purpose": "mDNS multicast discovery with PTR/SRV/TXT/A records.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "mDNS",
+      "expected_service": "_demo-service._tcp.local",
+      "endpoints": [
+        "192.0.2.60:5353",
+        "224.0.0.251:5353"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 8,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "PTR query",
+        "DNS-SD response"
+      ],
+      "notes": [
+        "This scenario intentionally spans two multicast source flows while keeping one scenario ID.",
+        "Materialized packet count: 8",
+        "Materialized duration: 1.840 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-MDNS6-01",
+      "name": "IPv6 mDNS / DNS-SD AAAA response",
+      "purpose": "Compact IPv6 UDP multicast mDNS / DNS-SD response with structured PTR, SRV, TXT, and AAAA presentation.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "mDNS",
+      "expected_service": "",
+      "endpoints": [
+        "[2001:db8::103]:5353",
+        "[ff02::fb]:5353"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv6 -> UDP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint",
+        "IPv6 analysis"
+      ],
+      "special_packets": [
+        "mDNS response",
+        "DNS-SD PTR",
+        "SRV/TXT additionals",
+        "AAAA additional"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/mdns/05_mdns_ipv6_dns_sd_response_aaaa.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-QUIC-01",
+      "name": "Decryptable QUIC session from checked-in fixture",
+      "purpose": "Full checked-in QUIC session preserving exact protected UDP payload bytes while exposing user-visible Initial, 0-RTT, ACK, ServerHello, Handshake, and Protected Payload semantics.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "QUIC",
+      "expected_service": "www.youtube.com",
+      "endpoints": [
+        "192.0.2.70:55070",
+        "198.51.100.70:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 17,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "QUIC/TLS stats",
+        "bidirectional QUIC flow",
+        "coalesced packet behavior"
+      ],
+      "special_packets": [
+        "QUIC Initial CRYPTO",
+        "QUIC Initial with ClientHello",
+        "QUIC Initial with 0-RTT",
+        "reverse Initial ACK",
+        "reverse Initial with ServerHello",
+        "later Handshake / Protected Payload"
+      ],
+      "notes": [
+        "Uses the exact QUIC UDP payloads from all 17 packets of the checked-in `quic_example_2.pcap` fixture.",
+        "Outer showcase carrier remains synthetic, but protected QUIC bytes are reused exactly so normal import retains the proven structured QUIC/TLS path.",
+        "Materialized packet count: 17",
+        "Materialized duration: 0.080 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-QUIC-MULTICRYPTO-01",
+      "name": "Rich QUIC Initial with many CRYPTO frames",
+      "purpose": "Purpose-recorded full QUIC flow preserving exact protected UDP payload bytes from a richer multi-CRYPTO Initial capture.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "QUIC",
+      "expected_service": "web.whatsapp.com",
+      "endpoints": [
+        "192.0.2.72:55070",
+        "198.51.100.72:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 23,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "QUIC/TLS stats",
+        "bidirectional QUIC flow",
+        "multi-CRYPTO Initial",
+        "0-RTT",
+        "reverse ServerHello"
+      ],
+      "special_packets": [
+        "QUIC Initial with many CRYPTO frames",
+        "QUIC Initial with ClientHello",
+        "QUIC 0-RTT",
+        "reverse Initial with ServerHello",
+        "later Handshake / Protected Payload"
+      ],
+      "notes": [
+        "Reuses all packets from the full purpose-recorded `QUIC_many_crypto_01.pcap` capture.",
+        "Exact UDP payload bytes are preserved while the outer showcase carrier remains synthetic to avoid tuple collisions.",
+        "Materialized packet count: 23",
+        "Materialized duration: 0.354 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-QUIC-MULTICRYPTO-02",
+      "name": "Rich QUIC Initial and reverse ACK / ServerHello path",
+      "purpose": "Purpose-recorded full QUIC flow preserving exact protected UDP payload bytes from a second richer QUIC capture with repeated reverse Initial and Handshake activity.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "QUIC",
+      "expected_service": "ep2.adtrafficquality.google",
+      "endpoints": [
+        "192.0.2.73:55070",
+        "198.51.100.73:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 16,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "QUIC/TLS stats",
+        "bidirectional QUIC flow",
+        "multi-CRYPTO Initial",
+        "reverse Initial ACKs",
+        "reverse ServerHello"
+      ],
+      "special_packets": [
+        "QUIC Initial with many CRYPTO frames",
+        "QUIC Initial with ClientHello",
+        "reverse Initial ACK",
+        "reverse Initial with ServerHello",
+        "later Handshake / Protected Payload"
+      ],
+      "notes": [
+        "Reuses all packets from the full purpose-recorded `QUIC_many_crypto_02.pcap` capture.",
+        "Exact UDP payload bytes are preserved while the outer showcase carrier remains synthetic to avoid tuple collisions.",
+        "Materialized packet count: 16",
+        "Materialized duration: 16.316 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-QUIC-NEG-01",
+      "name": "Undecryptable QUIC Initial",
+      "purpose": "Short QUIC Initial scenario that remains coarse/protected with no fabricated plaintext structure.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "QUIC",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.71:55071",
+        "198.51.100.71:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes"
+      ],
+      "analysis_features": [
+        "QUIC/TLS stats"
+      ],
+      "special_packets": [
+        "undecryptable QUIC Initial"
+      ],
+      "notes": [
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-TLS-03",
+      "name": "Short direct TLS ClientHello flow",
+      "purpose": "Third compact TLS flow with a direct ClientHello/SNI path rather than a long analysis hero.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "TLS",
+      "expected_service": "tls-mini.example.test",
+      "endpoints": [
+        "192.0.2.42:44020",
+        "198.51.100.42:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 9,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "TLS ClientHello with SNI",
+        "TLS ServerHello"
+      ],
+      "notes": [
+        "Materialized packet count: 9",
+        "Materialized duration: 0.410 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-TLS-SEGMENTED-01",
+      "name": "Segmented TLS ClientHello with continued SNI",
+      "purpose": "Compact TLS flow where the first ClientHello segment is sufficient for import-time TLS detection, but the SNI bytes arrive only in the second TCP segment and are recovered later by bounded selected-flow reconstruction.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "TLS",
+      "expected_service": "edge.microsoft.com",
+      "endpoints": [
+        "192.0.2.44:44024",
+        "198.51.100.44:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 32,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Stream",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "TLS ClientHello spanning two TCP segments",
+        "SNI located only in the continuation segment"
+      ],
+      "notes": [
+        "Exact TLS payload segmentation is reused from `tests/data/parsing/tls/tls_sni_in_second_segment_20.pcap`.",
+        "Initial import detects `TLS` but leaves Service empty because the SNI is not yet physically present in the first TCP segment.",
+        "Selecting/loading the flow allows bounded TCP/TLS reconstruction to recover `edge.microsoft.com`.",
+        "Materialized packet count: 32",
+        "Materialized duration: 0.483 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-TLS-NOSNI-01",
+      "name": "TLS without observed SNI",
+      "purpose": "Compact valid TLS handshake example with structured TLS presentation but no observed SNI because only the server-side handshake packet is present.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "TLS",
+      "expected_service": "",
+      "endpoints": [
+        "3.223.63.250:443",
+        "192.168.20.251:42644"
+      ],
+      "expected_protocol_path": "EthernetII -> VLAN(vid=101) -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "TLS ServerHello"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/tls/tls_1_2_server_hello_4.pcap`.",
+        "This scenario is intentionally described as TLS without observed SNI rather than as a ClientHello that omitted SNI.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-SSH-01",
+      "name": "SSH banner hint demo",
+      "purpose": "Short TCP flow demonstrating current SSH banner-based detected-protocol behavior.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "SSH",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.43:44022",
+        "198.51.100.43:22"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 7,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "SSH banner"
+      ],
+      "notes": [
+        "Current UI support is hint-oriented rather than a deep SSH parser.",
+        "Materialized packet count: 7",
+        "Materialized duration: 0.370 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-STUN-01",
+      "name": "STUN binding request/response hint demo",
+      "purpose": "Short UDP flow demonstrating current STUN message-shape hint detection.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "STUN",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.44:34790",
+        "198.51.100.44:3478"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "STUN binding request",
+        "STUN binding success response"
+      ],
+      "notes": [
+        "Current UI support is hint-oriented rather than a deep STUN parser.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.040 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-BITTORRENT-01",
+      "name": "BitTorrent handshake hint demo",
+      "purpose": "Short TCP flow demonstrating current canonical BitTorrent handshake detection.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "BitTorrent",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.45:51413",
+        "198.51.100.45:6881"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 7,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "BitTorrent handshake"
+      ],
+      "notes": [
+        "Current UI support is hint-oriented rather than a deep BitTorrent parser.",
+        "Materialized packet count: 7",
+        "Materialized duration: 0.360 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-SMTP-01",
+      "name": "SMTP hint demo",
+      "purpose": "Short TCP flow demonstrating current SMTP greeting/EHLO hint detection.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "SMTP",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.46:25",
+        "198.51.100.46:41234"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 8,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "SMTP greeting",
+        "EHLO"
+      ],
+      "notes": [
+        "Counts toward the aggregated Statistics row `Mail protocols`.",
+        "Materialized packet count: 8",
+        "Materialized duration: 0.390 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-POP3-01",
+      "name": "POP3 hint demo",
+      "purpose": "Short TCP flow demonstrating current POP3 greeting/command hint detection.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "POP3",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.47:110",
+        "198.51.100.47:40110"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 8,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "POP3 greeting",
+        "USER command"
+      ],
+      "notes": [
+        "Counts toward the aggregated Statistics row `Mail protocols`.",
+        "Materialized packet count: 8",
+        "Materialized duration: 0.390 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-IMAP-01",
+      "name": "IMAP hint demo",
+      "purpose": "Short TCP flow demonstrating current IMAP greeting/tagged-command hint detection.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "IMAP",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.48:143",
+        "198.51.100.48:40143"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 8,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "IMAP greeting",
+        "tagged LOGIN"
+      ],
+      "notes": [
+        "Counts toward the aggregated Statistics row `Mail protocols`.",
+        "Materialized packet count: 8",
+        "Materialized duration: 0.390 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-DHCP-01",
+      "name": "DHCP hint demo",
+      "purpose": "Short BOOTP/DHCP flow demonstrating current DHCP magic-cookie detection on UDP/67-68.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "DHCP",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.153:68",
+        "198.51.100.153:67"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "protocol hint"
+      ],
+      "special_packets": [
+        "DHCP Discover",
+        "DHCP Offer"
+      ],
+      "notes": [
+        "Current UI support is hint-oriented rather than a deep DHCP parser.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.050 s"
+      ]
+    },
+    {
+      "scenario_id": "HINT-POSSIBLE-TLS-01",
+      "name": "Settings-gated Possible TLS demo",
+      "purpose": "Opaque TCP/443 flow that stays non-confirmed by default and only surfaces as Possible TLS when the fallback setting is enabled.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "Possible TLS (setting-dependent)",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.49:44043",
+        "198.51.100.49:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "settings-gated possible hint"
+      ],
+      "special_packets": [
+        "opaque TCP/443 payload"
+      ],
+      "notes": [
+        "Default behavior remains Unknown because `use_possible_tls_quic` is disabled by default.",
+        "When `use_possible_tls_quic` is enabled and the capture is reopened/imported, this flow should appear as Possible TLS.",
+        "Materialized packet count: 4",
+        "Materialized duration: 0.140 s"
+      ]
+    },
+    {
+      "scenario_id": "HINT-POSSIBLE-QUIC-01",
+      "name": "Settings-gated Possible QUIC demo",
+      "purpose": "Opaque UDP/443 flow that is not a valid QUIC long header and only surfaces as Possible QUIC when the fallback setting is enabled.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "Possible QUIC (setting-dependent)",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.52:44044",
+        "198.51.100.52:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "settings-gated possible hint"
+      ],
+      "special_packets": [
+        "opaque UDP/443 payload"
+      ],
+      "notes": [
+        "Default behavior remains Unknown because `use_possible_tls_quic` is disabled by default.",
+        "This is intentionally distinct from `APP-QUIC-NEG-01`, which is still a confirmed QUIC long-header flow.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "ID-VLAN-PAIR-01",
+      "name": "Same UDP tuple split by VLAN identity",
+      "purpose": "Two otherwise identical UDP packets intentionally differ only by VLAN identity so default flow grouping keeps them separate.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.150:55000",
+        "198.51.100.150:9000"
+      ],
+      "expected_protocol_path": "EthernetII -> VLAN -> IPv4 -> UDP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "grouping identity demo",
+        "protocol path identity tree"
+      ],
+      "special_packets": [
+        "same tuple with VLAN 300",
+        "same tuple with VLAN 301"
+      ],
+      "notes": [
+        "Manual GUI grouping demo: Ignore VLAN layers when grouping flows should merge these flows.",
+        "Primary source semantics validated from `tests/data/parsing/vlan/05_qinq_ipv4_udp.pcap`; scenario is materialized synthetically to produce a clean same-tuple identity pair.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.040 s"
+      ]
+    },
+    {
+      "scenario_id": "ID-MPLS-LABEL-01",
+      "name": "Same TCP tuple split by MPLS label identity",
+      "purpose": "Two otherwise identical TCP SYN packets intentionally differ only by MPLS label so default grouping keeps them separate.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.160:55160",
+        "198.51.100.160:443"
+      ],
+      "expected_protocol_path": "EthernetII -> MPLS -> IPv4 -> TCP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "grouping identity demo",
+        "protocol path identity tree"
+      ],
+      "special_packets": [
+        "same tuple with label 16021",
+        "same tuple with label 16022"
+      ],
+      "notes": [
+        "Manual GUI grouping demo: Ignore MPLS layers when grouping flows should merge these flows.",
+        "Primary source semantics validated from `tests/data/parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap`; scenario is materialized synthetically to produce a clean same-tuple identity pair.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.040 s"
+      ]
+    },
+    {
+      "scenario_id": "OVL-GTPU-TEID-01",
+      "name": "Same inner TCP tuple split by GTP-U TEID",
+      "purpose": "Two GTP-U packets keep the same inner TCP tuple while differing by TEID to demonstrate current identity behavior.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "10.60.0.10:49660",
+        "10.60.0.20:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP -> GTP-U -> IPv4 -> TCP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "GTP-U identity demo",
+        "protocol path identity tree"
+      ],
+      "special_packets": [
+        "TEID 0x01020304",
+        "TEID 0x05060708"
+      ],
+      "notes": [
+        "Exact packets are reused from `tests/data/parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap`.",
+        "Manual GUI grouping demo: Ignore GTP-U TEIDs when grouping inner flows should merge these flows.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.020 s"
+      ]
+    },
+    {
+      "scenario_id": "OVL-VXLAN-VNI-01",
+      "name": "Same inner TCP tuple split by VXLAN VNI",
+      "purpose": "Two VXLAN packets keep the same inner TCP tuple while differing by VNI to demonstrate identity visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "10.40.0.10:49440",
+        "10.40.0.20:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP -> VXLAN -> EthernetII -> IPv4 -> TCP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "VXLAN identity demo",
+        "protocol path identity tree"
+      ],
+      "special_packets": [
+        "VNI 100",
+        "VNI 200"
+      ],
+      "notes": [
+        "Exact packets are reused from `tests/data/parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap`.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.020 s"
+      ]
+    },
+    {
+      "scenario_id": "OVL-GENEVE-VNI-01",
+      "name": "Same inner TCP tuple split by Geneve VNI",
+      "purpose": "Two Geneve packets keep the same inner TCP tuple while differing by VNI to demonstrate identity visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "10.50.0.10:49550",
+        "10.50.0.20:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP -> Geneve -> EthernetII -> IPv4 -> TCP",
+      "expected_flow_count": 2,
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "Geneve identity demo",
+        "protocol path identity tree"
+      ],
+      "special_packets": [
+        "VNI 100",
+        "VNI 200"
+      ],
+      "notes": [
+        "Exact packets are reused from `tests/data/parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap`.",
+        "Materialized packet count: 2",
+        "Materialized duration: 0.020 s"
+      ]
+    },
+    {
+      "scenario_id": "APP-SCTP-01",
+      "name": "SCTP data packet",
+      "purpose": "Short SCTP scenario proving current user-visible SCTP flow recognition.",
+      "expected_protocol": "SCTP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "10.132.0.10:49132",
+        "10.132.0.20:36412"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> SCTP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "SCTP family coverage"
+      ],
+      "special_packets": [
+        "SCTP data packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/sctp/01_sctp_ipv4_data_s1ap.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "SEC-AH-01",
+      "name": "IPv4 AH with inner TCP",
+      "purpose": "Small AH scenario showing that normal import exposes AH plus the inner TCP tuple.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.70:49170",
+        "198.51.100.70:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> AH -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "security header coverage"
+      ],
+      "special_packets": [
+        "AH packet with TCP SYN"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/ah/01_ipv4_ah_tcp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "SEC-ESP-01",
+      "name": "IPv4 ESP packet",
+      "purpose": "Small ESP scenario showing current normal import exposure of ESP as a recognized protocol flow.",
+      "expected_protocol": "ESP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.50",
+        "198.51.100.50"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> ESP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "security header coverage"
+      ],
+      "special_packets": [
+        "ESP packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/esp/01_ipv4_esp_basic.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "TUN-IPIP-01",
+      "name": "IPv4-in-IPv4 tunnel packet",
+      "purpose": "Small IP-in-IP scenario showing canonical tunnel path visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "10.60.0.10:49160",
+        "10.60.0.20:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "tunnel family coverage"
+      ],
+      "special_packets": [
+        "encapsulated TCP SYN"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/ip_encapsulation/01_ipv4_in_ipv4_tcp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-PPPOE-01",
+      "name": "PPPoE session packet",
+      "purpose": "Small PPPoE session scenario proving PPPoE/PPP path visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.30:49160",
+        "198.51.100.30:443"
+      ],
+      "expected_protocol_path": "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "L2 encapsulation coverage"
+      ],
+      "special_packets": [
+        "PPPoE session packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-PBB-01",
+      "name": "PBB packet with inner IPv4/TCP",
+      "purpose": "Small PBB scenario proving provider-bridging path visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.60:49190",
+        "198.51.100.60:443"
+      ],
+      "expected_protocol_path": "EthernetII -> PBB -> EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "L2 encapsulation coverage"
+      ],
+      "special_packets": [
+        "PBB packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/pbb/01_pbb_ipv4_tcp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-LLCSNAP-01",
+      "name": "LLC/SNAP packet with IPv4/TCP",
+      "purpose": "Small LLC/SNAP scenario proving 802.3 + LLC path visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.40:49170",
+        "198.51.100.40:443"
+      ],
+      "expected_protocol_path": "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "L2 encapsulation coverage"
+      ],
+      "special_packets": [
+        "LLC/SNAP packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "TUN-EOIP-01",
+      "name": "EoIP packet with inner IPv4/TCP",
+      "purpose": "Small EoIP scenario proving current nested GRE/Ethernet visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "10.80.0.10:49180",
+        "10.80.0.20:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> GRE -> EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "tunnel family coverage"
+      ],
+      "special_packets": [
+        "EoIP packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/eoip/02_ipv4_eoip_inner_ipv4_tcp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "CTRL-IGMP-01",
+      "name": "IGMP membership report",
+      "purpose": "Short IGMP control scenario showing current detected-protocol and service presentation.",
+      "expected_protocol": "IGMP",
+      "expected_detected_protocol": "IGMPv1",
+      "expected_service": "Membership Report 224.0.0.251",
+      "endpoints": [
+        "192.0.2.10",
+        "224.0.0.251"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "control-plane family coverage"
+      ],
+      "special_packets": [
+        "IGMP membership report"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/igmp/01_igmpv1_membership_report_mdns_group.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "TUN-MPLS-PW-01",
+      "name": "MPLS pseudowire packet",
+      "purpose": "Small MPLS pseudowire scenario proving current nested Ethernet path visibility.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.50:49180",
+        "198.51.100.50:443"
+      ],
+      "expected_protocol_path": "EthernetII -> MPLS -> MPLS -> Pseudowire -> EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "tunnel family coverage"
+      ],
+      "special_packets": [
+        "MPLS pseudowire packet"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/mpls_pw/01_mpls_pw_eth_ipv4_tcp_no_cw.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "NET-IPV4-OPTIONS-01",
+      "name": "IPv4 packet with structured options",
+      "purpose": "Short IPv4-options scenario showing current Summary/Bytes support for structured IPv4 options.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "198.51.100.10:12345",
+        "198.51.100.20:54321"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> UDP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes"
+      ],
+      "analysis_features": [
+        "IPv4 options"
+      ],
+      "special_packets": [
+        "NOP",
+        "Router Alert",
+        "Record Route",
+        "EOL"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/ip_options/10_ipv4_multiple_options_udp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "TCP-OPTIONS-01",
+      "name": "TCP SYN with structured options",
+      "purpose": "Short TCP-options scenario showing current Summary/Bytes support for MSS, SACK Permitted, Timestamps, NOP, and Window Scale.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.10:49152",
+        "198.51.100.20:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes"
+      ],
+      "analysis_features": [
+        "TCP options"
+      ],
+      "special_packets": [
+        "MSS",
+        "SACK Permitted",
+        "Timestamps",
+        "NOP",
+        "Window Scale"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/tcp_options/04_tcp_syn_mss_window_scale_sack_timestamp.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-ARP-01",
+      "name": "ARP request/reply",
+      "purpose": "Simple ARP request/reply pair.",
+      "expected_protocol": "ARP",
+      "expected_detected_protocol": "",
+      "expected_service": "ARP Request/Reply",
+      "endpoints": [
+        "192.0.2.90",
+        "192.0.2.91"
+      ],
+      "expected_protocol_path": "EthernetII -> ARP",
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary",
+        "Stream"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "ARP request",
+        "ARP reply"
+      ],
+      "notes": [
+        "Materialized packet count: 2",
+        "Materialized duration: 0.050 s"
+      ]
+    },
+    {
+      "scenario_id": "CTRL-ICMP-01",
+      "name": "ICMP control traffic",
+      "purpose": "Echo request/reply plus one useful ICMP error.",
+      "expected_protocol": "ICMP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.100",
+        "198.51.100.100"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4",
+      "approximate_packet_count": 3,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "Echo Request",
+        "Echo Reply",
+        "Destination Unreachable"
+      ],
+      "notes": [
+        "Flow protocol-path expectations intentionally follow current app semantics, which stop at IPv4 for this flow.",
+        "Materialized packet count: 3",
+        "Materialized duration: 0.300 s"
+      ]
+    },
+    {
+      "scenario_id": "TCP-RST-01",
+      "name": "TCP reset presentation",
+      "purpose": "Short TCP connection ending in RST for flags presentation.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "192.0.2.110:45110",
+        "198.51.100.110:22"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 4,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "SYN",
+        "SYN-ACK",
+        "ACK",
+        "RST"
+      ],
+      "notes": [
+        "Materialized packet count: 4",
+        "Materialized duration: 0.100 s"
+      ]
+    },
+    {
+      "scenario_id": "EDGE-SNAPLEN-01",
+      "name": "Classic-PCAP caplen/origlen distinction",
+      "purpose": "Real caplen/origlen difference for captured/original byte semantics.",
+      "expected_protocol": "TCP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "203.0.113.120:46120",
+        "198.51.100.120:443"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4 -> TCP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [
+        "original vs captured length"
+      ],
+      "special_packets": [
+        "snaplen-truncated record"
+      ],
+      "notes": [
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "EDGE-FRAG-01",
+      "name": "IPv4 fragmentation",
+      "purpose": "Small deterministic IPv4 fragmentation scenario using only currently supported semantics.",
+      "expected_protocol": "UDP",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "203.0.113.130",
+        "198.51.100.130"
+      ],
+      "expected_protocol_path": "EthernetII -> IPv4",
+      "approximate_packet_count": 2,
+      "ui_surfaces": [
+        "Flows",
+        "Packets",
+        "Packet Details Summary"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "first fragment",
+        "non-initial fragment"
+      ],
+      "notes": [
+        "Materialized packet count: 2",
+        "Materialized duration: 0.050 s"
+      ]
+    },
+    {
+      "scenario_id": "EDGE-UNREC-01",
+      "name": "Unrecognized truncated Ethernet bytes",
+      "purpose": "Capture-level unrecognized packet with Packet Summary fallback and Captured Packet byte view.",
+      "expected_protocol": "",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "truncated link-layer bytes"
+      ],
+      "expected_protocol_path": "Captured Packet fallback only",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "truncated ethernet header"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/packet_byte_views/02_truncated_ethernet_header.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-MACSEC-PACKET-01",
+      "name": "MACsec packet-inspection-only unrecognized packet",
+      "purpose": "Unrecognized packet that still exposes structured MACsec packet inspection without forming a normal flow.",
+      "expected_protocol": "",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "packet-inspection-only MACsec record"
+      ],
+      "expected_protocol_path": "EthernetII -> MACsec",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "MACsec SecTAG",
+        "Protected Payload",
+        "ICV"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/macsec/01_macsec_basic_no_sci.pcap`.",
+        "This remains packet-inspection-only rather than a normal flow-grouping scenario.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-PPPOE-DISCOVERY-01",
+      "name": "PPPoE discovery no-flow packet",
+      "purpose": "Unrecognized PPPoE discovery control packet with structured PPPoE packet details but no normal flow identity.",
+      "expected_protocol": "",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "PPPoE discovery control packet"
+      ],
+      "expected_protocol_path": "EthernetII -> PPPoE",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "PPPoE Discovery PADI"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/pppoe/08_pppoe_discovery_padi.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "L2-LLCSNAP-UNREC-01",
+      "name": "LLC/SNAP unknown PID no-flow packet",
+      "purpose": "IEEE 802.3 LLC/SNAP packet that reaches SNAP parsing but remains unrecognized because the PID is unsupported.",
+      "expected_protocol": "",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "IEEE 802.3 LLC/SNAP unknown PID"
+      ],
+      "expected_protocol_path": "IEEE 802.3 -> LLC/SNAP",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "Unknown SNAP PID"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/llc_snap/08_llc_snap_unknown_pid.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    },
+    {
+      "scenario_id": "TUN-MPLS-UNREC-01",
+      "name": "MPLS no-flow packet without bottom-of-stack",
+      "purpose": "Unrecognized MPLS packet that still exposes multiple MPLS labels in Packet Details before flow-key extraction stops.",
+      "expected_protocol": "",
+      "expected_detected_protocol": "",
+      "expected_service": "",
+      "endpoints": [
+        "MPLS packet without bottom-of-stack"
+      ],
+      "expected_protocol_path": "EthernetII -> MPLS -> MPLS",
+      "approximate_packet_count": 1,
+      "ui_surfaces": [
+        "Packets",
+        "Packet Details Summary",
+        "Packet Details Bytes",
+        "Statistics"
+      ],
+      "analysis_features": [],
+      "special_packets": [
+        "two MPLS labels without BOS"
+      ],
+      "notes": [
+        "Exact packet is reused from `tests/data/parsing/mpls/18_mpls_stack_no_bos_before_payload_end.pcap`.",
+        "Materialized packet count: 1",
+        "Materialized duration: 0.000 s"
+      ]
+    }
+  ],
+  "parsing_family_coverage": [
+    {
+      "family": "ah",
+      "status": "represented",
+      "scenario_ids": [
+        "SEC-AH-01"
+      ],
+      "source_fixture": "tests/data/parsing/ah/01_ipv4_ah_tcp.pcap",
+      "note": "Validated through normal CLI import and materialized as a recognized AH/TCP flow."
+    },
+    {
+      "family": "arp",
+      "status": "represented",
+      "scenario_ids": [
+        "L2-ARP-01"
+      ],
+      "source_fixture": "",
+      "note": "Synthetic ARP request/reply showcase scenario."
+    },
+    {
+      "family": "dns",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-DNS-01",
+        "APP-DNS-02"
+      ],
+      "source_fixture": "",
+      "note": "Deterministic synthetic DNS request/response scenarios cover both A/CNAME-style and PTR-style confirmed DNS hints."
+    },
+    {
+      "family": "eoip",
+      "status": "represented",
+      "scenario_ids": [
+        "TUN-EOIP-01"
+      ],
+      "source_fixture": "tests/data/parsing/eoip/02_ipv4_eoip_inner_ipv4_tcp.pcap",
+      "note": "Validated through normal CLI import and materialized from the checked-in fixture."
+    },
+    {
+      "family": "esp",
+      "status": "represented",
+      "scenario_ids": [
+        "SEC-ESP-01"
+      ],
+      "source_fixture": "tests/data/parsing/esp/01_ipv4_esp_basic.pcap",
+      "note": "Validated through normal CLI import and materialized as a recognized ESP flow."
+    },
+    {
+      "family": "geneve",
+      "status": "represented",
+      "scenario_ids": [
+        "OVL-GENEVE-VNI-01"
+      ],
+      "source_fixture": "tests/data/parsing/geneve/19_geneve_same_inner_tuple_different_vni.pcap",
+      "note": "Demonstrates same-inner-tuple/different-VNI identity behavior."
+    },
+    {
+      "family": "gre",
+      "status": "represented",
+      "scenario_ids": [
+        "AN-GRE-TLS-01"
+      ],
+      "source_fixture": "",
+      "note": "Nested GRE/TLS hero flow already covers the GRE family."
+    },
+    {
+      "family": "gtpu",
+      "status": "represented",
+      "scenario_ids": [
+        "OVL-GTPU-TEID-01"
+      ],
+      "source_fixture": "tests/data/parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap",
+      "note": "Demonstrates same-inner-tuple/different-TEID identity behavior."
+    },
+    {
+      "family": "http",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-HTTP-01",
+        "APP-HTTP-02",
+        "APP-HTTP-LARGEBODY-01"
+      ],
+      "source_fixture": "",
+      "note": "Deterministic synthetic HTTP request/response scenarios cover short GET, short POST-style, and large multi-packet response reassembly behavior."
+    },
+    {
+      "family": "icmp",
+      "status": "represented",
+      "scenario_ids": [
+        "CTRL-ICMP-01"
+      ],
+      "source_fixture": "",
+      "note": "Deterministic synthetic ICMP control scenario."
+    },
+    {
+      "family": "igmp",
+      "status": "represented",
+      "scenario_ids": [
+        "CTRL-IGMP-01"
+      ],
+      "source_fixture": "tests/data/parsing/igmp/01_igmpv1_membership_report_mdns_group.pcap",
+      "note": "Validated through normal CLI import with detected protocol and service text."
+    },
+    {
+      "family": "ip_encapsulation",
+      "status": "represented",
+      "scenario_ids": [
+        "TUN-IPIP-01"
+      ],
+      "source_fixture": "tests/data/parsing/ip_encapsulation/01_ipv4_in_ipv4_tcp.pcap",
+      "note": "Validated through normal CLI import and materialized from the checked-in fixture."
+    },
+    {
+      "family": "ip_options",
+      "status": "represented",
+      "scenario_ids": [
+        "NET-IPV4-OPTIONS-01"
+      ],
+      "source_fixture": "tests/data/parsing/ip_options/10_ipv4_multiple_options_udp.pcap",
+      "note": "Validated through normal CLI packet inspection with structured IPv4 options."
+    },
+    {
+      "family": "linux_cooked",
+      "status": "companion-capture",
+      "scenario_ids": [],
+      "source_fixture": "",
+      "note": "Primary showcase remains a classic Ethernet PCAP; SLL/SLL2 require a separate companion capture."
+    },
+    {
+      "family": "llc_snap",
+      "status": "represented",
+      "scenario_ids": [
+        "L2-LLCSNAP-01",
+        "L2-LLCSNAP-UNREC-01"
+      ],
+      "source_fixture": "tests/data/parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap",
+      "note": "Validated through normal CLI import for the recognized path; L2-LLCSNAP-UNREC-01 adds the no-flow unknown-PID packet-inspection path."
+    },
+    {
+      "family": "macsec",
+      "status": "packet-inspection-only",
+      "scenario_ids": [
+        "L2-MACSEC-PACKET-01"
+      ],
+      "source_fixture": "tests/data/parsing/macsec/01_macsec_basic_no_sci.pcap",
+      "note": "Current checked-in MACsec fixture remains a no-flow/unrecognized packet through normal CLI import, but selected-packet Summary/Bytes semantics still exist; this is packet inspection support rather than a flow-grouping gap."
+    },
+    {
+      "family": "mdns",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-MDNS-01",
+        "APP-MDNS6-01"
+      ],
+      "source_fixture": "tests/data/parsing/mdns/05_mdns_ipv6_dns_sd_response_aaaa.pcap",
+      "note": "mDNS coverage now includes both the deterministic IPv4 DNS-SD scenario and one exact fixture-backed IPv6 DNS-SD / AAAA response."
+    },
+    {
+      "family": "mpls",
+      "status": "represented",
+      "scenario_ids": [
+        "AN-GRE-TLS-01",
+        "ID-MPLS-LABEL-01",
+        "TUN-MPLS-UNREC-01"
+      ],
+      "source_fixture": "tests/data/parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap",
+      "note": "Hero flow covers nested MPLS presentation; ID-MPLS-LABEL-01 adds explicit label-identity separation; TUN-MPLS-UNREC-01 adds a no-flow parsed-label example."
+    },
+    {
+      "family": "mpls_pw",
+      "status": "represented",
+      "scenario_ids": [
+        "TUN-MPLS-PW-01"
+      ],
+      "source_fixture": "tests/data/parsing/mpls_pw/01_mpls_pw_eth_ipv4_tcp_no_cw.pcap",
+      "note": "Validated through normal CLI import and materialized from the checked-in fixture."
+    },
+    {
+      "family": "packet_byte_views",
+      "status": "fixture-infrastructure",
+      "scenario_ids": [
+        "EDGE-SNAPLEN-01",
+        "EDGE-UNREC-01"
+      ],
+      "source_fixture": "tests/data/parsing/packet_byte_views/02_truncated_ethernet_header.pcap",
+      "note": "Directory is fixture infrastructure; relevant user-visible byte-view behavior is covered by EDGE scenarios."
+    },
+    {
+      "family": "pbb",
+      "status": "represented",
+      "scenario_ids": [
+        "L2-PBB-01"
+      ],
+      "source_fixture": "tests/data/parsing/pbb/01_pbb_ipv4_tcp.pcap",
+      "note": "Validated through normal CLI import and materialized from the checked-in fixture."
+    },
+    {
+      "family": "pppoe",
+      "status": "represented",
+      "scenario_ids": [
+        "L2-PPPOE-01",
+        "L2-PPPOE-DISCOVERY-01"
+      ],
+      "source_fixture": "tests/data/parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap",
+      "note": "Validated through normal CLI import for the session path; L2-PPPOE-DISCOVERY-01 adds the no-flow discovery/control presentation path."
+    },
+    {
+      "family": "quic",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-QUIC-01",
+        "APP-QUIC-MULTICRYPTO-01",
+        "APP-QUIC-MULTICRYPTO-02",
+        "APP-QUIC-NEG-01"
+      ],
+      "source_fixture": "tests/data/parsing/quic/quic_example_2.pcap; tmp/QUIC_many_crypto_01.pcap; tmp/QUIC_many_crypto_02.pcap",
+      "note": "Positive and negative QUIC showcase scenarios are both present; the richer purpose-recorded captures preserve exact protected UDP payload bytes for multi-CRYPTO Initial behavior."
+    },
+    {
+      "family": "sctp",
+      "status": "represented",
+      "scenario_ids": [
+        "APP-SCTP-01"
+      ],
+      "source_fixture": "tests/data/parsing/sctp/01_sctp_ipv4_data_s1ap.pcap",
+      "note": "Validated through normal CLI import and materialized from the checked-in fixture."
+    },
+    {
+      "family": "tcp",
+      "status": "already-covered",
+      "scenario_ids": [
+        "AN-TLS-BULK-01",
+        "AN-TCP6-INTERACTIVE-01",
+        "APP-HTTP-01",
+        "TCP-RST-01"
+      ],
+      "source_fixture": "",
+      "note": "Generic TCP family is already strongly covered by existing hero and application scenarios."
+    },
+    {
+      "family": "tcp_options",
+      "status": "represented",
+      "scenario_ids": [
+        "TCP-OPTIONS-01"
+      ],
+      "source_fixture": "tests/data/parsing/tcp_options/04_tcp_syn_mss_window_scale_sack_timestamp.pcap",
+      "note": "Validated through normal CLI packet inspection with structured TCP options."
+    },
+    {
+      "family": "tls",
+      "status": "represented",
+      "scenario_ids": [
+        "AN-TLS-BULK-01",
+        "AN-GRE-TLS-01",
+        "APP-TLS-03",
+        "APP-TLS-SEGMENTED-01",
+        "APP-TLS-NOSNI-01"
+      ],
+      "source_fixture": "tests/data/parsing/tls/tls_sni_in_second_segment_20.pcap",
+      "note": "TLS is covered by the two existing analysis hero flows, one compact SNI-positive direct flow, one segmented ClientHello/SNI continuation case, and one compact valid TLS flow without observed SNI."
+    },
+    {
+      "family": "udp",
+      "status": "already-covered",
+      "scenario_ids": [
+        "AN-UDP-TELEMETRY-01",
+        "APP-DNS-01",
+        "APP-MDNS-01",
+        "APP-MDNS6-01",
+        "APP-QUIC-01",
+        "APP-QUIC-MULTICRYPTO-01",
+        "APP-QUIC-MULTICRYPTO-02"
+      ],
+      "source_fixture": "",
+      "note": "Generic UDP family is already strongly covered by telemetry, DNS, IPv4/IPv6 mDNS, and multiple QUIC scenarios."
+    },
+    {
+      "family": "vlan",
+      "status": "represented",
+      "scenario_ids": [
+        "AN-UDP-TELEMETRY-01",
+        "ID-VLAN-PAIR-01"
+      ],
+      "source_fixture": "tests/data/parsing/vlan/05_qinq_ipv4_udp.pcap",
+      "note": "Telemetry hero covers live VLAN presentation; ID-VLAN-PAIR-01 adds explicit same-tuple/different-VID separation."
+    },
+    {
+      "family": "vxlan",
+      "status": "represented",
+      "scenario_ids": [
+        "OVL-VXLAN-VNI-01"
+      ],
+      "source_fixture": "tests/data/parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap",
+      "note": "Demonstrates same-inner-tuple/different-VNI identity behavior."
+    }
+  ],
+  "detected_protocol_coverage": [
+    {
+      "detected_protocol": "HTTP",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-HTTP-01",
+        "APP-HTTP-02",
+        "APP-HTTP-LARGEBODY-01"
+      ],
+      "note": "Two compact structured HTTP request/response flows plus one large multi-packet response reassembly flow with a stable Host-derived service hint."
+    },
+    {
+      "detected_protocol": "TLS",
+      "status": "confirmed",
+      "scenario_ids": [
+        "AN-TLS-BULK-01",
+        "AN-GRE-TLS-01",
+        "APP-TLS-03",
+        "APP-TLS-SEGMENTED-01",
+        "APP-TLS-NOSNI-01"
+      ],
+      "note": "Confirmed TLS coverage now includes direct and nested SNI-bearing cases, one segmented ClientHello case whose SNI is recovered only after selected-flow reconstruction, and one compact valid TLS flow without observed SNI."
+    },
+    {
+      "detected_protocol": "DNS",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-DNS-01",
+        "APP-DNS-02"
+      ],
+      "note": "Two confirmed DNS flows covering different query/response shapes."
+    },
+    {
+      "detected_protocol": "QUIC",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-QUIC-01",
+        "APP-QUIC-MULTICRYPTO-01",
+        "APP-QUIC-MULTICRYPTO-02",
+        "APP-QUIC-NEG-01"
+      ],
+      "note": "Confirmed QUIC long-header coverage includes positive decryptable flows and one honest coarse negative Initial."
+    },
+    {
+      "detected_protocol": "SSH",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-SSH-01"
+      ],
+      "note": "Banner-based confirmed SSH hint demonstration."
+    },
+    {
+      "detected_protocol": "STUN",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-STUN-01"
+      ],
+      "note": "Binding request/response pair satisfying the current STUN message-shape detector."
+    },
+    {
+      "detected_protocol": "BitTorrent",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-BITTORRENT-01"
+      ],
+      "note": "Canonical 68-byte BitTorrent handshake demonstration."
+    },
+    {
+      "detected_protocol": "Mail protocols",
+      "status": "grouped-presentation",
+      "scenario_ids": [
+        "APP-SMTP-01",
+        "APP-POP3-01",
+        "APP-IMAP-01"
+      ],
+      "note": "Three independently detected mail-protocol flows aggregate into the shared Statistics row `Mail protocols`."
+    },
+    {
+      "detected_protocol": "DHCP",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-DHCP-01"
+      ],
+      "note": "Compact UDP/67-68 BOOTP/DHCP magic-cookie demonstration."
+    },
+    {
+      "detected_protocol": "mDNS",
+      "status": "confirmed",
+      "scenario_ids": [
+        "APP-MDNS-01",
+        "APP-MDNS6-01"
+      ],
+      "note": "mDNS coverage includes one IPv4 multicast DNS-SD scenario plus one compact IPv6 DNS-SD / AAAA response flow."
+    },
+    {
+      "detected_protocol": "Possible TLS",
+      "status": "heuristic-setting-dependent",
+      "scenario_ids": [
+        "HINT-POSSIBLE-TLS-01"
+      ],
+      "note": "Only appears when `use_possible_tls_quic` is enabled and the capture is reopened/imported; default behavior remains Unknown."
+    },
+    {
+      "detected_protocol": "Possible QUIC",
+      "status": "heuristic-setting-dependent",
+      "scenario_ids": [
+        "HINT-POSSIBLE-QUIC-01"
+      ],
+      "note": "Only appears when `use_possible_tls_quic` is enabled and the capture is reopened/imported; this flow is not confirmed QUIC."
+    },
+    {
+      "detected_protocol": "IGMP family in Statistics",
+      "status": "implementation-note",
+      "scenario_ids": [
+        "CTRL-IGMP-01"
+      ],
+      "note": "IGMP/IGMPv1/IGMPv2/IGMPv3 can appear in flow rows, but current Statistics folds them into Unknown rather than a dedicated row."
+    }
+  ],
+  "unrecognized_packet_coverage": [
+    {
+      "scenario_id": "EDGE-UNREC-01",
+      "source_fixture": "tests/data/parsing/packet_byte_views/02_truncated_ethernet_header.pcap",
+      "flow_assignment": "unrecognized",
+      "expected_reason": "Link-layer header truncated",
+      "expected_parsed_up_to": null,
+      "packet_inspection_features": [
+        "Captured Packet fallback only",
+        "Warnings layer",
+        "Captured Packet byte view"
+      ],
+      "summary_behavior": "Packet Summary fallback only; no structured protocol layers are expected.",
+      "bytes_behavior": "Captured Packet fallback remains available as the selected byte view.",
+      "captured_length_bytes": 10,
+      "original_length_bytes": 46
+    },
+    {
+      "scenario_id": "L2-MACSEC-PACKET-01",
+      "source_fixture": "tests/data/parsing/macsec/01_macsec_basic_no_sci.pcap",
+      "flow_assignment": "unrecognized",
+      "expected_reason": "MACsec protected payload not decrypted",
+      "expected_parsed_up_to": null,
+      "packet_inspection_features": [
+        "Ethernet II",
+        "MACsec SecTAG",
+        "Protected Payload",
+        "ICV"
+      ],
+      "summary_behavior": "Structured Summary still shows Ethernet, MACsec, Protected Payload, and ICV layers.",
+      "bytes_behavior": "Bounded selected-packet Bytes presentation remains available for the MACsec packet.",
+      "captured_length_bytes": 60,
+      "original_length_bytes": 60
+    },
+    {
+      "scenario_id": "L2-PPPOE-DISCOVERY-01",
+      "source_fixture": "tests/data/parsing/pppoe/08_pppoe_discovery_padi.pcap",
+      "flow_assignment": "unrecognized",
+      "expected_reason": "PPPoE Discovery PADI",
+      "expected_parsed_up_to": null,
+      "packet_inspection_features": [
+        "Ethernet II",
+        "PPPoE Discovery"
+      ],
+      "summary_behavior": "Structured Summary shows Ethernet and PPPoE Discovery details without a PPP/IP flow payload.",
+      "bytes_behavior": "Selected-packet Bytes remains available from the captured packet.",
+      "captured_length_bytes": 33,
+      "original_length_bytes": 33
+    },
+    {
+      "scenario_id": "L2-LLCSNAP-UNREC-01",
+      "source_fixture": "tests/data/parsing/llc_snap/08_llc_snap_unknown_pid.pcap",
+      "flow_assignment": "unrecognized",
+      "expected_reason": "Unknown SNAP PID",
+      "expected_parsed_up_to": null,
+      "packet_inspection_features": [
+        "IEEE 802.3",
+        "LLC",
+        "SNAP",
+        "SNAP payload preview"
+      ],
+      "summary_behavior": "Structured Summary shows Ethernet, LLC, SNAP, and SNAP payload layers.",
+      "bytes_behavior": "Selected-packet Bytes remains available from the captured packet.",
+      "captured_length_bytes": 42,
+      "original_length_bytes": 42
+    },
+    {
+      "scenario_id": "TUN-MPLS-UNREC-01",
+      "source_fixture": "tests/data/parsing/mpls/18_mpls_stack_no_bos_before_payload_end.pcap",
+      "flow_assignment": "unrecognized",
+      "expected_reason": "MPLS bottom-of-stack not found",
+      "expected_parsed_up_to": null,
+      "packet_inspection_features": [
+        "Ethernet II",
+        "MPLS label stack"
+      ],
+      "summary_behavior": "Structured Summary shows Ethernet plus both parsed MPLS labels before flow-key extraction stops.",
+      "bytes_behavior": "Selected-packet Bytes remains available from the captured packet.",
+      "captured_length_bytes": 22,
+      "original_length_bytes": 22
+    }
+  ],
+  "known_limitations": [
+    "Does not advertise retransmission classification or out-of-order storytelling.",
+    "Does not advertise DNS transaction correlation beyond current structured packet/stream presentation.",
+    "Does not advertise recursive ICMP quoted-packet deep inspection.",
+    "Does not advertise ICMPv6/NDP deep inspection.",
+    "Does not advertise deep SCTP Stream semantics.",
+    "Does not advertise deep SVCB/HTTPS parsing.",
+    "MACsec remains packet-inspection-only in the primary showcase: L2-MACSEC-PACKET-01 is intentionally a no-flow/unrecognized packet with structured Summary/Bytes support rather than a normal recognized flow.",
+    "SLL/SLL2 support is intentionally excluded from this primary Ethernet showcase and can live in a separate companion capture later."
+  ],
+  "validation_smoke_checks": [
+    "Open the capture and confirm Flows / Analysis / Statistics load without requiring an index.",
+    "Open Statistics -> Detected Protocol Hints and confirm all current confirmed application-hint families have at least one representative row: HTTP, TLS, DNS, QUIC, SSH, STUN, BitTorrent, Mail protocols, DHCP, and mDNS.",
+    "If `use_possible_tls_quic` is enabled before reopening/importing the capture, confirm HINT-POSSIBLE-TLS-01 and HINT-POSSIBLE-QUIC-01 move from Unknown into Possible TLS / Possible QUIC respectively.",
+    "Inspect AN-TLS-BULK-01 for TLS SNI, rate phases, packet-size histogram, inter-arrival histogram, and burst/idle regions.",
+    "Inspect AN-GRE-TLS-01 for complex protocol path and nested TLS stream/bytes presentation.",
+    "Inspect APP-HTTP-02, APP-HTTP-LARGEBODY-01, APP-DNS-02, APP-TLS-03, APP-TLS-SEGMENTED-01, APP-TLS-NOSNI-01, APP-SSH-01, APP-STUN-01, APP-BITTORRENT-01, APP-SMTP-01, APP-POP3-01, APP-IMAP-01, and APP-DHCP-01 for representative confirmed detected-protocol hint coverage.",
+    "Inspect APP-TLS-SEGMENTED-01 and confirm that initial import detects TLS while Service starts empty, then selected-flow reconstruction recovers edge.microsoft.com because the SNI resides only in the second TCP segment.",
+    "Inspect APP-MDNS6-01 for compact IPv6 UDP/mDNS/DNS-SD behavior with structured PTR, SRV, TXT, and AAAA presentation.",
+    "Inspect APP-QUIC-01, APP-QUIC-MULTICRYPTO-01, APP-QUIC-MULTICRYPTO-02, and APP-QUIC-NEG-01 for compact positive, rich positive, and coarse negative QUIC Initial behavior.",
+    "Inspect APP-QUIC-01 packet 1 for Initial/CRYPTO/ClientHello, packet 3 for Initial/0-RTT, one reverse packet for Initial ACK, and packet 13 for ServerHello.",
+    "Inspect APP-QUIC-MULTICRYPTO-01 packet 1 for many CRYPTO/PING/PADDING frames plus ClientHello, packet 4 for reverse ServerHello, and later packets for Handshake / Protected Payload.",
+    "Inspect APP-QUIC-MULTICRYPTO-02 packet 1 for many CRYPTO/PING/PADDING frames plus ClientHello, packets 3-4 for reverse Initial ACK behavior, and packets 5-6 for reverse ServerHello.",
+    "Inspect ID-VLAN-PAIR-01, ID-MPLS-LABEL-01, OVL-GTPU-TEID-01, OVL-VXLAN-VNI-01, and OVL-GENEVE-VNI-01 for identity-tree diversity and manual GUI grouping demonstrations.",
+    "Inspect NET-IPV4-OPTIONS-01 and TCP-OPTIONS-01 for current structured options presentation.",
+    "Inspect EDGE-SNAPLEN-01 for captured/original length semantics and bounded byte view.",
+    "Inspect EDGE-UNREC-01, L2-MACSEC-PACKET-01, L2-PPPOE-DISCOVERY-01, L2-LLCSNAP-UNREC-01, and TUN-MPLS-UNREC-01 for distinct unrecognized-packet reasons, packet-inspection depth, and Bytes behavior."
+  ],
+  "materialization_summary": {
+    "total_packet_count": 1557,
+    "total_duration_seconds": 114.023399,
+    "approximate_pcap_size_bytes": 746411,
+    "classic_pcap_linktype": 1,
+    "contains_snaplen_distinction": true,
+    "contains_unrecognized_packets": true
+  }
+}
