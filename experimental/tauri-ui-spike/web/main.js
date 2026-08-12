@@ -3604,10 +3604,14 @@
     ] : [];
     const unrecognizedStats = overview?.unrecognized_packets || null;
 
-    elements.metricPackets.textContent = overview ? formatNumber(overview.summary?.packet_count) : "-";
+    elements.metricPackets.textContent = overview ? formatNumber(overview.whole_capture_totals?.packet_count ?? overview.summary?.packet_count ?? 0) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
-    elements.metricCapturedBytes.textContent = overview ? String(overview.summary?.captured_bytes_text ?? "-") : "-";
-    elements.metricOriginalBytes.textContent = overview ? String(overview.summary?.original_bytes_text ?? "-") : "-";
+    elements.metricCapturedBytes.textContent = overview
+      ? String(overview.whole_capture_totals?.captured_bytes_text ?? overview.summary?.captured_bytes_text ?? "-")
+      : "-";
+    elements.metricOriginalBytes.textContent = overview
+      ? String(overview.whole_capture_totals?.original_bytes_text ?? overview.summary?.original_bytes_text ?? "-")
+      : "-";
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";

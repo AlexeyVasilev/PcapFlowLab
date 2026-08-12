@@ -777,6 +777,9 @@ private:
     QVariantList flow_packet_histogram_rows_ {};
     QVariantList protocol_hint_distribution_ {};
     UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
+    std::uint64_t whole_capture_packet_count_ {0U};
+    std::uint64_t whole_capture_captured_bytes_ {0U};
+    std::uint64_t whole_capture_original_bytes_ {0U};
     CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};

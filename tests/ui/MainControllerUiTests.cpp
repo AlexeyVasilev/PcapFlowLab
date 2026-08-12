@@ -3278,10 +3278,12 @@ int main(int argc, char* argv[]) {
     const int top_endpoints_ports_section = static_cast<int>(MainController::StatisticsOptionalSection::top_endpoints_ports);
     const int section_not_requested = static_cast<int>(MainController::StatisticsSectionRequestState::not_requested);
     const int section_ready = static_cast<int>(MainController::StatisticsSectionRequestState::ready);
+    const auto zero_unrecognized_tcp_packet =
+        make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 0, 1), ipv4(10, 42, 0, 2), 46001, 443);
     const auto zero_unrecognized_capture_path = write_temp_pcap(
         "pfl_ui_statistics_unrecognized_zero.pcap",
         make_classic_pcap({
-            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 0, 1), ipv4(10, 42, 0, 2), 46001, 443)},
+            {100, zero_unrecognized_tcp_packet},
         })
     );
     const std::vector<std::uint8_t> unrecognized_ethernet_packet {
@@ -3290,10 +3292,12 @@ int main(int argc, char* argv[]) {
         0x88, 0xb5,
         0x01, 0x02, 0x03, 0x04,
     };
+    const auto nonzero_unrecognized_tcp_packet =
+        make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 1, 1), ipv4(10, 42, 1, 2), 46002, 443);
     const auto nonzero_unrecognized_capture_path = write_temp_pcap(
         "pfl_ui_statistics_unrecognized_nonzero.pcap",
         make_classic_pcap({
-            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 42, 1, 1), ipv4(10, 42, 1, 2), 46002, 443)},
+            {100, nonzero_unrecognized_tcp_packet},
             {200, unrecognized_ethernet_packet},
         })
     );
@@ -3524,6 +3528,11 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(unrecognized_controller.tcpPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4FlowCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4PacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.packetCount() == 2U);
+        UI_EXPECT(unrecognized_controller.capturedBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
+        UI_EXPECT(unrecognized_controller.originalBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
         UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 18U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 18U);
@@ -3533,11 +3542,19 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(unrecognized_controller.tcpPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4FlowCount() == 1U);
         UI_EXPECT(unrecognized_controller.ipv4PacketCount() == 1U);
+        UI_EXPECT(unrecognized_controller.packetCount() == 1U);
+        UI_EXPECT(unrecognized_controller.capturedBytes() == static_cast<qulonglong>(zero_unrecognized_tcp_packet.size()));
+        UI_EXPECT(unrecognized_controller.originalBytes() == static_cast<qulonglong>(zero_unrecognized_tcp_packet.size()));
         UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 0U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 0U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 0U);
 
         UI_EXPECT(open_capture_and_wait(app, unrecognized_controller, nonzero_unrecognized_capture_path));
+        UI_EXPECT(unrecognized_controller.packetCount() == 2U);
+        UI_EXPECT(unrecognized_controller.capturedBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
+        UI_EXPECT(unrecognized_controller.originalBytes() ==
+            static_cast<qulonglong>(nonzero_unrecognized_tcp_packet.size() + unrecognized_ethernet_packet.size()));
         UI_EXPECT(unrecognized_controller.unrecognizedStatsPacketCount() == 1U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsCapturedBytes() == 18U);
         UI_EXPECT(unrecognized_controller.unrecognizedStatsOriginalBytes() == 18U);

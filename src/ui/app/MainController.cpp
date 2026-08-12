@@ -2848,19 +2848,14 @@ QVariantList MainController::analysisSequencePreview() const {
 }
 
 qulonglong MainController::packetCount() const noexcept {
-    return static_cast<qulonglong>(session_.summary().packet_count);
+    return static_cast<qulonglong>(whole_capture_packet_count_);
 }
 qulonglong MainController::flowCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().flow_count);
 }
 
 qulonglong MainController::capturedBytes() const noexcept {
-    return static_cast<qulonglong>(
-        protocol_summary_.tcp.captured_bytes +
-        protocol_summary_.udp.captured_bytes +
-        protocol_summary_.sctp.captured_bytes +
-        protocol_summary_.other.captured_bytes
-    );
+    return static_cast<qulonglong>(whole_capture_captured_bytes_);
 }
 
 QString MainController::capturedBytesText() const {
@@ -2868,7 +2863,7 @@ QString MainController::capturedBytesText() const {
 }
 
 qulonglong MainController::originalBytes() const noexcept {
-    return static_cast<qulonglong>(session_.summary().total_bytes);
+    return static_cast<qulonglong>(whole_capture_original_bytes_);
 }
 
 QString MainController::originalBytesText() const {
@@ -5753,6 +5748,9 @@ void MainController::resetLoadedState() {
     session_ = {};
     protocol_summary_ = {};
     unrecognized_packet_statistics_ = {};
+    whole_capture_packet_count_ = 0U;
+    whole_capture_captured_bytes_ = 0U;
+    whole_capture_original_bytes_ = 0U;
     resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
     flow_model_.clear();
@@ -5795,6 +5793,10 @@ void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
     unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
+    const auto whole_capture_packet_size_statistics = session_.packet_size_statistics();
+    whole_capture_packet_count_ = whole_capture_packet_size_statistics.total_packet_count;
+    whole_capture_captured_bytes_ = whole_capture_packet_size_statistics.total_captured_bytes;
+    whole_capture_original_bytes_ = session_.summary().total_bytes + unrecognized_packet_statistics_.original_bytes;
     resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
     // Clear any selected-flow state from the previous capture before publishing
