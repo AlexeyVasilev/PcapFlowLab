@@ -401,8 +401,6 @@ void emit_test_output(const std::string& text) {
         ::freopen("CONOUT$", "w", stdout);
         ::freopen("CONOUT$", "w", stderr);
     }
-#else
-    console_ready = true;
 #endif
 
 #ifdef WIN32
