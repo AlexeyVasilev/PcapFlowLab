@@ -8,7 +8,7 @@
 #include <variant>
 #include <vector>
 
-#include "core/services/DnsInspectionParser.h"
+#include "core/domain/DnsInspection.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"

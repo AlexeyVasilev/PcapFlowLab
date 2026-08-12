@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "core/services/DnsInspectionParser.h"
-#include "core/services/IcmpInspectionParser.h"
+#include "core/domain/DnsInspection.h"
+#include "core/domain/IcmpInspection.h"
 
 namespace pfl {
 
