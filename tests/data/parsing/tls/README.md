@@ -1738,6 +1738,32 @@ Fixtures `12`, `13`, `14`, and `18` now expose bounded structured ECDHE `ServerK
   - no `Supported TLS Versions` field is invented for this TLS 1.2 ClientHello;
   - no `TLS CertificateStatus` Stream row is invented when the server omits stapled OCSP data.
 
+### tls_sni_in_second_segment_20.pcap
+
+**Category:** Session and reassembly fixture  
+**Source:** Sanitized/materialized locally from `tmp/TLS_SNI_in_second_packet_01.pcap`  
+**Decision:** Keep for now
+
+#### Current product contract
+
+- one TCP flow preserves a split ClientHello where:
+  - packet `4` starts the TLS record and carries `1440` TCP payload bytes;
+  - packet `5` is a pure continuation segment carrying `390` TCP payload bytes;
+  - the SNI bytes are physically present only in packet `5`.
+- the preserved SNI is `edge.microsoft.com`.
+- initial import-time flow hint behavior is intentionally packet-local:
+  - the first ClientHello segment is sufficient to classify the flow as `TLS`;
+  - import-time Service remains empty because the SNI is not yet available in that first segment.
+- after selecting/loading the flow, bounded selected-flow TCP/TLS reconstruction completes the ClientHello:
+  - the full handshake becomes available to selected-flow presentation;
+  - Service is recovered as `edge.microsoft.com`.
+
+#### Unique purpose
+
+- Permanent real segmented-TLS fixture showing the difference between:
+  - packet-local import-time TLS detection;
+  - later bounded selected-flow SNI recovery from a continued ClientHello.
+
 ### tls_normal_1.pcap
 
 **Category:** Session and reassembly fixture  
