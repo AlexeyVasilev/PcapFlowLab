@@ -34,11 +34,22 @@ constexpr std::uint16_t kPppoeDiscoveryTagEndOfList = 0x0000U;
 constexpr std::uint16_t kPppProtocolLcp = 0xc021U;
 constexpr std::uint16_t kPppProtocolIpcp = 0x8021U;
 constexpr std::uint16_t kPppProtocolIpv6cp = 0x8057U;
+constexpr std::uint16_t kDnsPort = 53U;
+constexpr std::uint16_t kMdnsPort = 5353U;
 
 bool is_ppp_control_protocol(const std::uint16_t protocol) noexcept {
     return protocol == kPppProtocolLcp ||
         protocol == kPppProtocolIpcp ||
         protocol == kPppProtocolIpv6cp;
+}
+
+bool is_dns_candidate_udp_port(const std::uint16_t port) noexcept {
+    return port == kDnsPort || port == kMdnsPort;
+}
+
+bool should_inspect_dns_message(const PacketDetails& details) noexcept {
+    return details.has_udp &&
+        (is_dns_candidate_udp_port(details.udp.src_port) || is_dns_candidate_udp_port(details.udp.dst_port));
 }
 
 struct LinkLayerView {
@@ -148,14 +159,16 @@ void populate_application_protocol_details(
     details.http = {};
 
     PacketPayloadService payload_service {};
-    if (details.has_udp) {
-        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet_ref.data_link_type);
-        DnsInspectionParser dns_parser {};
-        const auto dns_message = dns_parser.inspect(
-            std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size())
-        );
-        if (dns_message.status != DnsInspectionStatus::not_enough_header) {
-            details.dns_message = std::move(dns_message);
+    if (should_inspect_dns_message(details)) {
+        const auto transport_payload = payload_service.extract_transport_payload_view(packet_bytes, packet_ref.data_link_type);
+        if (transport_payload.found) {
+            DnsInspectionParser dns_parser {};
+            const auto dns_message = dns_parser.inspect(
+                transport_payload.payload
+            );
+            if (dns_message.status != DnsInspectionStatus::not_enough_header) {
+                details.dns_message = std::move(dns_message);
+            }
         }
     }
 

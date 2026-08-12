@@ -3222,6 +3222,26 @@ void run_packet_details_tests() {
     }
 
     {
+        const auto udp_packet = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), 54000, 443, 5);
+
+        PacketDetailsService service {};
+        const PacketRef packet_ref {
+            .packet_index = 19,
+            .byte_offset = 96,
+            .captured_length = static_cast<std::uint32_t>(udp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(udp_packet.size()),
+        };
+
+        const auto details = service.decode(udp_packet, packet_ref);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_udp);
+        PFL_EXPECT(details->udp.src_port == 54000);
+        PFL_EXPECT(details->udp.dst_port == 443);
+        PFL_EXPECT(!details->dns_message.has_value());
+    }
+
+    {
         const auto full_tcp_with_payload = make_ethernet_ipv4_tcp_packet_with_payload(
             ipv4(10, 0, 0, 7), ipv4(10, 0, 0, 8), 41000, 443, 7, 0x18);
         auto captured_tcp_with_payload = full_tcp_with_payload;

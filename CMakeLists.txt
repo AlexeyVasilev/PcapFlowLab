@@ -14,7 +14,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PFL_BUILD_UI "Build the Qt Quick desktop UI when Qt 6 is available." ON)
-option(PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS "Enable pending DNS/mDNS inspection contract tests." OFF)
 
 add_library(pcap_flow_lab_warnings INTERFACE)
 
@@ -465,14 +464,6 @@ if(BUILD_TESTING)
             pcap_flow_lab_core
             pcap_flow_lab_import_validation_lib
     )
-
-    if(PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS)
-        target_compile_definitions(
-            pcap_flow_lab_core_tests
-            PRIVATE
-                PFL_ENABLE_PENDING_DNS_INSPECTION_TESTS=1
-        )
-    endif()
 
     # Keep only the core test executable unoptimized in optimized configs to
     # reduce compiler memory usage; production targets remain fully optimized.
