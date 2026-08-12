@@ -130,6 +130,13 @@ Frame {
         return items.length > 0 ? 0 : -1
     }
 
+    function byteExportFormats() {
+        if (!root.packetDetailsController || !root.packetDetailsController.byteExportFormats) {
+            return []
+        }
+        return root.packetDetailsController.byteExportFormats()
+    }
+
     function buildSummaryLayerOccurrences(layers) {
         const occurrences = {}
 
@@ -700,6 +707,127 @@ Frame {
 
     }
 
+    Dialog {
+        id: byteExportDialog
+
+        property string targetKind: "packet"
+        property var exportFormatsModel: []
+        property int selectedFormatIndex: 0
+
+        readonly property bool packetTarget: targetKind === "packet"
+        readonly property string targetLabel: packetTarget
+            ? (root.packetDetailsModel ? root.packetDetailsModel.selectedPacketByteViewLabel : "")
+            : root.headerPrimaryText()
+        readonly property string sizeText: packetTarget
+            ? `${root.packetDetailsModel ? root.packetDetailsModel.selectedPacketByteViewAvailableLength : 0} bytes`
+            : `${root.packetDetailsModel ? root.packetDetailsModel.streamItemDataAvailableLength : 0} bytes`
+        readonly property string selectedFormatId: selectedFormatIndex >= 0
+            && selectedFormatIndex < exportFormatsModel.length
+            && exportFormatsModel[selectedFormatIndex]
+            ? String(exportFormatsModel[selectedFormatIndex].stableId || "")
+            : ""
+
+        function openForPacket() {
+            targetKind = "packet"
+            exportFormatsModel = root.byteExportFormats()
+            selectedFormatIndex = 0
+            open()
+        }
+
+        function openForStream() {
+            targetKind = "stream"
+            exportFormatsModel = root.byteExportFormats()
+            selectedFormatIndex = 0
+            open()
+        }
+
+        modal: true
+        focus: true
+        title: "Export Bytes"
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        contentItem: Item {
+            implicitWidth: 420
+            implicitHeight: exportDialogLayout.implicitHeight + 8
+
+            ColumnLayout {
+                id: exportDialogLayout
+                anchors.fill: parent
+                spacing: 12
+
+                Label {
+                    Layout.fillWidth: true
+                    text: byteExportDialog.packetTarget
+                        ? `Byte view: ${byteExportDialog.targetLabel}`
+                        : `Item data: ${byteExportDialog.targetLabel}`
+                    wrapMode: Text.Wrap
+                    color: "#0f172a"
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: `Size: ${byteExportDialog.sizeText}`
+                    color: "#475569"
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Label {
+                        text: "Format"
+                        color: "#334155"
+                    }
+
+                    ComboBox {
+                        id: byteExportFormatCombo
+                        Layout.fillWidth: true
+                        model: byteExportDialog.exportFormatsModel
+                        textRole: "label"
+                        valueRole: "stableId"
+                        currentIndex: byteExportDialog.selectedFormatIndex
+
+                        onActivated: function(index) {
+                            byteExportDialog.selectedFormatIndex = index
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignRight
+                    spacing: 8
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Button {
+                        text: "Cancel"
+                        onClicked: byteExportDialog.close()
+                    }
+
+                    Button {
+                        text: "Export..."
+                        enabled: byteExportDialog.selectedFormatId.length > 0
+
+                        onClicked: {
+                            if (!root.packetDetailsController) {
+                                return
+                            }
+
+                            const exported = byteExportDialog.packetTarget
+                                ? root.packetDetailsController.exportSelectedPacketBytes(byteExportDialog.selectedFormatId)
+                                : root.packetDetailsController.exportSelectedStreamItemData(byteExportDialog.selectedFormatId)
+                            if (exported) {
+                                byteExportDialog.close()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -1037,6 +1165,23 @@ Frame {
                         }
                     }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: "Export Bytes..."
+                            enabled: !!root.packetDetailsModel
+                                && root.packetDetailsModel.hasPacket
+                                && root.packetDetailsModel.selectedPacketByteViewAvailable
+                                && root.packetDetailsModel.selectedPacketByteViewId.length > 0
+                            onClicked: byteExportDialog.openForPacket()
+                        }
+                    }
+
                     Label {
                         Layout.fillWidth: true
                         visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
@@ -1154,6 +1299,22 @@ Frame {
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: "Export Bytes..."
+                            enabled: !!root.packetDetailsModel
+                                && root.packetDetailsModel.hasPacket
+                                && root.packetDetailsModel.streamItemDataAvailable
+                            onClicked: byteExportDialog.openForStream()
+                        }
+                    }
 
                     Label {
                         Layout.fillWidth: true

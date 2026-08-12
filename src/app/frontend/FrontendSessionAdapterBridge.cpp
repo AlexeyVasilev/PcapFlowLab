@@ -562,6 +562,40 @@ std::string export_protocol_path_tree_result_json(const pfl::FrontendExportProto
     return out.str();
 }
 
+std::string byte_export_format_json(const pfl::FrontendByteExportFormatDto& format) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(format.stable_id) << ','
+        << "\"label\":" << json_string(format.label) << ','
+        << "\"suggested_extension\":" << json_string(format.suggested_extension) << ','
+        << "\"binary_output\":" << bool_json(format.binary_output)
+        << '}';
+    return out.str();
+}
+
+std::string byte_export_formats_json(const std::vector<pfl::FrontendByteExportFormatDto>& formats) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < formats.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << byte_export_format_json(formats[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string byte_export_result_json(const pfl::FrontendByteExportResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"exported\":" << bool_json(result.exported) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string smart_export_result_json(const pfl::FrontendSmartExportResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -1608,6 +1642,85 @@ char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     return make_c_string(export_protocol_path_tree_result_json(
         handle->adapter.export_protocol_path_tree(statistics_mode, path)
     ));
+}
+
+char* pfl_frontend_session_adapter_get_byte_export_formats_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    return make_c_string(byte_export_formats_json(handle->adapter.get_byte_export_formats()));
+}
+
+char* pfl_frontend_session_adapter_export_selected_flow_packet_byte_view_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint64_t packet_index,
+    const char* stable_id_utf8,
+    const char* format_id_utf8,
+    const char* path_utf8,
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const std::string stable_id = stable_id_utf8 != nullptr ? std::string {stable_id_utf8} : std::string {};
+    const std::string format_id = format_id_utf8 != nullptr ? std::string {format_id_utf8} : std::string {};
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(byte_export_result_json(handle->adapter.export_selected_flow_packet_byte_view(
+        packet_index,
+        stable_id,
+        format_id,
+        path,
+        flow_packet_index,
+        loaded_packet_window_count
+    )));
+}
+
+char* pfl_frontend_session_adapter_export_unrecognized_packet_byte_view_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint64_t packet_index,
+    const char* stable_id_utf8,
+    const char* format_id_utf8,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const std::string stable_id = stable_id_utf8 != nullptr ? std::string {stable_id_utf8} : std::string {};
+    const std::string format_id = format_id_utf8 != nullptr ? std::string {format_id_utf8} : std::string {};
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(byte_export_result_json(handle->adapter.export_unrecognized_packet_byte_view(
+        packet_index,
+        stable_id,
+        format_id,
+        path
+    )));
+}
+
+char* pfl_frontend_session_adapter_export_selected_flow_stream_item_data_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index,
+    const char* format_id_utf8,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const std::string format_id = format_id_utf8 != nullptr ? std::string {format_id_utf8} : std::string {};
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(byte_export_result_json(handle->adapter.export_selected_flow_stream_item_data(
+        max_packets_to_scan,
+        limit,
+        stream_item_index,
+        format_id,
+        path
+    )));
 }
 
 char* pfl_frontend_session_adapter_update_settings_json(

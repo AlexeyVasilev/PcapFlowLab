@@ -619,6 +619,9 @@ public:
     Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
     Q_INVOKABLE void selectPacketByteView(const QString& stableId);
+    Q_INVOKABLE QVariantList byteExportFormats() const;
+    Q_INVOKABLE bool exportSelectedPacketBytes(const QString& formatId);
+    Q_INVOKABLE bool exportSelectedStreamItemData(const QString& formatId);
     Q_INVOKABLE void selectUnrecognizedPackets();
     Q_INVOKABLE QString captureStorageSummaryText() const;
 
@@ -766,6 +769,12 @@ private:
     QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
     QString chooseProtocolPathTreeSaveFile() const;
+    QString chooseByteExportSaveFile(
+        const QString& title,
+        const QString& suggestedFileName,
+        const QString& suggestedExtension,
+        bool binaryOutput
+    ) const;
     QString chooseDirectory(const QString& title) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 

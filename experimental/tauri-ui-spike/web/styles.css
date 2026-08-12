@@ -230,6 +230,56 @@ body.is-resizing-vertical {
   margin-top: 10px;
 }
 
+.dialog-label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.byte-export-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.byte-export-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.byte-export-dialog-card {
+  width: min(420px, 100%);
+}
+
+.byte-export-dialog-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.byte-export-dialog-field {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.byte-export-dialog-field-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.byte-export-dialog-field-value {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .settings-dialog-card {
   width: min(560px, 100%);
 }

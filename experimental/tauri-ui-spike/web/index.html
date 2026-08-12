@@ -243,6 +243,10 @@
                     </section>
                     <section class="packet-details-tab-panel" data-packet-details-panel="bytes">
                       <select id="packetDetailsByteViewSelector" class="details-select"></select>
+                      <div class="byte-export-toolbar">
+                        <div class="byte-export-toolbar-spacer"></div>
+                        <button id="packetDetailsExportBytesButton" type="button" class="secondary-button">Export Bytes...</button>
+                      </div>
                       <p id="packetDetailsBytesStateText" class="status-text compact-status-text"></p>
                       <pre id="packetDetailsBytesText" class="details-pre byte-preview-pre">No packet selected.</pre>
                     </section>
@@ -268,6 +272,10 @@
                       <div id="streamDetailsSummaryText" class="stream-details-summary-container">Select a stream item to inspect details.</div>
                     </section>
                     <section class="stream-details-tab-panel" data-stream-details-panel="item-data">
+                      <div class="byte-export-toolbar">
+                        <div class="byte-export-toolbar-spacer"></div>
+                        <button id="streamDetailsExportBytesButton" type="button" class="secondary-button">Export Bytes...</button>
+                      </div>
                       <p id="streamDetailsItemDataStateText" class="status-text compact-status-text"></p>
                       <pre id="streamDetailsItemDataText" class="details-pre byte-preview-pre">Select a stream item to inspect details.</pre>
                     </section>
@@ -846,7 +854,7 @@
       </section>
     </div>
 
-      <div id="smartExportDialog" class="dialog-backdrop" aria-hidden="true">
+    <div id="smartExportDialog" class="dialog-backdrop" aria-hidden="true">
         <section class="dialog-card smart-export-dialog-card" role="dialog" aria-modal="true" aria-labelledby="smartExportDialogTitle">
           <div class="dialog-heading">
             <h2 id="smartExportDialogTitle">Smart Export</h2>
@@ -925,6 +933,31 @@
         <div class="smart-export-actions">
           <button id="smartExportCancelButton" type="button" class="secondary-button">Cancel</button>
           <button id="smartExportRunButton" type="button">OK</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="byteExportDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card byte-export-dialog-card" role="dialog" aria-modal="true" aria-labelledby="byteExportDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="byteExportDialogTitle">Export Bytes</h2>
+          <button id="byteExportCloseButton" type="button" class="icon-button" aria-label="Close export bytes dialog">&times;</button>
+        </div>
+        <div class="byte-export-dialog-copy">
+          <div class="byte-export-dialog-field">
+            <span id="byteExportTargetLabelLabel" class="byte-export-dialog-field-label">Byte view</span>
+            <span id="byteExportTargetLabel" class="byte-export-dialog-field-value">-</span>
+          </div>
+          <div class="byte-export-dialog-field">
+            <span class="byte-export-dialog-field-label">Size</span>
+            <span id="byteExportSizeLabel" class="byte-export-dialog-field-value">-</span>
+          </div>
+        </div>
+        <label class="dialog-label" for="byteExportFormatSelect">Format</label>
+        <select id="byteExportFormatSelect" class="details-select"></select>
+        <div class="dialog-actions">
+          <button id="byteExportCancelButton" type="button" class="secondary-button">Cancel</button>
+          <button id="byteExportRunButton" type="button" class="primary-button">Export...</button>
         </div>
       </section>
     </div>

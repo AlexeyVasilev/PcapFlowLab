@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -73,6 +73,33 @@ extern "C" {
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
+        path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_byte_export_formats_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_selected_flow_packet_byte_view_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        packet_index: u64,
+        stable_id_utf8: *const c_char,
+        format_id_utf8: *const c_char,
+        path_utf8: *const c_char,
+        flow_packet_index: u64,
+        loaded_packet_window_count: u64,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_unrecognized_packet_byte_view_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        packet_index: u64,
+        stable_id_utf8: *const c_char,
+        format_id_utf8: *const c_char,
+        path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_selected_flow_stream_item_data_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        max_packets_to_scan: usize,
+        limit: usize,
+        stream_item_index: u64,
+        format_id_utf8: *const c_char,
         path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_update_settings_json(
@@ -386,6 +413,82 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_export_protocol_path_tree_json(self.handle, mode, path.as_ptr())
         };
         parse_json_owned::<ExportProtocolPathTreeResultDto>(json)
+    }
+
+    pub fn get_byte_export_formats(&self) -> Result<Vec<ByteExportFormatDto>, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_byte_export_formats_json(self.handle) };
+        parse_json_owned::<Vec<ByteExportFormatDto>>(json)
+    }
+
+    pub fn export_selected_flow_packet_byte_view(
+        &self,
+        packet_index: u64,
+        stable_id: &str,
+        format_id: &str,
+        path: &str,
+        flow_packet_index: u64,
+        loaded_packet_window_count: u64,
+    ) -> Result<ByteExportResultDto, String> {
+        let stable_id = CString::new(stable_id).map_err(|_| "Byte-view id contains an embedded NUL byte.".to_string())?;
+        let format_id = CString::new(format_id).map_err(|_| "Format id contains an embedded NUL byte.".to_string())?;
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_selected_flow_packet_byte_view_json(
+                self.handle,
+                packet_index,
+                stable_id.as_ptr(),
+                format_id.as_ptr(),
+                path.as_ptr(),
+                flow_packet_index,
+                loaded_packet_window_count,
+            )
+        };
+        parse_json_owned::<ByteExportResultDto>(json)
+    }
+
+    pub fn export_unrecognized_packet_byte_view(
+        &self,
+        packet_index: u64,
+        stable_id: &str,
+        format_id: &str,
+        path: &str,
+    ) -> Result<ByteExportResultDto, String> {
+        let stable_id = CString::new(stable_id).map_err(|_| "Byte-view id contains an embedded NUL byte.".to_string())?;
+        let format_id = CString::new(format_id).map_err(|_| "Format id contains an embedded NUL byte.".to_string())?;
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_unrecognized_packet_byte_view_json(
+                self.handle,
+                packet_index,
+                stable_id.as_ptr(),
+                format_id.as_ptr(),
+                path.as_ptr(),
+            )
+        };
+        parse_json_owned::<ByteExportResultDto>(json)
+    }
+
+    pub fn export_selected_flow_stream_item_data(
+        &self,
+        max_packets_to_scan: usize,
+        limit: usize,
+        stream_item_index: u64,
+        format_id: &str,
+        path: &str,
+    ) -> Result<ByteExportResultDto, String> {
+        let format_id = CString::new(format_id).map_err(|_| "Format id contains an embedded NUL byte.".to_string())?;
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_selected_flow_stream_item_data_json(
+                self.handle,
+                max_packets_to_scan,
+                limit,
+                stream_item_index,
+                format_id.as_ptr(),
+                path.as_ptr(),
+            )
+        };
+        parse_json_owned::<ByteExportResultDto>(json)
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -112,6 +112,7 @@ add_library(
     src/core/services/IcmpInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/frontend/FrontendSettingsJson.cpp
+    src/app/session/ByteExport.cpp
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
     src/app/session/ProtocolPathTextExport.cpp
@@ -396,6 +397,7 @@ if(BUILD_TESTING)
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp
         tests/unit/CliSummaryTests.cpp
+        tests/unit/ByteExportTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
         tests/unit/PacketPayloadTests.cpp

@@ -51,6 +51,28 @@ public:
         ProtocolPathStatisticsMode mode,
         const std::filesystem::path& output_path
     ) const;
+    [[nodiscard]] std::vector<FrontendByteExportFormatDto> get_byte_export_formats() const;
+    [[nodiscard]] FrontendByteExportResult export_selected_flow_packet_byte_view(
+        std::uint64_t packet_index,
+        const std::string& stable_id,
+        const std::string& format_id,
+        const std::filesystem::path& output_path,
+        std::uint64_t flow_packet_index = 0U,
+        std::uint64_t loaded_packet_window_count = 0U
+    ) const;
+    [[nodiscard]] FrontendByteExportResult export_unrecognized_packet_byte_view(
+        std::uint64_t packet_index,
+        const std::string& stable_id,
+        const std::string& format_id,
+        const std::filesystem::path& output_path
+    ) const;
+    [[nodiscard]] FrontendByteExportResult export_selected_flow_stream_item_data(
+        std::size_t max_packets_to_scan,
+        std::size_t limit,
+        std::uint64_t stream_item_index,
+        const std::string& format_id,
+        const std::filesystem::path& output_path
+    ) const;
     [[nodiscard]] FrontendSmartExportResult export_smart_flows(
         const std::filesystem::path& output_path,
         const std::vector<std::size_t>& flow_indices,

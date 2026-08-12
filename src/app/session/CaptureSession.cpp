@@ -4177,6 +4177,32 @@ std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data
     return session_detail::format_selected_stream_item_data_hex_dump(presentation, {}, service);
 }
 
+bool CaptureSession::export_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index,
+    const session_detail::ByteExportFormat format,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    const auto materialized = materialize_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+    if (!materialized.has_value()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected stream item data is unavailable for export.";
+        }
+        return false;
+    }
+
+    HexDumpService service {};
+    return session_detail::write_byte_export_file(output_path, *materialized, format, service, out_error_text);
+}
+
 std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_dump(
     const PacketRef& packet,
     const session_detail::SelectedPacketByteViewId& id
@@ -4198,6 +4224,45 @@ std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_
         std::span<const std::uint8_t>(bytes.data(), bytes.size()),
         service
     );
+}
+
+bool CaptureSession::export_selected_packet_byte_view(
+    const PacketRef& packet,
+    const session_detail::SelectedPacketByteViewId& id,
+    const session_detail::ByteExportFormat format,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    const auto presentation = derive_selected_packet_byte_presentation(packet);
+    if (!presentation.has_value()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected packet byte view is unavailable for export.";
+        }
+        return false;
+    }
+
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected packet bytes are unavailable for export.";
+        }
+        return false;
+    }
+
+    const auto materialized = session_detail::materialize_selected_packet_byte_view(
+        *presentation,
+        id,
+        std::span<const std::uint8_t>(bytes.data(), bytes.size())
+    );
+    if (!materialized.has_value()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected packet byte view is unavailable for export.";
+        }
+        return false;
+    }
+
+    HexDumpService service {};
+    return session_detail::write_byte_export_file(output_path, materialized->bytes, format, service, out_error_text);
 }
 
 std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const {

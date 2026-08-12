@@ -112,6 +112,21 @@ pub struct ExportProtocolPathTreeResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ByteExportFormatDto {
+    pub stable_id: String,
+    pub label: String,
+    pub suggested_extension: String,
+    pub binary_output: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ByteExportResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartExportResultDto {
     pub exported: bool,
     pub output_path: String,
