@@ -245,39 +245,75 @@ body.is-resizing-vertical {
   margin-top: 6px;
 }
 
-.byte-export-toolbar-spacer {
+.byte-export-toolbar-status {
   flex: 1 1 auto;
+  margin: 0;
 }
 
 .byte-export-dialog-card {
-  width: min(420px, 100%);
+  width: min(520px, calc(100% - 24px));
 }
 
-.byte-export-dialog-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.byte-export-dialog-field {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-}
-
-.byte-export-dialog-field-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.byte-export-dialog-field-value {
+.byte-export-dialog-metadata {
+  margin: 0 0 10px;
   color: var(--text);
   font-size: 13px;
   line-height: 1.4;
   word-break: break-word;
+}
+
+.byte-export-format-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.byte-export-format-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d8e2ee;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.byte-export-format-option:hover {
+  background: #f8fbff;
+}
+
+.byte-export-format-option.is-selected {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.byte-export-format-option input[type="radio"] {
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+}
+
+.byte-export-format-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.byte-export-format-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.byte-export-format-example {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-dialog-card {

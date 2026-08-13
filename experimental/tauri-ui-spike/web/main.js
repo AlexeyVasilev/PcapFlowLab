@@ -356,10 +356,8 @@
     byteExportCloseButton: document.getElementById("byteExportCloseButton"),
     byteExportCancelButton: document.getElementById("byteExportCancelButton"),
     byteExportRunButton: document.getElementById("byteExportRunButton"),
-    byteExportTargetLabelLabel: document.getElementById("byteExportTargetLabelLabel"),
-    byteExportTargetLabel: document.getElementById("byteExportTargetLabel"),
-    byteExportSizeLabel: document.getElementById("byteExportSizeLabel"),
-    byteExportFormatSelect: document.getElementById("byteExportFormatSelect"),
+    byteExportMetadata: document.getElementById("byteExportMetadata"),
+    byteExportFormatList: document.getElementById("byteExportFormatList"),
     analysisFlowMeta: document.getElementById("analysisFlowMeta"),
     analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
     analysisFlowTableViewport: document.getElementById("analysisFlowTableViewport"),
@@ -2766,39 +2764,36 @@
   }
 
   function renderByteExportDialog() {
-    if (elements.byteExportTargetLabelLabel) {
-      elements.byteExportTargetLabelLabel.textContent = state.byteExportTargetKind === "stream" ? "Item data" : "Byte view";
-    }
-    if (elements.byteExportTargetLabel) {
-      if (state.byteExportTargetKind === "stream") {
-        elements.byteExportTargetLabel.textContent = String(
+    if (elements.byteExportMetadata) {
+      const label = state.byteExportTargetKind === "stream"
+        ? String(
           state.selectedStreamItemDetails?.label
           || state.selectedStreamItem?.label
           || state.selectedStreamItemDetails?.header_primary_text
           || "Stream item data"
-        );
-      } else {
-        elements.byteExportTargetLabel.textContent = String(
-          state.packetDetails?.selected_byte_view?.label
-          || "Selected byte view"
-        );
-      }
-    }
-    if (elements.byteExportSizeLabel) {
+        )
+        : String(state.packetDetails?.selected_byte_view?.label || "Selected byte view");
       const size = state.byteExportTargetKind === "stream"
         ? Number(state.selectedStreamItemDetails?.stream_item_data?.available_length || 0)
         : Number(state.packetDetails?.selected_byte_view?.available_length || 0);
-      elements.byteExportSizeLabel.textContent = `${formatNumber(size)} bytes`;
+      elements.byteExportMetadata.textContent = `${label} · ${formatNumber(size)} bytes`;
     }
-    if (elements.byteExportFormatSelect) {
-      elements.byteExportFormatSelect.innerHTML = state.byteExportFormats
-        .map((format) => {
+    if (elements.byteExportFormatList) {
+      elements.byteExportFormatList.innerHTML = state.byteExportFormats
+        .map((format, index) => {
           const stableId = String(format?.stable_id || "");
-          const selected = stableId === String(state.byteExportSelectedFormatId || "") ? " selected" : "";
-          return `<option value="${escapeHtml(stableId)}"${selected}>${escapeHtml(String(format?.label || stableId))}</option>`;
+          const selected = stableId === String(state.byteExportSelectedFormatId || "");
+          return `
+            <label class="byte-export-format-option${selected ? " is-selected" : ""}">
+              <input type="radio" name="byteExportFormat" value="${escapeHtml(stableId)}" ${selected ? "checked" : ""} />
+              <span class="byte-export-format-copy">
+                <span class="byte-export-format-title">${escapeHtml(String(format?.label || stableId || `Format ${index + 1}`))}</span>
+                <span class="byte-export-format-example">${escapeHtml(byteExportFormatExampleText(format))}</span>
+              </span>
+            </label>
+          `;
         })
         .join("");
-      elements.byteExportFormatSelect.disabled = state.byteExportFormats.length === 0;
     }
     if (elements.byteExportRunButton) {
       elements.byteExportRunButton.disabled = String(state.byteExportSelectedFormatId || "").length === 0;
@@ -6994,6 +6989,23 @@
     return state.byteExportFormats;
   }
 
+  function byteExportFormatExampleText(format) {
+    switch (String(format?.stable_id || "")) {
+      case "hex_dump_ascii":
+        return "31 32 33 34  |1234|";
+      case "raw_binary":
+        return "Exact bytes (.bin)";
+      case "c_cpp_byte_list":
+        return "0x31, 0x32, 0x33, 0x34";
+      case "continuous_hex":
+        return "31323334";
+      case "base64":
+        return "MTIzNA==";
+      default:
+        return "";
+    }
+  }
+
   function sanitizeByteExportFilenameComponent(text, fallback = "bytes") {
     const normalized = String(text || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     return normalized || fallback;
@@ -7496,8 +7508,12 @@
       closeByteExportDialog();
     }
   });
-  elements.byteExportFormatSelect?.addEventListener("change", () => {
-    state.byteExportSelectedFormatId = String(elements.byteExportFormatSelect.value || "");
+  elements.byteExportFormatList?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.name !== "byteExportFormat") {
+      return;
+    }
+    state.byteExportSelectedFormatId = String(target.value || "");
     render();
   });
   elements.settingsCancelButton?.addEventListener("click", closeSettingsDialog);
