@@ -7281,9 +7281,9 @@
     try {
       const outputPath = await invoke("pick_save_byte_export_path", {
         title: state.byteExportTargetKind === "stream" ? "Export Stream Item Data" : "Export Packet Bytes",
-        suggestedFileName: buildByteExportSuggestedFileName(state.byteExportTargetKind, format),
-        suggestedExtension: String(format.suggested_extension || "txt"),
-        binaryOutput: Boolean(format.binary_output),
+        suggested_file_name: buildByteExportSuggestedFileName(state.byteExportTargetKind, format),
+        suggested_extension: String(format.suggested_extension || "txt"),
+        binary_output: Boolean(format.binary_output),
       });
       if (!outputPath) {
         return;

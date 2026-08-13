@@ -555,7 +555,7 @@ fn pick_save_protocol_path_tree_path(_app: AppHandle) -> Result<Option<String>, 
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn pick_save_byte_export_path(
     _app: AppHandle,
     _title: String,
