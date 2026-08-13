@@ -3,11 +3,13 @@
 project(
     pcap_flow_lab
     VERSION 0.2.0
-    DESCRIPTION "Flow-based PCAP analyzer for large network captures"
+    DESCRIPTION "Flow-based PCAP analyzer"
     LANGUAGES CXX
 )
 
 include(CTest)
+
+add_compile_definitions(PFL_APP_VERSION="${PROJECT_VERSION}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -227,12 +229,6 @@ if(PFL_BUILD_UI)
             src/ui/app/PacketDetailsViewModel.h
             src/ui/app/StreamListModel.cpp
             src/ui/app/StreamListModel.h
-        )
-
-        set_source_files_properties(
-            src/ui/app/main.cpp
-            PROPERTIES
-                COMPILE_DEFINITIONS "PFL_APP_VERSION=\"${PROJECT_VERSION}\""
         )
 
         qt_add_qml_module(

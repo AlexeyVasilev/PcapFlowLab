@@ -17,6 +17,10 @@
 #include "cli/PacketInfoCommand.h"
 #include "core/index/CaptureIndex.h"
 
+#ifndef PFL_APP_VERSION
+#define PFL_APP_VERSION "0.0.0"
+#endif
+
 namespace pfl::cli {
 namespace {
 
@@ -646,7 +650,7 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
 
 std::string render_global_cli_help() {
     std::ostringstream out {};
-    out << "PcapFlowLab CLI\n\n";
+    out << "Pcap Flow Lab " << PFL_APP_VERSION << "\n\n";
     out << "Usage\n";
     out << "  pcap-flow-lab <capture-or-index> [summary options]\n";
     out << "  pcap-flow-lab summary <input> [options]\n";

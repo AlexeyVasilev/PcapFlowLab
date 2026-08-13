@@ -282,7 +282,7 @@ ApplicationWindow {
 
                 Label {
                     Layout.fillWidth: true
-                    text: "Flow-based PCAP analyzer for large captures"
+                    text: "Flow-based PCAP analyzer"
                     wrapMode: Text.WordWrap
                     color: "#0f172a"
                 }
