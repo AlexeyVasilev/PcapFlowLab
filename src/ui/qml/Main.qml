@@ -616,6 +616,7 @@ ApplicationWindow {
 
             Frame {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 padding: 0
 
                 background: Rectangle {
@@ -631,6 +632,7 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 8
 
                         Label {
@@ -641,7 +643,9 @@ ApplicationWindow {
 
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             implicitHeight: activeSessionPathLabel.implicitHeight
+                            clip: true
 
                             Label {
                                 id: activeSessionPathLabel
@@ -671,6 +675,7 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 8
                         visible: mainController.openedFromIndex
                             || (mainController.hasCapture
@@ -685,7 +690,9 @@ ApplicationWindow {
 
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             implicitHeight: sourceCapturePathLabel.implicitHeight
+                            clip: true
 
                             Label {
                                 id: sourceCapturePathLabel
@@ -713,6 +720,7 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 8
                         visible: mainController.hasCapture && !mainController.hasSourceCapture && mainController.expectedSourceCapturePath.length > 0
 
@@ -724,7 +732,9 @@ ApplicationWindow {
 
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             implicitHeight: expectedSourcePathLabel.implicitHeight
+                            clip: true
 
                             Label {
                                 id: expectedSourcePathLabel

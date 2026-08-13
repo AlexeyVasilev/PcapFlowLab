@@ -14,6 +14,7 @@ Frame {
     signal expandedChangedByUser(bool expanded)
 
     Layout.fillWidth: true
+    Layout.minimumWidth: 0
     padding: 0
 
     background: Rectangle {
@@ -31,6 +32,7 @@ Frame {
             id: headerButton
             objectName: root.toggleObjectName
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             flat: true
             focusPolicy: Qt.StrongFocus
             Accessible.name: root.title
@@ -38,6 +40,7 @@ Frame {
             onClicked: root.expandedChangedByUser(!root.expanded)
 
             contentItem: RowLayout {
+                anchors.fill: parent
                 spacing: 10
 
                 Label {
@@ -49,6 +52,7 @@ Frame {
 
                 Label {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     text: root.title
                     font.pixelSize: 16
                     font.bold: true
@@ -58,6 +62,7 @@ Frame {
 
                 Label {
                     visible: root.summaryText.length > 0
+                    Layout.minimumWidth: 0
                     text: root.summaryText
                     color: "#64748b"
                     font.pixelSize: 12
@@ -78,6 +83,7 @@ Frame {
         ColumnLayout {
             id: contentColumn
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             visible: root.expanded
             spacing: 10
         }

@@ -25,7 +25,9 @@ Frame {
         required property string valueText
 
         Layout.fillWidth: true
+        Layout.minimumWidth: 0
         padding: 10
+        clip: true
 
         background: Rectangle {
             color: "#ffffff"
@@ -39,16 +41,22 @@ Frame {
             spacing: 3
 
             Label {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 text: chip.title
                 color: "#64748b"
                 font.pixelSize: 12
+                elide: Text.ElideRight
             }
 
             Label {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 text: chip.valueText
                 font.bold: true
                 font.pixelSize: 18
                 color: "#0f172a"
+                elide: Text.ElideRight
             }
         }
     }

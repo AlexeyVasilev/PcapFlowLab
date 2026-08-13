@@ -51,6 +51,7 @@ Frame {
 
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumWidth: 0
         padding: 0
 
         background: Rectangle {
