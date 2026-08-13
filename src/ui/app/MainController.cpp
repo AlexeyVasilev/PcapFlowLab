@@ -3340,6 +3340,14 @@ bool MainController::showFragmentedPacketCountColumn() const noexcept {
     return show_fragmented_packet_count_column_;
 }
 
+bool MainController::developerDiagnosticsAvailable() const noexcept {
+#ifndef NDEBUG
+    return true;
+#else
+    return false;
+#endif
+}
+
 QString MainController::flowGroupingWarningText() const {
     if (!session_.has_capture()) {
         return {};

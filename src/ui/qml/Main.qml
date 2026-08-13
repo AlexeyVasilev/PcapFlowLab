@@ -109,6 +109,7 @@ ApplicationWindow {
     Action {
         id: showCaptureStorageDiagnosticsAction
         text: "Capture Storage Diagnostics"
+        enabled: mainController.developerDiagnosticsAvailable
         onTriggered: {
             captureStorageDiagnosticsDialog.diagnosticsText = mainController.captureStorageSummaryText()
             captureStorageDiagnosticsDialog.open()
@@ -162,9 +163,19 @@ ApplicationWindow {
             title: "Help"
 
             MenuItem { action: showSupportedProtocolsAction }
-            MenuSeparator {}
-            MenuItem { action: showCaptureStorageDiagnosticsAction }
-            MenuSeparator {}
+            MenuSeparator {
+                visible: mainController.developerDiagnosticsAvailable
+                height: visible ? implicitHeight : 0
+            }
+            MenuItem {
+                action: showCaptureStorageDiagnosticsAction
+                visible: mainController.developerDiagnosticsAvailable
+                height: visible ? implicitHeight : 0
+            }
+            MenuSeparator {
+                visible: mainController.developerDiagnosticsAvailable
+                height: visible ? implicitHeight : 0
+            }
             MenuItem { action: showAboutAction }
         }
     }
