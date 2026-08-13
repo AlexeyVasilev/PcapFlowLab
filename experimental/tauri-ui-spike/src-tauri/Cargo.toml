@@ -1,6 +1,6 @@
 [package]
 name = "pcap-flow-lab-tauri-spike"
-version = "0.2.0"
+version = "0.3.0"
 description = "Experimental Tauri frontend spike for Pcap Flow Lab"
 authors = ["Pcap Flow Lab contributors"]
 edition = "2021"

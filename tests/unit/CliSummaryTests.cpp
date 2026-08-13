@@ -263,7 +263,7 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(result.stderr_text.empty());
         PFL_EXPECT(contains_text(result.stdout_text, "Pcap Flow Lab"));
-        PFL_EXPECT(contains_text(result.stdout_text, "0.2.0"));
+        PFL_EXPECT(contains_text(result.stdout_text, "0.3.0"));
         PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab <capture-or-index> [summary options]"));
         PFL_EXPECT(contains_text(result.stdout_text, "summary"));
         PFL_EXPECT(contains_text(result.stdout_text, "flows"));
@@ -353,7 +353,7 @@ void expect_global_and_summary_help_behavior() {
         PFL_EXPECT(result.exit_code == 1);
         PFL_EXPECT(result.stdout_text.empty());
         PFL_EXPECT(contains_text(result.stderr_text, "Pcap Flow Lab"));
-        PFL_EXPECT(contains_text(result.stderr_text, "0.2.0"));
+        PFL_EXPECT(contains_text(result.stderr_text, "0.3.0"));
         PFL_EXPECT(contains_text(result.stderr_text, "Usage"));
         PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI - summary"));
         PFL_EXPECT(!contains_text(result.stderr_text, "Usage:\n  pcap-flow-lab [summary] <input>\n"));
