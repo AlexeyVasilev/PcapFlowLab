@@ -2836,10 +2836,32 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(protocol_path_checkbox->property("checked").toBool());
     });
 
+    run_ui_section("settings_pane_fragmented_packet_count_checkbox", [&]() {
+        MainController fragmented_column_controller {};
+        UI_EXPECT(!fragmented_column_controller.showFragmentedPacketCountColumn());
+
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* fragmented_packet_count_checkbox =
+            named_object(settings_pane.object.get(), "showFragmentedPacketCountColumnCheckBox");
+        UI_EXPECT(fragmented_packet_count_checkbox != nullptr);
+        UI_EXPECT(fragmented_packet_count_checkbox->property("visible").toBool());
+        UI_EXPECT(!fragmented_packet_count_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("showFragmentedPacketCountColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(fragmented_packet_count_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("showFragmentedPacketCountColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!fragmented_packet_count_checkbox->property("checked").toBool());
+    });
+
     run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
         auto* vlan_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox");
+        UI_EXPECT(settings_tabs != nullptr);
         UI_EXPECT(vlan_grouping_checkbox != nullptr);
+        settings_tabs->setProperty("currentIndex", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(vlan_grouping_checkbox->property("visible").toBool());
         settings_pane.object->setProperty("ignoreVlanAndMplsLayersWhenGroupingFlows", false);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -2851,10 +2873,14 @@ int main(int argc, char* argv[]) {
 
     run_ui_section("settings_pane_ignore_gtpu_teid_grouping_checkbox", [&]() {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
         auto* gtpu_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsCheckBox");
         auto* vlan_grouping_checkbox = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsCheckBox");
+        UI_EXPECT(settings_tabs != nullptr);
         UI_EXPECT(gtpu_grouping_checkbox != nullptr);
         UI_EXPECT(vlan_grouping_checkbox != nullptr);
+        settings_tabs->setProperty("currentIndex", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(gtpu_grouping_checkbox->property("visible").toBool());
         settings_pane.object->setProperty("ignoreGtpuTeidsWhenGroupingInnerFlows", false);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -2955,6 +2981,29 @@ int main(int argc, char* argv[]) {
         flow_table.object->setProperty("showProtocolPathColumn", false);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!item_visible(flow_table.object.get(), "pathHeaderCell"));
+        flow_table.object->setProperty("showProtocolPathColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
+    });
+
+    run_ui_section("flow_table_fragmented_packet_count_column_visibility", [&]() {
+        auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
+        UI_EXPECT(named_object(flow_table.object.get(), "fragHeaderCell") != nullptr);
+        UI_EXPECT(!item_visible(flow_table.object.get(), "fragHeaderCell"));
+
+        flow_table.object->setProperty("showFragmentedPacketCountColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(flow_table.object.get(), "fragHeaderCell"));
+
+        flow_table.object->setProperty("showProtocolPathColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(flow_table.object.get(), "fragHeaderCell"));
+        UI_EXPECT(!item_visible(flow_table.object.get(), "pathHeaderCell"));
+
+        flow_table.object->setProperty("showFragmentedPacketCountColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(flow_table.object.get(), "fragHeaderCell"));
+
         flow_table.object->setProperty("showProtocolPathColumn", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));

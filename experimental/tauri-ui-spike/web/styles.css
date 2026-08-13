@@ -328,6 +328,10 @@ body.is-resizing-vertical {
   width: min(560px, 100%);
 }
 
+.settings-tabbar {
+  margin-bottom: 12px;
+}
+
 .protocol-path-legend-dialog-card {
   width: min(760px, 100%);
 }
@@ -342,6 +346,16 @@ body.is-resizing-vertical {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.settings-tab-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-tab-panel[hidden] {
+  display: none;
 }
 
 .settings-section {
@@ -375,6 +389,10 @@ body.is-resizing-vertical {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.settings-tab-copy {
+  margin-bottom: 0;
 }
 
 .settings-section-deferred {

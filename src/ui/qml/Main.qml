@@ -326,49 +326,49 @@ ApplicationWindow {
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
-        width: 560
-        height: 360
+        width: 640
+        height: 460
+        implicitWidth: 640
+        implicitHeight: 460
         modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape
         title: "Settings"
 
-        contentItem: ScrollView {
-            clip: true
-            contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-            SettingsPane {
-                id: settingsPane
-                width: parent.width
-                httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
-                usePossibleTlsQuic: mainController.usePossibleTlsQuic
-                ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
-                ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
-                validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
-                showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
-                showProtocolPathColumn: mainController.showProtocolPathColumn
-                onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
-                    mainController.httpUsePathAsServiceHint = enabled
-                }
-                onUsePossibleTlsQuicChangedByUser: function(enabled) {
-                    mainController.usePossibleTlsQuic = enabled
-                }
-                onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
-                    mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
-                }
-                onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
-                    mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
-                }
-                onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
-                    mainController.validateSelectedPacketChecksums = enabled
-                }
-                onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
-                    mainController.showWiresharkFilterForSelectedFlow = enabled
-                }
-                onShowProtocolPathColumnChangedByUser: function(enabled) {
-                    mainController.showProtocolPathColumn = enabled
-                }
+        contentItem: SettingsPane {
+            id: settingsPane
+            anchors.fill: parent
+            httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
+            usePossibleTlsQuic: mainController.usePossibleTlsQuic
+            ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
+            ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
+            validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
+            showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
+            showProtocolPathColumn: mainController.showProtocolPathColumn
+            showFragmentedPacketCountColumn: mainController.showFragmentedPacketCountColumn
+            onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
+                mainController.httpUsePathAsServiceHint = enabled
+            }
+            onUsePossibleTlsQuicChangedByUser: function(enabled) {
+                mainController.usePossibleTlsQuic = enabled
+            }
+            onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
+                mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
+            }
+            onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
+                mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
+            }
+            onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
+                mainController.validateSelectedPacketChecksums = enabled
+            }
+            onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
+                mainController.showWiresharkFilterForSelectedFlow = enabled
+            }
+            onShowProtocolPathColumnChangedByUser: function(enabled) {
+                mainController.showProtocolPathColumn = enabled
+            }
+            onShowFragmentedPacketCountColumnChangedByUser: function(enabled) {
+                mainController.showFragmentedPacketCountColumn = enabled
             }
         }
 
@@ -1098,6 +1098,7 @@ ApplicationWindow {
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
                 packetFlagsColumnVisible: mainController.selectedFlowUsesTcp
                 showProtocolPathColumn: mainController.showProtocolPathColumn
+                showFragmentedPacketCountColumn: mainController.showFragmentedPacketCountColumn
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel

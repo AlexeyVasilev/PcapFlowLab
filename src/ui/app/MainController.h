@@ -282,6 +282,7 @@ private:
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
+    Q_PROPERTY(bool showFragmentedPacketCountColumn READ showFragmentedPacketCountColumn WRITE setShowFragmentedPacketCountColumn NOTIFY showFragmentedPacketCountColumnChanged)
     Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
     Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -544,6 +545,7 @@ public:
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
+    [[nodiscard]] bool showFragmentedPacketCountColumn() const noexcept;
     [[nodiscard]] QString flowGroupingWarningText() const;
     [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
@@ -635,6 +637,7 @@ public:
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setShowProtocolPathColumn(bool enabled);
+    void setShowFragmentedPacketCountColumn(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
@@ -655,6 +658,7 @@ signals:
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();
+    void showFragmentedPacketCountColumnChanged();
     void selectedFlowWiresharkFilterChanged();
     void protocolPathFlowFilterChanged();
     void currentTabIndexChanged();
@@ -820,6 +824,7 @@ private:
     bool validate_selected_packet_checksums_ {false};
     bool show_wireshark_filter_for_selected_flow_ {true};
     bool show_protocol_path_column_ {true};
+    bool show_fragmented_packet_count_column_ {false};
     int statistics_mode_ {0};
     int statistics_sections_reset_token_ {0};
     int loaded_protocol_path_statistics_mode_ {-1};

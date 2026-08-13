@@ -3336,6 +3336,10 @@ bool MainController::showProtocolPathColumn() const noexcept {
     return show_protocol_path_column_;
 }
 
+bool MainController::showFragmentedPacketCountColumn() const noexcept {
+    return show_fragmented_packet_count_column_;
+}
+
 QString MainController::flowGroupingWarningText() const {
     if (!session_.has_capture()) {
         return {};
@@ -4942,6 +4946,15 @@ void MainController::setShowProtocolPathColumn(const bool enabled) {
 
     show_protocol_path_column_ = enabled;
     emit showProtocolPathColumnChanged();
+}
+
+void MainController::setShowFragmentedPacketCountColumn(const bool enabled) {
+    if (show_fragmented_packet_count_column_ == enabled) {
+        return;
+    }
+
+    show_fragmented_packet_count_column_ = enabled;
+    emit showFragmentedPacketCountColumnChanged();
 }
 
 void MainController::setCurrentTabIndex(const int index) {

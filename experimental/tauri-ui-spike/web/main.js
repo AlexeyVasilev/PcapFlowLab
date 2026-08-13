@@ -80,6 +80,8 @@
     settingsStatusText: "",
     settingsStatusKind: "neutral",
     showProtocolPathColumn: true,
+    showFragmentedPacketCountColumn: false,
+    settingsActiveTab: "view-inspection",
     settings: {
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
@@ -239,10 +241,16 @@
     settingsIgnoreGtpuTeidsWhenGroupingInnerFlows: document.getElementById("settingsIgnoreGtpuTeidsWhenGroupingInnerFlows"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
     settingsShowProtocolPathColumn: document.getElementById("settingsShowProtocolPathColumn"),
+    settingsShowFragmentedPacketCountColumn: document.getElementById("settingsShowFragmentedPacketCountColumn"),
     settingsValidateSelectedPacketChecksums: document.getElementById("settingsValidateSelectedPacketChecksums"),
+    settingsViewInspectionTab: document.getElementById("settingsViewInspectionTab"),
+    settingsCaptureProcessingTab: document.getElementById("settingsCaptureProcessingTab"),
+    settingsViewInspectionPanel: document.getElementById("settingsViewInspectionPanel"),
+    settingsCaptureProcessingPanel: document.getElementById("settingsCaptureProcessingPanel"),
     settingsStatusText: document.getElementById("settingsStatusText"),
     settingsCancelButton: document.getElementById("settingsCancelButton"),
     settingsSaveButton: document.getElementById("settingsSaveButton"),
+    flowSortFrag: document.getElementById("flowSortFrag"),
     smartExportDialog: document.getElementById("smartExportDialog"),
     smartExportCloseButton: document.getElementById("smartExportCloseButton"),
     smartExportCancelButton: document.getElementById("smartExportCancelButton"),
@@ -1364,7 +1372,9 @@
   }
 
   function flowTableColumnCount() {
-    return state.showProtocolPathColumn ? 12 : 11;
+    return 10
+      + (state.showProtocolPathColumn ? 1 : 0)
+      + (state.showFragmentedPacketCountColumn ? 1 : 0);
   }
 
   function sourceAvailabilityOrDefault(sourceAvailability) {
@@ -2788,9 +2798,27 @@
       elements.settingsShowProtocolPathColumn.checked = Boolean(state.showProtocolPathColumn);
       elements.settingsShowProtocolPathColumn.disabled = dialogDisabled;
     }
+    if (elements.settingsShowFragmentedPacketCountColumn) {
+      elements.settingsShowFragmentedPacketCountColumn.checked = Boolean(state.showFragmentedPacketCountColumn);
+      elements.settingsShowFragmentedPacketCountColumn.disabled = dialogDisabled;
+    }
     if (elements.settingsValidateSelectedPacketChecksums) {
       elements.settingsValidateSelectedPacketChecksums.checked = Boolean(state.settings.validate_selected_packet_checksums);
       elements.settingsValidateSelectedPacketChecksums.disabled = dialogDisabled;
+    }
+    if (elements.settingsViewInspectionTab) {
+      elements.settingsViewInspectionTab.classList.toggle("active", state.settingsActiveTab === "view-inspection");
+      elements.settingsViewInspectionTab.disabled = dialogDisabled;
+    }
+    if (elements.settingsCaptureProcessingTab) {
+      elements.settingsCaptureProcessingTab.classList.toggle("active", state.settingsActiveTab === "capture-processing");
+      elements.settingsCaptureProcessingTab.disabled = dialogDisabled;
+    }
+    if (elements.settingsViewInspectionPanel) {
+      elements.settingsViewInspectionPanel.hidden = state.settingsActiveTab !== "view-inspection";
+    }
+    if (elements.settingsCaptureProcessingPanel) {
+      elements.settingsCaptureProcessingPanel.hidden = state.settingsActiveTab !== "capture-processing";
     }
     if (elements.settingsCancelButton) {
       elements.settingsCancelButton.disabled = dialogDisabled;
@@ -4183,6 +4211,9 @@
     if (elements.flowPathHeader) {
       elements.flowPathHeader.style.display = state.showProtocolPathColumn ? "" : "none";
     }
+    if (elements.flowSortFrag) {
+      elements.flowSortFrag.style.display = state.showFragmentedPacketCountColumn ? "" : "none";
+    }
     renderUnrecognizedPacketsPanel();
 
     if (state.openState === "opening" || state.flowState === "loading") {
@@ -4262,6 +4293,9 @@
         const protocolPathCell = state.showProtocolPathColumn
           ? `<td class="flow-path-cell">${renderProtocolPathCell(flow)}</td>`
           : "";
+        const fragCell = state.showFragmentedPacketCountColumn
+          ? `<td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>`
+          : "";
         return `
           <tr class="flow-row${selected}${checked}" data-flow-index="${flow.flow_index}">
             <td class="flow-check-cell"><input type="checkbox" class="flow-check-input" data-flow-check-index="${flow.flow_index}" ${state.checkedFlowIndices.has(flow.flow_index) ? "checked" : ""} aria-label="Select flow ${flowDisplayNumber(flow)} for batch actions" /></td>
@@ -4270,7 +4304,7 @@
             <td>${escapeHtml(flow.protocol_text)}</td>
             <td>${escapeHtml(formatProtocolHint(flow))}</td>
             <td>${escapeHtml(flow.service_hint)}</td>
-            <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
+            ${fragCell}
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_a, flow.port_a)}</td>
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_b, flow.port_b)}</td>
             ${protocolPathCell}
@@ -6951,6 +6985,7 @@
 
     try {
       const settings = await invoke("get_settings");
+      state.settingsActiveTab = "view-inspection";
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
@@ -7070,6 +7105,7 @@
     const ignoreGtpuTeidsWhenGroupingInnerFlows = Boolean(elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
     const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
+    const showFragmentedPacketCountColumn = Boolean(elements.settingsShowFragmentedPacketCountColumn?.checked);
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
 
     state.settingsSaveInProgress = true;
@@ -7095,6 +7131,7 @@
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
       state.showProtocolPathColumn = showProtocolPathColumn;
+      state.showFragmentedPacketCountColumn = showFragmentedPacketCountColumn;
 
       if (state.openState === "opened") {
         await loadOverviewAndFlows();
@@ -7698,6 +7735,18 @@
     render();
   });
   elements.settingsCancelButton?.addEventListener("click", closeSettingsDialog);
+  elements.settingsViewInspectionTab?.addEventListener("click", () => {
+    if (!state.settingsDialogLoading && !state.settingsSaveInProgress) {
+      state.settingsActiveTab = "view-inspection";
+      render();
+    }
+  });
+  elements.settingsCaptureProcessingTab?.addEventListener("click", () => {
+    if (!state.settingsDialogLoading && !state.settingsSaveInProgress) {
+      state.settingsActiveTab = "capture-processing";
+      render();
+    }
+  });
   elements.settingsSaveButton?.addEventListener("click", () => {
     void saveSettingsFromDialog();
   });

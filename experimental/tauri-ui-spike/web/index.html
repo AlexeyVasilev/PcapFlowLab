@@ -781,56 +781,76 @@
         <p class="dialog-copy">
           Settings control how new captures are interpreted and how current results are presented.
         </p>
-        <div class="settings-sections">
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsHttpUsePathAsServiceHint" type="checkbox" />
-              <span>HTTP: use request path as service hint when Host is missing</span>
-            </label>
-            <p class="settings-help">Applied on the next capture or index open.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsUsePossibleTlsQuic" type="checkbox" />
-              <span>Use possible TLS/QUIC</span>
-            </label>
-            <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
-              <span>Ignore VLAN and MPLS layers when grouping flows</span>
-            </label>
-            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
-              <span>Ignore GTP-U TEIDs when grouping inner flows</span>
-            </label>
-            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsShowWiresharkFilterForSelectedFlow" type="checkbox" />
-              <span>Show Wireshark filter for selected flow</span>
-            </label>
-            <p class="settings-help">Applied immediately to the selected-flow view.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsShowProtocolPathColumn" type="checkbox" />
-              <span>Show Protocol Path column in the flow table</span>
-            </label>
-            <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
-              <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
-            </label>
-            <p class="settings-help">Applied immediately to the currently selected packet details when source bytes are available.</p>
-          </section>
+        <div class="subtabbar settings-tabbar" aria-label="Settings tabs">
+          <button id="settingsViewInspectionTab" type="button" class="subtab-button active">View &amp; Inspection</button>
+          <button id="settingsCaptureProcessingTab" type="button" class="subtab-button">Capture Processing</button>
+        </div>
+        <div class="settings-tab-panels">
+          <div id="settingsViewInspectionPanel" class="settings-tab-panel">
+            <div class="settings-sections">
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsUsePossibleTlsQuic" type="checkbox" />
+                  <span>Use possible TLS/QUIC</span>
+                </label>
+                <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsShowWiresharkFilterForSelectedFlow" type="checkbox" />
+                  <span>Show Wireshark filter for selected flow</span>
+                </label>
+                <p class="settings-help">Applied immediately to the selected-flow view.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsShowProtocolPathColumn" type="checkbox" />
+                  <span>Show Protocol Path column in the flow table</span>
+                </label>
+                <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsShowFragmentedPacketCountColumn" type="checkbox" />
+                  <span>Show fragmented packet count column in the flow table</span>
+                </label>
+                <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
+                  <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
+                </label>
+                <p class="settings-help">Applied immediately to the currently selected packet details when source bytes are available.</p>
+              </section>
+            </div>
+          </div>
+          <div id="settingsCaptureProcessingPanel" class="settings-tab-panel" hidden>
+            <p class="settings-help settings-tab-copy">These settings affect how captures are interpreted when opened.</p>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsHttpUsePathAsServiceHint" type="checkbox" />
+                  <span>HTTP: use request path as service hint when Host is missing</span>
+                </label>
+                <p class="settings-help">Applied on the next capture or index open.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
+                  <span>Ignore VLAN and MPLS layers when grouping flows</span>
+                </label>
+                <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
+                  <span>Ignore GTP-U TEIDs when grouping inner flows</span>
+                </label>
+                <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
+              </section>
+            </div>
+          </div>
         </div>
         <p id="settingsStatusText" class="status-text"></p>
         <div class="dialog-actions">
