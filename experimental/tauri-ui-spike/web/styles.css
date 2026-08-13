@@ -35,6 +35,14 @@
   --flows-bottom-left-size: minmax(420px, 1.12fr);
   --analysis-left-size: minmax(300px, 0.85fr);
   --workspace-splitter-size: 10px;
+  --protocol-path-stats-row-content-height: 32px;
+  --protocol-path-stats-row-padding-block: 5px;
+  --protocol-path-stats-row-border-height: 1px;
+  --protocol-path-stats-row-height: calc(
+    var(--protocol-path-stats-row-content-height)
+    + (var(--protocol-path-stats-row-padding-block) * 2)
+    + var(--protocol-path-stats-row-border-height)
+  );
 }
 
 * {
@@ -993,6 +1001,11 @@ body.is-resizing-vertical {
   min-height: 0;
 }
 
+.analysis-panel {
+  min-width: 0;
+  container-type: inline-size;
+}
+
 .packet-details-panel {
   min-width: 0;
 }
@@ -1613,8 +1626,12 @@ select:disabled {
 
 .virtual-spacer-row td {
   padding: 0;
-  border-bottom: none;
+  border: 0;
   height: 0;
+  line-height: 0;
+  font-size: 0;
+  overflow: hidden;
+  background: transparent;
 }
 
 .flow-table-wrap .data-table tbody tr.flow-row td {
@@ -1839,11 +1856,17 @@ select:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.9fr) minmax(260px, 1fr);
   gap: 8px;
+  align-items: start;
 }
 
 .analysis-section-flex,
 .analysis-section-compact {
   min-height: 0;
+  min-width: 0;
+}
+
+.analysis-dual-row > * {
+  min-width: 0;
 }
 
 .analysis-section-compact .summary-grid {
@@ -1970,7 +1993,11 @@ select:disabled {
 
 .analysis-matrix-table-wrap {
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .analysis-matrix-table {
@@ -2330,7 +2357,9 @@ select:disabled {
 }
 
 .protocol-path-stats-viewport .data-table tbody tr.protocol-path-stats-row td {
-  height: 32px;
+  height: var(--protocol-path-stats-row-content-height);
+  padding-top: var(--protocol-path-stats-row-padding-block);
+  padding-bottom: var(--protocol-path-stats-row-padding-block);
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -2454,6 +2483,12 @@ select:disabled {
 .protocol-path-stats-viewport {
   max-height: 420px;
   overflow-y: auto;
+}
+
+@container (max-width: 780px) {
+  .analysis-dual-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .protocol-hints-table {

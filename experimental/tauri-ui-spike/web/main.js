@@ -14,7 +14,7 @@
   const streamPacketBatchSize = 30;
   const flowVirtualRowHeight = 32;
   const analysisFlowVirtualRowHeight = 44;
-  const protocolPathStatsVirtualRowHeight = 32;
+  const defaultProtocolPathStatsVirtualRowHeight = 43;
   const flowVirtualOverscanRows = 12;
   const analysisFlowVirtualOverscanRows = 10;
   const protocolPathStatsVirtualOverscanRows = 12;
@@ -2458,6 +2458,7 @@
       return;
     }
 
+    const protocolPathStatsVirtualRowHeight = getProtocolPathStatsVirtualRowHeight();
     const viewportElement = elements.protocolPathStatsViewport;
     if (viewportElement) {
       const viewportHeight = Math.max(0, Number(viewportElement.clientHeight || 0));
@@ -2472,6 +2473,32 @@
       tableBody: elements.protocolPathStatsBody,
       rows: visibleProtocolPathRows,
       rowHeight: protocolPathStatsVirtualRowHeight,
+      viewportElement: elements.protocolPathStatsViewport,
+      overscanRows: protocolPathStatsVirtualOverscanRows,
+      colspan: 4,
+      renderRow: (row) => renderProtocolPathStatsRow(row, protocolPathMode, selectedProtocolPathNode),
+    });
+  }
+
+  function renderProtocolPathStatsViewportWindow() {
+    const protocolPathMode = currentProtocolPathMode();
+    if (!state.protocolPathStatsByMode.has(protocolPathMode) || !elements.protocolPathStatsBody) {
+      return;
+    }
+
+    const visibleProtocolPathRows = Array.isArray(state.protocolPathStatsVisibleRows)
+      ? state.protocolPathStatsVisibleRows
+      : [];
+    if (visibleProtocolPathRows.length === 0) {
+      return;
+    }
+
+    const protocolPathRows = currentProtocolPathStatsRows();
+    const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
+    renderVirtualizedTableBody({
+      tableBody: elements.protocolPathStatsBody,
+      rows: visibleProtocolPathRows,
+      rowHeight: getProtocolPathStatsVirtualRowHeight(),
       viewportElement: elements.protocolPathStatsViewport,
       overscanRows: protocolPathStatsVirtualOverscanRows,
       colspan: 4,
@@ -3250,6 +3277,15 @@
       virtualizationActive,
       windowRows,
     };
+  }
+
+  function getProtocolPathStatsVirtualRowHeight() {
+    const targetElement = elements.protocolPathStatsViewport || document.documentElement;
+    const rawValue = window.getComputedStyle(targetElement).getPropertyValue("--protocol-path-stats-row-height").trim();
+    const parsedValue = Number.parseFloat(rawValue);
+    return Number.isFinite(parsedValue) && parsedValue > 0
+      ? parsedValue
+      : defaultProtocolPathStatsVirtualRowHeight;
   }
 
   function clearFlowTableDom() {
@@ -5749,7 +5785,7 @@
     window.requestAnimationFrame(() => {
       protocolPathStatsViewportRenderScheduled = false;
       if (state.activeTab === "statistics") {
-        renderProtocolPathStatsSection();
+        renderProtocolPathStatsViewportWindow();
       }
     });
   }
