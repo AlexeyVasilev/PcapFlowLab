@@ -101,6 +101,12 @@ ApplicationWindow {
     }
 
     Action {
+        id: showSupportedProtocolsAction
+        text: "Supported Protocols"
+        onTriggered: supportedProtocolsDialog.open()
+    }
+
+    Action {
         id: showCaptureStorageDiagnosticsAction
         text: "Capture Storage Diagnostics"
         onTriggered: {
@@ -155,6 +161,8 @@ ApplicationWindow {
         Menu {
             title: "Help"
 
+            MenuItem { action: showSupportedProtocolsAction }
+            MenuSeparator {}
             MenuItem { action: showCaptureStorageDiagnosticsAction }
             MenuSeparator {}
             MenuItem { action: showAboutAction }
@@ -473,6 +481,14 @@ ApplicationWindow {
             standardButtons: DialogButtonBox.Ok
             onAccepted: protocolPathLegendDialog.close()
         }
+    }
+
+    SupportedProtocolsDialog {
+        id: supportedProtocolsDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        protocolCatalog: mainController.supportedProtocolCatalog
     }
 
     SmartExportDialog {

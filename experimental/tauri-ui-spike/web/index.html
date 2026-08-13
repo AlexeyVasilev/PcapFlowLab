@@ -38,6 +38,7 @@
         <div class="menu-root">
           <button id="menuButtonHelp" type="button" class="menu-button" data-menu-button="help">Help</button>
           <div id="menuPanelHelp" class="menu-panel" data-menu-panel="help">
+            <button type="button" class="menu-item" data-menu-action="supported-protocols">Supported Protocols</button>
             <button type="button" class="menu-item" data-menu-action="protocol-path-legend">Protocol Path Legend</button>
             <button type="button" class="menu-item" data-menu-action="about">About</button>
           </div>
@@ -849,6 +850,29 @@
         </p>
         <p id="protocolPathLegendStatusText" class="status-text"></p>
         <div id="protocolPathLegendGrid" class="protocol-path-legend-grid" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <div id="supportedProtocolsDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card supported-protocols-dialog-card" role="dialog" aria-modal="true" aria-labelledby="supportedProtocolsDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="supportedProtocolsDialogTitle">Supported Protocols</h2>
+          <button id="supportedProtocolsCloseButton" type="button" class="secondary-button">Close</button>
+        </div>
+        <p class="dialog-copy">
+          Recognition means the protocol is recognized in flow classification, detected protocol, protocol path, or protocol-aware inspection. Service means the protocol can provide meaningful Service text for a flow.
+        </p>
+        <p class="dialog-copy">
+          Packet Summary means structured protocol details are available in Packet Details -&gt; Summary. Stream means protocol-aware semantic items are available in the selected-flow Stream. Partial means useful support exists with known limitations. N/A means the capability is not meaningful for that protocol.
+        </p>
+        <div class="supported-protocols-status-legend">
+          <span class="supported-protocol-status-chip is-yes">Yes</span>
+          <span class="supported-protocol-status-chip is-partial">Partial</span>
+          <span class="supported-protocol-status-chip is-no">No</span>
+          <span class="supported-protocol-status-chip is-not-applicable">N/A</span>
+        </div>
+        <p id="supportedProtocolsStatusText" class="status-text"></p>
+        <div id="supportedProtocolsContent" class="supported-protocols-content" aria-live="polite"></div>
       </section>
     </div>
 

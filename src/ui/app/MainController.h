@@ -286,6 +286,7 @@ private:
     Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
+    Q_PROPERTY(QVariantList supportedProtocolCatalog READ supportedProtocolCatalog CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(bool selectedFlowUsesTcp READ selectedFlowUsesTcp NOTIFY selectedFlowIndexChanged)
     Q_PROPERTY(bool hasProtocolPathFlowFilter READ hasProtocolPathFlowFilter NOTIFY protocolPathFlowFilterChanged)
@@ -547,6 +548,7 @@ public:
     [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
+    [[nodiscard]] QVariantList supportedProtocolCatalog() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
     [[nodiscard]] bool selectedFlowUsesTcp() const;
     [[nodiscard]] bool hasProtocolPathFlowFilter() const noexcept;

@@ -119,6 +119,7 @@ add_library(
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
+    src/app/session/SupportedProtocolCatalog.cpp
     src/app/session/DnsSummaryPresentation.cpp
     src/app/session/IcmpSummaryPresentation.cpp
     src/app/session/SelectedPacketSummaryPreparation.cpp
@@ -254,6 +255,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/AnalysisWorkspacePane.qml
                 src/ui/qml/components/FlowAnalysisPane.qml
                 src/ui/qml/components/SettingsPane.qml
+                src/ui/qml/components/SupportedProtocolsDialog.qml
                 src/ui/qml/components/SmartExportDialog.qml
         )
 
@@ -437,6 +439,7 @@ if(BUILD_TESTING)
         tests/unit/IndexFormatTests.cpp
         tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
+        tests/unit/SupportedProtocolCatalogTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp
         tests/unit/LinuxCookedTests.cpp
         tests/unit/FragmentationTests.cpp

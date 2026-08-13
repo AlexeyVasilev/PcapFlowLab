@@ -38,6 +38,7 @@ char* pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
     std::size_t limit
 );
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_supported_protocol_catalog_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode

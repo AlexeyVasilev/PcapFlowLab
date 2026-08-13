@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -558,7 +558,7 @@ fn pick_save_protocol_path_tree_path(_app: AppHandle) -> Result<Option<String>, 
 #[tauri::command]
 fn pick_save_byte_export_path(
     _app: AppHandle,
-    title: String,
+    _title: String,
     suggested_file_name: String,
     suggested_extension: String,
     binary_output: bool,
@@ -728,6 +728,16 @@ fn get_protocol_path_legend(
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
     state.adapter.get_protocol_path_legend()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_supported_protocol_catalog(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<SupportedProtocolCatalogDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_supported_protocol_catalog()
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -1180,6 +1190,7 @@ pub fn run() {
             get_quic_tls_statistics,
             get_top_endpoint_port_statistics,
             get_protocol_path_legend,
+            get_supported_protocol_catalog,
             get_protocol_path_statistics,
             get_protocol_path_summary_flow_indices,
             update_settings,

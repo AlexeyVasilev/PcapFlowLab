@@ -105,6 +105,7 @@ public:
     [[nodiscard]] FrontendTopEndpointPortStatisticsDto get_top_endpoint_port_statistics(std::size_t limit = 5U) const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] std::vector<FrontendProtocolPathLegendEntryDto> get_protocol_path_legend() const;
+    [[nodiscard]] FrontendSupportedProtocolCatalogDto get_supported_protocol_catalog() const;
     [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(
         ProtocolPathStatisticsMode mode
     ) const;

@@ -204,6 +204,7 @@ fn main() {
         "src/app/session/SelectedPacketBytePresentation.cpp",
         "src/app/session/SelectedStreamItemDataPresentation.cpp",
         "src/app/session/SelectedFlowPacketSemantics.cpp",
+        "src/app/session/SupportedProtocolCatalog.cpp",
         "src/app/session/DnsSummaryPresentation.cpp",
         "src/app/session/IcmpSummaryPresentation.cpp",
         "src/app/session/SelectedPacketSummaryPreparation.cpp",

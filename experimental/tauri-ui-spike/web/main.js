@@ -61,15 +61,20 @@
     aboutDialogVisible: false,
     settingsDialogVisible: false,
     protocolPathLegendDialogVisible: false,
+    supportedProtocolsDialogVisible: false,
     byteExportDialogVisible: false,
     protocolPathLegendLoading: false,
+    supportedProtocolsLoading: false,
     protocolPathLegendEntries: [],
+    supportedProtocolCatalogRows: [],
     byteExportFormats: [],
     byteExportTargetKind: "packet",
     byteExportSelectedFormatId: "",
     protocolPathPresentationsById: new Map(),
     protocolPathLegendStatusText: "",
     protocolPathLegendStatusKind: "neutral",
+    supportedProtocolsStatusText: "",
+    supportedProtocolsStatusKind: "neutral",
     settingsDialogLoading: false,
     settingsSaveInProgress: false,
     settingsStatusText: "",
@@ -224,6 +229,10 @@
     protocolPathLegendCloseButton: document.getElementById("protocolPathLegendCloseButton"),
     protocolPathLegendGrid: document.getElementById("protocolPathLegendGrid"),
     protocolPathLegendStatusText: document.getElementById("protocolPathLegendStatusText"),
+    supportedProtocolsDialog: document.getElementById("supportedProtocolsDialog"),
+    supportedProtocolsCloseButton: document.getElementById("supportedProtocolsCloseButton"),
+    supportedProtocolsContent: document.getElementById("supportedProtocolsContent"),
+    supportedProtocolsStatusText: document.getElementById("supportedProtocolsStatusText"),
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
     settingsIgnoreVlanAndMplsLayersWhenGroupingFlows: document.getElementById("settingsIgnoreVlanAndMplsLayersWhenGroupingFlows"),
@@ -1347,6 +1356,11 @@
   function clearProtocolPathLegendStatus() {
     state.protocolPathLegendStatusText = "";
     state.protocolPathLegendStatusKind = "neutral";
+  }
+
+  function clearSupportedProtocolsStatus() {
+    state.supportedProtocolsStatusText = "";
+    state.supportedProtocolsStatusKind = "neutral";
   }
 
   function flowTableColumnCount() {
@@ -2684,6 +2698,8 @@
             || state.smartExportInProgress;
         } else if (action === "settings") {
           item.disabled = state.settingsDialogLoading || state.settingsSaveInProgress;
+        } else if (action === "supported-protocols") {
+          item.disabled = state.supportedProtocolsLoading;
         } else if (action === "protocol-path-legend") {
           item.disabled = state.protocolPathLegendLoading;
         }
@@ -2700,6 +2716,10 @@
       if (elements.protocolPathLegendDialog) {
         elements.protocolPathLegendDialog.classList.toggle("is-visible", state.protocolPathLegendDialogVisible);
         elements.protocolPathLegendDialog.setAttribute("aria-hidden", state.protocolPathLegendDialogVisible ? "false" : "true");
+      }
+      if (elements.supportedProtocolsDialog) {
+        elements.supportedProtocolsDialog.classList.toggle("is-visible", state.supportedProtocolsDialogVisible);
+        elements.supportedProtocolsDialog.setAttribute("aria-hidden", state.supportedProtocolsDialogVisible ? "false" : "true");
       }
       if (elements.byteExportDialog) {
         elements.byteExportDialog.classList.toggle("is-visible", state.byteExportDialogVisible);
@@ -2849,6 +2869,82 @@
             <span class="protocol-path-legend-meta">${escapeHtml(colorKey || "protocol")}</span>
           </div>
         </div>
+      `;
+    }).join("");
+  }
+
+  function supportedProtocolStatusChip(statusId, label) {
+    const normalized = String(statusId || "not_applicable").replaceAll("_", "-");
+    return `<span class="supported-protocol-status-chip is-${escapeHtml(normalized)}">${escapeHtml(label || "")}</span>`;
+  }
+
+  function renderSupportedProtocolsDialog() {
+    if (elements.supportedProtocolsCloseButton) {
+      elements.supportedProtocolsCloseButton.disabled = state.supportedProtocolsLoading;
+    }
+
+    if (elements.supportedProtocolsStatusText) {
+      elements.supportedProtocolsStatusText.textContent = state.supportedProtocolsStatusText;
+      elements.supportedProtocolsStatusText.className = "status-text";
+      if (state.supportedProtocolsStatusKind === "error") {
+        elements.supportedProtocolsStatusText.classList.add("is-error");
+      } else if (state.supportedProtocolsStatusKind === "success") {
+        elements.supportedProtocolsStatusText.classList.add("is-success");
+      }
+    }
+
+    if (!elements.supportedProtocolsContent) {
+      return;
+    }
+
+    if (state.supportedProtocolsLoading) {
+      elements.supportedProtocolsContent.innerHTML = '<div class="settings-disabled-row">Loading supported protocols...</div>';
+      return;
+    }
+
+    if (!Array.isArray(state.supportedProtocolCatalogRows) || state.supportedProtocolCatalogRows.length === 0) {
+      elements.supportedProtocolsContent.innerHTML = '<div class="settings-disabled-row">Supported protocol catalog is unavailable.</div>';
+      return;
+    }
+
+    const categoryOrder = [
+      "link_and_encapsulation",
+      "network",
+      "transport",
+      "tunnels_and_overlays",
+      "security",
+      "application",
+    ];
+
+    elements.supportedProtocolsContent.innerHTML = categoryOrder.map((categoryId) => {
+      const rows = state.supportedProtocolCatalogRows.filter((row) => String(row?.category_id || "") === categoryId);
+      if (rows.length === 0) {
+        return "";
+      }
+
+      const header = `
+        <div class="supported-protocol-table">
+          <div class="supported-protocol-table-header">Protocol</div>
+          <div class="supported-protocol-table-header">Recognition</div>
+          <div class="supported-protocol-table-header">Service</div>
+          <div class="supported-protocol-table-header">Packet Summary</div>
+          <div class="supported-protocol-table-header">Stream</div>
+          <div class="supported-protocol-table-header">Notes</div>
+      `;
+      const body = rows.map((row) => `
+          <div class="supported-protocol-cell protocol-name">${escapeHtml(row?.protocol || "")}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.recognition_status_id, row?.recognition_status_label)}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.service_status_id, row?.service_status_label)}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.packet_summary_status_id, row?.packet_summary_status_label)}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.stream_status_id, row?.stream_status_label)}</div>
+          <div class="supported-protocol-cell notes">${escapeHtml(row?.notes || "")}</div>
+      `).join("");
+
+      return `
+        <section class="supported-protocol-category">
+          <h3 class="supported-protocol-category-title">${escapeHtml(rows[0]?.category_label || "")}</h3>
+          ${header}${body}</div>
+        </section>
       `;
     }).join("");
   }
@@ -5553,6 +5649,7 @@
       ["menu", renderMenuState],
       ["settings dialog", renderSettingsDialog],
       ["protocol path legend dialog", renderProtocolPathLegendDialog],
+      ["supported protocols dialog", renderSupportedProtocolsDialog],
       ["byte export dialog", renderByteExportDialog],
       ["smart export dialog", renderSmartExportDialog],
       ["tabs", renderTabs],
@@ -6864,6 +6961,35 @@
     }
   }
 
+  async function openSupportedProtocolsDialogFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    clearSupportedProtocolsStatus();
+    state.supportedProtocolsDialogVisible = true;
+    state.supportedProtocolsLoading = true;
+    render();
+
+    try {
+      const catalog = await invoke("get_supported_protocol_catalog");
+      state.supportedProtocolCatalogRows = Array.isArray(catalog?.rows) ? catalog.rows : [];
+      if (state.supportedProtocolCatalogRows.length === 0) {
+        state.supportedProtocolsStatusText = "Supported protocol catalog is unavailable.";
+        state.supportedProtocolsStatusKind = "error";
+      }
+    } catch (error) {
+      state.supportedProtocolCatalogRows = [];
+      state.supportedProtocolsStatusText = `Failed to load supported protocols: ${String(error)}`;
+      state.supportedProtocolsStatusKind = "error";
+    } finally {
+      state.supportedProtocolsLoading = false;
+      render();
+    }
+  }
+
   function closeSettingsDialog() {
     if (state.settingsDialogLoading || state.settingsSaveInProgress) {
       return;
@@ -6881,6 +7007,16 @@
 
     state.protocolPathLegendDialogVisible = false;
     clearProtocolPathLegendStatus();
+    render();
+  }
+
+  function closeSupportedProtocolsDialog() {
+    if (state.supportedProtocolsLoading) {
+      return;
+    }
+
+    state.supportedProtocolsDialogVisible = false;
+    clearSupportedProtocolsStatus();
     render();
   }
 
@@ -7340,6 +7476,9 @@
       case "protocol-path-legend":
         await openProtocolPathLegendDialogFromMenu();
         return;
+      case "supported-protocols":
+        await openSupportedProtocolsDialogFromMenu();
+        return;
       case "export-current-flow":
         await exportCurrentFlowFromMenu();
         return;
@@ -7498,6 +7637,12 @@
       closeProtocolPathLegendDialog();
     }
   });
+  elements.supportedProtocolsCloseButton?.addEventListener("click", closeSupportedProtocolsDialog);
+  elements.supportedProtocolsDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.supportedProtocolsDialog) {
+      closeSupportedProtocolsDialog();
+    }
+  });
   elements.byteExportCloseButton?.addEventListener("click", closeByteExportDialog);
   elements.byteExportCancelButton?.addEventListener("click", closeByteExportDialog);
   elements.byteExportRunButton?.addEventListener("click", () => {
@@ -7596,6 +7741,7 @@
         || state.aboutDialogVisible
         || state.settingsDialogVisible
         || state.protocolPathLegendDialogVisible
+        || state.supportedProtocolsDialogVisible
         || state.byteExportDialogVisible
         || state.smartExportDialogVisible;
       closeMenus();
@@ -7607,6 +7753,10 @@
       if (!state.protocolPathLegendLoading) {
         state.protocolPathLegendDialogVisible = false;
         clearProtocolPathLegendStatus();
+      }
+      if (!state.supportedProtocolsLoading) {
+        state.supportedProtocolsDialogVisible = false;
+        clearSupportedProtocolsStatus();
       }
       state.byteExportDialogVisible = false;
       if (!state.smartExportInProgress) {

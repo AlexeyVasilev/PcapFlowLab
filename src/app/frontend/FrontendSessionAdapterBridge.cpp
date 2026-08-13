@@ -144,6 +144,26 @@ std::string protocol_path_legend_entry_json(const pfl::FrontendProtocolPathLegen
     return out.str();
 }
 
+std::string supported_protocol_catalog_row_json(const pfl::FrontendSupportedProtocolCatalogRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"category_id\":" << json_string(row.category_id) << ','
+        << "\"category_label\":" << json_string(row.category_label) << ','
+        << "\"protocol_id\":" << json_string(row.protocol_id) << ','
+        << "\"protocol\":" << json_string(row.protocol) << ','
+        << "\"recognition_status_id\":" << json_string(row.recognition_status_id) << ','
+        << "\"recognition_status_label\":" << json_string(row.recognition_status_label) << ','
+        << "\"service_status_id\":" << json_string(row.service_status_id) << ','
+        << "\"service_status_label\":" << json_string(row.service_status_label) << ','
+        << "\"packet_summary_status_id\":" << json_string(row.packet_summary_status_id) << ','
+        << "\"packet_summary_status_label\":" << json_string(row.packet_summary_status_label) << ','
+        << "\"stream_status_id\":" << json_string(row.stream_status_id) << ','
+        << "\"stream_status_label\":" << json_string(row.stream_status_label) << ','
+        << "\"notes\":" << json_string(row.notes)
+        << '}';
+    return out.str();
+}
+
 std::string flow_indices_json(const std::vector<std::size_t>& flow_indices) {
     std::ostringstream out {};
     out << '[';
@@ -975,6 +995,19 @@ std::string protocol_path_legend_json(const std::vector<pfl::FrontendProtocolPat
     return out.str();
 }
 
+std::string supported_protocol_catalog_json(const pfl::FrontendSupportedProtocolCatalogDto& catalog) {
+    std::ostringstream out {};
+    out << "{\"rows\":[";
+    for (std::size_t index = 0; index < catalog.rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << supported_protocol_catalog_row_json(catalog.rows[index]);
+    }
+    out << "]}";
+    return out.str();
+}
+
 std::string packet_result_json(const pfl::FrontendSelectedFlowPacketsResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -1585,6 +1618,14 @@ char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSess
     }
 
     return make_c_string(protocol_path_legend_json(handle->adapter.get_protocol_path_legend()));
+}
+
+char* pfl_frontend_session_adapter_get_supported_protocol_catalog_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("{\"rows\":[]}");
+    }
+
+    return make_c_string(supported_protocol_catalog_json(handle->adapter.get_supported_protocol_catalog()));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(

@@ -326,6 +326,28 @@ pub struct ProtocolPathPresentationDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupportedProtocolCatalogRowDto {
+    pub category_id: String,
+    pub category_label: String,
+    pub protocol_id: String,
+    pub protocol: String,
+    pub recognition_status_id: String,
+    pub recognition_status_label: String,
+    pub service_status_id: String,
+    pub service_status_label: String,
+    pub packet_summary_status_id: String,
+    pub packet_summary_status_label: String,
+    pub stream_status_id: String,
+    pub stream_status_label: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupportedProtocolCatalogDto {
+    pub rows: Vec<SupportedProtocolCatalogRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewDto {
     pub has_capture: bool,
     pub unrecognized_packet_count: u64,

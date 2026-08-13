@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -59,6 +59,9 @@ extern "C" {
         limit: usize,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_protocol_path_legend_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_supported_protocol_catalog_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_protocol_path_statistics_json(
@@ -324,6 +327,11 @@ impl CppFrontendSessionAdapter {
     pub fn get_protocol_path_legend(&self) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_legend_json(self.handle) };
         parse_json_owned::<Vec<ProtocolPathLegendEntryDto>>(json)
+    }
+
+    pub fn get_supported_protocol_catalog(&self) -> Result<SupportedProtocolCatalogDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_supported_protocol_catalog_json(self.handle) };
+        parse_json_owned::<SupportedProtocolCatalogDto>(json)
     }
 
     pub fn get_protocol_path_statistics(&self, mode: u8) -> Result<Vec<ProtocolPathStatsDto>, String> {

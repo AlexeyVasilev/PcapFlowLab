@@ -362,6 +362,26 @@ struct FrontendProtocolPathLegendEntryDto {
     std::string text_color {};
 };
 
+struct FrontendSupportedProtocolCatalogRowDto {
+    std::string category_id {};
+    std::string category_label {};
+    std::string protocol_id {};
+    std::string protocol {};
+    std::string recognition_status_id {};
+    std::string recognition_status_label {};
+    std::string service_status_id {};
+    std::string service_status_label {};
+    std::string packet_summary_status_id {};
+    std::string packet_summary_status_label {};
+    std::string stream_status_id {};
+    std::string stream_status_label {};
+    std::string notes {};
+};
+
+struct FrontendSupportedProtocolCatalogDto {
+    std::vector<FrontendSupportedProtocolCatalogRowDto> rows {};
+};
+
 struct FrontendSelectionResultDto {
     bool selected {false};
     std::optional<FrontendFlowDto> updated_flow {};

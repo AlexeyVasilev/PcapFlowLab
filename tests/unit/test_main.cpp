@@ -80,6 +80,7 @@ void run_index_tests();
 void run_index_format_tests();
 void run_chunked_import_tests();
 void run_protocol_coverage_tests();
+void run_supported_protocol_catalog_tests();
 void run_malformed_packet_handling_tests();
 void run_linux_cooked_tests();
 void run_linux_cooked_pcap_fixture_tests();
@@ -235,6 +236,7 @@ int main() {
         {"index_format", pfl::tests::run_index_format_tests},
         {"chunked_import", pfl::tests::run_chunked_import_tests},
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
+        {"supported_protocol_catalog", pfl::tests::run_supported_protocol_catalog_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},
         {"linux_cooked", pfl::tests::run_linux_cooked_tests},
         {"linux_cooked_pcap_fixtures", pfl::tests::run_linux_cooked_pcap_fixture_tests},

@@ -324,6 +324,12 @@ body.is-resizing-vertical {
   width: min(760px, 100%);
 }
 
+.supported-protocols-dialog-card {
+  width: min(1180px, 100%);
+  max-height: min(88vh, 980px);
+  overflow: auto;
+}
+
 .settings-sections {
   display: flex;
   flex-direction: column;
@@ -409,6 +415,99 @@ body.is-resizing-vertical {
 .protocol-path-legend-meta {
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.supported-protocols-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.supported-protocol-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.supported-protocol-status-chip.is-yes {
+  background: #eefbf3;
+  border-color: #b7e4c7;
+  color: var(--text-primary);
+}
+
+.supported-protocol-status-chip.is-partial {
+  background: #fff7e6;
+  border-color: #f2d7a6;
+  color: var(--text-primary);
+}
+
+.supported-protocol-status-chip.is-no {
+  background: #e5e7eb;
+  border-color: #cbd5e1;
+  color: var(--text-primary);
+}
+
+.supported-protocol-status-chip.is-not-applicable {
+  background: #f1f5f9;
+  border-color: #d8dee9;
+  color: var(--text-primary);
+}
+
+.supported-protocols-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.supported-protocol-category {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.supported-protocol-category-title {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.supported-protocol-table {
+  display: grid;
+  grid-template-columns: 180px 110px 100px 130px 100px minmax(320px, 1fr);
+  gap: 8px 10px;
+  align-items: start;
+}
+
+.supported-protocol-table-header {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.supported-protocol-cell {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.supported-protocol-cell.protocol-name {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.supported-protocol-cell.notes {
+  color: var(--text-secondary);
 }
 
 .smart-export-dialog-card {

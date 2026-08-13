@@ -4,6 +4,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SupportedProtocolCatalog.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
@@ -483,6 +484,10 @@ std::string escape_csv_field(const std::string& field) {
     return escaped;
 }
 
+QString from_latin1_view(const std::string_view value) {
+    return QString::fromLatin1(value.data(), static_cast<qsizetype>(value.size()));
+}
+
 std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
     bool ok = false;
     const auto value = text.trimmed().toULongLong(&ok);
@@ -715,6 +720,32 @@ QVariantList protocol_path_legend_to_variant_list() {
     }
 
     return legend;
+}
+
+QVariantList supported_protocol_catalog_to_variant_list() {
+    QVariantList catalog {};
+    const auto rows = session_detail::supported_protocol_catalog_rows();
+    catalog.reserve(static_cast<qsizetype>(rows.size()));
+
+    for (const auto& row : rows) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("categoryId"), from_latin1_view(session_detail::supported_protocol_category_stable_id(row.category)));
+        item.insert(QStringLiteral("categoryLabel"), from_latin1_view(session_detail::supported_protocol_category_display_label(row.category)));
+        item.insert(QStringLiteral("protocolId"), from_latin1_view(row.stable_id));
+        item.insert(QStringLiteral("protocol"), from_latin1_view(row.protocol));
+        item.insert(QStringLiteral("recognitionStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.recognition)));
+        item.insert(QStringLiteral("recognitionStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.recognition)));
+        item.insert(QStringLiteral("serviceStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.service)));
+        item.insert(QStringLiteral("serviceStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.service)));
+        item.insert(QStringLiteral("packetSummaryStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.packet_summary)));
+        item.insert(QStringLiteral("packetSummaryStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.packet_summary)));
+        item.insert(QStringLiteral("streamStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.stream)));
+        item.insert(QStringLiteral("streamStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.stream)));
+        item.insert(QStringLiteral("notes"), from_latin1_view(row.notes));
+        catalog.push_back(item);
+    }
+
+    return catalog;
 }
 
 enum class ChecksumValidationStatus {
@@ -3347,6 +3378,10 @@ QString MainController::selectedFlowWiresharkFilter() const {
 
 QVariantList MainController::protocolPathLegend() const {
     return protocol_path_legend_to_variant_list();
+}
+
+QVariantList MainController::supportedProtocolCatalog() const {
+    return supported_protocol_catalog_to_variant_list();
 }
 
 QVariantList MainController::byteExportFormats() const {

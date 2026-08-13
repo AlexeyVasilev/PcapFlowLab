@@ -6,6 +6,7 @@
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/SupportedProtocolCatalog.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
@@ -2970,6 +2971,32 @@ std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_prot
     }
 
     return rows;
+}
+
+FrontendSupportedProtocolCatalogDto FrontendSessionAdapter::get_supported_protocol_catalog() const {
+    FrontendSupportedProtocolCatalogDto catalog {};
+    const auto rows = session_detail::supported_protocol_catalog_rows();
+    catalog.rows.reserve(rows.size());
+
+    for (const auto& row : rows) {
+        catalog.rows.push_back(FrontendSupportedProtocolCatalogRowDto {
+            .category_id = std::string {session_detail::supported_protocol_category_stable_id(row.category)},
+            .category_label = std::string {session_detail::supported_protocol_category_display_label(row.category)},
+            .protocol_id = std::string {row.stable_id},
+            .protocol = std::string {row.protocol},
+            .recognition_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.recognition)},
+            .recognition_status_label = std::string {session_detail::supported_protocol_status_display_label(row.recognition)},
+            .service_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.service)},
+            .service_status_label = std::string {session_detail::supported_protocol_status_display_label(row.service)},
+            .packet_summary_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.packet_summary)},
+            .packet_summary_status_label = std::string {session_detail::supported_protocol_status_display_label(row.packet_summary)},
+            .stream_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.stream)},
+            .stream_status_label = std::string {session_detail::supported_protocol_status_display_label(row.stream)},
+            .notes = std::string {row.notes},
+        });
+    }
+
+    return catalog;
 }
 
 std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_path_statistics(
