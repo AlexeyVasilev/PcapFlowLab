@@ -131,6 +131,10 @@ Frame {
 
             ListView {
                 id: streamListView
+                readonly property real rightScrollbarGutter: streamScrollBar.visible
+                    ? Math.max(streamScrollBar.width, streamScrollBar.implicitWidth) + 5
+                    : 0
+                readonly property real contentViewportWidth: Math.max(0, width - rightScrollbarGutter)
                 anchors.fill: parent
                 anchors.margins: 6
                 clip: true
@@ -138,6 +142,7 @@ Frame {
                 model: root.streamModel
 
                 ScrollBar.vertical: AppScrollBar {
+                    id: streamScrollBar
                     policy: streamListView.contentHeight > streamListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 
@@ -156,13 +161,13 @@ Frame {
                     readonly property string metadataText: byteCount + " bytes | " + (sourcePacketsText.length > 0 ? root.compactSourcePacketsText(sourcePacketsText) : (packetCount > 1 ? packetCount + " packets" : "1 packet"))
                     readonly property string headerMetaText: "#" + streamItemIndex + " \u00b7 " + directionText
 
-                    width: streamListView.width
+                    width: streamListView.contentViewportWidth
                     height: bubble.implicitHeight
 
                     Rectangle {
                         id: bubble
                         x: forward ? 0 : parent.width - width
-                        width: Math.min(streamListView.width * 0.84, 420)
+                        width: Math.min(parent.width * 0.84, 420)
                         implicitHeight: metadataContainer.y + metadataContainer.implicitHeight + 8
                         radius: 9
                         color: root.bubbleColor(directionText, selected)
