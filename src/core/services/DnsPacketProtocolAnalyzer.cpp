@@ -157,17 +157,11 @@ std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
     return inspect_message(packet_bytes, kLinkTypeEthernet);
 }
 
-std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
-    std::span<const std::uint8_t> packet_bytes,
-    const std::uint32_t data_link_type
+std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message_payload(
+    std::span<const std::uint8_t> payload_bytes,
+    const std::size_t payload_offset
 ) const {
-    PacketPayloadService payload_service {};
-    const auto payload = payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
-    if (!payload.found || payload.payload.empty()) {
-        return std::nullopt;
-    }
-
-    const auto message = extract_dns_message(payload.payload);
+    const auto message = extract_dns_message(payload_bytes);
     if (!message.has_value() || message->bytes.size() < kDnsHeaderSize) {
         return std::nullopt;
     }
@@ -187,7 +181,7 @@ std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
 
     const auto qtype = read_be16(message->bytes, offset);
 
-    const auto message_offset = narrow_u32(payload.offset + message->payload_offset);
+    const auto message_offset = narrow_u32(payload_offset + message->payload_offset);
     const auto declared_length = narrow_u32(message->bytes.size());
     if (!message_offset.has_value() || !declared_length.has_value()) {
         return std::nullopt;
@@ -209,6 +203,19 @@ std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
         .response_code = static_cast<std::uint8_t>(flags & 0x000FU),
         .query_name = *qname,
     };
+}
+
+std::optional<DnsPacketMessageView> DnsPacketProtocolAnalyzer::inspect_message(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type
+) const {
+    PacketPayloadService payload_service {};
+    const auto payload = payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
+    if (!payload.found || payload.payload.empty()) {
+        return std::nullopt;
+    }
+
+    return inspect_message_payload(payload.payload, payload.offset);
 }
 
 std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(

@@ -55,6 +55,36 @@ std::vector<std::uint8_t> make_zero_filled(const std::size_t count) {
     return std::vector<std::uint8_t>(count, 0x00U);
 }
 
+std::vector<std::uint8_t> make_dns_query_payload() {
+    constexpr std::string_view qname_first_label = "example";
+    constexpr std::string_view qname_second_label = "test";
+
+    std::vector<std::uint8_t> bytes {};
+    append_be16(bytes, 0x1234U);
+    append_be16(bytes, 0x0100U);
+    append_be16(bytes, 0x0001U);
+    append_be16(bytes, 0x0000U);
+    append_be16(bytes, 0x0000U);
+    append_be16(bytes, 0x0000U);
+    bytes.push_back(0x07U);
+    bytes.insert(bytes.end(), qname_first_label.begin(), qname_first_label.end());
+    bytes.push_back(0x04U);
+    bytes.insert(bytes.end(), qname_second_label.begin(), qname_second_label.end());
+    bytes.push_back(0x00U);
+    append_be16(bytes, 0x0001U);
+    append_be16(bytes, 0x0001U);
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_vxlan_payload(const std::vector<std::uint8_t>& inner_ethernet_frame) {
+    std::vector<std::uint8_t> bytes {
+        0x08U, 0x00U, 0x00U, 0x00U,
+        0x00U, 0x00U, 0x2aU, 0x00U,
+    };
+    bytes.insert(bytes.end(), inner_ethernet_frame.begin(), inner_ethernet_frame.end());
+    return bytes;
+}
+
 void append_extension(
     std::vector<std::uint8_t>& bytes,
     const std::uint16_t extension_type,
@@ -2647,6 +2677,97 @@ void run_packet_details_tests() {
         PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Message Type") == "Request");
         PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Method") == "GET");
         PFL_EXPECT(require_summary_field_value(summary_layers.back(), "Host") == "www.kresla-darom.ru");
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+    }
+
+    {
+        const auto inner_dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 10),
+            ipv4(172, 16, 0, 53),
+            53000,
+            53,
+            make_dns_query_payload()
+        );
+        const auto outer_vxlan_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(192, 0, 2, 10),
+            ipv4(198, 51, 100, 10),
+            40000,
+            4789,
+            make_vxlan_payload(inner_dns_packet)
+        );
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_details_vxlan_inner_dns_effective_payload.pcap",
+            make_classic_pcap({{100U, outer_vxlan_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_vxlan);
+        PFL_EXPECT(details->has_dns);
+        PFL_EXPECT(!details->has_http);
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::udp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->dns.transaction_id == 0x1234U);
+        PFL_EXPECT(details->dns.query_type == 1U);
+        PFL_EXPECT(details->dns.query_name == "example.test");
+        PFL_REQUIRE(details->dns_message.has_value());
+        PFL_EXPECT(details->dns_message->status == DnsInspectionStatus::complete);
+        PFL_EXPECT(!details->dns_message->questions.empty());
+        PFL_EXPECT(details->dns_message->questions[0].name == "example.test");
+
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "udp-inner") != nullptr);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "dns") != nullptr);
+        PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
+    }
+
+    {
+        const std::string_view http_text = "GET /nested HTTP/1.1\r\nHost: nested.example\r\n\r\n";
+        const std::vector<std::uint8_t> http_payload(http_text.begin(), http_text.end());
+        const auto inner_http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(172, 16, 1, 10),
+            ipv4(172, 16, 1, 80),
+            41000,
+            80,
+            http_payload,
+            0x18U
+        );
+        const auto outer_vxlan_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(192, 0, 2, 20),
+            ipv4(198, 51, 100, 20),
+            40001,
+            4789,
+            make_vxlan_payload(inner_http_packet)
+        );
+        const auto capture_path = write_temp_pcap(
+            "pfl_packet_details_vxlan_inner_http_effective_payload.pcap",
+            make_classic_pcap({{100U, outer_vxlan_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_vxlan);
+        PFL_EXPECT(details->has_http);
+        PFL_EXPECT(!details->has_dns);
+        PFL_REQUIRE(details->effective_transport_payload.has_value());
+        PFL_EXPECT(details->effective_transport_payload->transport == EffectiveTransportKind::tcp);
+        PFL_EXPECT(details->effective_transport_payload->role == EffectiveTransportRole::inner);
+        PFL_EXPECT(details->http.message_type == HttpMessageType::request);
+        PFL_EXPECT(details->http.method == "GET");
+        PFL_EXPECT(details->http.path == "/nested");
+        PFL_EXPECT(details->http.version == "HTTP/1.1");
+        PFL_EXPECT(details->http.host == "nested.example");
+
+        const auto summary_layers = build_flow_packet_summary_layers(session, 0U, 0U);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "tcp-inner") != nullptr);
+        PFL_REQUIRE(find_summary_layer(summary_layers, "http") != nullptr);
         PFL_EXPECT(find_summary_layer(summary_layers, "data") == nullptr);
     }
 

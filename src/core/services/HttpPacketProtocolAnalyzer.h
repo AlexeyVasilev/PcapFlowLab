@@ -25,6 +25,9 @@ struct HttpPacketMessageView {
 
 class HttpPacketProtocolAnalyzer {
 public:
+    [[nodiscard]] std::optional<HttpPacketMessageView> inspect_message_payload(
+        std::span<const std::uint8_t> payload_bytes
+    ) const;
     [[nodiscard]] std::optional<HttpPacketMessageView> inspect_message(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::optional<HttpPacketMessageView> inspect_message(
         std::span<const std::uint8_t> packet_bytes,

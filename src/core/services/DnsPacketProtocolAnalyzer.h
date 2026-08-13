@@ -23,6 +23,10 @@ struct DnsPacketMessageView {
 
 class DnsPacketProtocolAnalyzer {
 public:
+    [[nodiscard]] std::optional<DnsPacketMessageView> inspect_message_payload(
+        std::span<const std::uint8_t> payload_bytes,
+        std::size_t payload_offset = 0U
+    ) const;
     [[nodiscard]] std::optional<DnsPacketMessageView> inspect_message(std::span<const std::uint8_t> packet_bytes) const;
     [[nodiscard]] std::optional<DnsPacketMessageView> inspect_message(
         std::span<const std::uint8_t> packet_bytes,
