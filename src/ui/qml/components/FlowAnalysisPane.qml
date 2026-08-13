@@ -580,11 +580,15 @@ Frame {
             ScrollView {
                 id: analysisResultScroll
                 objectName: "analysisResultContent"
+                readonly property real verticalScrollbarGutter: analysisVerticalScrollBar.visible
+                    ? Math.max(analysisVerticalScrollBar.width, analysisVerticalScrollBar.implicitWidth) + 6
+                    : 0
                 anchors.fill: parent
                 clip: true
                 visible: root.analysisAvailable && !root.analysisLoading
 
                 ScrollBar.vertical: AppScrollBar {
+                    id: analysisVerticalScrollBar
                     parent: analysisResultScroll
                     x: analysisResultScroll.mirrored ? 0 : analysisResultScroll.width - width
                     y: analysisResultScroll.topPadding
@@ -600,7 +604,7 @@ Frame {
                 }
 
                 ColumnLayout {
-                    width: analysisResultScroll.availableWidth
+                    width: Math.max(0, analysisResultScroll.availableWidth - analysisResultScroll.verticalScrollbarGutter)
                     spacing: root.blockSpacing
 
                         AnalysisSectionFrame {

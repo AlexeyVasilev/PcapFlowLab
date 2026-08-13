@@ -351,11 +351,15 @@ Item {
 
     ScrollView {
         id: statisticsScroll
+        readonly property real verticalScrollbarGutter: statisticsVerticalScrollBar.visible
+            ? Math.max(statisticsVerticalScrollBar.width, statisticsVerticalScrollBar.implicitWidth) + 6
+            : 0
         anchors.fill: parent
         clip: true
         contentWidth: statisticsContent.width
         contentHeight: statisticsContent.implicitHeight
         ScrollBar.vertical: AppScrollBar {
+            id: statisticsVerticalScrollBar
             parent: statisticsScroll
             x: statisticsScroll.mirrored ? 0 : statisticsScroll.width - width
             y: statisticsScroll.topPadding
@@ -372,7 +376,7 @@ Item {
 
         Item {
             id: statisticsContent
-            width: statisticsScroll.availableWidth
+            width: Math.max(0, statisticsScroll.availableWidth - statisticsScroll.verticalScrollbarGutter)
             implicitHeight: statisticsColumn.implicitHeight
 
             ColumnLayout {
