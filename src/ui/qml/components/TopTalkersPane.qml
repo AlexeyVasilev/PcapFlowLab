@@ -115,7 +115,7 @@ Frame {
                 clip: true
                 model: tableFrame.viewModel
 
-                ScrollBar.vertical: ScrollBar {
+                ScrollBar.vertical: AppScrollBar {
                     id: tableScrollBar
                     policy: tableListView.contentHeight > tableListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }

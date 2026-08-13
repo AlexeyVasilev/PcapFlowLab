@@ -298,7 +298,7 @@ Frame {
                 flickableDirection: Flickable.HorizontalFlick
                 boundsBehavior: Flickable.StopAtBounds
 
-                ScrollBar.horizontal: ScrollBar {
+                ScrollBar.horizontal: AppScrollBar {
                     id: flowTableHorizontalScrollBar
                     policy: flowTableScroller.contentWidth > flowTableScroller.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
@@ -399,7 +399,7 @@ Frame {
                         onCountChanged: root.syncSelectedFlowRow()
                         onModelChanged: root.syncSelectedFlowRow()
 
-                        ScrollBar.vertical: ScrollBar {
+                        ScrollBar.vertical: AppScrollBar {
                             id: flowScrollBar
                             policy: flowListView.contentHeight > flowListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                         }

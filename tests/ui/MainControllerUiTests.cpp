@@ -393,8 +393,8 @@ void run_ui_section(const std::string_view name, Function&& function) {
 }
 
 void emit_test_output(const std::string& text) {
-    static bool console_ready = false;
 #ifdef WIN32
+    static bool console_ready = false;
     if (!console_ready) {
         console_ready = true;
         AttachConsole(ATTACH_PARENT_PROCESS);

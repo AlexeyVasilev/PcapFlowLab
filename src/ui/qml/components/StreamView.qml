@@ -137,7 +137,7 @@ Frame {
                 spacing: 6
                 model: root.streamModel
 
-                ScrollBar.vertical: ScrollBar {
+                ScrollBar.vertical: AppScrollBar {
                     policy: streamListView.contentHeight > streamListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 

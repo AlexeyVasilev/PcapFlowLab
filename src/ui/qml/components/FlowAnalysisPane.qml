@@ -584,8 +584,12 @@ Frame {
                 clip: true
                 visible: root.analysisAvailable && !root.analysisLoading
 
-                ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                ScrollBar.vertical: AppScrollBar {
+                    policy: analysisResultScroll.contentHeight > analysisResultScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
+                ScrollBar.horizontal: AppScrollBar {
+                    policy: analysisResultScroll.contentWidth > analysisResultScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
 
                 ColumnLayout {
                     width: analysisResultScroll.availableWidth

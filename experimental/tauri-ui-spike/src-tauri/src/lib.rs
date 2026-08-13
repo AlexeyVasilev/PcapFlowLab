@@ -558,7 +558,7 @@ fn pick_save_protocol_path_tree_path(_app: AppHandle) -> Result<Option<String>, 
 #[tauri::command(rename_all = "snake_case")]
 fn pick_save_byte_export_path(
     _app: AppHandle,
-    _title: String,
+    title: String,
     suggested_file_name: String,
     suggested_extension: String,
     binary_output: bool,
@@ -590,6 +590,7 @@ fn pick_save_byte_export_path(
 
     #[cfg(not(target_os = "linux"))]
     {
+        let _ = &title;
         let filter_label = if binary_output { "Binary files" } else { "Text files" };
         let selected_path = _app
             .dialog()

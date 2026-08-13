@@ -355,8 +355,12 @@ Item {
         clip: true
         contentWidth: statisticsContent.width
         contentHeight: statisticsContent.implicitHeight
-        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-        ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        ScrollBar.vertical: AppScrollBar {
+            policy: statisticsScroll.contentHeight > statisticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        }
+        ScrollBar.horizontal: AppScrollBar {
+            policy: statisticsScroll.contentWidth > statisticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        }
 
         Item {
             id: statisticsContent
@@ -880,7 +884,7 @@ Item {
                                 reuseItems: true
                                 cacheBuffer: root.tableRowHeight * 12
 
-                                ScrollBar.vertical: ScrollBar {
+                                ScrollBar.vertical: AppScrollBar {
                                     policy: protocolPathListView.contentHeight > protocolPathListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                                 }
 

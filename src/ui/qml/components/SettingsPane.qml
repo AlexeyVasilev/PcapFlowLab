@@ -106,11 +106,17 @@ Item {
             currentIndex: settingsTabs.currentIndex
 
             ScrollView {
+                id: protocolSettingsScroll
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 contentWidth: availableWidth
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical: AppScrollBar {
+                    policy: protocolSettingsScroll.contentHeight > protocolSettingsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
+                ScrollBar.horizontal: AppScrollBar {
+                    policy: ScrollBar.AlwaysOff
+                }
 
                 ColumnLayout {
                     width: parent.width
@@ -229,11 +235,17 @@ Item {
             }
 
             ScrollView {
+                id: groupingSettingsScroll
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 contentWidth: availableWidth
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical: AppScrollBar {
+                    policy: groupingSettingsScroll.contentHeight > groupingSettingsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
+                ScrollBar.horizontal: AppScrollBar {
+                    policy: ScrollBar.AlwaysOff
+                }
 
                 ColumnLayout {
                     width: parent.width

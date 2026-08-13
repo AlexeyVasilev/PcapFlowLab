@@ -64,9 +64,15 @@ Dialog {
     title: "Supported Protocols"
 
     contentItem: ScrollView {
+        id: supportedProtocolsScroll
         clip: true
         contentWidth: availableWidth
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical: AppScrollBar {
+            policy: supportedProtocolsScroll.contentHeight > supportedProtocolsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        }
+        ScrollBar.horizontal: AppScrollBar {
+            policy: ScrollBar.AlwaysOff
+        }
 
         ColumnLayout {
             width: parent.width

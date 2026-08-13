@@ -195,9 +195,14 @@ ApplicationWindow {
         title: "Capture Storage Diagnostics"
 
         contentItem: ScrollView {
+            id: captureStorageDiagnosticsScroll
             clip: true
-            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
-            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+            ScrollBar.vertical: AppScrollBar {
+                policy: captureStorageDiagnosticsScroll.contentHeight > captureStorageDiagnosticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                policy: captureStorageDiagnosticsScroll.contentWidth > captureStorageDiagnosticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
 
             TextArea {
                 readOnly: true
@@ -403,9 +408,15 @@ ApplicationWindow {
         title: "Protocol Path Legend"
 
         contentItem: ScrollView {
+            id: protocolPathLegendScroll
             clip: true
             contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical: AppScrollBar {
+                policy: protocolPathLegendScroll.contentHeight > protocolPathLegendScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                policy: ScrollBar.AlwaysOff
+            }
 
             ColumnLayout {
                 width: parent.width

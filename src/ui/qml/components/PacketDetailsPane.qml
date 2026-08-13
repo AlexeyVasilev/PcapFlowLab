@@ -500,8 +500,12 @@ Frame {
             anchors.fill: parent
             anchors.margins: 1
             clip: true
-            ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-            ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            ScrollBar.vertical: AppScrollBar {
+                policy: textPaneScroll.contentHeight > textPaneScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                policy: textPaneScroll.contentWidth > textPaneScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
 
             TextArea {
                 readOnly: true
@@ -1197,12 +1201,17 @@ Frame {
                     }
 
                     ScrollView {
+                        id: packetSummaryScroll
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         visible: packetSummaryPane.renderableLayers
-                        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ScrollBar.vertical: AppScrollBar {
+                            policy: packetSummaryScroll.contentHeight > packetSummaryScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        }
+                        ScrollBar.horizontal: AppScrollBar {
+                            policy: ScrollBar.AlwaysOff
+                        }
 
                         ColumnLayout {
                             width: parent.width
@@ -1346,12 +1355,17 @@ Frame {
                     }
 
                     ScrollView {
+                        id: streamSummaryScroll
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         visible: streamSummaryPane.renderableLayers
-                        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ScrollBar.vertical: AppScrollBar {
+                            policy: streamSummaryScroll.contentHeight > streamSummaryScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        }
+                        ScrollBar.horizontal: AppScrollBar {
+                            policy: ScrollBar.AlwaysOff
+                        }
 
                         ColumnLayout {
                             width: parent.width
