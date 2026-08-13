@@ -585,9 +585,17 @@ Frame {
                 visible: root.analysisAvailable && !root.analysisLoading
 
                 ScrollBar.vertical: AppScrollBar {
+                    parent: analysisResultScroll
+                    x: analysisResultScroll.mirrored ? 0 : analysisResultScroll.width - width
+                    y: analysisResultScroll.topPadding
+                    height: analysisResultScroll.availableHeight
                     policy: analysisResultScroll.contentHeight > analysisResultScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
                 ScrollBar.horizontal: AppScrollBar {
+                    parent: analysisResultScroll
+                    x: analysisResultScroll.leftPadding
+                    y: analysisResultScroll.height - height
+                    width: analysisResultScroll.availableWidth
                     policy: analysisResultScroll.contentWidth > analysisResultScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 

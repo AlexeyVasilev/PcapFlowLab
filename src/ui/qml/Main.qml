@@ -198,9 +198,17 @@ ApplicationWindow {
             id: captureStorageDiagnosticsScroll
             clip: true
             ScrollBar.vertical: AppScrollBar {
+                parent: captureStorageDiagnosticsScroll
+                x: captureStorageDiagnosticsScroll.mirrored ? 0 : captureStorageDiagnosticsScroll.width - width
+                y: captureStorageDiagnosticsScroll.topPadding
+                height: captureStorageDiagnosticsScroll.availableHeight
                 policy: captureStorageDiagnosticsScroll.contentHeight > captureStorageDiagnosticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
             ScrollBar.horizontal: AppScrollBar {
+                parent: captureStorageDiagnosticsScroll
+                x: captureStorageDiagnosticsScroll.leftPadding
+                y: captureStorageDiagnosticsScroll.height - height
+                width: captureStorageDiagnosticsScroll.availableWidth
                 policy: captureStorageDiagnosticsScroll.contentWidth > captureStorageDiagnosticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
 
@@ -412,9 +420,17 @@ ApplicationWindow {
             clip: true
             contentWidth: availableWidth
             ScrollBar.vertical: AppScrollBar {
+                parent: protocolPathLegendScroll
+                x: protocolPathLegendScroll.mirrored ? 0 : protocolPathLegendScroll.width - width
+                y: protocolPathLegendScroll.topPadding
+                height: protocolPathLegendScroll.availableHeight
                 policy: protocolPathLegendScroll.contentHeight > protocolPathLegendScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
             ScrollBar.horizontal: AppScrollBar {
+                parent: protocolPathLegendScroll
+                x: protocolPathLegendScroll.leftPadding
+                y: protocolPathLegendScroll.height - height
+                width: protocolPathLegendScroll.availableWidth
                 policy: ScrollBar.AlwaysOff
             }
 

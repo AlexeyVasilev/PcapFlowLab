@@ -112,9 +112,17 @@ Item {
                 clip: true
                 contentWidth: availableWidth
                 ScrollBar.vertical: AppScrollBar {
+                    parent: protocolSettingsScroll
+                    x: protocolSettingsScroll.mirrored ? 0 : protocolSettingsScroll.width - width
+                    y: protocolSettingsScroll.topPadding
+                    height: protocolSettingsScroll.availableHeight
                     policy: protocolSettingsScroll.contentHeight > protocolSettingsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
                 ScrollBar.horizontal: AppScrollBar {
+                    parent: protocolSettingsScroll
+                    x: protocolSettingsScroll.leftPadding
+                    y: protocolSettingsScroll.height - height
+                    width: protocolSettingsScroll.availableWidth
                     policy: ScrollBar.AlwaysOff
                 }
 
@@ -241,9 +249,17 @@ Item {
                 clip: true
                 contentWidth: availableWidth
                 ScrollBar.vertical: AppScrollBar {
+                    parent: groupingSettingsScroll
+                    x: groupingSettingsScroll.mirrored ? 0 : groupingSettingsScroll.width - width
+                    y: groupingSettingsScroll.topPadding
+                    height: groupingSettingsScroll.availableHeight
                     policy: groupingSettingsScroll.contentHeight > groupingSettingsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
                 ScrollBar.horizontal: AppScrollBar {
+                    parent: groupingSettingsScroll
+                    x: groupingSettingsScroll.leftPadding
+                    y: groupingSettingsScroll.height - height
+                    width: groupingSettingsScroll.availableWidth
                     policy: ScrollBar.AlwaysOff
                 }
 

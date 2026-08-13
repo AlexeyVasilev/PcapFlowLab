@@ -356,9 +356,17 @@ Item {
         contentWidth: statisticsContent.width
         contentHeight: statisticsContent.implicitHeight
         ScrollBar.vertical: AppScrollBar {
+            parent: statisticsScroll
+            x: statisticsScroll.mirrored ? 0 : statisticsScroll.width - width
+            y: statisticsScroll.topPadding
+            height: statisticsScroll.availableHeight
             policy: statisticsScroll.contentHeight > statisticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         }
         ScrollBar.horizontal: AppScrollBar {
+            parent: statisticsScroll
+            x: statisticsScroll.leftPadding
+            y: statisticsScroll.height - height
+            width: statisticsScroll.availableWidth
             policy: statisticsScroll.contentWidth > statisticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         }
 

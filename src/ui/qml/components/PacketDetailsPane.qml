@@ -501,9 +501,17 @@ Frame {
             anchors.margins: 1
             clip: true
             ScrollBar.vertical: AppScrollBar {
+                parent: textPaneScroll
+                x: textPaneScroll.mirrored ? 0 : textPaneScroll.width - width
+                y: textPaneScroll.topPadding
+                height: textPaneScroll.availableHeight
                 policy: textPaneScroll.contentHeight > textPaneScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
             ScrollBar.horizontal: AppScrollBar {
+                parent: textPaneScroll
+                x: textPaneScroll.leftPadding
+                y: textPaneScroll.height - height
+                width: textPaneScroll.availableWidth
                 policy: textPaneScroll.contentWidth > textPaneScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
             }
 
@@ -1207,9 +1215,17 @@ Frame {
                         clip: true
                         visible: packetSummaryPane.renderableLayers
                         ScrollBar.vertical: AppScrollBar {
+                            parent: packetSummaryScroll
+                            x: packetSummaryScroll.mirrored ? 0 : packetSummaryScroll.width - width
+                            y: packetSummaryScroll.topPadding
+                            height: packetSummaryScroll.availableHeight
                             policy: packetSummaryScroll.contentHeight > packetSummaryScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                         }
                         ScrollBar.horizontal: AppScrollBar {
+                            parent: packetSummaryScroll
+                            x: packetSummaryScroll.leftPadding
+                            y: packetSummaryScroll.height - height
+                            width: packetSummaryScroll.availableWidth
                             policy: ScrollBar.AlwaysOff
                         }
 
@@ -1361,9 +1377,17 @@ Frame {
                         clip: true
                         visible: streamSummaryPane.renderableLayers
                         ScrollBar.vertical: AppScrollBar {
+                            parent: streamSummaryScroll
+                            x: streamSummaryScroll.mirrored ? 0 : streamSummaryScroll.width - width
+                            y: streamSummaryScroll.topPadding
+                            height: streamSummaryScroll.availableHeight
                             policy: streamSummaryScroll.contentHeight > streamSummaryScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                         }
                         ScrollBar.horizontal: AppScrollBar {
+                            parent: streamSummaryScroll
+                            x: streamSummaryScroll.leftPadding
+                            y: streamSummaryScroll.height - height
+                            width: streamSummaryScroll.availableWidth
                             policy: ScrollBar.AlwaysOff
                         }
 

@@ -8,8 +8,8 @@ ScrollBar {
     readonly property bool overflowVisible: policy !== ScrollBar.AlwaysOff && size < 1.0
     readonly property real thickness: 11
 
-    implicitWidth: thickness
-    implicitHeight: thickness
+    implicitWidth: verticalBar ? thickness : 0
+    implicitHeight: verticalBar ? 0 : thickness
     visible: overflowVisible
     interactive: overflowVisible
     hoverEnabled: overflowVisible

@@ -68,9 +68,17 @@ Dialog {
         clip: true
         contentWidth: availableWidth
         ScrollBar.vertical: AppScrollBar {
+            parent: supportedProtocolsScroll
+            x: supportedProtocolsScroll.mirrored ? 0 : supportedProtocolsScroll.width - width
+            y: supportedProtocolsScroll.topPadding
+            height: supportedProtocolsScroll.availableHeight
             policy: supportedProtocolsScroll.contentHeight > supportedProtocolsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
         }
         ScrollBar.horizontal: AppScrollBar {
+            parent: supportedProtocolsScroll
+            x: supportedProtocolsScroll.leftPadding
+            y: supportedProtocolsScroll.height - height
+            width: supportedProtocolsScroll.availableWidth
             policy: ScrollBar.AlwaysOff
         }
 
