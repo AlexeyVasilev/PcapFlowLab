@@ -734,6 +734,7 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
     row.materialization_stability = item.stability;
     row.semantic_family = StreamItemSemanticFamily::http;
     row.http_summary = item.summary;
+    row.http_byte_owner = item.byte_owner;
     return BuiltStreamRow {
         .row = std::move(row),
         .stability = item.stability,
@@ -4103,7 +4104,8 @@ session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_select
         flow_protocol,
         *row_it,
         decode_stream_stability(context.stability_codes[row_index]),
-        context.intra_packet_ordinals[row_index]
+        context.intra_packet_ordinals[row_index],
+        context.materialized_packet_window_count
     );
 }
 
@@ -4382,6 +4384,37 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
     ReassemblyService service {};
     return service.reassemble_tcp_payload(*this, request, direction_packets);
 }
+
+std::optional<ReassemblyResult> CaptureSession::reassemble_selected_flow_stream_direction_prefix(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const Direction direction,
+    const std::size_t max_bytes
+) const {
+    const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, max_packets_to_scan);
+    if (prefix_resolution.context == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto& context = *prefix_resolution.context;
+    const auto direction_packets = direction == Direction::a_to_b
+        ? std::span<const PacketRef>(context.prefix_packets_a.data(), context.prefix_packets_a.size())
+        : std::span<const PacketRef>(context.prefix_packets_b.data(), context.prefix_packets_b.size());
+    if (direction_packets.empty()) {
+        return std::nullopt;
+    }
+
+    return reassemble_flow_direction(
+        ReassemblyRequest {
+            .flow_index = flow_index,
+            .direction = direction,
+            .max_packets = direction_packets.size(),
+            .max_bytes = max_bytes,
+        },
+        direction_packets
+    );
+}
+
 std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(const std::size_t flow_index) const {
     if (!has_source_capture()) {
         return std::nullopt;

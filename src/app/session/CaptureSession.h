@@ -282,6 +282,12 @@ public:
         const ReassemblyRequest& request,
         std::span<const PacketRef> direction_packets
     ) const;
+    [[nodiscard]] std::optional<ReassemblyResult> reassemble_selected_flow_stream_direction_prefix(
+        std::size_t flow_index,
+        std::size_t max_packets_to_scan,
+        Direction direction,
+        std::size_t max_bytes
+    ) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
     [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
     [[nodiscard]] std::optional<FlowAnalysisResult> get_flow_analysis(std::size_t flow_index) const;

@@ -94,7 +94,8 @@ struct SelectedStreamItemDataPresentation {
     ProtocolId flow_protocol,
     const StreamItemRow& row,
     StreamMaterializationStability stability,
-    std::uint32_t intra_packet_ordinal
+    std::uint32_t intra_packet_ordinal,
+    std::size_t bounded_packet_window_count
 );
 
 [[nodiscard]] std::optional<std::vector<std::uint8_t>> materialize_selected_stream_item_data(

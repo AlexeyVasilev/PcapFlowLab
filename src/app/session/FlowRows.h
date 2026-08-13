@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/domain/DnsInspection.h"
+#include "core/domain/Direction.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
@@ -147,6 +148,12 @@ struct HttpStreamItemSummaryDetails {
     std::string diagnostic {};
 };
 
+struct HttpStreamItemByteOwner {
+    Direction direction {Direction::a_to_b};
+    std::uint32_t reconstructed_offset {0U};
+    std::uint32_t length {0U};
+};
+
 struct DnsStreamItemSummaryDetails {
     DnsStreamItemSemanticKind semantic_kind {DnsStreamItemSemanticKind::none};
     DnsMessage message {};
@@ -182,6 +189,7 @@ struct StreamItemRow {
     std::vector<std::uint8_t> summary_payload_bytes {};
     std::optional<GenericStreamItemSummaryDetails> generic_summary {};
     std::optional<HttpStreamItemSummaryDetails> http_summary {};
+    std::optional<HttpStreamItemByteOwner> http_byte_owner {};
     std::optional<DnsStreamItemSummaryDetails> dns_summary {};
     std::optional<ArpStreamItemSummaryDetails> arp_summary {};
     TlsStreamItemSemanticKind tls_semantic_kind {TlsStreamItemSemanticKind::none};

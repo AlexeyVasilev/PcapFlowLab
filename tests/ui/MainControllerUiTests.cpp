@@ -4352,9 +4352,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
     UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("Item Data"));
-    UI_EXPECT(!stream_details_model->streamItemDataAvailable());
-    UI_EXPECT(stream_details_model->streamItemDataText().isEmpty());
-    UI_EXPECT(stream_details_model->streamItemDataStatusText().contains(QStringLiteral("Item data unavailable")));
+    UI_EXPECT(stream_details_model->streamItemDataAvailable());
+    UI_EXPECT(!stream_details_model->streamItemDataText().isEmpty());
+    UI_EXPECT(stream_details_model->streamItemDataStatusText().contains(QStringLiteral("Available:")));
     const auto http_stream_layers = stream_details_model->summaryLayers();
     const auto http_stream_layer = find_top_level_summary_layer(http_stream_layers, QStringLiteral("http"));
     UI_EXPECT(!http_stream_layer.isEmpty());

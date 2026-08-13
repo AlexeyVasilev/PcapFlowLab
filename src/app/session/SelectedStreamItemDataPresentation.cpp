@@ -10,6 +10,7 @@
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketPayloadService.h"
 
@@ -18,6 +19,7 @@ namespace pfl::session_detail {
 namespace {
 
 constexpr std::size_t kTlsRecordHeaderSize = 5U;
+constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
 
 std::string format_byte_count(const std::uint64_t count) {
     return std::to_string(count) + (count == 1U ? " byte" : " bytes");
@@ -111,6 +113,12 @@ bool is_packet_backed_tcp_payload_row(const StreamItemRow& row) noexcept {
         !row.quic_stream_presentation.has_value() &&
         !row.arp_summary.has_value();
 }
+
+SelectedStreamItemDataPresentation build_tcp_payload_presentation(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const StreamItemRow& row
+);
 
 std::optional<std::uint32_t> tls_declared_length(std::span<const std::uint8_t> bytes) noexcept {
     if (bytes.size() < kTlsRecordHeaderSize) {
@@ -329,23 +337,106 @@ SelectedStreamItemDataPresentation build_tls_presentation(
 }
 
 SelectedStreamItemDataPresentation build_http_presentation(
+    const CaptureSession& session,
+    const std::size_t flow_index,
     const StreamItemRow& row,
-    const StreamMaterializationStability stability
+    const StreamMaterializationStability stability,
+    const std::size_t bounded_packet_window_count
 ) {
-    const auto state = row.byte_count == 0U
+    const auto unavailable_state = row.byte_count == 0U
         ? StreamItemDataState::synthetic
         : (stability == StreamMaterializationStability::window_incomplete
             ? StreamItemDataState::window_incomplete
             : StreamItemDataState::unavailable);
-    const auto reason = row.byte_count == 0U
-        ? "Synthetic HTTP gap rows do not own bytes."
-        : "HTTP stream rows currently retain formatted preview text but not authoritative item bytes.";
-    return make_unavailable_presentation(
-        row.stream_item_index,
-        StreamItemDataSemanticKind::http_message,
-        state,
-        reason
+    if (!row.http_summary.has_value() || row.http_summary->semantic_kind == HttpStreamItemSemanticKind::gap) {
+        return make_unavailable_presentation(
+            row.stream_item_index,
+            StreamItemDataSemanticKind::http_message,
+            StreamItemDataState::synthetic,
+            "Synthetic HTTP gap rows do not own bytes."
+        );
+    }
+    if (!row.http_byte_owner.has_value()) {
+        return make_unavailable_presentation(
+            row.stream_item_index,
+            StreamItemDataSemanticKind::http_message,
+            unavailable_state,
+            "The HTTP stream row does not retain an authoritative bounded reconstructed byte range."
+        );
+    }
+
+    const auto owner = *row.http_byte_owner;
+    if (owner.length != row.byte_count) {
+        return make_unavailable_presentation(
+            row.stream_item_index,
+            StreamItemDataSemanticKind::http_message,
+            unavailable_state,
+            "The retained HTTP byte owner does not match the selected stream row length."
+        );
+    }
+
+    const auto reassembly = session.reassemble_selected_flow_stream_direction_prefix(
+        flow_index,
+        bounded_packet_window_count,
+        owner.direction,
+        kHttpReassemblyMaxBytes
     );
+    if (!reassembly.has_value()) {
+        return make_unavailable_presentation(
+            row.stream_item_index,
+            StreamItemDataSemanticKind::http_message,
+            unavailable_state,
+            "The bounded selected-flow reconstruction window does not contain the owning HTTP direction bytes."
+        );
+    }
+
+    const auto& bytes = reassembly->bytes;
+    if (owner.reconstructed_offset > bytes.size() ||
+        owner.length > bytes.size() - owner.reconstructed_offset) {
+        return make_unavailable_presentation(
+            row.stream_item_index,
+            StreamItemDataSemanticKind::http_message,
+            unavailable_state,
+            "The retained HTTP byte owner falls outside the current bounded reconstructed direction buffer."
+        );
+    }
+
+    const auto begin = bytes.begin() + static_cast<std::ptrdiff_t>(owner.reconstructed_offset);
+    auto owned_bytes = std::vector<std::uint8_t> {};
+    owned_bytes.insert(
+        owned_bytes.end(),
+        begin,
+        begin + static_cast<std::ptrdiff_t>(owner.length)
+    );
+
+    const auto state =
+        row.http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload
+            ? (stability == StreamMaterializationStability::window_incomplete
+                ? StreamItemDataState::window_incomplete
+                : StreamItemDataState::partial)
+            : StreamItemDataState::complete;
+    return SelectedStreamItemDataPresentation {
+        .stream_item_index = row.stream_item_index,
+        .semantic_kind = StreamItemDataSemanticKind::http_message,
+        .source_kind = StreamItemDataSourceKind::reconstructed_item,
+        .state = state,
+        .assembly_kind = row.packet_count > 1U
+            ? StreamItemDataAssemblyKind::reassembled
+            : StreamItemDataAssemblyKind::packet_local,
+        .available_length = owner.length,
+        .declared_length = owner.length,
+        .captured_packet_range = std::nullopt,
+        .contributing_unit_count = row.packet_count > 1U
+            ? std::optional<std::uint32_t> {row.packet_count}
+            : std::nullopt,
+        .contributing_unit_kind = row.packet_count > 1U
+            ? std::optional<StreamItemDataContributionUnitKind> {
+                StreamItemDataContributionUnitKind::tcp_segment}
+            : std::nullopt,
+        .quic_crypto_stream_offset = std::nullopt,
+        .owned_bytes = std::move(owned_bytes),
+        .unavailable_reason = {},
+    };
 }
 
 SelectedStreamItemDataPresentation build_quic_packet_presentation(
@@ -854,7 +945,8 @@ SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation
     const ProtocolId flow_protocol,
     const StreamItemRow& row,
     const StreamMaterializationStability stability,
-    const std::uint32_t intra_packet_ordinal
+    const std::uint32_t intra_packet_ordinal,
+    const std::size_t bounded_packet_window_count
 ) {
     if (row.byte_count == 0U) {
         const auto semantic_kind = row.tls_semantic_kind == TlsStreamItemSemanticKind::gap
@@ -884,7 +976,7 @@ SelectedStreamItemDataPresentation derive_selected_stream_item_data_presentation
     }
 
     if (is_structured_http_row(row)) {
-        return build_http_presentation(row, stability);
+        return build_http_presentation(session, flow_index, row, stability, bounded_packet_window_count);
     }
 
     if (flow_protocol == ProtocolId::tcp && is_packet_backed_tcp_payload_row(row)) {

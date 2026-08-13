@@ -24,6 +24,7 @@ struct HttpStreamPresentationItem {
     std::vector<std::uint64_t> packet_indices {};
     StreamMaterializationStability stability {StreamMaterializationStability::stable};
     HttpStreamItemSummaryDetails summary {};
+    std::optional<HttpStreamItemByteOwner> byte_owner {};
 };
 
 struct HttpDirectionalStreamPresentation {

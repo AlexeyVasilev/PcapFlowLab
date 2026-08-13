@@ -169,7 +169,8 @@ Selected-flow backend now also supports a presentation-neutral Item Data model f
 
 Current limitation:
 
-- HTTP stream rows still expose structured Summary, but they do not yet retain authoritative item-owned message bytes, so HTTP Item Data remains explicitly unavailable.
+- HTTP stream request/response/partial rows now retain authoritative bounded reconstructed ownership metadata, so Item Data can expose the exact selected HTTP message or partial payload bytes without storing per-row byte vectors.
+- Synthetic HTTP gap rows still expose no Item Data.
 
 ## 9. Protocol-Specific Selected-Flow Rules
 

@@ -24,6 +24,27 @@ struct ParsedHttpHeaderBlock {
     HttpStreamItemSummaryDetails summary {};
 };
 
+std::optional<HttpStreamItemByteOwner> make_http_byte_owner(
+    const Direction direction,
+    const std::size_t reconstructed_offset,
+    const std::size_t length,
+    const std::size_t buffer_size
+) {
+    if (reconstructed_offset > buffer_size || length > buffer_size - reconstructed_offset) {
+        return std::nullopt;
+    }
+    if (reconstructed_offset > std::numeric_limits<std::uint32_t>::max() ||
+        length > std::numeric_limits<std::uint32_t>::max()) {
+        return std::nullopt;
+    }
+
+    return HttpStreamItemByteOwner {
+        .direction = direction,
+        .reconstructed_offset = static_cast<std::uint32_t>(reconstructed_offset),
+        .length = static_cast<std::uint32_t>(length),
+    };
+}
+
 std::string_view bytes_as_text(std::span<const std::uint8_t> bytes) {
     return std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
@@ -577,6 +598,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                         .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
                         .diagnostic = "Window ended before a complete HTTP header block was available.",
                     },
+                    .byte_owner = make_http_byte_owner(direction, offset, trailing.size(), payload_bytes.size()),
                     },
                     logical_item_count,
                     skip_item_count,
@@ -599,6 +621,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
             .byte_count = block_bytes.size(),
             .packet_indices = consume_reassembled_packet_indices(*chunks, block_bytes.size(), chunk_index, chunk_offset),
             .summary = parsed->summary,
+            .byte_owner = make_http_byte_owner(direction, offset, block_bytes.size(), payload_bytes.size()),
             },
             logical_item_count,
             skip_item_count,
@@ -627,6 +650,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly_bounde
                             .semantic_kind = HttpStreamItemSemanticKind::partial_payload,
                             .diagnostic = "A later HTTP message boundary was not available in the loaded reassembly window.",
                         },
+                        .byte_owner = make_http_byte_owner(direction, offset, trailing.size(), payload_bytes.size()),
                         },
                         logical_item_count,
                         skip_item_count,
