@@ -215,7 +215,7 @@ Item {
 
         Layout.fillWidth: true
         Layout.minimumWidth: 0
-        padding: 0
+        padding: 10
 
         background: Rectangle {
             color: "#ffffff"
@@ -226,7 +226,6 @@ Item {
         ColumnLayout {
             id: sectionLayout
             anchors.fill: parent
-            anchors.margins: 10
             Layout.minimumWidth: 0
             spacing: 8
         }
