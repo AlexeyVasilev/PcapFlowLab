@@ -478,7 +478,7 @@ Frame {
                 id: emptyStateCard
                 objectName: "analysisEmptyState"
                 anchors.centerIn: parent
-                width: Math.min(parent.width - 24, 340)
+                width: Math.max(0, Math.min(parent.width - 24, 340))
                 visible: !root.hasActiveFlow && !root.analysisLoading
                 color: "#f8fafc"
                 border.color: "#cbd5e1"
@@ -492,14 +492,18 @@ Frame {
                     spacing: 6
 
                     Label {
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
                         text: "Select a flow to analyze"
                         font.pixelSize: 18
                         font.bold: true
                         color: "#0f172a"
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
                     }
 
                     Label {
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
                         text: "Choose a flow from the list on the left to open its analysis workspace."
                         color: "#64748b"
