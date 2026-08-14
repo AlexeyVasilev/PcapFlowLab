@@ -233,6 +233,9 @@ Current Analysis surfaces include:
 Use `Open in Flows` when you want to move from analysis back to detailed packet
 and stream inspection for the same flow.
 
+For the detailed end-user guide to this workspace, see
+[Analysis workspace](analysis.md).
+
 ## Statistics workspace
 
 `Statistics` is the whole-capture or whole-index summary workspace.
