@@ -35,31 +35,54 @@ Frame {
     readonly property int tableHeaderHeight: 28
     readonly property int tablePadding: 8
     readonly property int tableColumnSpacing: 12
-
-    readonly property int transportNameColumnWidth: 92
-    readonly property int transportFlowsColumnWidth: 118
-    readonly property int transportPacketsColumnWidth: 126
-    readonly property int transportCapturedColumnWidth: 126
-    readonly property int transportOriginalColumnWidth: 126
-    readonly property int transportTableWidth: transportNameColumnWidth + transportFlowsColumnWidth + transportPacketsColumnWidth + transportCapturedColumnWidth + transportOriginalColumnWidth + (tableColumnSpacing * 4) + (tablePadding * 2)
-
-    readonly property int familyNameColumnWidth: 92
-    readonly property int familyFlowsColumnWidth: 118
-    readonly property int familyPacketsColumnWidth: 126
-    readonly property int familyCapturedColumnWidth: 126
-    readonly property int familyOriginalColumnWidth: 126
-    readonly property int familyTableWidth: familyNameColumnWidth + familyFlowsColumnWidth + familyPacketsColumnWidth + familyCapturedColumnWidth + familyOriginalColumnWidth + (tableColumnSpacing * 4) + (tablePadding * 2)
+    readonly property var protocolSummaryBaseColumnWidths: [92, 118, 126, 126, 126]
+    readonly property var protocolSummaryMinColumnWidths: [64, 72, 80, 92, 92]
+    readonly property real protocolSummaryStackThreshold: 940
 
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
         return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ")
     }
 
+    function resolvedFiveColumnWidths(availableWidth, baseWidths, minWidths) {
+        const spacingAndPadding = (tableColumnSpacing * 4) + (tablePadding * 2)
+        const targetWidth = Math.max(0, Math.floor(Number(availableWidth || 0) - spacingAndPadding))
+        const base = baseWidths.slice()
+        const mins = minWidths.slice()
+        const baseTotal = base.reduce((sum, value) => sum + value, 0)
+        const minTotal = mins.reduce((sum, value) => sum + value, 0)
+
+        if (targetWidth >= baseTotal)
+            return base
+
+        if (targetWidth <= minTotal) {
+            const scale = minTotal > 0 ? targetWidth / minTotal : 1
+            const scaled = mins.map((value) => Math.max(24, Math.floor(value * scale)))
+            const scaledTotal = scaled.reduce((sum, value) => sum + value, 0)
+            scaled[scaled.length - 1] += Math.max(0, targetWidth - scaledTotal)
+            return scaled
+        }
+
+        const flexes = base.map((value, index) => value - mins[index])
+        const flexTotal = flexes.reduce((sum, value) => sum + value, 0)
+        const extra = targetWidth - minTotal
+        const resolved = mins.map((value, index) => {
+            if (flexTotal <= 0)
+                return value
+            return Math.floor(value + ((extra * flexes[index]) / flexTotal))
+        })
+        const resolvedTotal = resolved.reduce((sum, value) => sum + value, 0)
+        resolved[resolved.length - 1] += Math.max(0, targetWidth - resolvedTotal)
+        return resolved
+    }
+
     component SectionFrame: Frame {
         default property alias sectionContent: sectionLayout.data
 
         Layout.fillWidth: true
-        padding: 0
+        Layout.minimumWidth: 0
+        padding: 10
+        readonly property real sectionContentWidth: Math.max(0, availableWidth)
 
         background: Rectangle {
             color: "#ffffff"
@@ -70,7 +93,7 @@ Frame {
         ColumnLayout {
             id: sectionLayout
             anchors.fill: parent
-            anchors.margins: 10
+            Layout.minimumWidth: 0
             spacing: 8
         }
     }
@@ -81,71 +104,74 @@ Frame {
         required property string thirdTitle
         required property string fourthTitle
         required property string fifthTitle
-        required property int firstWidth
-        required property int secondWidth
-        required property int thirdWidth
-        required property int fourthWidth
-        required property int fifthWidth
-        required property int tableWidth
+        required property var columnWidths
 
-        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        width: parent ? parent.width : 0
         height: root.tableHeaderHeight
         radius: 4
         color: "#f8fafc"
         border.color: "#e2e8f0"
 
-        Item {
+        RowLayout {
             anchors.fill: parent
             anchors.leftMargin: root.tablePadding
             anchors.rightMargin: root.tablePadding
+            spacing: root.tableColumnSpacing
 
             Label {
-                x: 0
-                width: parent.parent.firstWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[0]
+                Layout.minimumWidth: parent.parent.columnWidths[0]
+                Layout.maximumWidth: parent.parent.columnWidths[0]
                 text: parent.parent.firstTitle
                 font.bold: true
                 color: "#334155"
+                elide: Text.ElideRight
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing
-                width: parent.parent.secondWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[1]
+                Layout.minimumWidth: parent.parent.columnWidths[1]
+                Layout.maximumWidth: parent.parent.columnWidths[1]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.secondTitle
                 font.bold: true
                 color: "#334155"
+                elide: Text.ElideLeft
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
-                width: parent.parent.thirdWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[2]
+                Layout.minimumWidth: parent.parent.columnWidths[2]
+                Layout.maximumWidth: parent.parent.columnWidths[2]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.thirdTitle
                 font.bold: true
                 color: "#334155"
+                elide: Text.ElideLeft
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
-                width: parent.parent.fourthWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[3]
+                Layout.minimumWidth: parent.parent.columnWidths[3]
+                Layout.maximumWidth: parent.parent.columnWidths[3]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.fourthTitle
                 font.bold: true
                 color: "#334155"
+                elide: Text.ElideLeft
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
-                width: parent.parent.fifthWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[4]
+                Layout.minimumWidth: parent.parent.columnWidths[4]
+                Layout.maximumWidth: parent.parent.columnWidths[4]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.fifthTitle
                 font.bold: true
                 color: "#334155"
+                elide: Text.ElideLeft
             }
         }
     }
@@ -156,38 +182,36 @@ Frame {
         required property string thirdText
         required property string fourthText
         required property string fifthText
-        required property int firstWidth
-        required property int secondWidth
-        required property int thirdWidth
-        required property int fourthWidth
-        required property int fifthWidth
-        required property int tableWidth
+        required property var columnWidths
         required property int rowIndex
         required property color firstColor
 
-        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        width: parent ? parent.width : 0
         height: root.tableRowHeight
         radius: 4
         color: rowIndex % 2 === 0 ? "transparent" : "#f8fafc"
 
-        Item {
+        RowLayout {
             anchors.fill: parent
             anchors.leftMargin: root.tablePadding
             anchors.rightMargin: root.tablePadding
+            spacing: root.tableColumnSpacing
 
             Label {
-                x: 0
-                width: parent.parent.firstWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[0]
+                Layout.minimumWidth: parent.parent.columnWidths[0]
+                Layout.maximumWidth: parent.parent.columnWidths[0]
                 text: parent.parent.firstText
                 color: parent.parent.firstColor
                 elide: Text.ElideRight
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing
-                width: parent.parent.secondWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[1]
+                Layout.minimumWidth: parent.parent.columnWidths[1]
+                Layout.maximumWidth: parent.parent.columnWidths[1]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.secondText
                 color: "#334155"
@@ -195,9 +219,9 @@ Frame {
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
-                width: parent.parent.thirdWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[2]
+                Layout.minimumWidth: parent.parent.columnWidths[2]
+                Layout.maximumWidth: parent.parent.columnWidths[2]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.thirdText
                 color: "#334155"
@@ -205,9 +229,9 @@ Frame {
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
-                width: parent.parent.fourthWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[3]
+                Layout.minimumWidth: parent.parent.columnWidths[3]
+                Layout.maximumWidth: parent.parent.columnWidths[3]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.fourthText
                 color: "#334155"
@@ -215,9 +239,9 @@ Frame {
             }
 
             Label {
-                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
-                width: parent.parent.fifthWidth
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.preferredWidth: parent.parent.columnWidths[4]
+                Layout.minimumWidth: parent.parent.columnWidths[4]
+                Layout.maximumWidth: parent.parent.columnWidths[4]
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.fifthText
                 color: "#334155"
@@ -226,7 +250,7 @@ Frame {
         }
     }
 
-    padding: 0
+    padding: 10
     clip: true
 
     background: Rectangle {
@@ -238,7 +262,7 @@ Frame {
     ColumnLayout {
         id: contentLayout
         anchors.fill: parent
-        anchors.margins: 10
+        Layout.minimumWidth: 0
         spacing: 10
 
         Label {
@@ -248,12 +272,18 @@ Frame {
             color: "#0f172a"
         }
 
-        RowLayout {
+        GridLayout {
+            readonly property bool stacked: width > 0 && width < root.protocolSummaryStackThreshold
             Layout.fillWidth: true
-            spacing: 10
+            Layout.minimumWidth: 0
+            columns: stacked ? 1 : 2
+            columnSpacing: 10
+            rowSpacing: 10
 
             SectionFrame {
+                id: transportSection
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignTop
 
                 Label {
@@ -268,12 +298,11 @@ Frame {
                     thirdTitle: "Packets"
                     fourthTitle: "Captured"
                     fifthTitle: "Original"
-                    firstWidth: root.transportNameColumnWidth
-                    secondWidth: root.transportFlowsColumnWidth
-                    thirdWidth: root.transportPacketsColumnWidth
-                    fourthWidth: root.transportCapturedColumnWidth
-                    fifthWidth: root.transportOriginalColumnWidth
-                    tableWidth: root.transportTableWidth
+                    columnWidths: root.resolvedFiveColumnWidths(
+                        transportSection.sectionContentWidth,
+                        root.protocolSummaryBaseColumnWidths,
+                        root.protocolSummaryMinColumnWidths
+                    )
                 }
 
                 Repeater {
@@ -291,12 +320,11 @@ Frame {
                         thirdText: root.hasCapture ? root.groupInteger(modelData.packets) : "-"
                         fourthText: root.hasCapture ? modelData.capturedText : "-"
                         fifthText: root.hasCapture ? modelData.originalText : "-"
-                        firstWidth: root.transportNameColumnWidth
-                        secondWidth: root.transportFlowsColumnWidth
-                        thirdWidth: root.transportPacketsColumnWidth
-                        fourthWidth: root.transportCapturedColumnWidth
-                        fifthWidth: root.transportOriginalColumnWidth
-                        tableWidth: root.transportTableWidth
+                        columnWidths: root.resolvedFiveColumnWidths(
+                            transportSection.sectionContentWidth,
+                            root.protocolSummaryBaseColumnWidths,
+                            root.protocolSummaryMinColumnWidths
+                        )
                         rowIndex: modelData.rowIndex
                         firstColor: "#0f172a"
                     }
@@ -304,7 +332,9 @@ Frame {
             }
 
             SectionFrame {
+                id: familySection
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignTop
 
                 Label {
@@ -319,12 +349,11 @@ Frame {
                     thirdTitle: "Packets"
                     fourthTitle: "Captured"
                     fifthTitle: "Original"
-                    firstWidth: root.familyNameColumnWidth
-                    secondWidth: root.familyFlowsColumnWidth
-                    thirdWidth: root.familyPacketsColumnWidth
-                    fourthWidth: root.familyCapturedColumnWidth
-                    fifthWidth: root.familyOriginalColumnWidth
-                    tableWidth: root.familyTableWidth
+                    columnWidths: root.resolvedFiveColumnWidths(
+                        familySection.sectionContentWidth,
+                        root.protocolSummaryBaseColumnWidths,
+                        root.protocolSummaryMinColumnWidths
+                    )
                 }
 
                 Repeater {
@@ -340,12 +369,11 @@ Frame {
                         thirdText: root.hasCapture ? root.groupInteger(modelData.packets) : "-"
                         fourthText: root.hasCapture ? modelData.capturedText : "-"
                         fifthText: root.hasCapture ? modelData.originalText : "-"
-                        firstWidth: root.familyNameColumnWidth
-                        secondWidth: root.familyFlowsColumnWidth
-                        thirdWidth: root.familyPacketsColumnWidth
-                        fourthWidth: root.familyCapturedColumnWidth
-                        fifthWidth: root.familyOriginalColumnWidth
-                        tableWidth: root.familyTableWidth
+                        columnWidths: root.resolvedFiveColumnWidths(
+                            familySection.sectionContentWidth,
+                            root.protocolSummaryBaseColumnWidths,
+                            root.protocolSummaryMinColumnWidths
+                        )
                         rowIndex: modelData.rowIndex
                         firstColor: "#0f172a"
                     }

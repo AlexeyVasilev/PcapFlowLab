@@ -106,6 +106,19 @@ struct FrontendExportProtocolPathTreeResult {
     std::string error_text {};
 };
 
+struct FrontendByteExportFormatDto {
+    std::string stable_id {};
+    std::string label {};
+    std::string suggested_extension {};
+    bool binary_output {false};
+};
+
+struct FrontendByteExportResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 enum class FrontendSmartExportOutputMode : std::uint8_t {
     single_file = 0,
     separate_file_per_flow = 1,
@@ -347,6 +360,26 @@ struct FrontendProtocolPathLegendEntryDto {
     std::string background_color {};
     std::string border_color {};
     std::string text_color {};
+};
+
+struct FrontendSupportedProtocolCatalogRowDto {
+    std::string category_id {};
+    std::string category_label {};
+    std::string protocol_id {};
+    std::string protocol {};
+    std::string recognition_status_id {};
+    std::string recognition_status_label {};
+    std::string service_status_id {};
+    std::string service_status_label {};
+    std::string packet_summary_status_id {};
+    std::string packet_summary_status_label {};
+    std::string stream_status_id {};
+    std::string stream_status_label {};
+    std::string notes {};
+};
+
+struct FrontendSupportedProtocolCatalogDto {
+    std::vector<FrontendSupportedProtocolCatalogRowDto> rows {};
 };
 
 struct FrontendSelectionResultDto {

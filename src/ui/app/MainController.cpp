@@ -1,8 +1,10 @@
 ﻿#include "ui/app/MainController.h"
 
+#include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketBytePresentation.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SupportedProtocolCatalog.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
@@ -62,6 +64,33 @@ constexpr std::size_t kStreamItemBatchSize = 15U;
 constexpr std::size_t kInitialStreamPacketBudget = 30U;
 constexpr std::size_t kStreamPacketBatchSize = 30U;
 constexpr int kSessionApplyOverlayDelayMs = 40;
+
+QString sanitize_export_filename_component(QString text) {
+    text = text.trimmed();
+    if (text.isEmpty()) {
+        return QStringLiteral("bytes");
+    }
+
+    for (QChar& character : text) {
+        if (character.isLetterOrNumber()) {
+            character = character.toLower();
+        } else {
+            character = QChar::fromLatin1('-');
+        }
+    }
+
+    while (text.contains(QStringLiteral("--"))) {
+        text.replace(QStringLiteral("--"), QStringLiteral("-"));
+    }
+    while (text.startsWith(QLatin1Char('-'))) {
+        text.remove(0, 1);
+    }
+    while (text.endsWith(QLatin1Char('-'))) {
+        text.chop(1);
+    }
+    return text.isEmpty() ? QStringLiteral("bytes") : text;
+}
+
 struct OpenJobResult {
     bool opened {false};
     bool cancelled {false};
@@ -455,6 +484,10 @@ std::string escape_csv_field(const std::string& field) {
     return escaped;
 }
 
+QString from_latin1_view(const std::string_view value) {
+    return QString::fromLatin1(value.data(), static_cast<qsizetype>(value.size()));
+}
+
 std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
     bool ok = false;
     const auto value = text.trimmed().toULongLong(&ok);
@@ -687,6 +720,32 @@ QVariantList protocol_path_legend_to_variant_list() {
     }
 
     return legend;
+}
+
+QVariantList supported_protocol_catalog_to_variant_list() {
+    QVariantList catalog {};
+    const auto rows = session_detail::supported_protocol_catalog_rows();
+    catalog.reserve(static_cast<qsizetype>(rows.size()));
+
+    for (const auto& row : rows) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("categoryId"), from_latin1_view(session_detail::supported_protocol_category_stable_id(row.category)));
+        item.insert(QStringLiteral("categoryLabel"), from_latin1_view(session_detail::supported_protocol_category_display_label(row.category)));
+        item.insert(QStringLiteral("protocolId"), from_latin1_view(row.stable_id));
+        item.insert(QStringLiteral("protocol"), from_latin1_view(row.protocol));
+        item.insert(QStringLiteral("recognitionStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.recognition)));
+        item.insert(QStringLiteral("recognitionStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.recognition)));
+        item.insert(QStringLiteral("serviceStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.service)));
+        item.insert(QStringLiteral("serviceStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.service)));
+        item.insert(QStringLiteral("packetSummaryStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.packet_summary)));
+        item.insert(QStringLiteral("packetSummaryStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.packet_summary)));
+        item.insert(QStringLiteral("streamStatusId"), from_latin1_view(session_detail::supported_protocol_status_stable_id(row.stream)));
+        item.insert(QStringLiteral("streamStatusLabel"), from_latin1_view(session_detail::supported_protocol_status_display_label(row.stream)));
+        item.insert(QStringLiteral("notes"), from_latin1_view(row.notes));
+        catalog.push_back(item);
+    }
+
+    return catalog;
 }
 
 enum class ChecksumValidationStatus {
@@ -3277,6 +3336,18 @@ bool MainController::showProtocolPathColumn() const noexcept {
     return show_protocol_path_column_;
 }
 
+bool MainController::showFragmentedPacketCountColumn() const noexcept {
+    return show_fragmented_packet_count_column_;
+}
+
+bool MainController::developerDiagnosticsAvailable() const noexcept {
+#ifndef NDEBUG
+    return true;
+#else
+    return false;
+#endif
+}
+
 QString MainController::flowGroupingWarningText() const {
     if (!session_.has_capture()) {
         return {};
@@ -3319,6 +3390,23 @@ QString MainController::selectedFlowWiresharkFilter() const {
 
 QVariantList MainController::protocolPathLegend() const {
     return protocol_path_legend_to_variant_list();
+}
+
+QVariantList MainController::supportedProtocolCatalog() const {
+    return supported_protocol_catalog_to_variant_list();
+}
+
+QVariantList MainController::byteExportFormats() const {
+    QVariantList formats {};
+    for (const auto& descriptor : session_detail::byte_export_format_descriptors()) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("stableId"), QString::fromStdString(descriptor.stable_id));
+        item.insert(QStringLiteral("label"), QString::fromStdString(descriptor.label));
+        item.insert(QStringLiteral("suggestedExtension"), QString::fromStdString(descriptor.suggested_extension));
+        item.insert(QStringLiteral("binaryOutput"), descriptor.binary_output);
+        formats.push_back(item);
+    }
+    return formats;
 }
 
 bool MainController::selectedFlowHasWiresharkFilter() const {
@@ -4868,6 +4956,15 @@ void MainController::setShowProtocolPathColumn(const bool enabled) {
     emit showProtocolPathColumnChanged();
 }
 
+void MainController::setShowFragmentedPacketCountColumn(const bool enabled) {
+    if (show_fragmented_packet_count_column_ == enabled) {
+        return;
+    }
+
+    show_fragmented_packet_count_column_ = enabled;
+    emit showFragmentedPacketCountColumnChanged();
+}
+
 void MainController::setCurrentTabIndex(const int index) {
     const int normalizedIndex = (index == kAnalysisTabIndex || index == kStatsTabIndex || index == kSettingsTabIndex)
         ? index
@@ -4989,6 +5086,164 @@ void MainController::selectPacketByteView(const QString& stableId) {
 
     selected_packet_byte_view_stable_id_ = stableId;
     refreshSelectedPacketByteView();
+}
+
+bool MainController::exportSelectedPacketBytes(const QString& formatId) {
+    if (formatId.isEmpty()) {
+        setStatusText(QStringLiteral("Select an export format."), true);
+        return false;
+    }
+    if (details_selection_context_ != DetailsSelectionContext::packet || selected_packet_index_ == kInvalidPacketSelection) {
+        setStatusText(QStringLiteral("Select a packet first."), true);
+        return false;
+    }
+    if (selected_packet_byte_view_stable_id_.isEmpty()) {
+        setStatusText(QStringLiteral("Select a byte view first."), true);
+        return false;
+    }
+    if (!packet_details_model_.selectedPacketByteViewAvailable()) {
+        setStatusText(QStringLiteral("The selected byte view is unavailable for export."), true);
+        return false;
+    }
+    if (!ensureSourceCaptureAvailable(QStringLiteral("Export packet bytes"))) {
+        return false;
+    }
+
+    const auto parsed_format = session_detail::parse_byte_export_format_id(formatId.toStdString());
+    if (!parsed_format.has_value()) {
+        setStatusText(QStringLiteral("Unknown byte export format."), true);
+        return false;
+    }
+
+    const auto parsed_view_id =
+        session_detail::parse_selected_packet_byte_view_stable_id(selected_packet_byte_view_stable_id_.toStdString());
+    if (!parsed_view_id.has_value()) {
+        setStatusText(QStringLiteral("The selected byte view is invalid for export."), true);
+        return false;
+    }
+
+    const auto packet = session_.find_packet(static_cast<std::uint64_t>(selected_packet_index_));
+    if (!packet.has_value()) {
+        setStatusText(QStringLiteral("The selected packet is unavailable for export."), true);
+        return false;
+    }
+
+    const QString packetNumberText = [&]() -> QString {
+        if (unrecognized_packets_selected_) {
+            return QString::number(selected_packet_index_ + 1ULL);
+        }
+
+        const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+        if (it != current_flow_packet_numbers_.end() && it->second > 0U) {
+            return QString::number(it->second);
+        }
+        return QString::number(packet->packet_index + 1ULL);
+    }();
+
+    const QString suggestedExtension =
+        QString::fromStdString(session_detail::byte_export_format_suggested_extension(*parsed_format));
+    const QString suggestedFileName = QStringLiteral("packet-%1-%2.%3").arg(
+        packetNumberText,
+        sanitize_export_filename_component(packet_details_model_.selectedPacketByteViewLabel()),
+        suggestedExtension
+    );
+    const QString outputPath = chooseByteExportSaveFile(
+        QStringLiteral("Export Packet Bytes"),
+        suggestedFileName,
+        suggestedExtension,
+        session_detail::byte_export_format_is_binary(*parsed_format)
+    );
+    if (outputPath.isEmpty()) {
+        return false;
+    }
+
+    std::string errorText {};
+    if (!session_.export_selected_packet_byte_view(
+            *packet,
+            *parsed_view_id,
+            *parsed_format,
+            std::filesystem::path {outputPath.toStdWString()},
+            &errorText)) {
+        setStatusText(
+            errorText.empty()
+                ? QStringLiteral("Failed to export the selected packet byte view.")
+                : QString::fromStdString(errorText),
+            true
+        );
+        return false;
+    }
+
+    setLastDirectoryFromPath(std::filesystem::path {outputPath.toStdWString()});
+    setStatusText(QStringLiteral("Packet bytes exported to %1.").arg(outputPath));
+    return true;
+}
+
+bool MainController::exportSelectedStreamItemData(const QString& formatId) {
+    if (formatId.isEmpty()) {
+        setStatusText(QStringLiteral("Select an export format."), true);
+        return false;
+    }
+    if (details_selection_context_ != DetailsSelectionContext::stream || selected_stream_item_index_ == kInvalidStreamSelection) {
+        setStatusText(QStringLiteral("Select a stream item first."), true);
+        return false;
+    }
+    if (selected_flow_index_ < 0) {
+        setStatusText(QStringLiteral("The selected stream item is unavailable for export."), true);
+        return false;
+    }
+    if (!packet_details_model_.streamItemDataAvailable()) {
+        setStatusText(QStringLiteral("The selected stream item data is unavailable for export."), true);
+        return false;
+    }
+    if (!ensureSourceCaptureAvailable(QStringLiteral("Export stream item data"))) {
+        return false;
+    }
+
+    const auto parsed_format = session_detail::parse_byte_export_format_id(formatId.toStdString());
+    if (!parsed_format.has_value()) {
+        setStatusText(QStringLiteral("Unknown byte export format."), true);
+        return false;
+    }
+
+    const QString suggestedExtension =
+        QString::fromStdString(session_detail::byte_export_format_suggested_extension(*parsed_format));
+    const QString suggestedFileName = QStringLiteral("stream-item-%1-%2.%3").arg(
+        QString::number(selected_stream_item_index_ + 1ULL),
+        sanitize_export_filename_component(packet_details_model_.headerPrimaryText()),
+        suggestedExtension
+    );
+    const QString outputPath = chooseByteExportSaveFile(
+        QStringLiteral("Export Stream Item Data"),
+        suggestedFileName,
+        suggestedExtension,
+        session_detail::byte_export_format_is_binary(*parsed_format)
+    );
+    if (outputPath.isEmpty()) {
+        return false;
+    }
+
+    const auto limit = loaded_stream_item_count_ > 0U ? loaded_stream_item_count_ : current_stream_items_.size();
+    std::string errorText {};
+    if (!session_.export_selected_flow_stream_item_data(
+            static_cast<std::size_t>(selected_flow_index_),
+            stream_packet_window_count_,
+            limit,
+            static_cast<std::uint64_t>(selected_stream_item_index_),
+            *parsed_format,
+            std::filesystem::path {outputPath.toStdWString()},
+            &errorText)) {
+        setStatusText(
+            errorText.empty()
+                ? QStringLiteral("Failed to export the selected stream item data.")
+                : QString::fromStdString(errorText),
+            true
+        );
+        return false;
+    }
+
+    setLastDirectoryFromPath(std::filesystem::path {outputPath.toStdWString()});
+    setStatusText(QStringLiteral("Stream item data exported to %1.").arg(outputPath));
+    return true;
 }
 
 void MainController::refreshSelectedPacketByteView() {
@@ -6748,6 +7003,36 @@ QString MainController::chooseProtocolPathTreeSaveFile() const {
     dialog.setNameFilter(QStringLiteral("Text Files (*.txt);;All Files (*)"));
     dialog.setDefaultSuffix(QStringLiteral("txt"));
     dialog.selectFile(QStringLiteral("protocol-path-tree.txt"));
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseByteExportSaveFile(
+    const QString& title,
+    const QString& suggestedFileName,
+    const QString& suggestedExtension,
+    const bool binaryOutput
+) const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(title);
+    dialog.setNameFilter(
+        binaryOutput
+            ? QStringLiteral("Binary Files (*.%1);;All Files (*)").arg(suggestedExtension)
+            : QStringLiteral("Text Files (*.%1);;All Files (*)").arg(suggestedExtension)
+    );
+    dialog.setDefaultSuffix(suggestedExtension);
+    if (!suggestedFileName.isEmpty()) {
+        dialog.selectFile(suggestedFileName);
+    }
 
     if (dialog.exec() != QFileDialog::Accepted) {
         return {};

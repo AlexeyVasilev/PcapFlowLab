@@ -214,7 +214,8 @@ Item {
         default property alias sectionContent: sectionLayout.data
 
         Layout.fillWidth: true
-        padding: 0
+        Layout.minimumWidth: 0
+        padding: 10
 
         background: Rectangle {
             color: "#ffffff"
@@ -225,13 +226,14 @@ Item {
         ColumnLayout {
             id: sectionLayout
             anchors.fill: parent
-            anchors.margins: 10
+            Layout.minimumWidth: 0
             spacing: 8
         }
     }
 
     component CompactMetricLabel: Label {
         Layout.fillWidth: true
+        Layout.minimumWidth: 0
         color: "#334155"
         wrapMode: Text.NoWrap
         elide: Text.ElideRight
@@ -351,16 +353,32 @@ Item {
 
     ScrollView {
         id: statisticsScroll
+        readonly property real verticalScrollbarGutter: statisticsVerticalScrollBar.visible
+            ? Math.max(statisticsVerticalScrollBar.width, statisticsVerticalScrollBar.implicitWidth) + 6
+            : 0
         anchors.fill: parent
         clip: true
         contentWidth: statisticsContent.width
         contentHeight: statisticsContent.implicitHeight
-        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-        ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        ScrollBar.vertical: AppScrollBar {
+            id: statisticsVerticalScrollBar
+            parent: statisticsScroll
+            x: statisticsScroll.mirrored ? 0 : statisticsScroll.width - width
+            y: statisticsScroll.topPadding
+            height: statisticsScroll.availableHeight
+            policy: statisticsScroll.contentHeight > statisticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        }
+        ScrollBar.horizontal: AppScrollBar {
+            parent: statisticsScroll
+            x: statisticsScroll.leftPadding
+            y: statisticsScroll.height - height
+            width: statisticsScroll.availableWidth
+            policy: statisticsScroll.contentWidth > statisticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        }
 
         Item {
             id: statisticsContent
-            width: statisticsScroll.availableWidth
+            width: Math.max(0, statisticsScroll.availableWidth - statisticsScroll.verticalScrollbarGutter)
             implicitHeight: statisticsColumn.implicitHeight
 
             ColumnLayout {
@@ -372,6 +390,7 @@ Item {
 
                 SummaryBar {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     packetCount: root.packetCount
                     flowCount: root.flowCount
                     capturedBytes: root.capturedBytes
@@ -383,6 +402,7 @@ Item {
 
                 ProtocolStatsPane {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     Layout.preferredHeight: implicitHeight
                     hasCapture: root.hasCapture
                     tcpFlowCount: root.tcpFlowCount
@@ -416,6 +436,8 @@ Item {
                     objectName: "unrecognizedStatsSection"
                     Layout.fillWidth: true
                     visible: root.hasCapture && Number(root.unrecognizedStatsPacketCount || 0) > 0
+                    readonly property real packetColumnWidth: 96
+                    readonly property real byteColumnWidth: 152
 
                     Label {
                         text: "Unrecognized Packets"
@@ -441,27 +463,44 @@ Item {
                             anchors.fill: parent
                             anchors.leftMargin: root.tablePadding
                             anchors.rightMargin: root.tablePadding
+                            Layout.minimumWidth: 0
                             spacing: root.tableColumnSpacing
 
                             Label {
-                                Layout.fillWidth: true
+                                Layout.preferredWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.packetColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: "Packets"
                                 font.bold: true
                                 color: "#334155"
+                                elide: Text.ElideRight
                             }
 
                             Label {
-                                Layout.fillWidth: true
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: "Captured Bytes"
                                 font.bold: true
                                 color: "#334155"
+                                elide: Text.ElideRight
                             }
 
                             Label {
-                                Layout.fillWidth: true
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: "Original Bytes"
                                 font.bold: true
                                 color: "#334155"
+                                elide: Text.ElideRight
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
                             }
                         }
                     }
@@ -476,27 +515,44 @@ Item {
                             anchors.fill: parent
                             anchors.leftMargin: root.tablePadding
                             anchors.rightMargin: root.tablePadding
+                            Layout.minimumWidth: 0
                             spacing: root.tableColumnSpacing
 
                             Label {
                                 objectName: "unrecognizedStatsPacketValue"
-                                Layout.fillWidth: true
+                                Layout.preferredWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.packetColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: root.groupInteger(root.unrecognizedStatsPacketCount)
                                 color: "#0f172a"
+                                elide: Text.ElideRight
                             }
 
                             Label {
                                 objectName: "unrecognizedStatsCapturedBytesValue"
-                                Layout.fillWidth: true
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: root.formatBytes(root.unrecognizedStatsCapturedBytes)
                                 color: "#334155"
+                                elide: Text.ElideRight
                             }
 
                             Label {
                                 objectName: "unrecognizedStatsOriginalBytesValue"
-                                Layout.fillWidth: true
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: root.formatBytes(root.unrecognizedStatsOriginalBytes)
                                 color: "#334155"
+                                elide: Text.ElideRight
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
                             }
                         }
                     }
@@ -532,6 +588,7 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: root.packetSizeDistributionState === root.requestStateReady
                         spacing: 8
 
@@ -541,16 +598,20 @@ Item {
                             delegate: RowLayout {
                                 required property var modelData
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 spacing: 10
 
                                 Label {
                                     Layout.preferredWidth: 90
+                                    Layout.minimumWidth: 60
                                     text: modelData.label
                                     color: "#0f172a"
+                                    elide: Text.ElideRight
                                 }
 
                                 Rectangle {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     Layout.preferredHeight: 18
                                     radius: 9
                                     color: "#f1f5f9"
@@ -568,9 +629,11 @@ Item {
 
                                 Label {
                                     Layout.preferredWidth: 90
+                                    Layout.minimumWidth: 0
                                     horizontalAlignment: Text.AlignRight
                                     text: root.groupInteger(modelData.packetCount)
                                     color: "#334155"
+                                    elide: Text.ElideLeft
                                 }
                             }
                         }
@@ -599,6 +662,7 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: root.hasCapture
                         spacing: 8
 
@@ -661,6 +725,7 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: root.flowPacketHistogramState === root.requestStateReady
                         spacing: 8
 
@@ -670,16 +735,20 @@ Item {
                             delegate: RowLayout {
                                 required property var modelData
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 spacing: 10
 
                                 Label {
                                     Layout.preferredWidth: 90
+                                    Layout.minimumWidth: 60
                                     text: modelData.label
                                     color: "#0f172a"
+                                    elide: Text.ElideRight
                                 }
 
                                 Rectangle {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     Layout.preferredHeight: 18
                                     radius: 9
                                     color: "#f1f5f9"
@@ -704,11 +773,13 @@ Item {
 
                                 Label {
                                     Layout.preferredWidth: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows ? 70 : 110
+                                    Layout.minimumWidth: 0
                                     horizontalAlignment: Text.AlignRight
                                     text: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
                                         ? root.groupInteger(modelData.flowCount)
                                         : modelData.originalByteCountText
                                     color: "#334155"
+                                    elide: Text.ElideLeft
                                 }
                             }
                         }
@@ -744,11 +815,13 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: root.protocolPathSectionState === root.requestStateReady
                         spacing: 8
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             spacing: 10
 
                             ProtocolPathPrimaryActionButton {
@@ -880,7 +953,7 @@ Item {
                                 reuseItems: true
                                 cacheBuffer: root.tableRowHeight * 12
 
-                                ScrollBar.vertical: ScrollBar {
+                                ScrollBar.vertical: AppScrollBar {
                                     policy: protocolPathListView.contentHeight > protocolPathListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                                 }
 
@@ -1020,6 +1093,7 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: root.protocolHintsSectionState === root.requestStateReady
                         spacing: 6
 
@@ -1098,11 +1172,13 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: root.quicTlsSectionState === root.requestStateReady
                         spacing: 10
 
                         SectionFrame {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             Layout.alignment: Qt.AlignTop
 
                             Label { text: "QUIC"; font.bold: true }
@@ -1119,6 +1195,7 @@ Item {
 
                         SectionFrame {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             Layout.alignment: Qt.AlignTop
 
                             Label { text: "TLS"; font.bold: true }
@@ -1156,6 +1233,7 @@ Item {
 
                     TopTalkersPane {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Layout.preferredHeight: 260
                         visible: root.topEndpointPortSectionState === root.requestStateReady
                         hasCapture: root.hasCapture

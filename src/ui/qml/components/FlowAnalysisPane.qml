@@ -478,7 +478,7 @@ Frame {
                 id: emptyStateCard
                 objectName: "analysisEmptyState"
                 anchors.centerIn: parent
-                width: Math.min(parent.width - 24, 340)
+                width: Math.max(0, Math.min(parent.width - 24, 340))
                 visible: !root.hasActiveFlow && !root.analysisLoading
                 color: "#f8fafc"
                 border.color: "#cbd5e1"
@@ -492,14 +492,18 @@ Frame {
                     spacing: 6
 
                     Label {
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
                         text: "Select a flow to analyze"
                         font.pixelSize: 18
                         font.bold: true
                         color: "#0f172a"
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
                     }
 
                     Label {
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
                         text: "Choose a flow from the list on the left to open its analysis workspace."
                         color: "#64748b"
@@ -580,15 +584,31 @@ Frame {
             ScrollView {
                 id: analysisResultScroll
                 objectName: "analysisResultContent"
+                readonly property real verticalScrollbarGutter: analysisVerticalScrollBar.visible
+                    ? Math.max(analysisVerticalScrollBar.width, analysisVerticalScrollBar.implicitWidth) + 6
+                    : 0
                 anchors.fill: parent
                 clip: true
                 visible: root.analysisAvailable && !root.analysisLoading
 
-                ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                ScrollBar.vertical: AppScrollBar {
+                    id: analysisVerticalScrollBar
+                    parent: analysisResultScroll
+                    x: analysisResultScroll.mirrored ? 0 : analysisResultScroll.width - width
+                    y: analysisResultScroll.topPadding
+                    height: analysisResultScroll.availableHeight
+                    policy: analysisResultScroll.contentHeight > analysisResultScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
+                ScrollBar.horizontal: AppScrollBar {
+                    parent: analysisResultScroll
+                    x: analysisResultScroll.leftPadding
+                    y: analysisResultScroll.height - height
+                    width: analysisResultScroll.availableWidth
+                    policy: analysisResultScroll.contentWidth > analysisResultScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
 
                 ColumnLayout {
-                    width: analysisResultScroll.availableWidth
+                    width: Math.max(0, analysisResultScroll.availableWidth - analysisResultScroll.verticalScrollbarGutter)
                     spacing: root.blockSpacing
 
                         AnalysisSectionFrame {

@@ -734,6 +734,7 @@ BuiltStreamRow make_stream_item_row_from_http_presentation(
     row.materialization_stability = item.stability;
     row.semantic_family = StreamItemSemanticFamily::http;
     row.http_summary = item.summary;
+    row.http_byte_owner = item.byte_owner;
     return BuiltStreamRow {
         .row = std::move(row),
         .stability = item.stability,
@@ -4103,7 +4104,8 @@ session_detail::SelectedStreamItemDataPresentation CaptureSession::derive_select
         flow_protocol,
         *row_it,
         decode_stream_stability(context.stability_codes[row_index]),
-        context.intra_packet_ordinals[row_index]
+        context.intra_packet_ordinals[row_index],
+        context.materialized_packet_window_count
     );
 }
 
@@ -4177,6 +4179,32 @@ std::optional<std::string> CaptureSession::format_selected_flow_stream_item_data
     return session_detail::format_selected_stream_item_data_hex_dump(presentation, {}, service);
 }
 
+bool CaptureSession::export_selected_flow_stream_item_data(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index,
+    const session_detail::ByteExportFormat format,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    const auto materialized = materialize_selected_flow_stream_item_data(
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        stream_item_index
+    );
+    if (!materialized.has_value()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected stream item data is unavailable for export.";
+        }
+        return false;
+    }
+
+    HexDumpService service {};
+    return session_detail::write_byte_export_file(output_path, *materialized, format, service, out_error_text);
+}
+
 std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_dump(
     const PacketRef& packet,
     const session_detail::SelectedPacketByteViewId& id
@@ -4198,6 +4226,45 @@ std::optional<std::string> CaptureSession::format_selected_packet_byte_view_hex_
         std::span<const std::uint8_t>(bytes.data(), bytes.size()),
         service
     );
+}
+
+bool CaptureSession::export_selected_packet_byte_view(
+    const PacketRef& packet,
+    const session_detail::SelectedPacketByteViewId& id,
+    const session_detail::ByteExportFormat format,
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    const auto presentation = derive_selected_packet_byte_presentation(packet);
+    if (!presentation.has_value()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected packet byte view is unavailable for export.";
+        }
+        return false;
+    }
+
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected packet bytes are unavailable for export.";
+        }
+        return false;
+    }
+
+    const auto materialized = session_detail::materialize_selected_packet_byte_view(
+        *presentation,
+        id,
+        std::span<const std::uint8_t>(bytes.data(), bytes.size())
+    );
+    if (!materialized.has_value()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "The selected packet byte view is unavailable for export.";
+        }
+        return false;
+    }
+
+    HexDumpService service {};
+    return session_detail::write_byte_export_file(output_path, materialized->bytes, format, service, out_error_text);
 }
 
 std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const {
@@ -4317,6 +4384,37 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
     ReassemblyService service {};
     return service.reassemble_tcp_payload(*this, request, direction_packets);
 }
+
+std::optional<ReassemblyResult> CaptureSession::reassemble_selected_flow_stream_direction_prefix(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const Direction direction,
+    const std::size_t max_bytes
+) const {
+    const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, max_packets_to_scan);
+    if (prefix_resolution.context == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto& context = *prefix_resolution.context;
+    const auto direction_packets = direction == Direction::a_to_b
+        ? std::span<const PacketRef>(context.prefix_packets_a.data(), context.prefix_packets_a.size())
+        : std::span<const PacketRef>(context.prefix_packets_b.data(), context.prefix_packets_b.size());
+    if (direction_packets.empty()) {
+        return std::nullopt;
+    }
+
+    return reassemble_flow_direction(
+        ReassemblyRequest {
+            .flow_index = flow_index,
+            .direction = direction,
+            .max_packets = direction_packets.size(),
+            .max_bytes = max_bytes,
+        },
+        direction_packets
+    );
+}
+
 std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(const std::size_t flow_index) const {
     if (!has_source_capture()) {
         return std::nullopt;

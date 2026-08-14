@@ -14,7 +14,7 @@
   const streamPacketBatchSize = 30;
   const flowVirtualRowHeight = 32;
   const analysisFlowVirtualRowHeight = 44;
-  const protocolPathStatsVirtualRowHeight = 32;
+  const defaultProtocolPathStatsVirtualRowHeight = 43;
   const flowVirtualOverscanRows = 12;
   const analysisFlowVirtualOverscanRows = 10;
   const protocolPathStatsVirtualOverscanRows = 12;
@@ -61,16 +61,27 @@
     aboutDialogVisible: false,
     settingsDialogVisible: false,
     protocolPathLegendDialogVisible: false,
+    supportedProtocolsDialogVisible: false,
+    byteExportDialogVisible: false,
     protocolPathLegendLoading: false,
+    supportedProtocolsLoading: false,
     protocolPathLegendEntries: [],
+    supportedProtocolCatalogRows: [],
+    byteExportFormats: [],
+    byteExportTargetKind: "packet",
+    byteExportSelectedFormatId: "",
     protocolPathPresentationsById: new Map(),
     protocolPathLegendStatusText: "",
     protocolPathLegendStatusKind: "neutral",
+    supportedProtocolsStatusText: "",
+    supportedProtocolsStatusKind: "neutral",
     settingsDialogLoading: false,
     settingsSaveInProgress: false,
     settingsStatusText: "",
     settingsStatusKind: "neutral",
     showProtocolPathColumn: true,
+    showFragmentedPacketCountColumn: false,
+    settingsActiveTab: "view-inspection",
     settings: {
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
@@ -220,16 +231,26 @@
     protocolPathLegendCloseButton: document.getElementById("protocolPathLegendCloseButton"),
     protocolPathLegendGrid: document.getElementById("protocolPathLegendGrid"),
     protocolPathLegendStatusText: document.getElementById("protocolPathLegendStatusText"),
+    supportedProtocolsDialog: document.getElementById("supportedProtocolsDialog"),
+    supportedProtocolsCloseButton: document.getElementById("supportedProtocolsCloseButton"),
+    supportedProtocolsContent: document.getElementById("supportedProtocolsContent"),
+    supportedProtocolsStatusText: document.getElementById("supportedProtocolsStatusText"),
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
     settingsIgnoreVlanAndMplsLayersWhenGroupingFlows: document.getElementById("settingsIgnoreVlanAndMplsLayersWhenGroupingFlows"),
     settingsIgnoreGtpuTeidsWhenGroupingInnerFlows: document.getElementById("settingsIgnoreGtpuTeidsWhenGroupingInnerFlows"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
     settingsShowProtocolPathColumn: document.getElementById("settingsShowProtocolPathColumn"),
+    settingsShowFragmentedPacketCountColumn: document.getElementById("settingsShowFragmentedPacketCountColumn"),
     settingsValidateSelectedPacketChecksums: document.getElementById("settingsValidateSelectedPacketChecksums"),
+    settingsViewInspectionTab: document.getElementById("settingsViewInspectionTab"),
+    settingsCaptureProcessingTab: document.getElementById("settingsCaptureProcessingTab"),
+    settingsViewInspectionPanel: document.getElementById("settingsViewInspectionPanel"),
+    settingsCaptureProcessingPanel: document.getElementById("settingsCaptureProcessingPanel"),
     settingsStatusText: document.getElementById("settingsStatusText"),
     settingsCancelButton: document.getElementById("settingsCancelButton"),
     settingsSaveButton: document.getElementById("settingsSaveButton"),
+    flowSortFrag: document.getElementById("flowSortFrag"),
     smartExportDialog: document.getElementById("smartExportDialog"),
     smartExportCloseButton: document.getElementById("smartExportCloseButton"),
     smartExportCancelButton: document.getElementById("smartExportCancelButton"),
@@ -333,6 +354,7 @@
     packetDetailsStateText: document.getElementById("packetDetailsStateText"),
     packetDetailsSummary: document.getElementById("packetDetailsSummary"),
     packetDetailsByteViewSelector: document.getElementById("packetDetailsByteViewSelector"),
+    packetDetailsExportBytesButton: document.getElementById("packetDetailsExportBytesButton"),
     packetDetailsBytesStateText: document.getElementById("packetDetailsBytesStateText"),
     packetDetailsBytesText: document.getElementById("packetDetailsBytesText"),
     streamDetailsStateText: document.getElementById("streamDetailsStateText"),
@@ -344,8 +366,15 @@
     streamDetailsTabPanels: Array.from(document.querySelectorAll("[data-stream-details-panel]")),
     streamDetailsItemDataTabButton: document.getElementById("streamDetailsItemDataTabButton"),
     streamDetailsSummaryText: document.getElementById("streamDetailsSummaryText"),
+    streamDetailsExportBytesButton: document.getElementById("streamDetailsExportBytesButton"),
     streamDetailsItemDataStateText: document.getElementById("streamDetailsItemDataStateText"),
     streamDetailsItemDataText: document.getElementById("streamDetailsItemDataText"),
+    byteExportDialog: document.getElementById("byteExportDialog"),
+    byteExportCloseButton: document.getElementById("byteExportCloseButton"),
+    byteExportCancelButton: document.getElementById("byteExportCancelButton"),
+    byteExportRunButton: document.getElementById("byteExportRunButton"),
+    byteExportMetadata: document.getElementById("byteExportMetadata"),
+    byteExportFormatList: document.getElementById("byteExportFormatList"),
     analysisFlowMeta: document.getElementById("analysisFlowMeta"),
     analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
     analysisFlowTableViewport: document.getElementById("analysisFlowTableViewport"),
@@ -1337,8 +1366,15 @@
     state.protocolPathLegendStatusKind = "neutral";
   }
 
+  function clearSupportedProtocolsStatus() {
+    state.supportedProtocolsStatusText = "";
+    state.supportedProtocolsStatusKind = "neutral";
+  }
+
   function flowTableColumnCount() {
-    return state.showProtocolPathColumn ? 12 : 11;
+    return 10
+      + (state.showProtocolPathColumn ? 1 : 0)
+      + (state.showFragmentedPacketCountColumn ? 1 : 0);
   }
 
   function sourceAvailabilityOrDefault(sourceAvailability) {
@@ -2432,6 +2468,7 @@
       return;
     }
 
+    const protocolPathStatsVirtualRowHeight = getProtocolPathStatsVirtualRowHeight();
     const viewportElement = elements.protocolPathStatsViewport;
     if (viewportElement) {
       const viewportHeight = Math.max(0, Number(viewportElement.clientHeight || 0));
@@ -2446,6 +2483,32 @@
       tableBody: elements.protocolPathStatsBody,
       rows: visibleProtocolPathRows,
       rowHeight: protocolPathStatsVirtualRowHeight,
+      viewportElement: elements.protocolPathStatsViewport,
+      overscanRows: protocolPathStatsVirtualOverscanRows,
+      colspan: 4,
+      renderRow: (row) => renderProtocolPathStatsRow(row, protocolPathMode, selectedProtocolPathNode),
+    });
+  }
+
+  function renderProtocolPathStatsViewportWindow() {
+    const protocolPathMode = currentProtocolPathMode();
+    if (!state.protocolPathStatsByMode.has(protocolPathMode) || !elements.protocolPathStatsBody) {
+      return;
+    }
+
+    const visibleProtocolPathRows = Array.isArray(state.protocolPathStatsVisibleRows)
+      ? state.protocolPathStatsVisibleRows
+      : [];
+    if (visibleProtocolPathRows.length === 0) {
+      return;
+    }
+
+    const protocolPathRows = currentProtocolPathStatsRows();
+    const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
+    renderVirtualizedTableBody({
+      tableBody: elements.protocolPathStatsBody,
+      rows: visibleProtocolPathRows,
+      rowHeight: getProtocolPathStatsVirtualRowHeight(),
       viewportElement: elements.protocolPathStatsViewport,
       overscanRows: protocolPathStatsVirtualOverscanRows,
       colspan: 4,
@@ -2584,6 +2647,7 @@
     state.openMenu = null;
     state.aboutDialogVisible = false;
     state.settingsDialogVisible = false;
+    state.byteExportDialogVisible = false;
     state.settingsDialogLoading = false;
     state.settingsSaveInProgress = false;
     clearSettingsStatus();
@@ -2671,6 +2735,8 @@
             || state.smartExportInProgress;
         } else if (action === "settings") {
           item.disabled = state.settingsDialogLoading || state.settingsSaveInProgress;
+        } else if (action === "supported-protocols") {
+          item.disabled = state.supportedProtocolsLoading;
         } else if (action === "protocol-path-legend") {
           item.disabled = state.protocolPathLegendLoading;
         }
@@ -2687,6 +2753,14 @@
       if (elements.protocolPathLegendDialog) {
         elements.protocolPathLegendDialog.classList.toggle("is-visible", state.protocolPathLegendDialogVisible);
         elements.protocolPathLegendDialog.setAttribute("aria-hidden", state.protocolPathLegendDialogVisible ? "false" : "true");
+      }
+      if (elements.supportedProtocolsDialog) {
+        elements.supportedProtocolsDialog.classList.toggle("is-visible", state.supportedProtocolsDialogVisible);
+        elements.supportedProtocolsDialog.setAttribute("aria-hidden", state.supportedProtocolsDialogVisible ? "false" : "true");
+      }
+      if (elements.byteExportDialog) {
+        elements.byteExportDialog.classList.toggle("is-visible", state.byteExportDialogVisible);
+        elements.byteExportDialog.setAttribute("aria-hidden", state.byteExportDialogVisible ? "false" : "true");
       }
       if (elements.smartExportDialog) {
         elements.smartExportDialog.classList.toggle("is-visible", state.smartExportDialogVisible);
@@ -2724,9 +2798,27 @@
       elements.settingsShowProtocolPathColumn.checked = Boolean(state.showProtocolPathColumn);
       elements.settingsShowProtocolPathColumn.disabled = dialogDisabled;
     }
+    if (elements.settingsShowFragmentedPacketCountColumn) {
+      elements.settingsShowFragmentedPacketCountColumn.checked = Boolean(state.showFragmentedPacketCountColumn);
+      elements.settingsShowFragmentedPacketCountColumn.disabled = dialogDisabled;
+    }
     if (elements.settingsValidateSelectedPacketChecksums) {
       elements.settingsValidateSelectedPacketChecksums.checked = Boolean(state.settings.validate_selected_packet_checksums);
       elements.settingsValidateSelectedPacketChecksums.disabled = dialogDisabled;
+    }
+    if (elements.settingsViewInspectionTab) {
+      elements.settingsViewInspectionTab.classList.toggle("active", state.settingsActiveTab === "view-inspection");
+      elements.settingsViewInspectionTab.disabled = dialogDisabled;
+    }
+    if (elements.settingsCaptureProcessingTab) {
+      elements.settingsCaptureProcessingTab.classList.toggle("active", state.settingsActiveTab === "capture-processing");
+      elements.settingsCaptureProcessingTab.disabled = dialogDisabled;
+    }
+    if (elements.settingsViewInspectionPanel) {
+      elements.settingsViewInspectionPanel.hidden = state.settingsActiveTab !== "view-inspection";
+    }
+    if (elements.settingsCaptureProcessingPanel) {
+      elements.settingsCaptureProcessingPanel.hidden = state.settingsActiveTab !== "capture-processing";
     }
     if (elements.settingsCancelButton) {
       elements.settingsCancelButton.disabled = dialogDisabled;
@@ -2743,6 +2835,43 @@
       } else if (state.settingsStatusKind === "success") {
         elements.settingsStatusText.classList.add("is-success");
       }
+    }
+  }
+
+  function renderByteExportDialog() {
+    if (elements.byteExportMetadata) {
+      const label = state.byteExportTargetKind === "stream"
+        ? String(
+          state.selectedStreamItemDetails?.label
+          || state.selectedStreamItem?.label
+          || state.selectedStreamItemDetails?.header_primary_text
+          || "Stream item data"
+        )
+        : String(state.packetDetails?.selected_byte_view?.label || "Selected byte view");
+      const size = state.byteExportTargetKind === "stream"
+        ? Number(state.selectedStreamItemDetails?.stream_item_data?.available_length || 0)
+        : Number(state.packetDetails?.selected_byte_view?.available_length || 0);
+      elements.byteExportMetadata.textContent = `${label} · ${formatNumber(size)} bytes`;
+    }
+    if (elements.byteExportFormatList) {
+      elements.byteExportFormatList.innerHTML = state.byteExportFormats
+        .map((format, index) => {
+          const stableId = String(format?.stable_id || "");
+          const selected = stableId === String(state.byteExportSelectedFormatId || "");
+          return `
+            <label class="byte-export-format-option${selected ? " is-selected" : ""}">
+              <input type="radio" name="byteExportFormat" value="${escapeHtml(stableId)}" ${selected ? "checked" : ""} />
+              <span class="byte-export-format-copy">
+                <span class="byte-export-format-title">${escapeHtml(String(format?.label || stableId || `Format ${index + 1}`))}</span>
+                <span class="byte-export-format-example">${escapeHtml(byteExportFormatExampleText(format))}</span>
+              </span>
+            </label>
+          `;
+        })
+        .join("");
+    }
+    if (elements.byteExportRunButton) {
+      elements.byteExportRunButton.disabled = String(state.byteExportSelectedFormatId || "").length === 0;
     }
   }
 
@@ -2795,6 +2924,82 @@
             <span class="protocol-path-legend-meta">${escapeHtml(colorKey || "protocol")}</span>
           </div>
         </div>
+      `;
+    }).join("");
+  }
+
+  function supportedProtocolStatusChip(statusId, label) {
+    const normalized = String(statusId || "not_applicable").replaceAll("_", "-");
+    return `<span class="supported-protocol-status-chip is-${escapeHtml(normalized)}">${escapeHtml(label || "")}</span>`;
+  }
+
+  function renderSupportedProtocolsDialog() {
+    if (elements.supportedProtocolsCloseButton) {
+      elements.supportedProtocolsCloseButton.disabled = state.supportedProtocolsLoading;
+    }
+
+    if (elements.supportedProtocolsStatusText) {
+      elements.supportedProtocolsStatusText.textContent = state.supportedProtocolsStatusText;
+      elements.supportedProtocolsStatusText.className = "status-text";
+      if (state.supportedProtocolsStatusKind === "error") {
+        elements.supportedProtocolsStatusText.classList.add("is-error");
+      } else if (state.supportedProtocolsStatusKind === "success") {
+        elements.supportedProtocolsStatusText.classList.add("is-success");
+      }
+    }
+
+    if (!elements.supportedProtocolsContent) {
+      return;
+    }
+
+    if (state.supportedProtocolsLoading) {
+      elements.supportedProtocolsContent.innerHTML = '<div class="settings-disabled-row">Loading supported protocols...</div>';
+      return;
+    }
+
+    if (!Array.isArray(state.supportedProtocolCatalogRows) || state.supportedProtocolCatalogRows.length === 0) {
+      elements.supportedProtocolsContent.innerHTML = '<div class="settings-disabled-row">Supported protocol catalog is unavailable.</div>';
+      return;
+    }
+
+    const categoryOrder = [
+      "link_and_encapsulation",
+      "network",
+      "transport",
+      "tunnels_and_overlays",
+      "security",
+      "application",
+    ];
+
+    elements.supportedProtocolsContent.innerHTML = categoryOrder.map((categoryId) => {
+      const rows = state.supportedProtocolCatalogRows.filter((row) => String(row?.category_id || "") === categoryId);
+      if (rows.length === 0) {
+        return "";
+      }
+
+      const header = `
+        <div class="supported-protocol-table">
+          <div class="supported-protocol-table-header">Protocol</div>
+          <div class="supported-protocol-table-header">Recognition</div>
+          <div class="supported-protocol-table-header">Service</div>
+          <div class="supported-protocol-table-header">Packet Summary</div>
+          <div class="supported-protocol-table-header">Stream</div>
+          <div class="supported-protocol-table-header">Notes</div>
+      `;
+      const body = rows.map((row) => `
+          <div class="supported-protocol-cell protocol-name">${escapeHtml(row?.protocol || "")}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.recognition_status_id, row?.recognition_status_label)}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.service_status_id, row?.service_status_label)}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.packet_summary_status_id, row?.packet_summary_status_label)}</div>
+          <div class="supported-protocol-cell">${supportedProtocolStatusChip(row?.stream_status_id, row?.stream_status_label)}</div>
+          <div class="supported-protocol-cell notes">${escapeHtml(row?.notes || "")}</div>
+      `).join("");
+
+      return `
+        <section class="supported-protocol-category">
+          <h3 class="supported-protocol-category-title">${escapeHtml(rows[0]?.category_label || "")}</h3>
+          ${header}${body}</div>
+        </section>
       `;
     }).join("");
   }
@@ -3100,6 +3305,15 @@
       virtualizationActive,
       windowRows,
     };
+  }
+
+  function getProtocolPathStatsVirtualRowHeight() {
+    const targetElement = elements.protocolPathStatsViewport || document.documentElement;
+    const rawValue = window.getComputedStyle(targetElement).getPropertyValue("--protocol-path-stats-row-height").trim();
+    const parsedValue = Number.parseFloat(rawValue);
+    return Number.isFinite(parsedValue) && parsedValue > 0
+      ? parsedValue
+      : defaultProtocolPathStatsVirtualRowHeight;
   }
 
   function clearFlowTableDom() {
@@ -3997,6 +4211,9 @@
     if (elements.flowPathHeader) {
       elements.flowPathHeader.style.display = state.showProtocolPathColumn ? "" : "none";
     }
+    if (elements.flowSortFrag) {
+      elements.flowSortFrag.style.display = state.showFragmentedPacketCountColumn ? "" : "none";
+    }
     renderUnrecognizedPacketsPanel();
 
     if (state.openState === "opening" || state.flowState === "loading") {
@@ -4076,6 +4293,9 @@
         const protocolPathCell = state.showProtocolPathColumn
           ? `<td class="flow-path-cell">${renderProtocolPathCell(flow)}</td>`
           : "";
+        const fragCell = state.showFragmentedPacketCountColumn
+          ? `<td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>`
+          : "";
         return `
           <tr class="flow-row${selected}${checked}" data-flow-index="${flow.flow_index}">
             <td class="flow-check-cell"><input type="checkbox" class="flow-check-input" data-flow-check-index="${flow.flow_index}" ${state.checkedFlowIndices.has(flow.flow_index) ? "checked" : ""} aria-label="Select flow ${flowDisplayNumber(flow)} for batch actions" /></td>
@@ -4084,7 +4304,7 @@
             <td>${escapeHtml(flow.protocol_text)}</td>
             <td>${escapeHtml(formatProtocolHint(flow))}</td>
             <td>${escapeHtml(flow.service_hint)}</td>
-            <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
+            ${fragCell}
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_a, flow.port_a)}</td>
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_b, flow.port_b)}</td>
             ${protocolPathCell}
@@ -4437,6 +4657,9 @@
     elements.streamDetailsItemDataStateText.textContent = "";
     elements.streamDetailsItemDataText.textContent = "Select a stream item to inspect details.";
     elements.streamDetailsItemDataText.classList.remove("is-muted");
+    if (elements.streamDetailsExportBytesButton) {
+      elements.streamDetailsExportBytesButton.disabled = true;
+    }
 
     for (const button of elements.streamDetailsTabButtons) {
       const active = button.dataset.streamDetailsTab === state.streamDetailsTab;
@@ -4524,6 +4747,9 @@
     }
 
     elements.streamDetailsItemDataStateText.textContent = itemData.status_text || "";
+    if (elements.streamDetailsExportBytesButton) {
+      elements.streamDetailsExportBytesButton.disabled = !(itemData.available);
+    }
     if (itemData.available === false && itemData.state && itemData.state !== "synthetic") {
       elements.streamDetailsItemDataStateText.classList.add("is-error");
     }
@@ -4821,6 +5047,9 @@
     elements.packetDetailsSummary.innerHTML = "";
     elements.packetDetailsBytesStateText.textContent = "";
     elements.packetDetailsBytesText.classList.remove("is-muted");
+    if (elements.packetDetailsExportBytesButton) {
+      elements.packetDetailsExportBytesButton.disabled = true;
+    }
 
     const descriptors = packetByteViewDescriptors(details);
     elements.packetDetailsByteViewSelector.innerHTML = descriptors
@@ -4893,6 +5122,9 @@
     elements.packetDetailsStateText.textContent = "";
 
     const selectedByteView = details?.selected_byte_view || null;
+    if (elements.packetDetailsExportBytesButton) {
+      elements.packetDetailsExportBytesButton.disabled = !(selectedByteView?.available);
+    }
     if (state.packetDetailsByteViewLoading) {
       elements.packetDetailsBytesStateText.textContent = "Loading selected byte view...";
       elements.packetDetailsBytesText.textContent = "Loading selected byte view...";
@@ -5487,6 +5719,8 @@
       ["menu", renderMenuState],
       ["settings dialog", renderSettingsDialog],
       ["protocol path legend dialog", renderProtocolPathLegendDialog],
+      ["supported protocols dialog", renderSupportedProtocolsDialog],
+      ["byte export dialog", renderByteExportDialog],
       ["smart export dialog", renderSmartExportDialog],
       ["tabs", renderTabs],
       ["flow view tabs", renderFlowViewTabs],
@@ -5585,7 +5819,7 @@
     window.requestAnimationFrame(() => {
       protocolPathStatsViewportRenderScheduled = false;
       if (state.activeTab === "statistics") {
-        renderProtocolPathStatsSection();
+        renderProtocolPathStatsViewportWindow();
       }
     });
   }
@@ -6751,6 +6985,7 @@
 
     try {
       const settings = await invoke("get_settings");
+      state.settingsActiveTab = "view-inspection";
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
@@ -6797,6 +7032,35 @@
     }
   }
 
+  async function openSupportedProtocolsDialogFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    clearSupportedProtocolsStatus();
+    state.supportedProtocolsDialogVisible = true;
+    state.supportedProtocolsLoading = true;
+    render();
+
+    try {
+      const catalog = await invoke("get_supported_protocol_catalog");
+      state.supportedProtocolCatalogRows = Array.isArray(catalog?.rows) ? catalog.rows : [];
+      if (state.supportedProtocolCatalogRows.length === 0) {
+        state.supportedProtocolsStatusText = "Supported protocol catalog is unavailable.";
+        state.supportedProtocolsStatusKind = "error";
+      }
+    } catch (error) {
+      state.supportedProtocolCatalogRows = [];
+      state.supportedProtocolsStatusText = `Failed to load supported protocols: ${String(error)}`;
+      state.supportedProtocolsStatusKind = "error";
+    } finally {
+      state.supportedProtocolsLoading = false;
+      render();
+    }
+  }
+
   function closeSettingsDialog() {
     if (state.settingsDialogLoading || state.settingsSaveInProgress) {
       return;
@@ -6817,6 +7081,16 @@
     render();
   }
 
+  function closeSupportedProtocolsDialog() {
+    if (state.supportedProtocolsLoading) {
+      return;
+    }
+
+    state.supportedProtocolsDialogVisible = false;
+    clearSupportedProtocolsStatus();
+    render();
+  }
+
   async function saveSettingsFromDialog() {
     if (typeof invoke !== "function") {
       state.settingsStatusText = "Tauri API is unavailable in this frontend.";
@@ -6831,6 +7105,7 @@
     const ignoreGtpuTeidsWhenGroupingInnerFlows = Boolean(elements.settingsIgnoreGtpuTeidsWhenGroupingInnerFlows?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
     const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
+    const showFragmentedPacketCountColumn = Boolean(elements.settingsShowFragmentedPacketCountColumn?.checked);
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
 
     state.settingsSaveInProgress = true;
@@ -6856,6 +7131,7 @@
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
       state.showProtocolPathColumn = showProtocolPathColumn;
+      state.showFragmentedPacketCountColumn = showFragmentedPacketCountColumn;
 
       if (state.openState === "opened") {
         await loadOverviewAndFlows();
@@ -6903,6 +7179,159 @@
     state.smartExportDialogVisible = false;
     clearSmartExportStatus();
     render();
+  }
+
+  async function ensureByteExportFormats() {
+    if (state.byteExportFormats.length > 0) {
+      return state.byteExportFormats;
+    }
+
+    if (typeof invoke !== "function") {
+      throw new Error("Tauri API is unavailable in this frontend.");
+    }
+
+    const formats = await invoke("get_byte_export_formats");
+    state.byteExportFormats = Array.isArray(formats) ? formats : [];
+    if (!state.byteExportSelectedFormatId && state.byteExportFormats.length > 0) {
+      state.byteExportSelectedFormatId = String(state.byteExportFormats[0]?.stable_id || "");
+    }
+    return state.byteExportFormats;
+  }
+
+  function byteExportFormatExampleText(format) {
+    switch (String(format?.stable_id || "")) {
+      case "hex_dump_ascii":
+        return "31 32 33 34  |1234|";
+      case "raw_binary":
+        return "Exact bytes (.bin)";
+      case "c_cpp_byte_list":
+        return "0x31, 0x32, 0x33, 0x34";
+      case "continuous_hex":
+        return "31323334";
+      case "base64":
+        return "MTIzNA==";
+      default:
+        return "";
+    }
+  }
+
+  function sanitizeByteExportFilenameComponent(text, fallback = "bytes") {
+    const normalized = String(text || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return normalized || fallback;
+  }
+
+  function buildByteExportSuggestedFileName(targetKind, format) {
+    const extension = String(format?.suggested_extension || "txt");
+    if (targetKind === "stream") {
+      const itemNumber = Number(state.selectedStreamItemIndex ?? -1) + 1;
+      const label = sanitizeByteExportFilenameComponent(
+        state.selectedStreamItemDetails?.label || state.selectedStreamItem?.label || "stream-item",
+        "stream-item"
+      );
+      return `stream-item-${itemNumber}-${label}.${extension}`;
+    }
+
+    const packetRow = state.selectedPacketRow || null;
+    const packetNumber = state.unrecognizedPacketsSelected
+      ? Number(state.selectedPacketIndex ?? -1) + 1
+      : (selectedPacketDisplayNumber(packetRow) ?? Number(state.selectedPacketIndex ?? -1) + 1);
+    const label = sanitizeByteExportFilenameComponent(
+      state.packetDetails?.selected_byte_view?.label || "packet-bytes",
+      "packet-bytes"
+    );
+    return `packet-${packetNumber}-${label}.${extension}`;
+  }
+
+  async function openByteExportDialog(targetKind) {
+    try {
+      await ensureByteExportFormats();
+      state.byteExportTargetKind = targetKind === "stream" ? "stream" : "packet";
+      if (!state.byteExportSelectedFormatId && state.byteExportFormats.length > 0) {
+        state.byteExportSelectedFormatId = String(state.byteExportFormats[0]?.stable_id || "");
+      }
+      state.byteExportDialogVisible = true;
+      render();
+    } catch (error) {
+      setStatus(`Failed to load byte export formats: ${String(error)}`, "error");
+      render();
+    }
+  }
+
+  function closeByteExportDialog() {
+    state.byteExportDialogVisible = false;
+    render();
+  }
+
+  async function runByteExportFromDialog() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    const format = state.byteExportFormats.find(
+      (candidate) => String(candidate?.stable_id || "") === String(state.byteExportSelectedFormatId || "")
+    );
+    if (!format) {
+      setStatus("Select an export format.", "error");
+      render();
+      return;
+    }
+
+    try {
+      const outputPath = await invoke("pick_save_byte_export_path", {
+        title: state.byteExportTargetKind === "stream" ? "Export Stream Item Data" : "Export Packet Bytes",
+        suggested_file_name: buildByteExportSuggestedFileName(state.byteExportTargetKind, format),
+        suggested_extension: String(format.suggested_extension || "txt"),
+        binary_output: Boolean(format.binary_output),
+      });
+      if (!outputPath) {
+        return;
+      }
+
+      let result = null;
+      if (state.byteExportTargetKind === "stream") {
+        result = await invoke("export_selected_flow_stream_item_data", {
+          max_packets_to_scan: Number(state.streamPacketWindowCount || 0),
+          limit: Number(state.streamLoadedItemCount || state.streamItems.length || 0),
+          stream_item_index: Number(state.selectedStreamItemIndex || 0),
+          format_id: String(state.byteExportSelectedFormatId || ""),
+          path: String(outputPath),
+        });
+      } else if (state.unrecognizedPacketsSelected) {
+        result = await invoke("export_unrecognized_packet_byte_view", {
+          packet_index: Number(state.selectedPacketRow?.packet_index ?? state.selectedPacketIndex ?? 0),
+          stable_id: String(state.packetDetailsSelectedByteViewStableId || ""),
+          format_id: String(state.byteExportSelectedFormatId || ""),
+          path: String(outputPath),
+        });
+      } else {
+        result = await invoke("export_selected_flow_packet_byte_view", {
+          packet_index: Number(state.selectedPacketRow?.packet_index ?? state.selectedPacketIndex ?? 0),
+          stable_id: String(state.packetDetailsSelectedByteViewStableId || ""),
+          format_id: String(state.byteExportSelectedFormatId || ""),
+          path: String(outputPath),
+          flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
+          loaded_packet_window_count: Number(state.packets.length),
+        });
+      }
+
+      if (result?.exported) {
+        setStatus(
+          state.byteExportTargetKind === "stream"
+            ? "Stream item data exported successfully."
+            : "Packet bytes exported successfully.",
+          "success"
+        );
+        state.byteExportDialogVisible = false;
+      } else {
+        setStatus(result?.error_text || "Failed to export bytes.", "error");
+      }
+      render();
+    } catch (error) {
+      setStatus(`Failed to export bytes: ${String(error)}`, "error");
+      render();
+    }
   }
 
   async function browseSmartExportDestinationFolder() {
@@ -7120,6 +7549,9 @@
       case "protocol-path-legend":
         await openProtocolPathLegendDialogFromMenu();
         return;
+      case "supported-protocols":
+        await openSupportedProtocolsDialogFromMenu();
+        return;
       case "export-current-flow":
         await exportCurrentFlowFromMenu();
         return;
@@ -7278,7 +7710,43 @@
       closeProtocolPathLegendDialog();
     }
   });
+  elements.supportedProtocolsCloseButton?.addEventListener("click", closeSupportedProtocolsDialog);
+  elements.supportedProtocolsDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.supportedProtocolsDialog) {
+      closeSupportedProtocolsDialog();
+    }
+  });
+  elements.byteExportCloseButton?.addEventListener("click", closeByteExportDialog);
+  elements.byteExportCancelButton?.addEventListener("click", closeByteExportDialog);
+  elements.byteExportRunButton?.addEventListener("click", () => {
+    void runByteExportFromDialog();
+  });
+  elements.byteExportDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.byteExportDialog) {
+      closeByteExportDialog();
+    }
+  });
+  elements.byteExportFormatList?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.name !== "byteExportFormat") {
+      return;
+    }
+    state.byteExportSelectedFormatId = String(target.value || "");
+    render();
+  });
   elements.settingsCancelButton?.addEventListener("click", closeSettingsDialog);
+  elements.settingsViewInspectionTab?.addEventListener("click", () => {
+    if (!state.settingsDialogLoading && !state.settingsSaveInProgress) {
+      state.settingsActiveTab = "view-inspection";
+      render();
+    }
+  });
+  elements.settingsCaptureProcessingTab?.addEventListener("click", () => {
+    if (!state.settingsDialogLoading && !state.settingsSaveInProgress) {
+      state.settingsActiveTab = "capture-processing";
+      render();
+    }
+  });
   elements.settingsSaveButton?.addEventListener("click", () => {
     void saveSettingsFromDialog();
   });
@@ -7299,6 +7767,12 @@
     if (event.target === elements.smartExportDialog) {
       closeSmartExportDialog();
     }
+  });
+  elements.packetDetailsExportBytesButton?.addEventListener("click", () => {
+    void openByteExportDialog("packet");
+  });
+  elements.streamDetailsExportBytesButton?.addEventListener("click", () => {
+    void openByteExportDialog("stream");
   });
   for (const control of [
     elements.smartExportScopeCurrent,
@@ -7352,6 +7826,8 @@
         || state.aboutDialogVisible
         || state.settingsDialogVisible
         || state.protocolPathLegendDialogVisible
+        || state.supportedProtocolsDialogVisible
+        || state.byteExportDialogVisible
         || state.smartExportDialogVisible;
       closeMenus();
       state.aboutDialogVisible = false;
@@ -7363,6 +7839,11 @@
         state.protocolPathLegendDialogVisible = false;
         clearProtocolPathLegendStatus();
       }
+      if (!state.supportedProtocolsLoading) {
+        state.supportedProtocolsDialogVisible = false;
+        clearSupportedProtocolsStatus();
+      }
+      state.byteExportDialogVisible = false;
       if (!state.smartExportInProgress) {
         state.smartExportDialogVisible = false;
         clearSmartExportStatus();

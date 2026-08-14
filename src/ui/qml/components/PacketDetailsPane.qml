@@ -130,6 +130,33 @@ Frame {
         return items.length > 0 ? 0 : -1
     }
 
+    function byteExportFormats() {
+        if (!root.packetDetailsController || !root.packetDetailsController.byteExportFormats) {
+            return []
+        }
+        return root.packetDetailsController.byteExportFormats()
+    }
+
+    function byteExportFormatExample(formatEntry) {
+        const stableId = formatEntry && formatEntry["stableId"] !== undefined && formatEntry["stableId"] !== null
+            ? String(formatEntry["stableId"])
+            : ""
+        switch (stableId) {
+        case "hex_dump_ascii":
+            return "31 32 33 34  |1234|"
+        case "raw_binary":
+            return "Exact bytes (.bin)"
+        case "c_cpp_byte_list":
+            return "0x31, 0x32, 0x33, 0x34"
+        case "continuous_hex":
+            return "31323334"
+        case "base64":
+            return "MTIzNA=="
+        default:
+            return ""
+        }
+    }
+
     function buildSummaryLayerOccurrences(layers) {
         const occurrences = {}
 
@@ -473,8 +500,20 @@ Frame {
             anchors.fill: parent
             anchors.margins: 1
             clip: true
-            ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-            ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            ScrollBar.vertical: AppScrollBar {
+                parent: textPaneScroll
+                x: textPaneScroll.mirrored ? 0 : textPaneScroll.width - width
+                y: textPaneScroll.topPadding
+                height: textPaneScroll.availableHeight
+                policy: textPaneScroll.contentHeight > textPaneScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                parent: textPaneScroll
+                x: textPaneScroll.leftPadding
+                y: textPaneScroll.height - height
+                width: textPaneScroll.availableWidth
+                policy: textPaneScroll.contentWidth > textPaneScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
 
             TextArea {
                 readOnly: true
@@ -698,6 +737,201 @@ Frame {
         }
     }
 
+    }
+
+    Dialog {
+        id: byteExportDialog
+
+        property string targetKind: "packet"
+        property var exportFormatsModel: []
+        property int selectedFormatIndex: 0
+
+        readonly property bool packetTarget: targetKind === "packet"
+        readonly property string targetLabel: packetTarget
+            ? (root.packetDetailsModel ? root.packetDetailsModel.selectedPacketByteViewLabel : "")
+            : root.headerPrimaryText()
+        readonly property int availableLength: packetTarget
+            ? Number(root.packetDetailsModel ? root.packetDetailsModel.selectedPacketByteViewAvailableLength : 0)
+            : Number(root.packetDetailsModel ? root.packetDetailsModel.streamItemDataAvailableLength : 0)
+        readonly property string metadataText: {
+            const label = byteExportDialog.targetLabel.length > 0
+                ? byteExportDialog.targetLabel
+                : (byteExportDialog.packetTarget ? "Selected byte view" : "Selected item data")
+            return `${label} \u00b7 ${byteExportDialog.availableLength} bytes`
+        }
+        readonly property string selectedFormatId: selectedFormatIndex >= 0
+            && selectedFormatIndex < exportFormatsModel.length
+            && exportFormatsModel[selectedFormatIndex]
+            ? String(exportFormatsModel[selectedFormatIndex].stableId || "")
+            : ""
+
+        function selectCurrentOrDefault() {
+            const currentStableId = byteExportDialog.selectedFormatId
+            for (let index = 0; index < exportFormatsModel.length; ++index) {
+                const stableId = exportFormatsModel[index] && exportFormatsModel[index].stableId !== undefined && exportFormatsModel[index].stableId !== null
+                    ? String(exportFormatsModel[index].stableId)
+                    : ""
+                if (stableId.length > 0 && stableId === currentStableId) {
+                    selectedFormatIndex = index
+                    return
+                }
+            }
+            selectedFormatIndex = exportFormatsModel.length > 0 ? 0 : -1
+        }
+
+        function openForPacket() {
+            targetKind = "packet"
+            exportFormatsModel = root.byteExportFormats()
+            selectCurrentOrDefault()
+            open()
+        }
+
+        function openForStream() {
+            targetKind = "stream"
+            exportFormatsModel = root.byteExportFormats()
+            selectCurrentOrDefault()
+            open()
+        }
+
+        modal: true
+        focus: true
+        title: "Export Bytes"
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        parent: Overlay.overlay
+        width: Math.min(540, Math.max(320, (parent ? parent.width : 540) - 32))
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.max(16, Math.round((parent.height - height) / 2)) : 16
+
+        contentItem: Item {
+            implicitWidth: byteExportDialog.width
+            implicitHeight: exportDialogLayout.implicitHeight + 8
+
+            ColumnLayout {
+                id: exportDialogLayout
+                anchors.fill: parent
+                spacing: 10
+
+                Label {
+                    Layout.fillWidth: true
+                    text: byteExportDialog.metadataText
+                    color: "#0f172a"
+                    wrapMode: Text.Wrap
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Label {
+                        text: "Format"
+                        color: "#334155"
+                    }
+
+                    ButtonGroup {
+                        id: byteExportFormatButtonGroup
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Repeater {
+                            model: byteExportDialog.exportFormatsModel
+
+                            delegate: Rectangle {
+                                required property int index
+                                required property var modelData
+
+                                Layout.fillWidth: true
+                                implicitHeight: formatRowLayout.implicitHeight + 16
+                                radius: 6
+                                border.width: 1
+                                border.color: byteExportDialog.selectedFormatIndex === index ? "#93c5fd" : "#d8e2ee"
+                                color: byteExportDialog.selectedFormatIndex === index ? "#eff6ff" : "#ffffff"
+
+                                RowLayout {
+                                    id: formatRowLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    spacing: 10
+
+                                    RadioButton {
+                                        id: formatRadio
+                                        ButtonGroup.group: byteExportFormatButtonGroup
+                                        checked: byteExportDialog.selectedFormatIndex === index
+
+                                        onToggled: {
+                                            if (checked) {
+                                                byteExportDialog.selectedFormatIndex = index
+                                            }
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: String(modelData && modelData.label ? modelData.label : "")
+                                            color: "#0f172a"
+                                            font.bold: true
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: root.byteExportFormatExample(modelData)
+                                            color: "#64748b"
+                                            font.family: "monospace"
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: byteExportDialog.selectedFormatIndex = index
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignRight
+                    spacing: 8
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Button {
+                        text: "Cancel"
+                        onClicked: byteExportDialog.close()
+                    }
+
+                    Button {
+                        text: "Save..."
+                        enabled: byteExportDialog.selectedFormatId.length > 0
+
+                        onClicked: {
+                            if (!root.packetDetailsController) {
+                                return
+                            }
+
+                            const exported = byteExportDialog.packetTarget
+                                ? root.packetDetailsController.exportSelectedPacketBytes(byteExportDialog.selectedFormatId)
+                                : root.packetDetailsController.exportSelectedStreamItemData(byteExportDialog.selectedFormatId)
+                            if (exported) {
+                                byteExportDialog.close()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     background: Rectangle {
@@ -975,12 +1209,25 @@ Frame {
                     }
 
                     ScrollView {
+                        id: packetSummaryScroll
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         visible: packetSummaryPane.renderableLayers
-                        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ScrollBar.vertical: AppScrollBar {
+                            parent: packetSummaryScroll
+                            x: packetSummaryScroll.mirrored ? 0 : packetSummaryScroll.width - width
+                            y: packetSummaryScroll.topPadding
+                            height: packetSummaryScroll.availableHeight
+                            policy: packetSummaryScroll.contentHeight > packetSummaryScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        }
+                        ScrollBar.horizontal: AppScrollBar {
+                            parent: packetSummaryScroll
+                            x: packetSummaryScroll.leftPadding
+                            y: packetSummaryScroll.height - height
+                            width: packetSummaryScroll.availableWidth
+                            policy: ScrollBar.AlwaysOff
+                        }
 
                         ColumnLayout {
                             width: parent.width
@@ -1037,15 +1284,29 @@ Frame {
                         }
                     }
 
-                    Label {
+                    RowLayout {
                         Layout.fillWidth: true
-                        visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                        text: root.packetDetailsModel
-                            ? root.packetDetailsModel.selectedPacketByteViewStatusText
-                            : ""
-                        color: "#64748b"
-                        font.pixelSize: 12
-                        wrapMode: Text.Wrap
+                        spacing: 8
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            text: root.packetDetailsModel
+                                ? root.packetDetailsModel.selectedPacketByteViewStatusText
+                                : ""
+                            color: "#64748b"
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                        }
+
+                        Button {
+                            text: "Export Bytes..."
+                            enabled: !!root.packetDetailsModel
+                                && root.packetDetailsModel.hasPacket
+                                && root.packetDetailsModel.selectedPacketByteViewAvailable
+                                && root.packetDetailsModel.selectedPacketByteViewId.length > 0
+                            onClicked: byteExportDialog.openForPacket()
+                        }
                     }
 
                     TextPane {
@@ -1110,12 +1371,25 @@ Frame {
                     }
 
                     ScrollView {
+                        id: streamSummaryScroll
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         visible: streamSummaryPane.renderableLayers
-                        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ScrollBar.vertical: AppScrollBar {
+                            parent: streamSummaryScroll
+                            x: streamSummaryScroll.mirrored ? 0 : streamSummaryScroll.width - width
+                            y: streamSummaryScroll.topPadding
+                            height: streamSummaryScroll.availableHeight
+                            policy: streamSummaryScroll.contentHeight > streamSummaryScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        }
+                        ScrollBar.horizontal: AppScrollBar {
+                            parent: streamSummaryScroll
+                            x: streamSummaryScroll.leftPadding
+                            y: streamSummaryScroll.height - height
+                            width: streamSummaryScroll.availableWidth
+                            policy: ScrollBar.AlwaysOff
+                        }
 
                         ColumnLayout {
                             width: parent.width
@@ -1155,15 +1429,28 @@ Frame {
                     anchors.fill: parent
                     spacing: 8
 
-                    Label {
+                    RowLayout {
                         Layout.fillWidth: true
-                        visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                        text: root.packetDetailsModel
-                            ? root.packetDetailsModel.streamItemDataStatusText
-                            : ""
-                        color: "#64748b"
-                        font.pixelSize: 12
-                        wrapMode: Text.Wrap
+                        spacing: 8
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            text: root.packetDetailsModel
+                                ? root.packetDetailsModel.streamItemDataStatusText
+                                : ""
+                            color: "#64748b"
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                        }
+
+                        Button {
+                            text: "Export Bytes..."
+                            enabled: !!root.packetDetailsModel
+                                && root.packetDetailsModel.hasPacket
+                                && root.packetDetailsModel.streamItemDataAvailable
+                            onClicked: byteExportDialog.openForStream()
+                        }
                     }
 
                     TextPane {

@@ -38,6 +38,7 @@ char* pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(
     std::size_t limit
 );
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_supported_protocol_catalog_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode
@@ -50,6 +51,31 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode,
+    const char* path_utf8
+);
+char* pfl_frontend_session_adapter_get_byte_export_formats_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_export_selected_flow_packet_byte_view_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint64_t packet_index,
+    const char* stable_id_utf8,
+    const char* format_id_utf8,
+    const char* path_utf8,
+    std::uint64_t flow_packet_index,
+    std::uint64_t loaded_packet_window_count
+);
+char* pfl_frontend_session_adapter_export_unrecognized_packet_byte_view_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint64_t packet_index,
+    const char* stable_id_utf8,
+    const char* format_id_utf8,
+    const char* path_utf8
+);
+char* pfl_frontend_session_adapter_export_selected_flow_stream_item_data_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::size_t max_packets_to_scan,
+    std::size_t limit,
+    std::uint64_t stream_item_index,
+    const char* format_id_utf8,
     const char* path_utf8
 );
 char* pfl_frontend_session_adapter_update_settings_json(

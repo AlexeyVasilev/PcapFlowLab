@@ -51,6 +51,7 @@ Frame {
 
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumWidth: 0
         padding: 0
 
         background: Rectangle {
@@ -115,7 +116,7 @@ Frame {
                 clip: true
                 model: tableFrame.viewModel
 
-                ScrollBar.vertical: ScrollBar {
+                ScrollBar.vertical: AppScrollBar {
                     id: tableScrollBar
                     policy: tableListView.contentHeight > tableListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }

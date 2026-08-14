@@ -10,8 +10,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -555,6 +555,59 @@ fn pick_save_protocol_path_tree_path(_app: AppHandle) -> Result<Option<String>, 
     }
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn pick_save_byte_export_path(
+    _app: AppHandle,
+    title: String,
+    suggested_file_name: String,
+    suggested_extension: String,
+    binary_output: bool,
+) -> Result<Option<String>, String> {
+    let normalized_extension = if suggested_extension.trim().is_empty() {
+        if binary_output { "bin".to_string() } else { "txt".to_string() }
+    } else {
+        suggested_extension
+    };
+
+    let normalized_file_name = if suggested_file_name.trim().is_empty() {
+        format!("byte-export.{}", normalized_extension)
+    } else {
+        suggested_file_name
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        let filter_label = if binary_output { "Binary files" } else { "Text files" };
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            format!("--title={title}"),
+            format!("--filename={}", current_dir_prefill(&normalized_file_name)),
+            format!("--file-filter={filter_label} | *.{}", normalized_extension),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), &normalized_extension).to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = &title;
+        let filter_label = if binary_output { "Binary files" } else { "Text files" };
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter(filter_label, &[normalized_extension.as_str()])
+            .set_file_name(&normalized_file_name)
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, &normalized_extension).to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
 fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
     if path.extension().is_some() {
         return path;
@@ -676,6 +729,16 @@ fn get_protocol_path_legend(
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
     state.adapter.get_protocol_path_legend()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_supported_protocol_catalog(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<SupportedProtocolCatalogDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_supported_protocol_catalog()
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -934,6 +997,79 @@ fn export_protocol_path_tree(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_byte_export_formats(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<Vec<ByteExportFormatDto>, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_byte_export_formats()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn export_selected_flow_packet_byte_view(
+    state: State<'_, Mutex<AdapterState>>,
+    packet_index: u64,
+    stable_id: String,
+    format_id: String,
+    path: String,
+    flow_packet_index: u64,
+    loaded_packet_window_count: u64,
+) -> Result<ByteExportResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_selected_flow_packet_byte_view(
+        packet_index,
+        &stable_id,
+        &format_id,
+        &path,
+        flow_packet_index,
+        loaded_packet_window_count,
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn export_unrecognized_packet_byte_view(
+    state: State<'_, Mutex<AdapterState>>,
+    packet_index: u64,
+    stable_id: String,
+    format_id: String,
+    path: String,
+) -> Result<ByteExportResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_unrecognized_packet_byte_view(
+        packet_index,
+        &stable_id,
+        &format_id,
+        &path,
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn export_selected_flow_stream_item_data(
+    state: State<'_, Mutex<AdapterState>>,
+    max_packets_to_scan: usize,
+    limit: usize,
+    stream_item_index: u64,
+    format_id: String,
+    path: String,
+) -> Result<ByteExportResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_selected_flow_stream_item_data(
+        max_packets_to_scan,
+        limit,
+        stream_item_index,
+        &format_id,
+        &path,
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
 #[allow(clippy::too_many_arguments)]
 fn export_smart_flows(
     state: State<'_, Mutex<AdapterState>>,
@@ -1025,6 +1161,7 @@ pub fn run() {
             pick_source_capture_path,
             pick_save_index_path,
             pick_save_flow_export_path,
+            pick_save_byte_export_path,
             pick_smart_export_destination_folder,
             pick_save_all_flows_info_csv_path,
             pick_save_analysis_sequence_csv_path,
@@ -1039,6 +1176,10 @@ pub fn run() {
             export_selected_flows,
             export_all_flows_info_csv,
             export_protocol_path_tree,
+            get_byte_export_formats,
+            export_selected_flow_packet_byte_view,
+            export_unrecognized_packet_byte_view,
+            export_selected_flow_stream_item_data,
             export_smart_flows,
             export_smart_unrecognized_packets,
             exit_app,
@@ -1050,6 +1191,7 @@ pub fn run() {
             get_quic_tls_statistics,
             get_top_endpoint_port_statistics,
             get_protocol_path_legend,
+            get_supported_protocol_catalog,
             get_protocol_path_statistics,
             get_protocol_path_summary_flow_indices,
             update_settings,

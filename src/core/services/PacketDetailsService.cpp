@@ -47,9 +47,25 @@ bool is_dns_candidate_udp_port(const std::uint16_t port) noexcept {
     return port == kDnsPort || port == kMdnsPort;
 }
 
-bool should_inspect_dns_message(const PacketDetails& details) noexcept {
-    return details.has_udp &&
-        (is_dns_candidate_udp_port(details.udp.src_port) || is_dns_candidate_udp_port(details.udp.dst_port));
+std::optional<std::pair<std::uint16_t, std::uint16_t>> read_effective_udp_ports(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketDetails& details
+) {
+    if (!details.effective_transport_payload.has_value() ||
+        details.effective_transport_payload->transport != EffectiveTransportKind::udp) {
+        return std::nullopt;
+    }
+
+    const auto transport_header_offset =
+        static_cast<std::size_t>(details.effective_transport_payload->transport_header_offset);
+    if (transport_header_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+        return std::nullopt;
+    }
+
+    return std::pair<std::uint16_t, std::uint16_t> {
+        detail::read_be16(packet_bytes, transport_header_offset),
+        detail::read_be16(packet_bytes, transport_header_offset + 2U),
+    };
 }
 
 struct LinkLayerView {
@@ -149,7 +165,6 @@ std::optional<PacketByteRange> make_packet_byte_range(
 
 void populate_application_protocol_details(
     std::span<const std::uint8_t> packet_bytes,
-    const PacketRef& packet_ref,
     PacketDetails& details
 ) {
     details.has_dns = false;
@@ -158,10 +173,24 @@ void populate_application_protocol_details(
     details.has_http = false;
     details.http = {};
 
+    if (!details.effective_transport_payload.has_value()) {
+        return;
+    }
+
     PacketPayloadService payload_service {};
-    if (should_inspect_dns_message(details)) {
-        const auto transport_payload = payload_service.extract_transport_payload_view(packet_bytes, packet_ref.data_link_type);
-        if (transport_payload.found) {
+    const auto transport_payload = payload_service.extract_effective_transport_payload_view(
+        packet_bytes,
+        *details.effective_transport_payload
+    );
+    if (!transport_payload.found) {
+        return;
+    }
+
+    if (const auto effective_udp_ports = read_effective_udp_ports(packet_bytes, details);
+        effective_udp_ports.has_value() &&
+        (is_dns_candidate_udp_port(effective_udp_ports->first) ||
+            is_dns_candidate_udp_port(effective_udp_ports->second))) {
+        if (!transport_payload.payload.empty()) {
             DnsInspectionParser dns_parser {};
             const auto dns_message = dns_parser.inspect(
                 transport_payload.payload
@@ -169,37 +198,42 @@ void populate_application_protocol_details(
             if (dns_message.status != DnsInspectionStatus::not_enough_header) {
                 details.dns_message = std::move(dns_message);
             }
+            DnsPacketProtocolAnalyzer dns_analyzer {};
+            if (const auto dns = dns_analyzer.inspect_message_payload(
+                    transport_payload.payload,
+                    transport_payload.offset
+                );
+                dns.has_value()) {
+                details.has_dns = true;
+                details.dns = DnsDetails {
+                    .is_response = dns->is_response,
+                    .transaction_id = dns->transaction_id,
+                    .query_type = dns->query_type,
+                    .response_code = dns->response_code,
+                    .query_name = dns->query_name,
+                };
+            }
         }
     }
 
-    DnsPacketProtocolAnalyzer dns_analyzer {};
-    if (const auto dns = dns_analyzer.inspect_message(packet_bytes, packet_ref.data_link_type); dns.has_value()) {
-        details.has_dns = true;
-        details.dns = DnsDetails {
-            .is_response = dns->is_response,
-            .transaction_id = dns->transaction_id,
-            .query_type = dns->query_type,
-            .response_code = dns->response_code,
-            .query_name = dns->query_name,
-        };
-    }
-
-    HttpPacketProtocolAnalyzer http_analyzer {};
-    if (const auto http = http_analyzer.inspect_message(packet_bytes, packet_ref.data_link_type); http.has_value()) {
-        details.has_http = true;
-        details.http = HttpDetails {
-            .message_type = http->message_type == HttpPacketMessageType::request
-                ? HttpMessageType::request
-                : http->message_type == HttpPacketMessageType::response
-                    ? HttpMessageType::response
-                    : HttpMessageType::unknown,
-            .method = http->method,
-            .path = http->path,
-            .version = http->version,
-            .host = http->host,
-            .status_code = http->status_code,
-            .reason_phrase = http->reason,
-        };
+    if (details.effective_transport_payload->transport == EffectiveTransportKind::tcp) {
+        HttpPacketProtocolAnalyzer http_analyzer {};
+        if (const auto http = http_analyzer.inspect_message_payload(transport_payload.payload); http.has_value()) {
+            details.has_http = true;
+            details.http = HttpDetails {
+                .message_type = http->message_type == HttpPacketMessageType::request
+                    ? HttpMessageType::request
+                    : http->message_type == HttpPacketMessageType::response
+                        ? HttpMessageType::response
+                        : HttpMessageType::unknown,
+                .method = http->method,
+                .path = http->path,
+                .version = http->version,
+                .host = http->host,
+                .status_code = http->status_code,
+                .reason_phrase = http->reason,
+            };
+        }
     }
 }
 
@@ -4157,7 +4191,6 @@ std::optional<PacketDetails> decode_packet_details(
                 packet_end,
                 EffectiveTransportRole::top_level
             );
-            populate_application_protocol_details(packet_bytes, packet_ref, details);
             return details;
         }
 
@@ -4197,7 +4230,6 @@ std::optional<PacketDetails> decode_packet_details(
                     EffectiveTransportRole::top_level
                 );
             }
-            populate_application_protocol_details(packet_bytes, packet_ref, details);
             if (details.udp.dst_port == detail::kUdpPortGtpu) {
                 const auto gtpu_offset = transport_offset + detail::kUdpHeaderSize;
                 const auto gtpu_payload_end = udp_payload.has_value()
@@ -4502,7 +4534,6 @@ std::optional<PacketDetails> decode_packet_details(
                 packet_end,
                 EffectiveTransportRole::top_level
             );
-            populate_application_protocol_details(packet_bytes, packet_ref, details);
             return details;
         }
 
@@ -4542,7 +4573,6 @@ std::optional<PacketDetails> decode_packet_details(
                     EffectiveTransportRole::top_level
                 );
             }
-            populate_application_protocol_details(packet_bytes, packet_ref, details);
             if (details.udp.dst_port == detail::kUdpPortGtpu) {
                 const auto gtpu_offset = payload->payload_offset + detail::kUdpHeaderSize;
                 const auto gtpu_payload_end = udp_payload.has_value()
@@ -4652,20 +4682,38 @@ std::optional<PacketDetails> decode_packet_details(
     return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
 }
 
+std::optional<PacketDetails> finalize_packet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    std::optional<PacketDetails> details
+) {
+    if (!details.has_value()) {
+        return std::nullopt;
+    }
+
+    populate_application_protocol_details(packet_bytes, *details);
+    return details;
+}
+
 }  // namespace
 
 std::optional<PacketDetails> PacketDetailsService::decode(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet_ref
 ) const {
-    return decode_packet_details(packet_bytes, packet_ref, DecodeMode::strict);
+    return finalize_packet_details(
+        packet_bytes,
+        decode_packet_details(packet_bytes, packet_ref, DecodeMode::strict)
+    );
 }
 
 std::optional<PacketDetails> PacketDetailsService::decode_best_effort(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet_ref
 ) const {
-    return decode_packet_details(packet_bytes, packet_ref, DecodeMode::best_effort);
+    return finalize_packet_details(
+        packet_bytes,
+        decode_packet_details(packet_bytes, packet_ref, DecodeMode::best_effort)
+    );
 }
 
 }  // namespace pfl

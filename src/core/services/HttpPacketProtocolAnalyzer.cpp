@@ -247,17 +247,23 @@ std::optional<HttpPacketMessageView> HttpPacketProtocolAnalyzer::inspect_message
     return inspect_message(packet_bytes, kLinkTypeEthernet);
 }
 
+std::optional<HttpPacketMessageView> HttpPacketProtocolAnalyzer::inspect_message_payload(
+    std::span<const std::uint8_t> payload_bytes
+) const {
+    if (payload_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    return parse_http_message(bytes_as_text(payload_bytes));
+}
+
 std::optional<HttpPacketMessageView> HttpPacketProtocolAnalyzer::inspect_message(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint32_t data_link_type
 ) const {
     PacketPayloadService payload_service {};
     const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
-    if (payload_bytes.empty()) {
-        return std::nullopt;
-    }
-
-    return parse_http_message(bytes_as_text(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())));
+    return inspect_message_payload(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()));
 }
 
 std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes) const {

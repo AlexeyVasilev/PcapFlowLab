@@ -112,6 +112,21 @@ pub struct ExportProtocolPathTreeResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ByteExportFormatDto {
+    pub stable_id: String,
+    pub label: String,
+    pub suggested_extension: String,
+    pub binary_output: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ByteExportResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartExportResultDto {
     pub exported: bool,
     pub output_path: String,
@@ -308,6 +323,28 @@ pub struct ProtocolPathPresentationDto {
     pub path_text: String,
     pub compact_text: String,
     pub badges: Vec<ProtocolPathBadgeDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupportedProtocolCatalogRowDto {
+    pub category_id: String,
+    pub category_label: String,
+    pub protocol_id: String,
+    pub protocol: String,
+    pub recognition_status_id: String,
+    pub recognition_status_label: String,
+    pub service_status_id: String,
+    pub service_status_label: String,
+    pub packet_summary_status_id: String,
+    pub packet_summary_status_label: String,
+    pub stream_status_id: String,
+    pub stream_status_label: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupportedProtocolCatalogDto {
+    pub rows: Vec<SupportedProtocolCatalogRowDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

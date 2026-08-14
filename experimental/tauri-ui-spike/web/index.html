@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pcap Flow Lab Tauri UI</title>
+    <title>Pcap Flow Lab</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -38,6 +38,7 @@
         <div class="menu-root">
           <button id="menuButtonHelp" type="button" class="menu-button" data-menu-button="help">Help</button>
           <div id="menuPanelHelp" class="menu-panel" data-menu-panel="help">
+            <button type="button" class="menu-item" data-menu-action="supported-protocols">Supported Protocols</button>
             <button type="button" class="menu-item" data-menu-action="protocol-path-legend">Protocol Path Legend</button>
             <button type="button" class="menu-item" data-menu-action="about">About</button>
           </div>
@@ -243,7 +244,10 @@
                     </section>
                     <section class="packet-details-tab-panel" data-packet-details-panel="bytes">
                       <select id="packetDetailsByteViewSelector" class="details-select"></select>
-                      <p id="packetDetailsBytesStateText" class="status-text compact-status-text"></p>
+                      <div class="byte-export-toolbar">
+                        <p id="packetDetailsBytesStateText" class="status-text compact-status-text byte-export-toolbar-status"></p>
+                        <button id="packetDetailsExportBytesButton" type="button" class="secondary-button">Export Bytes...</button>
+                      </div>
                       <pre id="packetDetailsBytesText" class="details-pre byte-preview-pre">No packet selected.</pre>
                     </section>
                   </div>
@@ -268,7 +272,10 @@
                       <div id="streamDetailsSummaryText" class="stream-details-summary-container">Select a stream item to inspect details.</div>
                     </section>
                     <section class="stream-details-tab-panel" data-stream-details-panel="item-data">
-                      <p id="streamDetailsItemDataStateText" class="status-text compact-status-text"></p>
+                      <div class="byte-export-toolbar">
+                        <p id="streamDetailsItemDataStateText" class="status-text compact-status-text byte-export-toolbar-status"></p>
+                        <button id="streamDetailsExportBytesButton" type="button" class="secondary-button">Export Bytes...</button>
+                      </div>
                       <pre id="streamDetailsItemDataText" class="details-pre byte-preview-pre">Select a stream item to inspect details.</pre>
                     </section>
                   </div>
@@ -749,15 +756,16 @@
     <div id="aboutDialog" class="dialog-backdrop" aria-hidden="true">
       <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="aboutDialogTitle">
         <div class="dialog-heading">
-          <h2 id="aboutDialogTitle">About Pcap Flow Lab Tauri UI</h2>
+          <h2 id="aboutDialogTitle">About Pcap Flow Lab</h2>
           <button id="aboutDialogCloseButton" type="button" class="secondary-button">Close</button>
         </div>
         <div class="about-summary">
           <h3 class="about-product-title">Pcap Flow Lab</h3>
-          <p class="dialog-copy about-version-copy">Version 0.2.0</p>
+          <p class="dialog-copy about-version-copy">Version 0.3.0</p>
         </div>
-        <p class="dialog-copy">Flow-based PCAP analyzer for large captures</p>
+        <p class="dialog-copy">Flow-based PCAP analyzer</p>
         <p class="dialog-copy">Built with C++ and Tauri</p>
+        <p class="dialog-copy">For very large captures, the Qt version is recommended for better resource efficiency.</p>
         <p class="dialog-copy">
           Repository:
           <a href="https://github.com/AlexeyVasilev/PcapFlowLab" target="_blank" rel="noreferrer">https://github.com/AlexeyVasilev/PcapFlowLab</a>
@@ -773,56 +781,76 @@
         <p class="dialog-copy">
           Settings control how new captures are interpreted and how current results are presented.
         </p>
-        <div class="settings-sections">
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsHttpUsePathAsServiceHint" type="checkbox" />
-              <span>HTTP: use request path as service hint when Host is missing</span>
-            </label>
-            <p class="settings-help">Applied on the next capture or index open.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsUsePossibleTlsQuic" type="checkbox" />
-              <span>Use possible TLS/QUIC</span>
-            </label>
-            <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
-              <span>Ignore VLAN and MPLS layers when grouping flows</span>
-            </label>
-            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
-              <span>Ignore GTP-U TEIDs when grouping inner flows</span>
-            </label>
-            <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsShowWiresharkFilterForSelectedFlow" type="checkbox" />
-              <span>Show Wireshark filter for selected flow</span>
-            </label>
-            <p class="settings-help">Applied immediately to the selected-flow view.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsShowProtocolPathColumn" type="checkbox" />
-              <span>Show Protocol Path column in the flow table</span>
-            </label>
-            <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
-          </section>
-          <section class="settings-section">
-            <label class="settings-checkbox-row">
-              <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
-              <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
-            </label>
-            <p class="settings-help">Applied immediately to the currently selected packet details when source bytes are available.</p>
-          </section>
+        <div class="subtabbar settings-tabbar" aria-label="Settings tabs">
+          <button id="settingsViewInspectionTab" type="button" class="subtab-button active">View &amp; Inspection</button>
+          <button id="settingsCaptureProcessingTab" type="button" class="subtab-button">Capture Processing</button>
+        </div>
+        <div class="settings-tab-panels">
+          <div id="settingsViewInspectionPanel" class="settings-tab-panel">
+            <div class="settings-sections">
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsUsePossibleTlsQuic" type="checkbox" />
+                  <span>Use possible TLS/QUIC</span>
+                </label>
+                <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsShowWiresharkFilterForSelectedFlow" type="checkbox" />
+                  <span>Show Wireshark filter for selected flow</span>
+                </label>
+                <p class="settings-help">Applied immediately to the selected-flow view.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsShowProtocolPathColumn" type="checkbox" />
+                  <span>Show Protocol Path column in the flow table</span>
+                </label>
+                <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsShowFragmentedPacketCountColumn" type="checkbox" />
+                  <span>Show fragmented packet count column in the flow table</span>
+                </label>
+                <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
+                  <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
+                </label>
+                <p class="settings-help">Applied immediately to the currently selected packet details when source bytes are available.</p>
+              </section>
+            </div>
+          </div>
+          <div id="settingsCaptureProcessingPanel" class="settings-tab-panel" hidden>
+            <p class="settings-help settings-tab-copy">These settings affect how captures are interpreted when opened.</p>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsHttpUsePathAsServiceHint" type="checkbox" />
+                  <span>HTTP: use request path as service hint when Host is missing</span>
+                </label>
+                <p class="settings-help">Applied on the next capture or index open.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsIgnoreVlanAndMplsLayersWhenGroupingFlows" type="checkbox" />
+                  <span>Ignore VLAN and MPLS layers when grouping flows</span>
+                </label>
+                <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
+              </section>
+              <section class="settings-section">
+                <label class="settings-checkbox-row">
+                  <input id="settingsIgnoreGtpuTeidsWhenGroupingInnerFlows" type="checkbox" />
+                  <span>Ignore GTP-U TEIDs when grouping inner flows</span>
+                </label>
+                <p class="settings-help">Applied when importing a capture. Existing indexes keep their stored flow grouping.</p>
+              </section>
+            </div>
+          </div>
         </div>
         <p id="settingsStatusText" class="status-text"></p>
         <div class="dialog-actions">
@@ -846,7 +874,30 @@
       </section>
     </div>
 
-      <div id="smartExportDialog" class="dialog-backdrop" aria-hidden="true">
+    <div id="supportedProtocolsDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card supported-protocols-dialog-card" role="dialog" aria-modal="true" aria-labelledby="supportedProtocolsDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="supportedProtocolsDialogTitle">Supported Protocols</h2>
+          <button id="supportedProtocolsCloseButton" type="button" class="secondary-button">Close</button>
+        </div>
+        <p class="dialog-copy">
+          Recognition means the protocol is recognized in flow classification, detected protocol, protocol path, or protocol-aware inspection. Service means the protocol can provide meaningful Service text for a flow.
+        </p>
+        <p class="dialog-copy">
+          Packet Summary means structured protocol details are available in Packet Details -&gt; Summary. Stream means protocol-aware semantic items are available in the selected-flow Stream. Partial means useful support exists with known limitations. N/A means the capability is not meaningful for that protocol.
+        </p>
+        <div class="supported-protocols-status-legend">
+          <span class="supported-protocol-status-chip is-yes">Yes</span>
+          <span class="supported-protocol-status-chip is-partial">Partial</span>
+          <span class="supported-protocol-status-chip is-no">No</span>
+          <span class="supported-protocol-status-chip is-not-applicable">N/A</span>
+        </div>
+        <p id="supportedProtocolsStatusText" class="status-text"></p>
+        <div id="supportedProtocolsContent" class="supported-protocols-content" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <div id="smartExportDialog" class="dialog-backdrop" aria-hidden="true">
         <section class="dialog-card smart-export-dialog-card" role="dialog" aria-modal="true" aria-labelledby="smartExportDialogTitle">
           <div class="dialog-heading">
             <h2 id="smartExportDialogTitle">Smart Export</h2>
@@ -925,6 +976,24 @@
         <div class="smart-export-actions">
           <button id="smartExportCancelButton" type="button" class="secondary-button">Cancel</button>
           <button id="smartExportRunButton" type="button">OK</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="byteExportDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card byte-export-dialog-card" role="dialog" aria-modal="true" aria-labelledby="byteExportDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="byteExportDialogTitle">Export Bytes</h2>
+          <button id="byteExportCloseButton" type="button" class="icon-button" aria-label="Close export bytes dialog">&times;</button>
+        </div>
+        <p id="byteExportMetadata" class="byte-export-dialog-metadata">-</p>
+        <div>
+          <label class="dialog-label" for="byteExportFormatList">Format</label>
+          <div id="byteExportFormatList" class="byte-export-format-list" role="radiogroup" aria-label="Byte export format"></div>
+        </div>
+        <div class="dialog-actions">
+          <button id="byteExportCancelButton" type="button" class="secondary-button">Cancel</button>
+          <button id="byteExportRunButton" type="button" class="primary-button">Save...</button>
         </div>
       </section>
     </div>

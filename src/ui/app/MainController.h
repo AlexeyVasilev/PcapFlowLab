@@ -282,10 +282,13 @@ private:
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
+    Q_PROPERTY(bool showFragmentedPacketCountColumn READ showFragmentedPacketCountColumn WRITE setShowFragmentedPacketCountColumn NOTIFY showFragmentedPacketCountColumnChanged)
+    Q_PROPERTY(bool developerDiagnosticsAvailable READ developerDiagnosticsAvailable CONSTANT)
     Q_PROPERTY(QString flowGroupingWarningText READ flowGroupingWarningText NOTIFY stateChanged)
     Q_PROPERTY(QString gtpuTeidGroupingInfoText READ gtpuTeidGroupingInfoText NOTIFY stateChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
+    Q_PROPERTY(QVariantList supportedProtocolCatalog READ supportedProtocolCatalog CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(bool selectedFlowUsesTcp READ selectedFlowUsesTcp NOTIFY selectedFlowIndexChanged)
     Q_PROPERTY(bool hasProtocolPathFlowFilter READ hasProtocolPathFlowFilter NOTIFY protocolPathFlowFilterChanged)
@@ -543,10 +546,13 @@ public:
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] bool showProtocolPathColumn() const noexcept;
+    [[nodiscard]] bool showFragmentedPacketCountColumn() const noexcept;
+    [[nodiscard]] bool developerDiagnosticsAvailable() const noexcept;
     [[nodiscard]] QString flowGroupingWarningText() const;
     [[nodiscard]] QString gtpuTeidGroupingInfoText() const;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
+    [[nodiscard]] QVariantList supportedProtocolCatalog() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
     [[nodiscard]] bool selectedFlowUsesTcp() const;
     [[nodiscard]] bool hasProtocolPathFlowFilter() const noexcept;
@@ -619,6 +625,9 @@ public:
     Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
     Q_INVOKABLE void selectPacketByteView(const QString& stableId);
+    Q_INVOKABLE QVariantList byteExportFormats() const;
+    Q_INVOKABLE bool exportSelectedPacketBytes(const QString& formatId);
+    Q_INVOKABLE bool exportSelectedStreamItemData(const QString& formatId);
     Q_INVOKABLE void selectUnrecognizedPackets();
     Q_INVOKABLE QString captureStorageSummaryText() const;
 
@@ -630,6 +639,7 @@ public:
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setShowProtocolPathColumn(bool enabled);
+    void setShowFragmentedPacketCountColumn(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
@@ -650,6 +660,7 @@ signals:
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();
+    void showFragmentedPacketCountColumnChanged();
     void selectedFlowWiresharkFilterChanged();
     void protocolPathFlowFilterChanged();
     void currentTabIndexChanged();
@@ -766,6 +777,12 @@ private:
     QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
     QString chooseProtocolPathTreeSaveFile() const;
+    QString chooseByteExportSaveFile(
+        const QString& title,
+        const QString& suggestedFileName,
+        const QString& suggestedExtension,
+        bool binaryOutput
+    ) const;
     QString chooseDirectory(const QString& title) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
@@ -809,6 +826,7 @@ private:
     bool validate_selected_packet_checksums_ {false};
     bool show_wireshark_filter_for_selected_flow_ {true};
     bool show_protocol_path_column_ {true};
+    bool show_fragmented_packet_count_column_ {false};
     int statistics_mode_ {0};
     int statistics_sections_reset_token_ {0};
     int loaded_protocol_path_statistics_mode_ {-1};

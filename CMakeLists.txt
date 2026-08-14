@@ -2,12 +2,14 @@
 
 project(
     pcap_flow_lab
-    VERSION 0.2.0
-    DESCRIPTION "Flow-based PCAP analyzer for large network captures"
+    VERSION 0.3.0
+    DESCRIPTION "Flow-based PCAP analyzer"
     LANGUAGES CXX
 )
 
 include(CTest)
+
+add_compile_definitions(PFL_APP_VERSION="${PROJECT_VERSION}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -112,12 +114,14 @@ add_library(
     src/core/services/IcmpInspectionParser.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/frontend/FrontendSettingsJson.cpp
+    src/app/session/ByteExport.cpp
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
     src/app/session/ProtocolPathTextExport.cpp
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
+    src/app/session/SupportedProtocolCatalog.cpp
     src/app/session/DnsSummaryPresentation.cpp
     src/app/session/IcmpSummaryPresentation.cpp
     src/app/session/SelectedPacketSummaryPreparation.cpp
@@ -227,12 +231,6 @@ if(PFL_BUILD_UI)
             src/ui/app/StreamListModel.h
         )
 
-        set_source_files_properties(
-            src/ui/app/main.cpp
-            PROPERTIES
-                COMPILE_DEFINITIONS "PFL_APP_VERSION=\"${PROJECT_VERSION}\""
-        )
-
         qt_add_qml_module(
             pcap_flow_lab_ui
             URI PcapFlowLab
@@ -253,6 +251,8 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/AnalysisWorkspacePane.qml
                 src/ui/qml/components/FlowAnalysisPane.qml
                 src/ui/qml/components/SettingsPane.qml
+                src/ui/qml/components/AppScrollBar.qml
+                src/ui/qml/components/SupportedProtocolsDialog.qml
                 src/ui/qml/components/SmartExportDialog.qml
         )
 
@@ -396,6 +396,7 @@ if(BUILD_TESTING)
         tests/unit/CliExportFlowsTests.cpp
         tests/unit/CliFlowInfoTests.cpp
         tests/unit/CliSummaryTests.cpp
+        tests/unit/ByteExportTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
         tests/unit/PacketPayloadTests.cpp
@@ -435,6 +436,7 @@ if(BUILD_TESTING)
         tests/unit/IndexFormatTests.cpp
         tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
+        tests/unit/SupportedProtocolCatalogTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp
         tests/unit/LinuxCookedTests.cpp
         tests/unit/FragmentationTests.cpp

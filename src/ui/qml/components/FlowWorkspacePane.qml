@@ -17,6 +17,7 @@ Item {
     property bool wiresharkFilterVisible: false
     property bool packetFlagsColumnVisible: false
     property bool showProtocolPathColumn: true
+    property bool showFragmentedPacketCountColumn: false
     property int sortColumn: 0
     property bool sortAscending: true
     property var packetModel: null
@@ -124,6 +125,7 @@ Item {
             wiresharkFilterText: root.wiresharkFilterText
             wiresharkFilterVisible: root.wiresharkFilterVisible
             showProtocolPathColumn: root.showProtocolPathColumn
+            showFragmentedPacketCountColumn: root.showFragmentedPacketCountColumn
             sortColumn: root.sortColumn
             sortAscending: root.sortAscending
             onFlowSelected: function(flowIndex) {

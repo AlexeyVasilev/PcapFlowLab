@@ -6,6 +6,7 @@
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/SupportedProtocolCatalog.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
@@ -59,6 +60,27 @@ struct AnalysisSequenceExportRow {
 
 std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
+}
+
+FrontendByteExportResult unavailable_byte_export_result(const std::string& error_text) {
+    return FrontendByteExportResult {
+        .exported = false,
+        .output_path = {},
+        .error_text = error_text,
+    };
+}
+
+std::vector<FrontendByteExportFormatDto> frontend_byte_export_formats() {
+    std::vector<FrontendByteExportFormatDto> result {};
+    for (const auto& descriptor : session_detail::byte_export_format_descriptors()) {
+        result.push_back(FrontendByteExportFormatDto {
+            .stable_id = descriptor.stable_id,
+            .label = descriptor.label,
+            .suggested_extension = descriptor.suggested_extension,
+            .binary_output = descriptor.binary_output,
+        });
+    }
+    return result;
 }
 
 std::optional<SmartPacketRetentionOptions> build_smart_packet_retention_options(
@@ -2434,6 +2456,175 @@ FrontendExportProtocolPathTreeResult FrontendSessionAdapter::export_protocol_pat
     return result;
 }
 
+std::vector<FrontendByteExportFormatDto> FrontendSessionAdapter::get_byte_export_formats() const {
+    return frontend_byte_export_formats();
+}
+
+FrontendByteExportResult FrontendSessionAdapter::export_selected_flow_packet_byte_view(
+    const std::uint64_t packet_index,
+    const std::string& stable_id,
+    const std::string& format_id,
+    const std::filesystem::path& output_path,
+    const std::uint64_t flow_packet_index,
+    const std::uint64_t loaded_packet_window_count
+) const {
+    if (!session_.has_capture()) {
+        return unavailable_byte_export_result("No capture is open.");
+    }
+    if (!selected_flow_index_.has_value()) {
+        return unavailable_byte_export_result("No flow is selected.");
+    }
+    if (output_path.empty()) {
+        return unavailable_byte_export_result("No output file selected.");
+    }
+
+    const auto parsed_format = session_detail::parse_byte_export_format_id(format_id);
+    if (!parsed_format.has_value()) {
+        return unavailable_byte_export_result("Unknown byte export format.");
+    }
+
+    const auto parsed_view_id = session_detail::parse_selected_packet_byte_view_stable_id(stable_id);
+    if (!parsed_view_id.has_value()) {
+        return unavailable_byte_export_result("The selected packet byte view is invalid.");
+    }
+
+    std::optional<PacketRef> packet {};
+    if (flow_packet_index != 0U) {
+        packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
+        if (!packet.has_value() || packet->packet_index != packet_index) {
+            return unavailable_byte_export_result("The selected packet is unavailable.");
+        }
+    } else {
+        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+            return unavailable_byte_export_result("The selected packet is unavailable.");
+        }
+        packet = session_.find_packet(packet_index);
+        if (!packet.has_value()) {
+            return unavailable_byte_export_result("The selected packet is unavailable.");
+        }
+    }
+
+    static_cast<void>(loaded_packet_window_count);
+    std::string error_text {};
+    if (!session_.export_selected_packet_byte_view(
+            *packet,
+            *parsed_view_id,
+            *parsed_format,
+            output_path,
+            &error_text)) {
+        return unavailable_byte_export_result(
+            error_text.empty() ? "Failed to export the selected packet byte view." : error_text
+        );
+    }
+
+    return FrontendByteExportResult {
+        .exported = true,
+        .output_path = path_to_string(output_path),
+        .error_text = {},
+    };
+}
+
+FrontendByteExportResult FrontendSessionAdapter::export_unrecognized_packet_byte_view(
+    const std::uint64_t packet_index,
+    const std::string& stable_id,
+    const std::string& format_id,
+    const std::filesystem::path& output_path
+) const {
+    if (!session_.has_capture()) {
+        return unavailable_byte_export_result("No capture is open.");
+    }
+    if (output_path.empty()) {
+        return unavailable_byte_export_result("No output file selected.");
+    }
+
+    const auto parsed_format = session_detail::parse_byte_export_format_id(format_id);
+    if (!parsed_format.has_value()) {
+        return unavailable_byte_export_result("Unknown byte export format.");
+    }
+
+    const auto parsed_view_id = session_detail::parse_selected_packet_byte_view_stable_id(stable_id);
+    if (!parsed_view_id.has_value()) {
+        return unavailable_byte_export_result("The selected packet byte view is invalid.");
+    }
+
+    const auto packet = session_.find_packet(packet_index);
+    if (!packet.has_value()) {
+        return unavailable_byte_export_result("The selected packet is unavailable.");
+    }
+
+    const auto matches_unrecognized = std::any_of(
+        session_.state().unrecognized_packets.begin(),
+        session_.state().unrecognized_packets.end(),
+        [packet_index](const UnrecognizedPacketRecord& record) {
+            return record.packet.packet_index == packet_index;
+        }
+    );
+    if (!matches_unrecognized) {
+        return unavailable_byte_export_result("The selected packet is unavailable in the unrecognized packet context.");
+    }
+
+    std::string error_text {};
+    if (!session_.export_selected_packet_byte_view(
+            *packet,
+            *parsed_view_id,
+            *parsed_format,
+            output_path,
+            &error_text)) {
+        return unavailable_byte_export_result(
+            error_text.empty() ? "Failed to export the selected packet byte view." : error_text
+        );
+    }
+
+    return FrontendByteExportResult {
+        .exported = true,
+        .output_path = path_to_string(output_path),
+        .error_text = {},
+    };
+}
+
+FrontendByteExportResult FrontendSessionAdapter::export_selected_flow_stream_item_data(
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index,
+    const std::string& format_id,
+    const std::filesystem::path& output_path
+) const {
+    if (!session_.has_capture()) {
+        return unavailable_byte_export_result("No capture is open.");
+    }
+    if (!selected_flow_index_.has_value()) {
+        return unavailable_byte_export_result("No flow is selected.");
+    }
+    if (output_path.empty()) {
+        return unavailable_byte_export_result("No output file selected.");
+    }
+
+    const auto parsed_format = session_detail::parse_byte_export_format_id(format_id);
+    if (!parsed_format.has_value()) {
+        return unavailable_byte_export_result("Unknown byte export format.");
+    }
+
+    std::string error_text {};
+    if (!session_.export_selected_flow_stream_item_data(
+            *selected_flow_index_,
+            max_packets_to_scan,
+            limit,
+            stream_item_index,
+            *parsed_format,
+            output_path,
+            &error_text)) {
+        return unavailable_byte_export_result(
+            error_text.empty() ? "Failed to export the selected stream item data." : error_text
+        );
+    }
+
+    return FrontendByteExportResult {
+        .exported = true,
+        .output_path = path_to_string(output_path),
+        .error_text = {},
+    };
+}
+
 FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
     const std::filesystem::path& output_path,
     const std::vector<std::size_t>& flow_indices,
@@ -2780,6 +2971,32 @@ std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_prot
     }
 
     return rows;
+}
+
+FrontendSupportedProtocolCatalogDto FrontendSessionAdapter::get_supported_protocol_catalog() const {
+    FrontendSupportedProtocolCatalogDto catalog {};
+    const auto rows = session_detail::supported_protocol_catalog_rows();
+    catalog.rows.reserve(rows.size());
+
+    for (const auto& row : rows) {
+        catalog.rows.push_back(FrontendSupportedProtocolCatalogRowDto {
+            .category_id = std::string {session_detail::supported_protocol_category_stable_id(row.category)},
+            .category_label = std::string {session_detail::supported_protocol_category_display_label(row.category)},
+            .protocol_id = std::string {row.stable_id},
+            .protocol = std::string {row.protocol},
+            .recognition_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.recognition)},
+            .recognition_status_label = std::string {session_detail::supported_protocol_status_display_label(row.recognition)},
+            .service_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.service)},
+            .service_status_label = std::string {session_detail::supported_protocol_status_display_label(row.service)},
+            .packet_summary_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.packet_summary)},
+            .packet_summary_status_label = std::string {session_detail::supported_protocol_status_display_label(row.packet_summary)},
+            .stream_status_id = std::string {session_detail::supported_protocol_status_stable_id(row.stream)},
+            .stream_status_label = std::string {session_detail::supported_protocol_status_display_label(row.stream)},
+            .notes = std::string {row.notes},
+        });
+    }
+
+    return catalog;
 }
 
 std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_path_statistics(

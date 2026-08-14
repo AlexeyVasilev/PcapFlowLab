@@ -281,11 +281,18 @@ Open workflow:
 
 - is now enabled in Tauri
 - is intentionally runtime-only
-- currently exposes the safe existing settings already present in the shared app/session path:
-  - `HTTP path as service hint when Host is missing`
+- is organized into:
+  - `View & Inspection`
+  - `Capture Processing`
+- currently exposes the safe existing settings already present in the shared app/session path, including the runtime-only presentation toggles:
   - `Use possible TLS/QUIC`
   - `Show Wireshark filter for selected flow`
+  - `Show Protocol Path column in the flow table`
+  - `Show fragmented packet count column in the flow table` (default off)
   - `Validate IPv4/TCP/UDP checksums for selected packet`
+  - `HTTP path as service hint when Host is missing`
+  - `Ignore VLAN and MPLS layers when grouping flows`
+  - `Ignore GTP-U TEIDs when grouping inner flows`
 - applies the Wireshark-filter visibility toggle immediately after `OK`
 - applies packet checksum validation only to selected packet details when readable source bytes are available
 

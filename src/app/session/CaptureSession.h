@@ -10,6 +10,7 @@
 #include <vector>
 #include <array>
 
+#include "app/session/ByteExport.h"
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
@@ -252,9 +253,25 @@ public:
         std::size_t limit,
         std::uint64_t stream_item_index
     ) const;
+    [[nodiscard]] bool export_selected_flow_stream_item_data(
+        std::size_t flow_index,
+        std::size_t max_packets_to_scan,
+        std::size_t limit,
+        std::uint64_t stream_item_index,
+        session_detail::ByteExportFormat format,
+        const std::filesystem::path& output_path,
+        std::string* out_error_text = nullptr
+    ) const;
     [[nodiscard]] std::optional<std::string> format_selected_packet_byte_view_hex_dump(
         const PacketRef& packet,
         const session_detail::SelectedPacketByteViewId& id
+    ) const;
+    [[nodiscard]] bool export_selected_packet_byte_view(
+        const PacketRef& packet,
+        const session_detail::SelectedPacketByteViewId& id,
+        session_detail::ByteExportFormat format,
+        const std::filesystem::path& output_path,
+        std::string* out_error_text = nullptr
     ) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_payload_hex_dump(const PacketRef& packet) const;
@@ -264,6 +281,12 @@ public:
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(
         const ReassemblyRequest& request,
         std::span<const PacketRef> direction_packets
+    ) const;
+    [[nodiscard]] std::optional<ReassemblyResult> reassemble_selected_flow_stream_direction_prefix(
+        std::size_t flow_index,
+        std::size_t max_packets_to_scan,
+        Direction direction,
+        std::size_t max_bytes
     ) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
     [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;

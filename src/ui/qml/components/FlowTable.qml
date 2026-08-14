@@ -13,6 +13,7 @@ Frame {
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
     property bool showProtocolPathColumn: true
+    property bool showFragmentedPacketCountColumn: false
     property bool unrecognizedPacketsSelected: false
     property int unrecognizedPacketCount: 0
     property int sortColumn: 0
@@ -33,7 +34,10 @@ Frame {
     readonly property int fragColumnWidth: 56
     readonly property int packetsColumnWidth: 86
     readonly property int bytesColumnWidth: 92
-    readonly property int flowTableColumnCount: root.showProtocolPathColumn ? 12 : 11
+    readonly property int flowTableColumnCount:
+        10
+        + (root.showProtocolPathColumn ? 1 : 0)
+        + (root.showFragmentedPacketCountColumn ? 1 : 0)
     readonly property int flowTableBaseWidth:
         root.tableContentLeftMargin
         + root.tableContentRightMargin
@@ -46,7 +50,7 @@ Frame {
         + (root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0)
         + root.endpointColumnWidth
         + root.endpointColumnWidth
-        + root.fragColumnWidth
+        + (root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0)
         + root.packetsColumnWidth
         + root.bytesColumnWidth
         + root.tableRowSpacing * (root.flowTableColumnCount - 1)
@@ -294,7 +298,7 @@ Frame {
                 flickableDirection: Flickable.HorizontalFlick
                 boundsBehavior: Flickable.StopAtBounds
 
-                ScrollBar.horizontal: ScrollBar {
+                ScrollBar.horizontal: AppScrollBar {
                     id: flowTableHorizontalScrollBar
                     policy: flowTableScroller.contentWidth > flowTableScroller.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
@@ -359,7 +363,15 @@ Frame {
                                 Layout.maximumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
                                 verticalAlignment: Text.AlignVCenter
                             }
-                            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
+                            Button {
+                                objectName: "fragHeaderCell"
+                                text: "Frag" + root.sortIndicator(5)
+                                visible: root.showFragmentedPacketCountColumn
+                                Layout.preferredWidth: root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0
+                                Layout.minimumWidth: root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0
+                                Layout.maximumWidth: root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0
+                                onClicked: root.sortRequested(5)
+                            }
                             Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
                             Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
                         }
@@ -387,7 +399,7 @@ Frame {
                         onCountChanged: root.syncSelectedFlowRow()
                         onModelChanged: root.syncSelectedFlowRow()
 
-                        ScrollBar.vertical: ScrollBar {
+                        ScrollBar.vertical: AppScrollBar {
                             id: flowScrollBar
                             policy: flowListView.contentHeight > flowListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                         }
@@ -656,7 +668,10 @@ Frame {
                                         ToolTip.text: protocolPathText
                                     }
                                     Rectangle {
-                                        Layout.preferredWidth: root.fragColumnWidth
+                                        visible: root.showFragmentedPacketCountColumn
+                                        Layout.preferredWidth: root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0
+                                        Layout.minimumWidth: root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0
+                                        Layout.maximumWidth: root.showFragmentedPacketCountColumn ? root.fragColumnWidth : 0
                                         implicitHeight: 20
                                         radius: 4
                                         color: root.fragBackgroundColor(hasFragmentedPackets, selected)

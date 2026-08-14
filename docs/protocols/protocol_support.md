@@ -60,6 +60,53 @@ The support matrix below uses the following categories.
 - `N/A`
   - The category does not meaningfully apply to that row.
 
+## User-facing Protocol Capability Catalog
+
+This compact table matches `Help -> Supported Protocols` in both Qt and Tauri.
+Its source of truth is the shared C++ `SupportedProtocolCatalog`, and a unit
+test enforces exact synchronization with the marked block below. The detailed
+matrices later in this document remain the deeper engineering reference.
+
+<!-- BEGIN USER PROTOCOL CAPABILITY CATALOG -->
+| Category | Protocol | Recognition | Service | Packet Summary | Stream | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Link & Encapsulation | Ethernet II | Yes | N/A | Yes | N/A | Ethernet II framing is decoded and shown in Packet Summary. |
+| Link & Encapsulation | IEEE 802.3 LLC/SNAP | Partial | N/A | Yes | N/A | SNAP continuation is limited to supported IPv4, IPv6, and ARP payloads. |
+| Link & Encapsulation | Linux cooked capture (SLL/SLL2) | Yes | N/A | Yes | N/A | Linux cooked capture headers are shown in Summary and supported inner decode continues. |
+| Link & Encapsulation | VLAN / QinQ | Yes | N/A | Yes | N/A | Single-tag and QinQ stacks are decoded; stack depth is bounded. |
+| Link & Encapsulation | MACsec | Partial | N/A | Partial | N/A | SecTAG metadata is parsed, but protected payload remains opaque. |
+| Link & Encapsulation | PBB / MAC-in-MAC | Partial | N/A | Partial | N/A | I-TAG and supported inner Ethernet/IP continuations are handled conservatively. |
+| Link & Encapsulation | MPLS | Partial | N/A | Yes | N/A | Label stacks are decoded; supported bottoms include IP and limited Ethernet pseudowire. |
+| Link & Encapsulation | PPPoE | Partial | N/A | Partial | N/A | Session IP continuation is supported with basic Discovery and PPP control presentation. |
+| Network | ARP | Yes | Yes | Yes | Yes | Structured request, reply, and probe information is available. |
+| Network | IPv4 | Yes | N/A | Yes | N/A | Header fields and bounded IPv4 options are presented. |
+| Network | IPv6 | Yes | N/A | Yes | N/A | Header fields are presented; upper-layer detail depends on the next protocol. |
+| Network | ICMPv4 | Yes | N/A | Partial | N/A | Common ICMPv4 messages are structured; quoted-packet recursion is not implemented. |
+| Network | ICMPv6 | Yes | N/A | Partial | N/A | Basic ICMPv6 details are shown; deeper NDP parsing is not implemented. |
+| Network | IGMP | Yes | Yes | Partial | N/A | IGMPv1/v2 parsing is stronger; IGMPv3 support is currently more limited. |
+| Transport | TCP | Yes | N/A | Yes | Partial | Headers and options are structured; plain Stream rows expose generic TCP payload data. |
+| Transport | UDP | Yes | N/A | Yes | Partial | Header parsing is structured; plain Stream rows expose generic UDP payload data. |
+| Transport | SCTP | Yes | N/A | Partial | No | Common header and first-chunk metadata are parsed; SCTP stream semantics are not implemented. |
+| Tunnels & Overlays | GRE | Partial | N/A | Partial | N/A | GRE v0 supports selected direct IP, TEB, and MPLS continuation paths. |
+| Tunnels & Overlays | IP-in-IP (IPv4/IPv6) | Partial | N/A | Partial | N/A | Bounded IPv4/IPv6 encapsulation and supported inner transport continuation are handled. |
+| Tunnels & Overlays | VXLAN | Partial | N/A | Partial | N/A | VXLAN/4789 supports bounded inner Ethernet/IP transport with VNI-aware flow identity. |
+| Tunnels & Overlays | Geneve | Partial | N/A | Partial | N/A | Version 0 Ethernet overlays on UDP/6081 support bounded options and inner transport. |
+| Tunnels & Overlays | GTP-U | Partial | N/A | Partial | N/A | GTPv1-U T-PDU supports bounded inner IP transport with TEID-aware flow identity. |
+| Tunnels & Overlays | MikroTik EoIP | Partial | N/A | Partial | N/A | Strict MikroTik EoIP shapes support selected inner Ethernet/IP continuations. |
+| Security | IPsec AH | Partial | N/A | Partial | N/A | AH metadata and bounded inner continuation are supported; validation is not implemented. |
+| Security | IPsec ESP | Partial | N/A | Partial | N/A | SPI and sequence metadata are shown; protected payload is not decrypted. |
+| Application | TLS | Yes | Partial | Yes | Partial | SNI from a segmented ClientHello may be unavailable at import and recovered after flow selection. |
+| Application | QUIC | Yes | Partial | Partial | Partial | Long-header QUIC is recognized; decryptable Initial traffic exposes richer TLS/CRYPTO detail. |
+| Application | HTTP/1.x | Yes | Yes | Yes | Yes | HTTP/1.x requests/responses and Host-derived Service information are supported. |
+| Application | DNS | Yes | Yes | Yes | Yes | Structured DNS over UDP is shown; Stream does not reconstruct DNS transactions. |
+| Application | mDNS | Yes | Yes | Yes | Yes | Multicast DNS and DNS-SD service information are parsed where available. |
+| Application | DHCPv4 | Yes | No | No | No | Recognized from BOOTP/DHCPv4 wire shape only; no dedicated message parser is exposed. |
+| Application | SSH | Yes | No | No | No | Recognized from SSH banner only; structured SSH message parsing is not implemented. |
+| Application | STUN | Yes | No | No | No | Recognized from STUN message shape only; deeper STUN parsing is not implemented. |
+| Application | BitTorrent | Yes | No | No | No | Recognized from the canonical handshake only; deeper BitTorrent parsing is not implemented. |
+| Application | Mail protocols (SMTP / POP3 / IMAP) | Yes | No | No | No | Lightweight detection exists; structured mail-protocol parsing is not implemented. |
+<!-- END USER PROTOCOL CAPABILITY CATALOG -->
+
 ## Current Architectural Split
 
 Protocol support is intentionally split across three layers of work.
@@ -158,6 +205,7 @@ Separate IGMP note:
 | PCAP / Frame metadata | Supported | N/A | N/A | Supported | Not supported | Not supported | Not supported | Supported | Frame layer shows packet index in file, selected-flow packet index when available, timestamp, captured length, original length, and truncation warnings. |
 | Ethernet | Supported | N/A | Not supported | Supported | Not supported | Not supported | Not supported | Supported | Ethernet II and IEEE 802.3 length-based framing both appear in layered Summary with source/destination MAC addresses plus either EtherType or declared payload length. |
 | IEEE 802.3 LLC/SNAP | Partial | Partial | Not supported | Supported | Not supported | Not supported | Not supported | Supported | Shared decode distinguishes IEEE 802.3 length framing from Ethernet II, recognizes LLC/SNAP only for DSAP `0xaa`, SSAP `0xaa`, Control `0x03`, and continues through known SNAP PID values for IPv4, IPv6, and ARP when the bounded payload validates, including non-zero OUI cases. Direct and VLAN/QinQ-wrapped cases are supported. Unknown PID and non-SNAP LLC remain conservative with specific no-flow reason text and bounded Data preview. Malformed LLC/SNAP headers and IEEE 802.3 length-boundary mismatches are handled best-effort, and trailing bytes beyond the declared 802.3 length are ignored for inner parsing. |
+| Linux SLL / SLL2 | Supported | N/A | Not supported | Supported | Not supported | Not supported | Not supported | Supported | Linux cooked v1/v2 carrier headers are surfaced in layered Summary, and supported inner ARP/IPv4/IPv6 decode continues through the normal bounded parsing path. |
 | 802.1Q VLAN | Supported | N/A | Not supported | Supported | Not supported | Not supported | Not supported | Supported | Single-tag `0x8100`, `0x88A8` QinQ-style outer tags, and legacy `0x9100` VLAN-like tags are supported in shared decode and layered Summary. VLAN stack depth is bounded to 4 tags. Unknown or truncated inner VLAN payloads remain conservative and can stay in the unrecognized-packet list while still preserving partial Ethernet/VLAN envelope details. |
 | MACsec / IEEE 802.1AE | Partial | Not supported | Not supported | Supported | Partial | Not supported | Not supported | Supported | Shared decode recognizes EtherType `0x88e5` directly after Ethernet, outer single VLAN `0x8100`, outer QinQ `0x88a8` + `0x8100`, or outer legacy VLAN-like `0x9100`, parses basic SecTAG metadata (Version/ES/SC/SCB/E/C/AN, Short Length, Packet Number, optional SCI), and keeps protected payload opaque. Selected-packet layered Summary can show `MACsec SecTAG`, bounded `MACsec Protected Payload`, and `MACsec ICV` when enough bytes are present; for complete `E=0` / `C=0` secured-data cases, the first two secured-data bytes may also be surfaced as `Plain EtherType` metadata while the remaining bytes stay opaque. Production uses a fixed assumed 16-byte ICV, does not decrypt or validate it, and ignores Short Length when calculating protected-payload / ICV bounds. Packet Details `Bytes` can still expose the bounded selected-packet views for no-flow MACsec packets. No persistent `ProtocolPath` entry or `ProtocolPathRegistry` growth is created for MACsec because there is no inner flow recovery from protected payload, so all current MACsec fixtures remain no-flow packets with specific truncation/decryption reason text. |
 | IEEE 802.1ah PBB / MAC-in-MAC | Partial | Partial | Not supported | Supported | Not supported | Not supported | N/A | Supported | Shared decode recognizes EtherType `0x88e7`, parses the fixed 4-byte I-TAG (Priority/Drop Eligible/NCA/Reserved 1/Reserved 2/I-SID), and continues into inner customer Ethernet. Inner IPv4/IPv6 TCP/UDP can form normal flows, ARP can be recognized behind PBB, and inner VLAN/QinQ/LLC-SNAP composition is supported. Outer provider VLAN entry before PBB is supported through the shared VLAN parser, including single-tag `0x8100`, QinQ `0x88a8`, and legacy `0x9100` VLAN-like TPIDs. Protocol-path-aware flow identity for PBB uses only the 24-bit I-SID; PCP / DEI / NCA / reserved bits do not split flows. Unknown inner EtherType, known-but-unsupported nested continuations, complete-I-TAG/no-inner-Ethernet cases, malformed/truncated inner headers, and caplen-truncated inner headers remain conservative no-flow packets with explicit reason text and bounded Data/partial-header presentation; extra captured tail beyond the declared inner IPv4/IPv6 lengths is excluded from transport payload accounting. Truncated I-TAG packets can still expose partial first-byte bit fields and basic PBB protocol-detail text for manual inspection. No PBB-TE, OAM/CFM, control-plane, bridge-learning, nested-PBB continuation, or inner PPPoE/MPLS continuation through PBB is implemented. |
@@ -182,6 +230,10 @@ Separate IGMP note:
 ## Support Matrix: Higher-Level Protocols And Hints
 
 These rows generally ride on top of TCP or UDP flows. They do not create separate flow-key semantics of their own.
+For this detailed matrix, `Stream items` means protocol-aware semantic Stream
+support. Generic TCP/UDP payload fallback alone does not count as
+protocol-specific Stream support, although generic transport ownership can still
+surface under `Stream Item Data` where applicable.
 
 | Protocol / hint | Recognition | Flow key / grouping | Service hint | Packet Summary layer | Packet Details Bytes | Stream items | Stream Item Data | Tests / fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -189,14 +241,14 @@ These rows generally ride on top of TCP or UDP flows. They do not create separat
 | QUIC | Supported | Not supported | Partial | Supported | Supported | Supported | Partial | Supported | Open-time QUIC detection is intentionally cheap. Service hint may remain empty at open time and refresh later through bounded selected-flow analysis. Selected-packet `Summary` appends a final QUIC layer, including QUIC+TLS presentation where available. Packet Details `Bytes` exposes protocol-unit/derived-byte views. Stream supports QUIC Initial item labeling such as `QUIC Initial: CRYPTO` and `QUIC Initial: ACK`. No claim is made here about full general QUIC reassembly. |
 | DNS | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Open-time hinting supports DNS with QNAME-based service hints. Selected-packet `Summary` and packet-local selected-flow Stream items both reuse the shared `DnsInspectionParser -> DnsMessage -> DnsSummaryPresentation` path. Packet Details `Bytes` and Stream Item `Data` remain transport/item-owned bytes rather than transaction reconstruction. No transaction matching or DNS-over-TCP reconstruction is implemented. |
 | mDNS | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Detection still depends on UDP/5353 and multicast destination checks. Flow-level Service uses a bounded best-effort Question/PTR-owner/RR-owner hint, selected-packet `Summary` is structured, packet-local selected-flow Stream items expose the same bounded structured DNS wire model, and user-facing compact detected text is `mDNS`. |
-| HTTP | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Open-time hinting can use `Host`, and optionally request path fallback when the relevant setting is enabled. Selected-packet `Summary` appends a final HTTP layer using the existing packet-details path. Stream can build request/response-oriented items such as `HTTP GET /...` from bounded reconstruction, while Stream Item `Data` remains ownership-based rather than an HTTP document model. |
-| DHCP | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is open-time detection from BOOTP/DHCP shape checks. Packet Details `Bytes` and Stream Item `Data` fall back to generic UDP ownership where applicable. |
-| STUN | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is hint-only. No dedicated selected-packet or stream presentation was found. |
-| BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is handshake / hint recognition only. No dedicated selected-packet or stream presentation was found. |
-| SSH | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is banner-based hint recognition only. |
-| SMTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is cheap text / port-based hint recognition only. |
-| POP3 | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is cheap text / port-based hint recognition only. |
-| IMAP | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is cheap text / port-based hint recognition only. |
+| HTTP | Supported | Not supported | Supported | Supported | Supported | Supported | Partial | Supported | Open-time hinting can use `Host`, and optionally request path fallback when the relevant setting is enabled. Selected-packet `Summary` appends a final HTTP layer using the existing packet-details path. Stream can build request/response-oriented items such as `HTTP GET /...` from bounded reconstruction, and Stream Item `Data` now exposes exact authoritative bytes for request/response/partial rows through the same bounded ownership model rather than an HTTP document model; synthetic gap rows remain unavailable. |
+| DHCP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is open-time detection from BOOTP/DHCP shape checks only. Generic UDP-owned Stream Item `Data` may still exist where transport ownership is available, but there is no DHCP-specific Stream item model. |
+| STUN | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is hint-only. Generic transport-owned Stream Item `Data` may still exist, but no STUN-specific selected-packet or Stream semantics are implemented. |
+| BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is canonical-handshake / hint recognition only. Generic transport-owned Stream Item `Data` may still exist, but no BitTorrent-specific Stream semantics are implemented. |
+| SSH | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is banner-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but no structured SSH message or Stream model is implemented. |
+| SMTP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no SMTP-specific Stream model. |
+| POP3 | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no POP3-specific Stream model. |
+| IMAP | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Partial | Supported | Current support is cheap text / port-based hint recognition only. Generic TCP-owned Stream Item `Data` may still exist, but there is no IMAP-specific Stream model. |
 | `possible_tls` | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Not supported | Supported | Settings-gated fallback hint for TCP/443-like traffic when confirmed TLS detection did not fire. This is intentionally not a claim of real TLS parsing. |
 | `possible_quic` | Detection-only | Not supported | Not supported | Not supported | Not supported | Not supported | Not supported | Supported | Settings-gated fallback hint for UDP/443-like traffic when confirmed QUIC detection did not fire. This is intentionally not a claim of real QUIC parsing. |
 

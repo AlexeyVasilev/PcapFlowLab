@@ -32,6 +32,15 @@ std::vector<std::uint8_t> make_text_bytes(const std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+std::vector<std::uint8_t> concat_bytes(
+    const std::vector<std::uint8_t>& left,
+    const std::vector<std::uint8_t>& right
+) {
+    auto bytes = left;
+    bytes.insert(bytes.end(), right.begin(), right.end());
+    return bytes;
+}
+
 void append_be16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
@@ -87,16 +96,6 @@ const StreamItemRow* find_stream_row_by_label_and_packets(
 ) {
     const auto it = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
         return row.label == label && row.packet_indices == packet_indices;
-    });
-    return it == rows.end() ? nullptr : &(*it);
-}
-
-const StreamItemRow* find_stream_row_by_prefix(
-    const std::vector<StreamItemRow>& rows,
-    const std::string_view prefix
-) {
-    const auto it = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
-        return row.label.rfind(prefix, 0U) == 0U;
     });
     return it == rows.end() ? nullptr : &(*it);
 }
@@ -238,7 +237,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::tcp,
             relabeled_row,
             row.materialization_stability,
-            0U
+            0U,
+            30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
@@ -295,7 +295,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::tcp,
             missing_provenance_row,
             row.materialization_stability,
-            0U
+            0U,
+            30U
         );
         PFL_EXPECT(missing_provenance.source_kind == session_detail::StreamItemDataSourceKind::unavailable);
         PFL_EXPECT(missing_provenance.unavailable_reason.find("not packet-backed") != std::string::npos);
@@ -363,19 +364,57 @@ void run_selected_stream_item_data_presentation_tests() {
     }
 
     {
+        constexpr std::string_view http_request_text =
+            "GET / HTTP/1.1\r\n"
+            "Host: single.example\r\n"
+            "User-Agent: selected-stream-item-data\r\n"
+            "\r\n";
+        const auto http_request_bytes = make_text_bytes(http_request_text);
+        const auto path = write_temp_pcap(
+            "pfl_selected_stream_item_data_http_request_single.pcap",
+            make_classic_pcap({{
+                100U,
+                make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 92, 0, 1),
+                    ipv4(10, 92, 0, 2),
+                    47010,
+                    80,
+                    http_request_bytes,
+                    0x18
+                )
+            }})
+        );
+
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), fast_options()));
+        PFL_EXPECT(session.open_capture(path, fast_options()));
 
         const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
-        const auto* row = find_stream_row_by_prefix(rows, "HTTP ");
+        const auto* row = find_stream_row_by_label(rows, "HTTP GET /");
         PFL_REQUIRE(row != nullptr);
+        PFL_REQUIRE(row->http_summary.has_value());
+        PFL_REQUIRE(row->http_byte_owner.has_value());
+        PFL_EXPECT(row->http_summary->semantic_kind == HttpStreamItemSemanticKind::request);
+        PFL_EXPECT(row->http_byte_owner->reconstructed_offset == 0U);
+        PFL_EXPECT(row->http_byte_owner->length == http_request_bytes.size());
 
         const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row->stream_item_index);
         PFL_EXPECT(presentation.semantic_kind == session_detail::StreamItemDataSemanticKind::http_message);
-        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::unavailable);
-        PFL_EXPECT(!presentation.unavailable_reason.empty());
-        PFL_EXPECT(!session.materialize_selected_flow_stream_item_data(0U, 30U, 16U, row->stream_item_index).has_value());
-        PFL_EXPECT(!session.format_selected_flow_stream_item_data_hex_dump(0U, 30U, 16U, row->stream_item_index).has_value());
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::complete);
+        PFL_EXPECT(presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::packet_local);
+        PFL_EXPECT(presentation.available_length == http_request_bytes.size());
+        PFL_EXPECT(presentation.declared_length == std::optional<std::uint32_t> {
+            static_cast<std::uint32_t>(http_request_bytes.size())});
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row->stream_item_index
+        );
+        PFL_EXPECT(materialized == http_request_bytes);
+        expect_hex_dump_matches(session, 0U, 30U, 16U, row->stream_item_index, http_request_bytes);
 
         auto relabeled_row = *row;
         relabeled_row.label = "synthetic label should not choose HTTP item data";
@@ -385,9 +424,419 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::tcp,
             relabeled_row,
             row->materialization_stability,
-            0U
+            0U,
+            30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
+    }
+
+    {
+        constexpr std::string_view split_http_request_text =
+            "GET /split HTTP/1.1\r\n"
+            "Host: split.example\r\n"
+            "User-Agent: split-test\r\n"
+            "\r\n";
+        const auto split_http_request = make_text_bytes(split_http_request_text);
+        const auto split_http_request_a = std::vector<std::uint8_t>(
+            split_http_request.begin(),
+            split_http_request.begin() + 24
+        );
+        const auto split_http_request_b = std::vector<std::uint8_t>(
+            split_http_request.begin() + 24,
+            split_http_request.end()
+        );
+        const auto split_http_request_path = write_temp_pcap(
+            "pfl_selected_stream_item_data_http_split_request.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {
+                    100U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 1, 1), ipv4(10, 92, 1, 2), 47011, 80, split_http_request_a, 0x18)
+                },
+                {
+                    200U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 1, 1), ipv4(10, 92, 1, 2), 47011, 80, split_http_request_b, 0x18)
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(split_http_request_path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto* row = find_stream_row_by_label(rows, "HTTP GET /split");
+        PFL_REQUIRE(row != nullptr);
+        const auto expected_split_packet_indices = std::vector<std::uint64_t> {0U, 1U};
+        PFL_EXPECT(row->packet_indices == expected_split_packet_indices);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row->stream_item_index);
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(presentation.assembly_kind == session_detail::StreamItemDataAssemblyKind::reassembled);
+        PFL_EXPECT(presentation.contributing_unit_count == std::optional<std::uint32_t> {2U});
+        PFL_EXPECT(
+            presentation.contributing_unit_kind ==
+            std::optional<session_detail::StreamItemDataContributionUnitKind> {
+                session_detail::StreamItemDataContributionUnitKind::tcp_segment
+            });
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row->stream_item_index
+        );
+        PFL_EXPECT(materialized == split_http_request);
+        expect_hex_dump_matches(session, 0U, 30U, 16U, row->stream_item_index, split_http_request);
+    }
+
+    {
+        constexpr std::string_view http_request_one_text =
+            "GET /one HTTP/1.1\r\n"
+            "Host: one.example\r\n"
+            "\r\n";
+        constexpr std::string_view http_request_two_text =
+            "GET /two HTTP/1.1\r\n"
+            "Host: two.example\r\n"
+            "\r\n";
+        const auto http_request_one = make_text_bytes(http_request_one_text);
+        const auto http_request_two = make_text_bytes(http_request_two_text);
+        const auto http_multi_payload = concat_bytes(http_request_one, http_request_two);
+        const auto http_multi_payload_a = std::vector<std::uint8_t>(
+            http_multi_payload.begin(),
+            http_multi_payload.begin() + static_cast<std::ptrdiff_t>(http_request_one.size() + 10U)
+        );
+        const auto http_multi_payload_b = std::vector<std::uint8_t>(
+            http_multi_payload.begin() + static_cast<std::ptrdiff_t>(http_request_one.size() + 10U),
+            http_multi_payload.end()
+        );
+        const auto http_multi_path = write_temp_pcap(
+            "pfl_selected_stream_item_data_http_multi_headers.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {
+                    100U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 2, 1), ipv4(10, 92, 2, 2), 47012, 80, http_multi_payload_a, 0x18)
+                },
+                {
+                    200U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 2, 1), ipv4(10, 92, 2, 2), 47012, 80, http_multi_payload_b, 0x18)
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(http_multi_path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto* row_one = find_stream_row_by_label(rows, "HTTP GET /one");
+        const auto* row_two = find_stream_row_by_label(rows, "HTTP GET /two");
+        PFL_REQUIRE(row_one != nullptr);
+        PFL_REQUIRE(row_two != nullptr);
+
+        const auto materialized_one = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row_one->stream_item_index
+        );
+        const auto materialized_two = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row_two->stream_item_index
+        );
+        PFL_EXPECT(materialized_one == http_request_one);
+        PFL_EXPECT(materialized_two == http_request_two);
+        PFL_EXPECT(materialized_one != materialized_two);
+    }
+
+    {
+        constexpr std::string_view http_response_text =
+            "HTTP/1.1 200 OK\r\n"
+            "Server: selected-data\r\n"
+            "Content-Length: 5\r\n"
+            "\r\n"
+            "Hello";
+        const auto http_response = make_text_bytes(http_response_text);
+        const auto http_response_a = std::vector<std::uint8_t>(
+            http_response.begin(),
+            http_response.begin() + 14
+        );
+        const auto http_response_b = std::vector<std::uint8_t>(
+            http_response.begin() + 14,
+            http_response.end()
+        );
+        const auto http_response_path = write_temp_pcap(
+            "pfl_selected_stream_item_data_http_response_split.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {
+                    100U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 3, 2), ipv4(10, 92, 3, 1), 80, 47013, http_response_a, 0x18)
+                },
+                {
+                    200U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 3, 2), ipv4(10, 92, 3, 1), 80, 47013, http_response_b, 0x18)
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(http_response_path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto* row = find_stream_row_by_label(rows, "HTTP 200 OK");
+        PFL_REQUIRE(row != nullptr);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row->stream_item_index);
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(presentation.available_length == http_response.size());
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row->stream_item_index
+        );
+        PFL_EXPECT(materialized == http_response);
+    }
+
+    {
+        constexpr std::string_view showcase_request_demo_text =
+            "GET /demo HTTP/1.1\r\n"
+            "Host: showcase.example\r\n"
+            "\r\n";
+        constexpr std::string_view showcase_response_text =
+            "HTTP/1.1 200 OK\r\n"
+            "Server: showcase\r\n"
+            "Content-Length: 5\r\n"
+            "\r\n"
+            "Hello";
+        constexpr std::string_view showcase_partial_response_text =
+            "HTTP/1.1 503 Service Unavailable\r\n"
+            "Server: showcase\r\n"
+            "Content-Length: 12\r\n";
+        constexpr std::string_view showcase_request_status_text =
+            "GET /status HTTP/1.1\r\n"
+            "Host: showcase.example\r\n"
+            "\r\n";
+        const auto showcase_request_demo = make_text_bytes(showcase_request_demo_text);
+        const auto showcase_response = make_text_bytes(showcase_response_text);
+        const auto showcase_partial_response = make_text_bytes(showcase_partial_response_text);
+        const auto showcase_request_status = make_text_bytes(showcase_request_status_text);
+        const auto showcase_response_a = std::vector<std::uint8_t>(
+            showcase_response.begin(),
+            showcase_response.begin() + 18
+        );
+        const auto showcase_response_b = std::vector<std::uint8_t>(
+            showcase_response.begin() + 18,
+            showcase_response.end()
+        );
+        const auto showcase_path = write_temp_pcap(
+            "pfl_selected_stream_item_data_http_showcase_shape.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {
+                    100U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 5, 1), ipv4(10, 92, 5, 2), 47015, 80, showcase_request_demo, 0x18)
+                },
+                {
+                    200U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 5, 2), ipv4(10, 92, 5, 1), 80, 47015, showcase_response_a, 0x18)
+                },
+                {
+                    300U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 5, 2), ipv4(10, 92, 5, 1), 80, 47015, showcase_response_b, 0x18)
+                },
+                {
+                    400U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 5, 2), ipv4(10, 92, 5, 1), 80, 47015, showcase_partial_response, 0x18)
+                },
+                {
+                    500U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 5, 1), ipv4(10, 92, 5, 2), 47015, 80, showcase_request_status, 0x18)
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(showcase_path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        PFL_EXPECT(rows.size() == 4U);
+        PFL_EXPECT(rows[0].label == "HTTP GET /demo");
+        PFL_EXPECT(rows[1].label == "HTTP 200 OK");
+        PFL_EXPECT(rows[2].label == "HTTP Payload (partial)");
+        PFL_EXPECT(rows[3].label == "HTTP GET /status");
+
+        const auto* response_row = find_stream_row_by_label(rows, "HTTP 200 OK");
+        const auto* partial_row = find_stream_row_by_label(rows, "HTTP Payload (partial)");
+        const auto* status_row = find_stream_row_by_label(rows, "HTTP GET /status");
+        PFL_REQUIRE(response_row != nullptr);
+        PFL_REQUIRE(partial_row != nullptr);
+        PFL_REQUIRE(status_row != nullptr);
+        PFL_REQUIRE(response_row->http_byte_owner.has_value());
+        PFL_REQUIRE(partial_row->http_byte_owner.has_value());
+        PFL_REQUIRE(status_row->http_byte_owner.has_value());
+
+        const auto response_presentation =
+            require_selected_stream_item_data(session, 0U, 30U, 16U, response_row->stream_item_index);
+        const auto partial_presentation =
+            require_selected_stream_item_data(session, 0U, 30U, 16U, partial_row->stream_item_index);
+        const auto status_presentation =
+            require_selected_stream_item_data(session, 0U, 30U, 16U, status_row->stream_item_index);
+        PFL_EXPECT(response_presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(partial_presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(status_presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(response_presentation.state == session_detail::StreamItemDataState::complete);
+        PFL_EXPECT(partial_presentation.state == session_detail::StreamItemDataState::window_incomplete);
+        PFL_EXPECT(status_presentation.state == session_detail::StreamItemDataState::complete);
+
+        const auto response_materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            response_row->stream_item_index
+        );
+        const auto partial_materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            partial_row->stream_item_index
+        );
+        const auto status_materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            status_row->stream_item_index
+        );
+        PFL_EXPECT(response_materialized == showcase_response);
+        PFL_EXPECT(partial_materialized == showcase_partial_response);
+        PFL_EXPECT(status_materialized == showcase_request_status);
+
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(showcase_path);
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stream = adapter.get_selected_flow_stream(30U, 16U);
+        const auto* frontend_response_row = find_frontend_stream_item_by_label(stream.items, "HTTP 200 OK");
+        const auto* frontend_partial_row = find_frontend_stream_item_by_label(stream.items, "HTTP Payload (partial)");
+        const auto* frontend_status_row = find_frontend_stream_item_by_label(stream.items, "HTTP GET /status");
+        PFL_REQUIRE(frontend_response_row != nullptr);
+        PFL_REQUIRE(frontend_partial_row != nullptr);
+        PFL_REQUIRE(frontend_status_row != nullptr);
+
+        const auto response_details =
+            adapter.get_selected_flow_stream_item_details(30U, 16U, frontend_response_row->stream_item_index);
+        const auto partial_details =
+            adapter.get_selected_flow_stream_item_details(30U, 16U, frontend_partial_row->stream_item_index);
+        const auto status_details =
+            adapter.get_selected_flow_stream_item_details(30U, 16U, frontend_status_row->stream_item_index);
+        PFL_EXPECT(response_details.payload_tab_title == "Item Data");
+        PFL_EXPECT(response_details.stream_item_data.available);
+        PFL_EXPECT(response_details.stream_item_data.semantic_kind == "http_message");
+        PFL_EXPECT(response_details.stream_item_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(response_details.stream_item_data.unavailable_text.empty());
+        PFL_EXPECT(partial_details.stream_item_data.available);
+        PFL_EXPECT(partial_details.stream_item_data.semantic_kind == "http_message");
+        PFL_EXPECT(partial_details.stream_item_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(partial_details.stream_item_data.unavailable_text.empty());
+        PFL_EXPECT(status_details.stream_item_data.available);
+        PFL_EXPECT(status_details.stream_item_data.semantic_kind == "http_message");
+        PFL_EXPECT(status_details.stream_item_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(status_details.stream_item_data.unavailable_text.empty());
+    }
+
+    {
+        constexpr std::string_view http_partial_request_text =
+            "GET /ok HTTP/1.1\r\n"
+            "Host: ok.example\r\n"
+            "\r\n"
+            "GET /partial HTTP/1.1\r\n"
+            "Host: partial.example\r\n";
+        const auto http_partial_payload = make_text_bytes(http_partial_request_text);
+        const auto http_partial_payload_a = std::vector<std::uint8_t>(
+            http_partial_payload.begin(),
+            http_partial_payload.begin() + 39
+        );
+        const auto http_partial_payload_b = std::vector<std::uint8_t>(
+            http_partial_payload.begin() + 39,
+            http_partial_payload.end()
+        );
+        const auto http_partial_tail = make_text_bytes(
+            "GET /partial HTTP/1.1\r\n"
+            "Host: partial.example\r\n");
+        const auto http_partial_path = write_temp_pcap(
+            "pfl_selected_stream_item_data_http_partial_headers.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {
+                    100U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 4, 1), ipv4(10, 92, 4, 2), 47014, 80, http_partial_payload_a, 0x18)
+                },
+                {
+                    200U,
+                    make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                        ipv4(10, 92, 4, 1), ipv4(10, 92, 4, 2), 47014, 80, http_partial_payload_b, 0x18)
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(http_partial_path, fast_options()));
+
+        const auto rows = session.list_flow_stream_items_for_packet_prefix(0U, 30U, 16U);
+        const auto* row = find_stream_row_by_label(rows, "HTTP Payload (partial)");
+        PFL_REQUIRE(row != nullptr);
+        PFL_REQUIRE(row->http_summary.has_value());
+        PFL_EXPECT(row->http_summary->semantic_kind == HttpStreamItemSemanticKind::partial_payload);
+
+        const auto presentation = require_selected_stream_item_data(session, 0U, 30U, 16U, row->stream_item_index);
+        PFL_EXPECT(presentation.source_kind == session_detail::StreamItemDataSourceKind::reconstructed_item);
+        PFL_EXPECT(presentation.state == session_detail::StreamItemDataState::window_incomplete);
+
+        const auto materialized = require_materialized_selected_stream_item_data(
+            session,
+            0U,
+            30U,
+            16U,
+            row->stream_item_index
+        );
+        PFL_EXPECT(materialized == http_partial_tail);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto opened = adapter.open_capture(fixture_path("parsing/http/http_get_1.pcap"));
+        PFL_REQUIRE(opened.opened);
+        PFL_REQUIRE(adapter.select_flow(0U).selected);
+
+        const auto stream = adapter.get_selected_flow_stream(30U, 16U);
+        const auto* row = find_frontend_stream_item_by_label(stream.items, "HTTP GET /");
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(!row->stream_item_data.formatted_text.empty());
+
+        const auto details = adapter.get_selected_flow_stream_item_details(30U, 16U, row->stream_item_index);
+        PFL_EXPECT(details.payload_tab_title == "Item Data");
+        PFL_EXPECT(details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.semantic_kind == "http_message");
+        PFL_EXPECT(details.stream_item_data.source_kind == "reconstructed_item");
+        PFL_EXPECT(!details.stream_item_data.formatted_text.empty());
     }
 
     {
@@ -423,11 +872,12 @@ void run_selected_stream_item_data_presentation_tests() {
 
         const auto details = adapter.get_selected_flow_stream_item_details(30U, 16U, row->stream_item_index);
         PFL_EXPECT(details.payload_tab_title == "Item Data");
-        PFL_EXPECT(!details.stream_item_data.available);
-        PFL_EXPECT(details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(details.stream_item_data.available);
+        PFL_EXPECT(details.stream_item_data.semantic_kind == "http_message");
+        PFL_EXPECT(details.stream_item_data.source_kind == "reconstructed_item");
         PFL_EXPECT(!details.stream_item_data.status_text.empty());
-        PFL_EXPECT(!details.stream_item_data.unavailable_text.empty());
-        PFL_EXPECT(details.stream_item_data.unavailable_text.find("authoritative item-owned byte sequence") != std::string::npos);
+        PFL_EXPECT(!details.stream_item_data.formatted_text.empty());
+        PFL_EXPECT(details.stream_item_data.unavailable_text.empty());
     }
 
     {
@@ -467,7 +917,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::tcp,
             relabeled_row,
             row->materialization_stability,
-            0U
+            0U,
+            30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
@@ -511,7 +962,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::tcp,
             relabeled_row,
             row->materialization_stability,
-            0U
+            0U,
+            5U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
@@ -609,7 +1061,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::udp,
             relabeled_row,
             row->materialization_stability,
-            0U
+            0U,
+            30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }
@@ -769,7 +1222,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::tcp,
             relabeled_gap_row,
             gap_row->materialization_stability,
-            0U
+            0U,
+            2U
         );
         expect_same_stream_item_data_presentation(relabeled_gap_presentation, presentation);
     }
@@ -795,7 +1249,8 @@ void run_selected_stream_item_data_presentation_tests() {
             ProtocolId::arp,
             relabeled_row,
             rows[0].materialization_stability,
-            0U
+            0U,
+            30U
         );
         expect_same_stream_item_data_presentation(relabeled_presentation, presentation);
     }

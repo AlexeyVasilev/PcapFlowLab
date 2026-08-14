@@ -185,7 +185,7 @@ Item {
                         clip: true
                         model: root.flowModel
 
-                        ScrollBar.vertical: ScrollBar {
+                        ScrollBar.vertical: AppScrollBar {
                             id: analysisFlowScrollBar
                             policy: analysisFlowList.contentHeight > analysisFlowList.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                         }

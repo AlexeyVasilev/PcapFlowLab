@@ -101,8 +101,15 @@ ApplicationWindow {
     }
 
     Action {
+        id: showSupportedProtocolsAction
+        text: "Supported Protocols"
+        onTriggered: supportedProtocolsDialog.open()
+    }
+
+    Action {
         id: showCaptureStorageDiagnosticsAction
         text: "Capture Storage Diagnostics"
+        enabled: mainController.developerDiagnosticsAvailable
         onTriggered: {
             captureStorageDiagnosticsDialog.diagnosticsText = mainController.captureStorageSummaryText()
             captureStorageDiagnosticsDialog.open()
@@ -155,8 +162,20 @@ ApplicationWindow {
         Menu {
             title: "Help"
 
-            MenuItem { action: showCaptureStorageDiagnosticsAction }
-            MenuSeparator {}
+            MenuItem { action: showSupportedProtocolsAction }
+            MenuSeparator {
+                visible: mainController.developerDiagnosticsAvailable
+                height: visible ? implicitHeight : 0
+            }
+            MenuItem {
+                action: showCaptureStorageDiagnosticsAction
+                visible: mainController.developerDiagnosticsAvailable
+                height: visible ? implicitHeight : 0
+            }
+            MenuSeparator {
+                visible: mainController.developerDiagnosticsAvailable
+                height: visible ? implicitHeight : 0
+            }
             MenuItem { action: showAboutAction }
         }
     }
@@ -176,9 +195,22 @@ ApplicationWindow {
         title: "Capture Storage Diagnostics"
 
         contentItem: ScrollView {
+            id: captureStorageDiagnosticsScroll
             clip: true
-            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
-            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+            ScrollBar.vertical: AppScrollBar {
+                parent: captureStorageDiagnosticsScroll
+                x: captureStorageDiagnosticsScroll.mirrored ? 0 : captureStorageDiagnosticsScroll.width - width
+                y: captureStorageDiagnosticsScroll.topPadding
+                height: captureStorageDiagnosticsScroll.availableHeight
+                policy: captureStorageDiagnosticsScroll.contentHeight > captureStorageDiagnosticsScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                parent: captureStorageDiagnosticsScroll
+                x: captureStorageDiagnosticsScroll.leftPadding
+                y: captureStorageDiagnosticsScroll.height - height
+                width: captureStorageDiagnosticsScroll.availableWidth
+                policy: captureStorageDiagnosticsScroll.contentWidth > captureStorageDiagnosticsScroll.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
 
             TextArea {
                 readOnly: true
@@ -274,7 +306,7 @@ ApplicationWindow {
 
                 Label {
                     Layout.fillWidth: true
-                    text: "Flow-based PCAP analyzer for large captures"
+                    text: "Flow-based PCAP analyzer"
                     wrapMode: Text.WordWrap
                     color: "#0f172a"
                 }
@@ -318,49 +350,49 @@ ApplicationWindow {
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
-        width: 560
-        height: 360
+        width: 640
+        height: 460
+        implicitWidth: 640
+        implicitHeight: 460
         modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape
         title: "Settings"
 
-        contentItem: ScrollView {
-            clip: true
-            contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-            SettingsPane {
-                id: settingsPane
-                width: parent.width
-                httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
-                usePossibleTlsQuic: mainController.usePossibleTlsQuic
-                ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
-                ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
-                validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
-                showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
-                showProtocolPathColumn: mainController.showProtocolPathColumn
-                onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
-                    mainController.httpUsePathAsServiceHint = enabled
-                }
-                onUsePossibleTlsQuicChangedByUser: function(enabled) {
-                    mainController.usePossibleTlsQuic = enabled
-                }
-                onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
-                    mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
-                }
-                onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
-                    mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
-                }
-                onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
-                    mainController.validateSelectedPacketChecksums = enabled
-                }
-                onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
-                    mainController.showWiresharkFilterForSelectedFlow = enabled
-                }
-                onShowProtocolPathColumnChangedByUser: function(enabled) {
-                    mainController.showProtocolPathColumn = enabled
-                }
+        contentItem: SettingsPane {
+            id: settingsPane
+            anchors.fill: parent
+            httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
+            usePossibleTlsQuic: mainController.usePossibleTlsQuic
+            ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
+            ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
+            validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
+            showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
+            showProtocolPathColumn: mainController.showProtocolPathColumn
+            showFragmentedPacketCountColumn: mainController.showFragmentedPacketCountColumn
+            onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
+                mainController.httpUsePathAsServiceHint = enabled
+            }
+            onUsePossibleTlsQuicChangedByUser: function(enabled) {
+                mainController.usePossibleTlsQuic = enabled
+            }
+            onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
+                mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
+            }
+            onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
+                mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
+            }
+            onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
+                mainController.validateSelectedPacketChecksums = enabled
+            }
+            onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
+                mainController.showWiresharkFilterForSelectedFlow = enabled
+            }
+            onShowProtocolPathColumnChangedByUser: function(enabled) {
+                mainController.showProtocolPathColumn = enabled
+            }
+            onShowFragmentedPacketCountColumnChangedByUser: function(enabled) {
+                mainController.showFragmentedPacketCountColumn = enabled
             }
         }
 
@@ -384,9 +416,23 @@ ApplicationWindow {
         title: "Protocol Path Legend"
 
         contentItem: ScrollView {
+            id: protocolPathLegendScroll
             clip: true
             contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical: AppScrollBar {
+                parent: protocolPathLegendScroll
+                x: protocolPathLegendScroll.mirrored ? 0 : protocolPathLegendScroll.width - width
+                y: protocolPathLegendScroll.topPadding
+                height: protocolPathLegendScroll.availableHeight
+                policy: protocolPathLegendScroll.contentHeight > protocolPathLegendScroll.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                parent: protocolPathLegendScroll
+                x: protocolPathLegendScroll.leftPadding
+                y: protocolPathLegendScroll.height - height
+                width: protocolPathLegendScroll.availableWidth
+                policy: ScrollBar.AlwaysOff
+            }
 
             ColumnLayout {
                 width: parent.width
@@ -475,6 +521,14 @@ ApplicationWindow {
         }
     }
 
+    SupportedProtocolsDialog {
+        id: supportedProtocolsDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        protocolCatalog: mainController.supportedProtocolCatalog
+    }
+
     SmartExportDialog {
         id: smartExportDialog
         parent: window.contentItem
@@ -512,6 +566,7 @@ ApplicationWindow {
             Button {
                 id: openCaptureButton
                 text: "Open Capture..."
+                Layout.alignment: Qt.AlignVCenter
                 enabled: !mainController.isOpening &&
                          !mainController.smartExportInProgress &&
                          !mainController.indexSaveInProgress &&
@@ -562,7 +617,9 @@ ApplicationWindow {
 
             Frame {
                 Layout.fillWidth: true
-                padding: 0
+                Layout.minimumWidth: 0
+                Layout.preferredHeight: implicitHeight
+                padding: 8
 
                 background: Rectangle {
                     color: "#ffffff"
@@ -572,11 +629,11 @@ ApplicationWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 8
                     spacing: 4
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 8
 
                         Label {
@@ -587,7 +644,9 @@ ApplicationWindow {
 
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             implicitHeight: activeSessionPathLabel.implicitHeight
+                            clip: true
 
                             Label {
                                 id: activeSessionPathLabel
@@ -617,6 +676,7 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 8
                         visible: mainController.openedFromIndex
                             || (mainController.hasCapture
@@ -631,7 +691,9 @@ ApplicationWindow {
 
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             implicitHeight: sourceCapturePathLabel.implicitHeight
+                            clip: true
 
                             Label {
                                 id: sourceCapturePathLabel
@@ -659,6 +721,7 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 8
                         visible: mainController.hasCapture && !mainController.hasSourceCapture && mainController.expectedSourceCapturePath.length > 0
 
@@ -670,7 +733,9 @@ ApplicationWindow {
 
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             implicitHeight: expectedSourcePathLabel.implicitHeight
+                            clip: true
 
                             Label {
                                 id: expectedSourcePathLabel
@@ -1082,6 +1147,7 @@ ApplicationWindow {
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
                 packetFlagsColumnVisible: mainController.selectedFlowUsesTcp
                 showProtocolPathColumn: mainController.showProtocolPathColumn
+                showFragmentedPacketCountColumn: mainController.showFragmentedPacketCountColumn
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel

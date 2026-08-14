@@ -628,7 +628,7 @@ Backend note for the current migration stage:
 - complete packet-local TLS records use captured packet bytes directly, while split or bounded reconstructed TLS records and their handshake children use one reconstructed owner plus child ranges into that owner rather than per-record or per-handshake byte copies;
 - encrypted or opaque TLS records such as `ApplicationData` remain TLS records even when no plaintext handshake child exists;
 - when current metadata confirms TLS ownership but only a bounded partial TCP fragment is available, the descriptor remains the narrowest honest TLS unit, such as `TLS Record Fragment`, with complete/partial/truncated state derived from structured TLS lengths;
-- DNS and TLS byte views remain packet-details-only in this stage; stream-item byte owners and stream-item application-unit byte selectors remain deferred;
+- DNS and TLS packet-details byte views remain unchanged in this stage; Stream Item Details now expose authoritative stream-item owners where the bounded selected-flow model can prove them, while broader application-unit selector expansion remains deferred;
 - selected-packet QUIC byte inspection now also exposes:
   - captured QUIC envelope ranges as children of the captured `UDP Datagram`;
   - captured QUIC Initial protected-payload ranges only when the packet-number length and packet end are authoritative;
@@ -646,7 +646,7 @@ Backend note for the current migration stage:
 - the retained QUIC Initial plaintext owner reuses the existing selected-packet QUIC plaintext artifact and is not copied into a second complete buffer solely for byte presentation;
 - captured and derived owners are intentionally transparent to the UI once the selector has chosen a stable id;
 - application protocols still deferred from Packet Details Bytes in this stage include packet-local HTTP message units and DHCP/BOOTP message units, because current packet presentation does not yet expose a single shared authoritative application-unit byte range for those protocols.
-- Stream Item Details tabs remain unchanged in this pass; stream-item byte owners, packet-spanning HTTP message byte units, and long-lived QUIC derived owners remain deferred.
+- Stream Item Details tabs remain unchanged in this pass; authoritative HTTP request/response/partial item bytes now come from bounded selected-flow reconstruction ownership, while long-lived QUIC derived owners remain deferred.
 
 ### Packet details state model
 

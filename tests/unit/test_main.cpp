@@ -54,6 +54,7 @@ void run_cli_export_flows_tests();
 void run_cli_flow_info_tests();
 void run_cli_packet_info_tests();
 void run_cli_summary_tests();
+void run_byte_export_tests();
 void run_selected_packet_byte_presentation_tests();
 void run_selected_stream_item_data_presentation_tests();
 void run_packet_payload_tests();
@@ -79,6 +80,7 @@ void run_index_tests();
 void run_index_format_tests();
 void run_chunked_import_tests();
 void run_protocol_coverage_tests();
+void run_supported_protocol_catalog_tests();
 void run_malformed_packet_handling_tests();
 void run_linux_cooked_tests();
 void run_linux_cooked_pcap_fixture_tests();
@@ -208,6 +210,7 @@ int main() {
         {"cli_flow_info", pfl::tests::run_cli_flow_info_tests},
         {"cli_packet_info", pfl::tests::run_cli_packet_info_tests},
         {"cli_summary", pfl::tests::run_cli_summary_tests},
+        {"byte_export", pfl::tests::run_byte_export_tests},
         {"selected_packet_byte_presentation", pfl::tests::run_selected_packet_byte_presentation_tests},
         {"selected_stream_item_data_presentation", pfl::tests::run_selected_stream_item_data_presentation_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},
@@ -233,6 +236,7 @@ int main() {
         {"index_format", pfl::tests::run_index_format_tests},
         {"chunked_import", pfl::tests::run_chunked_import_tests},
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
+        {"supported_protocol_catalog", pfl::tests::run_supported_protocol_catalog_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},
         {"linux_cooked", pfl::tests::run_linux_cooked_tests},
         {"linux_cooked_pcap_fixtures", pfl::tests::run_linux_cooked_pcap_fixture_tests},
