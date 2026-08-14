@@ -25,6 +25,10 @@ When an index depends on original packet bytes, the UI can also show a
 `Source PCAP` path. This matters for packet bytes, stream reconstruction, and
 other byte-backed inspection features.
 
+For the dedicated end-user guide to opening raw captures, opening/saving
+indexes, source-capture reattachment, and open-progress behavior, see
+[Captures and indexes](capture-and-index.md).
+
 ## Main areas
 
 The Qt main window uses four top-level menu groups:
