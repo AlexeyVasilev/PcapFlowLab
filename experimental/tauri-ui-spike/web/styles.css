@@ -1019,6 +1019,10 @@ body.is-resizing-vertical {
   min-height: 0;
 }
 
+.flows-panel {
+  min-width: 0;
+}
+
 .analysis-panel {
   min-width: 0;
   container-type: inline-size;
@@ -1033,6 +1037,10 @@ body.is-resizing-vertical {
 .analysis-flows-panel > .fill-scroll,
 .packet-details-panel > .details-scroll {
   flex: 1 1 auto;
+}
+
+.flows-panel > .fill-scroll {
+  min-width: 0;
 }
 
 .inspector-view {
@@ -1405,6 +1413,18 @@ select:disabled {
 .flow-table-wrap,
 .analysis-flow-table-wrap {
   overflow: auto;
+}
+
+.flow-table-wrap .data-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.flow-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .flow-view-panel {
