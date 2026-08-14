@@ -347,6 +347,7 @@ ApplicationWindow {
 
     Dialog {
         id: settingsDialog
+        objectName: "settingsDialog"
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
@@ -358,48 +359,84 @@ ApplicationWindow {
         focus: true
         closePolicy: Popup.CloseOnEscape
         title: "Settings"
+        property bool draftHttpUsePathAsServiceHint: false
+        property bool draftUsePossibleTlsQuic: false
+        property bool draftIgnoreVlanAndMplsLayersWhenGroupingFlows: false
+        property bool draftIgnoreGtpuTeidsWhenGroupingInnerFlows: false
+        property bool draftValidateSelectedPacketChecksums: false
+        property bool draftShowWiresharkFilterForSelectedFlow: true
+        property bool draftShowProtocolPathColumn: true
+        property bool draftShowFragmentedPacketCountColumn: false
+
+        function resetDraftFromController() {
+            draftHttpUsePathAsServiceHint = mainController.httpUsePathAsServiceHint
+            draftUsePossibleTlsQuic = mainController.usePossibleTlsQuic
+            draftIgnoreVlanAndMplsLayersWhenGroupingFlows = mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
+            draftIgnoreGtpuTeidsWhenGroupingInnerFlows = mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
+            draftValidateSelectedPacketChecksums = mainController.validateSelectedPacketChecksums
+            draftShowWiresharkFilterForSelectedFlow = mainController.showWiresharkFilterForSelectedFlow
+            draftShowProtocolPathColumn = mainController.showProtocolPathColumn
+            draftShowFragmentedPacketCountColumn = mainController.showFragmentedPacketCountColumn
+        }
+
+        function applyDraftToController() {
+            mainController.httpUsePathAsServiceHint = draftHttpUsePathAsServiceHint
+            mainController.usePossibleTlsQuic = draftUsePossibleTlsQuic
+            mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = draftIgnoreVlanAndMplsLayersWhenGroupingFlows
+            mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = draftIgnoreGtpuTeidsWhenGroupingInnerFlows
+            mainController.validateSelectedPacketChecksums = draftValidateSelectedPacketChecksums
+            mainController.showWiresharkFilterForSelectedFlow = draftShowWiresharkFilterForSelectedFlow
+            mainController.showProtocolPathColumn = draftShowProtocolPathColumn
+            mainController.showFragmentedPacketCountColumn = draftShowFragmentedPacketCountColumn
+        }
+
+        onOpened: resetDraftFromController()
+        onAccepted: {
+            applyDraftToController()
+            close()
+        }
+        onRejected: close()
 
         contentItem: SettingsPane {
             id: settingsPane
+            objectName: "settingsDialogPane"
             anchors.fill: parent
-            httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
-            usePossibleTlsQuic: mainController.usePossibleTlsQuic
-            ignoreVlanAndMplsLayersWhenGroupingFlows: mainController.ignoreVlanAndMplsLayersWhenGroupingFlows
-            ignoreGtpuTeidsWhenGroupingInnerFlows: mainController.ignoreGtpuTeidsWhenGroupingInnerFlows
-            validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
-            showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
-            showProtocolPathColumn: mainController.showProtocolPathColumn
-            showFragmentedPacketCountColumn: mainController.showFragmentedPacketCountColumn
+            httpUsePathAsServiceHint: settingsDialog.draftHttpUsePathAsServiceHint
+            usePossibleTlsQuic: settingsDialog.draftUsePossibleTlsQuic
+            ignoreVlanAndMplsLayersWhenGroupingFlows: settingsDialog.draftIgnoreVlanAndMplsLayersWhenGroupingFlows
+            ignoreGtpuTeidsWhenGroupingInnerFlows: settingsDialog.draftIgnoreGtpuTeidsWhenGroupingInnerFlows
+            validateSelectedPacketChecksums: settingsDialog.draftValidateSelectedPacketChecksums
+            showWiresharkFilterForSelectedFlow: settingsDialog.draftShowWiresharkFilterForSelectedFlow
+            showProtocolPathColumn: settingsDialog.draftShowProtocolPathColumn
+            showFragmentedPacketCountColumn: settingsDialog.draftShowFragmentedPacketCountColumn
             onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
-                mainController.httpUsePathAsServiceHint = enabled
+                settingsDialog.draftHttpUsePathAsServiceHint = enabled
             }
             onUsePossibleTlsQuicChangedByUser: function(enabled) {
-                mainController.usePossibleTlsQuic = enabled
+                settingsDialog.draftUsePossibleTlsQuic = enabled
             }
             onIgnoreVlanAndMplsLayersWhenGroupingFlowsChangedByUser: function(enabled) {
-                mainController.ignoreVlanAndMplsLayersWhenGroupingFlows = enabled
+                settingsDialog.draftIgnoreVlanAndMplsLayersWhenGroupingFlows = enabled
             }
             onIgnoreGtpuTeidsWhenGroupingInnerFlowsChangedByUser: function(enabled) {
-                mainController.ignoreGtpuTeidsWhenGroupingInnerFlows = enabled
+                settingsDialog.draftIgnoreGtpuTeidsWhenGroupingInnerFlows = enabled
             }
             onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
-                mainController.validateSelectedPacketChecksums = enabled
+                settingsDialog.draftValidateSelectedPacketChecksums = enabled
             }
             onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
-                mainController.showWiresharkFilterForSelectedFlow = enabled
+                settingsDialog.draftShowWiresharkFilterForSelectedFlow = enabled
             }
             onShowProtocolPathColumnChangedByUser: function(enabled) {
-                mainController.showProtocolPathColumn = enabled
+                settingsDialog.draftShowProtocolPathColumn = enabled
             }
             onShowFragmentedPacketCountColumnChangedByUser: function(enabled) {
-                mainController.showFragmentedPacketCountColumn = enabled
+                settingsDialog.draftShowFragmentedPacketCountColumn = enabled
             }
         }
 
         footer: DialogButtonBox {
             standardButtons: DialogButtonBox.Ok | DialogButtonBox.Cancel
-            onAccepted: settingsDialog.close()
-            onRejected: settingsDialog.close()
         }
     }
 

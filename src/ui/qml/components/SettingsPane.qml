@@ -135,6 +135,7 @@ Item {
                         spacing: 4
 
                         CheckBox {
+                            objectName: "usePossibleTlsQuicCheckBox"
                             Layout.fillWidth: true
                             text: "Use possible TLS/QUIC"
                             checked: root.usePossibleTlsQuic
@@ -286,12 +287,13 @@ Item {
                         }
 
                         Label {
+                            objectName: "httpUsePathAsServiceHintHelpText"
                             Layout.fillWidth: true
                             Layout.leftMargin: 28
                             wrapMode: Text.WordWrap
                             color: "#64748b"
                             font.pixelSize: 12
-                            text: "Applied on the next capture or index open."
+                            text: "Applied when the next raw capture is opened."
                         }
                     }
 
@@ -308,12 +310,13 @@ Item {
                         }
 
                         Label {
+                            objectName: "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText"
                             Layout.fillWidth: true
                             Layout.leftMargin: 28
                             wrapMode: Text.WordWrap
                             color: "#64748b"
                             font.pixelSize: 12
-                            text: "Applied when importing a capture. Existing indexes keep their stored flow grouping."
+                            text: "Applied when importing a raw capture. Existing indexes keep their stored flow grouping."
                         }
                     }
 
@@ -330,12 +333,13 @@ Item {
                         }
 
                         Label {
+                            objectName: "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText"
                             Layout.fillWidth: true
                             Layout.leftMargin: 28
                             wrapMode: Text.WordWrap
                             color: "#64748b"
                             font.pixelSize: 12
-                            text: "Applied when importing a capture. Existing indexes keep their stored flow grouping."
+                            text: "Applied when importing a raw capture. Existing indexes keep their stored flow grouping."
                         }
                     }
 
