@@ -81,8 +81,8 @@ Frame {
 
         Layout.fillWidth: true
         Layout.minimumWidth: 0
-        padding: 0
-        readonly property real sectionContentWidth: Math.max(0, width - 20)
+        padding: 10
+        readonly property real sectionContentWidth: Math.max(0, availableWidth)
 
         background: Rectangle {
             color: "#ffffff"
@@ -93,7 +93,6 @@ Frame {
         ColumnLayout {
             id: sectionLayout
             anchors.fill: parent
-            anchors.margins: 10
             Layout.minimumWidth: 0
             spacing: 8
         }
@@ -251,7 +250,7 @@ Frame {
         }
     }
 
-    padding: 0
+    padding: 10
     clip: true
 
     background: Rectangle {
@@ -263,7 +262,6 @@ Frame {
     ColumnLayout {
         id: contentLayout
         anchors.fill: parent
-        anchors.margins: 10
         Layout.minimumWidth: 0
         spacing: 10
 

@@ -61,7 +61,7 @@ Frame {
         }
     }
 
-    padding: 0
+    padding: 8
     background: Rectangle {
         color: "#f8fafc"
         border.color: "#d8dee9"
@@ -70,7 +70,6 @@ Frame {
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 8
         spacing: 10
 
         StatChip {

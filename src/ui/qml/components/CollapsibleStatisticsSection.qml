@@ -9,13 +9,14 @@ Frame {
     property string summaryText: ""
     property string toggleObjectName: ""
     property bool expanded: false
+    readonly property int contentMargin: 10
     default property alias sectionContent: contentColumn.data
 
     signal expandedChangedByUser(bool expanded)
 
     Layout.fillWidth: true
     Layout.minimumWidth: 0
-    padding: 0
+    padding: contentMargin
 
     background: Rectangle {
         color: "#ffffff"
@@ -24,8 +25,8 @@ Frame {
     }
 
     ColumnLayout {
+        id: sectionLayout
         anchors.fill: parent
-        anchors.margins: 10
         spacing: 10
 
         Button {
