@@ -566,6 +566,7 @@ ApplicationWindow {
             Button {
                 id: openCaptureButton
                 text: "Open Capture..."
+                Layout.alignment: Qt.AlignVCenter
                 enabled: !mainController.isOpening &&
                          !mainController.smartExportInProgress &&
                          !mainController.indexSaveInProgress &&
@@ -617,7 +618,8 @@ ApplicationWindow {
             Frame {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
-                padding: 0
+                Layout.preferredHeight: implicitHeight
+                padding: 8
 
                 background: Rectangle {
                     color: "#ffffff"
@@ -627,7 +629,6 @@ ApplicationWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 8
                     spacing: 4
 
                     RowLayout {
