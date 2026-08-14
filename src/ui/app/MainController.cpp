@@ -3353,12 +3353,6 @@ QString MainController::flowGroupingWarningText() const {
         return {};
     }
 
-    if (session_.opened_from_index()) {
-        return pending_analysis_settings_.ignore_vlan_and_mpls_layers_when_grouping_flows
-            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied.")
-            : QString {};
-    }
-
     return session_.flow_grouping_ignores_vlan_and_mpls_layers()
         ? QStringLiteral("VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.")
         : QString {};
@@ -3367,12 +3361,6 @@ QString MainController::flowGroupingWarningText() const {
 QString MainController::gtpuTeidGroupingInfoText() const {
     if (!session_.has_capture()) {
         return {};
-    }
-
-    if (session_.opened_from_index()) {
-        return pending_analysis_settings_.ignore_gtpu_teids_when_grouping_inner_flows
-            ? QStringLiteral("Loaded indexes preserve their stored flow grouping. The current GTP-U TEID grouping setting is not reapplied.")
-            : QString {};
     }
 
     return session_.flow_grouping_ignores_gtpu_teids()
@@ -4872,6 +4860,13 @@ void MainController::setHttpUsePathAsServiceHint(const bool enabled) {
 
     pending_analysis_settings_.http_use_path_as_service_hint = enabled;
     emit httpUsePathAsServiceHintChanged();
+
+    if (session_.has_capture()) {
+        setStatusText(
+            QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."),
+            false
+        );
+    }
 }
 
 void MainController::setUsePossibleTlsQuic(const bool enabled) {
@@ -4904,7 +4899,12 @@ void MainController::setIgnoreVlanAndMplsLayersWhenGroupingFlows(const bool enab
     session_.set_analysis_settings(pending_analysis_settings_);
     emit ignoreVlanAndMplsLayersWhenGroupingFlowsChanged();
     if (session_.has_capture()) {
-        setStatusText(QStringLiteral("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting."), false);
+        setStatusText(
+            session_.opened_from_index()
+                ? QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened.")
+                : QStringLiteral("Reopen the current raw capture to apply the VLAN and MPLS flow-grouping setting."),
+            false
+        );
         emit stateChanged();
     }
 }
@@ -4918,7 +4918,12 @@ void MainController::setIgnoreGtpuTeidsWhenGroupingInnerFlows(const bool enabled
     session_.set_analysis_settings(pending_analysis_settings_);
     emit ignoreGtpuTeidsWhenGroupingInnerFlowsChanged();
     if (session_.has_capture()) {
-        setStatusText(QStringLiteral("Reopen the current capture or index to apply the GTP-U TEID flow-grouping setting."), false);
+        setStatusText(
+            session_.opened_from_index()
+                ? QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened.")
+                : QStringLiteral("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting."),
+            false
+        );
         emit stateChanged();
     }
 }

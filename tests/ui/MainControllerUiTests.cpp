@@ -30,6 +30,7 @@
 #include <QMetaEnum>
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QStringList>
@@ -361,6 +362,27 @@ LoadedQmlObject load_qml_component(const std::filesystem::path& relative_path, c
     QObject* object = component.create();
     if (object == nullptr) {
         throw pfl::tests::TestFailure(std::string("Failed to create ") + component_name + " component");
+    }
+
+    return LoadedQmlObject {
+        .engine = std::move(engine),
+        .object = std::unique_ptr<QObject>(object),
+    };
+}
+
+LoadedQmlObject load_main_qml_component(pfl::MainController& controller) {
+    auto engine = std::make_unique<QQmlEngine>();
+    engine->rootContext()->setContextProperty(QStringLiteral("mainController"), &controller);
+    const auto project_root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+    const auto component_path = project_root / "src/ui/qml/Main.qml";
+    QQmlComponent component(engine.get(), QUrl::fromLocalFile(QString::fromStdWString(component_path.wstring())));
+    if (component.status() != QQmlComponent::Ready) {
+        throw pfl::tests::TestFailure(component.errorString().toStdString());
+    }
+
+    QObject* object = component.create();
+    if (object == nullptr) {
+        throw pfl::tests::TestFailure("Failed to create Main.qml component");
     }
 
     return LoadedQmlObject {
@@ -2854,6 +2876,62 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!fragmented_packet_count_checkbox->property("checked").toBool());
     });
 
+    run_ui_section("settings_dialog_cancel_discards_pending_changes", [&]() {
+        MainController dialog_controller {};
+        auto main_window = load_main_qml_component(dialog_controller);
+        auto* settings_dialog = named_object(main_window.object.get(), "settingsDialog");
+        auto* settings_pane = named_object(main_window.object.get(), "settingsDialogPane");
+        UI_REQUIRE(settings_dialog != nullptr);
+        UI_REQUIRE(settings_pane != nullptr);
+        auto* use_possible_tls_quic_checkbox = named_object(settings_pane, "usePossibleTlsQuicCheckBox");
+        UI_REQUIRE(use_possible_tls_quic_checkbox != nullptr);
+        UI_EXPECT(!dialog_controller.usePossibleTlsQuic());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "open"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!use_possible_tls_quic_checkbox->property("checked").toBool());
+
+        use_possible_tls_quic_checkbox->setProperty("checked", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(use_possible_tls_quic_checkbox->property("checked").toBool());
+        UI_EXPECT(!dialog_controller.usePossibleTlsQuic());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "reject"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!dialog_controller.usePossibleTlsQuic());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "open"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!use_possible_tls_quic_checkbox->property("checked").toBool());
+
+        use_possible_tls_quic_checkbox->setProperty("checked", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "accept"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(dialog_controller.usePossibleTlsQuic());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "open"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(use_possible_tls_quic_checkbox->property("checked").toBool());
+    });
+
+    run_ui_section("settings_pane_capture_processing_helper_text", [&]() {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
+        auto* http_help_text = named_object(settings_pane.object.get(), "httpUsePathAsServiceHintHelpText");
+        auto* vlan_help_text = named_object(settings_pane.object.get(), "ignoreVlanAndMplsLayersWhenGroupingFlowsHelpText");
+        auto* gtpu_help_text = named_object(settings_pane.object.get(), "ignoreGtpuTeidsWhenGroupingInnerFlowsHelpText");
+        UI_REQUIRE(settings_tabs != nullptr);
+        UI_REQUIRE(http_help_text != nullptr);
+        UI_REQUIRE(vlan_help_text != nullptr);
+        UI_REQUIRE(gtpu_help_text != nullptr);
+        settings_tabs->setProperty("currentIndex", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(http_help_text->property("text").toString() == QStringLiteral("Applied when the next raw capture is opened."));
+        UI_EXPECT(vlan_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
+        UI_EXPECT(gtpu_help_text->property("text").toString() == QStringLiteral("Applied when importing a raw capture. Existing indexes keep their stored flow grouping."));
+    });
+
     run_ui_section("settings_pane_ignore_vlan_grouping_checkbox", [&]() {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
         auto* settings_tabs = named_object(settings_pane.object.get(), "settingsTabs");
@@ -2908,7 +2986,7 @@ int main(int argc, char* argv[]) {
         vlan_grouping_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
         UI_EXPECT(vlan_grouping_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_controller.statusText() ==
-            QStringLiteral("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting."));
+            QStringLiteral("Reopen the current raw capture to apply the VLAN and MPLS flow-grouping setting."));
         UI_EXPECT(vlan_grouping_controller.flowGroupingWarningText().isEmpty());
         UI_EXPECT(vlan_grouping_flow_model->rowCount() == 2);
 
@@ -2923,8 +3001,9 @@ int main(int argc, char* argv[]) {
         vlan_grouping_index_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
         UI_EXPECT(open_index_and_wait(app, vlan_grouping_index_controller, vlan_grouping_index_path));
         UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText() ==
-            QStringLiteral("Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied."));
+        UI_EXPECT(vlan_grouping_index_controller.statusText() ==
+            QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
     });
 
     run_ui_section("gtpu_teid_grouping_info_text", [&]() {
@@ -2941,7 +3020,7 @@ int main(int argc, char* argv[]) {
         gtpu_grouping_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
         UI_EXPECT(gtpu_grouping_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_controller.statusText() ==
-            QStringLiteral("Reopen the current capture or index to apply the GTP-U TEID flow-grouping setting."));
+            QStringLiteral("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting."));
         UI_EXPECT(gtpu_grouping_controller.gtpuTeidGroupingInfoText().isEmpty());
         UI_EXPECT(gtpu_grouping_flow_model->rowCount() == 2);
 
@@ -2957,8 +3036,9 @@ int main(int argc, char* argv[]) {
         gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
         UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
         UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
-        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText() ==
-            QStringLiteral("Loaded indexes preserve their stored flow grouping. The current GTP-U TEID grouping setting is not reapplied."));
+        UI_EXPECT(gtpu_grouping_index_controller.statusText() ==
+            QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
     });
 
     run_ui_section("flow_table_wireshark_filter_row", [&]() {

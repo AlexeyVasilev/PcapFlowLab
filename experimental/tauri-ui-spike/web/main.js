@@ -3770,9 +3770,6 @@
     if (availability.flow_grouping_ignores_vlan_and_mpls_layers) {
       return "VLAN and MPLS layers are ignored for flow grouping. Flows from different VLANs or MPLS paths may be merged.";
     }
-    if (state.currentSessionOpenedFromIndex && state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows) {
-      return "Loaded indexes preserve their stored flow grouping. The current VLAN and MPLS grouping setting is not reapplied.";
-    }
     return "";
   }
 
@@ -3790,9 +3787,6 @@
     }
     if (availability.flow_grouping_ignores_gtpu_teids) {
       return "GTP-U TEIDs are ignored for inner-flow grouping. Flows from different GTP-U tunnels may be merged.";
-    }
-    if (state.currentSessionOpenedFromIndex && state.settings.ignore_gtpu_teids_when_grouping_inner_flows) {
-      return "Loaded indexes preserve their stored flow grouping. The current GTP-U TEID grouping setting is not reapplied.";
     }
     return "";
   }
@@ -7107,6 +7101,11 @@
     const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
     const showFragmentedPacketCountColumn = Boolean(elements.settingsShowFragmentedPacketCountColumn?.checked);
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
+    const previousSettings = {
+      http_use_path_as_service_hint: Boolean(state.settings.http_use_path_as_service_hint),
+      ignore_vlan_and_mpls_layers_when_grouping_flows: Boolean(state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows),
+      ignore_gtpu_teids_when_grouping_inner_flows: Boolean(state.settings.ignore_gtpu_teids_when_grouping_inner_flows),
+    };
 
     state.settingsSaveInProgress = true;
     clearSettingsStatus();
@@ -7143,10 +7142,25 @@
         await loadSelectedPacketDetails();
       }
 
-      if (state.openState === "opened" && state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows !== currentSourceAvailability().flow_grouping_ignores_vlan_and_mpls_layers) {
-        setStatus("Reopen the current capture or index to apply the VLAN and MPLS flow-grouping setting.", "success");
-      } else if (state.openState === "opened" && state.settings.ignore_gtpu_teids_when_grouping_inner_flows !== currentSourceAvailability().flow_grouping_ignores_gtpu_teids) {
-        setStatus("Reopen the current capture or index to apply the GTP-U TEID flow-grouping setting.", "success");
+      const captureProcessingSettingsChanged =
+        previousSettings.http_use_path_as_service_hint !== state.settings.http_use_path_as_service_hint ||
+        previousSettings.ignore_vlan_and_mpls_layers_when_grouping_flows !== state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows ||
+        previousSettings.ignore_gtpu_teids_when_grouping_inner_flows !== state.settings.ignore_gtpu_teids_when_grouping_inner_flows;
+      const availability = currentSourceAvailability();
+      if (
+        state.openState === "opened" &&
+        !state.currentSessionOpenedFromIndex &&
+        state.settings.ignore_vlan_and_mpls_layers_when_grouping_flows !== availability.flow_grouping_ignores_vlan_and_mpls_layers
+      ) {
+        setStatus("Reopen the current raw capture to apply the VLAN and MPLS flow-grouping setting.", "success");
+      } else if (
+        state.openState === "opened" &&
+        !state.currentSessionOpenedFromIndex &&
+        state.settings.ignore_gtpu_teids_when_grouping_inner_flows !== availability.flow_grouping_ignores_gtpu_teids
+      ) {
+        setStatus("Reopen the current raw capture to apply the GTP-U TEID flow-grouping setting.", "success");
+      } else if (captureProcessingSettingsChanged) {
+        setStatus("Settings updated. Capture-processing changes apply when a raw capture is opened.", "success");
       } else {
         setStatus("Settings updated.", "success");
       }
