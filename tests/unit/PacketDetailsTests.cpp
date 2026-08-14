@@ -1209,6 +1209,12 @@ void run_packet_details_tests() {
         const auto tls_layers = find_summary_layers(summary_layers, "tls");
         PFL_REQUIRE(quic_layers.size() == 1U);
         PFL_REQUIRE(tls_layers.size() == 1U);
+        PFL_EXPECT(quic_layers[0]->expanded_by_default);
+        PFL_REQUIRE(!quic_layers[0]->children.empty());
+        for (const auto& child : quic_layers[0]->children) {
+            PFL_EXPECT(child.id == "quic_frame");
+            PFL_EXPECT(!child.expanded_by_default);
+        }
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Header Form") == "Long");
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Packet Type") == "Initial");
         PFL_EXPECT(require_summary_field_value(*quic_layers[0], "Frame Presence") == "CRYPTO");

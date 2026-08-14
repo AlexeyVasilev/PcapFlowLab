@@ -5350,6 +5350,7 @@ std::optional<PacketSummaryLayer> build_quic_frame_summary_layer(
         .id = "quic_frame",
         .title = "Frame #" + std::to_string(frame_index + 1U) + ", " + format_quic_presented_frame_type_value(frame.type),
         .fields = std::move(fields),
+        .expanded_by_default = false,
     };
 }
 
