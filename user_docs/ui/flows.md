@@ -34,6 +34,9 @@ The Flows workspace is designed around coordinated selection:
 - inspect packets or stream items for that flow;
 - inspect the currently selected packet or stream item on the right.
 
+For the dedicated guide to `Flow` menu exports, Smart Export targets, and
+flow-info CSV export, see [Flow actions](flow-actions.md).
+
 ## Flow table
 
 The flow table is the entry point for most inspection work.
