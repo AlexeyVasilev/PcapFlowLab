@@ -274,6 +274,9 @@ The current optional/collapsible statistics sections are:
 These sections load lazily. In practice, that means the application can defer
 some heavier calculations until you actually open the section.
 
+For the detailed end-user guide to this workspace, see
+[Statistics workspace](statistics.md).
+
 ### Protocol Path Tree
 
 `Protocol Path Tree` is especially important because it connects protocol-path
