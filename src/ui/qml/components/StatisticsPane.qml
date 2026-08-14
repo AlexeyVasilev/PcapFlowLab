@@ -436,6 +436,8 @@ Item {
                     objectName: "unrecognizedStatsSection"
                     Layout.fillWidth: true
                     visible: root.hasCapture && Number(root.unrecognizedStatsPacketCount || 0) > 0
+                    readonly property real packetColumnWidth: 96
+                    readonly property real byteColumnWidth: 152
 
                     Label {
                         text: "Unrecognized Packets"
@@ -465,30 +467,40 @@ Item {
                             spacing: root.tableColumnSpacing
 
                             Label {
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.packetColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: "Packets"
                                 font.bold: true
                                 color: "#334155"
+                                elide: Text.ElideRight
                             }
 
                             Label {
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: "Captured Bytes"
                                 font.bold: true
                                 color: "#334155"
+                                elide: Text.ElideRight
                             }
 
                             Label {
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: "Original Bytes"
                                 font.bold: true
                                 color: "#334155"
+                                elide: Text.ElideRight
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
                             }
                         }
                     }
@@ -508,29 +520,39 @@ Item {
 
                             Label {
                                 objectName: "unrecognizedStatsPacketValue"
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.packetColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.packetColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: root.groupInteger(root.unrecognizedStatsPacketCount)
                                 color: "#0f172a"
+                                elide: Text.ElideRight
                             }
 
                             Label {
                                 objectName: "unrecognizedStatsCapturedBytesValue"
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: root.formatBytes(root.unrecognizedStatsCapturedBytes)
                                 color: "#334155"
+                                elide: Text.ElideRight
                             }
 
                             Label {
                                 objectName: "unrecognizedStatsOriginalBytesValue"
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.minimumWidth: unrecognizedStatsSection.byteColumnWidth
+                                Layout.maximumWidth: unrecognizedStatsSection.byteColumnWidth
+                                horizontalAlignment: Text.AlignLeft
                                 text: root.formatBytes(root.unrecognizedStatsOriginalBytes)
                                 color: "#334155"
+                                elide: Text.ElideRight
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
                             }
                         }
                     }
