@@ -1,4 +1,20 @@
-﻿# Analysis Rate Graph RFC
+# Analysis Rate Graph RFC
+
+## Status
+
+Status: Implemented design RFC / historical design context
+
+The selected-flow `Flow Rate` block described here has been implemented.
+
+For the current Analysis feature contract and shared UI semantics, use:
+
+- [analysis-tab.md](analysis-tab.md)
+- [ui/presentation_contract.md](ui/presentation_contract.md)
+
+This RFC is retained to preserve the design rationale and constraints that led
+to the current rate-graph implementation. Historical references to MVP or
+later directions should be read as implemented-design context, not as an active
+implementation plan.
 
 ## Purpose
 
@@ -13,16 +29,17 @@ The block is:
 - not persisted
 - not part of open/import/index
 
-The Flow Rate Graph is a bounded analytical view for one selected connection. It is not a general charting framework and not a global precompute feature.
+The Flow Rate Graph is a bounded analytical view for one selected connection.
+It is not a general charting framework and not a global precompute feature.
 
 ## Metrics and Modes
 
-MVP supports two metrics:
+The initial design targeted two metrics:
 
 - `Data/s`
 - `Packets/s`
 
-MVP supports three direction modes:
+The initial design targeted three direction modes:
 
 - `A->B`
 - `B->A`
@@ -30,19 +47,23 @@ MVP supports three direction modes:
 
 For `Both`, the graph renders two lines at the same time, one per direction.
 
+Current production still follows this high-level mode model.
+
 ## Data Source
 
-The graph must use only:
+The graph is defined to use only:
 
 - packet timestamps
 - packet lengths
 - packet direction
 
-The graph must not use:
+The graph is defined not to use:
 
 - payload bytes
 - reassembly
 - protocol-specific parsing
+
+Current production remains aligned with that metadata-only boundary.
 
 ## Axes
 
@@ -58,20 +79,23 @@ Y axis:
 
 ## Aggregation Model
 
-The graph is defined as time-windowed aggregation, not packet-by-packet plotting.
+The graph is defined as time-windowed aggregation, not packet-by-packet
+plotting.
 
 For each window:
 
 - `Data/s = bytes_in_window / window_duration_seconds`
 - `Packets/s = packets_in_window / window_duration_seconds`
 
-This keeps the graph stable and cheap enough for interactive selected-flow analysis.
+This keeps the graph stable and cheap enough for interactive selected-flow
+analysis.
 
 ## Window Selection
 
-MVP window selection is adaptive and bounded.
+The implemented graph uses adaptive bounded window selection, but not every
+historical recommendation here remained identical in final production.
 
-Recommended strategy:
+Historical design recommendation:
 
 - choose a target point count around `60`
 - compute `window = flow_duration / target_point_count`
@@ -82,7 +106,16 @@ The UI should show the effective window size, for example:
 
 - `Window: 50 ms (auto)`
 
-This keeps behavior deterministic and avoids a hardcoded one-size-fits-all interval.
+Current production keeps the same overall design direction:
+
+- auto-selected bounded windowing
+- minimum `10 ms` and maximum `1 s` clamps
+- bounded point count
+- no manual free-form window control
+
+One notable implementation difference is that current production targets a
+higher point budget than the early RFC recommendation, while still enforcing a
+hard bounded graph size.
 
 ## Window Semantics and Packet Assignment
 
@@ -115,9 +148,10 @@ Y-axis scaling is auto-selected per graph.
 
 ## Short-Flow Fallback
 
-MVP must not rely on a hardcoded `2 seconds` rule.
+The implemented design did not rely on a hardcoded `2 seconds` rule.
 
-Instead, if the selected flow cannot produce enough useful points with the bounded window strategy, show a fallback message such as:
+Instead, if the selected flow cannot produce enough useful points with the
+bounded window strategy, the graph may show a fallback message such as:
 
 - `Flow too short for rate graph`
 
@@ -125,16 +159,18 @@ No synthetic or misleading line should be rendered in this case.
 
 ## Rendering Strategy
 
-For MVP, prefer a lightweight custom QML-rendered line graph.
+The original design preferred a lightweight custom-rendered graph rather than a
+heavy charting dependency.
 
-Do not add Qt Charts/Graphs dependencies unless later profiling proves a clear need.
-
-MVP rendering scope is intentionally narrow:
+The initial rendering scope was intentionally narrow:
 
 - one-line rendering
 - two-line rendering for `Both`
 - simple bounded point count
 - no advanced interactions
+
+The current product continues to treat this as a compact bounded Analysis block
+rather than as a general charting subsystem.
 
 ## UI Shape
 
@@ -150,7 +186,11 @@ Color usage should match existing direction semantics:
 - `A->B = green`
 - `B->A = blue`
 
-The block should remain compact and consistent with current Analysis tab layout.
+The block was intended to remain compact and consistent with the Analysis
+workspace layout.
+
+Current production exposes the graph in both Qt and Tauri over the same shared
+analysis result surface, while each frontend keeps its own rendering details.
 
 ## Performance Constraint
 
@@ -161,9 +201,9 @@ Computation must be:
 
 The graph must remain selected-flow scoped and bounded.
 
-## Non-Goals (Phase 1)
+## Historical non-goals
 
-Phase 1 explicitly excludes:
+The initial phase explicitly excluded:
 
 - zoom/pan
 - scrollable time navigation
@@ -174,23 +214,26 @@ Phase 1 explicitly excludes:
 - persistent graph state
 - chart-library abstraction framework
 
-## Future Directions
+## Historical future directions
 
-Potential later extensions:
+Potential later extensions considered during design:
 
 - zoom presets
 - hover/cursor values
 - export of aggregated rate series
 - optional `All` mode if later justified
 
-These are out of Phase 1 scope.
+These ideas are preserved as historical design context, not as the current
+feature contract.
 
 ## Consistency With Current Architecture
 
-This block must follow the existing architecture boundaries:
+This block follows the same architecture boundaries as the broader Analysis
+workspace:
 
 - fast path stays packet-oriented
 - Analysis remains selected-flow, on-demand, ephemeral
 - Stream/reassembly boundaries remain unchanged
 
-The rate graph is a bounded selected-flow analysis block, not a new global analysis subsystem.
+The rate graph is a bounded selected-flow analysis block, not a new global
+analysis subsystem.
