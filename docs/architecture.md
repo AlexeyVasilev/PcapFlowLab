@@ -1,198 +1,280 @@
 # Architecture
 
-Pcap Flow Lab is a flow-based packet-capture analyzer. The persistent model is packet and flow metadata; richer Stream analysis is derived on demand for the currently selected flow and is not part of the saved state.
+Pcap Flow Lab is a flow-first packet-capture analyzer with a shared backend for
+desktop frontends and the CLI. The durable persisted model is packet and flow
+metadata plus indexable session state; richer packet bytes, stream artifacts,
+and selected-flow reconstruction remain on-demand.
 
-## Main components
+## Main layers
 
-- `core/io`: classic PCAP and current PCAPNG readers, random-access packet reads, and classic PCAP export.
-- `core/decode`: packet-oriented link and network decoding for ingestion.
-- `docs/dissection-engine-rfc.md`: proposed follow-up architecture for converging legacy import-time decode and selected-packet best-effort details onto a shared registry-driven dissection engine.
-- `core/domain`: connection keys, packet references, runtime flows, summaries, and related lightweight types.
-- `core/services`: capture import, flow aggregation, packet inspection, exports, protocol analyzers, and developer-only perf logging.
-- `core/index`: sectioned binary index and checkpoint formats with exact-version loading.
-- `core/reassembly`: bounded directional reassembly helpers used only for on-demand analysis.
-- `app/session`: application-facing entry point for opening captures/indexes and for flow, packet, and stream queries.
-- `ui`: Qt Quick desktop UI over the session layer.
+- `core/io`
+  - classic PCAP and current PCAPNG readers, packet seek/read helpers, and
+    packet-writing export support
+- `core/decode`
+  - legacy packet-oriented decode helpers, including `PacketDecoder`
+- `core/dissection`
+  - unified registry-driven dissection engine used by current production import
+- `core/domain`
+  - flow keys, packet references, protocol-path identity, summaries, and other
+    lightweight model types
+- `core/services`
+  - capture import, packet details, export, hinting, statistics, and related
+    backend services
+- `core/index`
+  - exact-version sectioned index format and related source-capture validation
+- `core/reassembly`
+  - bounded ephemeral helpers used only for on-demand selected-flow work
+- `app/session`
+  - `CaptureSession` plus selected-packet, selected-flow, statistics, and
+    export orchestration
+- `app/frontend`
+  - shared frontend/session adapters, bridges, and DTO shaping used directly by
+    Tauri and by CLI commands where appropriate, alongside shared presentation
+    helpers/contracts consumed across application surfaces
+- `ui`
+  - Qt desktop frontend
+- `experimental/tauri-ui-spike`
+  - experimental Tauri frontend over the same backend/session contracts
+- `cli`
+  - five-command CLI over the same backend/session architecture
 
-## Runtime paths
+## Processing paths
 
-### Fast path
+The architecture is easiest to understand as five distinct paths with
+different persistence and cost profiles.
 
-The fast path is the default way to open a capture.
+### 1. Raw capture open/import fast path
 
-- Parses PCAP / PCAPNG packets and decodes packet metadata.
-- Aggregates packets into bidirectional connections and per-direction flows.
-- Populates summaries, flow rows, packet rows, cheap hints, fragmentation flags, and packet references.
-- Accumulates retained capture-wide packet-size distribution statistics from accepted packet records using captured packet length; this includes recognized, unrecognized, and decode-malformed packets that are successfully surfaced by the importer.
-- Optional weak fallback hints may classify otherwise unresolved TCP/UDP port 443 flows as `Possible TLS` / `Possible QUIC`; these remain presentation-level buckets distinct from confirmed TLS/QUIC detection.
-- Does not run directional reassembly.
-- Does not perform deep protocol reconstruction during open.
-- Keeps work packet-oriented and predictable.
-- If import fails after a strictly valid prefix has already been accepted, the session may still open partially with a warning; corrupted trailing data is discarded rather than recovered.
+Raw capture import is the normal open path for `PCAP` and `PCAPNG`.
 
-### Index path
+Production import is now driven by the unified registry-based dissection
+engine plus shared import application code. This path is intentionally
+packet-oriented and bounded:
 
-Saved analysis indexes can be opened directly instead of re-importing the capture.
+- it decodes packet-level facts needed for grouping and summary;
+- it builds canonical bidirectional flows;
+- it records `PacketRef` metadata and source locators;
+- it accumulates whole-capture counters and statistics inputs;
+- it persists only lightweight reusable state into memory/indexable session
+  structures.
 
-- The index stores capture summary, connections, flows, packet references, source metadata, and checkpointable analysis state.
-- The current binary format is explicitly sectioned, versioned as index format `13`, and loaded with an exact-version policy.
-- Stable index data also includes the capture-level protocol-path registry plus flow/connection protocol-path identity metadata.
-- Saved indexes preserve the exact flow grouping produced at raw-import time. The current format does not record whether VLAN/MPLS-agnostic grouping or GTP-U-TEID-agnostic grouping was enabled, so index load does not reinterpret stored grouping with the current application setting.
-- Runtime protocol-path statistics trees are rebuilt from indexed flow metadata and are not themselves persisted.
-- Unrecognized-packet metadata is persisted in current-format indexes and survives save/load without rescanning the source PCAP.
-- Capture-wide packet-size distribution statistics are reconstructed from persisted `PacketRef::captured_length` values for recognized and unrecognized packets; index load does not reread packet bytes from the source capture.
-- Raw packet bytes are not stored in the index.
-- An index can be opened without the original capture; this is an explicit index-only mode.
-- Raw packet features become available again only after the matching source capture is attached and validated.
+It does not do global stream reconstruction, global reassembly, or full
+transport-correct session analysis during open.
 
-### On-demand analysis
+### 2. Persisted index path
 
-On-demand analysis is separate from the fast path and from index loading.
+Saved indexes reopen previously imported session state.
 
-- Triggered only for the currently selected flow.
-- Requires source capture access because packet bytes are still read lazily from the original capture.
-- Builds ephemeral derived artifacts only for the active flow.
-- Current user-facing use is the Stream tab.
-- The selected-flow packet list may also carry ephemeral `Suspected retransmission` markers for exact duplicate payload-bearing TCP packets in the active flow only; these markers are not persisted and do not change open-time summaries or counts.
-- Selected-flow Stream construction can suppress retransmitted packet contribution in the current bounded model; this remains presentation-oriented and does not imply transport-complete recovery.
-- Analysis tab now also includes a bounded metadata-only Sequence Preview block for the selected flow.
-- Analysis can also export the full selected-flow packet sequence to CSV as a metadata-only artifact without payload bytes.
-- Analysis tab now also includes a bounded metadata-only Timeline block for the selected flow.
-- Analysis tab now also includes a bounded metadata-only Packet Size Histogram block for the selected flow.
-- Analysis tab now also includes a bounded metadata-only Inter-arrival Histogram block for the selected flow.
-- Analysis tab now also includes a bounded metadata-only Derived Metrics block for the selected flow.
-- Analysis tab now also includes a bounded metadata-only Directional Ratio block for the selected flow.
-- Analysis tab now also includes a bounded metadata-only Flow Rate graph block for the selected flow (window-aggregated Data/s and Packets/s from packet timestamps, lengths, and direction only).
-- Analysis tab block order is periodically reorganized for readability, with summary/interpretation blocks ahead of evidence/detail blocks; this does not change analysis logic.
-- Never runs globally across all flows during open.
+Current index format is version `14` and uses exact-version compatibility.
+Loading a mismatched version fails and requires rebuilding the index from the
+source capture.
 
-## Flow aggregation and packet model
+The index persists reusable session metadata such as:
 
-- Connections use a canonical symmetric key for bidirectional grouping.
-- Each runtime connection keeps separate `flow_a` and `flow_b` packet lists.
-- The normalized `ConnectionKey` is identity only.
-- User-visible `Endpoint A` / `Endpoint B` orientation is taken from the first observed packet in the flow:
-  - `flow_a.key` stores that first-observed directional tuple;
-  - `Endpoint A` is the `flow_a.key` source endpoint;
-  - `Endpoint B` is the `flow_a.key` destination endpoint;
-  - packets in `flow_a` are `A->B`;
-  - packets in `flow_b` are `B->A`.
-- This orientation is capture-relative and does not perform client/server inference.
-- Effective flow identity is the normalized endpoint tuple plus an interned `protocol_path_id`, so namespace-bearing layers such as GRE key, ESP SPI, AH SPI, and MikroTik EoIP Tunnel ID (normalized through the GRE-key slot) can split otherwise identical tuples.
-- Raw-capture import can optionally ignore `ProtocolLayerKind::vlan` and `ProtocolLayerKind::mpls` while building that flow-identity `protocol_path_id`. This strips VLAN and MPLS label-stack layers from flow grouping only; packet decoding, Packet Details, and byte presentation still expose the observed VLAN/MPLS layers.
-- Raw-capture import can also optionally ignore only the `ProtocolLayerIdentifierKind::gtpu_teid` attached to `ProtocolLayerKind::gtpu` while leaving the `GTP-U` layer itself in the flow-identity path. This is an expert mode for deployments where opposite directions of the same inner connection use different TEIDs; packet decoding, Packet Details, and byte presentation still expose the observed TEID per packet, and unrelated tunnels with the same inner tuple may merge when the mode is enabled.
-- `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, effective terminal transport payload length, TCP flags, link type, and fragmentation metadata.
-- `PacketRef` does not store protocol-path identity; recognized packets resolve that through their owning flow/connection metadata.
-- Packet bytes are loaded lazily when details, payload, protocol text, export, or stream analysis needs them.
-- Selected-flow packet lists now use bounded initial materialization in the UI. Small flows that fit within the initial packet budget are materialized fully, while larger flows append additional rows only through explicit Load more continuation.
-- Selected-flow packet rows may be annotated on demand with exact-duplicate TCP retransmission suspicion using direction + seq + ack + payload length + payload bytes. This remains flow-local, conservative, and presentation-oriented.
-- Selected-flow Stream items now follow the same pattern: small flows that fit within the initial Stream budget are materialized fully, and heavier flows append additional items only through explicit Load more continuation.
+- grouped flow and connection state;
+- packet references and related packet metadata;
+- capture/source metadata used for source reattachment validation;
+- protocol-path identity needed for stored flow grouping;
+- persisted whole-session statistics inputs and related indexed state;
+- persisted unrecognized-packet metadata in the current format.
 
-## Stream items and directional reassembly
+The index does not persist:
 
-The Stream tab is a derived payload-oriented view, not a stored stream model.
+- raw packet bytes;
+- reassembly buffers;
+- Stream artifacts;
+- selected-flow ephemeral caches.
 
-- Stream items are built on demand for the selected flow only.
-- Results are ephemeral and replaced when flow selection changes.
-- No stream items are stored in `CaptureState`, indexes, or checkpoints.
+An index can therefore open in a metadata-only mode without current source
+capture access. Reattaching the original source capture restores byte-backed
+capabilities for the stored session, but it does not regroup or reinterpret the
+indexed flow inventory.
 
-Current Stream behavior:
+### 3. Selected-packet lazy inspection
 
-- UDP stream items remain packet-payload based.
-- Generic non-TLS / non-HTTP TCP fallback remains packet-payload based.
-- TLS stream parsing uses bounded directional reassembly.
-  - Multiple TLS records inside one TCP payload are split into separate stream items.
-  - A TLS record spanning multiple TCP packets can appear as one logical stream item when the bounded reassembly buffer contains the full record.
-  - Incomplete trailing TLS data falls back conservatively to `TLS Record Fragment` or `TLS Payload`.
-- HTTP stream parsing uses bounded directional reassembly for requests and responses, including bodies assembled across multiple TCP segments when enough bytes are available.
-  - Complete HTTP requests and responses can appear as one logical stream item even when assembled from many TCP packets.
-  - `Content-Length` and chunked-body traversal are used to preserve bounded multi-segment continuity where parseability remains clear.
-  - Incomplete or ambiguous data falls back conservatively rather than implying transport-complete recovery.
-- QUIC selected-flow inspection provides meaningful bounded packet-aware parsing.
-  - Practical frame-level details such as `CRYPTO`, `ACK`, and `PADDING` can be exposed in packet and Stream presentation when confidently isolated.
-  - Parseable CRYPTO contents can surface handshake-aware TLS details such as `ClientHello` and `ServerHello` in bounded selected-flow contexts.
-  - This remains conservative selected-flow inspection, not full QUIC reconstruction or decryption-backed analysis.
+Selected-packet inspection is a separate lazy path.
 
-## Reassembly principles
+Selected-packet inspection starts from the selected packet and its source
+bytes. Normal packet facts remain selected-packet-oriented, and when an
+explicitly supported byte view requires it, bounded selected-flow context may
+also contribute authoritative reconstructed or derived bytes. This does not
+imply global reassembly or unbounded contextual reading.
 
-Current reassembly is intentionally narrow.
+This path derives:
 
-- Directional: one flow direction (`A->B` or `B->A`) per request, where `A/B` come from the first observed packet of the flow rather than canonical endpoint ordering.
-- Bounded: every request is limited by `max_packets` and `max_bytes`.
-- Heuristic: packet-order payload concatenation, not transport-correct TCP reconstruction.
-- Ephemeral: buffers and packet-contribution maps are built only for the current request.
-- Local: used for selected-flow on-demand analysis, not for global open-time processing.
+- structured packet `Summary`;
+- packet `Bytes` views;
+- exportable byte materialization.
 
-Reassembly results may be incomplete.
+This path is intentionally best-effort and conservative for malformed or
+truncated packets. It may still expose useful partial facts without pretending
+that unsupported deeper structure was decoded safely.
 
-- Quality flags can report packet-order-only reconstruction, budget truncation, non-payload packets, possible transport gaps, and possible retransmissions.
-- Those flags are diagnostic only; they are not ground truth about network correctness.
+### 4. Selected-flow bounded ephemeral analysis
 
-## Persistence boundaries
+Selected-flow work is another separate path.
 
-Persisted data:
+This path is:
 
-- capture summary
-- flows and connections
-- packet references and packet-level metadata
-- source capture metadata used for index attach validation
-- checkpoint progress/state needed for chunked import resume
+- selected-flow only;
+- on-demand;
+- bounded by packet/item windows and packet-byte budgets;
+- ephemeral rather than persisted.
 
-Not persisted:
+It drives:
 
-- stream items
-- partial-open session state and failure context
-- corrupted trailing capture data beyond a strict partial-open prefix
-- reassembled byte buffers
-- per-flow temporary stream caches
-- packet contribution maps used only for Stream presentation
+- the selected-flow packet list and packet-local enrichments;
+- selected-flow Stream construction;
+- Stream Item `Summary` and `Item Data`;
+- selected-flow Analysis blocks and metrics.
 
-## Developer-only instrumentation
+Current bounded reassembly and reconstruction are heuristic utilities for this
+path only. They are not global open-time state and do not imply full
+TCP-correct recovery.
 
-Open-time performance logging is developer-only and off by default.
+### 5. Frontend/session presentation path
 
-- Creating `perf-open.enabled` in the current working directory or next to the executable enables CSV logging.
-- The log is written to `perf_open_log.csv`.
-- It records application-level timing for `capture` and `index_load` opens.
-- It does not change normal product behavior when disabled.
+Qt, Tauri, and CLI do not each implement their own packet parsing model.
 
-## UI list surfaces
+Instead, shared session/frontend layers own the canonical session semantics and
+shared presentation contracts where those contracts exist. Tauri uses the
+frontend adapter/bridge boundary directly, CLI commands also consume
+`FrontendSessionAdapter` where appropriate, and Qt uses `CaptureSession` and
+related session/services directly for much of its controller behavior while
+still sharing the same underlying backend model.
 
-Current large-list surfaces prefer virtualization-friendly QML views and comparatively lightweight delegates over pagination.
+Each application surface still owns its own UI layout, interaction state,
+command parsing, and rendering.
 
-- Flow table uses `ListView` with fixed-height delegates and lazy vertical creation.
-- Packet list uses `ListView` with fixed-height delegates and lazy vertical creation.
-- Stream view uses `ListView`; it is also virtualized, although each delegate is visually heavier than a packet row.
-- Explicit vertical scrollbars are enabled on these surfaces for usability.
+This boundary is what keeps:
 
-Current scalability risks are still worth watching:
+- packet/grouping semantics;
+- index/source-capture behavior;
+- selected-packet byte views;
+- Stream Item Data semantics;
+- statistics data;
+- export orchestration
 
-- Flow and packet rows use wide delegate trees with several formatted labels per visible row.
-- The current flow table is vertically virtualized, but horizontal overflow is still handled by clipping rather than a dedicated horizontal-scrolling table model.
-- Pagination is intentionally deferred until stronger evidence shows that current virtualization is insufficient.
+aligned across multiple application surfaces.
 
-## Decoder follow-up
+## Canonical flow identity
 
-Current packet-oriented handling is now split between the unified registry-driven
-import path and the separate best-effort `PacketDetailsService` path used for
-selected-packet details.
+Pcap Flow Lab groups packets into canonical bidirectional flows.
 
-- Production capture import now goes through the unified dissection engine plus
-  the shared import application.
-- Legacy `PacketDecoder` remains temporarily only as a validation oracle and
-  differential-test reference.
-- Ongoing cleanup and remaining migration notes are documented in
-  `docs/dissection-engine-rfc.md`.
+Identity is not just a normalized endpoint tuple. The current architecture uses
+the normalized endpoint tuple plus interned protocol-path identity, so
+namespace-bearing layers can split otherwise identical endpoint tuples.
 
-## Known limitations
+This matters for overlay/tunnel and other path-bearing protocols where the same
+transport tuple may legitimately exist in multiple distinct namespaces.
 
-- No full TCP-correct stream reconstruction.
-- TCP retransmission effects are only partially handled in Stream construction; retransmitted packets are suppressed in the current bounded selected-flow model, but full retransmission-aware recovery does not exist.
-- HTTP Stream reconstruction is bounded and selected-flow-only; requests and responses, including bodies, can be assembled across multiple TCP segments, but recovery remains heuristic and not transport-complete.
-- QUIC selected-flow inspection is meaningful but bounded; frame-level and handshake-aware details can be exposed, but full QUIC reconstruction and decryption remain out of scope.
-- Bounded reassembly may truncate long streams.
-- Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
-- Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
+The user-facing `Endpoint A` / `Endpoint B` orientation remains a separate
+presentation concept derived from the first observed packet in the grouped
+flow. It does not perform client/server inference.
+
+## Flow-grouping normalization settings
+
+Raw capture import can optionally normalize some identity layers:
+
+- ignore VLAN/MPLS layers when grouping flows;
+- ignore GTP-U TEIDs when grouping inner flows.
+
+These settings are applied only while building canonical flow identity during
+raw import. They do not remove packet-visible protocol layers from packet
+details, and they are not reapplied when an index is loaded later.
+
+## Source-capture boundaries
+
+The architecture deliberately separates indexed metadata from source packet
+bytes.
+
+- Raw capture sessions have immediate source-byte access because the capture
+  itself is open.
+- Index-backed sessions can remain useful without source bytes.
+- Byte-backed features require a readable source capture that matches the
+  stored source identity.
+
+This boundary is central to the product:
+
+- metadata-backed browsing, analysis, and statistics can survive index-only
+  reopen;
+- byte-backed packet inspection, Stream reconstruction/materialization, and
+  packet-writing export cannot.
+
+## PacketDecoder and unified dissection status
+
+Production import has already cut over to the unified registry-driven
+dissection engine.
+
+However, the repository is not yet in a state where `PacketDecoder` is merely a
+dead compatibility stub or validation-only oracle. Current production/session
+code still uses `PacketDecoder` in non-import paths, including packet metadata
+recovery and terminal transport payload related paths.
+
+`PacketDetailsService` also remains a production selected-packet/details
+consumer separate from the import-time engine path.
+
+The correct architectural description today is therefore:
+
+- unified dissection owns the production import/open path;
+- legacy decoder/details code still has real production consumers outside that
+  import path;
+- the architecture is partially consolidated, but not yet reduced to one single
+  packet-decoding implementation for every runtime use.
+
+## Stream and reassembly boundaries
+
+The Stream model is not a globally persisted session artifact.
+
+Current architecture keeps Stream work:
+
+- selected-flow only;
+- on-demand;
+- bounded;
+- ephemeral.
+
+HTTP, TLS, and QUIC-related selected-flow inspection can build meaningful
+stream/item presentation when enough bytes are available, but this remains
+bounded application logic rather than full transport/session reconstruction.
+
+`Item Data` is likewise not a generic promise that every stream item has one
+stable byte blob. It materializes authoritative item-owned bytes only where the
+current protocol/item model actually retains them or reconstructs them with
+clear ownership/provenance.
+
+## Statistics boundaries
+
+Whole-capture Statistics is session-level data, not selected-flow state.
+
+Some statistics inputs are accumulated during raw import, while others are
+reconstructed from persisted indexed metadata on load. Optional heavier
+statistics sections are requested lazily by frontend/session presentation, but
+that lazy loading is about DTO transport and rendering, not about inventing a
+second parsing architecture.
+
+## Export boundaries
+
+Export behavior follows the same source-capture rules as other byte-backed
+features.
+
+- saving an index requires an attached source capture;
+- byte export requires authoritative bytes for the selected packet/item;
+- flow export / Smart Export ultimately requires source packet bytes.
+
+The export surface is therefore another consumer of the same session/index/
+source-capture architecture rather than a separate data path.
+
+## Known architectural limits
+
+The current architecture intentionally preserves a few important limits:
+
+- no global open-time stream model;
+- no raw packet bytes stored in indexes;
+- no persisted reassembly buffers or Stream artifacts;
+- no guarantee of transport-correct reconstruction for selected-flow work;
+- no backward-compatible promise across index-format revisions;
+- no claim that Qt and Tauri are identical in every UI detail, even though they
+  share the same backend/session semantics where that backend contract exists.
 
 
 

@@ -1,76 +1,207 @@
 # Current State
 
-## Stream
+Pcap Flow Lab 0.3.0 is a flow-first packet-capture analyzer built around a
+canonical bidirectional flow inventory, on-demand packet inspection, and
+bounded selected-flow analysis.
 
-- Fixture-backed baseline tests are in place for 7 repository PCAP cases.
-- HTTP Stream reconstruction supports requests and responses, including bounded body assembly across multiple TCP segments via `Content-Length` and chunked-body traversal, with conservative fallback where needed.
-- Partial HTTP and TLS cases have explicit fallback handling.
-- Retransmissions are indicated in the selected-flow packet list.
-- Selected-flow Stream construction suppresses retransmitted packets in the current bounded model.
-- Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
-- TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
-- Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.
-- Selected-packet protocol details now depend on packet-bytes availability, not Deep mode alone.
-- Selected-flow QUIC inspection now exposes bounded packet-aware details for `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `Protected Payload`, and practical frame-level cases such as `CRYPTO`, `ACK`, and `PADDING`, with conservative fallback where confidence is limited.
-- QUIC packet and Stream details now use direction-aware, ownership-aware selected-flow TLS attachment so `ClientHello` / `ServerHello` details are not reused across the wrong packet or Stream item context.
-- Selected-flow QUIC packet and Stream presentation now share one bounded internal model: Packet Details stays shell-oriented but Stream labeling is more semantic when confidently isolated (`QUIC Initial: CRYPTO`, `QUIC Initial: ACK`) and suppresses standalone `PADDING` / `PING` noise.
-- Bounded selected-flow QUIC TLS attachment now also surfaces handshake-aware details such as `ClientHello` and `ServerHello` when enough parseable CRYPTO bytes are available; otherwise it remains conservatively QUIC-only.
+## Inputs and session types
 
-## Analysis tab
+The current desktop and CLI product can open:
 
-- Metadata-only Analysis blocks are implemented.
-- Directional histograms are implemented.
-- The Flow Rate graph is implemented as a window-based metadata view.
-- Analysis does not use payload reconstruction or Stream reassembly.
+- raw `PCAP` captures;
+- raw `PCAPNG` captures;
+- saved Pcap Flow Lab analysis indexes (`.idx`).
 
-## Statistics tab
+Raw capture open/import builds the current canonical flow inventory from packet
+metadata and bounded decode facts. Saved indexes reopen previously materialized
+analysis state without reimporting the original capture.
 
-- Protocol statistics and protocol-distribution reporting have been expanded.
-- `Possible TLS` and `Possible QUIC` are tracked as separate weak-hint buckets.
-- Qt now keeps only the overview cards plus the transport/family Protocol Summary always visible.
-- Qt optional Statistics sections are now independent collapsible panels:
-  - `Packet Size Distribution`
-  - `Flows by Packet Count`
-  - `Protocol Path Tree`
-  - `Detected Protocol Hints`
-  - `QUIC and TLS`
-  - `Top Endpoints and Ports`
-- For each capture, those optional Qt sections start collapsed, request data on first expansion only, and reuse the per-capture cached result on collapse/reopen or Statistics-tab revisit.
-- `Packet Size Distribution` is a separate capture-wide contract from the selected-flow Analysis packet-size histogram:
-  - it uses captured packet length, not original length
-  - it counts all packet records accepted by the current importer, including unrecognized and decode-malformed packets
-  - it excludes unreadable truncated tail bytes and non-packet PCAP/PCAPNG metadata
-  - accumulation happens during capture import
-  - index load reconstructs the same result from persisted `PacketRef::captured_length` values without rereading capture bytes
-  - section expansion defers only DTO transport and rendering
-  - EPBs skipped earlier by the current unsupported-interface PCAPNG path are not represented
-- `Flows by Packet Count` now keeps the same packet-count buckets but exposes two presentation modes over one cached calculation:
-  - `Flows`
-  - `Original bytes`
-- That histogram lazy pass now accumulates both flow counts and original-byte totals per bucket without issuing a second backend request when the visible mode changes.
-- Opening a new capture resets the optional Qt and Tauri section expansion and visible result state.
+Indexes are exact-version artifacts. Current index format compatibility is
+strictly versioned at `14`. When an index version does not match, the product
+requires rebuilding the index from the source capture.
 
-## UI
+An index can open without the original source capture. In that index-only mode,
+metadata-backed workflows remain available, but byte-backed inspection,
+selected-flow reconstruction, and packet-writing export still depend on a valid
+attached source capture.
 
-- Navigation is menu-based.
-- The selected-flow Analysis workspace is stable.
-- Large-capture open progress and cooperative cancellation are implemented.
-- Smart Export includes progress reporting, cooperative cancellation, and a separate per-flow output mode.
-- The shared runtime settings slice now includes `Ignore VLAN and MPLS layers when grouping flows` for raw-import flow identity normalization.
-- When that mode was active at raw import, Flow Path presentation and Protocol Path Statistics omit VLAN and MPLS label-stack layers while Packet Details and Bytes still show the selected packet's actual VLAN and MPLS headers.
-- Opening from an existing index preserves whatever flow grouping was stored in that index; the current VLAN-and-MPLS grouping setting is not reapplied on index load.
-- The same shared runtime settings slice now also includes `Ignore GTP-U TEIDs when grouping inner flows`, disabled by default and applied only during raw capture import.
-- When that expert mode was active at raw import, flow identity keeps the `GTP-U` layer but strips only its TEID identifier; Flow Path presentation and Protocol Path Statistics therefore show `GTP-U` without `teid=...`, while Packet Summary and Bytes still expose each selected packet's actual TEID.
-- Opening from an existing index likewise preserves the stored TEID-sensitive or TEID-agnostic grouping; the current GTP-U TEID grouping setting is not reapplied on index load.
+## Flow model and grouping
 
-## Known gaps
+The core interactive model is a canonical grouped bidirectional flow.
 
-- QUIC Stream handling is still bounded and incomplete; there is no full QUIC reconstruction or decryption-backed session model, and broader QUIC itemization, prioritization, and multi-packet interpretation remain future work.
-- Retransmission suppression works in the current bounded selected-flow Stream model, but broader transport-complete retransmission handling is not implemented.
-- TLS details are only partially exposed; richer handshake and certificate fields exist for complete packet-contained TLS records, matching Stream item types, and directly parseable QUIC CRYPTO handshake bytes.
+- Endpoints are grouped symmetrically for identity.
+- User-facing `Endpoint A` / `Endpoint B` orientation comes from the first
+  observed packet in the grouped flow.
+- `A->B` and `B->A` therefore mean first-observed orientation, not inferred
+  client/server roles.
 
-## Next steps
+Flow identity is protocol-path-aware. The grouped endpoint tuple is combined
+with interned protocol-path identity so that namespace-bearing layers such as
+overlay/tunnel identifiers can split otherwise identical endpoint tuples into
+distinct canonical flows.
 
-- Extend retransmission handling beyond exact duplicate suppression.
-- Extend TLS Stream details beyond the initial `ClientHello` / `ServerHello` / `Certificate` enrichment step.
-- Extend QUIC TLS detail exposure beyond the first narrow ClientHello / ServerHello step only if bounded parseability stays explicit.
+Raw capture import also supports two optional expert normalization modes:
+
+- ignore VLAN/MPLS layers when grouping flows;
+- ignore GTP-U TEIDs when grouping inner flows.
+
+These settings affect canonical flow identity only at raw-import time. They do
+not rewrite packet facts, Packet Details surfaces, or already-saved index
+grouping.
+
+## Import and open behavior
+
+The normal open path is intentionally packet-oriented and predictable.
+
+- Import computes packet metadata, packet references, grouped flow inventory,
+  cheap protocol/service hints, and whole-capture counters.
+- Production import now uses the unified registry-driven dissection path.
+- The open path does not run global stream reconstruction or transport-complete
+  reassembly.
+- Whole-capture packet-size accounting is accumulated during import.
+- Malformed, truncated, and unsupported packets are handled conservatively.
+
+When the importer can accept a valid prefix of the input before later failure,
+the session may still open partially with a warning rather than pretending that
+trailing corrupted data was recovered successfully.
+
+## Packet inspection
+
+Selected-packet inspection is on demand.
+
+`Packet Details` currently exposes:
+
+- `Summary`
+- `Bytes`
+
+`Summary` is the structured packet-inspection surface. `Bytes` exposes
+packet-owned and derived byte views for the selected packet when source bytes
+are available.
+
+Packet inspection is best-effort and conservative. Pcap Flow Lab can still
+surface useful Frame / link / network / transport facts for malformed or
+truncated packets, but it does not fabricate deeper protocol structure when
+safe parseability stops.
+
+## Selected-flow workflow
+
+Flow inspection is split into `Packets`, `Stream`, and `Analysis` workflows.
+
+### Packets
+
+The selected-flow packet list is loaded incrementally and remains tied to the
+current canonical flow orientation.
+
+Packet metadata can remain visible from index-backed state, while byte-backed
+packet inspection still depends on source capture availability.
+
+### Stream
+
+The Stream workflow is selected-flow only, bounded, and ephemeral.
+
+- Stream rows are built on demand for the active flow.
+- Results are not stored in the saved index.
+- Current behavior is intentionally bounded rather than transport-complete.
+
+`Stream Item Details` currently exposes:
+
+- `Summary`
+- `Item Data`
+
+`Summary` is the structured stream-item inspection surface. `Item Data`
+materializes authoritative item-owned bytes only when current ownership or
+retained provenance exists.
+
+Current protocol-aware Stream support is strongest for TLS and HTTP over TCP,
+with bounded QUIC-related item inspection where parseable context exists.
+Generic TCP/UDP cases still fall back to payload-oriented rows when no richer
+specialization applies.
+
+## Protocol-aware inspection
+
+The current product exposes useful structured protocol inspection without
+claiming universal deep parsing.
+
+At a high level, current production behavior includes:
+
+- structured packet `Summary` and byte-view inspection for recognized packets;
+- bounded selected-flow TLS inspection;
+- bounded selected-flow HTTP request/response reconstruction;
+- structured DNS and mDNS inspection;
+- bounded QUIC packet and selected-flow inspection with conservative limits.
+
+Detailed protocol capability belongs in
+`docs/protocols/protocol_support.md`, not in this overview.
+
+## Analysis workspace
+
+The Analysis workspace is selected-flow only.
+
+It is metadata-driven and bounded. Current production behavior includes flow
+overview, directional metrics, timeline/rate-style analysis, sequence preview,
+and selected-flow histograms derived from packet metadata for the active flow.
+
+Analysis does not imply global precomputation during open, and it does not
+claim full transport-correct reconstruction.
+
+## Statistics workspace
+
+Statistics is whole-capture / whole-index oriented.
+
+The current product exposes whole-session overview data plus structured
+whole-capture statistics such as transport/family summaries, packet-size
+distribution, flow-count histograms, protocol-path trees, detected-protocol
+hints, QUIC/TLS summary views, and top endpoint/port summaries.
+
+Optional heavier Statistics sections are loaded lazily and reuse cached results
+for the current session.
+
+## Export workflows
+
+Pcap Flow Lab currently supports practical export workflows at both desktop and
+CLI surfaces.
+
+At a high level, current export behavior includes:
+
+- saving reusable analysis indexes;
+- packet/byte export from selected packet or selected stream-item byte-backed
+  surfaces when authoritative bytes are available;
+- flow export / Smart Export workflows that write packet data for selected
+  canonical flows;
+- export of unrecognized packets in the current Smart Export flow.
+
+Byte-backed export still depends on readable source capture bytes.
+
+## Application surfaces
+
+Qt is the primary/reference desktop UI for Pcap Flow Lab 0.3.0.
+
+The repository also contains:
+
+- an experimental Tauri desktop frontend that shares the same backend/session
+  architecture where behavior is already frontend-neutral;
+- a public CLI with five top-level commands:
+  - `summary`
+  - `flows`
+  - `export-flows`
+  - `flow-info`
+  - `packet-info`
+
+These surfaces are different applications over the same core packet/import,
+session, index, and presentation architecture.
+
+## Current limitations
+
+Important current limitations remain:
+
+- selected-flow reconstruction is bounded and heuristic, not full TCP-correct
+  reassembly;
+- Stream artifacts and reassembly buffers are not persisted in indexes;
+- raw packet bytes are not stored in indexes;
+- index-only sessions remain useful for metadata, but byte-backed inspection
+  and packet-writing export require the original source capture;
+- QUIC inspection is useful but bounded, and is not a full QUIC session or
+  HTTP/3 analyzer;
+- protocol support is intentionally uneven across protocols and should be read
+  from the dedicated protocol-support reference rather than inferred from the
+  existence of one packet or stream surface.
