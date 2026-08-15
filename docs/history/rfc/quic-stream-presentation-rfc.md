@@ -1,10 +1,24 @@
 # QUIC Stream Presentation RFC
 
+## Status
+
+Status: implemented design RFC and historical record for the QUIC selected-flow
+presentation model.
+
+This document remains useful because it explains the presentation boundaries and
+why the current QUIC surfaces are intentionally conservative. The authoritative
+current product contract lives in:
+
+- [docs/protocols/protocol_support.md](../../protocols/protocol_support.md)
+- [docs/stream_architecture.md](../../stream_architecture.md)
+- [docs/selected-flow-contract.md](../../selected-flow-contract.md)
+
 ## Purpose
 
 This RFC defines a practical presentation model for QUIC in the selected-flow surfaces of Pcap Flow Lab.
 
-The goal is to fix the conceptual model before broader QUIC logic changes continue.
+The original goal was to fix the conceptual model before broader QUIC logic
+changes continued.
 
 This RFC covers:
 
@@ -12,25 +26,26 @@ This RFC covers:
 - Stream
 - Stream Item Details
 
-This RFC does not propose code changes by itself. It defines the intended representation rules so later implementation stays conservative, bounded, and aligned with the current architecture.
+This RFC no longer proposes future work by itself. It now serves as the
+implemented design record for the representation rules that keep QUIC handling
+conservative, bounded, and aligned with the current architecture.
 
 This RFC does not require packet-perfect or protocol-complete QUIC reconstruction. It defines a reliable selected-flow presentation model, not a full QUIC analyzer.
 
 ## Status
 
-Initial selected-flow QUIC support already exists in a narrow form.
+Initial selected-flow QUIC support already exists in a bounded implemented
+form.
 
 - packet-level QUIC shell labeling exists for reliable header-typed cases
 - Stream can already expose narrow QUIC-oriented labels in bounded selected-flow paths
 - QUIC CRYPTO bytes may already yield narrow TLS handshake enrichment when directly parseable
 
-However, the project does not yet have a clearly fixed conceptual model for:
+This RFC records the conceptual model that the project now follows for:
 
 - QUIC packet-level presentation
 - QUIC stream-level itemization
 - the relation between QUIC header typing and QUIC payload or frame semantics
-
-This RFC fixes that model.
 
 Structured Stream Item Summary now retains lightweight QUIC presentation per
 selected-flow row and reuses the shared QUIC and TLS field mappers already used
@@ -63,14 +78,14 @@ Initial decryption succeeds. That artifact is:
 - not used as the semantic source of truth for Summary
 
 Structured frame ownership and TLS ownership still come from the retained
-`QuicPresentationFrame` and `TlsHandshakeModel` metadata. A future Byte View
-surface may consume the selected packet's decrypted Initial plaintext together
-with the existing frame offsets and CRYPTO metadata, but that UI does not
-exist yet.
+`QuicPresentationFrame` and `TlsHandshakeModel` metadata. The current Packet
+Details `Bytes` surface now consumes authoritative selected-packet and bounded
+derived QUIC byte views, including supported Initial-decryption and CRYPTO/TLS
+derived views, while keeping that data selected-packet-scoped and ephemeral.
 
 Failed Initial decryption remains intentionally coarse at the Stream Summary
-layer. Retry, Version Negotiation, and harder CRYPTO edge-fixture expansion
-remain future hardening work.
+layer. Retry and Version Negotiation are current supported presentation cases,
+while broader QUIC hardening and edge-fixture expansion remain future work.
 
 Packet Details Summary and Stream Item Summary now intentionally use parallel
 contribution rules:
@@ -87,7 +102,7 @@ non-Initial rows such as `0-RTT`, `Handshake`, and `Protected payload`.
 
 ## Architectural alignment
 
-The RFC must remain aligned with the existing selected-flow analysis boundaries described in [docs/stream_architecture.md](docs/stream_architecture.md) and [docs/architecture.md](docs/architecture.md).
+The RFC must remain aligned with the existing selected-flow analysis boundaries described in [docs/stream_architecture.md](../../stream_architecture.md) and [docs/architecture.md](../../architecture.md).
 
 QUIC presentation work at this stage is:
 
@@ -101,7 +116,7 @@ QUIC presentation work at this stage is not:
 
 - global parsing during capture open
 - index-time enrichment
-- decryption
+- general decryption beyond explicitly supported bounded QUIC Initial handling
 - full QUIC session reconstruction
 - full TLS-over-QUIC state reconstruction
 - full HTTP/3 semantic parsing
@@ -211,6 +226,14 @@ When the user selects a packet in the Packets list, Packet Details should explai
 
 Packet presentation therefore starts from the shell and may then add payload semantics and optional TLS enrichment.
 
+Current visible Packet Details surfaces are:
+
+- `Summary`
+- `Bytes`
+
+There is no current `Protocol` tab and no raw or transport-payload tab for
+selected-packet inspection.
+
 ### 1. Packet shell summary
 
 Packet Details should always show the packet shell summary when the bytes support reliable QUIC typing.
@@ -277,6 +300,18 @@ Stream is not a packet list clone.
 
 The Stream view should represent meaningful communication units for the selected flow. It should stay conservative, bounded, and useful for interactive summarization.
 
+Current visible selected-flow detail surfaces are:
+
+- `Stream`
+- `Stream Item Details`
+
+Current Stream Item Details tabs are:
+
+- `Summary`
+- `Item Data`
+
+There is no current Stream `Protocol` or transport-payload detail tab.
+
 ### Stream items are not packets
 
 The Stream view should not assume one packet equals one Stream item.
@@ -289,7 +324,7 @@ This is the most important rule in this RFC.
 
 Packet Details may expose a richer set of packet-contained semantics than Stream because packet inspection and Stream summarization serve different user goals.
 
-### Elements that should appear in Stream
+### Elements that appear in Stream
 
 The following may appear as Stream items when reliably identified and when they are meaningful for user-facing flow summarization.
 
@@ -297,9 +332,13 @@ The following may appear as Stream items when reliably identified and when they 
 - QUIC CRYPTO
 - QUIC Handshake
 - QUIC Protected payload
-- QUIC STREAM, only when later support becomes reliable enough for stable presentation
+- QUIC Retry
+- QUIC Version Negotiation
+- `0-RTT`
 
-These are examples of meaningful communication units, not a promise that every recognized frame becomes a separate item immediately.
+These are the current meaningful communication units for selected-flow QUIC
+presentation. General QUIC STREAM/application-data semantics remain outside the
+current bounded presentation scope.
 
 ### Elements that should not appear as standalone Stream items
 
@@ -310,7 +349,8 @@ The following should not become standalone Stream items in the current model.
 
 They may still appear in Packet Details as part of packet inspection.
 
-Future work could revisit PING if a strong user-facing reason appears, but the default position should remain no standalone Stream item.
+Future work could revisit PING if a strong user-facing reason appears, but the
+current product contract remains no standalone PING item.
 
 ### Handling mixed packets
 
@@ -392,17 +432,21 @@ Costs:
 - creates more risk of unstable labels when frame parsing is partial or uncertain
 - can become misleading if packet-shell context is hidden entirely
 
-### Recommended staged direction
+### Historical staged direction
 
-Near term, the project should stay conservative.
+The project followed a conservative staged direction:
 
-- keep Stream labels stable rather than radically renaming the surface immediately
-- prefer shell-oriented Stream labels in near-term UI rows when that yields more stable user-facing behavior
-- allow Stream Item Details to expose payload or frame semantics and optional TLS enrichment
-- allow Packet Details to remain the richest packet-inspection surface for coexisting payload semantics
-- refine Stream itemization toward payload-aware semantics only when the internal model is reliable enough to do so consistently
+- keep Stream labels stable rather than radically renaming the surface early
+- prefer shell-aware Stream labels when that yields more stable user-facing
+  behavior
+- let Stream Item Details expose payload or frame semantics and optional TLS
+  enrichment
+- let Packet Details remain the richest packet-inspection surface for
+  coexisting payload semantics
 
-In other words, near-term implementation should remain shell-oriented in labels more often than the eventual ideal model whenever that improves stability, while Packet Details and Stream Item Details become more explicit about payload semantics.
+The current product reflects that direction. Stream labels remain conservative,
+while Packet Details `Summary` / `Bytes` and Stream Item Details `Summary` /
+`Item Data` expose the richer bounded semantics.
 
 ## Stream Item Details rules
 
@@ -613,6 +657,8 @@ The following remain out of scope for this stage.
 - packet number space tracking beyond cheap local usage
 - ACK range analytics
 - general QUIC decryption
+- Handshake-key decryption
+- 0-RTT-key decryption
 - connection-wide CRYPTO stream reconstruction without explicit bounds
 - full HTTP/3 semantic parsing
 - global open-time QUIC parsing
@@ -620,74 +666,26 @@ The following remain out of scope for this stage.
 
 These items may become future work, but they must not leak into the current selected-flow presentation model by accident.
 
-## Internal model recommendation
+## Historical implementation direction
 
-To support the presentation rules above, the next implementation stages should move toward a narrow internal QUIC presentation model.
+The implementation direction recorded by this RFC was:
 
-That model should be presentation-oriented rather than protocol-complete.
+- fix correctness of QUIC TLS attachment and ownership first
+- use a narrow presentation-oriented QUIC model rather than a protocol-complete
+  global connection object
+- keep Packet Details richer than Stream
+- suppress low-value Stream noise such as standalone `PADDING` and `PING`
+- add richer QUIC semantics only when bounded evidence is authoritative
 
-Useful fields may include:
-
-- packet shell type
-- shell metadata fields used in Packet Details
-- payload or frame semantic list for the relevant packet or bounded item
-- references to CRYPTO fragments contributing to a bounded semantic unit
-- optional assembled TLS semantic summary
-- confidence or fallback state sufficient to keep the UI conservative
-
-This model does not need to become a global connection object. It only needs to support selected-flow presentation correctly.
-
-## Recommended implementation plan
-
-### Stage 1
-
-Fix correctness of current QUIC TLS attachment.
-
-- do not reuse ClientHello details for packets or items that should show ServerHello
-- ensure bounded CRYPTO assembly is direction-aware and ownership-aware
-- keep fallback behavior conservative when assembly is incomplete or ambiguous
-
-### Stage 2
-
-Introduce an internal QUIC presentation model.
-
-- packet shell type
-- payload or frame list
-- CRYPTO fragment references
-- optional assembled TLS semantic
-
-This stage should improve correctness first, not UI ambition.
-
-### Stage 3
-
-Improve Packet Details presentation.
-
-- show packet shell summary clearly
-- show payload or frame summary clearly
-- attach TLS details only when bounded assembly succeeds reliably
-
-### Stage 4
-
-Improve Stream itemization conservatively.
-
-- suppress PADDING and PING as standalone Stream items
-- keep ACK, CRYPTO, Handshake, and Protected payload semantics when reliably meaningful
-- refine labels only when the internal model is stable enough to support them consistently
-
-### Stage 5
-
-Optional future enrichment.
-
-- QUIC certificate details
-- minimal HTTP/3-aware handling
-- clearer payload-oriented Stream labels if reliability remains high
+That direction remains accurate as the historical explanation for the current
+behavior.
 
 ## Relationship to current planning docs
 
 This RFC complements the current Stream and planning documents rather than replacing them.
 
-- [docs/stream_architecture.md](docs/stream_architecture.md) defines the selected-flow Stream boundaries
-- [docs/current-state.md](docs/current-state.md) records the current narrow QUIC support level
-- [docs/next-steps.md](docs/next-steps.md) tracks short-term implementation priorities
+- [docs/stream_architecture.md](../../stream_architecture.md) defines the selected-flow Stream boundaries
+- [docs/current-state.md](../../current-state.md) records the current narrow QUIC support level
+- [docs/history/plans/next-steps.md](../plans/next-steps.md) tracks short-term implementation priorities
 
 The practical effect of this RFC is to define the conceptual model that later QUIC work should follow.

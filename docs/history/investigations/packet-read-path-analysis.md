@@ -2,12 +2,29 @@
 
 This note maps the current packet-byte flow starting at `PcapReader::read_next()` and `PcapNgReader::read_next()` before any reader/import optimization.
 
+Status: Engineering investigation / read-path analysis
+
+Current role:
+
+- This document is an investigation note that explains byte ownership, consumer paths, and optimization risk.
+- It remains useful for reasoning about reader/import costs and later source-backed rereads.
+- Some optimization opportunities and recommendations recorded here were later implemented; those sections should be read as investigation history, not as the current to-do list.
+
 ## Scope
 
 - No code changes were made for this analysis.
 - Focus is the current open/import path and the production callers that consume `read_next()`.
 - Goal: understand byte ownership, lifetime, and optimization risk before touching the reader/import path.
-- Follow-up architecture work for unifying packet traversal is now documented separately in `docs/dissection-engine-rfc.md`; this note remains about the current production byte path only.
+- Follow-up architecture work for unifying packet traversal is now documented separately in `docs/history/rfc/dissection-engine-rfc.md`; this note remains about the current production byte path only.
+
+Current-production updates since this investigation:
+
+- import-time repeated hint work has been reduced since this note was first written
+- the per-packet owning transport-payload copy on the flow-hint path was replaced by packet-local non-owning payload-view logic
+- classic-PCAP import now uses staged/prefix-aware handling only for unusually large packets, while ordinary packets remain on the sequential full-read path
+- selected-flow visible-window warmup now includes a bounded full-packet cache in addition to the existing selected-flow transport-payload cache
+- mmap-backed random access remains deferred
+- `pcapng` still remains on the full-read path
 
 ## 1. Current call chains from `read_next()`
 
@@ -332,9 +349,10 @@ Classification:
 - re-read from capture file on demand
 - do not depend on import-time byte buffers surviving
 
-## 6. Early-stop and over-work opportunities in the current code
+## 6. Early-stop and over-work opportunities at investigation time
 
-These are observations only; nothing was changed.
+These sections record the investigation findings from the time this note was written.
+Some of them have since been addressed in current main.
 
 ### 1. Repeated hint detection after the connection already has stable hints
 
@@ -358,7 +376,8 @@ the code still keeps:
 - trying protocol detectors
 - possibly parsing TLS/HTTP/etc again
 
-This is a concrete current early-stop opportunity.
+This was a concrete opportunity at the time of the investigation.
+Current main has since reduced repeated import-time hint work rather than leaving this entire path untouched.
 
 ### 2. Per-packet transport-payload copy during hint detection
 
@@ -370,7 +389,8 @@ That means current import does:
 2. decoder reads packet bytes
 3. hint service copies payload bytes again
 
-This is probably the most obvious import-path byte-copy hot spot after the reader itself.
+This was the most obvious import-path byte-copy hot spot at the time of the investigation.
+Current main now uses packet-local payload views for this path instead of always copying transport payload into a fresh owning vector.
 
 ### 3. Unified import currently uses one decode + hint path
 
@@ -472,9 +492,9 @@ The main caution is QUIC service hint assembly:
 - some flows need up to a few Initial packets before service hint becomes available
 - stopping too early for QUIC would have to be state-aware, not just “protocol already known”
 
-## 8. Practical recommendation
+## 8. Practical recommendation at investigation time
 
-### Recommendation
+### Historical recommendation
 
 **Option D: optimize in two smaller steps before any staged prefix/full read design.**
 
@@ -502,5 +522,5 @@ The safest first optimization is to cut the avoidable work *inside the current i
 - Import-time packet bytes are short-lived and are not stored in `CaptureState`.
 - Later session features re-read bytes from the source capture using `PacketRef.byte_offset`.
 - A reusable scratch buffer looks safe for the import path, but risky as a drop-in semantic replacement for every `read_next()` consumer.
-- Staged prefix/full reading is feasible only after refactoring decode/hint stages around explicit byte budgets; today it is the riskier path.
-- The best first optimization target is the current import-time repeated hint work and payload-copy churn, not the staged-read design.
+- Staged prefix/full reading remains a structural concern that should stay limited and measurable rather than becoming a universal reader policy.
+- The original first optimization target in this note was repeated import-time hint work and payload-copy churn; current main has since implemented that reduction and later added staged handling only for unusually large classic-PCAP packets.

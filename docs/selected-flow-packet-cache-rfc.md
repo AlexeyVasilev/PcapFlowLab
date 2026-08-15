@@ -2,12 +2,27 @@
 
 ## 1. Status
 
-Proposed design RFC for future implementation.
+Implemented design RFC / cache architecture reference
 
-- This RFC defines a bounded in-memory cache for the currently selected flow only.
-- It is intended to support future selected-flow performance and responsiveness work.
+- Current main now has a bounded runtime-only selected-flow cache architecture for the currently selected flow only.
 - It does not change the persistence model.
 - It does not change open-time or index-load behavior.
+- It remains the design-history record for why the cache boundary exists and which larger continuation ideas were intentionally deferred.
+
+Implemented in current main:
+
+- bounded runtime-only selected-flow full-packet cache
+- bounded runtime-only selected-flow transport-payload cache
+- per-selected-flow cache lifetime and invalidation
+- direct-read fallback on cache miss or cache-limit conditions
+- conservative cache clearing on session reset, capture/index open, source attach/clear, and explicit selected-flow cache clear
+
+Partially implemented / deferred:
+
+- broader append-style higher-level parser continuation
+- making every selected-flow Stream path continue from prior cached parser state
+- eviction policies beyond the current bounded stop-at-budget model
+- any persistent cache or cross-flow/session cache design
 
 ## 2. Problem Statement
 
@@ -74,26 +89,24 @@ Important semantic boundary:
 
 ## 6. What Bytes Are Cached
 
-This RFC should stay conservative about the first implementation.
+Current main uses two related runtime-only caches:
 
-There are two obvious choices:
+- selected-flow full-packet cache for the currently visible/warmed packet window
+- selected-flow transport-payload cache for transport-oriented selected-flow analysis
 
-- cache whole packet bytes
-- cache payload bytes only
+Current exact budgets:
 
-Recommended first-step direction:
+- full-packet cache: `8 MiB`
+- transport-payload cache: `16 MiB`
 
-- cache the bytes needed by selected-flow analysis, especially transport payload bytes plus enough packet association metadata to map cached bytes back to packets and directions
-- avoid duplicating packet metadata that already exists in persistent session state
-- allow packet-detail paths that still need direct packet reads to remain separate in the first iteration if that reduces implementation risk
+Current architectural interpretation:
 
-Rationale:
+- the full-packet cache is keyed by capture packet index and stores exact reread packet bytes for a bounded selected-flow packet window
+- the transport-payload cache stores selected-flow transport payload bytes plus packet association metadata needed by bounded selected-flow analysis
+- packet metadata already persisted in session state is not duplicated unnecessarily
+- packet-details and other byte-backed paths may still fall back to direct packet reads when a cache does not apply or a cache miss occurs
 
-- payload-oriented selected-flow analysis is the main pressure point today
-- payload-centric caching is likely to deliver most of the gain with lower memory cost
-- a future implementation can widen the cached byte scope if packet-details reuse becomes worthwhile
-
-This RFC intentionally does not force an all-or-nothing answer on day one. It defines the cache boundary and lifecycle first.
+This is intentionally not a persistent byte store and not a correctness upgrade for reassembly.
 
 ## 7. Cache Data Model
 
@@ -180,13 +193,12 @@ The cache must stay bounded.
 - If the cache budget is reached, `Load more` must stop cleanly or the UI must report that the cache limit has been reached.
 - There must be no silent truncation that pretends the cache still covers the selected-flow window fully.
 
-Recommended practical range for the first implementation:
+Current production constants:
 
-- 8 MiB
-- 16 MiB
-- 32 MiB
+- selected-flow full-packet cache: `8 MiB`
+- selected-flow transport-payload cache: `16 MiB`
 
-The final constant can be tuned later based on profiling and real captures. This RFC does not require one exact number now, but it does require an explicit bounded budget.
+The exact constants can still be tuned later, but current main already uses explicit bounded budgets rather than an open-ended proposal range.
 
 ## 10. Interaction With Packet List
 
@@ -299,6 +311,8 @@ Preferred next step:
 
 ## 16. Recommended Implementation Staging
 
+The staging below is now historical design context. Stage 1 and the basic byte-source/cache boundary are implemented in current main; broader parser-continuation ambitions remain deferred.
+
 ### Stage 1
 
 Add the selected-flow cache itself.
@@ -338,8 +352,8 @@ This staging intentionally separates “cache boundaries” from “incremental 
 
 ## 17. Open Questions
 
-- What should the final cache byte budget be?
-- Should the first implementation cache whole packet bytes or payload-oriented bytes only?
+- Future tuning question: should the current cache byte budgets change from `8 MiB` full-packet and `16 MiB` transport-payload?
+- How much additional cache reuse should move from current direct-read fallbacks into cache-backed paths, if any?
 - Should packet-details views reuse the cache in the first step, or stay on direct packet reads initially?
 - How much parser tail state, if any, is worth carrying across `Load more` in later stages?
 - Is eviction within a single selected flow worth supporting later, or is a simple “stop at budget” model preferable?

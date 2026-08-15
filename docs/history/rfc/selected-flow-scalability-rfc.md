@@ -1,5 +1,30 @@
 # Selected-Flow Scalability RFC
 
+Status: Implemented design RFC / selected-flow scalability history
+
+Current role:
+
+- This document is the selected-flow scalability boundary reference and design-history record.
+- Its selected-flow boundedness rules largely match current main.
+- Some proposed loading-state UX and staging language below is now historical because the core bounded behavior is already implemented.
+
+Implemented in current main:
+
+- selected-flow-expensive work stays scoped to the selected flow
+- packet and Stream loading is bounded rather than capture-wide
+- selected-flow packet and byte caches are runtime-only and bounded
+- Stream materialization remains ephemeral and rebuildable
+- selected-flow `Load more` semantics are cumulative and window-based rather than whole-capture precompute
+- capture open does not precompute Stream artifacts for every flow
+- partial-open-with-warning exists for internally consistent imported prefixes
+
+Still deferred or only partially realized:
+
+- a richer dedicated selected-flow loading-state UX than the current bounded interactive model
+- mmap-backed random-access optimization
+- chunked processing as the main answer to selected-flow responsiveness
+- any broader persistent Stream storage model
+
 ## Purpose
 
 This RFC covers two practical problems that now matter for large captures.
@@ -21,7 +46,7 @@ Large captures may fail after a substantial valid prefix has already been parsed
 
 Today, open still behaves as a fatal failure even when a large internally consistent prefix was imported successfully. That can discard useful work and makes debugging large-file behavior harder.
 
-This RFC defines a minimal path for keeping selected-flow interaction responsive and for deciding when a partial import may still be usable with an explicit warning.
+This RFC defines the architectural boundaries for keeping selected-flow interaction responsive and for deciding when a partial import may still be usable with an explicit warning.
 
 ## Goals
 
@@ -174,6 +199,8 @@ This RFC is not primarily about mmap.
 The first solution remains bounded and incremental selected-flow loading.
 
 ## Implementation phases
+
+The phase list below should be read as design history. Current main already implements the core bounded selected-flow packet/window model, cumulative `Load more` behavior, ephemeral materialization, and partial-open warning support.
 
 ### Phase 1
 

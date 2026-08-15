@@ -4,12 +4,37 @@ Date: 2026-06-20
 
 This note is a follow-up to [docs/packet-read-path-analysis.md](packet-read-path-analysis.md). It keeps the existing packet-read ownership map, then narrows the next optimization steps to the smallest safe passes for large captures and heavy selected-flow workloads.
 
+Status: Implemented optimization history / performance investigation
+
+Current role:
+
+- This document is the implementation-history and measured-tradeoff record for packet-read optimization work.
+- It should preserve chronology, accepted optimizations, rejected ideas, and deferred directions.
+- It is not the primary current contract document for large-capture behavior. Use [docs/large-capture-performance-guidelines.md](../../large-capture-performance-guidelines.md) for current engineering rules.
+
+Current production summary:
+
+- ordinary classic-PCAP packets stay on the efficient sequential full-read path
+- classic packets at or above `16 KiB` are eligible for staged/prefix-aware import handling
+- staged classic import starts from a `192`-byte prefix and can grow adaptively up to `4096` bytes when needed
+- `pcapng` import remains on the full-read path
+- selected packet/details reads remain lazy and source-backed after open/import
+- selected-flow visible-window warmup now uses a bounded `8 MiB` full-packet cache, while transport-payload-oriented selected-flow caching remains separately bounded at `16 MiB`
+- no mmap-backed production read path is currently used
+- there is no current policy to read only short prefixes for every normal packet
+
+Historical result to preserve:
+
+- broadly applying short-prefix reads to ordinary packets was investigated as a general strategy and was rejected
+- the extra read/skip/branch overhead made the common path materially slower in the measured experiment
+- current production therefore keeps the normal sequential packet path efficient and reserves staged handling for unusually large classic-PCAP packets where the byte-volume tradeoff is different
+
 Related context:
 
 - [docs/packet-read-path-analysis.md](packet-read-path-analysis.md)
-- [docs/large-capture-rfc.md](large-capture-rfc.md)
-- [docs/architecture.md](architecture.md)
-- [docs/decisions.md](decisions.md)
+- [docs/large-capture-rfc.md](../rfc/large-capture-rfc.md)
+- [docs/architecture.md](../../architecture.md)
+- [docs/decisions.md](../../decisions.md)
 
 Status:
 
@@ -73,11 +98,11 @@ Implemented fifth pass:
 
 ### Classic PCAP
 
-`PcapReader::read_next()` in [src/core/io/PcapReader.cpp](../src/core/io/PcapReader.cpp) reads the packet header, allocates `std::vector<std::uint8_t> bytes(packet_header.included_length)`, reads the full captured packet into that vector, then moves it into `RawPcapPacket`.
+`PcapReader::read_next()` in [src/core/io/PcapReader.cpp](../../../src/core/io/PcapReader.cpp) reads the packet header, allocates `std::vector<std::uint8_t> bytes(packet_header.included_length)`, reads the full captured packet into that vector, then moves it into `RawPcapPacket`.
 
 ### PCAPNG
 
-`PcapNgReader::read_next()` in [src/core/io/PcapNgReader.cpp](../src/core/io/PcapNgReader.cpp) first allocates `remaining` for the whole block payload, validates the block trailer, then allocates a second `bytes` vector of `captured_length` and copies the captured packet bytes into it before moving that into `RawPcapPacket`.
+`PcapNgReader::read_next()` in [src/core/io/PcapNgReader.cpp](../../../src/core/io/PcapNgReader.cpp) first allocates `remaining` for the whole block payload, validates the block trailer, then allocates a second `bytes` vector of `captured_length` and copies the captured packet bytes into it before moving that into `RawPcapPacket`.
 
 So current `pcapng` import pays:
 
@@ -87,7 +112,7 @@ So current `pcapng` import pays:
 
 ### Where `RawPcapPacket.bytes` lives
 
-`RawPcapPacket` is defined in [src/core/io/PcapReader.h](../src/core/io/PcapReader.h) and owns packet bytes as:
+`RawPcapPacket` is defined in [src/core/io/PcapReader.h](../../../src/core/io/PcapReader.h) and owns packet bytes as:
 
 - `std::vector<std::uint8_t> bytes`
 
@@ -95,7 +120,7 @@ That ownership is per-packet and per-reader-call. It lives only as long as the r
 
 ### Import/open lifetime
 
-During import, `read_next()` returns a temporary `RawPcapPacket` into `import_packets(...)` inside [src/core/services/CaptureImportProcessor.cpp](../src/core/services/CaptureImportProcessor.cpp).
+During import, `read_next()` returns a temporary `RawPcapPacket` into `import_packets(...)` inside [src/core/services/CaptureImportProcessor.cpp](../../../src/core/services/CaptureImportProcessor.cpp).
 
 Within that loop iteration:
 
@@ -107,7 +132,7 @@ After `process_packet(...)` returns, the owning byte vector is dropped.
 
 ### What is persisted
 
-`CaptureState` in [src/core/domain/CaptureState.h](../src/core/domain/CaptureState.h) stores:
+`CaptureState` in [src/core/domain/CaptureState.h](../../../src/core/domain/CaptureState.h) stores:
 
 - connections;
 - packet refs;
@@ -116,7 +141,7 @@ After `process_packet(...)` returns, the owning byte vector is dropped.
 
 It does not store packet byte vectors.
 
-Index serialization in [src/core/index/Serialization.cpp](../src/core/index/Serialization.cpp) persists only `PacketRef` metadata such as:
+Index serialization in [src/core/index/Serialization.cpp](../../../src/core/index/Serialization.cpp) persists only `PacketRef` metadata such as:
 
 - `packet_index`
 - `byte_offset`
@@ -135,7 +160,7 @@ Later byte-backed features re-read from the source capture by `PacketRef` rather
 
 Primary path:
 
-1. `CaptureSession::read_packet_data(...)` in [src/app/session/CaptureSession.cpp](../src/app/session/CaptureSession.cpp)
+1. `CaptureSession::read_packet_data(...)` in [src/app/session/CaptureSession.cpp](../../../src/app/session/CaptureSession.cpp)
 2. `CaptureFilePacketReader`
 3. `PacketDataReader`
 4. file read at `PacketRef.byte_offset` for `PacketRef.captured_length`
@@ -158,7 +183,7 @@ Notable consumers:
 
 File:
 
-- [src/core/decode/PacketDecoder.cpp](../src/core/decode/PacketDecoder.cpp)
+- [src/core/decode/PacketDecoder.cpp](../../../src/core/decode/PacketDecoder.cpp)
 
 Behavior:
 
@@ -185,7 +210,7 @@ Implication:
 
 File:
 
-- [src/core/services/CaptureImportProcessor.cpp](../src/core/services/CaptureImportProcessor.cpp)
+- [src/core/services/CaptureImportProcessor.cpp](../../../src/core/services/CaptureImportProcessor.cpp)
 
 Behavior:
 
@@ -206,7 +231,7 @@ Byte need:
 
 File:
 
-- [src/core/services/PacketIngestor.cpp](../src/core/services/PacketIngestor.cpp)
+- [src/core/services/PacketIngestor.cpp](../../../src/core/services/PacketIngestor.cpp)
 
 Behavior:
 
@@ -221,7 +246,7 @@ Byte need:
 
 File:
 
-- [src/core/services/FlowHintService.cpp](../src/core/services/FlowHintService.cpp)
+- [src/core/services/FlowHintService.cpp](../../../src/core/services/FlowHintService.cpp)
 
 Behavior:
 
@@ -245,7 +270,7 @@ Copy behavior:
 
 File:
 
-- [src/core/services/PacketPayloadService.cpp](../src/core/services/PacketPayloadService.cpp)
+- [src/core/services/PacketPayloadService.cpp](../../../src/core/services/PacketPayloadService.cpp)
 
 Behavior:
 
@@ -265,8 +290,8 @@ Copy behavior:
 
 Files:
 
-- [src/core/services/FlowHintService.cpp](../src/core/services/FlowHintService.cpp)
-- [src/core/services/QuicInitialParser.h](../src/core/services/QuicInitialParser.h)
+- [src/core/services/FlowHintService.cpp](../../../src/core/services/FlowHintService.cpp)
+- [src/core/services/QuicInitialParser.h](../../../src/core/services/QuicInitialParser.h)
 
 Behavior:
 
@@ -348,8 +373,8 @@ Production non-import callers:
 
 Files:
 
-- [src/core/services/FlowExportService.cpp](../src/core/services/FlowExportService.cpp)
-- [src/core/services/ChunkedCaptureImporter.cpp](../src/core/services/ChunkedCaptureImporter.cpp)
+- [src/core/services/FlowExportService.cpp](../../../src/core/services/FlowExportService.cpp)
+- [src/core/services/ChunkedCaptureImporter.cpp](../../../src/core/services/ChunkedCaptureImporter.cpp)
 
 Notes:
 
@@ -456,7 +481,7 @@ Risk:
 
 Affected areas:
 
-- [src/core/services/CaptureImportProcessor.cpp](../src/core/services/CaptureImportProcessor.cpp)
+- [src/core/services/CaptureImportProcessor.cpp](../../../src/core/services/CaptureImportProcessor.cpp)
 - possibly a tiny helper near connection hint state
 
 Tests to focus:
@@ -498,8 +523,8 @@ Residual risk:
 
 Affected areas:
 
-- [src/core/services/PacketPayloadService.cpp](../src/core/services/PacketPayloadService.cpp)
-- [src/core/services/FlowHintService.cpp](../src/core/services/FlowHintService.cpp)
+- [src/core/services/PacketPayloadService.cpp](../../../src/core/services/PacketPayloadService.cpp)
+- [src/core/services/FlowHintService.cpp](../../../src/core/services/FlowHintService.cpp)
 
 Tests to focus:
 
@@ -536,8 +561,8 @@ Risk:
 
 Affected areas:
 
-- [src/core/io/PcapReader.cpp](../src/core/io/PcapReader.cpp)
-- [src/core/io/PcapNgReader.cpp](../src/core/io/PcapNgReader.cpp)
+- [src/core/io/PcapReader.cpp](../../../src/core/io/PcapReader.cpp)
+- [src/core/io/PcapNgReader.cpp](../../../src/core/io/PcapNgReader.cpp)
 - maybe import-only helper wrappers
 
 Tests to focus:
@@ -679,6 +704,9 @@ Acceptance criteria for recommended pass A:
 - no regression in ARP / IGMP / QUIC / TLS hint coverage.
 
 ## 8. Phased roadmap after the current passes
+
+This section is preserved as implementation history and deferred follow-up context.
+Only the items already reflected in the status block and production summary above should be read as current production behavior.
 
 1. Re-measure import CPU and large-flow responsiveness after passes A and B together.
 2. If import allocation churn still dominates, evaluate pass C for reader-local scratch reuse.

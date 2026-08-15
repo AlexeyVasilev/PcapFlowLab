@@ -1,22 +1,33 @@
 # Analysis Tab RFC
 
-## Purpose
-
-This RFC defines the Analysis tab as a per-flow, on-demand, ephemeral analysis workspace.
-
-Analysis is a user-facing analytical view over the currently selected connection. It is not a global precompute system, not part of capture open or import, and not part of persisted session or index state.
-
-The goal is to fix the architectural direction now that an initial MVP implementation exists in service, session/controller wiring, and UI.
-
 ## Status
 
-An initial MVP implementation already exists.
+Status: Implemented design RFC / historical design context
 
-- a per-flow analysis service
-- session and controller wiring for selected-flow access
-- an initial Analysis tab in the flow workspace UI
+The selected-flow Analysis workspace described here has been implemented.
 
-This RFC defines the intended boundaries for further expansion so the feature remains consistent with the existing packet-oriented fast path and selected-flow analysis model.
+For the current technical contract, use:
+
+- [analysis-tab.md](../../analysis-tab.md)
+- [ui/presentation_contract.md](../../ui/presentation_contract.md)
+
+This RFC is retained to preserve the architectural rationale and staged design
+reasoning behind the Analysis workspace. Historical references to MVP scope,
+future phases, or later expansion should be read as design-evolution context,
+not as the current product contract.
+
+## Purpose
+
+This RFC defines the Analysis tab as a per-flow, on-demand, ephemeral analysis
+workspace.
+
+Analysis is a user-facing analytical view over the currently selected
+connection. It is not a global precompute system, not part of capture open or
+import, and not part of persisted session or index state.
+
+The goal of this RFC was to fix the architectural direction so the feature
+would remain consistent with the existing packet-oriented fast path and
+selected-flow analysis model.
 
 ## Goals
 
@@ -38,32 +49,37 @@ This RFC defines the intended boundaries for further expansion so the feature re
 
 ## Architectural alignment
 
-This RFC must remain aligned with the existing project architecture.
+This RFC was written to remain aligned with the existing project architecture.
 
 - fast path remains packet-oriented
-- open/import remains focused on packet, flow, summary, and hint derivation that is already part of the current model
+- open/import remains focused on packet, flow, summary, and hint derivation
+  that is already part of the current model
 - selected-flow deep or derived views remain on demand
 - bounded derived artifacts remain ephemeral
 - Stream already follows this model for selected-flow payload-oriented inspection
 - Analysis tab follows the same selected-flow philosophy
 
-Analysis must therefore remain outside capture open, outside index building, and outside checkpoint persistence.
+Analysis must therefore remain outside capture open, outside index building,
+and outside checkpoint persistence.
 
 ## Analysis workspace model
 
 The Analysis tab is a workspace for the currently selected flow.
 
 - scope is exactly one selected connection at a time
-- output is derived from existing imported state and, when needed later, bounded selected-flow reads
+- output is derived from existing imported state and, when needed later,
+  bounded selected-flow reads
 - results may be rebuilt whenever selection changes
 - results may be discarded at any time
 - analysis state is not part of durable system state
 
-This is intentionally different from capture-wide statistics or future cross-flow reporting. The Analysis tab is about understanding one selected flow in more detail, on demand.
+This is intentionally different from capture-wide statistics or future
+cross-flow reporting. The Analysis tab is about understanding one selected flow
+in more detail, on demand.
 
-## MVP scope
+## Historical initial scope
 
-The initial MVP scope is intentionally narrow.
+The initial MVP scope was intentionally narrow.
 
 ### Overview
 
@@ -78,13 +94,15 @@ The initial MVP scope is intentionally narrow.
 - packets `A->B` / `B->A`
 - bytes `A->B` / `B->A`
 
-MVP analysis should rely only on already available flow metadata and packet references.
+The initial implementation was intended to rely only on already available flow
+metadata and packet references.
 
 - no reassembly is required
 - no payload-derived workspace state is required
 - no new open-time analysis is required
 
-This keeps the first phase cheap, deterministic, and consistent with the existing architecture.
+That kept the first phase cheap, deterministic, and consistent with the
+existing architecture.
 
 ## Bounded analysis contract
 
@@ -96,12 +114,15 @@ All Analysis tab work must be bounded.
 
 No phase is allowed to introduce unbounded scanning of a flow.
 
-Future phases such as timeline, histograms, or protocol panels must:
+Later additions such as timeline, histograms, or protocol panels were intended
+to:
 
 - define their bounds explicitly
 - remain suitable for interactive use
 
-This is consistent with the project's existing bounded reassembly principles: selected-flow derived work may be useful and best-effort, but it must not become unbounded in latency or resource use.
+This is consistent with the project's existing bounded reassembly principles:
+selected-flow derived work may be useful and best-effort, but it must not
+become unbounded in latency or resource use.
 
 ## Partial and approximate results
 
@@ -113,11 +134,14 @@ Analysis results may be:
 
 The UI must treat these results as best-effort rather than ground truth.
 
-Analysis must prefer safe partial output over blocking or attempting full reconstruction.
+Analysis must prefer safe partial output over blocking or attempting full
+reconstruction.
 
 ## Data-source tiers
 
-Future Analysis tab work may use more than one source tier, but the tiers must stay explicit.
+This RFC preserved an explicit tier model so later Analysis evolution would not
+blur the boundary between metadata-first analysis and deeper payload-oriented
+inspection.
 
 ### Tier 1
 
@@ -150,7 +174,9 @@ Examples:
 - bounded payload-derived hints
 - narrowly scoped reassembly-assisted interpretation
 
-MVP stays entirely in Tier 1.
+The initial production Analysis workspace stayed entirely in Tier 1. Current
+production still follows a metadata-only Analysis model rather than a
+payload/reassembly-driven one.
 
 ## Trigger model
 
@@ -160,25 +186,31 @@ Analysis is refreshed only for the currently selected flow.
 - no global analysis runs across all flows
 - no background global analysis is introduced
 
-The active Analysis tab is the natural trigger point for heavier future analysis phases.
+The active Analysis tab was treated as the natural trigger point for any
+heavier later analysis phases.
 
 That means:
 
 - cheap Tier 1 analysis may be refreshed immediately for the selected flow
-- heavier future phases should be allowed to run only when Analysis is the active tab or when the user explicitly requests them
-- flow selection alone must not become a hidden trigger for expensive deep analysis
+- heavier later phases should be allowed to run only when Analysis is the
+  active tab or when the user explicitly requests them
+- flow selection alone must not become a hidden trigger for expensive deep
+  analysis
 
-This keeps the model simple and consistent with existing selected-flow behavior.
+This keeps the model simple and consistent with existing selected-flow
+behavior.
 
 ## Execution model
 
-For MVP, synchronous execution is acceptable if the work remains cheap.
+For the initial implementation, synchronous execution was acceptable as long as
+the work remained cheap.
 
-The current Tier 1 scope is small enough that a synchronous selected-flow refresh is reasonable.
+The current Tier 1 scope was small enough that a synchronous selected-flow
+refresh was reasonable.
 
 Analysis execution must remain observable to the user.
 
-Future heavier phases may require:
+Heavier later phases may require:
 
 - async execution
 - loading state
@@ -191,7 +223,9 @@ For heavier phases:
 - selection change must cancel or replace ongoing analysis
 - stale or misleading results must be avoided
 
-This RFC does not fix an async design yet. It only fixes the requirement that heavier selected-flow analysis must remain observable and must not silently turn into blocking global work.
+This RFC did not fix an async design. It only fixed the requirement that
+heavier selected-flow analysis must remain observable and must not silently
+turn into blocking global work.
 
 ## Cache and persistence policy
 
@@ -209,7 +243,12 @@ Cache, if any, is only for the currently selected flow.
 - it must not become a hidden cross-flow cache
 - it must not imply precompute during open
 
-## Phase plan
+## Historical phase plan
+
+This phase plan is preserved as historical design scaffolding. Current
+production has since implemented more than the earliest slice originally called
+out here, but the preserved sequence is still useful for understanding the
+intended evolution constraints.
 
 ### Phase 1
 
@@ -232,9 +271,11 @@ Cache, if any, is only for the currently selected flow.
 - Derived hints
 - simple classification hints
 
-Each phase must remain bounded, selected-flow scoped, and on demand.
+Each phase was intended to remain bounded, selected-flow scoped, and on
+demand.
 
-No phase is allowed to expand the feature into hidden global background analysis.
+No phase is allowed to expand the feature into hidden global background
+analysis.
 
 ## Explicit exclusions
 
@@ -246,21 +287,27 @@ The Analysis tab must not grow into the following:
 - immediate ML-driven classification pipeline
 - an attempt to replicate Wireshark feature-for-feature
 
-If future analysis becomes expensive, the correct response is bounded, observable, selected-flow execution, not architecture drift into global precomputation.
+If future analysis becomes expensive, the correct response is bounded,
+observable, selected-flow execution, not architecture drift into global
+precomputation.
 
 ## Relationship to existing features
 
-The project already distinguishes between durable packet/flow state and selected-flow derived views.
+The project already distinguishes between durable packet/flow state and
+selected-flow derived views.
 
 - fast path remains packet-oriented and durable where appropriate
 - Stream remains selected-flow, ephemeral, and bounded
-- Analysis tab follows the same pattern for analytical views over one selected connection
+- Analysis tab follows the same pattern for analytical views over one selected
+  connection
 
 The two selected-flow views serve different purposes.
 
 - Stream is payload-oriented and may use bounded reassembly
-- Analysis is a statistics and analytical view that starts metadata-only and may optionally use bounded deeper analysis later
+- Analysis is a statistics and analytical view that starts metadata-only and may
+  optionally use bounded deeper analysis later
 
 Analysis must not duplicate Stream behavior.
 
-This RFC therefore fixes Analysis as another selected-flow workspace layer over existing imported state, not as a new global analysis subsystem.
+This RFC therefore fixed Analysis as another selected-flow workspace layer over
+existing imported state, not as a new global analysis subsystem.

@@ -3,6 +3,10 @@
 Date: 2026-07-24
 Branch: `feature/unified-packet-dissection`
 
+## Status
+
+Current developer validation tool reference.
+
 This document describes the developer-only validation executable used to compare
 legacy import against unified shadow import on arbitrary local captures.
 
@@ -10,6 +14,10 @@ Production runtime import now uses unified dissection. The `legacy` mode remains
 temporary and exists only as a post-cutover comparison oracle.
 It is not an application runtime option and does not switch the Qt, CLI, or
 other production capture-import path back to `PacketDecoder`.
+
+That statement is specific to the validation tool / import mode. It does not
+mean the `PacketDecoder` class has no remaining production consumers elsewhere
+in the runtime.
 
 ## Tool
 
@@ -188,6 +196,10 @@ For each capture, record:
 
 ## Provisional Acceptance Criteria
 
+These were the cutover-era acceptance/review criteria. They remain useful as
+ongoing regression-review guidance, but they are not a pending release gate for
+a cutover that has already happened and they are not a product guarantee.
+
 Correctness:
 
 - zero structural mismatches on the selected real-capture corpus
@@ -221,3 +233,12 @@ Legacy mode remains intentionally available after the cutover only for:
 - post-cutover regression comparison
 - packet-level diagnosis of future parity regressions
 - safe retirement planning for the retained legacy decoder
+
+Current architectural distinction to keep explicit:
+
+- production capture import uses the unified registry-driven path;
+- `legacy` validation mode runs the legacy import implementation only for
+  developer comparison;
+- `PacketDecoder` is therefore no longer the production import authority, but
+  broader legacy-decoder retirement is still incomplete while limited
+  non-import runtime consumers remain.

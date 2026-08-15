@@ -1,5 +1,32 @@
 # Large Capture Handling RFC
 
+Status: Implemented / partially implemented design RFC
+
+Current role:
+
+- This document preserves the architectural rationale for large-capture handling.
+- Several core directions here are now implemented in current main.
+- Remaining mmap- and chunk-processing ideas are still deferred or only partially realized.
+
+Implemented in current main:
+
+- packet-oriented capture open/import remains the fast path
+- long-running open has observable progress reporting
+- open supports cooperative cancellation
+- partial-open-with-warning exists for internally consistent imported prefixes
+- index-based reopen remains the durable reuse path
+- packet/details inspection remains lazy and source-backed
+- selected-flow-expensive work remains on demand and bounded
+- large classic-PCAP packets can use staged/prefix-aware import handling while the common path remains sequential full-read
+
+Deferred or not fully implemented:
+
+- mmap-backed random-access backend
+- chunked processing as the primary normal open architecture
+- a broader persistent large-capture storage redesign
+- PacketRef compaction ideas deferred beyond 0.3.0
+- any new roadmap beyond what current main already implements
+
 ## Purpose
 
 Pcap Flow Lab already has a workable architecture for capture import, saved indexes, and on-demand Stream analysis, but large capture handling is still underdefined from a user and operational perspective.
@@ -170,6 +197,12 @@ Rationale:
 ## Future: Chunked Import
 
 Chunked import remains a future direction for very large captures.
+
+Current note:
+
+- core chunked-import/resume support exists as a separate implementation path
+- making chunked processing the default large-capture architecture is still deferred
+- this section should therefore be read as future/default-architecture history, not as a statement that no chunked implementation exists anywhere in the repository
 
 Potential scope:
 

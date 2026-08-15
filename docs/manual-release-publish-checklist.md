@@ -1,45 +1,62 @@
 # Manual Release Publish Checklist
 
-Use this as the final compact pass before publishing the GitHub release.
+Use this as the compact publication-day pass for the actual GitHub release.
 
-## Product and version checks
+## Version and tag
 
-- [ ] The intended release commit is final.
-- [ ] The git tag matches the chosen release version exactly.
-- [ ] The visible application version string matches the chosen release version.
-- [ ] The About dialog shows the chosen release version.
+- [ ] Release version is exactly `0.3.0`.
+- [ ] Git tag is exactly `0.3.0`.
+- [ ] Visible application version string matches `0.3.0`.
 
-## Basic Windows release verification
+## Planned archives
 
-- [ ] The Windows UI executable launches normally.
-- [ ] The Windows UI does not open an attached console window.
-- [ ] A representative sample capture can be opened successfully.
-- [ ] Flow browsing, selected-flow Analysis, and selected-flow Stream all work on a normal sample case.
+- [ ] `PcapFlowLab-0.3.0-windows-x64-qt.zip` exists.
+- [ ] `PcapFlowLab-0.3.0-windows-x64-tauri.zip` exists.
+- [ ] `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz` exists.
+- [ ] `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz` exists.
+- [ ] All four archive names match the agreed names exactly.
+- [ ] `pcap_flow_lab_showcase.pcap` exists as the standalone showcase asset.
 
-## Release-facing docs and screenshots
+## Smoke verification status
 
-- [ ] README platform wording matches the actual artifacts being published.
-- [ ] Release notes platform wording matches the actual artifacts being published.
-- [ ] Screenshots are current enough to match the visible UI.
-- [ ] The release notes still describe the tool as flow-based, bounded, and not a Wireshark replacement.
+- [ ] Windows Qt smoke check complete.
+- [ ] Windows Tauri smoke check complete.
+- [ ] Ubuntu Qt smoke check complete.
+- [ ] Ubuntu Tauri smoke check complete.
 
-## Archive review
+## Release-facing wording
 
-- [ ] The Windows release archive name is clear and versioned.
-- [ ] The archive opens into one clean top-level folder.
-- [ ] The archive contains the main UI executable and required runtime files only.
-- [ ] The archive does not contain tests, debug-only outputs, local logs, or unrelated build artifacts.
-- [ ] LICENSE is present in the release bundle or clearly reachable from the release page.
+- [ ] README platform wording matches the attached assets.
+- [ ] Release notes platform wording matches the attached assets.
+- [ ] Older-index compatibility wording is present and clear.
+- [ ] Packet Details wording is current: `Summary` / `Bytes`.
+- [ ] Stream Item Details wording is current: `Summary` / `Item Data`.
 
-## Platform wording check
+## Package-content checks
 
-- [ ] Windows is described as having a prebuilt archive.
-- [ ] Ubuntu is described as having a prebuilt archive only if one was manually built and manually verified; otherwise it is described as source-build-only.
-- [ ] macOS is described as source-build-only unless a verified binary is explicitly attached.
+- [ ] LICENSE and package-content checks passed.
+- [ ] Each archive has one clean top-level directory.
+- [ ] Package `README.md` is present in all four archives.
+- [ ] `LICENSE` is present in all four archives.
+- [ ] `pcap-flow-lab` CLI is present in all four archives.
+- [ ] The correct frontend is present in each archive.
+- [ ] No wrong-platform CLI or frontend was copied.
+- [ ] No unpublished, extra, debug, test, log, or temporary artifacts are
+      attached.
+- [ ] `SHA256SUMS.txt` was generated only after the final assets were frozen.
+- [ ] `SHA256SUMS.txt` matches all four archives and
+      `pcap_flow_lab_showcase.pcap`.
 
-## GitHub release page check
+## Links and guides
 
-- [ ] The release title and tag match the chosen release version.
-- [ ] The release body uses the prepared draft notes.
-- [ ] Attached files match the wording in the release body.
-- [ ] The release page does not imply automated packaging or broader platform guarantees than were actually verified.
+- [ ] Showcase guide link works:
+      [`examples/showcase/README.md`](../examples/showcase/README.md)
+- [ ] Source-build guide link works:
+      [`user_docs/build-from-source.md`](../user_docs/build-from-source.md)
+
+## GitHub release page
+
+- [ ] GitHub Release title is correct.
+- [ ] GitHub Release body is correct.
+- [ ] Attached files match the release body exactly.
+- [ ] No unpublished or unintended artifact is attached.

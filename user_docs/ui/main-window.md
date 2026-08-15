@@ -302,6 +302,10 @@ matching flow set.
 Open `View -> Settings` to change current GUI behavior and capture-processing
 preferences.
 
+Use the dedicated [Settings](settings.md) guide for the practical lifecycle of
+immediate view options, next-import processing options, and raw-capture reopen
+behavior.
+
 Current settings are split into two groups:
 
 - `View & Inspection`

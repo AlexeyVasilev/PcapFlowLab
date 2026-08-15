@@ -2,6 +2,16 @@
 
 This document captures practical rules from the selected-flow and large-capture optimization work. Use it when reviewing or extending hot paths in Qt, Tauri, or shared backend/session code.
 
+Status: Current engineering guidelines
+
+Role:
+
+- This document is the current guidance layer for large-capture and selected-flow scalability work.
+- It describes stable boundedness, caching, and source-backed-read rules that should remain true in current main.
+- Historical experiments, rejected strategies, and deferred redesign ideas belong in:
+  - [docs/history/investigations/large-file-read-optimization-plan.md](history/investigations/large-file-read-optimization-plan.md)
+  - [docs/history/investigations/packet-read-path-analysis.md](history/investigations/packet-read-path-analysis.md)
+
 ## Core Principle
 
 Large-capture UI actions must be bounded by the visible or requested window, not by:
@@ -13,6 +23,12 @@ Large-capture UI actions must be bounded by the visible or requested window, not
 - full DTO or details payload size
 
 If the UI asks for a first page, first batch, selected row, or selected item, the backend path should stay proportional to that request.
+
+Common current read-path rule:
+
+- normal capture traversal should preserve efficient sequential I/O on the common path
+- selected packet/details reads should remain lazy and source-backed
+- staged prefix-aware import handling should stay limited to unusually large classic-PCAP packets rather than becoming a universal packet-read policy
 
 ## Anti-Patterns
 
@@ -58,6 +74,8 @@ If the UI asks for a first page, first batch, selected row, or selected item, th
   Examples:
   - selected-flow full-packet cache
   - selected-flow TCP prefix context
+  - selected-flow transport-payload cache
+  - selected-flow stream materialization context
   - cached listed connection view
 
 - Cheap single-flow lookup.
@@ -106,6 +124,8 @@ If the UI asks for a first page, first batch, selected row, or selected item, th
 
 ## Future Work
 
+These are deferred optimization targets, not current architecture requirements:
+
 - Selected packet details can still be heavy on some large flows.
 - Selected stream item details can still be heavy for some items.
-- Those paths should be optimized later as separate focused passes.
+- Those paths should be optimized later as separate focused passes without changing the bounded current contracts above.

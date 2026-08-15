@@ -1,12 +1,29 @@
 # Tauri Backend Boundary Note
 
+## Status
+
+Historical architecture/design note.
+
+This note predates the current broader `FrontendSessionAdapter` surface. It
+captures the original reasoning used to extract the first frontend-neutral
+adapter from Qt-oriented application/session code for the Tauri spike.
+
+Current architecture is documented in:
+
+- [../../architecture.md](../../architecture.md)
+- [../../ui/frontend_dto_mapping.md](../../ui/frontend_dto_mapping.md)
+
+This document preserves useful design rationale and the original minimal
+adapter-plan framing. It should not be read as the current exhaustive adapter
+contract.
+
 ## Scope
 
 This note maps the current Qt-facing UI boundary to the existing application/session layer and identifies the smallest practical frontend-neutral API surface for a Tauri spike.
 
 It does not propose core packet-processing changes.
 
-Current status:
+Historical snapshot status at the time of this note:
 
 - the first adapter layer now exists as `FrontendSessionAdapter`
 - the first implemented slice is:
@@ -154,9 +171,9 @@ The stream path is not a simple stateless read.
 
 That logic is still backend-valid, but it should move into a small non-Qt adapter before exposing stream to Tauri.
 
-## Proposed minimal frontend-facing API
+## Original minimal frontend-facing API plan
 
-For the first spike, the smallest safe API is:
+For the first spike, the smallest safe API was:
 
 ### `open_capture(path, open_mode, analysis_settings)`
 
@@ -289,13 +306,13 @@ Recommendation:
 
 - do not include stream in the first Tauri slice unless the packet-list slice is already clean
 
-## Recommended adapter shape
+## Recommended adapter shape at the time
 
 Do not have Tauri call `MainController`.
 
 Do not have Tauri talk directly to raw `CaptureSession` either.
 
-The best next step is a very small adapter layer, for example:
+The original recommended next step was a very small adapter layer, for example:
 
 - `FrontendSessionAdapter`
 - or `TauriSessionAdapter`
@@ -307,6 +324,14 @@ Responsibilities:
 - expose serializable DTO-friendly methods
 - move only the non-Qt selected-flow orchestration that Tauri actually needs
 
+The current adapter has since grown substantially beyond this first plan and
+now covers a much broader set of shared operations, including source attach,
+index save, exports, Packet Details, Stream, Statistics, Analysis, Settings,
+Protocol Path, and other frontend-facing contracts. See
+[../../ui/frontend_dto_mapping.md](../../ui/frontend_dto_mapping.md) for the current
+implementation mapping instead of treating the lists below as current API
+authority.
+
 It should not:
 
 - depend on QAbstractListModel
@@ -314,7 +339,7 @@ It should not:
 - own QML text formatting
 - absorb export or full details-pane logic in the first spike
 
-## Recommended first implementation slice
+## Recommended first implementation slice at the time
 
 The first safe vertical slice is:
 

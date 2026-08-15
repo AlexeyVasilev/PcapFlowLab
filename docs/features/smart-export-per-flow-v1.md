@@ -1,8 +1,17 @@
 # Smart Export Per-Flow v1
 
+Status: implemented shared-backend feature design and engineering contract for
+the per-flow Smart Export output mode.
+
+This document describes the current per-flow Smart Export contract as it was
+added on top of the original single-output Smart Export rules. It preserves the
+original packet-selection semantics while defining the distinct per-flow output,
+buffering, manifest, and progress model.
+
 ## Goal
 
-Add a second output mode to Smart Export:
+Per-flow Smart Export adds a second output mode alongside the original
+single-output-file path:
 
 - Single output file
 - Separate file per flow
@@ -36,12 +45,16 @@ Separate-file mode reuses the same Smart Export v1 rules.
 
 ### Flows to export
 
-Exactly one radio choice:
+The original per-flow v1 contract reuses the original Smart Export v1 scopes:
 
 - Current flow
 - Selected flows
 - Unselected flows
 - All flows
+
+Current production surfaces may expose additional selectors built on top of the
+same shared export machinery, but this document is scoped to the per-flow mode
+itself.
 
 ### Base packet selection
 
@@ -74,6 +87,8 @@ Optional checkboxes:
 - Include every K-th packet after the base prefix:
   - applies only after the base prefix ends
   - adds sparse packets later in the flow
+  - is evaluated relative to packet positions after the base prefix, not from
+    the start of the flow
 
 ### Base mode = All packets
 
@@ -98,7 +113,7 @@ Do NOT implement this by building duplicate packet lists and deduplicating later
 
 ## Filename scheme
 
-Generated file names must:
+Generated file names are stable implementation artifacts. They:
 
 - include `flow_id` first
 - include protocol, hint, transport, and endpoints in sanitized form
@@ -112,14 +127,17 @@ Example shape:
 Rules:
 
 - `flow_id` must always be first
+- the leading `flow_id` is zero-padded for stable lexical ordering
 - invalid filesystem characters must be removed or normalized
 - empty components become `unknown`
-- very long components may be trimmed
+- very long components may be trimmed to bounded filename-safe fragments
 - IPv6 addresses must be sanitized so raw `:` does not remain in file names
 
 ## Manifest CSV
 
-The manifest should contain at least:
+Current per-flow export writes `flows_manifest.csv` into the destination folder.
+
+The manifest contains:
 
 - `flow_id`
 - `file_name`
@@ -138,9 +156,6 @@ The manifest should contain at least:
 - `last_timestamp`
 - `duration_us`
 - `protocol_path`
-
-Strongly recommended additional fields:
-
 - `exported_packet_count`
 - `exported_captured_bytes`
 - `exported_original_bytes`
@@ -167,7 +182,7 @@ It must avoid:
 
 ## Packet ownership model
 
-For Separate file per flow mode, always use:
+Separate-file mode uses:
 
 - `std::vector<uint32_t> packet_owner`
 
@@ -180,7 +195,7 @@ Keep current single-file Smart Export behavior unchanged:
 
 - single-file mode continues using the existing `uint8_t` marker-array approach
 
-## Required high-level algorithm
+## High-level algorithm
 
 1. Choose flows.
 2. Assign export-flow ids.
@@ -190,6 +205,11 @@ Keep current single-file Smart Export behavior unchanged:
 6. Otherwise append the packet to that flow's per-flow output pipeline.
 
 This must preserve original capture order inside each exported file and avoid rescanning the source capture per flow.
+
+This ownership model is authoritative for per-flow export: packet inclusion is
+decided up front, then materialized from one final source-backed scan. Normal
+flow export semantics are not derived from any currently visible Qt/Tauri
+windowing or pagination state.
 
 ## Buffered output design
 
@@ -204,20 +224,23 @@ Per-flow mode must not use one dynamically growing per-flow buffer under only a 
 
 ## Shared fixed-size buffer pool
 
-Per-flow output must use:
+Per-flow output uses:
 
 - a shared pool of fixed-size buffer slots
 - not one dynamically growing per-flow buffer per exported flow
 
 ## Buffer size
 
-Use a fixed buffer size of:
+Current implementation uses a fixed buffer size of:
 
 - `32 KB` per buffer slot
 
 ## Buffer memory budget
 
-When Separate file per flow is selected, the dialog must also show:
+Current user-facing surfaces may expose a configurable per-flow buffer-memory
+budget for this mode.
+
+Where surfaced, Separate file per flow also shows:
 
 - destination folder
 - note that `flows_manifest.csv` will also be written
@@ -231,7 +254,7 @@ UI form:
 - `512 MB`
 - `1024 MB`
 
-Default preset:
+Current default preset:
 
 - `128 MB`
 
@@ -301,7 +324,8 @@ Eviction action:
 
 ## Open file handle cache
 
-Use a small bounded cache of open output file handles in addition to the memory buffers.
+Use a small bounded cache of open output file handles in addition to the memory
+buffers.
 
 Default limit:
 
@@ -343,29 +367,43 @@ If one serialized packet record is larger than the fixed buffer size:
 - manifest creation failure must be reported explicitly
 - manifest must not silently disappear
 - manifest writing must not depend on keeping all output files open
-- if export fails after partial output creation, the user should still get a meaningful reason
+- if export fails after partial output creation, the user should still get a
+  meaningful reason
+
+Per-flow export is not an all-or-nothing transactional artifact set. The shared
+backend may already have created partial per-flow output files before a later
+failure prevents successful manifest completion.
 
 ## Progress reporting
 
-Separate-file export can be long-running and must expose progress.
+Separate-file export can be long-running and the shared backend exposes
+preparation/writing progress callbacks.
 
 - preparation progress based on processed chosen flows
 - writing progress based on source packet scan progress
 
-Preferred visible text:
+Current Qt-visible text is based on:
 
 - `Preparing export: flow X / Y`
 - `Writing output: X / Y packets`
 
-Update policy:
+Current update policy:
 
 - do not perform an extra packet-total pre-count pass just for preparation progress
 - progress should be published in reasonable chunks rather than on every packet during writing
 
-Suggested visible progress:
+Shared-backend progress supports:
 
 - progress bar
 - optionally processed flows or packets / total
+
+Current surface behavior differs:
+
+- Qt exposes asynchronous progress plus cancellation.
+- CLI can surface progress text during command execution.
+- The Tauri spike does not yet mirror the full Qt async progress/cancel flow
+  for Smart Export and instead uses one-shot command paths with busy/status
+  feedback.
 
 ## Error reporting
 
@@ -408,3 +446,14 @@ This pass is intentionally limited to:
 - clearer failure reporting
 
 Anything more advanced belongs to a later version.
+
+## Source-byte boundary
+
+Per-flow Smart Export is source-capture-backed export.
+
+- Output PCAP files and `flows_manifest.csv` are produced from authoritative
+  source-capture-backed session/export state.
+- A standalone index is not sufficient by itself to materialize per-flow export
+  bytes.
+- Index-backed per-flow export therefore still depends on an attached or
+  otherwise available source capture.

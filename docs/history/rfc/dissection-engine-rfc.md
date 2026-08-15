@@ -1,10 +1,40 @@
 # Dissection Engine RFC
 
-Status: Proposed
+Status: Partially implemented design RFC - production import cutover complete
 Scope: Packet-oriented L2-L4 and tunnel dissection
-Implementation branch: `feature/unified-packet-dissection`
+Implementation branch: `feature/unified-packet-dissection` (historical)
 
-Static cutover audit: see `docs/dissection-engine-parity-audit.md`.
+Static cutover audit: see `docs/history/audits/dissection-engine-parity-audit.md`.
+
+## Current implementation status
+
+This RFC is no longer purely proposed.
+
+Implemented from the RFC direction:
+
+- registry-driven structural dissection through `DissectionEngine`;
+- protocol registry/modules and import-facing collector/facts;
+- production capture-import cutover to the unified import path;
+- `DissectionImportAdapter` / shared import-application bridge into the
+  existing import domain and persistence model;
+- developer validation / parity infrastructure used during and after cutover;
+- protocol-family migration needed for production import cutover.
+
+Still retained or incomplete relative to the broader RFC:
+
+- `PacketDecoder` is no longer the production capture-import authority, but it
+  still has limited non-import production consumers in the selected/session
+  runtime;
+- `PacketDetailsService` still owns a separate presentation-oriented packet
+  traversal rather than consuming the unified engine directly;
+- some duplicate packet-structure traversal and cleanup stages described by the
+  RFC remain incomplete;
+- full legacy-decoder retirement and broader parser convergence are therefore
+  not complete.
+
+This RFC should be read as an implemented/partially implemented design RFC:
+production import now follows the unified path, while broader convergence and
+legacy cleanup remain unfinished.
 
 ## Goal
 
@@ -25,8 +55,8 @@ Today the production packet path is split across two different styles.
 
 - `CaptureImportProcessor` now calls the unified registry-driven dissection path
   plus the shared import application.
-- Legacy `PacketDecoder` still exists temporarily as a validation oracle and for
-  differential tests.
+- Legacy `PacketDecoder` still remains available for validation/differential
+  work and for limited non-import runtime consumers.
 - `PacketDecoder` still performs a large centralized conditional traversal over:
   - outer link handling from `parse_network_payload(...)`;
   - IPv4 / IPv6 transport dispatch;
@@ -51,7 +81,17 @@ Today the production packet path is split across two different styles.
   - DNS;
   - HTTP;
   then falls back to strict or best-effort `PacketDetailsService`.
-- `SessionFormatting` turns `PacketDetails` into Summary layers and Protocol text.
+- `SessionFormatting` turns `PacketDetails` into Summary layers and internal
+  protocol/details text formatting.
+
+### Selected/session runtime path outside import
+
+- `CaptureSession::read_transport_payload_terminal(...)` still constructs
+  `PacketDecoder` and uses
+  `decoded.terminal_transport_payload_bounds` for terminal transport-payload
+  extraction.
+- `CaptureSession` also uses `PacketDecoder` when reconstructing a richer
+  `PacketRef` from source-located packets.
 
 ### Consequence
 
@@ -129,9 +169,11 @@ Each protocol module is responsible for:
 
 Instead of one centralized function knowing every transition, the engine owns the traversal loop and the modules own protocol-local decisions.
 
-Production capture import now uses the unified dissection path. Legacy
-`PacketDecoder` remains temporarily for validation and differential testing
-until the cleanup stage is complete.
+Production capture import now uses the unified dissection path. Historical
+"shadow" terminology remains useful for pre-cutover and validation context, but
+the current import authority is the production unified dissection/import path.
+Legacy `PacketDecoder` remains for validation/differential work and for limited
+non-import runtime consumers until cleanup is complete.
 
 For IPv6 specifically, this means extension-header traversal must not be hidden inside an IPv6-local chain walker. Each supported IPv6 extension header must be registered under `SelectorDomain::ipv6_next_header` and traversed by the generic engine as its own dissection step.
 
@@ -177,6 +219,15 @@ The engine must preserve these invariants.
 - The engine must support consumer-dependent collection and continuation policy without changing structural parse rules.
 - Best-effort may expose a partial current layer, but it may not continue into a child layer unless the canonical parse result bounded that child slice safely.
 - Traversal must use an explicit depth bound and produce a structured `depth_limit` stop when exceeded.
+
+## Historical design and migration material
+
+The remaining sections in this RFC preserve the design rationale, proposed core
+model, selector architecture, and migration planning used for the unified
+dissection effort.
+
+Read references to "shadow" as historical pre-cutover terminology unless a
+section explicitly discusses validation/differential contexts.
 
 ## Proposed Core Model
 
@@ -841,7 +892,7 @@ remaining work is parity closure and production integration.
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
 The July 24, 2026 static audit in
-`docs/dissection-engine-parity-audit.md` no longer identifies any known
+`docs/history/audits/dissection-engine-parity-audit.md` no longer identifies any known
 protocol-family semantic blockers in the audited fixture set. This stage
 is now complete for the selected fixture corpus and representative real-capture
 validation set. The committed whole-session parity harness at
