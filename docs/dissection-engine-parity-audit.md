@@ -4,6 +4,24 @@ Date: 2026-07-24
 Branch: `feature/unified-packet-dissection`
 Verdict: `post-cutover-cleanup-in-progress`
 
+## Status
+
+Dated production-import cutover / parity audit.
+
+This audit supported the unified production-import switch away from legacy
+`PacketDecoder` for capture import.
+
+Its import-cutover conclusion remains historically important, but this file is
+not the canonical current description of all parser ownership in 0.3.0.
+
+Current architecture belongs primarily in:
+
+- [architecture.md](architecture.md)
+- [protocols/protocol_support.md](protocols/protocol_support.md)
+
+Some cleanup state changed after the audit date, but the broader verdict
+remains historical rather than a continuously rewritten current-state marker.
+
 ## Scope
 
 This is a static audit of the registry-driven dissection engine's cutover
@@ -12,6 +30,10 @@ readiness and the completed production import switch away from legacy
 
 The audit is source-grounded only. No build, test, or runtime commands were used
 for this pass.
+
+This audit is intentionally import-specific. It must not be read as claiming
+that every packet-structure consumer elsewhere in the product is already
+unified.
 
 ## Files traced
 
@@ -149,6 +171,11 @@ That adapter still converts finalized `ImportDissectionFacts` into the existing
 application now performs packet parsing, `PacketRef` finalization, path
 interning, `protocol_path_id` assignment, hint execution, and unrecognized
 record handling for both production import and unified validation runs.
+
+In this audit, "shadow" is the historical name for the registry-driven
+dissection path during the cutover phase. After cutover, production import uses
+that unified path directly; the term remains useful mainly for audit and
+validation contexts.
 
 ## Protocol-family parity matrix
 
