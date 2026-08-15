@@ -87,8 +87,6 @@ different responsibilities.
 
 - [Import Validation](dissection-import-validation.md)
   Current developer validation-tool reference for import cutover and parity work.
-- [Contributing](contributing.md)
-  Current contribution expectations.
 - [Release Checklist](release-checklist.md)
   Current release-readiness checklist.
 - [Manual Release Publish Checklist](manual-release-publish-checklist.md)

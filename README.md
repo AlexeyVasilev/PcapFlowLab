@@ -280,14 +280,6 @@ cargo tauri build
 - [CLI guide](user_docs/cli/README.md)
 - [Settings reference](user_docs/reference/settings.md)
 
-## Contributing
-
-Contributions are welcome. Please keep changes small, focused, and easy to
-review, and add or update tests when behavior changes.
-
-See [docs/contributing.md](docs/contributing.md) for the current contribution
-guidelines.
-
 ## License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
