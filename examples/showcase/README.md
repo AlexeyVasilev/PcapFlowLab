@@ -4,8 +4,8 @@ This directory contains the first materialized version of the long-lived PcapFlo
 
 - `capture_id`: `pcap-flow-lab-showcase`
 - `capture_version`: `1.0.0`
-- file: [`pcap_flow_lab_showcase.pcap`](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/examples/showcase/pcap_flow_lab_showcase.pcap)
-- manifest: [`manifest.json`](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/examples/showcase/manifest.json)
+- file: [`pcap_flow_lab_showcase.pcap`](pcap_flow_lab_showcase.pcap)
+- manifest: [`manifest.json`](manifest.json)
 
 The primary capture is a classic Ethernet PCAP. It is intentionally versioned as a living project asset. Future revisions keep the stable filename `pcap_flow_lab_showcase.pcap` and update `capture_version` plus the manifest/README contract.
 
@@ -33,7 +33,7 @@ Rough capture totals for `1.0.0`:
 
 ## Stable Scenario Identification
 
-Use `scenario_id` from [`manifest.json`](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/examples/showcase/manifest.json) as the stable locator.
+Use `scenario_id` from [`manifest.json`](manifest.json) as the stable locator.
 
 Do not rely on Flow # values in screenshots, docs, or demos:
 
@@ -128,7 +128,7 @@ Large captured-packet size demos:
 - `AN-LARGEPKT-7500-01`
 - `AN-LARGEPKT-60000-01`
 
-Detailed expectations, surfaces, and notes belong in [`manifest.json`](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/examples/showcase/manifest.json).
+Detailed expectations, surfaces, and notes belong in [`manifest.json`](manifest.json).
 
 ## Coverage Policy
 
