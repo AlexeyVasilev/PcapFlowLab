@@ -2,10 +2,6 @@
 
 **A flow-based PCAP analyzer.**
 
-<p align="center">
-  <img src="docs/images/branding/logo-banner.png" alt="Pcap Flow Lab banner" width="520">
-</p>
-
 Pcap Flow Lab is an open-source C++ application for analyzing packet captures
 through a flow-based model. Instead of treating individual packets as the
 primary navigation unit, it organizes traffic into flows and lets you move from
@@ -17,6 +13,10 @@ experimental Tauri desktop frontend built on the same core analysis and
 presentation model. Pcap Flow Lab is not a Wireshark replacement; it provides a
 different flow-based view of the same traffic and complements deep packet-based
 inspection workflows.
+
+<p align="center">
+  <img src="docs/images/branding/logo-banner.png" alt="Pcap Flow Lab banner" width="520">
+</p>
 
 ## A different view of packet captures
 
