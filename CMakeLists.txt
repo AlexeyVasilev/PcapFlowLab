@@ -231,12 +231,8 @@ if(PFL_BUILD_UI)
             src/ui/app/StreamListModel.h
         )
 
-        qt_add_qml_module(
-            pcap_flow_lab_ui
-            URI PcapFlowLab
-            VERSION 1.0
-            RESOURCE_PREFIX /qt/qml
-            QML_FILES
+        set(
+            PFL_UI_QML_FILES
                 src/ui/qml/Main.qml
                 src/ui/qml/components/SummaryBar.qml
                 src/ui/qml/components/FlowWorkspacePane.qml
@@ -256,13 +252,27 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/SmartExportDialog.qml
         )
 
+        qt_add_qml_module(
+            pcap_flow_lab_ui
+            URI PcapFlowLab
+            VERSION 1.0
+            RESOURCE_PREFIX /qt/qml
+            QML_FILES
+                ${PFL_UI_QML_FILES}
+        )
+
+        set(
+            PFL_UI_ICON_FILES
+                assets/app_icon_source.png
+                assets/icons/app.ico
+        )
+
         qt_add_resources(
             pcap_flow_lab_ui
             "pcap_flow_lab_icons"
             PREFIX "/"
             FILES
-                assets/app_icon_source.png
-                assets/icons/app.ico
+                ${PFL_UI_ICON_FILES}
         )
 
         if(WIN32 AND NOT MINGW)
@@ -348,6 +358,24 @@ if(PFL_BUILD_UI)
                 PRIVATE
                     ${CMAKE_CURRENT_SOURCE_DIR}/src
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit
+            )
+
+            qt_add_qml_module(
+                pcap_flow_lab_ui_tests
+                URI PcapFlowLab
+                VERSION 1.0
+                RESOURCE_PREFIX /qt/qml
+                OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/PcapFlowLab_ui_tests_qml
+                QML_FILES
+                    ${PFL_UI_QML_FILES}
+            )
+
+            qt_add_resources(
+                pcap_flow_lab_ui_tests
+                "pcap_flow_lab_ui_test_icons"
+                PREFIX "/"
+                FILES
+                    ${PFL_UI_ICON_FILES}
             )
 
             add_test(NAME pcap_flow_lab_ui_tests COMMAND pcap_flow_lab_ui_tests)

@@ -2886,14 +2886,17 @@ int main(int argc, char* argv[]) {
         auto* use_possible_tls_quic_checkbox = named_object(settings_pane, "usePossibleTlsQuicCheckBox");
         UI_REQUIRE(use_possible_tls_quic_checkbox != nullptr);
         UI_EXPECT(!dialog_controller.usePossibleTlsQuic());
+        UI_EXPECT(!settings_dialog->property("draftUsePossibleTlsQuic").toBool());
 
         UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "open"));
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!use_possible_tls_quic_checkbox->property("checked").toBool());
+        UI_EXPECT(!settings_dialog->property("draftUsePossibleTlsQuic").toBool());
 
-        use_possible_tls_quic_checkbox->setProperty("checked", true);
+        UI_REQUIRE(QMetaObject::invokeMethod(use_possible_tls_quic_checkbox, "click"));
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(use_possible_tls_quic_checkbox->property("checked").toBool());
+        UI_EXPECT(settings_dialog->property("draftUsePossibleTlsQuic").toBool());
         UI_EXPECT(!dialog_controller.usePossibleTlsQuic());
 
         UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "reject"));
@@ -2903,9 +2906,12 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "open"));
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!use_possible_tls_quic_checkbox->property("checked").toBool());
+        UI_EXPECT(!settings_dialog->property("draftUsePossibleTlsQuic").toBool());
 
-        use_possible_tls_quic_checkbox->setProperty("checked", true);
+        UI_REQUIRE(QMetaObject::invokeMethod(use_possible_tls_quic_checkbox, "click"));
         app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(use_possible_tls_quic_checkbox->property("checked").toBool());
+        UI_EXPECT(settings_dialog->property("draftUsePossibleTlsQuic").toBool());
         UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "accept"));
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(dialog_controller.usePossibleTlsQuic());
@@ -2913,6 +2919,7 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(QMetaObject::invokeMethod(settings_dialog, "open"));
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(use_possible_tls_quic_checkbox->property("checked").toBool());
+        UI_EXPECT(settings_dialog->property("draftUsePossibleTlsQuic").toBool());
     });
 
     run_ui_section("settings_pane_capture_processing_helper_text", [&]() {
@@ -2998,9 +3005,12 @@ int main(int argc, char* argv[]) {
 
     run_ui_section("flow_grouping_index_warning_text", [&]() {
         MainController vlan_grouping_index_controller {};
-        vlan_grouping_index_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
+        UI_EXPECT(!vlan_grouping_index_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(open_index_and_wait(app, vlan_grouping_index_controller, vlan_grouping_index_path));
         UI_EXPECT(vlan_grouping_index_controller.openedFromIndex());
+        UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
+        vlan_grouping_index_controller.setIgnoreVlanAndMplsLayersWhenGroupingFlows(true);
+        UI_EXPECT(vlan_grouping_index_controller.ignoreVlanAndMplsLayersWhenGroupingFlows());
         UI_EXPECT(vlan_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
         UI_EXPECT(vlan_grouping_index_controller.flowGroupingWarningText().isEmpty());
@@ -3033,9 +3043,12 @@ int main(int argc, char* argv[]) {
 
     run_ui_section("gtpu_teid_grouping_index_info_text", [&]() {
         MainController gtpu_grouping_index_controller {};
-        gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
+        UI_EXPECT(!gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(open_index_and_wait(app, gtpu_grouping_index_controller, gtpu_teid_grouping_index_path));
         UI_EXPECT(gtpu_grouping_index_controller.openedFromIndex());
+        UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
+        gtpu_grouping_index_controller.setIgnoreGtpuTeidsWhenGroupingInnerFlows(true);
+        UI_EXPECT(gtpu_grouping_index_controller.ignoreGtpuTeidsWhenGroupingInnerFlows());
         UI_EXPECT(gtpu_grouping_index_controller.statusText() ==
             QStringLiteral("Settings updated. Capture-processing changes apply when a raw capture is opened."));
         UI_EXPECT(gtpu_grouping_index_controller.gtpuTeidGroupingInfoText().isEmpty());
