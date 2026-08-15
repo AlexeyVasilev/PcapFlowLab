@@ -98,11 +98,11 @@ Implemented fifth pass:
 
 ### Classic PCAP
 
-`PcapReader::read_next()` in [src/core/io/PcapReader.cpp](../src/core/io/PcapReader.cpp) reads the packet header, allocates `std::vector<std::uint8_t> bytes(packet_header.included_length)`, reads the full captured packet into that vector, then moves it into `RawPcapPacket`.
+`PcapReader::read_next()` in [src/core/io/PcapReader.cpp](../../../src/core/io/PcapReader.cpp) reads the packet header, allocates `std::vector<std::uint8_t> bytes(packet_header.included_length)`, reads the full captured packet into that vector, then moves it into `RawPcapPacket`.
 
 ### PCAPNG
 
-`PcapNgReader::read_next()` in [src/core/io/PcapNgReader.cpp](../src/core/io/PcapNgReader.cpp) first allocates `remaining` for the whole block payload, validates the block trailer, then allocates a second `bytes` vector of `captured_length` and copies the captured packet bytes into it before moving that into `RawPcapPacket`.
+`PcapNgReader::read_next()` in [src/core/io/PcapNgReader.cpp](../../../src/core/io/PcapNgReader.cpp) first allocates `remaining` for the whole block payload, validates the block trailer, then allocates a second `bytes` vector of `captured_length` and copies the captured packet bytes into it before moving that into `RawPcapPacket`.
 
 So current `pcapng` import pays:
 
@@ -112,7 +112,7 @@ So current `pcapng` import pays:
 
 ### Where `RawPcapPacket.bytes` lives
 
-`RawPcapPacket` is defined in [src/core/io/PcapReader.h](../src/core/io/PcapReader.h) and owns packet bytes as:
+`RawPcapPacket` is defined in [src/core/io/PcapReader.h](../../../src/core/io/PcapReader.h) and owns packet bytes as:
 
 - `std::vector<std::uint8_t> bytes`
 
@@ -120,7 +120,7 @@ That ownership is per-packet and per-reader-call. It lives only as long as the r
 
 ### Import/open lifetime
 
-During import, `read_next()` returns a temporary `RawPcapPacket` into `import_packets(...)` inside [src/core/services/CaptureImportProcessor.cpp](../src/core/services/CaptureImportProcessor.cpp).
+During import, `read_next()` returns a temporary `RawPcapPacket` into `import_packets(...)` inside [src/core/services/CaptureImportProcessor.cpp](../../../src/core/services/CaptureImportProcessor.cpp).
 
 Within that loop iteration:
 
@@ -132,7 +132,7 @@ After `process_packet(...)` returns, the owning byte vector is dropped.
 
 ### What is persisted
 
-`CaptureState` in [src/core/domain/CaptureState.h](../src/core/domain/CaptureState.h) stores:
+`CaptureState` in [src/core/domain/CaptureState.h](../../../src/core/domain/CaptureState.h) stores:
 
 - connections;
 - packet refs;
@@ -141,7 +141,7 @@ After `process_packet(...)` returns, the owning byte vector is dropped.
 
 It does not store packet byte vectors.
 
-Index serialization in [src/core/index/Serialization.cpp](../src/core/index/Serialization.cpp) persists only `PacketRef` metadata such as:
+Index serialization in [src/core/index/Serialization.cpp](../../../src/core/index/Serialization.cpp) persists only `PacketRef` metadata such as:
 
 - `packet_index`
 - `byte_offset`
@@ -160,7 +160,7 @@ Later byte-backed features re-read from the source capture by `PacketRef` rather
 
 Primary path:
 
-1. `CaptureSession::read_packet_data(...)` in [src/app/session/CaptureSession.cpp](../src/app/session/CaptureSession.cpp)
+1. `CaptureSession::read_packet_data(...)` in [src/app/session/CaptureSession.cpp](../../../src/app/session/CaptureSession.cpp)
 2. `CaptureFilePacketReader`
 3. `PacketDataReader`
 4. file read at `PacketRef.byte_offset` for `PacketRef.captured_length`
@@ -183,7 +183,7 @@ Notable consumers:
 
 File:
 
-- [src/core/decode/PacketDecoder.cpp](../src/core/decode/PacketDecoder.cpp)
+- [src/core/decode/PacketDecoder.cpp](../../../src/core/decode/PacketDecoder.cpp)
 
 Behavior:
 
@@ -210,7 +210,7 @@ Implication:
 
 File:
 
-- [src/core/services/CaptureImportProcessor.cpp](../src/core/services/CaptureImportProcessor.cpp)
+- [src/core/services/CaptureImportProcessor.cpp](../../../src/core/services/CaptureImportProcessor.cpp)
 
 Behavior:
 
@@ -231,7 +231,7 @@ Byte need:
 
 File:
 
-- [src/core/services/PacketIngestor.cpp](../src/core/services/PacketIngestor.cpp)
+- [src/core/services/PacketIngestor.cpp](../../../src/core/services/PacketIngestor.cpp)
 
 Behavior:
 
@@ -246,7 +246,7 @@ Byte need:
 
 File:
 
-- [src/core/services/FlowHintService.cpp](../src/core/services/FlowHintService.cpp)
+- [src/core/services/FlowHintService.cpp](../../../src/core/services/FlowHintService.cpp)
 
 Behavior:
 
@@ -270,7 +270,7 @@ Copy behavior:
 
 File:
 
-- [src/core/services/PacketPayloadService.cpp](../src/core/services/PacketPayloadService.cpp)
+- [src/core/services/PacketPayloadService.cpp](../../../src/core/services/PacketPayloadService.cpp)
 
 Behavior:
 
@@ -290,8 +290,8 @@ Copy behavior:
 
 Files:
 
-- [src/core/services/FlowHintService.cpp](../src/core/services/FlowHintService.cpp)
-- [src/core/services/QuicInitialParser.h](../src/core/services/QuicInitialParser.h)
+- [src/core/services/FlowHintService.cpp](../../../src/core/services/FlowHintService.cpp)
+- [src/core/services/QuicInitialParser.h](../../../src/core/services/QuicInitialParser.h)
 
 Behavior:
 
@@ -373,8 +373,8 @@ Production non-import callers:
 
 Files:
 
-- [src/core/services/FlowExportService.cpp](../src/core/services/FlowExportService.cpp)
-- [src/core/services/ChunkedCaptureImporter.cpp](../src/core/services/ChunkedCaptureImporter.cpp)
+- [src/core/services/FlowExportService.cpp](../../../src/core/services/FlowExportService.cpp)
+- [src/core/services/ChunkedCaptureImporter.cpp](../../../src/core/services/ChunkedCaptureImporter.cpp)
 
 Notes:
 
@@ -481,7 +481,7 @@ Risk:
 
 Affected areas:
 
-- [src/core/services/CaptureImportProcessor.cpp](../src/core/services/CaptureImportProcessor.cpp)
+- [src/core/services/CaptureImportProcessor.cpp](../../../src/core/services/CaptureImportProcessor.cpp)
 - possibly a tiny helper near connection hint state
 
 Tests to focus:
@@ -523,8 +523,8 @@ Residual risk:
 
 Affected areas:
 
-- [src/core/services/PacketPayloadService.cpp](../src/core/services/PacketPayloadService.cpp)
-- [src/core/services/FlowHintService.cpp](../src/core/services/FlowHintService.cpp)
+- [src/core/services/PacketPayloadService.cpp](../../../src/core/services/PacketPayloadService.cpp)
+- [src/core/services/FlowHintService.cpp](../../../src/core/services/FlowHintService.cpp)
 
 Tests to focus:
 
@@ -561,8 +561,8 @@ Risk:
 
 Affected areas:
 
-- [src/core/io/PcapReader.cpp](../src/core/io/PcapReader.cpp)
-- [src/core/io/PcapNgReader.cpp](../src/core/io/PcapNgReader.cpp)
+- [src/core/io/PcapReader.cpp](../../../src/core/io/PcapReader.cpp)
+- [src/core/io/PcapNgReader.cpp](../../../src/core/io/PcapNgReader.cpp)
 - maybe import-only helper wrappers
 
 Tests to focus:
