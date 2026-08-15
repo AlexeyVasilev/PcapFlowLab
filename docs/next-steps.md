@@ -1,57 +1,71 @@
 # Next Steps
 
-## Stream (short-term)
+## Status
 
-- validate and stabilize retransmission suppression for exact duplicate TCP payload segments
-- ensure suppression is applied only in Stream/reassembly, not globally
-- validate against existing 7 fixture-based baseline tests
-- fix remaining inconsistencies in Stream item labeling (TLS / HTTP / DNS edge cases)
+Status: superseded working-plan snapshot.
 
-## Stream (model convergence)
+This file captured priorities during an earlier Stream, TLS, QUIC, and UI
+stabilization period. It is no longer the authoritative current project
+roadmap, and many items originally listed here have already landed.
 
-- move to a single bounded on-demand Stream materialization path
-- remove conceptual distinction between prefix/full Stream modes
-- ensure `Load more` extends the same Stream build
-- improve consistency between initial view and extended view
-- make partial vs complete item behavior predictable
+Current implemented behavior belongs in:
 
-## Stream (mid-term)
+- `docs/current-state.md`
+- `docs/architecture.md`
+- `docs/stream_architecture.md`
+- `docs/selected-flow-contract.md`
+- current protocol-support and UI contract docs
 
-- extend TLS item details beyond the first narrow step:
-  - more handshake types
-  - richer certificate fields when cheaply available
-  - better compact summaries for incomplete TLS metadata
-- improve partial handling (HTTP/TLS)
-- extend QUIC selected-flow detail coverage beyond the current shell-plus-semantics presentation step, without introducing full reconstruction or decryption
-- keep broader QUIC stream itemization, prioritization, and multi-packet correlation as future work after correctness-first presentation changes settle
-- keep QUIC `ServerHello` attachment bounded and ownership-aware; broader QUIC handshake reconstruction remains out of scope
+## Historical planning themes
 
-## Tests
+This snapshot mainly recorded work in these areas:
 
-- extend HTTP edge cases:
-  - HEAD / 204 / 304
-  - chunked multi-response
-  - request bodies (POST/PUT)
-- add DNS baseline fixture (if missing)
-- validate QUIC fallback behavior explicitly
-- add a few more focused QUIC selected-flow cases around mixed frame semantics and conservative fallback
-- keep further QUIC selected-flow changes aligned with fixture-backed expectations in `quic_fixture_01_expectations.json`
-- keep further QUIC selected-flow changes aligned with the paired fixture-backed expectations in `quic_fixture_01_expectations.json` and `quic_fixture_02_expectations.json`
-- keep tests focused on behavior, not exact packet mapping
+- Stream correctness and retransmission handling;
+- convergence toward one bounded selected-flow materialization path;
+- richer TLS / HTTP / QUIC selected-flow detail;
+- fixture-backed regression expansion;
+- metadata-only Analysis boundaries;
+- wording and usability improvements in the UI.
 
-## Analysis
+Those themes were real and useful at the time, but the list below must no
+longer be read as a current authoritative commitment.
 
-- keep metadata-only approach
-- avoid payload/reassembly creep into Analysis tab
-- optional: revisit percentiles later (not required now)
+## Historical notes
 
-## UI
+Many earlier priorities mentioned in this file have since been implemented or
+partially implemented, including work around:
 
-- refine Stream Item Details panel
-- improve clarity of partial / reconstructed data
-- validate the first TLS Protocol-tab enrichment pass against real captures
-- keep selected-packet protocol details on-demand and bytes-gated, not mode-gated
-- keep selected-flow loading observable and responsive
+- Stream model convergence and bounded `Load more` behavior;
+- selected-flow loading and retained bounded context;
+- richer TLS, HTTP, DNS/mDNS, and QUIC selected-flow presentation;
+- removal of old visible Protocol-tab assumptions from current packet/stream
+  inspection surfaces;
+- fixture-backed QUIC and Stream stabilization.
 
-This file reflects current working priorities and may evolve frequently.
-It complements RFCs and architecture documents but does not replace them.
+Some ideas from the old snapshot may still remain relevant as future work, but
+that does not make this file authoritative.
+
+Examples of historical themes that may still echo in future work:
+
+- more TCP correctness and hardening;
+- broader parser convergence;
+- additional QUIC hardening;
+- further compactness and performance work.
+
+## Current role
+
+This file should be treated as a historical planning snapshot only.
+
+It should not continue to claim that it reflects current working priorities.
+
+Genuine current deferred work should be tracked through:
+
+- current contract docs where appropriate;
+- active backlog documents;
+- issues / PR planning / future release planning outside this file.
+
+## Recommended future location
+
+This file is a strong candidate for later relocation to:
+
+- `docs/history/plans/`

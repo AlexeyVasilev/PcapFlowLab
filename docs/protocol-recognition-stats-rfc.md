@@ -1,89 +1,122 @@
 # Protocol Recognition Stats RFC
 
-## Purpose
+## Status
 
-This RFC defines a narrow first step for protocol recognition statistics in the Statistics tab.
+Status: implemented design RFC / historical feature design.
 
-The goal is to expose capture-wide recognition quality using already available flow-level metadata and hints. This is a summary/aggregation view, not a new deep-analysis engine.
+This RFC introduced the recognition-quality statistics concept as a bounded
+aggregation over metadata already produced by normal capture import and flow
+hinting. The current product has moved beyond the original QUIC-only first
+step, so this document should be read as the implemented design history rather
+than as the authoritative current contract.
 
-Initial scope is QUIC-only.
+Current authoritative behavior belongs to:
 
-## Initial QUIC scope
+- `docs/current-state.md`
+- `docs/architecture.md`
+- `docs/protocols/protocol_support.md`
+- current production implementation and UI
 
-The first implementation should report:
+## Original purpose
 
-- total QUIC flows
-- QUIC flows with SNI
-- QUIC flows without SNI
+The original purpose of this RFC was to define a narrow first step for protocol
+recognition statistics in the Statistics workspace.
+
+The architectural rule introduced here remains correct:
+
+- aggregate existing flow/session metadata;
+- do not add a new global protocol-parsing pass merely for statistics;
+- do not trigger reassembly only to populate capture-wide recognition stats;
+- keep Statistics lazy and cacheable where useful.
+
+That rule still matches current production behavior.
+
+## What was originally proposed
+
+The original first-step scope was QUIC-only.
+
+The first-step QUIC proposal recorded:
+
+- total QUIC flows;
+- QUIC flows with SNI;
+- QUIC flows without SNI;
 - QUIC version distribution:
   - v1
   - draft-29
   - v2
   - unknown
 
-For this RFC, a QUIC flow is any connection with `protocol_hint == "quic"`. Flows where QUIC parsing was only partially attempted but not classified as QUIC are not included in QUIC totals.
+That first-step wording is historical. It is no longer the full current scope.
 
-`QUIC flows with SNI` means `service_hint` was successfully extracted from QUIC Initial data.
+## Current verified implementation facts
 
-`QUIC flows without SNI` means a QUIC flow where no SNI is available, including both cases where parsing was attempted but no SNI was extracted and cases where parsing was not possible (for example: incomplete data, decryption failure, unsupported version).
+Current production Statistics exposes a lazy `QUIC and TLS` section rather than
+the original QUIC-only section.
 
-Reason-level breakdown for `without SNI` is out of scope for this step; all such cases stay in one bucket.
+Verified current shared-backend statistics include:
 
-QUIC version is taken from the parsed QUIC Initial header when available. If parsing fails or version is not available, the flow is counted in `unknown`. Version inference beyond parser-provided values is out of scope.
+- QUIC totals;
+- QUIC with-SNI / without-SNI counts;
+- QUIC version counts for:
+  - v1
+  - draft-29
+  - v2
+  - unknown
+- TLS totals;
+- TLS with-SNI / without-SNI counts;
+- TLS version counts for:
+  - TLS 1.2
+  - TLS 1.3
+  - unknown
 
-Counts are primary values. Percentages are derived display values and should be shown together where useful (for example: `80% (800 connections)`).
+Verified current frontend exposure includes:
 
-Unknown buckets are required. Unsupported or unknown QUIC versions must not be dropped from totals.
+- shared backend/session summary fields for QUIC and TLS recognition stats;
+- bridge/frontend DTO exposure for both QUIC and TLS recognition summaries;
+- Qt Statistics rendering in the `QUIC and TLS` optional section;
+- lazy request/caching behavior consistent with the rest of the optional
+  Statistics sections.
 
-## Architectural rule
+## Current architectural boundary
 
-Statistics must be derived from already available flow-level metadata and hints.
+The current recognition-statistics feature is still an aggregation view, not a
+separate deep-analysis engine.
 
-- no additional global parser pass just to compute statistics
-- no reassembly execution just for statistics
-- no new expensive deep analysis added to open/import
+It remains bounded by existing metadata already produced by normal import and
+hinting flows.
 
-Statistics may be computed lazily on demand or cached after first computation, but either approach must not trigger additional parsing work.
+Current implementation still does not imply:
 
-This RFC does not change fast-path import behavior or deep-path bounds.
+- a new global recognition-only parser pass;
+- capture-wide reassembly initiated solely for Statistics;
+- a new persistence layer dedicated to recognition statistics.
 
-## UI shape (first step)
+## Historical non-goals
 
-UI stays summary-oriented and simple:
+The following were original first-step non-goals:
 
-- capture-wide counts first
-- percentages as derived values
-- explicit `with SNI` and `without SNI` buckets
-- explicit QUIC version buckets including `unknown`
+- TLS recognition statistics;
+- drill-down or filter integration;
+- per-reason parser-failure statistics;
+- protocol confidence/score systems;
+- new persistence/index fields.
 
-Statistics reflect final available flow metadata for the session and must not depend on whether SNI or version metadata came from deep import or from fast-mode on-demand enrichment.
+These should now be read historically.
 
-## Determinism
+Current verified status:
 
-Given the same capture and the same parser version, statistics should be deterministic.
+- TLS recognition statistics were added later and are now implemented.
+- There is still no dedicated drill-down/filter workflow specific to the QUIC
+  and TLS recognition section; do not confuse Protocol Path drill-down with
+  recognition-statistics drill-down.
+- Per-reason recognition-failure breakdown remains outside the current shared
+  Statistics contract.
 
-Statistics must not depend on UI interaction order (for example, which flows were selected first).
+## Role going forward
 
-## Non-goals (first step)
+This file should remain as the historical design record for how recognition
+statistics were introduced and bounded.
 
-- no TLS or HTTP recognition statistics yet
-- no drill-down or filter integration
-- no per-reason parser-failure statistics
-- no protocol confidence/score system
-- no new persistence/index fields
-- no global recomputation framework
+It is a strong candidate for later relocation to:
 
-## Boundaries and consistency
-
-This RFC is consistent with current architecture:
-
-- fast path remains unchanged
-- deep path remains bounded
-- statistics are aggregation over existing state
-- no new protocol parsing work is introduced for this step
-
-## Possible later extensions (out of scope now)
-
-- TLS recognition statistics
-- HTTP recognition statistics
-- drill-down and filter integration
+- `docs/history/rfc/`
