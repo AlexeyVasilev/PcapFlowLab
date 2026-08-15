@@ -1,481 +1,344 @@
 # Frontend DTO Mapping Audit
 
+## Status and role
+
+This document is an implementation audit of how the shared presentation contract
+maps onto the current frontend/session/Qt/Tauri code.
+
+It is an engineering reference. It may contain point-in-time implementation
+notes, mismatches, and follow-up observations.
+
+[presentation_contract.md](presentation_contract.md) remains the canonical
+current product/presentation contract.
+
+This document does not define product behavior on its own.
+
 ## Purpose
 
-This document maps the shared presentation contract in [presentation_contract.md](presentation_contract.md) to the current implementation.
-
-The goal is to show:
-
-- which fields and semantics are already available today;
-- which ones already look frontend-neutral;
-- which ones still live mostly in Qt-specific models/view-models;
-- which ones are currently duplicated or drifting between Qt and Tauri;
-- which gaps should be handled first in later code changes.
-
-This document is an audit only. It does not introduce a new contract and does not require immediate implementation changes.
-
-For the current repository-level protocol support matrix and known protocol limitations, see [protocol_support.md](../protocols/protocol_support.md).
-
-## Summary
-
-### What is already close to frontend-neutral
-
-- Session-level shell facts in `CaptureSession`:
-  - open source kind;
-  - source availability;
-  - expected source path;
-  - partial-open state;
-  - summary/protocol/recognition counters.
-- Session row/query shapes in `FlowRows.h`:
-  - `FlowRow`;
-  - `PacketRow`;
-  - `UnrecognizedPacketRow`;
-  - `StreamItemRow`;
-  - protocol/statistics summary structs.
-- The `FrontendSessionAdapter` layer already exposes a useful read-side API for:
-  - overview;
-  - flows;
-  - selected-flow packets;
-  - unrecognized packets and unrecognized selected-packet details;
-  - selected-flow stream;
-  - selected-flow packet details.
-
-### What remains frontend-specific today
-
-- Flow filtering and sorting semantics.
-- Settings persistence and any broader non-runtime preferences.
-- Packet inspector layout, local selection widgets, and some packet-details presentation composition above the shared packet-summary and packet-bytes contracts.
-- Some stream-item-details rendering and interaction semantics in the right-hand inspector, even though shared C++ now owns the `Summary / Item Data` presentation contract and authoritative item-data materialization.
-- Statistics layout, section composition, and drill-down interaction above the shared structured Statistics DTOs and shared canonical display strings.
-- Most of Analysis presentation.
-
-### What is now shared in C++ presentation/DTOs
-
-- Shared C++ session/frontend presentation owns the structured Statistics DTOs used by Qt and Tauri.
-- Shared C++ owns Packet Bytes descriptors, stable byte-view identifiers, and selected-view content materialization.
-- Shared C++ owns Stream Item Data presentation and authoritative selected-item byte ownership/materialization.
-- Shared C++ owns the affected canonical Statistics display strings, including the compact byte/count/percentage text now reused by both frontends.
-- Qt and Tauri now adapt these same shared contracts while still keeping frontend-specific ownership of layout, local selection widgets, rendering, and interaction state where appropriate.
-
-### What is currently duplicated or drifting between Qt and Tauri
-
-- Open shell state semantics:
-  - Tauri has explicit `idle/opening/opened/error`;
-  - Qt exposes similar meaning through several controller properties but not the same shape.
-- Flow filtering/search:
-  - Qt filters over richer flow-model semantics;
-  - Tauri filters only over currently loaded client-side DTO fields.
-- Wireshark filter generation:
-  - Qt uses `selected_flow_wireshark_filter(...)`;
-  - Tauri now consumes a shared adapter-provided filter string, but parity still depends on matching helper semantics.
-- Packet inspector:
-  - Qt is text-first via `PacketDetailsViewModel`;
-  - Tauri is partially structured in UI but still backed by text-oriented adapter fields.
-- Source availability:
-  - frontend-neutral grouping has started through a shared `SourceAvailability` shape in open/details/stream results;
-  - Qt still consumes equivalent facts mostly through controller/view-model properties and placeholder builders.
-- Stream:
-  - Qt supports selected stream item and stream-item details;
-  - Tauri now models selected stream item state and richer stream-item details with shared `Summary / Item Data` rendering backed by the same selected-item DTO contract, and Tauri still does not navigate to source packets.
-
-### What should be handled first in future DTO cleanup
-
-- PacketInspector cleanup and any remaining stream-item-details polish.
-- Selected-flow packet/stream latency investigation for very large flows.
-- Shared packet-byte read optimization in the backend/session path.
-- Broader settings/preferences parity and any eventual persistence contract beyond the current runtime-only settings slice.
-- Statistics / Analysis stabilization after the recent DTO additions.
-- Performance pass for larger captures before committing to broader CLI expectations.
-
-## Mapping Table: Global Shell / Session State
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| active session path | `MainController.currentInputPath`, `Main.qml` active session frame | `FrontendOpenResult.input_path`; `CaptureSession::capture_path()` | `OpenCaptureResultDto.input_path`; held in `main.js` only via status/open result, not normalized as long-lived shell DTO | Tauri does not keep a richer shell session object; no explicit active-session DTO | app/session + frontend-neutral shell DTO | High |
-| open source kind: capture/index | `MainController.openedFromIndex`, `Main.qml` displays `PCAP:` or `Index:` | `FrontendOpenResult.opened_from_index`; `CaptureSession::opened_from_index()` | `OpenCaptureResultDto.opened_from_index`; Tauri uses it indirectly, not as dedicated shell display model | semantics available, but shell shape not standardized | app/session + frontend-neutral shell DTO | High |
-| open mode | `MainController.captureOpenMode`, `Main.qml` combo box | `FrontendOpenMode`; adapter `open_capture(path, mode)` | `open_mode` string in Tauri command, local select value in `main.js` | currently request-only in adapter; no persistent shell DTO field | app/session + frontend controller | Medium |
-| open state | Qt splits this across `isOpening`, `openErrorText`, `statusText`, success state by loaded session | no explicit frontend-neutral open-state enum | Tauri `main.js` explicit `idle/opening/opened/error` | mismatch in shape; Tauri has cleaner explicit state | frontend-neutral shell DTO candidate | High |
-| source availability | `MainController.hasSourceCapture`, source warnings, unavailable placeholders | `FrontendSourceAvailabilityDto` nested in open/details/stream results; `CaptureSession::has_source_capture()`, `source_capture_accessible()` | Tauri now consumes grouped `source_availability` in shell warning text and unavailable fallbacks | grouped facts exist, but Qt still does not consume one shared DTO shape | app/session + frontend-neutral SourceAvailabilityState | Improved |
-| attach source capture | `MainController::attachSourceCapture()` and `browseAttachSourceCapture()` reuse `CaptureSession::attach_source_capture(path)` | `FrontendSessionAdapter::attach_source_capture(path)` now exposes the same validation path and returns updated grouped source availability | Tauri now offers a native `Locate Source...` workflow and updates grouped shell source availability without reopening the session | broader index parity and richer attach-state/status shaping are still deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| expected source path | `MainController.expectedSourceCapturePath`, `Main.qml` warning block | `FrontendSourceAvailabilityDto.expected_source_capture_path`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state in shell/unavailable fallbacks | legacy scalars still coexist during migration | app/session + frontend-neutral SourceAvailabilityState | Improved |
-| partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendSourceAvailabilityDto.partial_open`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state for compact shell warning note | warning wording remains frontend-specific | app/session for fact, frontend rendering for wording | Improved |
-| save index workflow | `MainController::saveAnalysisIndex()` reuses `CaptureSession::save_index(path)` with source/partial-open guards | `FrontendSessionAdapter::save_index(path)` now exposes the same narrow session path through a small `FrontendSaveIndexResult` DTO | Tauri now wires `File -> Save Index` through a native Save dialog and the shared adapter path | broader index workflow polish and richer action-availability shaping are still deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| export current flow workflow | `MainController::exportSelectedFlow()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)` and `chooseSaveFile(false)` | `FrontendSessionAdapter::export_current_flow(path)` now exposes the same narrow selected-flow export path through a small `FrontendExportCurrentFlowResult` DTO | Tauri now wires `Flow -> Export Current Flow` through a native Save dialog with `.pcap` default suffix | aligned for the current selected-flow export path | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| export selected flows workflow | `MainController::exportSelectedFlows()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)`, `FlowListModel::checkedFlowIndices()`, and `chooseSaveFile(false)` | `FrontendSessionAdapter::export_selected_flows(path, flow_indices)` now exposes the same narrow batch export path through a small `FrontendExportSelectedFlowsResult` DTO | Tauri now wires `Flow -> Export Selected Flows` through a native Save dialog and frontend-local checked-flow state keyed by stable `flow_index` | aligned for current checked batch export scope | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| export unselected flows workflow | `MainController::exportUnselectedFlows()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)`, `FlowListModel::uncheckedFlowIndices()`, and `chooseSaveFile(false)` | Tauri reuses the same `FrontendSessionAdapter::export_selected_flows(path, flow_indices)` batch export method with a frontend-derived unchecked `flow_index` list over the full loaded flow set | Tauri now wires `Flow -> Export Unselected Flows` through a native Save dialog using the inverse of checked-flow selection rather than only visible filtered rows | aligned for current unchecked batch export scope | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| smart export workflow | `MainController::browseSmartExportFlows()` and `exportSmartFlows(...)` reuse `CaptureSession::export_smart_flows_to_pcap(...)` / `export_smart_flows_to_folder(...)` with current / selected / unselected / all flow scopes and base-retention options | `FrontendSessionAdapter::export_smart_flows(path, flow_indices, options)` now exposes the same narrow session smart-export path through `FrontendSmartExportOptions` and `FrontendSmartExportResult` | Tauri now wires `Flow -> Smart Export...` through a compact dialog, a native save-file or folder picker, and frontend-derived stable `flow_index` sets for current / checked / unchecked / all scopes | Qt's richer per-flow progress/cancel surface is still not mirrored in Tauri | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| selected flow | `MainController.selectedFlowIndex`; `maybeEnrichSelectedFlowServiceHint()` may lazily update the selected row after on-demand QUIC analysis | `FrontendSessionAdapter::selected_flow_index()` only internally; `select_flow(flow_index)` mutation API now returns `FrontendSelectionResultDto` with optional `updated_flow` for lazy service-hint refresh | `state.selectedFlowIndex` in `main.js`; set by flow row click and now may patch a single updated flow row after selection | still mutation-driven rather than a richer selected-flow shell DTO, but lazy row refresh is now aligned with Qt Fast-mode behavior | frontend controller/model with stable `flow_index` | Improved |
-| selected packet | `MainController.selectedPacketIndex` | no adapter-level explicit selected-packet query; packet details API takes `packet_index` | `state.selectedPacketIndex` and `state.selectedPacketRow` in `main.js` | selection state is frontend-local today | frontend controller/model with stable `packet_index` | Medium |
-| selected stream item | `MainController.selectedStreamItemIndex` | no frontend-neutral API for selecting/querying stream item details | Tauri now keeps local selected-stream-item state keyed by stable `stream_item_index` | Tauri UI gap is partially addressed, but no shared selection/details API exists yet | deferred frontend-neutral DTO / controller work | Improved |
-| status/error text | `MainController.statusText`, `statusIsError`, `openErrorText` | `FrontendOpenResult.error_text`; packet/stream/detail result error/unavailable text fields | `state.statusText`, `statusKind`, plus per-panel error text in `main.js` | no common shell/status DTO; mixed global and local message ownership | app/session facts + frontend rendering wording | Medium |
-
-## Mapping Table: Flows View
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| `flow_index` | `FlowRow.index`; `FlowListModel.FlowIndexRole`; selected flow uses stable index | `FrontendFlowDto.flow_index` | `FlowDto.flow_index`; used in `main.js` | aligned | frontend-neutral DTO | High |
-| `flow_display_number` if present | Qt displays 1-based number from `flow_index + 1` in `FlowTable.qml` | none explicit | Tauri now derives and renders a 1-based display number locally while keeping stable `flow_index` for selection and backend calls | no backend gap; frontend-derived display numbering is aligned | frontend rendering over stable `flow_index` | Resolved |
-| address family | `FlowRow.family`; `FlowListModel.FamilyRole` formatted to `IPv4`/`IPv6` | `FrontendFlowDto.family` enum | `FlowDto.family` string `"ipv4"/"ipv6"`; now shown in Tauri flow table | aligned | frontend-neutral DTO | Resolved |
-| protocol | `FlowRow.protocol_text`; `FlowListModel.ProtocolRole` | `FrontendFlowDto.protocol_text` | `FlowDto.protocol_text`; shown in Tauri table | aligned | frontend-neutral DTO | High |
-| detected protocol | `FlowRow.protocol_hint`; `FlowListModel.ProtocolHintRole` formats display text for the user-facing "Detected Protocol" label | `FrontendFlowDto.protocol_hint` plus `protocol_hint_display` | `FlowDto.protocol_hint_display` now used by Tauri table/filter display under the same "Detected Protocol" label | shared display-oriented hint field added without changing core semantics | frontend-neutral DTO | Resolved |
-| service | `FlowRow.service_hint`; `FlowListModel.ServiceHintRole`; Qt may patch it later for the selected QUIC flow in Fast mode | `FrontendFlowDto.service_hint`; `FrontendSelectionResultDto.updated_flow` now reuses the same shape for single-row lazy refresh after `select_flow(flow_index)` | `FlowDto.service_hint`; shown in Tauri table/filter/analysis list and now refreshed for the selected flow after lazy QUIC hint discovery | aligned for the current selected-flow lazy-refresh scope without refetching all flows | frontend-neutral DTO | Improved |
-| address A | `FlowRow.address_a`; `FlowListModel.AddressARole` | `FrontendFlowDto.address_a` | `FlowDto.address_a`; used for filter and Wireshark generation | aligned | frontend-neutral DTO | High |
-| port A | `FlowRow.port_a`; `FlowListModel.PortARole` | `FrontendFlowDto.port_a` | `FlowDto.port_a`; used for display/filter/Wireshark generation | aligned | frontend-neutral DTO | High |
-| address B | `FlowRow.address_b`; `FlowListModel.AddressBRole` | `FrontendFlowDto.address_b` | `FlowDto.address_b`; used for filter and Wireshark generation | aligned | frontend-neutral DTO | High |
-| port B | `FlowRow.port_b`; `FlowListModel.PortBRole` | `FrontendFlowDto.port_b` | `FlowDto.port_b`; used for display/filter/Wireshark generation | aligned | frontend-neutral DTO | High |
-| combined endpoint text | `FlowRow.endpoint_a`, `endpoint_b`; `FlowListModel` filter uses them and Qt now renders them directly in compact `Endpoint A` / `Endpoint B` columns | `FrontendFlowDto.endpoint_a`, `endpoint_b` | `FlowDto.endpoint_a`, `endpoint_b`; Tauri now also renders endpoint-style columns and still reuses these fields for filtering | aligned at data and visible-column level; frontend formatting remains responsible for the final endpoint string shape | frontend-neutral DTO | Improved |
-| fragmentation indicator/count | `has_fragmented_packets`, `fragmented_packet_count`; `Frag` column in Qt | `FrontendFlowDto.has_fragmented_packets`, `fragmented_packet_count` | `FlowDto.has_fragmented_packets`, `fragmented_packet_count`; now surfaced as compact `Frag` marker text in Tauri | aligned enough for compact table | frontend-neutral DTO | Resolved |
-| packet count | `FlowRow.packet_count`; `FlowListModel.PacketsRole` | `FrontendFlowDto.packet_count` | `FlowDto.packet_count`; shown and filterable in Tauri | aligned | frontend-neutral DTO | High |
-| byte count | `FlowRow.total_bytes`; `FlowListModel.BytesRole` | `FrontendFlowDto.total_bytes` | `FlowDto.total_bytes`; shown and filterable in Tauri | aligned | frontend-neutral DTO | High |
-| selected/checked state | `FlowListModel.CheckedRole`, `setFlowChecked()`, checked count/export selection | none in frontend-neutral adapter DTO | Tauri now keeps separate frontend-local checked-flow state in `main.js`, keyed by stable `flow_index`, with row checkboxes and a compact checked-count status bar; active selected flow remains separate | batch-selection facts are still frontend-local and batch export actions remain deferred | frontend controller/model unless a later shared batch-export contract needs more | Improved |
-| filter/search fields | Qt `FlowListModel.setFilterText()` matches family, protocol, hint, service, addresses, endpoints, ports, fragmentation | no dedicated query API; relies on already-structured flow fields | Tauri `main.js` filters over `protocol_text`, `protocol_hint`, `service_hint`, endpoints, addresses, ports, packets, bytes | same idea, but field set differs and logic is duplicated | frontend controller/model over shared flow DTO fields | High |
-| sort fields | Qt `FlowListModel.SortKey`, `MainController.sortFlows()` | no frontend-neutral sort API | Tauri now sorts flows frontend-side after applying the existing filter, using the already loaded flow DTO fields | still no shared/frontend-neutral sort contract; behavior remains UI-local by design for now | frontend controller/model | Improved |
-| Wireshark display filter | Qt `MainController.selectedFlowWiresharkFilter()` via shared helper over flow model | `FrontendFlowDto.wireshark_display_filter` now carries a conservative generated string through the adapter | Tauri now consumes `FlowDto.wireshark_display_filter` instead of rebuilding locally | generation is now shared at adapter layer, but semantics still need periodic parity review with Qt helper | frontend-neutral DTO | Improved |
-
-## Mapping Table: Selected-Flow Packets
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| `flow_packet_row` / row number within selected flow | `PacketRow.row_number`; `PacketListModel.RowNumberRole` | `FrontendPacketDto.row_number` | `PacketDto.row_number`; shown in Tauri table | aligned | frontend-neutral DTO | High |
-| `packet_index` | `PacketRow.packet_index`; `PacketListModel.PacketIndexRole`; `MainController.selectedPacketIndex` | `FrontendPacketDto.packet_index`; packet details API keyed by `packet_index` | `PacketDto.packet_index`; selected packet state uses it | aligned | frontend-neutral DTO | High |
-| direction | `PacketRow.direction_text`; `PacketListModel.DirectionTextRole`; Qt adds badge styling | `FrontendPacketDto.direction_text` | `PacketDto.direction_text`; shown directly | aligned at data level | frontend-neutral DTO | High |
-| timestamp | `PacketRow.timestamp_text`; `PacketListModel.TimestampRole` | `FrontendPacketDto.timestamp_text` | `PacketDto.timestamp_text` | aligned | frontend-neutral DTO | High |
-| captured length | `PacketRow.captured_length`; `CapturedLengthRole` | `FrontendPacketDto.captured_length` | `PacketDto.captured_length` | aligned | frontend-neutral DTO | High |
-| original length | `PacketRow.original_length`; `OriginalLengthRole` | `FrontendPacketDto.original_length` | `PacketDto.original_length` | aligned | frontend-neutral DTO | High |
-| transport payload length | `PacketRow.payload_length`; `PayloadLengthRole`; Qt enriches rows with original transport payload lengths | `FrontendPacketDto.payload_length`; adapter applies `apply_original_transport_payload_lengths()` | `PacketDto.payload_length` | aligned, but semantics depend on adapter enrichment | app/session + frontend-neutral row DTO | High |
-| TCP flags | `PacketRow.tcp_flags_text`; `TcpFlagsTextRole` | `FrontendPacketDto.tcp_flags_text` | `PacketDto.tcp_flags_text` | aligned | frontend-neutral DTO | High |
-| IP fragmentation marker | `PacketRow.is_ip_fragmented`; `IsIpFragmentedRole` | `FrontendPacketDto.is_ip_fragmented` | `PacketDto.is_ip_fragmented`; now shown in a compact Tauri marker column | aligned enough for current scope | frontend-neutral DTO | Resolved |
-| suspected retransmission marker | `PacketRow.suspected_tcp_retransmission`; `SuspectedTcpRetransmissionRole`; `hasVisibleMarkers` in Qt model | `FrontendPacketDto.suspected_tcp_retransmission`; adapter derives via `suspected_tcp_retransmission_packet_indices(...)` | `PacketDto.suspected_tcp_retransmission`; now shown in a compact Tauri marker column | aligned enough for current scope | frontend-neutral DTO already sufficient | Resolved |
-| packet pagination / offset / limit / total | Qt controller exposes `loadedPacketRowCount`, `totalPacketRowCount`, `canLoadMorePackets`; load-more semantics | `FrontendSelectedFlowPacketsResult.offset`, `limit`, `total_count`; adapter uses offset/limit query | Tauri `SelectedFlowPacketsDto` and `main.js` now use the same bounded append-only `Load More` shape with visible `Showing N of Total packets` status | the remaining gap is presentation density, not pagination semantics | app/session facts + frontend controller/model | Improved |
-| packet loading state | `MainController.packetsLoading` | none explicit in result DTO | Tauri `packetState = idle/loading/loaded/error` | shell/controller-state mismatch, not DTO gap | frontend controller/model | Medium |
-| packet error state | Qt largely controller-driven; packet list can be cleared/reset | result DTO has no packet-list `error_text` field | Tauri uses invoke exception path and local `packetErrorText` | no explicit packet-list error DTO | frontend controller/model or future list-state DTO | Low |
-| packet unavailable state | Qt uses source-availability and selected-flow state | no explicit packet-list unavailable text field | Tauri currently infers from shell/open/selection state | acceptable for now | app/session facts + frontend controller/model | Low |
-
-## Mapping Table: Packet Inspector
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| details title / header fields | `PacketDetailsViewModel.detailsTitle`, `headerPrimaryText`, `headerSecondaryText`, `badgeText` | `FrontendPacketDetailsDto.details_title` now carries the shared packet-details title; header/badge fields are still absent | Tauri now consumes shared `details_title`; summary labels remain local | title is partially aligned, header/badge remain Qt-specific today | frontend-neutral DTO for shared title, deferred for header/badge | Improved |
-| summary text | `PacketDetailsViewModel.summaryText`; built in `MainController::buildPacketSummary(...)` | `FrontendPacketDetailsDto.summary_text` still carries the legacy shared text summary block built from existing packet/session facts | Qt and Tauri now keep this text as a fallback when structured layered summary data is absent | fallback path remains intentionally text-first for unavailable/older cases | frontend-neutral DTO fallback | Improved |
-| structured summary layers | Qt previously kept summary mostly text-first with local formatting | `FrontendPacketDetailsDto.summary_layers` now carries a shared layered packet-summary tree with generic `layer -> fields -> children` structure | Qt Summary and Tauri Summary now both render collapsible shared layers first and fall back to `summary_text` only when layers are unavailable | shared layer model now covers Frame/Ethernet/VLAN/IPv4/IPv6/TCP/UDP/ARP plus a conservative final higher-level layer for already-recognized TLS/QUIC/DNS/HTTP/ICMP/ICMPv6 packets; base layers now include file/flow packet numbering, Ethernet MACs, and conservative IPv4/IPv6 header fields derived only during selected-packet/on-demand decoding | frontend-neutral DTO | Improved |
-| Qt Summary text selection | `PacketDetailsPane.qml` now renders Summary layer titles/fields/warnings through read-only selectable text controls | no DTO change; behavior is purely frontend presentation over existing summary-layer / text fields | not applicable in current Tauri shell | this PR changes usability only; backend/session contracts are unchanged | Qt frontend presentation only | Improved |
-| byte-view descriptor list | `PacketDetailsViewModel.packetByteViewDescriptors` | `FrontendPacketDetailsDto.byte_view_descriptors` now carries lightweight per-view metadata such as stable id, label, depth, lengths, and availability state | `PacketDetailsDto.byte_view_descriptors` | aligned for the new Packet Details `Bytes` tab | frontend-neutral DTO | High |
-| selected byte-view identity | `PacketDetailsViewModel.selectedPacketByteViewId` | `FrontendPacketDetailsDto.selected_byte_view.stable_id` plus the stable-id selector APIs | `PacketDetailsDto.selected_byte_view.stable_id` and Tauri local `packetDetailsSelectedByteViewStableId` state | aligned; stable id, not label, is the selection identity | frontend-neutral DTO + frontend controller | High |
-| selected byte-view formatted text | `PacketDetailsViewModel.selectedPacketByteViewText` | `FrontendPacketDetailsDto.selected_byte_view.formatted_text` | `PacketDetailsDto.selected_byte_view.formatted_text` | aligned; only one selected view is materialized at a time | frontend-neutral DTO | High |
-| selected byte-view lengths/state | `PacketDetailsViewModel.selectedPacketByteViewAvailableLength`, `selectedPacketByteViewDeclaredLength`, `selectedPacketByteViewState`, `selectedPacketByteViewStatusText` | `FrontendPacketDetailsDto.selected_byte_view` fields plus per-descriptor summary state | `PacketDetailsDto.selected_byte_view` fields | aligned for captured and derived owners | frontend-neutral DTO | High |
-| byte-view unavailable / empty handling | Qt now clears stale packet-byte text and exposes a selected-view status/unavailable message | `FrontendPacketDetailsDto.selected_byte_view.unavailable_text`, `FrontendPacketDetailsDto.unavailable_text`, and empty `byte_view_descriptors` | Tauri uses explicit selected-view unavailable/empty rendering in the `Bytes` tab | aligned; state is now more explicit than the old packet Raw/Payload preview shape | frontend-neutral DTO | High |
-| retained protocol details text | no dedicated Qt packet-details property after Protocol-tab removal | no dedicated packet-details/frontend-neutral DTO field; backend protocol text remains available through selected-packet summary-preparation inputs and existing flow/stream row fields | no dedicated Tauri DTO field | visible Protocol tabs were removed and the dead packet-details transport field was dropped; packet-details frontends now rely on shared summary layers/text instead of a hidden protocol-text field | backend formatter inputs plus existing row/session semantics | Improved |
-| packet details loading state | Qt controller `reloadSelectedPacketDetails()` path, not DTO-owned | no explicit loading field | Tauri `packetDetailsState = loading/...` | frontend/controller-only by design | frontend controller/model | Low |
-| packet details error state | Qt clears or shows placeholders; not formalized as separate DTO | `FrontendPacketDetailsDto.error_text`, `details_available`, `packet_found` | Tauri uses explicit `error` state and text | partial alignment | frontend-neutral DTO + frontend controller | Medium |
-| packet details unavailable state | Qt has placeholder builders for source-unavailable packet details and selected packet-byte unavailable text | `FrontendPacketDetailsDto.unavailable_text`, source-access flags, selected-byte-view unavailable text | Tauri uses explicit `unavailable` state | frontend-neutral shape exists, Qt still text-first for some placeholders | frontend-neutral DTO | High |
-
-## Mapping Table: Selected-Flow Stream
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| stream item index | `StreamItemRow.stream_item_index`; `StreamListModel.StreamItemIndexRole` | `FrontendStreamItemDto.stream_item_index` | `StreamItemDto.stream_item_index` | aligned | frontend-neutral DTO | High |
-| stream item display number | Qt uses item index visually in stream list; no separate display-number field | none explicit | Tauri shows `stream_item_index` directly | no explicit distinction yet | frontend rendering over stable `stream_item_index` | Low |
-| direction | `StreamItemRow.direction_text`; `DirectionTextRole` | `FrontendStreamItemDto.direction_text` | `StreamItemDto.direction_text` | aligned | frontend-neutral DTO | High |
-| label / type / kind | `StreamItemRow.label`; `LabelRole` | `FrontendStreamItemDto.label` | `StreamItemDto.label` | aligned | frontend-neutral DTO | High |
-| byte length | `StreamItemRow.byte_count`; `ByteCountRole` | `FrontendStreamItemDto.byte_count` | `StreamItemDto.byte_count` | aligned | frontend-neutral DTO | High |
-| contributing packet count | `StreamItemRow.packet_count`; `PacketCountRole` | `FrontendStreamItemDto.packet_count` | `StreamItemDto.packet_count` | aligned | frontend-neutral DTO | High |
-| source packet references | `StreamItemRow.packet_indices` in session row, `StreamListModel` turns this into text | `FrontendStreamItemDto.source_packet_indices` now carries structured refs alongside display text | `StreamItemDto.source_packet_indices`; Tauri currently uses them for tooltip/detail hints only | structured refs are now preserved at the frontend-neutral boundary; stream-item selection/details are still deferred | frontend-neutral DTO | Improved |
-| source packet display text | `StreamListModel.SourcePacketsTextRole`; `StreamView.qml` further compacts for UI | `FrontendStreamItemDto.source_packets_text` | `StreamItemDto.source_packets_text`; still the compact visible string in Tauri | aligned as shared display text with structured refs kept in parallel | frontend-neutral DTO | Improved |
-| constricted / quality flags | `StreamItemRow.has_constricted_contribution`; notes exist in session row but not Qt model roles beyond bool | `FrontendStreamItemDto.has_constricted_contribution`, `constricted_contribution_notes`, `constricted_packet_notes` | Tauri shows the existing `Constricted` marker and now keeps shared notes available for tooltip/detail hints | Qt still owns richer stream-item details presentation, but notes are no longer dropped by the adapter | frontend-neutral DTO | Improved |
-| bounded packet window metadata | Qt controller exposes `streamPacketWindowCount`, `streamPacketWindowPartial` | `FrontendSelectedFlowStreamResult.packet_window_count`, `total_flow_packet_count`, `packet_window_partial` | Tauri `SelectedFlowStreamDto` and local state use them | aligned | frontend-neutral DTO | High |
-| `can_load_more` / load-more state | Qt `canLoadMoreStreamItems`, `streamPartiallyLoaded`, `loadedStreamItemCount`, `totalStreamItemCount` | `FrontendSelectedFlowStreamResult.can_load_more`, `stream_partially_loaded`, `loaded_item_count`, `total_item_count` | Tauri uses same fields | aligned | frontend-neutral DTO | High |
-| stream loading state | Qt `MainController.streamLoading` and tab-activation logic | no explicit loading field in result DTO | Tauri `streamState = idle/loading/loaded/error/unavailable` | frontend/controller-owned | frontend controller/model | Low |
-| stream error state | Qt state via controller reset/unavailable text | `FrontendSelectedFlowStreamResult.error_text` | Tauri uses explicit error state | aligned enough | frontend-neutral DTO + frontend controller | Medium |
-| stream unavailable state | Qt `sourceCaptureAvailable` + stream empty-state text + placeholders | `FrontendSelectedFlowStreamResult.source_capture_accessible`, `stream_available`, `unavailable_text` | Tauri uses explicit unavailable state | aligned enough | frontend-neutral DTO | High |
-| stream item selection | Qt `selectedStreamItemIndex` and stream-item details path exist | `FrontendSessionAdapter::get_selected_flow_stream_item_details(max_packets_to_scan, limit, stream_item_index)` now provides a bounded selected-item details contract | Tauri uses the same bounded selected-item query behind local row selection | aligned around the shared selected-item request shape; frontend still owns tab state and selection UX | frontend-neutral DTO + controller/view-model orchestration | Improved |
-| stream item details header / summary / item-data | Qt `PacketDetailsViewModel` stream-item header fields plus `summaryText`, `streamItemData*`, `payloadTabTitle`, and structured `summaryLayers` | `FrontendStreamItemDto` now carries display-oriented header/summary fields plus nested `stream_item_data` metadata and one selected formatted text result | Tauri now renders a compact header block plus `Summary / Item Data`; no dedicated stream-item protocol-details DTO field remains | old preview-oriented payload fields remain for compatibility, but `stream_item_data` and shared summary layers are now the semantic authority | frontend-neutral DTO for selected-item details, shared backend ownership in C++ | Improved |
-
-## Mapping Table: Statistics / Overview
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| packet count | `SummaryBar`, `MainController.packetCount` | `FrontendOverviewDto.summary.packet_count` | `OverviewDto.summary.packet_count` | aligned | frontend-neutral DTO | High |
-| flow count | `SummaryBar`, `MainController.flowCount` | `FrontendOverviewDto.summary.flow_count` | `OverviewDto.summary.flow_count` | aligned | frontend-neutral DTO | High |
-| original bytes | Qt `SummaryBar` shows original bytes | `FrontendOverviewDto.summary.original_bytes` plus canonical `original_bytes_text` built in shared C++ presentation helpers | Tauri statistics tab now renders the shared `original_bytes_text` overview value | aligned for current overview scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
-| captured bytes | Qt `SummaryBar` shows captured bytes | `FrontendOverviewDto.summary.captured_bytes` plus canonical `captured_bytes_text` built in shared C++ presentation helpers | Tauri statistics tab now renders the shared `captured_bytes_text` overview value | aligned for current overview scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
-| TCP/UDP/Other counters | `ProtocolStatsPane` transport section | `FrontendOverviewDto.protocol_summary.tcp/udp/other` with raw counters plus canonical `captured_bytes_text` / `original_bytes_text` | Tauri now renders the shared byte text fields in the transport summary table | aligned for current transport summary scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
-| IPv4/IPv6 counters | `ProtocolStatsPane` family section | `FrontendOverviewDto.protocol_summary.ipv4/ipv6` with raw counters plus canonical `captured_bytes_text` / `original_bytes_text` | Tauri now renders the shared byte text fields in the family summary table | aligned for current family summary scope | frontend-neutral DTO + shared C++ presentation helpers | Improved |
-| protocol hint groups | Qt derives grouped table from `protocolHintDistribution` in `MainController`, backed by `CaptureProtocolSummary` hint buckets and shared helper rows | dedicated `FrontendProtocolHintStatisticsDto` via `get_protocol_hint_statistics()` with raw values plus `*_text` display fields | Tauri renders `Detected Protocol Hints` from the dedicated lazy section request and now consumes the same canonical count/size/percentage text as Qt | drill-down remains filter-based in Tauri, but value formatting is now shared rather than Qt-owned | frontend-neutral DTO + shared C++ presentation helpers | Improved |
-| QUIC summary | Qt protocol stats pane; `MainController.quic*` properties | dedicated `FrontendQuicTlsStatisticsDto` via `get_quic_tls_statistics()` | Tauri renders the QUIC side of the combined `QUIC and TLS` section from the dedicated lazy request | aligned for current recognition summary scope | frontend-neutral DTO | Improved |
-| TLS summary | Qt protocol stats pane; `MainController.tls*` properties | dedicated `FrontendQuicTlsStatisticsDto` via `get_quic_tls_statistics()` | Tauri renders the TLS side of the combined `QUIC and TLS` section from the dedicated lazy request | aligned for current recognition summary scope | frontend-neutral DTO | Improved |
-| top endpoints | `TopTalkersPane`, `topEndpointsModel`, `CaptureSession::top_summary()` | dedicated `FrontendTopEndpointPortStatisticsDto` via `get_top_endpoint_port_statistics(limit)` | Tauri renders `Top Endpoints` inside the lazy `Top Endpoints and Ports` section | Qt drill-down action is still richer; Tauri currently reuses flow-filter drill-down | frontend-neutral DTO for bounded rows, frontend controller/model for later actions | Improved |
-| top ports | `TopTalkersPane`, `topPortsModel`, `CaptureSession::top_summary()` | dedicated `FrontendTopEndpointPortStatisticsDto` via `get_top_endpoint_port_statistics(limit)` | Tauri renders `Top Ports` inside the lazy `Top Endpoints and Ports` section | Qt drill-down action is still richer; Tauri currently reuses flow-filter drill-down | frontend-neutral DTO for bounded rows, frontend controller/model for later actions | Improved |
-| statistics drill-down actions | Qt `drillDownToEndpoint`, `drillDownToPort` | no frontend-neutral action/query contract | Tauri now supports frontend-only drill-down by switching to `Flows` and setting the existing flow filter from protocol-hint / endpoint / port rows | still no shared action/query contract; Tauri behavior is filter-only, not full Qt drill-down parity | frontend controller/model + later contract decision | Improved |
-
-## Mapping Table: Analysis
-
-Analysis is now partially addressed in Tauri through a first selected-flow, on-demand slice. The mapping below records what is visible today and what remains deferred compared with Qt.
-
-| Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
-|---|---|---|---|---|---|---|
-| selected-flow analysis trigger | `sendSelectedFlowToAnalysis()`, `currentTabIndex`, `analysis_tab_active_` | `FrontendSessionAdapter::get_selected_flow_analysis()` now wraps `CaptureSession::get_flow_analysis(flow_index)` behind selected-flow state | Tauri `Analysis` tab now loads analysis lazily for the current selected flow when the tab opens | no dedicated shared action contract; Tauri follows selected-flow context only | app/session + frontend-neutral DTO + frontend controller | Improved |
-| analysis flow list | `AnalysisWorkspacePane` left list from `flowModel` | none separate; Qt reuses flow model and Tauri now reuses already loaded `FlowDto` rows | Tauri now shows a left-side Analysis flow list backed by already loaded flow DTOs; selecting a row reuses shared selected-flow state and on-demand analysis load | still no dedicated shared analysis-list DTO or action contract; list remains frontend-shaped | frontend controller/model over existing flow DTOs | Improved |
-| duration/timeline metrics | `MainController.analysisDurationText`, timeline properties | `FrontendSelectedFlowAnalysisDto` now carries duration / first-packet / last-packet / largest-gap / packets-considered text for a minimal slice | Tauri now renders a compact timing section | Qt still exposes richer timeline/rate context | frontend-neutral DTO + frontend rendering | Improved |
-| endpoint summary | `analysisEndpointSummaryText` | `FrontendSelectedFlowAnalysisDto.endpoint_summary_text` | Tauri now renders a compact flow summary section | Tauri does not yet mirror the separate Qt analysis-flows left pane | frontend-neutral DTO + frontend rendering | Improved |
-| packet/byte/rate metrics | multiple `analysis*Text` properties in `MainController` | `FrontendSelectedFlowAnalysisDto` now carries total packets / original bytes / captured bytes / packets-per-second / data-rate text, including small directional derived metric text | Tauri now renders compact traffic totals plus a small derived-metrics table | no charts or deeper rate context | frontend-neutral DTO + frontend rendering | Improved |
-| direction split metrics | `analysisPacketsAToBText`, `analysisBytesAToBText`, etc. | `FrontendSelectedFlowAnalysisDto` now carries directional packet/byte counts plus ratio/dominance text | Tauri now renders a compact direction split section | no Qt-style directional charts | frontend-neutral DTO + frontend rendering | Improved |
-| packet size metrics | `analysisAveragePacketSizeText`, min/max size texts | `FrontendSelectedFlowAnalysisDto` now carries average / min / max packet-size text, including small directional variants already available in the analysis result | Tauri now renders these in a compact timing/size section plus derived-metrics table | still no histogram or chart context | frontend-neutral DTO + frontend rendering | Improved |
-| inter-arrival metrics | `analysisAverageInterArrivalText`, histograms | `FrontendSelectedFlowAnalysisDto.average_inter_arrival_text` plus compact histogram rows from the existing analysis result | Tauri now renders average inter-arrival text and a compact histogram section | richer charting/rate-graph context remains deferred | frontend-neutral DTO + frontend rendering | Improved |
-| protocol hint/service/version text | `analysisProtocolHint`, `analysisServiceHint`, `analysisProtocolVersionText` | `FrontendSelectedFlowAnalysisDto` now carries protocol text plus protocol-hint/service/version/panel fallback text for the compact slice | Tauri now renders a compact Protocol Panel in addition to flow summary | still no richer protocol-specific workspace | frontend-neutral DTO + frontend rendering | Improved |
-| TCP control counts | `analysisHasTcpControlCounts`, SYN/FIN/RST props | `FrontendSelectedFlowAnalysisDto` now carries `has_tcp_control_counts` plus SYN/FIN/RST counts and text | Tauri now renders a small TCP controls section when available | no deeper TCP-specific analysis surface | frontend-neutral DTO + frontend rendering | Improved |
-| burst/idle-gap metrics | `analysisBurstCountText`, `analysisLargestIdleGapText` | `FrontendSelectedFlowAnalysisDto` now carries burst / longest-burst / largest-burst-bytes / idle-gap text | Tauri now renders a compact Burst / Idle Summary section | no charts or sequence preview context | frontend-neutral DTO + frontend rendering | Improved |
-| rate graph status/window | `analysisRateGraphAvailable`, status/window text, series props | `FrontendSelectedFlowAnalysisDto` now carries `rate_graph_available`, `rate_graph_status_text`, `rate_graph_window_text`, and prepared `A->B` / `B->A` rate-series points from the shared selected-flow analysis result | Tauri now renders a Qt-like rate graph with local metric/direction toggles over the shared prepared samples | sample generation is shared; only display formatting/toggles remain frontend-local by design | frontend-neutral DTO for prepared points + frontend rendering | Improved |
-| histograms | packet size and inter-arrival histogram properties | `FrontendSelectedFlowAnalysisDto` now carries compact histogram rows with `All / A→B / B→A` counts from the existing analysis result | Tauri now renders compact Packet Size and Inter-arrival histogram sections with frontend-only direction toggles | richer chart/export surface beyond the current graph + histogram coverage remains deferred | frontend-neutral DTO + frontend rendering | Improved |
-| sequence preview | `analysisSequencePreview` | `FrontendSelectedFlowAnalysisDto.sequence_preview_rows` now exposes a compact preview row subset from the existing session analysis result | Tauri now renders a compact Sequence Preview table in the Analysis pane | packet index, TCP flags, and export path remain deferred | frontend-neutral DTO + frontend rendering | Improved |
-| analysis export action | `browseExportSelectedFlowSequenceCsv()` and availability props | `FrontendSessionAdapter::export_selected_flow_analysis_sequence_csv(path)` now exposes the same narrow selected-flow CSV export path through the frontend-neutral adapter | Tauri now offers `Export sequence CSV` from the `Sequence Preview` section via a native Save dialog | only the selected-flow Analysis sequence CSV path is covered; broader export workflows remain deferred | frontend-neutral adapter + frontend workflow | Improved |
-
-## Gap Classification
-
-### Already aligned
-
-- Stable flow fields in `FlowRow` -> `FrontendFlowDto` -> Tauri `FlowDto`
-- Stable packet-row fields in `PacketRow` -> `FrontendPacketDto` -> Tauri `PacketDto`
-- Selected-flow stream row fields and current stream-item detail texts in `StreamItemRow` / adapter -> `FrontendStreamItemDto` -> Tauri `StreamItemDto`
-- Basic overview counters and recognition stats in `FrontendOverviewDto`
-- Grouped source-availability facts in `CaptureSession` -> frontend-neutral `SourceAvailability` -> Tauri open/details/stream DTOs
-- A first selected-flow analysis slice in `CaptureSession::get_flow_analysis()` -> `FrontendSelectedFlowAnalysisDto` -> Tauri `Analysis` tab
-- A narrow shared `save_index(path)` workflow over `CaptureSession::save_index(...)` -> Tauri `File -> Save Index`
-- A narrow shared `export_current_flow(path)` workflow over `CaptureSession::export_flow_to_pcap(...)` -> Tauri `Flow -> Export Current Flow`
-- A narrow shared `export_selected_flows(path, flow_indices)` workflow over `CaptureSession::export_flows_to_pcap(...)` -> Tauri `Flow -> Export Selected Flows` and `Flow -> Export Unselected Flows`
-- A narrow shared `export_smart_flows(path, flow_indices, options)` workflow over `CaptureSession::export_smart_flows_to_pcap(...)` / `export_smart_flows_to_folder(...)` -> Tauri `Flow -> Smart Export...`
-
-### Naming mismatch only
-
-- `flow_index` vs visible 1-based Qt display number
-- `row_number` vs `flow packet row` terminology
-- `stream_item_index` vs possible display number naming
-- `total_bytes` in adapter overview vs Qt summary using separate captured/original byte labels
-
-### Available in Qt but not frontend-neutral
-
-- checked/selected-for-batch-export flow state in a shared/frontend-neutral contract
-- a dedicated shared stream-item selection/details query contract; Tauri currently consumes richer detail text through the stream row DTO itself
-- Qt source-unavailable placeholders still live in controller/view-model logic rather than consuming one grouped source-availability DTO directly
-
-### Available in Tauri but not contract-aligned
-
-- explicit shell `openState` enum in `main.js`
-- explicit packet details state machine in `main.js`
-- explicit stream state machine in `main.js`
-
-These are useful implementation patterns, but they are local Tauri state, not yet shared contract fields.
-
-### Missing structured fields
-
-- explicit shell/session-state DTO
-- explicit selected-stream-item frontend-neutral path
-- deeper packet-inspector structured layers beyond the current conservative `summary_layers` slice
-
-### Text-only today, candidate for structured DTO
-
-- packet summary fallback text in Qt
-- stream-item summary/details text in Qt
-- source-unavailable placeholder texts
-- Wireshark filter string
-- protocol-hint grouping labels
-
-### Frontend-only by design
-
-- filtering widget state
-- sorting widget state
-- tab activation
-- row highlighting
-- compact vs comfortable density
-- local prev/next vs load-more UX
-
-### Needs design decision
-
-- final owner of Wireshark filter generation
-- whether packet inspector should be mostly structured or text-first
-- whether stream item details join the same shared inspector contract as packet details
-- how far statistics beyond basic counters should be standardized for CLI
-- how far Analysis should keep expanding as a shared frontend-neutral DTO before a dedicated analysis-specific contract cleanup
-
-## Recommended Follow-Up Order
-
-### 1. PacketInspector / stream-item details cleanup
-
-Why first now:
-
-- packet and stream inspection are already useful, but still uneven compared with Qt;
-- this is where shared DTO shape and UX clarity will pay off quickly.
+The goal of this audit is to show:
+
+- which semantics are already shared cleanly;
+- which data currently comes from `FrontendSessionAdapter` and bridge-friendly
+  DTOs;
+- which parts Qt still accesses directly through `CaptureSession` /
+  `MainController`;
+- which frontend-local interaction layers remain intentionally frontend-owned;
+- which mismatches are real implementation drift versus simply different UI
+  layout choices.
+
+## Current architecture summary
 
-Expected risk:
+### Shared backend/session ownership
 
-- medium.
+The shared C++ backend/session/presentation layers currently own:
 
-Affected layers:
+- flow/session semantics;
+- Protocol Path presentation mapping;
+- structured Statistics DTOs;
+- Supported Protocol Catalog exposure;
+- Packet Summary structure;
+- Packet Bytes descriptors and selected-view content materialization;
+- Stream Item Data ownership/materialization;
+- selected-flow analysis DTO shaping where currently exposed;
+- source-availability facts and attach-source behavior;
+- save-index and flow-export API boundaries.
 
-- frontend-neutral DTO layer
-- Qt packet/stream presentation paths
-- Tauri inspector views
-- future CLI inspect/report commands
+### FrontendSessionAdapter scope
 
-### 2. Selected-flow packet/stream latency investigation on very large flows
+`FrontendSessionAdapter` is a useful shared application-facing read/write
+boundary, especially for:
 
-Why second:
+- capture/index opening;
+- source availability;
+- save index;
+- attach source capture;
+- supported protocol catalog;
+- flow queries and flow exports;
+- packet details;
+- stream details;
+- statistics DTOs;
+- selected-flow analysis DTOs.
 
-- the Tauri UI now covers most primary workflows, so the biggest remaining pain is responsiveness on very large selected flows;
-- Qt shows the same broad symptom, which points to shared app/session behavior worth understanding before more UI work piles on top.
+### Qt path
 
-Expected risk:
+Qt does not route everything through `FrontendSessionAdapter`.
 
-- medium.
+`MainController` still uses `CaptureSession` and session-level presentation
+helpers directly for a large part of the desktop workflow, including:
 
-Affected layers:
+- flows model ownership;
+- packet/stream selection orchestration;
+- local packet-details and stream-details view-model coordination;
+- Qt-local analysis and statistics wiring;
+- some settings/runtime state handling.
 
-- app/session selected-flow load path
-- Tauri request/latency surface
-- Qt selected-flow workflow
+### Tauri path
 
-### 3. Shared packet-byte read optimization in the backend/session path
+Tauri is much closer to the adapter/bridge boundary:
 
-Why third:
+- Rust/Tauri commands call the shared bridge;
+- DTOs are marshaled through `FrontendSessionAdapterBridge`;
+- `web/main.js` owns frontend-local state machines and rendering over those
+  shared DTOs.
 
-- latency work on very large flows is likely to converge on the shared packet-byte read path;
-- this is the most plausible common bottleneck behind slow packet/stream materialization across both frontends.
+The important architectural conclusion is unchanged:
 
-Expected risk:
+- Qt, Tauri, and CLI do not implement independent packet parsing or grouping
+  architectures;
+- they consume shared backend/session semantics through different application
+  access paths.
 
-- medium to high.
+## High-value current mappings
 
-Affected layers:
+### Flow DTOs
 
-- `CaptureSession`
-- packet-byte read helpers
-- stream/payload/reassembly consumers
+Current shared flow-facing fields are strong and already useful across
+frontends:
 
-### 4. Statistics / Analysis stabilization
+- `flow_index`
+- family
+- protocol text
+- protocol hint + detected-protocol display text
+- service hint
+- endpoint A / endpoint B
+- protocol path id
+- fragmentation facts
+- packet count
+- total/original-byte count
+- Wireshark display filter text
 
-Why fourth:
+Qt still layers local model/filter/sort behavior on top of these fields.
+Tauri uses bridge DTOs more directly.
+
+### Protocol Path presentation
 
-- both areas now have meaningful Tauri slices and shared DTO coverage;
-- the remaining work is mostly about deciding how far shared product semantics should go before CLI work starts.
+Current shared Protocol Path presentation is backed by shared C++ structures and
+DTOs, including:
 
-Expected risk:
+- compact path text;
+- full path text;
+- badge/chip rows;
+- protocol-path statistics rows;
+- protocol-path legend entries.
 
-- medium.
+Qt and Tauri both consume that shared presentation mapping. The frontends are
+not supposed to maintain independent path-label taxonomies.
 
-Affected layers:
+### Supported Protocol Catalog
 
-- app/session DTO shaping
-- Qt-rich presentation paths
-- Tauri parity/polish
-- future CLI reporting surfaces
+Supported protocol capability presentation is now shared cleanly:
 
-### 5. Save/open index workflow polish
+- backend `SupportedProtocolCatalog` is authoritative;
+- `FrontendSessionAdapter` exposes it;
+- Qt and Tauri render the same compact catalog semantics;
+- the compact table in `docs/protocols/protocol_support.md` is expected to stay
+  synchronized with the same backend catalog.
 
-Why fifth:
+### Packet Summary and Packet Bytes
 
-- the thin shared save/open path is now wired in Tauri;
-- the remaining work is parity polish, not a missing core workflow.
+Current shared packet-inspection coverage already includes:
 
-Expected risk:
+- structured packet summary layers;
+- stable packet byte-view descriptors;
+- selected-view-only byte materialization;
+- explicit unavailable/state/status metadata.
 
-- low to medium.
+Qt still owns more local inspector composition and presentation details, but the
+important packet semantics are already backend-driven rather than Qt-only.
 
-Affected layers:
+### Stream item summary and Item Data
 
-- Tauri frontend workflow/UI
-- frontend-neutral adapter surface
-- some session/open-path integration
+Current shared stream-item support includes:
 
-### 6. Deeper large-capture memory optimization only if still needed
+- stream item rows with stable `stream_item_index`;
+- stream item summary layers/text;
+- shared `Item Data` ownership/materialization fields;
+- explicit availability/state/status metadata;
+- bounded selected-item semantics.
 
-Why sixth:
+The major remaining gap is not byte ownership semantics. It is mostly frontend
+presentation polish and optional navigation affordances such as stream-to-packet
+jump behavior.
 
-- the first mitigation layer is now frontend virtualization/windowing;
-- more aggressive work such as narrower DTO slices or backend paging should follow only if profiling still shows pressure after the shared byte-read path is improved.
+### Source availability and attach-source
 
-Expected risk:
+Current shared source-availability facts are grouped meaningfully:
 
-- medium to high.
+- has source capture;
+- source capture accessible;
+- opened from index;
+- partial open;
+- byte-backed inspection available;
+- active source path;
+- expected source path;
+- current flow-grouping normalization facts for the loaded raw session.
 
-Affected layers:
+Attach-source behavior and save-index behavior also have meaningful shared
+adapter boundaries now.
 
-- Tauri rendering and interaction performance
-- adapter payload sizes
-- possible backend paging/filter/sort design
+### Statistics DTOs
 
-### 7. CLI design after DTO stabilization
+Current shared statistics coverage includes:
 
-Why seventh:
+- overview summary;
+- whole-capture totals;
+- transport/family summary values;
+- packet-size distribution;
+- flows-by-packet-count histogram;
+- protocol-hint statistics;
+- Protocol Path statistics;
+- QUIC/TLS statistics;
+- top endpoints and ports.
 
-- CLI should consume the stabilized shared DTO contract, not invent a third shape in parallel;
-- waiting a bit longer avoids locking in DTO choices too early.
+Qt and Tauri still differ in layout and local drill-down interaction, but the
+main data model is already shared.
 
-Expected risk:
+### Analysis DTOs
 
-- medium.
+Current shared selected-flow analysis DTOs already cover a substantial slice:
 
-Affected layers:
+- endpoint summary;
+- protocol/service/version text;
+- timing metrics;
+- traffic totals;
+- directional counts;
+- derived metrics;
+- TCP control counts where applicable;
+- burst/idle metrics;
+- rate-graph points/status;
+- histogram rows;
+- sequence preview rows;
+- sequence export API.
 
-- CLI surface
-- shared DTO naming / serialization choices
+Qt still exposes the richer reference workspace. Tauri now consumes a meaningful
+shared selected-flow analysis slice rather than a fake placeholder.
 
-## Open Questions
+## Important current mismatches
 
-### Identifiers / display numbering
+### Qt direct session usage versus adapter usage
 
-- Should we explicitly carry both stable identifiers and display numbers in shared DTOs?
-- Should `flow_display_number` be standardized or remain frontend-derived?
-- Should stream rows expose both stable index and display number?
+This is the most important architectural precision to keep explicit:
 
-### Field naming
+- Tauri uses the adapter/bridge path as its primary surface;
+- CLI commands also consume `FrontendSessionAdapter` where appropriate;
+- Qt `MainController` still uses `CaptureSession` directly in many places.
 
-- Should `total_bytes` in current overview become explicit `captured_bytes` and `original_bytes` at top level?
-- Should `service_hint` and `protocol_hint` keep current names or move to more generic display-neutral naming later?
+Therefore it is inaccurate to describe all frontends as using the same adapter
+call path, even though they still share the same backend/session semantics.
 
-### DTO ownership
+### Settings behavior
 
-- Should Wireshark filter generation become shared adapter output, or remain frontend assembly from flow DTO fields?
-- Should checked-flow batch-selection state ever become frontend-neutral, or remain UI-local?
+Current main behavior uses the same high-level settings transaction model in
+both desktop frontends.
 
-### Text vs structured fields
+- Tauri stages dialog draft state and commits it on `OK`.
+- Qt also stages draft state in the dialog, initializes that draft from current
+  committed values when opened, and applies the draft only on `OK`.
 
-- Should packet summary remain hybrid, or should later passes push more packets fully onto structured layers with a thinner text fallback?
-- Should stream source-packet references carry both structured refs and display text?
-- Which statistics grouping labels are shared semantics versus UI wording?
+The shared settings DTO is real, and current dialog commit semantics are now
+aligned at the frontend-contract level.
 
-### Source-unavailable states
+### Grouping banners for index sessions
 
-- Should there be one common `SourceAvailabilityState` across shell, packet details, stream, and exports?
-- How much unavailable wording belongs in DTOs versus frontends?
+Index-session grouping messaging must stay separate from authoritative grouping
+provenance.
 
-### Packet inspector
+- grouping settings are committed through the normal settings draft/`OK` flow;
+- their grouping effect still applies only to the next raw capture import or a
+  reopened raw session;
+- an opened index preserves the grouping stored in that index;
+- current checkbox state is not authoritative historical metadata describing
+  how an opened index was originally built.
 
-- Should the future PacketInspector DTO include explicit title/header fields, or only content fields?
-- Should payload tab title become shared DTO data?
+### Batch-selection state
 
-### Stream
+Checked-flow selection remains frontend-local state.
 
-- Should stream-item details get a frontend-neutral API before CLI work starts?
-- How should stream-item selection and stream-to-packet navigation be represented?
+That is acceptable for the current product. It does not need to become a
+frontend-neutral DTO merely because both Qt and Tauri support batch actions.
 
-### Statistics
+### Open/status shell state
 
-- Which Qt statistics sections are required for future CLI output?
-- Should top-talker drill-down semantics become part of the shared contract or remain frontend-only?
+Tauri has a cleaner explicit frontend-local shell state machine for some areas
+such as dialog visibility and open-state transitions.
 
-### Analysis
+Qt spreads equivalent meaning across `MainController` properties.
 
-- Which parts of Qt Analysis are stable enough to map into a frontend-neutral adapter?
-- Should Analysis remain reference-only until flows/packets/details/stream DTOs are stable?
+This is a useful implementation note, but not a sign that Tauri owns a more
+authoritative product contract.
 
-### CLI
+## Current mapping status by area
 
-- Should CLI prefer structured JSON first and add display text as optional fields?
-- Which fields should be considered contractually stable before any CLI surface is introduced?
+### Already well shared
 
-## Non-Goals
+- flow row semantics;
+- Protocol Path presentation;
+- Supported Protocol Catalog;
+- Packet Summary structure;
+- Packet Bytes descriptors/materialization;
+- Stream Item Data ownership/materialization;
+- source availability;
+- attach source;
+- save index;
+- current flow export / selected-flow export / Smart Export backend APIs;
+- Statistics DTOs;
+- selected-flow analysis DTOs.
 
-- No code changes in this audit.
-- No DTO changes in this audit.
-- No behavior changes.
-- No final CLI design.
-- No final Analysis DTO design.
+### Shared semantics with frontend-local composition
+
+- flow filtering and sorting;
+- checked-flow batch selection;
+- local shell/status rendering;
+- packet inspector layout;
+- stream details layout;
+- statistics section layout and expansion UI;
+- analysis layout and graph rendering.
+
+### Still genuinely follow-up territory
+
+- whether some remaining Qt-local inspector composition should move behind a
+  thinner shared presentation boundary;
+- whether a future frontend-neutral selected-stream-item navigation contract is
+  worthwhile;
+- whether any broader DTO cleanup is justified beyond accuracy/polish.
+
+## Notes on rows that no longer describe current reality
+
+The older audit language that implied “what should be handled first” for already
+completed work is no longer the right framing.
+
+The following areas are no longer best described as missing foundational work:
+
+- Supported Protocol Catalog exposure;
+- Packet Bytes descriptor/materialization ownership;
+- Stream Item Data ownership/materialization;
+- structured Statistics DTOs;
+- selected-flow analysis DTO surface for Tauri;
+- attach-source and save-index adapter paths;
+- flow export / Smart Export shared backend APIs.
+
+Future cleanup, where still useful, should be described as follow-up polish or
+boundary refinement, not as “still missing core architecture”.
+
+## Relationship to the canonical contract
+
+Use this document when the question is:
+
+- “Which current C++/Qt/Tauri path owns this field?”
+- “Is this already adapter/bridge friendly?”
+- “Is this shared semantics or frontend-local composition?”
+
+Use [presentation_contract.md](presentation_contract.md) when the question is:
+
+- “What is the canonical current product-facing UI behavior?”
+- “What terminology is current?”
+- “What semantics should Qt and Tauri share even when their layouts differ?”
+
+## Non-goals
+
+This audit does not:
+
+- redefine the canonical product contract;
+- require a new DTO freeze;
+- require all Qt behavior to move behind `FrontendSessionAdapter`;
+- require pixel or interaction parity between Qt and Tauri.
