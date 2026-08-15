@@ -1,11 +1,17 @@
 # QUIC Fixture 02 Reference
 
+Status:
+- current fixture and expectation reference for repository-committed QUIC
+  regression coverage
+
 Fixture under test:
 - [quic_example_2.pcap](../tests/data/parsing/quic/quic_example_2.pcap)
 
 Reference sources:
 - Corrected user spreadsheet `QUIC naming 2.ods`
-- The corrected spreadsheet is the primary source of truth for the expectations below.
+- The corrected spreadsheet is historical provenance for the fixture design.
+- The durable in-repository contract is the committed fixture, this reference
+  document, the paired expectation JSON, and the current regression tests.
 
 What this fixture covers:
 - one QUIC flow with 17 packets
@@ -19,6 +25,10 @@ Updated naming convention:
 - semantic units may be rendered in a shell-aware form such as `QUIC Initial: ACK`, `QUIC Initial: CRYPTO`, or `QUIC Initial: CRYPTO, 0-RTT`
 - this makes mixed QUIC packets easier to reason about when a single UDP packet carries several semantic units
 - packet-level expectations and stream-level expectations below follow that shell-aware convention
+
+Current repository source of truth:
+- [quic_fixture_02_expectations.json](../tests/fixtures/quic_fixture_02_expectations.json)
+- current unit and UI regression tests that consume that expectation spec
 
 Known conservative expectations:
 - standalone `PADDING` must not become a stream item

@@ -1,5 +1,23 @@
 # QUIC Initial RFC
 
+## Status
+
+Status: implemented design RFC and historical record of the QUIC Initial rollout.
+
+This document remains useful as the design history for bounded QUIC Initial
+inspection, but the current product contract is defined by the canonical
+architecture and protocol-support documents.
+
+Current reader guidance:
+
+- treat this RFC as the historical design for how bounded QUIC Initial support
+  was introduced
+- use [docs/protocols/protocol_support.md](docs/protocols/protocol_support.md)
+  for current support scope
+- use [docs/stream_architecture.md](docs/stream_architecture.md) and
+  [docs/selected-flow-contract.md](docs/selected-flow-contract.md) for current
+  selected-flow and selected-packet presentation rules
+
 ## Purpose
 
 This RFC defines a narrow first step for QUIC parsing.
@@ -10,15 +28,18 @@ The immediate goal is not general QUIC support. The first useful outcome is limi
 - extracting SNI from the embedded TLS ClientHello when enough crypto data is available
 - using that result conservatively for `service_hint` and related UI visibility
 
-The design is phased deliberately.
+The design was phased deliberately.
 
-- Phase 1: single-packet client Initial SNI extraction
-- Phase 2: bounded multi-packet Initial assembly
-- Phase 3: optional UI polish and Stream labeling improvements for QUIC
+- Phase 1: implemented as the first conservative client Initial SNI extraction
+  step
+- Phase 2: implemented in bounded selected-flow form
+- Phase 3: partially implemented and otherwise superseded by the current
+  selected-packet `Summary` / `Bytes` and selected-flow `Stream` /
+  `Stream Item Details` surfaces
 
 ## Scope
 
-Supported in Phase 1:
+Originally supported in Phase 1:
 
 - client -> server direction only
 - QUIC long-header Initial packets only
@@ -29,7 +50,7 @@ Supported in Phase 1:
 - TLS ClientHello parsing only after assembled crypto bytes are available
 - SNI extraction only when the assembled ClientHello is complete enough
 
-Not supported in this RFC:
+Not supported as part of this RFC's Initial-only scope:
 
 - general QUIC stream parsing
 - broader server-side parsing
@@ -71,18 +92,31 @@ Phase 2 extends the same correctness rule to a bounded packet set.
 - Assemble the crypto stream by offset across that bounded set.
 - Parse TLS ClientHello from the assembled crypto bytes.
 - Extract SNI only if enough ordered crypto data is available.
-- Keep explicit bounded limits: max packets, max crypto bytes, and optionally max CRYPTO frames. Exact values remain TBD but the bounds are mandatory.
+- Keep explicit bounded limits: max packets, max crypto bytes, and CRYPTO
+  frames. In the current implementation these bounds are conservative and
+  explicit: at most three Initial packets, sixteen KiB of CRYPTO bytes, and
+  sixty-four CRYPTO frames.
 
 This remains bounded work and stays consistent with the existing packet-oriented architecture. It is not general QUIC reassembly and it does not imply broader QUIC session support.
 
 ### Phase 3
 
-Phase 3 is optional polish only.
+Phase 3 was optional polish only.
 
-- UI/service-hint presentation improvements for successfully parsed QUIC Initials
+- UI/service-hint presentation improvements for successfully parsed QUIC
+  Initials
 - possible Stream labeling improvements for selected-flow analysis
 
-Phase 3 does not change the core bounded parsing rules.
+The current product implements the important presentation outcome of this phase:
+
+- selected-packet `Summary` can expose QUIC shell, frame-presence, and bounded
+  TLS handshake detail for contributing Initial packets
+- selected-packet `Bytes` can expose bounded authoritative QUIC Initial and
+  CRYPTO/TLS-derived byte views
+- selected-flow `Stream` and `Stream Item Details` can expose bounded QUIC
+  semantic rows such as `QUIC Initial: CRYPTO` and `QUIC Initial: ACK`
+
+Phase 3 did not change the core bounded parsing rules.
 
 ## Critical correctness rule
 
@@ -106,6 +140,11 @@ A bounded single-packet QUIC Initial parser may run during deep open when that w
 - Intended output is a conservative `service_hint` when SNI extraction succeeds.
 - No broader QUIC session state is implied.
 
+In the current product this remains intentionally narrow import-time enrichment.
+The richer packet-summary, packet-bytes, and selected-flow QUIC surfaces are
+selected-packet or selected-flow operations rather than global QUIC parsing
+during capture open.
+
 ### Fast-opened capture
 
 The same parser may run on demand for the currently selected QUIC flow.
@@ -113,6 +152,11 @@ The same parser may run on demand for the currently selected QUIC flow.
 - This path is initially allowed to remain ephemeral and UI-facing.
 - It must stay scoped to selected-flow analysis.
 - It must not introduce global expensive QUIC work during fast open.
+
+In the current product, bounded selected-flow context may contribute
+authoritative reconstructed or derived bytes for explicitly supported Initial /
+CRYPTO / TLS views, but this does not imply unbounded flow-wide reassembly or
+general QUIC session reconstruction.
 
 ## Conservative outcomes
 
@@ -145,6 +189,14 @@ This RFC does not change the current architectural boundaries.
 - no temporary crypto assembly artifacts are persisted
 - no global QUIC analysis is added to fast open
 - this RFC does not introduce general QUIC parsing
+
+Current verified decryption boundary:
+
+- QUIC Initial decryption is supported conservatively for the implemented
+  selected-packet and selected-flow presentation paths
+- supported Initial-version handling includes QUIC v1, QUIC v2, and draft-29
+- no Handshake-key decryption, 0-RTT-key decryption, or general protected
+  application-data decryption is implied by this RFC
 
 ## Reuse of prior art
 
