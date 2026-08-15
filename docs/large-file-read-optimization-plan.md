@@ -4,6 +4,31 @@ Date: 2026-06-20
 
 This note is a follow-up to [docs/packet-read-path-analysis.md](packet-read-path-analysis.md). It keeps the existing packet-read ownership map, then narrows the next optimization steps to the smallest safe passes for large captures and heavy selected-flow workloads.
 
+Status: Implemented optimization history / performance investigation
+
+Current role:
+
+- This document is the implementation-history and measured-tradeoff record for packet-read optimization work.
+- It should preserve chronology, accepted optimizations, rejected ideas, and deferred directions.
+- It is not the primary current contract document for large-capture behavior. Use [docs/large-capture-performance-guidelines.md](large-capture-performance-guidelines.md) for current engineering rules.
+
+Current production summary:
+
+- ordinary classic-PCAP packets stay on the efficient sequential full-read path
+- classic packets at or above `16 KiB` are eligible for staged/prefix-aware import handling
+- staged classic import starts from a `192`-byte prefix and can grow adaptively up to `4096` bytes when needed
+- `pcapng` import remains on the full-read path
+- selected packet/details reads remain lazy and source-backed after open/import
+- selected-flow visible-window warmup now uses a bounded `8 MiB` full-packet cache, while transport-payload-oriented selected-flow caching remains separately bounded at `16 MiB`
+- no mmap-backed production read path is currently used
+- there is no current policy to read only short prefixes for every normal packet
+
+Historical result to preserve:
+
+- broadly applying short-prefix reads to ordinary packets was investigated as a general strategy and was rejected
+- the extra read/skip/branch overhead made the common path materially slower in the measured experiment
+- current production therefore keeps the normal sequential packet path efficient and reserves staged handling for unusually large classic-PCAP packets where the byte-volume tradeoff is different
+
 Related context:
 
 - [docs/packet-read-path-analysis.md](packet-read-path-analysis.md)
@@ -679,6 +704,9 @@ Acceptance criteria for recommended pass A:
 - no regression in ARP / IGMP / QUIC / TLS hint coverage.
 
 ## 8. Phased roadmap after the current passes
+
+This section is preserved as implementation history and deferred follow-up context.
+Only the items already reflected in the status block and production summary above should be read as current production behavior.
 
 1. Re-measure import CPU and large-flow responsiveness after passes A and B together.
 2. If import allocation churn still dominates, evaluate pass C for reader-local scratch reuse.
