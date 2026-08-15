@@ -38,6 +38,11 @@ Use [Capture processing settings reference](reference/settings.md) for the CLI
 
 If you are looking for the desktop dialog instead, use [GUI Settings](ui/settings.md).
 
+### Building from source?
+
+Use [Build from source](build-from-source.md) for platform prerequisites and
+source-build steps for Qt, Tauri, and CLI/core-only builds.
+
 ## Desktop UI guides
 
 The desktop UI and CLI use the same core capture and canonical-flow concepts,

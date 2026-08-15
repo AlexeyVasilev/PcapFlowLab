@@ -259,6 +259,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
+See the [source build guide](user_docs/build-from-source.md) for Windows,
+Ubuntu, macOS, Tauri, and platform prerequisites.
+
 ### Tauri frontend
 
 The experimental Tauri frontend requires the Rust toolchain, Tauri tooling, and
