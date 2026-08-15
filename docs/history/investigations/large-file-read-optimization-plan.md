@@ -10,7 +10,7 @@ Current role:
 
 - This document is the implementation-history and measured-tradeoff record for packet-read optimization work.
 - It should preserve chronology, accepted optimizations, rejected ideas, and deferred directions.
-- It is not the primary current contract document for large-capture behavior. Use [docs/large-capture-performance-guidelines.md](large-capture-performance-guidelines.md) for current engineering rules.
+- It is not the primary current contract document for large-capture behavior. Use [docs/large-capture-performance-guidelines.md](../../large-capture-performance-guidelines.md) for current engineering rules.
 
 Current production summary:
 
@@ -32,9 +32,9 @@ Historical result to preserve:
 Related context:
 
 - [docs/packet-read-path-analysis.md](packet-read-path-analysis.md)
-- [docs/large-capture-rfc.md](large-capture-rfc.md)
-- [docs/architecture.md](architecture.md)
-- [docs/decisions.md](decisions.md)
+- [docs/large-capture-rfc.md](../rfc/large-capture-rfc.md)
+- [docs/architecture.md](../../architecture.md)
+- [docs/decisions.md](../../decisions.md)
 
 Status:
 

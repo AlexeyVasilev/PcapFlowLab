@@ -8,8 +8,8 @@ The selected-flow Analysis workspace described here has been implemented.
 
 For the current technical contract, use:
 
-- [analysis-tab.md](analysis-tab.md)
-- [ui/presentation_contract.md](ui/presentation_contract.md)
+- [analysis-tab.md](../../analysis-tab.md)
+- [ui/presentation_contract.md](../../ui/presentation_contract.md)
 
 This RFC is retained to preserve the architectural rationale and staged design
 reasoning behind the Analysis workspace. Historical references to MVP scope,

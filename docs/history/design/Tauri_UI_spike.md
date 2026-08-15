@@ -12,10 +12,10 @@ Tauri remains experimental.
 
 Current shared UI semantics are defined canonically in:
 
-- [../ui/presentation_contract.md](../ui/presentation_contract.md)
-- [../ui/frontend_dto_mapping.md](../ui/frontend_dto_mapping.md)
-- [../ui/tauri_qt_parity_audit.md](../ui/tauri_qt_parity_audit.md)
-- [../protocols/protocol_support.md](../protocols/protocol_support.md)
+- [../../ui/presentation_contract.md](../../ui/presentation_contract.md)
+- [../../ui/frontend_dto_mapping.md](../../ui/frontend_dto_mapping.md)
+- [../audits/tauri_qt_parity_audit.md](../audits/tauri_qt_parity_audit.md)
+- [../../protocols/protocol_support.md](../../protocols/protocol_support.md)
 
 This document is retained primarily for Tauri-specific evolution history,
 architecture decisions, experimental frontend constraints, and implementation
@@ -26,7 +26,7 @@ context. It is not the canonical current Qt/Tauri presentation contract.
 Pcap Flow Lab already has a layered architecture with a C++ core, application/session layer, and a Qt desktop UI. The experimental Tauri UI validates that a modern webview-based desktop frontend can sit on top of the same backend/session layer without changing packet-processing behavior.
 
 Current shared protocol-detection and inspection coverage is documented in
-[protocol_support.md](../protocols/protocol_support.md).
+[protocol_support.md](../../protocols/protocol_support.md).
 
 ## Goals
 

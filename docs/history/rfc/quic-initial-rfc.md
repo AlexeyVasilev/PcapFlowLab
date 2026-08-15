@@ -12,10 +12,10 @@ Current reader guidance:
 
 - treat this RFC as the historical design for how bounded QUIC Initial support
   was introduced
-- use [docs/protocols/protocol_support.md](docs/protocols/protocol_support.md)
+- use [docs/protocols/protocol_support.md](../../protocols/protocol_support.md)
   for current support scope
-- use [docs/stream_architecture.md](docs/stream_architecture.md) and
-  [docs/selected-flow-contract.md](docs/selected-flow-contract.md) for current
+- use [docs/stream_architecture.md](../../stream_architecture.md) and
+  [docs/selected-flow-contract.md](../../selected-flow-contract.md) for current
   selected-flow and selected-packet presentation rules
 
 ## Purpose

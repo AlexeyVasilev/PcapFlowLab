@@ -8,8 +8,8 @@ The selected-flow `Flow Rate` block described here has been implemented.
 
 For the current Analysis feature contract and shared UI semantics, use:
 
-- [analysis-tab.md](analysis-tab.md)
-- [ui/presentation_contract.md](ui/presentation_contract.md)
+- [analysis-tab.md](../../analysis-tab.md)
+- [ui/presentation_contract.md](../../ui/presentation_contract.md)
 
 This RFC is retained to preserve the design rationale and constraints that led
 to the current rate-graph implementation. Historical references to MVP or

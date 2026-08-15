@@ -6,7 +6,7 @@ This document is the authoritative repository-level reference for current protoc
 
 Related design docs:
 
-- `docs/protocols/overlay_inner_flow_tuple_branch.md`
+- `docs/history/design/overlay_inner_flow_tuple_branch.md`
 - `docs/protocols/protocol_path_flow_identity.md`
 
 It describes what "support" means for each protocol across:

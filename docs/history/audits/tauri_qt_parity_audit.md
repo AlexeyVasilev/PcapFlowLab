@@ -13,7 +13,7 @@ It is not the canonical current UI contract.
 
 Current product/presentation semantics are defined by:
 
-- [presentation_contract.md](presentation_contract.md)
+- [presentation_contract.md](../../ui/presentation_contract.md)
 - current production code
 - current user documentation
 

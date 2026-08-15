@@ -9,8 +9,8 @@ Role:
 - This document is the current guidance layer for large-capture and selected-flow scalability work.
 - It describes stable boundedness, caching, and source-backed-read rules that should remain true in current main.
 - Historical experiments, rejected strategies, and deferred redesign ideas belong in:
-  - [docs/large-file-read-optimization-plan.md](large-file-read-optimization-plan.md)
-  - [docs/packet-read-path-analysis.md](packet-read-path-analysis.md)
+  - [docs/history/investigations/large-file-read-optimization-plan.md](history/investigations/large-file-read-optimization-plan.md)
+  - [docs/history/investigations/packet-read-path-analysis.md](history/investigations/packet-read-path-analysis.md)
 
 ## Core Principle
 

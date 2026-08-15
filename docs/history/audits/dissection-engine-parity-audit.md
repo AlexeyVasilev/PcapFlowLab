@@ -16,8 +16,8 @@ not the canonical current description of all parser ownership in 0.3.0.
 
 Current architecture belongs primarily in:
 
-- [architecture.md](architecture.md)
-- [protocols/protocol_support.md](protocols/protocol_support.md)
+- [architecture.md](../../architecture.md)
+- [protocols/protocol_support.md](../../protocols/protocol_support.md)
 
 Some cleanup state changed after the audit date, but the broader verdict
 remains historical rather than a continuously rewritten current-state marker.
@@ -78,7 +78,7 @@ Parity-contract evidence:
 - `tests/data/parsing/geneve/README.md`
 - `tests/data/parsing/gtpu/README.md`
 - `docs/dissection-import-validation.md`
-- `docs/dissection-engine-rfc.md`
+- `docs/history/rfc/dissection-engine-rfc.md`
 - `CMakeLists.txt`
 
 ## Production import contract traced from code

@@ -9,9 +9,9 @@ This document remains useful because it explains the presentation boundaries and
 why the current QUIC surfaces are intentionally conservative. The authoritative
 current product contract lives in:
 
-- [docs/protocols/protocol_support.md](docs/protocols/protocol_support.md)
-- [docs/stream_architecture.md](docs/stream_architecture.md)
-- [docs/selected-flow-contract.md](docs/selected-flow-contract.md)
+- [docs/protocols/protocol_support.md](../../protocols/protocol_support.md)
+- [docs/stream_architecture.md](../../stream_architecture.md)
+- [docs/selected-flow-contract.md](../../selected-flow-contract.md)
 
 ## Purpose
 
@@ -102,7 +102,7 @@ non-Initial rows such as `0-RTT`, `Handshake`, and `Protected payload`.
 
 ## Architectural alignment
 
-The RFC must remain aligned with the existing selected-flow analysis boundaries described in [docs/stream_architecture.md](docs/stream_architecture.md) and [docs/architecture.md](docs/architecture.md).
+The RFC must remain aligned with the existing selected-flow analysis boundaries described in [docs/stream_architecture.md](../../stream_architecture.md) and [docs/architecture.md](../../architecture.md).
 
 QUIC presentation work at this stage is:
 
@@ -684,8 +684,8 @@ behavior.
 
 This RFC complements the current Stream and planning documents rather than replacing them.
 
-- [docs/stream_architecture.md](docs/stream_architecture.md) defines the selected-flow Stream boundaries
-- [docs/current-state.md](docs/current-state.md) records the current narrow QUIC support level
-- [docs/next-steps.md](docs/next-steps.md) tracks short-term implementation priorities
+- [docs/stream_architecture.md](../../stream_architecture.md) defines the selected-flow Stream boundaries
+- [docs/current-state.md](../../current-state.md) records the current narrow QUIC support level
+- [docs/history/plans/next-steps.md](../plans/next-steps.md) tracks short-term implementation priorities
 
 The practical effect of this RFC is to define the conceptual model that later QUIC work should follow.

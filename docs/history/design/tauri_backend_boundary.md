@@ -10,8 +10,8 @@ adapter from Qt-oriented application/session code for the Tauri spike.
 
 Current architecture is documented in:
 
-- [../architecture.md](../architecture.md)
-- [../ui/frontend_dto_mapping.md](../ui/frontend_dto_mapping.md)
+- [../../architecture.md](../../architecture.md)
+- [../../ui/frontend_dto_mapping.md](../../ui/frontend_dto_mapping.md)
 
 This document preserves useful design rationale and the original minimal
 adapter-plan framing. It should not be read as the current exhaustive adapter
@@ -328,7 +328,7 @@ The current adapter has since grown substantially beyond this first plan and
 now covers a much broader set of shared operations, including source attach,
 index save, exports, Packet Details, Stream, Statistics, Analysis, Settings,
 Protocol Path, and other frontend-facing contracts. See
-[../ui/frontend_dto_mapping.md](../ui/frontend_dto_mapping.md) for the current
+[../../ui/frontend_dto_mapping.md](../../ui/frontend_dto_mapping.md) for the current
 implementation mapping instead of treating the lists below as current API
 authority.
 

@@ -293,7 +293,7 @@ The following must remain true.
 ## See Also
 
 - [stream_architecture.md](./stream_architecture.md)
-- [quic-stream-presentation-rfc.md](./quic-stream-presentation-rfc.md)
+- [historical QUIC stream presentation rationale](./history/rfc/quic-stream-presentation-rfc.md)
 - [quic-fixture-01-reference.md](./quic-fixture-01-reference.md)
 - [quic-fixture-02-reference.md](./quic-fixture-02-reference.md)
 - [current-state.md](./current-state.md)

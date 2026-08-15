@@ -4,7 +4,7 @@ Status: Partially implemented design RFC - production import cutover complete
 Scope: Packet-oriented L2-L4 and tunnel dissection
 Implementation branch: `feature/unified-packet-dissection` (historical)
 
-Static cutover audit: see `docs/dissection-engine-parity-audit.md`.
+Static cutover audit: see `docs/history/audits/dissection-engine-parity-audit.md`.
 
 ## Current implementation status
 
@@ -892,7 +892,7 @@ remaining work is parity closure and production integration.
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
 The July 24, 2026 static audit in
-`docs/dissection-engine-parity-audit.md` no longer identifies any known
+`docs/history/audits/dissection-engine-parity-audit.md` no longer identifies any known
 protocol-family semantic blockers in the audited fixture set. This stage
 is now complete for the selected fixture corpus and representative real-capture
 validation set. The committed whole-session parity harness at

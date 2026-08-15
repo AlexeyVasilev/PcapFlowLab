@@ -15,7 +15,7 @@ Current role:
 - No code changes were made for this analysis.
 - Focus is the current open/import path and the production callers that consume `read_next()`.
 - Goal: understand byte ownership, lifetime, and optimization risk before touching the reader/import path.
-- Follow-up architecture work for unifying packet traversal is now documented separately in `docs/dissection-engine-rfc.md`; this note remains about the current production byte path only.
+- Follow-up architecture work for unifying packet traversal is now documented separately in `docs/history/rfc/dissection-engine-rfc.md`; this note remains about the current production byte path only.
 
 Current-production updates since this investigation:
 
