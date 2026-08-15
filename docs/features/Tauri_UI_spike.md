@@ -1,20 +1,40 @@
-# RFC: Tauri UI
+# Tauri UI Spike
 
 ## Status
-Draft, but now substantially beyond the original bring-up slice.
+
+Implemented experimental frontend design / evolution document.
+
+The Tauri work began as a frontend spike and evolved into a meaningful
+alternative desktop frontend over the shared C++ backend/session layer.
+
+Qt remains the reference desktop UI.
+Tauri remains experimental.
+
+Current shared UI semantics are defined canonically in:
+
+- [../ui/presentation_contract.md](../ui/presentation_contract.md)
+- [../ui/frontend_dto_mapping.md](../ui/frontend_dto_mapping.md)
+- [../ui/tauri_qt_parity_audit.md](../ui/tauri_qt_parity_audit.md)
+- [../protocols/protocol_support.md](../protocols/protocol_support.md)
+
+This document is retained primarily for Tauri-specific evolution history,
+architecture decisions, experimental frontend constraints, and implementation
+context. It is not the canonical current Qt/Tauri presentation contract.
 
 ## Motivation
 
 Pcap Flow Lab already has a layered architecture with a C++ core, application/session layer, and a Qt desktop UI. The experimental Tauri UI validates that a modern webview-based desktop frontend can sit on top of the same backend/session layer without changing packet-processing behavior.
 
-Current shared protocol-detection, packet-details, payload, and stream support is documented in [protocol_support.md](../protocols/protocol_support.md).
+Current shared protocol-detection and inspection coverage is documented in
+[protocol_support.md](../protocols/protocol_support.md).
 
 ## Goals
 
 - Evaluate Tauri as an experimental desktop frontend.
 - Keep the existing C++ core and session logic.
 - Define and exercise a frontend-neutral adapter boundary.
-- Validate a realistic selected-flow analyzer workflow across flows, packets, stream, statistics, and first-slice analysis.
+- Validate a realistic selected-flow desktop workflow across flows, packets,
+  stream, statistics, and analysis.
 
 ## Non-goals
 
@@ -40,36 +60,32 @@ This makes the project suitable for a frontend experiment that requests richer d
 
 ## Backend / adapter direction
 
-The Tauri UI now relies on a small frontend-neutral adapter over `CaptureSession`.
+The Tauri UI relies on the shared `FrontendSessionAdapter` /
+`FrontendSessionAdapterBridge` boundary over `CaptureSession`.
 
-Current adapter-backed operations include:
+The adapter surface has grown substantially beyond the original bring-up slice.
+Rather than treating a short method list here as exhaustive, the important
+current capability groups are:
 
-- `open_capture(path, open_mode)`
-- `save_index(path)`
-- `export_current_flow(path)`
-- `export_selected_flows(path, flow_indices)`
-- `export_smart_flows(path, flow_indices, options)`
-- `get_overview()`
-- `get_flows()`
-- `select_flow(flow_index)`
-- `get_selected_flow_packets(offset, limit)`
-- `get_selected_flow_packet_details(packet_index)`
-- `get_selected_flow_stream(packet_window, item_limit)`
-- `get_selected_flow_analysis()`
+- capture/index opening and source-availability state
+- source attach and index save
+- settings exchange/update
+- flow queries and flow export workflows
+- Smart Export workflows
+- Packet Details and packet-byte materialization/export
+- Stream and Stream Item Details / Item Data
+- Statistics and Protocol Path DTOs
+- selected-flow Analysis and sequence export
+- supported-protocol catalog exposure
 
-The existing Qt UI remains the reference implementation for richer presentation semantics, but the Tauri path now exercises a meaningful shared DTO surface for:
+Qt remains the richer reference desktop UI in several presentation/workflow
+areas, but the Tauri path now exercises a meaningful shared DTO/presentation
+surface instead of a narrow first-slice adapter.
 
-- flows
-- packet rows
-- packet details
-- source availability
-- stream items
-- overview/statistics
-- first-slice selected-flow analysis
+## Current experimental status
 
-## Current Tauri shell status
-
-The current Tauri UI now supports:
+The current Tauri UI supports the major desktop workflow areas below while
+remaining an experimental frontend:
 
 - compact Qt-like `File / Flow / View / Help` menu shell
 - `Help -> About` dialog aligned more closely with the Qt About content, but labeled for `Tauri`
@@ -86,7 +102,7 @@ The current Tauri UI now supports:
 - `Flow -> Export Unselected Flows` through the existing batch flow-export/session path
 - `Flow -> Export All Flows Info to CSV...` through the shared flow-manifest CSV/session path
 - `Flow -> Smart Export...` through the existing smart-export/session path
-- `View -> Settings` for the currently shared safe runtime settings slice
+- `View -> Settings` for the current shared runtime-safe settings slice
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
@@ -105,7 +121,16 @@ The current Tauri UI now supports:
 - Qt-aligned top-level tab order and runtime-only adjustable splitters for the Flows and Analysis workspaces
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
 
-## Current Flows capability
+For detailed current UI semantics, refer to the canonical presentation and
+mapping docs rather than treating the lists below as the authority for shared
+product behavior.
+
+## Implemented areas
+
+This document keeps a compact Tauri-oriented inventory of major implemented
+areas. It is intentionally not a complete current user manual.
+
+### Flows
 
 The `Flows` tab now supports:
 
@@ -162,7 +187,7 @@ The `Flows` tab now supports:
   - `Help -> About`
   - `View -> Settings`
 
-## Current Stream capability
+### Stream
 
 The `Stream` tab now supports:
 
@@ -182,7 +207,7 @@ The `Stream` tab now supports:
 - stream reconstruction can recover after a valid source-capture attach
 - selected-flow stream latency on very large flows remains a known optimization area
 
-## Current Statistics capability
+### Statistics
 
 The `Statistics` tab now supports:
 
@@ -234,9 +259,9 @@ Backend/API note:
 - Tauri overview no longer duplicates these optional-section payloads
 - Protocol Path remains on its separate lazy request/cache path
 
-## Current Analysis capability
+### Analysis
 
-The `Analysis` tab now supports a first selected-flow-only, on-demand analysis workspace:
+The `Analysis` tab supports a selected-flow-only, on-demand analysis workspace:
 
 - left-side Analysis Flows list built from already loaded flow DTOs
 - Analysis Flows `Packets` and `Bytes` columns now match Qt-style plain integer formatting in that table
@@ -277,9 +302,13 @@ Open workflow:
 - cancel during open reuses the existing shared session/open cancellation path
 - redundant `Opened capture:` / `Opened index:` success lines are intentionally omitted because the active-session area already carries that information
 
+### Settings
+
 `View -> Settings`:
 
-- is now enabled in Tauri
+- is enabled in Tauri
+- uses staged dialog state like Qt
+- `OK` commits and `Cancel` discards draft state
 - is intentionally runtime-only
 - is organized into:
   - `View & Inspection`
@@ -295,6 +324,8 @@ Open workflow:
   - `Ignore GTP-U TEIDs when grouping inner flows`
 - applies the Wireshark-filter visibility toggle immediately after `OK`
 - applies packet checksum validation only to selected packet details when readable source bytes are available
+- capture-processing grouping settings apply on the next raw import/reopen
+- committed runtime settings do not reinterpret an already opened index
 
 `Flow -> Export Current Flow`:
 
@@ -375,12 +406,14 @@ The dev-only memory diagnostics workflow:
 - is intended for manual leak/retention investigation only
 - does not change product behavior when disabled
 
+### Experimental/frontend constraints
+
 Current Tauri shell hardening constraints:
 
 - `src-tauri/tauri.conf.json` still keeps `withGlobalTauri: true` because the current plain HTML/JS shell depends on the injected global bridge.
 - `src-tauri/tauri.conf.json` still keeps `security.csp: null` for the current experimental shell; tightening CSP safely is still a separate hardening pass because the current plain HTML/JS shell depends on the injected global bridge and runtime-verified DOM/style behavior.
 
-## Current limitations and remaining Qt gaps
+## Remaining experimental limitations worth preserving
 
 The Tauri UI is now functionally close to Qt for primary workflows, but it is still not full Qt parity. The main remaining gaps are:
 
@@ -388,11 +421,13 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
 - the shared runtime settings slice now includes both `Ignore VLAN and MPLS layers when grouping flows` and `Ignore GTP-U TEIDs when grouping inner flows`, and the Tauri shell mirrors the same reopen-required status plus the same raw-import and index-loaded informational grouping banners as Qt
-- packet inspector still intentionally simpler than Qt even though it now has `Summary / Bytes`
+- packet inspector still intentionally simpler than Qt even though it now has
+  `Summary / Bytes`
 - packet details display polish remains incomplete compared with Qt
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing
-- stream item details are now much closer to Qt, but some protocol-specific formatting/helper paths still remain Qt-only
+- stream item details are now much closer to Qt, but some protocol-specific
+  formatting/helper paths still remain Qt-only
 - statistics still miss some deeper drill-down/navigation behavior compared with Qt
 - Analysis still misses:
   - richer charts
@@ -402,9 +437,10 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - very large sessions now keep the async open progress/cancel path, overview, and statistics available, but the shell skips eager full `get_flows()` loading above `250,000` flows to avoid hanging on multi-million-flow captures or very large indexes
 - packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred
 - memory diagnostics exist, but they are investigative only; they are not a substitute for a future large-capture performance / virtualization pass
-- frontend virtualization is now the first mitigation layer, but backend paging/filtering/sorting is still deferred for very large captures
+- frontend virtualization is now the first mitigation layer, but backend
+  paging/filtering/sorting is still deferred for very large captures
 
-## Current deferred items
+## Historical/deferred follow-up themes
 
 - Save/open index workflow polish
 - settings persistence and any broader Settings/preferences parity
@@ -416,7 +452,7 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
 - shared packet-byte read optimization in the backend/session path
 - deeper large-capture memory and DTO-size optimization if needed
 
-## Next priorities after merge
+## Example later priorities from this evolution stage
 
 1. Tauri/UI parity polish versus Qt, especially compact layout and presentation details
 2. Selected-flow packet and stream latency investigation for very large flows

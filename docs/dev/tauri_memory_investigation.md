@@ -1,5 +1,16 @@
 # Tauri Memory Investigation
 
+## Status
+
+Engineering investigation / diagnostic reference.
+
+This document records a Tauri memory ownership/retention investigation and the
+diagnostic hooks added to support repeated-open measurement. It is not the
+canonical current Tauri architecture or current UI capability contract.
+
+Its conclusions are scoped to the inspected implementation and the measurement
+approach used during the investigation.
+
 ## Scope
 
 This note captures a static ownership and retention audit for the experimental Tauri UI, plus the dev-only diagnostics hooks added to make repeated-open memory behavior measurable without changing product behavior.
@@ -87,7 +98,10 @@ Logged phases currently include:
 - `before_next_open`
 - `after_next_open`
 
-## Static audit findings
+These diagnostics remain an engineering aid. They are not a user-facing product
+feature and do not define current runtime semantics by themselves.
+
+## Findings at the time of the investigation
 
 ### 1. `CaptureSession` / `FrontendSessionAdapter` lifetime
 
@@ -111,7 +125,8 @@ Important consequence:
 - there is no obvious nested cross-FFI ownership tree for DTO arrays/strings;
 - the top-level owned FFI allocation appears to be released correctly after every command response.
 
-No clear small FFI leak was identified in the current JSON bridge path, so no FFI ownership fix was made in this pass.
+No clear small FFI leak was identified in the current JSON bridge path, so no
+FFI ownership fix was made during this investigation.
 
 ### 3. Rust DTO conversion and command return path
 
@@ -119,7 +134,7 @@ No clear small FFI leak was identified in the current JSON bridge path, so no FF
 - We did not find a second persistent Rust-side cache of the large flow/statistics/analysis DTO payloads.
 - The main risk in Rust is therefore not a repeated response leak but lack of observability around repeated command cycles.
 
-This pass adds only the dev-only CSV logger to that layer.
+This investigation added only the dev-only CSV logger to that layer.
 
 ### 4. JS state retention
 
@@ -142,7 +157,8 @@ Before this pass, the app already had logical cleanup helpers such as:
 
 The remaining risk was that large rendered DOM tables and text containers could stay populated until the next render, while the new open was already starting.
 
-This pass hardens cleanup by explicitly clearing the main rendered table bodies and analysis/details text containers before the next open.
+This investigation hardened cleanup by explicitly clearing the main rendered
+table bodies and analysis/details text containers before the next open.
 
 It also adds a first large-capture mitigation in the web shell:
 
@@ -168,7 +184,9 @@ The remaining risk:
 
 - large table DOMs and large HTML strings can still temporarily retain memory until the WebView and JS engine reclaim them;
 - repeated open cycles may therefore show high-water behavior even without a true logic leak.
-- selected-flow packet and stream latency on very large flows can still be dominated by the shared backend/session packet-byte read path rather than by DOM retention alone.
+- selected-flow packet and stream latency on very large flows can still be
+  dominated by the shared backend/session packet-byte read path rather than by
+  DOM retention alone.
 
 ### 6. Repeated-open cleanup risk
 
@@ -180,7 +198,8 @@ Repeated opens were the highest-risk workflow for retention, because the app cou
 - old statistics tables
 - old DOM table rows
 
-This pass makes that workflow more observable and more deterministic by:
+Changes made during the investigation made that workflow more observable and
+more deterministic by:
 
 - logging `before_next_open`
 - logging `before_open_cleanup` and `after_open_cleanup`
@@ -201,7 +220,7 @@ These are the most likely sources of elevated memory usage even if no strict own
 5. WebView allocator / JS GC lag after repeated table teardown and rebuild.
 6. Shared packet-byte reads for very large selected flows, especially when stream reconstruction or payload analysis touches many packet offsets.
 
-## Fixes made in this pass
+## Changes made during the investigation
 
 Concrete fixes made:
 
@@ -210,7 +229,7 @@ Concrete fixes made:
 - active lower-pane-only rendering for `Packets` vs `Stream`
 - lightweight frontend virtualization for the main Flows table and the Analysis flow list
 
-Concrete leak fixes not made:
+Changes deliberately not made during the investigation:
 
 - no FFI ownership bug was clearly identified in the current JSON bridge path
 - no `CaptureSession` core lifetime change was made
@@ -241,12 +260,15 @@ Recommended repeated-open measurement protocol:
    - whether large analysis/statistics row counts persist unexpectedly across `before_next_open` -> `after_open_cleanup`
    - whether `process_working_set_bytes` climbs monotonically or stabilizes
 
-Because working set is allocator- and WebView-dependent, also cross-check with external OS tools:
+Because working set is allocator- and WebView-dependent, also cross-check with
+external OS tools:
 
 - Windows Task Manager
 - Process Explorer
 
-The external check matters because working set may stay elevated briefly even when JS arrays and DOM nodes are no longer logically referenced.
+The external check matters because working set may stay elevated briefly even
+when JS arrays and DOM nodes are no longer logically referenced. High-water
+memory by itself is not proof of a leak.
 
 ## Deferred optimization candidates
 
