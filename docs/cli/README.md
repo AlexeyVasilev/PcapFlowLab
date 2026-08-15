@@ -1,37 +1,9 @@
-# CLI V2 Overview
+# CLI Overview
 
-This directory documents the current PcapFlowLab CLI v2 architecture and
-command contracts.
+This directory contains the technical reference for the current Pcap Flow Lab
+command-line interface.
 
-- It is not current command help.
-- The current production CLI exposes the five-command v2-style public surface:
-  `summary`, `flows`, `export-flows`, `flow-info`, and `packet-info`.
-- The command documents in this folder describe the current implemented CLI.
-- Runtime `--help` remains the authoritative syntax reference.
-
-For the full architecture contract, see [architecture.md](./architecture.md).
-For the detailed `summary` command contract, see
-[commands/summary.md](./commands/summary.md).
-For the detailed `flows` command contract, see
-[commands/flows.md](./commands/flows.md).
-For the detailed `export-flows` command contract, see
-[commands/export-flows.md](./commands/export-flows.md).
-For the detailed `flow-info` command contract, see
-[commands/flow-info.md](./commands/flow-info.md).
-For the detailed `packet-info` command contract, see
-[commands/packet-info.md](./commands/packet-info.md).
-
-## What The CLI Is For
-
-CLI v2 supports:
-
-- complete capture or index summary work
-- flow-list querying
-- flow packet export
-- selected-flow analysis
-- packet inspection
-
-The five primary public commands are:
+The public command surface is:
 
 - `summary`
 - `flows`
@@ -39,181 +11,88 @@ The five primary public commands are:
 - `flow-info`
 - `packet-info`
 
-There is no separate top-level `statistics` command in the current v2 model.
+Global help documents only those canonical command names. The dispatcher also
+accepts a small compatibility alias set, but this reference uses the canonical
+names throughout.
 
-## Default Command Behavior
+## Command index
 
-These forms are equivalent:
+- [Architecture](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/architecture.md)
+- [summary](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/summary.md)
+- [flows](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/flows.md)
+- [export-flows](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/export-flows.md)
+- [flow-info](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/flow-info.md)
+- [packet-info](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/packet-info.md)
+
+## Input model
+
+All commands accept either:
+
+- a positional input path; or
+- `--input <path>`
+
+Those two forms are mutually exclusive. Using both in the same invocation is
+invalid, even if both paths are identical or resolve to the same file.
+
+Examples:
 
 ```text
-pcap-flow-lab capture.pcap
 pcap-flow-lab summary capture.pcap
+pcap-flow-lab summary --input capture.pcap
+pcap-flow-lab capture.pcap
 pcap-flow-lab --input capture.pcap
 ```
 
-The default command is `summary`.
-
-## Input Forms
-
-CLI v2 supports:
-
-- positional input path
-- `--input <path>`
-
-These input forms are mutually exclusive and must not be combined in one
-invocation.
-
-Supported analysis input concepts are:
-
-- PCAP
-- PCAPNG
-- PcapFlowLab index
-
-For byte-backed operations against an index, CLI v2 also reserves:
+Invalid:
 
 ```text
---source-capture <path>
+pcap-flow-lab summary capture.pcap --input capture.pcap
 ```
 
-## Common Option Concepts
+## Supported input types
 
-| Option | Role |
-| --- | --- |
-| `--input <path>` | Explicit input path |
-| `--source-capture <path>` | Source-capture override for byte-backed index operations |
-| `--settings <settings.json>` | Narrow CLI JSON settings subset for raw-capture import |
-| `--filter <text>` | Flow-text filtering for flow-oriented commands |
-| `--sort <field>:<asc\|desc>` | Flow sorting for flow-oriented commands |
-| `--limit <N>` | Limit result flow count after selection, filter, and sort |
-| `--flow-number <N>` | Select one canonical user-facing flow |
-| `--flow-numbers <range>` | Select a set of canonical user-facing flows |
-| `--packets-in-flow <range>` | Select packets by position inside one flow |
-| `--packets-in-file <range>` | Select packets by number in the complete capture |
-| `--format <format>` | Command- or artifact-specific output format |
-| `--force` | Allow overwriting existing output files |
-| `--progress auto\|on\|off` | Progress display policy |
+The CLI auto-detects:
 
-## Summary Versus Flow-Oriented Commands
+- raw capture files;
+- capture indexes.
 
-`summary` is always whole-capture or whole-index.
+Some commands can operate fully on an index. Commands that need source bytes may
+require the original capture to be available, or may require
+`--source-capture <path>` when opening an index.
 
-- It is not flow-filtered.
-- It does not accept flow-selection options.
-- It prints Basic Summary by default.
-- `--extended` adds selected whole-capture statistics sections.
-- Protocol Path Tree preview belongs to `summary` and is controlled
-  independently.
-- Protocol Path Tree belongs to the summary/statistics domain.
+## Settings JSON
 
-Filtering, sorting, and limiting belong to flow-oriented commands such as:
+The CLI settings JSON parser currently accepts only these boolean fields:
 
-- `flows`
-- `export-flows`
+- `ignore_vlan_and_mpls_layers_when_grouping_flows`
+- `ignore_gtpu_teids_when_grouping_inner_flows`
+- `validate_selected_packet_checksums`
 
-## Numbering Model
+Unknown fields are rejected.
 
-CLI v2 user-facing flow and packet numbers are 1-based in the documented
-command contracts.
+Example:
 
-- flow numbers refer to canonical session flows
-- sorting does not renumber flows
-- packet numbering in file and packet numbering in flow are separate coordinate
-  systems
-
-The documented `flows` contract also defines:
-
-- one-based canonical flow numbering
-- filtering and sorting semantics for flow-oriented commands
-- a default 25-row stdout preview
-- CSV metadata export for selected flow lists
-
-## stdout And stderr
-
-Current stream contract:
-
-`stdout`
-: requested command data
-
-`stderr`
-: progress, warnings, errors, diagnostics
-
-This keeps shell pipelines predictable.
-
-## Progress
-
-CLI v2 reserves:
-
-```text
---progress auto
---progress on
---progress off
+```json
+{
+  "ignore_vlan_and_mpls_layers_when_grouping_flows": true,
+  "ignore_gtpu_teids_when_grouping_inner_flows": false,
+  "validate_selected_packet_checksums": true
+}
 ```
 
-Default behavior is `auto`.
+## Progress and help
 
-- `auto`: show live progress only when `stderr` is an interactive terminal
-- `on`: force live progress, including when `stderr` is redirected
-- `off`: disable progress
-- progress belongs on `stderr`
-- requested command data remains on `stdout`
+- Top-level `pcap-flow-lab --help` prints global help and exits successfully.
+- Top-level `pcap-flow-lab` prints the same global help body but exits
+  non-zero because no command or input was provided.
+- Command-specific parse errors print an error followed by command help.
+- `--progress` is supported where documented by each command.
 
-## Examples
+## Numbering
 
-Default summary invocation:
+All user-facing flow numbers and packet numbers are 1-based.
 
-```text
-pcap-flow-lab capture.pcap
-```
+## Related end-user docs
 
-Explicit summary against an index:
-
-```text
-pcap-flow-lab summary capture.idx
-```
-
-Filtered and sorted flow list:
-
-```text
-pcap-flow-lab flows capture.idx \
-    --filter "QUIC" \
-    --sort bytes:desc \
-    --limit 100
-```
-
-Selected flow export:
-
-```text
-pcap-flow-lab export-flows capture.idx \
-    --filter "192.168.0.152" \
-    --out selected.pcap
-```
-
-Selected-flow analysis:
-
-```text
-pcap-flow-lab flow-info capture.idx --flow-number 42
-```
-
-Packet inspection by packet number inside a selected flow:
-
-```text
-pcap-flow-lab packet-info capture.pcap \
-    --flow-number 42 \
-    --packet-in-flow 7
-```
-
-## Next Documentation Layer
-
-Detailed command documentation is available here for the current implemented
-commands:
-
-- `docs/cli/commands/summary.md`
-- `docs/cli/commands/flows.md`
-- `docs/cli/commands/export-flows.md` (now defined and implemented in production)
-- `docs/cli/commands/flow-info.md` (now defined and implemented in production)
-- `docs/cli/commands/packet-info.md` (now defined and implemented in production)
-
-`summary.md`, `flows.md`, `export-flows.md`, `flow-info.md`, and
-`packet-info.md` now exist.
-
-`packet-info` is now implemented in the current production CLI.
+The technical CLI reference in `docs/cli/**` describes command contracts and
+behavior. End-user workflow guides live separately in `user_docs/cli/**`.
