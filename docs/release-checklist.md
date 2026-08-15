@@ -27,6 +27,7 @@ targets:
 - [ ] `PcapFlowLab-0.3.0-windows-x64-tauri.zip`
 - [ ] `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz`
 - [ ] `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz`
+- [ ] `pcap_flow_lab_showcase.pcap`
 
 Release artifacts are manually assembled and manually verified.
 
@@ -141,22 +142,25 @@ Release artifacts are manually assembled and manually verified.
 ## 12. Archive and package review
 
 - [ ] Each archive opens into one clean top-level directory.
-- [ ] Each archive contains the intended frontend executable/application and the
-      runtime files it needs.
+- [ ] Each archive contains the intended frontend executable/application, the
+      same-platform `pcap-flow-lab` CLI, and the runtime files it needs.
 - [ ] No archive contains tests, debug outputs, build logs, temporary files, or
       unrelated development artifacts.
-- [ ] `README.md` is included in each manually prepared release bundle, or a
-      release-specific README decision is documented before packaging.
+- [ ] `README.md` copied from `docs/release-package-readme.md` is included in
+      each manually prepared release bundle.
 - [ ] `LICENSE` is included in each manually prepared release bundle unless a
       different established packaging rule is documented.
-- [ ] Packaging review explicitly decides whether the GitHub-oriented root
-      README is shipped as-is inside the binary archives or whether a short
-      release-specific README copy is needed.
+- [ ] The root GitHub `README.md` is not copied unchanged into release
+      archives.
+- [ ] The correct frontend is present in each archive.
+- [ ] No wrong-platform CLI or frontend was copied into any archive.
 
-## 13. CLI inclusion decision
+## 13. Release metadata and checksums
 
-- [ ] Decide and document whether `pcap-flow-lab` CLI is included in each
-      desktop archive or distributed through a specific subset of archives.
+- [ ] `SHA256SUMS.txt` is generated only after the final four archives and the
+      standalone showcase asset are frozen.
+- [ ] `SHA256SUMS.txt` matches all four application archives and
+      `pcap_flow_lab_showcase.pcap`.
 
 ## 14. Release notes and metadata
 

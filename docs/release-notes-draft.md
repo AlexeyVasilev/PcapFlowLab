@@ -107,6 +107,9 @@ The release also includes practical export workflows across the shared backend,
 including Smart Export, per-flow output where supported, flow metadata export,
 and selected byte export from the interactive inspection surfaces.
 
+Each prebuilt desktop archive also includes the `pcap-flow-lab` CLI and a short
+package-oriented `README.md`.
+
 ## Protocol coverage
 
 0.3.0 significantly expands protocol coverage at the user-facing level.
@@ -165,6 +168,10 @@ Pcap Flow Lab 0.3.0 is planned to publish four prebuilt application archives:
 - `PcapFlowLab-0.3.0-windows-x64-tauri.zip`
 - `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz`
 - `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz`
+
+In addition, the release publishes one separate sample asset:
+
+- `pcap_flow_lab_showcase.pcap`
 
 Windows therefore has prebuilt Qt and Tauri applications. Ubuntu therefore has
 prebuilt Qt and Tauri applications. Qt remains the primary desktop UI. Tauri

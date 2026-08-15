@@ -15,6 +15,7 @@ Use this as the compact publication-day pass for the actual GitHub release.
 - [ ] `PcapFlowLab-0.3.0-ubuntu-x64-qt.tar.gz` exists.
 - [ ] `PcapFlowLab-0.3.0-ubuntu-x64-tauri.tar.gz` exists.
 - [ ] All four archive names match the agreed names exactly.
+- [ ] `pcap_flow_lab_showcase.pcap` exists as the standalone showcase asset.
 
 ## Smoke verification status
 
@@ -35,12 +36,16 @@ Use this as the compact publication-day pass for the actual GitHub release.
 
 - [ ] LICENSE and package-content checks passed.
 - [ ] Each archive has one clean top-level directory.
+- [ ] Package `README.md` is present in all four archives.
+- [ ] `LICENSE` is present in all four archives.
+- [ ] `pcap-flow-lab` CLI is present in all four archives.
+- [ ] The correct frontend is present in each archive.
+- [ ] No wrong-platform CLI or frontend was copied.
 - [ ] No unpublished, extra, debug, test, log, or temporary artifacts are
       attached.
-- [ ] Pre-packaging decision about CLI inclusion in desktop archives is
-      completed and documented.
-- [ ] Pre-packaging decision about whether archive users get the root README or
-      a short release-specific README copy is completed and documented.
+- [ ] `SHA256SUMS.txt` was generated only after the final assets were frozen.
+- [ ] `SHA256SUMS.txt` matches all four archives and
+      `pcap_flow_lab_showcase.pcap`.
 
 ## Links and guides
 
