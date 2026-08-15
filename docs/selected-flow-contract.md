@@ -43,13 +43,13 @@ The packet list is the packet-truth view for the selected flow.
 - Packets remain visible even when marked as retransmissions.
 - Marker columns may annotate special cases such as suspected retransmission.
 - Packet Details describe the selected packet itself, not the deduplicated stream interpretation.
-- Packet protocol details depend on analyzable bytes from that packet and its bounded selected-flow context where applicable.
+- Packet Details remain packet-oriented even when some explicitly supported derived byte views use bounded selected-flow context.
 
 Packet list invariants:
 
 - A retransmitted packet must stay visible in `Packets`.
 - Marker visibility must not depend on whether stream contribution is suppressed.
-- Packet-level raw/protocol inspection remains available for the selected packet when bytes are available.
+- Packet-level Summary and Bytes inspection remain available for the selected packet when bytes are available.
 
 ## 5. Stream Contract
 
@@ -64,7 +64,7 @@ A stream item is a semantic or presentation unit for the selected flow.
 Stream behavior rules:
 
 - Stream is built on-demand for the selected flow only.
-- `Load more` expands the packet window and can extend or improve stream output.
+- `Load more` expands the cumulative packet window and can extend or improve stream output.
 - The packet window is always a bounded prefix of the selected flow's packets, not an arbitrary sparse selection.
 - The logical-item budget applies inside protocol-aware reconstruction as a cumulative bound for that query shape.
 - Selected-flow UI queries may request one extra logical item of lookahead so the frontend can distinguish a complete visible result from `can_load_more`.
@@ -75,6 +75,7 @@ Stream behavior rules:
 - The current retained session context keeps a committed stable prefix and a provisional suffix for the materialized bounded result.
 - Window-incomplete rows may be replaced when the packet window grows.
 - No frontend cursor token is used; callers continue to request cumulative packet/item bounds.
+- Compatible repeated queries and smaller compatible projections may reuse the retained selected-flow context, but larger cumulative bounds still trigger a safe bounded rebuild.
 
 ## 6. Source Ownership Contract
 
@@ -99,6 +100,7 @@ Retransmission handling is selected-flow-only and contribution-oriented.
 - Duplicate TCP contribution must not create duplicate stream semantics.
 - Full duplicate retransmissions are suppressed from selected-flow stream contribution.
 - Conservative partial-overlap suppression is supported for duplicate prefixes where sequence-space and payload agreement are reliable.
+- Duplicate-prefix trimming applies only where authoritative selected-flow TCP contribution metadata makes that trim reliable.
 - More complex overlap, reordering, or gap geometries remain intentionally conservative unless explicitly supported.
 - This suppression applies only to duplicate selected-flow semantic contribution, not to packet visibility or packet-level inspection.
 
@@ -126,6 +128,9 @@ Current visibility rules:
 - there is no visible `Protocol` tab;
 - there are no visible `Raw` or transport-specific `TCP Payload` / `UDP Payload` tabs;
 - Stream Item Details use `Summary` and `Item Data`.
+- Selected packet inspection starts from the selected packet and its source bytes.
+- Explicitly supported derived byte views may also use bounded selected-flow context where authoritative reconstructed or derived bytes exist.
+- Packet Details do not imply unbounded stream reconstruction or global contextual rereads.
 - Packet `Bytes` availability is explicit; a selected byte view may be valid even when its formatted text is empty, for example when an authoritative selected range has zero available bytes.
 
 ### 8.2 Stream Item Details
@@ -171,6 +176,7 @@ Current limitation:
 
 - HTTP stream request/response/partial rows now retain authoritative bounded reconstructed ownership metadata, so Item Data can expose the exact selected HTTP message or partial payload bytes without storing per-row byte vectors.
 - Synthetic HTTP gap rows still expose no Item Data.
+- If bounded reconstruction cannot prove one authoritative owner for the selected HTTP row, Item Data remains explicitly unavailable rather than searching packet contents heuristically.
 
 ## 9. Protocol-Specific Selected-Flow Rules
 
@@ -205,6 +211,7 @@ HTTP selected-flow presentation is message-oriented when reliable header structu
 - Source packet ownership must reflect the contributing packet set.
 - Partial or incomplete HTTP data should fall back conservatively.
 - HTTP body handling remains bounded and practical, not a general body-reconstruction subsystem.
+- Bounded reconstruction may use `Content-Length` and supported chunked-message traversal to retain honest message ownership across complete messages.
 - HTTP Stream Item Summary is driven by retained HTTP semantic kind and retained request/response fields such as method, target, version, status code, reason phrase, and honest reconstruction diagnostics rather than by label text.
 
 ### 9.3 QUIC
@@ -218,8 +225,10 @@ QUIC selected-flow presentation uses a bounded shell-aware model.
   - `QUIC Initial: CRYPTO`
   - `QUIC Initial: ACK`
   - `0-RTT`
-  - `QUIC Handshake`
-  - `QUIC Protected Payload`
+  - `Handshake`
+  - `Protected payload`
+  - `QUIC Retry`
+  - `QUIC Version Negotiation`
 - Standalone `PADDING` and `PING` do not become stream items.
 - QUIC stream item size should reflect semantic item size, not whole UDP packet size.
 - QUIC details may include attached TLS-over-CRYPTO details when reliably derived from bounded available bytes.
@@ -278,7 +287,7 @@ The following must remain true.
 - QUIC item size reflects semantic item size, not whole UDP packet size.
 - Specific TLS labels win over generic TLS fallback when reliably known.
 - TLS Alert details include alert-specific fields when reliably parsed.
-- Details panes use honest context-specific payload tab naming.
+- Details panes use honest context-specific surfaces and explicit availability semantics.
 - Selected-flow analysis remains on-demand only.
 
 ## See Also

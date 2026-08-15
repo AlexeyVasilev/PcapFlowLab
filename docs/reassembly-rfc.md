@@ -17,7 +17,9 @@ Reassembly is currently used to improve Stream item construction for a selected 
 - Output is a temporary buffer plus contributing packet indices and quality flags.
 - Use is per-flow and per-request only.
 - No session-wide or persistent stream cache is part of the current design.
-- Exact duplicate TCP payload segments may be suppressed for selected-flow Stream use when they were already marked by selected-flow retransmission detection.
+- Selected-flow-scoped ephemeral packet caches and selected-flow Stream context reuse may exist as runtime performance helpers.
+- Exact duplicate TCP payload contributions may be suppressed for selected-flow Stream use when they were already marked by selected-flow retransmission detection.
+- Duplicate-prefix trimming may also suppress already-accounted leading bytes when selected-flow TCP contribution metadata proves that trim authoritatively.
 
 ## Bounded reassembly contract
 
@@ -48,11 +50,11 @@ TLS Stream parsing uses directional reassembly when available.
 
 ### HTTP
 
-HTTP Stream parsing also uses directional reassembly, but only for header blocks.
+HTTP Stream parsing also uses directional reassembly in a bounded request/response-oriented way.
 
-- Complete HTTP request and response header blocks are recognized in byte order.
-- A header block spanning multiple TCP packets can appear as one logical stream item when enough bytes are present in the bounded reassembly buffer.
-- Full HTTP body reconstruction is intentionally out of scope, but bounded `Content-Length` and chunked-body traversal may be used to continue across complete messages.
+- Complete HTTP request and response messages can appear as logical stream items when bounded available bytes make message boundaries authoritative.
+- A request or response spanning multiple TCP packets can appear as one logical stream item when enough bytes are present in the bounded reassembly buffer.
+- Full general-purpose HTTP body decoding is intentionally out of scope, but bounded `Content-Length` and supported chunked-body traversal may be used to continue across complete messages and retain honest message ownership.
 - Incomplete or trailing non-header data falls back conservatively to `HTTP Payload`.
 
 ## Accuracy and diagnostic semantics
@@ -60,9 +62,10 @@ HTTP Stream parsing also uses directional reassembly, but only for header blocks
 Current reassembly is heuristic.
 
 - Payload bytes are concatenated in packet order.
-- Exact duplicate TCP payload segments may be skipped when selected-flow suppression context is present.
+- Exact duplicate TCP payload contributions may be skipped when selected-flow suppression context is present.
+- Leading duplicate prefixes may be trimmed when selected-flow contribution metadata proves those bytes were already accounted for.
 - This is not a transport-correct TCP byte stream.
-- Retransmissions, overlaps, and out-of-order repair are not implemented.
+- General retransmission modeling, overlap repair, and out-of-order repair are not implemented.
 - Stream consumers must treat the result as best-effort data.
 
 Quality flags are diagnostic only.
@@ -79,7 +82,6 @@ Persisted:
 
 - normal capture summary and flow state
 - index/checkpoint metadata
-- small final analysis results and flags, when explicitly added by a feature
 
 Not persisted:
 
@@ -92,20 +94,22 @@ Not persisted:
 
 Current Stream analysis remains ephemeral.
 
-- Stream-view data is rebuilt for the selected flow on demand.
-- Any cache is scoped only to the currently selected flow.
+- Stream-view data is materialized for the selected flow on demand.
+- Any cache or retained context is scoped only to the currently selected flow.
 - It may be discarded at any time.
 - It is a UI/performance optimization only, not part of system state.
+- Compatible repeated requests and smaller compatible projections may reuse retained selected-flow state.
+- Larger cumulative bounds currently rebuild the larger bounded prefix safely from packet zero.
 
 ## Non-goals of the current implementation
 
 - no full TCP-correct reconstruction
-- no retransmission modeling
-- no overlap trimming
+- no general retransmission modeling
+- no general overlap trimming
 - no out-of-order repair
 - no bidirectional message stitching
-- no HTTP body reconstruction
-- no chunked transfer decoding
+- no general HTTP body reconstruction subsystem
+- no general chunked transfer decoding subsystem
 - no QUIC stream reassembly yet
 - no persistent stream artifacts
 - no global execution across all flows during open
@@ -118,5 +122,5 @@ Current Stream analysis remains ephemeral.
 
 ## Future direction
 
-- additional retransmission handling may be added for Stream use
+- additional selected-flow retransmission handling may be added for Stream use
 - this will remain bounded and heuristic, not full TCP reconstruction
