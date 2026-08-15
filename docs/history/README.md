@@ -9,8 +9,8 @@ architecture evolved.
 
 They are not authoritative for current Pcap Flow Lab behavior.
 
-The current technical documentation entrypoint is being organized at
-`docs/README.md`.
+Current technical documentation starts at
+[`../README.md`](../README.md).
 
 History folders:
 

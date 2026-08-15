@@ -17,12 +17,12 @@ names throughout.
 
 ## Command index
 
-- [Architecture](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/architecture.md)
-- [summary](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/summary.md)
-- [flows](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/flows.md)
-- [export-flows](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/export-flows.md)
-- [flow-info](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/flow-info.md)
-- [packet-info](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/cli/commands/packet-info.md)
+- [Architecture](architecture.md)
+- [summary](commands/summary.md)
+- [flows](commands/flows.md)
+- [export-flows](commands/export-flows.md)
+- [flow-info](commands/flow-info.md)
+- [packet-info](commands/packet-info.md)
 
 ## Input model
 
