@@ -190,7 +190,24 @@ Implemented now:
 Still pending:
 
 - PacketRef compaction
-- consumer migration from packet-ref rescans to the new aggregate structure
+- broader consumer migration from packet-ref rescans to the new aggregate
+  structure
+
+FlowAnalysis now uses `ConnectionAggregateStats` for:
+
+- captured-byte totals
+- first/last timestamp bounds and derived duration
+- TCP SYN/FIN/RST counts
+- maximum original packet length
+- maximum captured packet length
+
+FlowAnalysis still intentionally scans ordered `PacketRef` collections for:
+
+- packet-size histograms
+- minimum packet lengths
+- inter-arrival/gap/burst calculations
+- rate graph generation
+- sequence preview rows
 
 ## Derived Data
 

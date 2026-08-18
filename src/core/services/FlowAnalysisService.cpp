@@ -83,6 +83,23 @@ std::string format_packet_timestamp(const PacketRef& packet) {
     return timestamp.str();
 }
 
+std::string format_packet_timestamp_us(const std::uint64_t timestamp_us) {
+    const auto total_seconds = static_cast<std::uint32_t>(timestamp_us / 1000000ULL);
+    const auto microseconds = static_cast<std::uint32_t>(timestamp_us % 1000000ULL);
+    const auto seconds_of_day = total_seconds % 86400U;
+    const auto hours = seconds_of_day / 3600U;
+    const auto minutes = (seconds_of_day % 3600U) / 60U;
+    const auto seconds = seconds_of_day % 60U;
+
+    std::ostringstream timestamp {};
+    timestamp << std::setfill('0')
+              << std::setw(2) << hours << ':'
+              << std::setw(2) << minutes << ':'
+              << std::setw(2) << seconds << '.'
+              << std::setw(6) << microseconds;
+    return timestamp.str();
+}
+
 std::string format_ratio_number(const double value) {
     std::ostringstream stream {};
     const double rounded_value = std::round(value * 10.0) / 10.0;
@@ -310,18 +327,6 @@ FlowAnalysisRateGraph build_rate_graph(const std::vector<PacketPreviewCandidate>
     rate_graph.available = true;
     return rate_graph;
 }
-template <typename Flow>
-void update_time_bounds(const Flow& flow, std::optional<std::uint64_t>& first_us, std::optional<std::uint64_t>& last_us) {
-    for (const auto& packet : flow.packets) {
-        const auto timestamp_us = packet_timestamp_us(packet);
-        if (!first_us.has_value() || timestamp_us < *first_us) {
-            first_us = timestamp_us;
-        }
-        if (!last_us.has_value() || timestamp_us > *last_us) {
-            last_us = timestamp_us;
-        }
-    }
-}
 
 template <typename Connection>
 std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(const Connection& connection) {
@@ -405,28 +410,6 @@ void accumulate_packet_size_histogram(const Flow& flow, std::array<std::uint64_t
     }
 }
 
-template <typename Flow>
-void accumulate_tcp_control_counts(
-    const Flow& flow,
-    std::uint64_t& syn_packets,
-    std::uint64_t& fin_packets,
-    std::uint64_t& rst_packets
-) {
-    for (const auto& packet : flow.packets) {
-        if ((packet.tcp_flags & 0x02U) != 0U) {
-            syn_packets += 1U;
-        }
-
-        if ((packet.tcp_flags & 0x01U) != 0U) {
-            fin_packets += 1U;
-        }
-
-        if ((packet.tcp_flags & 0x04U) != 0U) {
-            rst_packets += 1U;
-        }
-    }
-}
-
 template <typename Connection>
 void populate_protocol_panel(const Connection& connection, FlowAnalysisResult& result) {
     switch (connection.protocol_hint) {
@@ -448,8 +431,9 @@ void populate_protocol_panel(const Connection& connection, FlowAnalysisResult& r
 
     if (connection.key.protocol == ProtocolId::tcp) {
         result.has_tcp_control_counts = true;
-        accumulate_tcp_control_counts(connection.flow_a, result.tcp_syn_packets, result.tcp_fin_packets, result.tcp_rst_packets);
-        accumulate_tcp_control_counts(connection.flow_b, result.tcp_syn_packets, result.tcp_fin_packets, result.tcp_rst_packets);
+        result.tcp_syn_packets = connection.aggregate_stats.tcp_syn_count;
+        result.tcp_fin_packets = connection.aggregate_stats.tcp_fin_count;
+        result.tcp_rst_packets = connection.aggregate_stats.tcp_rst_count;
     }
 
     if (result.protocol_panel_version_text.empty()
@@ -551,14 +535,15 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
         : std::string {flow_protocol_hint_text(connection.protocol_hint)};
     result.service_hint = connection.service_hint;
     populate_protocol_panel(connection, result);
-
-    std::optional<std::uint64_t> first_us {};
-    std::optional<std::uint64_t> last_us {};
-    update_time_bounds(connection.flow_a, first_us, last_us);
-    update_time_bounds(connection.flow_b, first_us, last_us);
-
-    if (first_us.has_value() && last_us.has_value() && *last_us >= *first_us) {
-        result.duration_us = *last_us - *first_us;
+    result.captured_bytes = connection.aggregate_stats.captured_bytes;
+    if (connection.packet_count > 0U
+        && connection.aggregate_stats.last_timestamp_us >= connection.aggregate_stats.first_timestamp_us) {
+        result.duration_us =
+            connection.aggregate_stats.last_timestamp_us - connection.aggregate_stats.first_timestamp_us;
+        result.first_packet_timestamp_text =
+            format_packet_timestamp_us(connection.aggregate_stats.first_timestamp_us);
+        result.last_packet_timestamp_text =
+            format_packet_timestamp_us(connection.aggregate_stats.last_timestamp_us);
     }
 
     if (!connection.flow_a.packets.empty()) {
@@ -582,11 +567,9 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     const auto ordered_packets = build_time_ordered_packet_refs(connection);
     result.timeline_packet_count_considered = static_cast<std::uint64_t>(ordered_packets.size());
     if (!ordered_packets.empty()) {
-        result.first_packet_timestamp_text = format_packet_timestamp(*ordered_packets.front().packet);
-        result.last_packet_timestamp_text = format_packet_timestamp(*ordered_packets.back().packet);
         result.min_packet_size_bytes = ordered_packets.front().packet->original_length;
-        result.max_packet_size_bytes = ordered_packets.front().packet->original_length;
-        result.max_captured_packet_size_bytes = ordered_packets.front().packet->captured_length;
+        result.max_packet_size_bytes = connection.aggregate_stats.max_original_packet_length;
+        result.max_captured_packet_size_bytes = connection.aggregate_stats.max_captured_packet_length;
     }
 
     std::optional<std::uint64_t> previous_timestamp_us {};
@@ -597,10 +580,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     bool current_run_is_burst = false;
     for (const auto& ordered_packet : ordered_packets) {
         const auto* packet = ordered_packet.packet;
-        result.captured_bytes += packet->captured_length;
         result.min_packet_size_bytes = std::min(result.min_packet_size_bytes, packet->original_length);
-        result.max_packet_size_bytes = std::max(result.max_packet_size_bytes, packet->original_length);
-        result.max_captured_packet_size_bytes = std::max(result.max_captured_packet_size_bytes, packet->captured_length);
 
         if (current_burst_packet_count == 0U) {
             current_burst_packet_count = 1U;

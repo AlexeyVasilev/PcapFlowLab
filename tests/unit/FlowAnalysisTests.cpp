@@ -59,6 +59,7 @@ std::uint64_t histogram_total_count(const std::vector<Row>& rows) {
 bool nearly_equal(const double left, const double right, const double epsilon = 0.001) {
     return std::fabs(left - right) <= epsilon;
 }
+
 const FlowAnalysisRatePoint* rate_point_at(const std::vector<FlowAnalysisRatePoint>& points, const std::uint64_t x_us) {
     for (const auto& point : points) {
         if (point.relative_time_us == x_us) {
@@ -101,6 +102,10 @@ double total_bytes_from_rate_series(const std::vector<FlowAnalysisRatePoint>& po
     }
 
     return total_bytes;
+}
+
+std::uint64_t analysis_packet_timestamp_us(const PacketRef& packet) noexcept {
+    return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
 }
 
 PacketRef make_analysis_packet_ref(
@@ -158,6 +163,49 @@ PacketRef make_analysis_packet_ref_at(
     };
 }
 
+void populate_connection_aggregate_stats(ConnectionV4& connection) {
+    auto update_from_packet = [&](const PacketRef& packet) {
+        const auto timestamp_us = analysis_packet_timestamp_us(packet);
+        if (connection.aggregate_stats.first_timestamp_us == 0U
+            || timestamp_us < connection.aggregate_stats.first_timestamp_us) {
+            connection.aggregate_stats.first_timestamp_us = timestamp_us;
+        }
+        if (timestamp_us > connection.aggregate_stats.last_timestamp_us) {
+            connection.aggregate_stats.last_timestamp_us = timestamp_us;
+        }
+
+        connection.aggregate_stats.captured_bytes += packet.captured_length;
+        if (packet.captured_length < packet.original_length) {
+            connection.aggregate_stats.truncated_packet_count += 1U;
+        }
+        connection.aggregate_stats.max_original_packet_length =
+            std::max(connection.aggregate_stats.max_original_packet_length, packet.original_length);
+        connection.aggregate_stats.max_captured_packet_length =
+            std::max(connection.aggregate_stats.max_captured_packet_length, packet.captured_length);
+
+        if (connection.key.protocol != ProtocolId::tcp) {
+            return;
+        }
+
+        if ((packet.tcp_flags & 0x02U) != 0U) {
+            connection.aggregate_stats.tcp_syn_count += 1U;
+        }
+        if ((packet.tcp_flags & 0x01U) != 0U) {
+            connection.aggregate_stats.tcp_fin_count += 1U;
+        }
+        if ((packet.tcp_flags & 0x04U) != 0U) {
+            connection.aggregate_stats.tcp_rst_count += 1U;
+        }
+    };
+
+    for (const auto& packet : connection.flow_a.packets) {
+        update_from_packet(packet);
+    }
+    for (const auto& packet : connection.flow_b.packets) {
+        update_from_packet(packet);
+    }
+}
+
 ConnectionV4 make_protocol_panel_connection(
     const FlowProtocolHint protocol_hint,
     const ProtocolId transport_protocol,
@@ -179,15 +227,16 @@ ConnectionV4 make_protocol_panel_connection(
     connection.flow_b.packet_count = static_cast<std::uint64_t>(connection.flow_b.packets.size());
 
     for (const auto& packet : connection.flow_a.packets) {
-        connection.flow_a.total_bytes += packet.captured_length;
+        connection.flow_a.total_bytes += packet.original_length;
     }
 
     for (const auto& packet : connection.flow_b.packets) {
-        connection.flow_b.total_bytes += packet.captured_length;
+        connection.flow_b.total_bytes += packet.original_length;
     }
 
     connection.packet_count = connection.flow_a.packet_count + connection.flow_b.packet_count;
     connection.total_bytes = connection.flow_a.total_bytes + connection.flow_b.total_bytes;
+    populate_connection_aggregate_stats(connection);
     return connection;
 }
 
@@ -429,10 +478,11 @@ void run_flow_analysis_tests() {
     };
     truncated_connection.flow_a.packet_count = static_cast<std::uint64_t>(truncated_connection.flow_a.packets.size());
     for (const auto& packet : truncated_connection.flow_a.packets) {
-        truncated_connection.flow_a.total_bytes += packet.captured_length;
+        truncated_connection.flow_a.total_bytes += packet.original_length;
     }
     truncated_connection.packet_count = truncated_connection.flow_a.packet_count;
     truncated_connection.total_bytes = truncated_connection.flow_a.total_bytes;
+    populate_connection_aggregate_stats(truncated_connection);
 
     FlowAnalysisService direct_service {};
     const auto truncated_analysis = direct_service.analyze(truncated_connection);
@@ -479,6 +529,41 @@ void run_flow_analysis_tests() {
         indexed_truncated_analysis->max_captured_packet_size_bytes ==
         raw_truncated_analysis->max_captured_packet_size_bytes
     );
+
+    const auto aggregate_backed_connection = make_protocol_panel_connection(
+        FlowProtocolHint::tls,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 80U, 10U, 0x02U),
+        },
+        {
+            make_analysis_packet_ref(1U, 500U, 90U, 12U, 0x10U),
+        },
+        "aggregate.example",
+        QuicVersionHint::unknown,
+        TlsVersionHint::tls13
+    );
+    auto authoritative_aggregate_connection = aggregate_backed_connection;
+    authoritative_aggregate_connection.aggregate_stats.first_timestamp_us = 2000100ULL;
+    authoritative_aggregate_connection.aggregate_stats.last_timestamp_us = 5000300ULL;
+    authoritative_aggregate_connection.aggregate_stats.captured_bytes = 999U;
+    authoritative_aggregate_connection.aggregate_stats.tcp_syn_count = 11U;
+    authoritative_aggregate_connection.aggregate_stats.tcp_fin_count = 7U;
+    authoritative_aggregate_connection.aggregate_stats.tcp_rst_count = 5U;
+    authoritative_aggregate_connection.aggregate_stats.max_original_packet_length = 1600U;
+    authoritative_aggregate_connection.aggregate_stats.max_captured_packet_length = 1500U;
+
+    const auto authoritative_aggregate_analysis = direct_service.analyze(authoritative_aggregate_connection);
+    PFL_EXPECT(authoritative_aggregate_analysis.captured_bytes == 999U);
+    PFL_EXPECT(authoritative_aggregate_analysis.duration_us == 3000200ULL);
+    PFL_EXPECT(authoritative_aggregate_analysis.first_packet_timestamp_text == "00:00:02.000100");
+    PFL_EXPECT(authoritative_aggregate_analysis.last_packet_timestamp_text == "00:00:05.000300");
+    PFL_EXPECT(authoritative_aggregate_analysis.max_packet_size_bytes == 1600U);
+    PFL_EXPECT(authoritative_aggregate_analysis.max_captured_packet_size_bytes == 1500U);
+    PFL_EXPECT(authoritative_aggregate_analysis.tcp_syn_packets == 11U);
+    PFL_EXPECT(authoritative_aggregate_analysis.tcp_fin_packets == 7U);
+    PFL_EXPECT(authoritative_aggregate_analysis.tcp_rst_packets == 5U);
+    PFL_EXPECT(packet_histogram_count(authoritative_aggregate_analysis, "64-127") == 2U);
 
     const auto inter_arrival_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 42000, 8080, 12, 0x18
