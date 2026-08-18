@@ -76,6 +76,16 @@ different responsibilities.
 - [Selected-Flow Packet Cache Reference](selected-flow-packet-cache-rfc.md)
   Current cache-boundary and cache-budget reference despite the filename.
 
+## Active Design RFCs
+
+- [Advanced Flow Filter RFC](features/advanced-flow-filter-rfc.md)
+  Proposed product/backend filter model for future indexed flow search.
+- [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
+  Proposed compact per-connection metadata foundation for future filtering.
+- [Index v15 Container RFC](features/index-v15-container-rfc.md)
+  Proposed stable-header and section-compatibility baseline for the next major
+  index format.
+
 ## Export
 
 - [Smart Export](features/smart-export-v1.md)
