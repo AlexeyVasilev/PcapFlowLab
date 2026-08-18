@@ -12,6 +12,58 @@ namespace {
     return is_transport_hint_protocol(protocol) && packet.payload_length > 0U;
 }
 
+[[nodiscard]] std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
+    return static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL +
+           static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+template <typename Connection>
+void update_aggregate_stats(Connection& connection,
+                            const PacketRef& packet,
+                            const ProtocolId protocol,
+                            const bool was_empty) noexcept {
+    const auto timestamp_us = packet_timestamp_us(packet);
+    if (was_empty) {
+        connection.aggregate_stats.first_timestamp_us = timestamp_us;
+        connection.aggregate_stats.last_timestamp_us = timestamp_us;
+    } else {
+        if (timestamp_us < connection.aggregate_stats.first_timestamp_us) {
+            connection.aggregate_stats.first_timestamp_us = timestamp_us;
+        }
+        if (timestamp_us > connection.aggregate_stats.last_timestamp_us) {
+            connection.aggregate_stats.last_timestamp_us = timestamp_us;
+        }
+    }
+
+    connection.aggregate_stats.captured_bytes += packet.captured_length;
+
+    if (packet.captured_length < packet.original_length) {
+        ++connection.aggregate_stats.truncated_packet_count;
+    }
+
+    if (packet.original_length > connection.aggregate_stats.max_original_packet_length) {
+        connection.aggregate_stats.max_original_packet_length = packet.original_length;
+    }
+
+    if (packet.captured_length > connection.aggregate_stats.max_captured_packet_length) {
+        connection.aggregate_stats.max_captured_packet_length = packet.captured_length;
+    }
+
+    if (protocol != ProtocolId::tcp) {
+        return;
+    }
+
+    if ((packet.tcp_flags & 0x02U) != 0U) {
+        ++connection.aggregate_stats.tcp_syn_count;
+    }
+    if ((packet.tcp_flags & 0x01U) != 0U) {
+        ++connection.aggregate_stats.tcp_fin_count;
+    }
+    if ((packet.tcp_flags & 0x04U) != 0U) {
+        ++connection.aggregate_stats.tcp_rst_count;
+    }
+}
+
 void append_packet(FlowV4& flow, const FlowKeyV4& packet_key, const PacketRef& packet) {
     flow.key = packet_key;
     flow.packets.push_back(packet);
@@ -246,8 +298,10 @@ bool has_valid_first_observed_orientation(const ConnectionV6& connection) noexce
 }
 
 void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& packet) {
+    const bool was_empty = packet_count == 0U;
     ++packet_count;
     total_bytes += packet.original_length;
+    update_aggregate_stats(*this, packet, packet_key.protocol, was_empty);
     update_fragmentation_stats(*this, packet);
 
     if (!has_flow_a) {
@@ -292,8 +346,10 @@ void ConnectionV4::note_hint_detection_attempt(const PacketRef& packet, const Pr
 }
 
 void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& packet) {
+    const bool was_empty = packet_count == 0U;
     ++packet_count;
     total_bytes += packet.original_length;
+    update_aggregate_stats(*this, packet, packet_key.protocol, was_empty);
     update_fragmentation_stats(*this, packet);
 
     if (!has_flow_a) {

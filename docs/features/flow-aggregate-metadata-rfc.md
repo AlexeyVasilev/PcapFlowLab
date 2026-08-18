@@ -1,6 +1,7 @@
 # Flow Aggregate Metadata RFC
 
-Status: proposed design / RFC only.
+Status: partially implemented runtime foundation; index persistence and PacketRef
+compaction remain proposed.
 
 This document defines the compact aggregate metadata foundation proposed for
 future indexed flow filtering and related metadata queries.
@@ -78,6 +79,8 @@ Current `ConnectionV4` / `ConnectionV6` already store:
 - `quic_version`
 - `tls_version`
 - directional `flow_a` / `flow_b`
+- runtime-only `ConnectionAggregateStats` populated during recognized-packet
+  insertion for raw/imported captures
 
 ### Verified current serialization state
 
@@ -97,6 +100,7 @@ Current index serialization does not persist:
 - `quic_version`
 - `tls_version`
 - `hint_search_state`
+- runtime-only `ConnectionAggregateStats`
 - connection-level captured-byte totals
 - first/last timestamps
 - truncated-packet count
@@ -161,6 +165,32 @@ The intent is:
 - enough authoritative source data to answer v1 filter families in O(1)
 - no duplication of already-persisted directional packet/original-byte counts
 - no persistence of obviously derived rates or ratios
+
+Current runtime semantics for the implemented foundation are:
+
+- `first_timestamp_us` is the minimum observed packet timestamp, not first
+  insertion order
+- `last_timestamp_us` is the maximum observed packet timestamp
+- packet timestamp is `ts_sec * 1_000_000 + ts_usec`
+- TCP counters count packets where the corresponding bit is set
+- SYN+ACK contributes to `tcp_syn_count`
+- non-TCP packets do not affect TCP control counters
+
+## Current Implementation Stage
+
+Implemented now:
+
+- runtime-only `ConnectionAggregateStats` owned on canonical
+  `ConnectionV4` / `ConnectionV6`
+- aggregate updates during normal recognized-packet insertion for raw/imported
+  captures
+
+Still pending:
+
+- index persistence for the aggregate structure
+- any `kCaptureIndexVersion` bump / index v15 work
+- PacketRef compaction
+- consumer migration from packet-ref rescans to the new aggregate structure
 
 ## Derived Data
 
