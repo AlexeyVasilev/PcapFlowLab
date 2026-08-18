@@ -45,7 +45,7 @@ This RFC defines a minimal evolution path for large-file handling that stays con
 - support safe cancellation of long-running operations
 - improve performance visibility and regression tracking
 - define a scalable UI direction for very large flow and packet lists
-- stay compatible with later large-file features such as chunked import resume and optional mmap-backed access
+- stay compatible with later large-file features such as optional mmap-backed access; the unused legacy chunked-import resume path was later removed rather than migrated
 
 ## Non-goals
 
@@ -238,7 +238,7 @@ Recommended order:
 
 ### Phase 5
 
-- future chunked import and resume evolution
+- no migration of the removed legacy chunked-import resume subsystem
 
 This order keeps the first changes low-risk and user-visible without expanding protocol scope.
 

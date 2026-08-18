@@ -13,8 +13,6 @@
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
-#include "core/index/ImportCheckpointReader.h"
-#include "core/index/ImportCheckpointWriter.h"
 #include "core/index/Serialization.h"
 #include "core/services/CaptureImporter.h"
 
@@ -530,9 +528,7 @@ void run_index_format_tests() {
     PFL_REQUIRE(ah_path_id != kInvalidProtocolPathId);
 
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_sectioned_index.idx";
-    const auto checkpoint_path = std::filesystem::temp_directory_path() / "pfl_sectioned_checkpoint.ckp";
     std::filesystem::remove(index_path);
-    std::filesystem::remove(checkpoint_path);
 
     CaptureIndexWriter index_writer {};
     PFL_EXPECT(index_writer.write(index_path, state, source_path));
@@ -782,28 +778,6 @@ void run_index_format_tests() {
         PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
     }
 
-    ImportCheckpoint checkpoint {};
-    PFL_EXPECT(read_capture_source_info(source_path, checkpoint.source_info));
-    checkpoint.packets_processed = 2;
-    checkpoint.next_input_offset = 128;
-    checkpoint.completed = true;
-    checkpoint.state = loaded_state;
-
-    ImportCheckpointWriter checkpoint_writer {};
-    PFL_EXPECT(checkpoint_writer.write(checkpoint_path, checkpoint));
-
-    ImportCheckpointReader checkpoint_reader {};
-    ImportCheckpoint loaded_checkpoint {};
-    PFL_EXPECT(checkpoint_reader.read(checkpoint_path, loaded_checkpoint));
-    PFL_EXPECT(loaded_checkpoint.source_info.capture_path == checkpoint.source_info.capture_path);
-    PFL_EXPECT(loaded_checkpoint.source_info.format == checkpoint.source_info.format);
-    PFL_EXPECT(loaded_checkpoint.source_info.file_size == checkpoint.source_info.file_size);
-    PFL_EXPECT(loaded_checkpoint.source_info.last_write_time == checkpoint.source_info.last_write_time);
-    PFL_EXPECT(loaded_checkpoint.packets_processed == checkpoint.packets_processed);
-    PFL_EXPECT(loaded_checkpoint.next_input_offset == checkpoint.next_input_offset);
-    PFL_EXPECT(loaded_checkpoint.completed == checkpoint.completed);
-    expect_matching_states(loaded_checkpoint.state, checkpoint.state);
-
     const auto malformed_index_path = write_temp_binary_file(
         "pfl_index_section_size_invalid.idx",
         corrupt_first_section_size(index_bytes)
@@ -859,42 +833,6 @@ void run_index_format_tests() {
     );
     PFL_EXPECT(!index_reader.read(trailing_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
 
-    const auto checkpoint_bytes = read_file_bytes(checkpoint_path);
-    const auto malformed_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_section_size_invalid.ckp",
-        corrupt_first_section_size(checkpoint_bytes)
-    );
-    PFL_EXPECT(!checkpoint_reader.read(malformed_checkpoint_path, loaded_checkpoint));
-
-    const auto missing_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_missing_progress.ckp",
-        remove_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::progress))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(missing_checkpoint_path, loaded_checkpoint));
-
-    const auto missing_protocol_paths_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_missing_protocol_paths.ckp",
-        remove_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::protocol_paths))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(missing_protocol_paths_checkpoint_path, loaded_checkpoint));
-
-    const auto duplicate_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_duplicate_progress.ckp",
-        duplicate_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::progress))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(duplicate_checkpoint_path, loaded_checkpoint));
-
-    const auto duplicate_protocol_paths_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_duplicate_protocol_paths.ckp",
-        duplicate_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::protocol_paths))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(duplicate_protocol_paths_checkpoint_path, loaded_checkpoint));
-
-    const auto trailing_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_trailing_garbage.ckp",
-        append_trailing_garbage(checkpoint_bytes)
-    );
-    PFL_EXPECT(!checkpoint_reader.read(trailing_checkpoint_path, loaded_checkpoint));
 }
 
 }  // namespace pfl::tests

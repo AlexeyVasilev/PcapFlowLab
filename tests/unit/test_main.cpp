@@ -78,7 +78,6 @@ void run_export_tests();
 void run_pcapng_tests();
 void run_index_tests();
 void run_index_format_tests();
-void run_chunked_import_tests();
 void run_protocol_coverage_tests();
 void run_supported_protocol_catalog_tests();
 void run_malformed_packet_handling_tests();
@@ -234,7 +233,6 @@ int main() {
         {"pcapng", pfl::tests::run_pcapng_tests},
         {"index", pfl::tests::run_index_tests},
         {"index_format", pfl::tests::run_index_format_tests},
-        {"chunked_import", pfl::tests::run_chunked_import_tests},
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
         {"supported_protocol_catalog", pfl::tests::run_supported_protocol_catalog_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},

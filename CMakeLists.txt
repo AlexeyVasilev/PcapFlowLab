@@ -84,9 +84,6 @@ add_library(
     src/core/index/Serialization.cpp
     src/core/index/CaptureIndexWriter.cpp
     src/core/index/CaptureIndexReader.cpp
-    src/core/index/ImportCheckpoint.cpp
-    src/core/index/ImportCheckpointWriter.cpp
-    src/core/index/ImportCheckpointReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
@@ -95,7 +92,6 @@ add_library(
     src/core/services/CaptureImportApplication.cpp
     src/core/services/DissectionImportAdapter.cpp
     src/core/services/CaptureImporter.cpp
-    src/core/services/ChunkedCaptureImporter.cpp
     src/core/services/FlowExportService.cpp
     src/core/services/FlowAnalysisService.cpp
     src/core/services/PacketDetailsService.cpp
@@ -462,7 +458,6 @@ if(BUILD_TESTING)
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
         tests/unit/IndexFormatTests.cpp
-        tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/SupportedProtocolCatalogTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp

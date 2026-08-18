@@ -7,8 +7,6 @@
 #include "app/session/CaptureSession.h"
 #include "core/domain/Connection.h"
 #include "core/domain/FlowKey.h"
-#include "core/index/ImportCheckpointReader.h"
-#include "core/services/ChunkedCaptureImporter.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/PacketPayloadService.h"
 #include "PcapTestUtils.h"
@@ -1231,9 +1229,7 @@ void run_flow_hints_tests() {
             })
         );
         const auto index_path = std::filesystem::temp_directory_path() / "pfl_flow_hint_roundtrip.idx";
-        const auto checkpoint_path = std::filesystem::temp_directory_path() / "pfl_flow_hint_roundtrip.ckp";
         std::filesystem::remove(index_path);
-        std::filesystem::remove(checkpoint_path);
 
         CaptureSession original_session {};
         PFL_EXPECT(original_session.open_capture(http_capture_path));
@@ -1245,17 +1241,6 @@ void run_flow_hints_tests() {
         PFL_EXPECT(loaded_rows.size() == 1);
         PFL_EXPECT(loaded_rows[0].protocol_hint == "http");
         PFL_EXPECT(loaded_rows[0].service_hint == "www.example.com");
-
-        ChunkedCaptureImporter importer {};
-        PFL_EXPECT(importer.import_chunk(http_capture_path, checkpoint_path, 1) == ChunkedImportStatus::completed);
-
-        ImportCheckpointReader checkpoint_reader {};
-        ImportCheckpoint checkpoint {};
-        PFL_EXPECT(checkpoint_reader.read(checkpoint_path, checkpoint));
-        PFL_EXPECT(checkpoint.state.ipv4_connections.size() == 1);
-        const auto* connection = checkpoint.state.ipv4_connections.list().front();
-        PFL_EXPECT(connection->protocol_hint == FlowProtocolHint::http);
-        PFL_EXPECT(connection->service_hint == "www.example.com");
     }
 
     {

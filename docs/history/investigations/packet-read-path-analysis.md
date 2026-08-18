@@ -62,16 +62,16 @@ Pcapng:
 12. `Connection::apply_hints(...)`
 13. `CaptureSession::state_ = imported_state`
 
-### Chunked import chain
+### Removed legacy chunked import chain
 
-`ChunkedCaptureImporter` uses the same processing path:
+The removed legacy `ChunkedCaptureImporter` used the same processing path:
 
 1. `ChunkedCaptureImporter::import_chunk(...)` / `resume_chunk(...)`
 2. `import_from_checkpoint(...)`
 3. `PcapReader::read_next()` or `PcapNgReader::read_next()`
 4. `CaptureImportProcessor::process_packet(...)`
 5. `PacketDecoder` + `PacketIngestor` + `FlowHintService`
-6. checkpoint state is serialized later by `ImportCheckpointWriter`
+6. checkpoint state was serialized later by `ImportCheckpointWriter`
 
 ### Other production callers of `read_next()`
 
@@ -423,7 +423,7 @@ So within `import_packets(...)`, packet bytes are effectively iteration-local.
 
 `read_next()` is also used by:
 
-- `ChunkedCaptureImporter`
+- removed legacy `ChunkedCaptureImporter`
 - `FlowExportService::export_marked_packets_to_pcap(...)`
 - `FlowExportService::export_owned_packets_to_pcaps(...)`
 

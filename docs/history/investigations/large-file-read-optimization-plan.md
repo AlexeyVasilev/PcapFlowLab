@@ -369,17 +369,16 @@ Production non-import callers:
 
 - `FlowExportService::export_marked_packets_to_pcap(...)`
 - `FlowExportService::export_owned_packets_to_pcaps(...)`
-- `ChunkedCaptureImporter` import/resume path
+- removed legacy `ChunkedCaptureImporter` import/resume path
 
 Files:
 
 - [src/core/services/FlowExportService.cpp](../../../src/core/services/FlowExportService.cpp)
-- [src/core/services/ChunkedCaptureImporter.cpp](../../../src/core/services/ChunkedCaptureImporter.cpp)
 
 Notes:
 
 - flow export paths consume full `RawPcapPacket.bytes` and write them immediately;
-- chunked import reuses the same import processor and therefore the same byte-consumption model;
+- the removed legacy chunked-import path reused the same import processor and therefore the same byte-consumption model;
 - tests and fixture helpers also call `read_next()`, but they are not production hot spots.
 
 ## 4. Likely static hot spots and waste
@@ -569,7 +568,7 @@ Tests to focus:
 
 - import/open tests;
 - export paths using `read_next()`;
-- chunked import resume;
+- removed legacy chunked-import resume path;
 - malformed reader tests.
 
 Rollback:

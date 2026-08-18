@@ -6,7 +6,7 @@ Stream is the bounded selected-flow semantic view.
 
 - It materializes protocol-aware or conservative fallback items for one selected flow at a time.
 - It is derived from imported flow metadata plus lazy reads from the source capture when source bytes are available.
-- It is not persisted in indexes, checkpoints, or `CaptureState`.
+- It is not persisted in indexes or `CaptureState`.
 - It is not part of capture open, import, summary construction, or index build.
 
 In practice, Stream is an on-demand selected-flow analysis surface rather than a stored cross-session model.
@@ -85,7 +85,7 @@ Window-incomplete rows remain provisional because a larger packet window may rep
 - `CaptureSession` reevaluates that larger cumulative Stream shape.
 - Larger cumulative bounds currently trigger a safe bounded rebuild from packet zero.
 - Compatible repeated requests and smaller compatible projections may still reuse the retained materialized result.
-- No frontend cursor token or persisted continuation checkpoint is introduced.
+- No frontend cursor token or persisted continuation state is introduced.
 
 ## Caching and source-byte requirements
 

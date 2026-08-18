@@ -193,7 +193,7 @@ This is about responsiveness and clarity, not about adding deep analysis during 
 This RFC is not primarily about mmap.
 
 - mmap may later help random-access packet reads if profiling justifies it
-- chunked import remains a separate future direction
+- the unused legacy chunked-import subsystem was later removed rather than kept as a separate future direction
 - neither is the first solution to selected-flow stalls addressed here
 
 The first solution remains bounded and incremental selected-flow loading.

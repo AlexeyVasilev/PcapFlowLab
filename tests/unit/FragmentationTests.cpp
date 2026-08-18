@@ -6,8 +6,6 @@
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
 #include "core/index/CaptureIndexReader.h"
-#include "core/index/ImportCheckpointReader.h"
-#include "core/index/ImportCheckpointWriter.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
@@ -138,39 +136,6 @@ void run_fragmentation_tests() {
     PFL_REQUIRE(loaded_packet2.has_value());
     PFL_EXPECT(loaded_packet0->is_ip_fragmented);
     PFL_EXPECT(loaded_packet2->is_ip_fragmented);
-
-    CaptureImporter importer {};
-    CaptureState imported_state {};
-    PFL_EXPECT(importer.import_capture(capture_path, imported_state));
-
-    ImportCheckpoint checkpoint {};
-    PFL_EXPECT(read_capture_source_info(capture_path, checkpoint.source_info));
-    checkpoint.packets_processed = imported_state.summary.packet_count;
-    checkpoint.next_input_offset = 1234U;
-    checkpoint.completed = false;
-    checkpoint.state = imported_state;
-
-    const auto checkpoint_path = std::filesystem::temp_directory_path() / "pfl_fragmentation.ckp";
-    std::filesystem::remove(checkpoint_path);
-
-    ImportCheckpointWriter checkpoint_writer {};
-    PFL_EXPECT(checkpoint_writer.write(checkpoint_path, checkpoint));
-
-    ImportCheckpoint loaded_checkpoint {};
-    ImportCheckpointReader checkpoint_reader {};
-    PFL_EXPECT(checkpoint_reader.read(checkpoint_path, loaded_checkpoint));
-    PFL_EXPECT(loaded_checkpoint.state.summary.packet_count == imported_state.summary.packet_count);
-
-    const auto checkpoint_ipv4 = loaded_checkpoint.state.ipv4_connections.list();
-    const auto checkpoint_ipv6 = loaded_checkpoint.state.ipv6_connections.list();
-    std::uint64_t checkpoint_fragment_count {0};
-    for (const auto* connection : checkpoint_ipv4) {
-        checkpoint_fragment_count += connection->fragmented_packet_count;
-    }
-    for (const auto* connection : checkpoint_ipv6) {
-        checkpoint_fragment_count += connection->fragmented_packet_count;
-    }
-    PFL_EXPECT(checkpoint_fragment_count == 3U);
 
     const auto mf_flow_packets = session.list_flow_packets(0);
     PFL_REQUIRE(!mf_flow_packets.empty());

@@ -5,8 +5,6 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecoder.h"
-#include "core/index/ImportCheckpointReader.h"
-#include "core/services/ChunkedCaptureImporter.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
@@ -106,33 +104,6 @@ void run_packet_metadata_tests() {
         PFL_REQUIRE(udp_ref.has_value());
         PFL_EXPECT(udp_ref->payload_length == 7);
         PFL_EXPECT(udp_ref->tcp_flags == 0);
-    }
-
-    {
-        const auto source_path = write_temp_pcap(
-            "pfl_packet_metadata_checkpoint.pcap",
-            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
-        );
-        const auto checkpoint_path = std::filesystem::temp_directory_path() / "pfl_packet_metadata.ckp";
-        std::filesystem::remove(checkpoint_path);
-
-        ChunkedCaptureImporter importer {};
-        PFL_EXPECT(importer.import_chunk(source_path, checkpoint_path, 1) == ChunkedImportStatus::checkpoint_saved);
-
-        ImportCheckpointReader reader {};
-        ImportCheckpoint checkpoint {};
-        PFL_EXPECT(reader.read(checkpoint_path, checkpoint));
-        PFL_EXPECT(checkpoint.state.summary.packet_count == 1);
-        PFL_EXPECT(checkpoint.state.ipv4_connections.size() == 1);
-
-        const auto connections = checkpoint.state.ipv4_connections.list();
-        PFL_REQUIRE(connections.size() == 1U);
-        const auto* connection = connections.front();
-        PFL_REQUIRE(connection != nullptr);
-        PFL_EXPECT(connection->has_flow_a);
-        PFL_REQUIRE(!connection->flow_a.packets.empty());
-        PFL_EXPECT(connection->flow_a.packets.front().payload_length == 5);
-        PFL_EXPECT(connection->flow_a.packets.front().tcp_flags == 0x12);
     }
 
     {

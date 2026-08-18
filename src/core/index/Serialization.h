@@ -24,17 +24,6 @@ enum class CaptureIndexSectionId : std::uint32_t {
     packet_locator = 7,
 };
 
-enum class ImportCheckpointSectionId : std::uint32_t {
-    source_info = 1,
-    progress = 2,
-    summary = 3,
-    protocol_paths = 4,
-    ipv4_connections = 5,
-    ipv6_connections = 6,
-    unrecognized_packets = 7,
-    packet_locator = 8,
-};
-
 inline constexpr std::uint16_t kCaptureIndexStableSectionFlagRequired = 0x0001U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =

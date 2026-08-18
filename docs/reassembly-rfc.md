@@ -35,7 +35,7 @@ Reassembly stays outside the fast path.
 
 - Fast open remains packet-oriented.
 - Open-time ingestion does not perform stream reconstruction.
-- Index creation and checkpoint writing do not store reassembled buffers or stream artifacts.
+- Index creation does not store reassembled buffers or stream artifacts.
 - Stream analysis is an on-demand layer over already imported packet and flow metadata.
 
 ## Current uses in Stream
@@ -81,7 +81,7 @@ The project stores analysis results, not reconstructed streams.
 Persisted:
 
 - normal capture summary and flow state
-- index/checkpoint metadata
+- index metadata
 
 Not persisted:
 
