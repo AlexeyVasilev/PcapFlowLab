@@ -234,6 +234,57 @@ bool read_packet_refs(std::istream& stream, std::vector<PacketRef>& packets) {
     return true;
 }
 
+bool skip_exact_bytes(std::istream& stream, std::uint32_t byte_count) {
+    if (byte_count == 0U) {
+        return true;
+    }
+
+    auto discard = std::array<char, 512> {};
+    std::uint32_t remaining = byte_count;
+    while (remaining > 0U) {
+        const auto chunk_size = std::min<std::uint32_t>(remaining, static_cast<std::uint32_t>(discard.size()));
+        stream.read(discard.data(), static_cast<std::streamsize>(chunk_size));
+        if (stream.gcount() != static_cast<std::streamsize>(chunk_size)) {
+            return false;
+        }
+        remaining -= chunk_size;
+    }
+
+    return true;
+}
+
+bool read_bounded_string(std::istream& stream,
+                         std::string& value,
+                         const std::uint32_t max_length,
+                         std::uint32_t& bytes_consumed,
+                         const std::uint32_t header_size_limit) {
+    std::uint32_t length {0};
+    if (!read_u32(stream, length)) {
+        return false;
+    }
+
+    if (length > max_length ||
+        bytes_consumed > header_size_limit ||
+        4U > header_size_limit - bytes_consumed ||
+        length > (header_size_limit - bytes_consumed - 4U)) {
+        return false;
+    }
+
+    bytes_consumed += 4U;
+    value.assign(length, '\0');
+    if (length == 0U) {
+        return true;
+    }
+
+    auto bytes = std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(value.data()), value.size());
+    if (!read_bytes(stream, bytes)) {
+        return false;
+    }
+
+    bytes_consumed += length;
+    return true;
+}
+
 }  // namespace
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes) {
@@ -378,6 +429,116 @@ bool read_string(std::istream& stream, std::string& value) {
 
     auto bytes = std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(value.data()), value.size());
     return read_bytes(stream, bytes);
+}
+
+std::optional<std::uint32_t> encoded_capture_index_stable_header_size(
+    const CaptureIndexStableHeader& header,
+    const std::uint32_t extension_size
+) noexcept {
+    const auto writer_size = header.writer_application_version.size();
+    const auto source_path_size = header.source_capture_path_utf8.size();
+    if (writer_size > static_cast<std::size_t>(kMaxCaptureIndexStableHeaderStringBytes) ||
+        source_path_size > static_cast<std::size_t>(kMaxCaptureIndexStableHeaderStringBytes) ||
+        writer_size > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) ||
+        source_path_size > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::nullopt;
+    }
+
+    const auto total_size = static_cast<std::uint64_t>(kCaptureIndexStableHeaderKnownPrefixSize) +
+                            static_cast<std::uint64_t>(writer_size) +
+                            static_cast<std::uint64_t>(source_path_size) +
+                            static_cast<std::uint64_t>(extension_size);
+    if (total_size > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint32_t>(total_size);
+}
+
+bool write_capture_index_stable_header(std::ostream& stream,
+                                       const CaptureIndexStableHeader& header,
+                                       const std::span<const std::uint8_t> extension_bytes) {
+    const auto encoded_size = encoded_capture_index_stable_header_size(
+        header,
+        static_cast<std::uint32_t>(extension_bytes.size())
+    );
+    if (!encoded_size.has_value()) {
+        return false;
+    }
+
+    return write_u64(stream, header.magic) &&
+           write_u16(stream, header.container_format_version) &&
+           write_u16(stream, header.header_flags) &&
+           write_u32(stream, *encoded_size) &&
+           write_u32(stream, header.index_revision) &&
+           write_string(stream, header.writer_application_version) &&
+           write_u8(stream, static_cast<std::uint8_t>(header.source_format)) &&
+           write_u64(stream, header.source_file_size) &&
+           write_i64(stream, header.source_last_write_time) &&
+           write_u64(stream, header.source_content_fingerprint) &&
+           write_string(stream, header.source_capture_path_utf8) &&
+           write_bytes(stream, extension_bytes);
+}
+
+bool read_capture_index_stable_header(std::istream& stream, CaptureIndexStableHeader& header) {
+    std::uint8_t raw_source_format {0};
+    std::uint32_t bytes_consumed = 0U;
+
+    if (!read_u64(stream, header.magic) ||
+        !read_u16(stream, header.container_format_version) ||
+        !read_u16(stream, header.header_flags) ||
+        !read_u32(stream, header.header_size) ||
+        !read_u32(stream, header.index_revision)) {
+        return false;
+    }
+
+    bytes_consumed = 8U + 2U + 2U + 4U + 4U;
+    if (header.header_size < kCaptureIndexStableHeaderKnownPrefixSize) {
+        return false;
+    }
+
+    if (!read_bounded_string(
+            stream,
+            header.writer_application_version,
+            kMaxCaptureIndexStableHeaderStringBytes,
+            bytes_consumed,
+            header.header_size) ||
+        !read_u8(stream, raw_source_format) ||
+        !read_u64(stream, header.source_file_size) ||
+        !read_i64(stream, header.source_last_write_time) ||
+        !read_u64(stream, header.source_content_fingerprint)) {
+        return false;
+    }
+
+    bytes_consumed += 1U + 8U + 8U + 8U;
+    if (bytes_consumed > header.header_size ||
+        !read_bounded_string(
+            stream,
+            header.source_capture_path_utf8,
+            kMaxCaptureIndexStableHeaderStringBytes,
+            bytes_consumed,
+            header.header_size)) {
+        return false;
+    }
+
+    header.source_format = static_cast<CaptureSourceFormat>(raw_source_format);
+    return skip_exact_bytes(stream, header.header_size - bytes_consumed);
+}
+
+bool write_capture_index_stable_section_header(std::ostream& stream,
+                                               const CaptureIndexStableSectionHeader& header) {
+    return write_u32(stream, header.section_id) &&
+           write_u16(stream, header.section_schema_version) &&
+           write_u16(stream, header.section_flags) &&
+           write_u64(stream, header.payload_size);
+}
+
+bool read_capture_index_stable_section_header(std::istream& stream,
+                                              CaptureIndexStableSectionHeader& header) {
+    return read_u32(stream, header.section_id) &&
+           read_u16(stream, header.section_schema_version) &&
+           read_u16(stream, header.section_flags) &&
+           read_u64(stream, header.payload_size);
 }
 
 bool write_section(std::ostream& stream, const std::uint32_t section_id, std::span<const std::uint8_t> payload) {

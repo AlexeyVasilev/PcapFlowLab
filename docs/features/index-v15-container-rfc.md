@@ -1,8 +1,9 @@
 # Index v15 Container RFC
 
-Status: proposed design / RFC only.
+Status: binary contract frozen for future activation; not yet active in the
+production reader/writer.
 
-This document defines the proposed container-level baseline for a future index
+This document defines the frozen container-level baseline for a future index
 v15 format.
 
 This RFC does not implement index v15, does not change the current index
@@ -75,7 +76,7 @@ However, in v14 this metadata is stored in a normal later section rather than a
 separately readable stable header. A version mismatch prevents the reader from
 reaching it.
 
-## Proposed v15 Baseline
+## Frozen v15 Baseline
 
 v15 should establish a stable self-describing container design.
 
@@ -96,31 +97,63 @@ At minimum, a future reader should be able to determine:
 - source last-write metadata if retained
 - source fingerprint/identity if retained
 
+Frozen initial container identity:
+
+- stable-container magic is distinct from the legacy v14-and-earlier magic
+- `container_format_version = 1`
+- `index_revision = 15`
+
+These have different semantics:
+
+- `container_format_version` identifies the stable outer framing/header
+  contract and should change rarely
+- `index_revision` is diagnostic metadata describing the Pcap Flow Lab index
+  generation/revision
+- `index_revision` is not the primary compatibility gate
+- future payload compatibility should primarily depend on section id plus
+  section schema version
+
 ## Proposed Conceptual Layout
 
 ### Stable preamble/header
 
-Conceptual header fields:
+The stable v15 header uses little-endian integral encoding, UTF-8
+length-prefixed strings with no required trailing NUL, and a serialized layout
+that does not depend on C++ struct padding or host ABI.
 
-- magic
-- `container_format_version`
-- `header_size`
-- `index_schema_revision` or `index_revision`
-- writer application version
-- stable source metadata
-- room for append-only future header extensions
+The frozen field order is:
+
+- `u64 magic`
+- `u16 container_format_version`
+- `u16 header_flags`
+- `u32 header_size`
+- `u32 index_revision`
+- `u32 writer_application_version_length`
+- `writer_application_version` UTF-8 bytes
+- `u8 source_capture_format`
+- `u64 source_file_size`
+- `i64 source_last_write_time`
+- `u64 source_content_fingerprint`
+- `u32 source_capture_path_length`
+- `source_capture_path` UTF-8 bytes
+- optional append-only stable-header tail bytes up to `header_size`
+
+The writer application version is stored as a UTF-8 string. When this format is
+later activated in production, the intended source is `PFL_APP_VERSION`.
 
 ### After the stable header
 
 The payload should be organized as versioned length-delimited sections.
 
-Each section should conceptually contain:
+Each section uses this exact header:
 
-- section id
-- section schema version
-- flags
-- payload size
-- payload
+- `u32 section_id`
+- `u16 section_schema_version`
+- `u16 section_flags`
+- `u64 payload_size`
+
+This is an exact 16-byte wire header, followed immediately by `payload_size`
+payload bytes.
 
 This keeps unknown/optional data skippable and known data explicitly versioned.
 
@@ -135,6 +168,10 @@ If a required section is missing or has an unsupported schema version:
 - analysis payload loading should fail cleanly
 - stable header metadata should still remain available for diagnostics
 
+Section flag bit 0 is frozen as:
+
+- `REQUIRED = 0x0001`
+
 ### Optional section semantics
 
 Optional sections can be skipped safely when unknown or unsupported.
@@ -144,6 +181,10 @@ Desired behavior:
 - unknown optional section -> skip by payload size
 - known supported section version -> read
 - unsupported optional section version -> ignore if safe to do so
+
+The file-provided REQUIRED bit is not the only source of truth. A future reader
+must still validate the known-core-section presence/cardinality rules required
+by the v15 schema.
 
 ## Compatibility Contract Starting At v15
 
@@ -186,6 +227,16 @@ Examples of useful diagnostics:
 - preservation of the stable preamble contract while allowing new stable header
   metadata to be added in a controlled way
 
+Frozen `header_size` semantics:
+
+- `header_size` is the total encoded stable-header byte count up to the first
+  payload section
+- a future reader may parse the known stable-header prefix and skip unknown
+  append-only bytes until `header_size`
+- fields may be extended only append-only within the same compatible
+  container-format generation
+- malformed `header_size` values must be rejected safely
+
 ## Current v14/v15 Boundary
 
 This RFC explicitly does not require:
@@ -212,39 +263,36 @@ The current v14 format has these issues:
 - there is no stable header-level writer application version
 - there is no stable header-level source metadata contract
 
-## Proposed V1 Section Families
+## Frozen Initial Section Families
 
-The exact v15 section list is still open, but a plausible first family is:
+The initial core data families remain:
 
-- source-info / source-identity section
-- summary section
-- protocol-path registry section
-- IPv4 connection data section
-- IPv6 connection data section
-- unrecognized-packet section
-- packet-locator section
+- summary
+- protocol-path registry
+- IPv4 connections
+- IPv6 connections
+- unrecognized packets
+- packet locator
 
-The key change is not the list itself; it is the container contract around
-stable header introspection plus per-section schema/version handling.
+Basic source identity is not duplicated into a required payload `source_info`
+section. The stable header is the authoritative baseline source-introspection
+surface.
 
-## Open Questions
+Cardinality contract:
 
-- Should `container_format_version` and `index_schema_revision` both exist, or
-  is one of them redundant if section-schema versions are authoritative?
-- Should the writer application version be stored as:
-  - semantic string
-  - packed integer tuple
-  - both?
-- Which source identity fields belong in the stable header versus an optional
-  source-details section?
-- Should the stable header include a short source capture basename separately
-  from full path to improve diagnostics across platforms?
-- Should connection-data sections be further subdivided in v15, or remain large
-  coarse-grained sections with their own schema versions?
-- Should required/optional section semantics use an explicit flag bit in the
-  section header, or should requirement be implied by section id family?
-- Should the packet locator remain required for v15, or can it become optional
-  if certain features degrade gracefully without it?
+- IPv4 connection sections are repeatable/chunkable
+- IPv6 connection sections are repeatable/chunkable
+- the other initial core sections are singleton unless explicitly revised later
+
+## Remaining Open Questions
+
+- Which future optional/source-details fields, if any, should live outside the
+  stable header?
+- Should the stable header later include a short source basename in addition to
+  full path for diagnostics?
+- Should connection-data sections be subdivided further in future revisions?
+- Should the packet locator remain required in future schemas, or become
+  optional if some features can degrade gracefully?
 
 ## Risks To Resolve Before Production Implementation
 
