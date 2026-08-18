@@ -1,13 +1,13 @@
 # Index v15 Container RFC
 
-Status: binary contract frozen for future activation; not yet active in the
-production reader/writer.
+Status: stable v15 container is active in the production reader/writer.
 
-This document defines the frozen container-level baseline for a future index
-v15 format.
+This document defines the frozen container-level baseline for the active stable
+index v15 format.
 
-This RFC does not implement index v15, does not change the current index
-version, and does not require a compatibility loader for v14 and earlier.
+Production now writes stable-container v15 indexes, loads stable v15+ indexes
+that retain the supported core section schemas, and inspects legacy v14
+headers while rejecting legacy full-load with a rebuild-required diagnostic.
 
 Related RFCs:
 
@@ -26,21 +26,21 @@ v14 and earlier may remain unsupported.
 
 ## Current State
 
-### Current v14 top-level structure
+### Historical v14 top-level structure
 
 Verified from current code:
 
 - file starts with:
-  - `u64 kCaptureIndexMagic`
-  - `u16 kCaptureIndexVersion`
+  - `u64 kLegacyCaptureIndexMagic`
+  - `u16 kLegacyCaptureIndexVersion`
   - `u16 reserved`
-- current version constant is `kCaptureIndexVersion = 14`
+- historical legacy version constant is `kLegacyCaptureIndexVersion = 14`
 - after the fixed preamble, the file contains length-delimited sections:
   - `u32 section_id`
   - `u64 payload_size`
   - raw payload bytes
 
-Current section families are:
+Historical section families were:
 
 - `source_info`
 - `summary`
@@ -50,17 +50,19 @@ Current section families are:
 - `unrecognized_packets`
 - `packet_locator`
 
-### Current reader behavior
+### Current production reader behavior
 
 Verified current behavior:
 
-- reader checks exact `magic`
-- reader checks exact `version == kCaptureIndexVersion`
-- if version mismatches, it fails immediately with:
-  - `"unsupported index version; rebuild the index from the source capture"`
-- it does not attempt graceful stable-header introspection for newer versions
-- unknown section ids are rejected immediately
-- all current known sections are effectively required by the reader
+- reader recognizes both legacy and stable container magic values
+- legacy v14 indexes are inspectable at the header/version level
+- legacy v14 full-load is rejected with:
+  - `"legacy index version 14 is no longer loadable; rebuild the index from the source capture"`
+- stable v15+ load is gated primarily by container version plus required
+  section/schema support, not by exact global revision equality
+- unknown required sections are rejected
+- unknown optional sections are skipped by payload size
+- the stable core sections remain required in practice
 
 ### Current source metadata availability
 
@@ -72,9 +74,8 @@ Current source metadata already exists as `CaptureSourceInfo` and contains:
 - source last-write time
 - source content fingerprint
 
-However, in v14 this metadata is stored in a normal later section rather than a
-separately readable stable header. A version mismatch prevents the reader from
-reaching it.
+In production stable v15, this metadata now lives in the stable header rather
+than a required payload `source_info` section.
 
 ## Frozen v15 Baseline
 
@@ -138,8 +139,8 @@ The frozen field order is:
 - `source_capture_path` UTF-8 bytes
 - optional append-only stable-header tail bytes up to `header_size`
 
-The writer application version is stored as a UTF-8 string. When this format is
-later activated in production, the intended source is `PFL_APP_VERSION`.
+The writer application version is stored as a UTF-8 string. In production, the
+writer source is `PFL_APP_VERSION`.
 
 ### After the stable header
 
@@ -239,22 +240,22 @@ Frozen `header_size` semantics:
 
 ## Current v14/v15 Boundary
 
-This RFC explicitly does not require:
+This RFC still does not require:
 
 - a v14 -> v15 compatibility loader
 - automatic rewriting of old indexes
 - support for all historical index revisions
 
-For v14 and earlier, current behavior may remain:
+For v14 and earlier, current behavior is:
 
-- exact-version rejection
-- or a generic legacy-version rejection
+- inspectable legacy header/version recognition
+- full-load rejection with a rebuild-required diagnostic
 
-The new compatibility/introspection contract begins at v15.
+The compatibility/introspection contract begins at stable v15.
 
-## Current-State Gaps This RFC Intends To Fix
+## Current-State Gaps This RFC Resolved
 
-The current v14 format has these issues:
+The old v14 format had these issues:
 
 - exact global version gating happens before source metadata can be read
 - unknown sections are always fatal

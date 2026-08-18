@@ -1,7 +1,7 @@
 # Flow Aggregate Metadata RFC
 
-Status: partially implemented runtime foundation; index persistence and PacketRef
-compaction remain proposed.
+Status: runtime foundation and stable v15 index persistence are implemented;
+PacketRef compaction remains proposed.
 
 This document defines the compact aggregate metadata foundation proposed for
 future indexed flow filtering and related metadata queries.
@@ -41,7 +41,7 @@ Current `PacketRef` fields are:
 - `tcp_flags`
 - `is_ip_fragmented`
 
-Current v14 serialized `PacketRef` layout writes:
+Current stable v15 serialized `PacketRef` layout writes:
 
 - `u64 packet_index`
 - `u32 ts_sec`
@@ -79,8 +79,8 @@ Current `ConnectionV4` / `ConnectionV6` already store:
 - `quic_version`
 - `tls_version`
 - directional `flow_a` / `flow_b`
-- runtime-only `ConnectionAggregateStats` populated during recognized-packet
-  insertion for raw/imported captures
+- `ConnectionAggregateStats` populated during recognized-packet insertion for
+  raw/imported captures and persisted by the stable v15 index
 
 ### Verified current serialization state
 
@@ -92,20 +92,20 @@ Current index serialization persists:
 - `fragmented_packet_count`
 - `protocol_hint`
 - `service_hint`
-- directional `FlowV4` / `FlowV6`, including packet counts, total original
-  bytes, and all packet refs
-
-Current index serialization does not persist:
-
 - `quic_version`
 - `tls_version`
-- `hint_search_state`
-- runtime-only `ConnectionAggregateStats`
+- `ConnectionAggregateStats`
 - connection-level captured-byte totals
 - first/last timestamps
 - truncated-packet count
 - packet-size extrema
 - TCP SYN/FIN/RST counts
+- directional `FlowV4` / `FlowV6`, including packet counts, total original
+  bytes, and all packet refs
+
+Current index serialization does not persist:
+
+- `hint_search_state`
 
 ### Existing data that already makes some proposed fields redundant
 
@@ -180,15 +180,15 @@ Current runtime semantics for the implemented foundation are:
 
 Implemented now:
 
-- runtime-only `ConnectionAggregateStats` owned on canonical
+- `ConnectionAggregateStats` owned on canonical
   `ConnectionV4` / `ConnectionV6`
 - aggregate updates during normal recognized-packet insertion for raw/imported
   captures
+- stable v15 persistence for `quic_version`, `tls_version`, and
+  `ConnectionAggregateStats`
 
 Still pending:
 
-- index persistence for the aggregate structure
-- any `kCaptureIndexVersion` bump / index v15 work
 - PacketRef compaction
 - consumer migration from packet-ref rescans to the new aggregate structure
 

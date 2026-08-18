@@ -12,6 +12,9 @@ namespace pfl {
 
 class CaptureIndexReader {
 public:
+    bool inspect(const std::filesystem::path& index_path,
+                 CaptureIndexInspection& out_inspection,
+                 OpenContext* ctx = nullptr) const;
     bool read(const std::filesystem::path& index_path,
               CaptureState& out_state,
               std::filesystem::path& out_source_capture_path,

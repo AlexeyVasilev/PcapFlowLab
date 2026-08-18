@@ -720,16 +720,82 @@ bool read_flow(std::istream& stream, FlowV6& flow) {
     return true;
 }
 
+bool write_connection_aggregate_stats(std::ostream& stream, const ConnectionAggregateStats& stats) {
+    return write_u64(stream, stats.first_timestamp_us) &&
+           write_u64(stream, stats.last_timestamp_us) &&
+           write_u64(stream, stats.captured_bytes) &&
+           write_u64(stream, stats.truncated_packet_count) &&
+           write_u64(stream, stats.tcp_syn_count) &&
+           write_u64(stream, stats.tcp_fin_count) &&
+           write_u64(stream, stats.tcp_rst_count) &&
+           write_u32(stream, stats.max_original_packet_length) &&
+           write_u32(stream, stats.max_captured_packet_length);
+}
+
+bool read_connection_aggregate_stats(std::istream& stream, ConnectionAggregateStats& stats) {
+    return read_u64(stream, stats.first_timestamp_us) &&
+           read_u64(stream, stats.last_timestamp_us) &&
+           read_u64(stream, stats.captured_bytes) &&
+           read_u64(stream, stats.truncated_packet_count) &&
+           read_u64(stream, stats.tcp_syn_count) &&
+           read_u64(stream, stats.tcp_fin_count) &&
+           read_u64(stream, stats.tcp_rst_count) &&
+           read_u32(stream, stats.max_original_packet_length) &&
+           read_u32(stream, stats.max_captured_packet_length);
+}
+
+template <typename Connection>
+bool write_connection_prefix(std::ostream& stream, const Connection& connection) {
+    return write_connection_key(stream, connection.key) &&
+           write_u8(stream, connection.has_flow_a ? 1U : 0U) &&
+           write_u8(stream, connection.has_flow_b ? 1U : 0U) &&
+           write_u64(stream, connection.packet_count) &&
+           write_u64(stream, connection.total_bytes) &&
+           write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) &&
+           write_u64(stream, connection.fragmented_packet_count) &&
+           write_flow_protocol_hint(stream, connection.protocol_hint) &&
+           write_string(stream, connection.service_hint) &&
+           write_u8(stream, static_cast<std::uint8_t>(connection.quic_version)) &&
+           write_u8(stream, static_cast<std::uint8_t>(connection.tls_version)) &&
+           write_connection_aggregate_stats(stream, connection.aggregate_stats);
+}
+
+template <typename Connection>
+bool read_connection_prefix(std::istream& stream, Connection& connection) {
+    std::uint8_t has_flow_a {0};
+    std::uint8_t has_flow_b {0};
+    std::uint8_t has_fragmented_packets {0};
+    std::uint8_t quic_version {0};
+    std::uint8_t tls_version {0};
+
+    if (!read_connection_key(stream, connection.key) ||
+        !read_u8(stream, has_flow_a) ||
+        !read_u8(stream, has_flow_b) ||
+        !read_u64(stream, connection.packet_count) ||
+        !read_u64(stream, connection.total_bytes) ||
+        !read_u8(stream, has_fragmented_packets) ||
+        !read_u64(stream, connection.fragmented_packet_count) ||
+        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
+        !read_string(stream, connection.service_hint) ||
+        !read_u8(stream, quic_version) ||
+        !read_u8(stream, tls_version) ||
+        !read_connection_aggregate_stats(stream, connection.aggregate_stats)) {
+        return false;
+    }
+
+    connection.has_flow_a = has_flow_a != 0U;
+    connection.has_flow_b = has_flow_b != 0U;
+    connection.has_fragmented_packets = has_fragmented_packets != 0U;
+    connection.quic_version = static_cast<QuicVersionHint>(quic_version);
+    connection.tls_version = static_cast<TlsVersionHint>(tls_version);
+    connection.flow_a = {};
+    connection.flow_b = {};
+    connection.hint_search_state = {};
+    return true;
+}
+
 bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
-    if (!write_connection_key(stream, connection.key) ||
-        !write_u8(stream, connection.has_flow_a ? 1U : 0U) ||
-        !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
-        !write_u64(stream, connection.packet_count) ||
-        !write_u64(stream, connection.total_bytes) ||
-        !write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) ||
-        !write_u64(stream, connection.fragmented_packet_count) ||
-        !write_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !write_string(stream, connection.service_hint)) {
+    if (!write_connection_prefix(stream, connection)) {
         return false;
     }
 
@@ -745,15 +811,7 @@ bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
 }
 
 bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
-    if (!write_connection_key(stream, connection.key) ||
-        !write_u8(stream, connection.has_flow_a ? 1U : 0U) ||
-        !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
-        !write_u64(stream, connection.packet_count) ||
-        !write_u64(stream, connection.total_bytes) ||
-        !write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) ||
-        !write_u64(stream, connection.fragmented_packet_count) ||
-        !write_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !write_string(stream, connection.service_hint)) {
+    if (!write_connection_prefix(stream, connection)) {
         return false;
     }
 
@@ -769,27 +827,9 @@ bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
 }
 
 bool read_connection(std::istream& stream, ConnectionV4& connection) {
-    std::uint8_t has_flow_a {0};
-    std::uint8_t has_flow_b {0};
-    std::uint8_t has_fragmented_packets {0};
-
-    if (!read_connection_key(stream, connection.key) ||
-        !read_u8(stream, has_flow_a) ||
-        !read_u8(stream, has_flow_b) ||
-        !read_u64(stream, connection.packet_count) ||
-        !read_u64(stream, connection.total_bytes) ||
-        !read_u8(stream, has_fragmented_packets) ||
-        !read_u64(stream, connection.fragmented_packet_count) ||
-        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !read_string(stream, connection.service_hint)) {
+    if (!read_connection_prefix(stream, connection)) {
         return false;
     }
-
-    connection.has_flow_a = has_flow_a != 0;
-    connection.has_flow_b = has_flow_b != 0;
-    connection.has_fragmented_packets = has_fragmented_packets != 0;
-    connection.flow_a = {};
-    connection.flow_b = {};
 
     if (!connection.has_flow_a) {
         return false;
@@ -807,27 +847,9 @@ bool read_connection(std::istream& stream, ConnectionV4& connection) {
 }
 
 bool read_connection(std::istream& stream, ConnectionV6& connection) {
-    std::uint8_t has_flow_a {0};
-    std::uint8_t has_flow_b {0};
-    std::uint8_t has_fragmented_packets {0};
-
-    if (!read_connection_key(stream, connection.key) ||
-        !read_u8(stream, has_flow_a) ||
-        !read_u8(stream, has_flow_b) ||
-        !read_u64(stream, connection.packet_count) ||
-        !read_u64(stream, connection.total_bytes) ||
-        !read_u8(stream, has_fragmented_packets) ||
-        !read_u64(stream, connection.fragmented_packet_count) ||
-        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !read_string(stream, connection.service_hint)) {
+    if (!read_connection_prefix(stream, connection)) {
         return false;
     }
-
-    connection.has_flow_a = has_flow_a != 0;
-    connection.has_flow_b = has_flow_b != 0;
-    connection.has_fragmented_packets = has_fragmented_packets != 0;
-    connection.flow_a = {};
-    connection.flow_b = {};
 
     if (!connection.has_flow_a) {
         return false;
@@ -900,15 +922,7 @@ bool write_connection_table(
     }
 
     for (const auto* connection : connections) {
-        if (!write_connection_key(stream, connection->key) ||
-            !write_u8(stream, connection->has_flow_a ? 1U : 0U) ||
-            !write_u8(stream, connection->has_flow_b ? 1U : 0U) ||
-            !write_u64(stream, connection->packet_count) ||
-            !write_u64(stream, connection->total_bytes) ||
-            !write_u8(stream, connection->has_fragmented_packets ? 1U : 0U) ||
-            !write_u64(stream, connection->fragmented_packet_count) ||
-            !write_flow_protocol_hint(stream, connection->protocol_hint) ||
-            !write_string(stream, connection->service_hint)) {
+        if (!write_connection_prefix(stream, *connection)) {
             return false;
         }
 
@@ -947,15 +961,7 @@ bool write_connection_table(
     }
 
     for (const auto* connection : connections) {
-        if (!write_connection_key(stream, connection->key) ||
-            !write_u8(stream, connection->has_flow_a ? 1U : 0U) ||
-            !write_u8(stream, connection->has_flow_b ? 1U : 0U) ||
-            !write_u64(stream, connection->packet_count) ||
-            !write_u64(stream, connection->total_bytes) ||
-            !write_u8(stream, connection->has_fragmented_packets ? 1U : 0U) ||
-            !write_u64(stream, connection->fragmented_packet_count) ||
-            !write_flow_protocol_hint(stream, connection->protocol_hint) ||
-            !write_string(stream, connection->service_hint)) {
+        if (!write_connection_prefix(stream, *connection)) {
             return false;
         }
 
