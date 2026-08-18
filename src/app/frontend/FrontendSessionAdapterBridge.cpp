@@ -1041,11 +1041,28 @@ std::string packet_result_json(const pfl::FrontendSelectedFlowPacketsResult& res
             << "\"timestamp_text\":" << json_string(packet.timestamp_text) << ','
             << "\"captured_length\":" << packet.captured_length << ','
             << "\"original_length\":" << packet.original_length << ','
-            << "\"payload_length\":" << packet.payload_length << ','
-            << "\"is_ip_fragmented\":" << bool_json(packet.is_ip_fragmented) << ','
+            << "\"payload_length\":";
+        if (packet.payload_length.has_value()) {
+            out << *packet.payload_length;
+        } else {
+            out << "null";
+        }
+        out << ','
+            << "\"is_ip_fragmented\":";
+        if (packet.is_ip_fragmented.has_value()) {
+            out << bool_json(*packet.is_ip_fragmented);
+        } else {
+            out << "null";
+        }
+        out << ','
             << "\"suspected_tcp_retransmission\":" << bool_json(packet.suspected_tcp_retransmission) << ','
-            << "\"tcp_flags_text\":" << json_string(packet.tcp_flags_text)
-            << '}';
+            << "\"tcp_flags_text\":";
+        if (packet.tcp_flags_text.has_value()) {
+            out << json_string(*packet.tcp_flags_text);
+        } else {
+            out << "null";
+        }
+        out << '}';
     }
 
     out << "]}";

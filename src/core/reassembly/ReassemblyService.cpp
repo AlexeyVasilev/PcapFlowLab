@@ -4,6 +4,7 @@
 #include <variant>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 
 namespace pfl {
 
@@ -114,17 +115,13 @@ std::optional<ReassemblyResult> reassemble_tcp_payload_from_packet_span(
     for (std::size_t index = 0; index < packet_budget; ++index) {
         const auto& packet = direction_packets[index];
         ++result.total_packets_seen;
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
 
-        if (packet.is_ip_fragmented) {
+        if (metadata.is_ip_fragmented.value_or(false)) {
             set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
             result.stopped_at_gap = true;
             result.first_gap_packet_index = packet.packet_index;
             break;
-        }
-
-        if (packet.payload_length == 0U) {
-            set_flag(result, ReassemblyQualityFlag::contains_non_payload_packets);
-            continue;
         }
 
         if (selected_flow_gap_packet_index.has_value() && packet.packet_index >= *selected_flow_gap_packet_index) {
@@ -140,7 +137,11 @@ std::optional<ReassemblyResult> reassemble_tcp_payload_from_packet_span(
         }
 
         const auto payload = session.read_selected_flow_transport_payload(request.flow_index, packet);
-        if (payload.empty() || payload.size() != packet.payload_length) {
+        if (payload.empty()) {
+            if (metadata.captured_transport_payload_length.value_or(0U) == 0U) {
+                set_flag(result, ReassemblyQualityFlag::contains_non_payload_packets);
+                continue;
+            }
             set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
             result.stopped_at_gap = true;
             result.first_gap_packet_index = packet.packet_index;

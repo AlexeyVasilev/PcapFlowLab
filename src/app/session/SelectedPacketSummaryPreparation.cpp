@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
@@ -423,6 +424,7 @@ std::vector<PacketSummaryLayer> build_prepared_selected_packet_tls_layers(
 PacketSummaryOptions SelectedPacketSummaryPreparation::make_options() const {
     PacketSummaryOptions options {};
     options.flow_packet_index = flow_packet_index;
+    options.is_ip_fragmented = is_ip_fragmented;
     options.transport_payload_length = transport_payload_length;
     options.original_transport_payload_length = original_transport_payload_length;
     options.transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size());
@@ -451,6 +453,11 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
     std::vector<std::string> checksum_warning_lines
 ) {
     const auto packet_bytes = session.read_packet_data(packet);
+    const auto is_ip_fragmented = derive_ip_fragmentation_state_from_packet_details(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet,
+        details
+    );
     PacketPayloadService payload_service {};
     const auto transport_payload_view = details.effective_transport_payload.has_value()
         ? payload_service.extract_effective_transport_payload_view(packet_bytes, *details.effective_transport_payload)
@@ -482,6 +489,7 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
 
     SelectedPacketSummaryPreparation preparation {
         .flow_packet_index = flow_packet_index,
+        .is_ip_fragmented = is_ip_fragmented,
         .transport_payload_length = transport_payload_length,
         .original_transport_payload_length = original_transport_payload_length,
         .transport_payload = std::move(transport_payload),
@@ -523,7 +531,7 @@ SelectedPacketSummaryPreparation prepare_selected_packet_summary(
             if (packet_data.captured_length == 0U) {
                 return TransportPayloadDisposition::none;
             }
-            if (packet.is_ip_fragmented) {
+            if (is_ip_fragmented.value_or(false)) {
                 return TransportPayloadDisposition::none;
             }
             if (transport_truncated ||

@@ -1,9 +1,13 @@
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <string_view>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "core/decode/PacketDecoder.h"
 #include "PcapTestUtils.h"
 
@@ -26,6 +30,61 @@ std::vector<std::uint8_t> make_pppoe_session_packet(
     append_be16(bytes, ppp_protocol);
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
+}
+
+bool mutate_packet_ref_fields(
+    CaptureSession& session,
+    const std::uint64_t packet_index,
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags,
+    const bool is_ip_fragmented
+) {
+    const auto mutate_packets = [&](auto& packets) {
+        const auto it = std::find_if(packets.begin(), packets.end(), [&](const PacketRef& packet) {
+            return packet.packet_index == packet_index;
+        });
+        if (it == packets.end()) {
+            return false;
+        }
+
+        it->payload_length = payload_length;
+        it->tcp_flags = tcp_flags;
+        it->is_ip_fragmented = is_ip_fragmented;
+        return true;
+    };
+
+    for (const auto& connection : session_detail::list_connections(session.state())) {
+        if (connection.family == FlowAddressFamily::ipv4 && connection.ipv4 != nullptr) {
+            auto& mutable_connection = session.state().ipv4_connections.get_or_create(connection.ipv4->key);
+            if (mutate_packets(mutable_connection.flow_a.packets) || mutate_packets(mutable_connection.flow_b.packets)) {
+                return true;
+            }
+            continue;
+        }
+
+        if (connection.family == FlowAddressFamily::ipv6 && connection.ipv6 != nullptr) {
+            auto& mutable_connection = session.state().ipv6_connections.get_or_create(connection.ipv6->key);
+            if (mutate_packets(mutable_connection.flow_a.packets) || mutate_packets(mutable_connection.flow_b.packets)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool summary_layers_contain_value(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string_view value
+) {
+    for (const auto& layer : layers) {
+        for (const auto& field : layer.fields) {
+            if (field.value == value) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 }  // namespace
@@ -78,6 +137,58 @@ void run_packet_metadata_tests() {
         session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
         PFL_REQUIRE(!enriched_rows.empty());
         PFL_EXPECT(enriched_rows.front().payload_length == 5);
+
+        PFL_REQUIRE(mutate_packet_ref_fields(session, 0U, 0U, 0U, true));
+
+        const auto stale_tcp_ref = session.find_packet(0U);
+        PFL_REQUIRE(stale_tcp_ref.has_value());
+
+        const auto derived_metadata = session_detail::derive_transient_packet_metadata(session, *stale_tcp_ref);
+        PFL_REQUIRE(derived_metadata.captured_transport_payload_length.has_value());
+        PFL_REQUIRE(derived_metadata.original_transport_payload_length.has_value());
+        PFL_REQUIRE(derived_metadata.tcp_flags.has_value());
+        PFL_REQUIRE(derived_metadata.is_ip_fragmented.has_value());
+        PFL_EXPECT(*derived_metadata.captured_transport_payload_length == 5U);
+        PFL_EXPECT(*derived_metadata.original_transport_payload_length == 5U);
+        PFL_EXPECT(*derived_metadata.tcp_flags == 0x12U);
+        PFL_EXPECT(!*derived_metadata.is_ip_fragmented);
+
+        auto stale_rows = session.list_flow_packets(0);
+        PFL_REQUIRE(!stale_rows.empty());
+        PFL_EXPECT(stale_rows.front().payload_length == 0U);
+        PFL_EXPECT(stale_rows.front().tcp_flags_text.empty());
+        PFL_EXPECT(stale_rows.front().is_ip_fragmented);
+
+        session.prepare_selected_flow_packet_cache(0U, stale_rows.size());
+        session_detail::populate_transient_packet_row_metadata(session, stale_rows);
+        PFL_REQUIRE(stale_rows.front().derived_payload_length.has_value());
+        PFL_REQUIRE(stale_rows.front().derived_tcp_flags_text.has_value());
+        PFL_REQUIRE(stale_rows.front().derived_is_ip_fragmented.has_value());
+        PFL_EXPECT(*stale_rows.front().derived_payload_length == 5U);
+        PFL_EXPECT(*stale_rows.front().derived_tcp_flags_text == "ACK|SYN");
+        PFL_EXPECT(!*stale_rows.front().derived_is_ip_fragmented);
+
+        const auto payload_slice = session.read_selected_flow_transport_payload_slice(0U, *stale_tcp_ref, 0U, 5U);
+        PFL_EXPECT(payload_slice.size() == 5U);
+
+        const auto stale_packet_bytes = session.read_packet_data(*stale_tcp_ref);
+        const auto stale_packet_details = session.read_packet_details(*stale_tcp_ref);
+        PFL_REQUIRE(!stale_packet_bytes.empty());
+        PFL_REQUIRE(stale_packet_details.has_value());
+        auto summary_preparation = session_detail::prepare_selected_packet_summary(
+            session,
+            *stale_packet_details,
+            *stale_tcp_ref,
+            0U,
+            1U,
+            stale_rows.size(),
+            derived_metadata.captured_transport_payload_length,
+            derived_metadata.original_transport_payload_length
+        );
+        const auto summary_layers =
+            session_detail::build_packet_summary_layers(*stale_packet_details, *stale_tcp_ref, summary_preparation.make_options());
+        PFL_EXPECT(!summary_preparation.make_options().is_ip_fragmented.value_or(true));
+        PFL_EXPECT(!summary_layers_contain_value(summary_layers, "Packet is IP-fragmented"));
     }
 
     {

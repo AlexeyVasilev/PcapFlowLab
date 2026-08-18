@@ -394,10 +394,10 @@ struct FrontendPacketDto {
     std::string timestamp_text {};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
-    std::uint32_t payload_length {0};
-    bool is_ip_fragmented {false};
+    std::optional<std::uint32_t> payload_length {};
+    std::optional<bool> is_ip_fragmented {};
     bool suspected_tcp_retransmission {false};
-    std::string tcp_flags_text {};
+    std::optional<std::string> tcp_flags_text {};
 };
 
 struct FrontendUnrecognizedPacketDto {

@@ -17,6 +17,7 @@ namespace pfl::session_detail {
 
 struct SelectedPacketSummaryPreparation {
     std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<bool> is_ip_fragmented {};
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::vector<std::uint8_t> transport_payload {};

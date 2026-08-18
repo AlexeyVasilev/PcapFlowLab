@@ -67,6 +67,9 @@ struct PacketRow {
     bool is_ip_fragmented {false};
     bool suspected_tcp_retransmission {false};
     std::string tcp_flags_text {};
+    std::optional<std::uint32_t> derived_payload_length {};
+    std::optional<bool> derived_is_ip_fragmented {};
+    std::optional<std::string> derived_tcp_flags_text {};
 };
 
 struct UnrecognizedPacketRow {

@@ -116,6 +116,7 @@ struct AnalysisSequenceExportRow {
 struct TransportPayloadLengths {
     std::optional<std::uint32_t> real_payload_length {};
     std::optional<std::uint32_t> original_payload_length {};
+    std::optional<bool> is_ip_fragmented {};
 };
 
 FlowListModel::SortKey sort_key_from_column(const int column) {
@@ -499,13 +500,6 @@ std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
 }
 
 std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
-    std::span<const std::uint8_t> packet_bytes,
-    const PacketRef& packet
-) {
-    return session_detail::derive_original_transport_payload_length_from_headers(packet_bytes, packet);
-}
-
-std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
     const CaptureSession& session,
     const PacketRef& packet
 ) {
@@ -517,21 +511,23 @@ TransportPayloadLengths resolve_transport_payload_lengths(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
+    const auto metadata = session_detail::derive_transient_packet_metadata(packet_bytes, packet);
+
     if (!details.has_tcp && !details.has_udp) {
-        return {};
+        return TransportPayloadLengths {
+            .is_ip_fragmented = metadata.is_ip_fragmented,
+        };
     }
 
-    const auto original_payload_length = derive_original_transport_payload_length_from_headers(packet_bytes, packet);
-    const auto captured_payload_length = std::optional<std::uint32_t> {packet.payload_length};
-
     return TransportPayloadLengths {
-        .real_payload_length = captured_payload_length,
-        .original_payload_length = original_payload_length,
+        .real_payload_length = metadata.captured_transport_payload_length,
+        .original_payload_length = metadata.original_transport_payload_length,
+        .is_ip_fragmented = metadata.is_ip_fragmented,
     };
 }
 
-void apply_original_transport_payload_lengths(CaptureSession& session, std::vector<PacketRow>& rows) {
-    session_detail::apply_original_transport_payload_lengths(session, rows);
+void apply_transient_packet_row_metadata(CaptureSession& session, std::vector<PacketRow>& rows) {
+    session_detail::populate_transient_packet_row_metadata(session, rows);
 }
 
 std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
@@ -884,7 +880,7 @@ ChecksumValidationResult validate_tcp_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    if (packet.is_ip_fragmented) {
+    if (session_detail::derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, details).value_or(false)) {
         return ChecksumValidationResult {
             .status = ChecksumValidationStatus::unavailable,
             .note = QStringLiteral("TCP checksum not validated for IP-fragmented packet."),
@@ -1017,7 +1013,7 @@ ChecksumValidationResult validate_udp_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    if (packet.is_ip_fragmented) {
+    if (session_detail::derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, details).value_or(false)) {
         return ChecksumValidationResult {
             .status = ChecksumValidationStatus::unavailable,
             .note = QStringLiteral("UDP checksum not validated for IP-fragmented packet."),
@@ -1774,7 +1770,7 @@ QString buildPacketSummary(
     });
 
     QStringList warnings {};
-    if (packet.is_ip_fragmented) {
+    if (payload_lengths.is_ip_fragmented.value_or(false)) {
         warnings.push_back(QStringLiteral("Packet is IP-fragmented"));
     }
     if (details.captured_length != details.original_length) {
@@ -1892,7 +1888,8 @@ QString buildPacketSummary(
 QString buildPacketSummaryFallback(
     const PacketRef& packet,
     const QString& reason_text = {},
-    const PacketChecksumSections& checksum_sections = {}
+    const PacketChecksumSections& checksum_sections = {},
+    const std::optional<bool> is_ip_fragmented = std::nullopt
 ) {
     QStringList lines {};
     const auto packet_number_in_file = packet.packet_index + 1U;
@@ -1905,7 +1902,7 @@ QString buildPacketSummaryFallback(
     });
 
     QStringList warnings {};
-    if (packet.is_ip_fragmented) {
+    if (is_ip_fragmented.value_or(false)) {
         warnings.push_back(QStringLiteral("Packet is IP-fragmented"));
     }
     if (packet.captured_length != packet.original_length) {
@@ -1926,12 +1923,13 @@ QString buildPacketSummaryFallback(
 std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_layers(
     const PacketRef& packet,
     const QString& reason_text = {},
-    const PacketChecksumSections& checksum_sections = {}
+    const PacketChecksumSections& checksum_sections = {},
+    const std::optional<bool> is_ip_fragmented = std::nullopt
 ) {
     std::vector<session_detail::PacketSummaryLayer> layers {};
 
     std::vector<session_detail::PacketSummaryField> warning_fields {};
-    if (packet.is_ip_fragmented) {
+    if (is_ip_fragmented.value_or(false)) {
         warning_fields.push_back({});
         warning_fields.back().value = "Packet is IP-fragmented";
     }
@@ -2409,21 +2407,10 @@ QString MainController::analysisTotalBytesText() const {
 }
 
 qulonglong MainController::analysisCapturedBytes() const noexcept {
-    if (!current_flow_analysis_.has_value() || selected_flow_index_ < 0) {
+    if (!current_flow_analysis_.has_value()) {
         return 0U;
     }
-
-    const auto packets = session_.flow_packets(static_cast<std::size_t>(selected_flow_index_));
-    if (!packets.has_value()) {
-        return 0U;
-    }
-
-    std::uint64_t captured_bytes = 0U;
-    for (const auto& packet : *packets) {
-        captured_bytes += packet.captured_length;
-    }
-
-    return static_cast<qulonglong>(captured_bytes);
+    return static_cast<qulonglong>(current_flow_analysis_->captured_bytes);
 }
 
 QString MainController::analysisCapturedBytesText() const {
@@ -5680,7 +5667,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     if (!rows.empty()) {
         session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
         prepareSelectedFlowTcpContributionState(offset + rows.size());
-        apply_original_transport_payload_lengths(session_, rows);
+        apply_transient_packet_row_metadata(session_, rows);
     }
 
     for (auto& packet_row : rows) {
@@ -6600,9 +6587,23 @@ void MainController::reloadSelectedPacketDetails() {
             session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation->make_options())
         ));
     } else {
-        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, unrecognized_reason_text, checksum_sections));
+        const auto metadata = session_detail::derive_transient_packet_metadata(
+            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+            *packet
+        );
+        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(
+            *packet,
+            unrecognized_reason_text,
+            checksum_sections,
+            metadata.is_ip_fragmented
+        ));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-            build_packet_summary_fallback_layers(*packet, unrecognized_reason_text, checksum_sections)
+            build_packet_summary_fallback_layers(
+                *packet,
+                unrecognized_reason_text,
+                checksum_sections,
+                metadata.is_ip_fragmented
+            )
         ));
     }
 

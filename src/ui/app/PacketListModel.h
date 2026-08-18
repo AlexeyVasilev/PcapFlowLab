@@ -5,6 +5,7 @@
 #include <QString>
 #include <QVariant>
 
+#include <optional>
 #include <vector>
 
 #include "app/session/FlowRows.h"
@@ -64,10 +65,10 @@ private:
         QString timestamp {};
         uint captured_length {0};
         uint original_length {0};
-        uint payload_length {0};
-        bool is_ip_fragmented {false};
+        std::optional<uint> payload_length {};
+        std::optional<bool> is_ip_fragmented {};
         bool suspected_tcp_retransmission {false};
-        QString tcp_flags_text {};
+        std::optional<QString> tcp_flags_text {};
         QString reason_text {};
     };
 

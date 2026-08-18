@@ -4,6 +4,7 @@
 
 #include "app/session/CaptureSession.h"
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/PacketDetailsService.h"
 
 namespace pfl::session_detail {
 
@@ -376,6 +377,70 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_ipv6_packet(
 
 }  // namespace
 
+std::optional<bool> derive_ip_fragmentation_state_from_packet_details(
+    const std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet,
+    const PacketDetails& details
+) {
+    if (details.has_ipv4) {
+        return details.ipv4.fragment_offset != 0U || (details.ipv4.flags & 0x01U) != 0U;
+    }
+
+    if (details.has_ipv6) {
+        const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+        if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv6) {
+            return std::nullopt;
+        }
+
+        const auto payload = detail::parse_ipv6_payload(packet_bytes, network->payload_offset);
+        if (!payload.has_value()) {
+            return std::nullopt;
+        }
+
+        return payload->has_fragment_header;
+    }
+
+    return std::nullopt;
+}
+
+TransientPacketDerivedMetadata derive_transient_packet_metadata(
+    const std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet
+) {
+    TransientPacketDerivedMetadata metadata {
+        .captured_transport_payload_length = derive_captured_transport_payload_length_from_headers(packet_bytes, packet),
+        .original_transport_payload_length = derive_original_transport_payload_length_from_headers(packet_bytes, packet),
+    };
+
+    PacketDetailsService details_service {};
+    const auto details = details_service.decode_best_effort(packet_bytes, packet);
+    if (!details.has_value()) {
+        return metadata;
+    }
+
+    metadata.is_ip_fragmented = derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, *details);
+    if (details->has_tcp) {
+        metadata.tcp_flags = details->tcp.flags;
+    }
+
+    return metadata;
+}
+
+TransientPacketDerivedMetadata derive_transient_packet_metadata(
+    const CaptureSession& session,
+    const PacketRef& packet
+) {
+    const auto packet_bytes = session.read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return {};
+    }
+
+    return derive_transient_packet_metadata(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet
+    );
+}
+
 std::optional<std::uint32_t> derive_captured_transport_payload_length_from_headers(
     const std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
@@ -505,6 +570,29 @@ void apply_original_transport_payload_lengths(CaptureSession& session, std::vect
         const auto original_transport_payload_length = derive_original_transport_payload_length_from_headers(session, *packet);
         if (original_transport_payload_length.has_value()) {
             row.payload_length = *original_transport_payload_length;
+        }
+    }
+}
+
+void populate_transient_packet_row_metadata(CaptureSession& session, std::vector<PacketRow>& rows) {
+    for (auto& row : rows) {
+        row.derived_payload_length.reset();
+        row.derived_is_ip_fragmented.reset();
+        row.derived_tcp_flags_text.reset();
+
+        const auto packet = session.find_packet(row.packet_index);
+        if (!packet.has_value()) {
+            continue;
+        }
+
+        const auto metadata = derive_transient_packet_metadata(session, *packet);
+        row.derived_payload_length =
+            metadata.original_transport_payload_length.has_value()
+                ? metadata.original_transport_payload_length
+                : metadata.captured_transport_payload_length;
+        row.derived_is_ip_fragmented = metadata.is_ip_fragmented;
+        if (metadata.tcp_flags.has_value()) {
+            row.derived_tcp_flags_text = format_tcp_flags_text(*metadata.tcp_flags);
         }
     }
 }

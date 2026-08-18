@@ -193,6 +193,14 @@ Still pending:
 - broader consumer migration from packet-ref rescans to the new aggregate
   structure
 
+Current transient-migration stage now avoids relying on persistent
+`PacketRef::payload_length`, `PacketRef::tcp_flags`, and
+`PacketRef::is_ip_fragmented` in source-backed selected-flow packet-list
+presentation, selected-packet details/checksum preparation, and bounded
+selected-flow cache/reassembly/TLS/QUIC helpers. Those paths derive packet
+metadata from authoritative packet bytes at runtime while leaving stable v15
+serialization unchanged.
+
 FlowAnalysis now uses `ConnectionAggregateStats` for:
 
 - captured-byte totals

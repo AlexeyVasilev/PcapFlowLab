@@ -2127,7 +2127,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             break;
         }
 
-        if (packet.payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
+        if (session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
             continue;
         }
 
