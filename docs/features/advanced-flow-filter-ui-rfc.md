@@ -470,10 +470,15 @@ Custom filter:
 
 However, the UI internally distinguishes:
 
-- `Custom filter` + 0 configured rules
+- default `Custom filter`
+  - 0 configured predicates
+  - 0 active rules
+  - all section Enabled states at their normal default values
   - no meaningful unsaved configuration
 - `Custom filter` + configured rules
   - unsaved configuration exists
+- `Custom filter` with section Enabled state changed away from its default
+  - unsaved configuration exists even if it still has 0 active predicates/rules
 
 This internal distinction drives destructive-action prompts even though the
 toolbar display remains simply:
@@ -627,7 +632,9 @@ Address family
 Current status:
 
 - this is agreed UI design
-- this is a conceptual non-default example and not the initial new-filter state
+- this default unchecked checkbox state is consistent with the initial empty
+  Custom-filter state
+- no Address Family predicate exists until the user selects a value
 - the backend `AdvancedFlowFilterSpec` does not yet expose a dedicated address
   family predicate
 - therefore address family is a small backend prerequisite before full UI
@@ -1365,6 +1372,9 @@ Duration uses user-friendly labels:
 - min
 - h
 
+The UI may display `min` even if the current `.filter` text format uses a
+different canonical token such as `m`.
+
 Packet/count rows do not need a unit selector. They may show a static
 `packets` / `count` label or an equivalent compact presentation.
 
@@ -1701,9 +1711,9 @@ Expected staged direction:
 8. Service editor
 9. Protocol Path picker
 10. Contains Layer editor
-11. section Enabled state
-12. Open / Save / dirty integration
-13. format evolution and persistence
+11. section Enabled state / configured-document support
+12. format evolution and persistence
+13. Open / Save / dirty integration
 14. optional capture-level counts
 15. Tauri parity
 16. polish, tests, and docs

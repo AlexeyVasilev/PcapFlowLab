@@ -469,11 +469,19 @@ They do not require packet rescans, and non-TLS/non-QUIC flows do not satisfy
 version include predicates merely because their stored version enum is
 `unknown`.
 
-## Longer-Term Planned Filter Families
+## Broader Product Model And Future Extensions
 
-Beyond the current backend stage, the broader planned family set is:
+The current backend stage already implements the core predicate families
+described earlier in this RFC, including IP/CIDR, ports, service predicates,
+packet/byte ranges, Protocol Path predicates, TLS/QUIC versions, packet-size
+aggregates, duration, and current directionality.
+
+This section captures the broader product model and genuinely future
+extensions beyond that implemented baseline.
 
 ### IP addresses and networks
+
+Already implemented baseline:
 
 - multiple IPv4/IPv6 addresses
 - CIDR networks
@@ -481,9 +489,14 @@ Beyond the current backend stage, the broader planned family set is:
   - either endpoint
   - endpoint A
   - endpoint B
+
+Future extension:
+
 - future "between two networks" semantics
 
 ### Ports
+
+Already implemented baseline:
 
 - multiple exact ports
 - port ranges
@@ -516,6 +529,8 @@ These concepts must remain distinct:
 
 ### Service metadata
 
+Already implemented baseline:
+
 - multiple strings
 - case-insensitive contains
 - equals
@@ -523,22 +538,28 @@ These concepts must remain distinct:
 - known / unknown service
 - include / exclude support
 
-Regex is deferred.
+Future extension:
+
+- regex matching
 
 ### Flow packet count
+
+Already implemented baseline:
 
 - minimum and/or maximum packet count
 
 ### Flow byte volume
+
+Already implemented baseline:
 
 - original bytes: minimum and/or maximum
 - captured bytes: minimum and/or maximum
 
 ### Protocol Path
 
-Support multiple path predicates.
+Already implemented baseline:
 
-Planned path-matching semantics:
+- multiple path predicates
 
 - kind-only path/prefix
 - identifier-aware prefix
@@ -558,7 +579,7 @@ Path identity include:
 - AH SPI
 - ESP SPI
 
-Longer-term UI intent:
+Longer-term UI/product intent:
 
 - a dedicated "Add Protocol Path..." selector should create the same backend
   predicate type used by the common filter model
@@ -566,6 +587,8 @@ Longer-term UI intent:
   predicate instead of maintaining a separate filtering mechanism
 
 ### Protocol-specific versions
+
+Already implemented baseline:
 
 - TLS 1.2
 - TLS 1.3
@@ -576,14 +599,18 @@ Longer-term UI intent:
 
 ### Packet-size aggregates
 
-Initial useful predicates:
+Already implemented baseline:
 
 - largest original packet length
 - largest captured packet length
 
-Minimum packet-size predicates are deferred.
+Future extension:
+
+- minimum packet-size predicates
 
 ### Packet/flow conditions
+
+Already implemented baseline:
 
 - fragmented packets present / absent
 - fragmented packet count
@@ -608,25 +635,30 @@ Planned semantics:
 
 ### Duration
 
+Already implemented baseline:
+
 - minimum and/or maximum duration
 
 ### Directionality
 
-Using canonical A/B orientation:
+Already implemented baseline:
+
+- current backend predicate values:
+  - unidirectional
+  - bidirectional
+
+Future extension using canonical A/B orientation:
 
 - A->B packet count
 - B->A packet count
 - A->B original bytes
 - B->A original bytes
-- current backend predicate values:
-  - unidirectional
-  - bidirectional
 - derived packet dominance / ratio
 - derived byte dominance / ratio
 
 ### Derived rate predicates
 
-Where source aggregates are sufficient:
+Future extension where source aggregates are sufficient:
 
 - average packets/sec
 - average original-byte data rate
@@ -781,9 +813,6 @@ indexes.
 
 ## Open Questions
 
-- Should "known / unknown detected protocol" be represented as a dedicated
-  filter control, or only as inclusion/exclusion over `FlowProtocolHint` plus
-  `unknown`?
 - For time filters, should the first shared backend contract use absolute
   microsecond timestamps only, leaving relative-to-capture-start translation to
   frontends?
