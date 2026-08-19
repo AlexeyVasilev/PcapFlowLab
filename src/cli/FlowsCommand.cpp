@@ -348,7 +348,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         effective_settings = parse_result.settings;
     }
 
-    std::optional<session_detail::AdvancedFlowFilterSpec> parsed_advanced_filter_spec {};
+    std::optional<session_detail::AdvancedFlowFilterDocument> parsed_advanced_filter_document {};
     if (options.advanced_filter_path.has_value()) {
         const auto filter_file = read_advanced_flow_filter_file(*options.advanced_filter_path);
         if (!filter_file.ok) {
@@ -368,7 +368,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
             };
         }
 
-        parsed_advanced_filter_spec = parse_result.spec;
+        parsed_advanced_filter_document = parse_result.document;
     }
 
     FrontendSessionAdapter adapter {};
@@ -434,11 +434,17 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         selected_flow_indices = std::move(resolved.flow_indices);
     }
 
+    std::optional<session_detail::AdvancedFlowFilterSpec> effective_advanced_filter_spec {};
+    if (parsed_advanced_filter_document.has_value()) {
+        effective_advanced_filter_spec =
+            session_detail::make_effective_advanced_flow_filter_spec(*parsed_advanced_filter_document);
+    }
+
     std::vector<std::size_t> ordered_flow_indices {};
     std::size_t result_count_before_limit = 0U;
-    if (parsed_advanced_filter_spec.has_value()) {
+    if (effective_advanced_filter_spec.has_value()) {
         const auto query_result = adapter.query_advanced_flows(
-            *parsed_advanced_filter_spec,
+            *effective_advanced_filter_spec,
             selected_flow_indices,
             options.sort,
             options.limit

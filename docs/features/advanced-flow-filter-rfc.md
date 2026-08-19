@@ -54,26 +54,28 @@ CLI usage is intentionally conceptually distinct:
 - `--adv-filter <filter-file>` for the structured Advanced Flow Filter
 
 Those modes are mutually exclusive. Advanced Flow Filter remains separate from
-legacy `FlowQuery`: the CLI parses the `.filter` file into
-`AdvancedFlowFilterSpec`, compiles/evaluates it against canonical flow
-metadata, and only then reuses the ordinary `flows` sort/limit/export path on
-the resulting canonical flow indices.
+legacy `FlowQuery`: the CLI parses the `.filter` file into an
+`AdvancedFlowFilterDocument`, projects the effective
+`AdvancedFlowFilterSpec`, compiles/evaluates that effective spec against
+canonical flow metadata, and only then reuses the ordinary `flows`
+sort/limit/export path on the resulting canonical flow indices.
 
 The current backend stage now also defines a current development text contract
-for
-Advanced Flow Filter specs:
+for Advanced Flow Filter documents:
 
 ```text
+AdvancedFlowFilterDocument
+    <-> parse/format current text format v2
+    -> make_effective_advanced_flow_filter_spec(document)
 AdvancedFlowFilterSpec
-    <-> parse/format current text format v1
 CompiledAdvancedFlowFilter
     -> evaluate
 AdvancedFlowFilterResult
 ```
 
-The text contract is a serialization layer for `AdvancedFlowFilterSpec`. It
-is intentionally separate from filter compilation/evaluation and from any
-future UI editor workflow.
+The text contract is a serialization layer for the configured document. It is
+intentionally separate from filter compilation/evaluation and from any future
+UI editor workflow.
 
 ## Current CLI Integration
 
@@ -94,7 +96,7 @@ Current rules:
   evaluator after open/import completes.
 - Ordinary evaluation does not require source packet bytes.
 
-## Current Text Format v1
+## Current Text Format v2
 
 The current development text format is line-oriented and UTF-8 friendly.
 
@@ -112,7 +114,7 @@ During pre-release development:
 - migration readers or compatibility branches are not required solely for
   unreleased `.filter` versions
 - old development grammar does not need to be preserved merely because it once
-  used `format_version = 1`
+  used an earlier unreleased `format_version`
 - only the final format version selected for the first release containing
   Advanced Flow Filter becomes the compatibility baseline
 
@@ -126,15 +128,17 @@ separately once the format actually ships.
 - The first meaningful line must be:
 
 ```text
-format_version = 1
+format_version = 2
 ```
 
 - `format_version` may appear only once.
 - Any filter predicate before `format_version` is an error.
 - Keys are ASCII and use canonical lowercase spellings.
 - Enum-like values are ASCII and case-insensitive on input.
+- boolean section-enabled values accept `true` and `false`, case-insensitively
+  on input
 - Formatter output is canonical, lowercase where applicable, strips comments,
-  and always emits `format_version = 1` first.
+  and always emits `format_version = 2` first.
 
 Each non-comment assignment is:
 
@@ -145,7 +149,7 @@ Each non-comment assignment is:
 The parser returns `AdvancedFlowFilterTextParseResult` with:
 
 - `status`
-- parsed `AdvancedFlowFilterSpec`
+- parsed `AdvancedFlowFilterDocument`
 - optional structured `issue` carrying line, optional column, key, token, and
   diagnostic message
 
@@ -153,17 +157,58 @@ The formatter returns `AdvancedFlowFilterTextFormatResult` with:
 
 - `status`
 - canonical serialized text
-- optional structured `issue` when the spec cannot be represented faithfully
+- optional structured `issue` when the configured document cannot be represented
+  faithfully
 
 Scalar keys are unique within one file. Repeating a scalar key such as
 `packet_count.min` is an error. Repeated include/exclude predicates remain
 legal and preserve order inside their category.
 
-### Grammar shape
+The text format now serializes the configured document model rather than only
+the effective evaluator input:
 
-The implemented v1 keys are:
+- configured predicates are always preserved, including predicates in disabled
+  sections
+- section Enabled states are persisted independently
+- evaluation still uses:
 
 ```text
+parse configured document
+    ->
+make_effective_advanced_flow_filter_spec(document)
+    ->
+compile_advanced_flow_filter(...)
+    ->
+evaluate_advanced_flow_filter(...)
+```
+
+All sections default to Enabled = `true`. Canonical formatting omits default
+`true` section assignments and emits only the non-default `false` assignments.
+
+Canonical top-level ordering is:
+
+1. `format_version`
+2. non-default section Enabled assignments in fixed section order
+3. configured predicates in canonical predicate order
+
+### Grammar shape
+
+The implemented v2 keys are:
+
+```text
+section.address_family.enabled = true | false
+section.flow_protocol.enabled = true | false
+section.detected_protocol.enabled = true | false
+section.tls_version.enabled = true | false
+section.quic_version.enabled = true | false
+section.directionality.enabled = true | false
+section.ports.enabled = true | false
+section.ip_addresses.enabled = true | false
+section.traffic.enabled = true | false
+section.service.enabled = true | false
+section.protocol_path.enabled = true | false
+section.contains_layer.enabled = true | false
+
 address_family.include = ipv4 | ipv6
 address_family.exclude = ipv4 | ipv6
 
@@ -210,6 +255,28 @@ max_captured_packet_length.<min|max> = <packet-byte-quantity>
 ```
 
 `contains` Protocol Path predicates must contain exactly one layer.
+
+The fixed section-order used for canonical non-default Enabled assignments is:
+
+1. `address_family`
+2. `flow_protocol`
+3. `detected_protocol`
+4. `tls_version`
+5. `quic_version`
+6. `directionality`
+7. `ports`
+8. `ip_addresses`
+9. `traffic`
+10. `service`
+11. `protocol_path`
+12. `contains_layer`
+
+`protocol_path.contains.*` remains the configured predicate representation for
+Contains Layer rules. `section.protocol_path.enabled` independently controls
+`exact_path` and `path_prefix`, while `section.contains_layer.enabled`
+independently controls `contains_layer` predicates during effective-spec
+projection. The formatter still serializes all configured protocol-path
+predicates regardless of either section state.
 
 ### Canonical tokens
 

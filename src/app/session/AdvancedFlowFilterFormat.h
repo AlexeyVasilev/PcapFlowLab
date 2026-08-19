@@ -38,7 +38,7 @@ struct AdvancedFlowFilterTextParseIssue {
 
 struct AdvancedFlowFilterTextParseResult {
     AdvancedFlowFilterTextParseStatus status {AdvancedFlowFilterTextParseStatus::ok};
-    AdvancedFlowFilterSpec spec {};
+    AdvancedFlowFilterDocument document {};
     std::optional<AdvancedFlowFilterTextParseIssue> issue {};
 };
 
@@ -62,7 +62,7 @@ struct AdvancedFlowFilterTextFormatResult {
 [[nodiscard]] AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(std::string_view text);
 
 [[nodiscard]] AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(
-    const AdvancedFlowFilterSpec& spec
+    const AdvancedFlowFilterDocument& document
 );
 
 }  // namespace pfl::session_detail

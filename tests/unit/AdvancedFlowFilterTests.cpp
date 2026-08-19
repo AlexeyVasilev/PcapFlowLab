@@ -446,8 +446,14 @@ session_detail::AdvancedFlowFilterTextParseResult require_parse_success(const st
     return result;
 }
 
-std::string require_format_success(const AdvancedFlowFilterSpec& spec) {
-    const auto result = session_detail::format_advanced_flow_filter_text(spec);
+session_detail::AdvancedFlowFilterDocument make_default_document(const AdvancedFlowFilterSpec& spec) {
+    session_detail::AdvancedFlowFilterDocument document {};
+    document.configured_spec = spec;
+    return document;
+}
+
+std::string require_format_success(const session_detail::AdvancedFlowFilterDocument& document) {
+    const auto result = session_detail::format_advanced_flow_filter_text(document);
     PFL_REQUIRE(result.status == AdvancedFlowFilterTextFormatStatus::ok);
     return result.text;
 }
@@ -471,10 +477,12 @@ std::vector<std::size_t> evaluate_matching_indices_for_session(
 }
 
 void expect_round_trip_stable(const AdvancedFlowFilterSpec& spec) {
-    const auto first_text = require_format_success(spec);
+    const auto document = make_default_document(spec);
+    const auto first_text = require_format_success(document);
     const auto reparsed = require_parse_success(first_text);
-    const auto second_text = require_format_success(reparsed.spec);
+    const auto second_text = require_format_success(reparsed.document);
     PFL_EXPECT(first_text == second_text);
+    PFL_EXPECT(reparsed.document == document);
 }
 
 void run_protocol_and_candidate_scope_tests() {
@@ -1401,27 +1409,33 @@ void run_text_format_tests() {
     const auto connections = listed_connections_for_fixture(fixture);
 
     {
-        const auto parsed = require_parse_success("format_version = 1\n");
-        const auto filter = require_compiled_filter(parsed.spec, fixture, fixture.default_settings);
+        const auto parsed = require_parse_success("format_version = 2\n");
+        const auto filter = require_compiled_filter(
+            session_detail::make_effective_advanced_flow_filter_spec(parsed.document),
+            fixture,
+            fixture.default_settings
+        );
         expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
-        PFL_EXPECT(require_format_success(parsed.spec) == std::string("format_version = 1\n"));
+        PFL_EXPECT(parsed.document.section_states == session_detail::AdvancedFlowFilterDocumentSectionStates {});
+        PFL_EXPECT(require_format_success(parsed.document) == std::string("format_version = 2\n"));
     }
 
     {
         const auto parsed = require_parse_success(
             "\xEF\xBB\xBF# comment\r\n"
-            "format_version = 1\r\n"
+            "format_version = 2\r\n"
             "\r\n"
             "flow_protocol.include = TCP\r\n"
             "service.contains.ci.include = \"#hash\"   # trailing comment\r\n"
         );
-        PFL_EXPECT(parsed.spec.flow_protocol.include == std::vector<ProtocolId> {ProtocolId::tcp});
-        PFL_REQUIRE(parsed.spec.service.include.size() == 1U);
-        PFL_EXPECT(parsed.spec.service.include.front().value == "#hash");
+        const auto& spec = parsed.document.configured_spec;
+        PFL_EXPECT(spec.flow_protocol.include == std::vector<ProtocolId> {ProtocolId::tcp});
+        PFL_REQUIRE(spec.service.include.size() == 1U);
+        PFL_EXPECT(spec.service.include.front().value == "#hash");
         PFL_EXPECT(
-            require_format_success(parsed.spec) ==
+            require_format_success(parsed.document) ==
             std::string(
-                "format_version = 1\n"
+                "format_version = 2\n"
                 "flow_protocol.include = tcp\n"
                 "service.contains.ci.include = \"#hash\"\n"
             )
@@ -1433,28 +1447,29 @@ void run_text_format_tests() {
         expect_parse_status("flow_protocol.include = tcp\n", AdvancedFlowFilterTextParseStatus::missing_format_version);
 
         const auto duplicate_version = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 1\nformat_version = 1\n"
+            "format_version = 2\nformat_version = 2\n"
         );
         PFL_EXPECT(duplicate_version.status == AdvancedFlowFilterTextParseStatus::duplicate_format_version);
         PFL_REQUIRE(duplicate_version.issue.has_value());
         PFL_EXPECT(duplicate_version.issue->line == 2U);
 
-        expect_parse_status("format_version = 2\n", AdvancedFlowFilterTextParseStatus::unsupported_format_version);
+        expect_parse_status("format_version = 1\n", AdvancedFlowFilterTextParseStatus::unsupported_format_version);
+        expect_parse_status("format_version = 99\n", AdvancedFlowFilterTextParseStatus::unsupported_format_version);
 
         const auto unknown_key = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 1\nunknown.key = value\n"
+            "format_version = 2\nunknown.key = value\n"
         );
         PFL_EXPECT(unknown_key.status == AdvancedFlowFilterTextParseStatus::unknown_key);
         PFL_REQUIRE(unknown_key.issue.has_value());
         PFL_EXPECT(unknown_key.issue->line == 2U);
         PFL_EXPECT(unknown_key.issue->key == "unknown.key");
 
-        expect_parse_status("format_version = 1\nflow_protocol.include tcp\n", AdvancedFlowFilterTextParseStatus::malformed_assignment);
-        expect_parse_status("format_version = 1\npacket_count.min = 1\npacket_count.min = 2\n",
+        expect_parse_status("format_version = 2\nflow_protocol.include tcp\n", AdvancedFlowFilterTextParseStatus::malformed_assignment);
+        expect_parse_status("format_version = 2\npacket_count.min = 1\npacket_count.min = 2\n",
                             AdvancedFlowFilterTextParseStatus::duplicate_scalar_key);
 
         const auto invalid_enum = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 1\ndirectionality.include = any\n"
+            "format_version = 2\ndirectionality.include = any\n"
         );
         PFL_EXPECT(invalid_enum.status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
         PFL_REQUIRE(invalid_enum.issue.has_value());
@@ -1465,22 +1480,98 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
+            "section.address_family.enabled = false\n"
+            "section.flow_protocol.enabled = FALSE\n"
+            "section.detected_protocol.enabled = false\n"
+            "section.tls_version.enabled = false\n"
+            "section.quic_version.enabled = false\n"
+            "section.directionality.enabled = false\n"
+            "section.ports.enabled = false\n"
+            "section.ip_addresses.enabled = false\n"
+            "section.traffic.enabled = false\n"
+            "section.service.enabled = false\n"
+            "section.protocol_path.enabled = false\n"
+            "section.contains_layer.enabled = false\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.address_family == false);
+        PFL_EXPECT(parsed.document.section_states.flow_protocol == false);
+        PFL_EXPECT(parsed.document.section_states.detected_protocol == false);
+        PFL_EXPECT(parsed.document.section_states.tls_version == false);
+        PFL_EXPECT(parsed.document.section_states.quic_version == false);
+        PFL_EXPECT(parsed.document.section_states.directionality == false);
+        PFL_EXPECT(parsed.document.section_states.ports == false);
+        PFL_EXPECT(parsed.document.section_states.ip_addresses == false);
+        PFL_EXPECT(parsed.document.section_states.traffic == false);
+        PFL_EXPECT(parsed.document.section_states.service == false);
+        PFL_EXPECT(parsed.document.section_states.protocol_path == false);
+        PFL_EXPECT(parsed.document.section_states.contains_layer == false);
+        PFL_EXPECT(
+            require_format_success(parsed.document) ==
+            std::string(
+                "format_version = 2\n"
+                "section.address_family.enabled = false\n"
+                "section.flow_protocol.enabled = false\n"
+                "section.detected_protocol.enabled = false\n"
+                "section.tls_version.enabled = false\n"
+                "section.quic_version.enabled = false\n"
+                "section.directionality.enabled = false\n"
+                "section.ports.enabled = false\n"
+                "section.ip_addresses.enabled = false\n"
+                "section.traffic.enabled = false\n"
+                "section.service.enabled = false\n"
+                "section.protocol_path.enabled = false\n"
+                "section.contains_layer.enabled = false\n"
+            )
+        );
+
+        const auto explicit_true = require_parse_success(
+            "format_version = 2\n"
+            "section.ports.enabled = true\n"
+            "port.either.include = 443\n"
+        );
+        PFL_EXPECT(explicit_true.document.section_states.ports == true);
+        PFL_EXPECT(
+            require_format_success(explicit_true.document) ==
+            std::string(
+                "format_version = 2\n"
+                "port.either.include = 443\n"
+            )
+        );
+
+        expect_parse_status(
+            "format_version = 2\nsection.unknown.enabled = false\n",
+            AdvancedFlowFilterTextParseStatus::unknown_key
+        );
+        expect_parse_status(
+            "format_version = 2\nsection.ports.enabled = maybe\n",
+            AdvancedFlowFilterTextParseStatus::invalid_value
+        );
+        expect_parse_status(
+            "format_version = 2\nsection.ports.enabled = false\nsection.ports.enabled = true\n",
+            AdvancedFlowFilterTextParseStatus::duplicate_scalar_key
+        );
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
             "address_family.include = IPv4\n"
             "address_family.include = ipv6\n"
             "address_family.exclude = IPV6\n"
         );
-        PFL_EXPECT((parsed.spec.address_family.include == std::vector<FlowAddressFamily> {
+        const auto& spec = parsed.document.configured_spec;
+        PFL_EXPECT((spec.address_family.include == std::vector<FlowAddressFamily> {
             FlowAddressFamily::ipv4,
             FlowAddressFamily::ipv6,
         }));
-        PFL_EXPECT((parsed.spec.address_family.exclude == std::vector<FlowAddressFamily> {
+        PFL_EXPECT((spec.address_family.exclude == std::vector<FlowAddressFamily> {
             FlowAddressFamily::ipv6,
         }));
         PFL_EXPECT(
-            require_format_success(parsed.spec) ==
+            require_format_success(parsed.document) ==
             std::string(
-                "format_version = 1\n"
+                "format_version = 2\n"
                 "address_family.include = ipv4\n"
                 "address_family.include = ipv6\n"
                 "address_family.exclude = ipv6\n"
@@ -1490,7 +1581,7 @@ void run_text_format_tests() {
 
     {
         const auto invalid_family = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "address_family.include = ipx\n"
         );
         PFL_EXPECT(invalid_family.status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
@@ -1502,7 +1593,7 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "address_family.include = IPv4\n"
             "flow_protocol.include = TCP\n"
             "flow_protocol.include = udp\n"
@@ -1514,22 +1605,23 @@ void run_text_format_tests() {
             "directionality.include = BIDIRECTIONAL\n"
         );
 
-        PFL_EXPECT((parsed.spec.flow_protocol.include == std::vector<ProtocolId> {ProtocolId::tcp, ProtocolId::udp}));
-        PFL_EXPECT((parsed.spec.flow_protocol.exclude == std::vector<ProtocolId> {ProtocolId::icmpv6}));
-        PFL_EXPECT((parsed.spec.detected_protocol.include == std::vector<FlowProtocolHint> {FlowProtocolHint::possible_tls}));
-        PFL_EXPECT((parsed.spec.detected_protocol.exclude == std::vector<FlowProtocolHint> {FlowProtocolHint::mdns}));
-        PFL_EXPECT((parsed.spec.tls_version.include == std::vector<TlsVersionHint> {TlsVersionHint::tls13}));
-        PFL_EXPECT((parsed.spec.quic_version.exclude == std::vector<QuicVersionHint> {QuicVersionHint::draft29}));
-        PFL_EXPECT((parsed.spec.address_family.include == std::vector<FlowAddressFamily> {FlowAddressFamily::ipv4}));
+        const auto& spec = parsed.document.configured_spec;
+        PFL_EXPECT((spec.flow_protocol.include == std::vector<ProtocolId> {ProtocolId::tcp, ProtocolId::udp}));
+        PFL_EXPECT((spec.flow_protocol.exclude == std::vector<ProtocolId> {ProtocolId::icmpv6}));
+        PFL_EXPECT((spec.detected_protocol.include == std::vector<FlowProtocolHint> {FlowProtocolHint::possible_tls}));
+        PFL_EXPECT((spec.detected_protocol.exclude == std::vector<FlowProtocolHint> {FlowProtocolHint::mdns}));
+        PFL_EXPECT((spec.tls_version.include == std::vector<TlsVersionHint> {TlsVersionHint::tls13}));
+        PFL_EXPECT((spec.quic_version.exclude == std::vector<QuicVersionHint> {QuicVersionHint::draft29}));
+        PFL_EXPECT((spec.address_family.include == std::vector<FlowAddressFamily> {FlowAddressFamily::ipv4}));
         PFL_EXPECT((
-            parsed.spec.directionality.include ==
+            spec.directionality.include ==
             std::vector<AdvancedFlowFilterDirectionality> {AdvancedFlowFilterDirectionality::bidirectional}
         ));
 
         PFL_EXPECT(
-            require_format_success(parsed.spec) ==
+            require_format_success(parsed.document) ==
             std::string(
-                "format_version = 1\n"
+                "format_version = 2\n"
                 "address_family.include = ipv4\n"
                 "flow_protocol.include = tcp\n"
                 "flow_protocol.include = udp\n"
@@ -1545,31 +1637,32 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "port.either.include = 443\n"
             "port.a.include = 53000-53010\n"
             "port.b.exclude = 1-1023\n"
         );
-        PFL_REQUIRE(parsed.spec.ports.include.size() == 2U);
-        PFL_EXPECT(parsed.spec.ports.include[0].scope == AdvancedFlowFilterPortScope::either_endpoint);
-        PFL_EXPECT(parsed.spec.ports.include[0].range.first == 443U);
-        PFL_EXPECT(parsed.spec.ports.include[0].range.last == 443U);
-        PFL_EXPECT(parsed.spec.ports.include[1].scope == AdvancedFlowFilterPortScope::endpoint_a);
-        PFL_EXPECT(parsed.spec.ports.include[1].range.first == 53000U);
-        PFL_EXPECT(parsed.spec.ports.include[1].range.last == 53010U);
-        PFL_REQUIRE(parsed.spec.ports.exclude.size() == 1U);
-        PFL_EXPECT(parsed.spec.ports.exclude[0].scope == AdvancedFlowFilterPortScope::endpoint_b);
-        PFL_EXPECT(parsed.spec.ports.exclude[0].range.first == 1U);
-        PFL_EXPECT(parsed.spec.ports.exclude[0].range.last == 1023U);
+        const auto& spec = parsed.document.configured_spec;
+        PFL_REQUIRE(spec.ports.include.size() == 2U);
+        PFL_EXPECT(spec.ports.include[0].scope == AdvancedFlowFilterPortScope::either_endpoint);
+        PFL_EXPECT(spec.ports.include[0].range.first == 443U);
+        PFL_EXPECT(spec.ports.include[0].range.last == 443U);
+        PFL_EXPECT(spec.ports.include[1].scope == AdvancedFlowFilterPortScope::endpoint_a);
+        PFL_EXPECT(spec.ports.include[1].range.first == 53000U);
+        PFL_EXPECT(spec.ports.include[1].range.last == 53010U);
+        PFL_REQUIRE(spec.ports.exclude.size() == 1U);
+        PFL_EXPECT(spec.ports.exclude[0].scope == AdvancedFlowFilterPortScope::endpoint_b);
+        PFL_EXPECT(spec.ports.exclude[0].range.first == 1U);
+        PFL_EXPECT(spec.ports.exclude[0].range.last == 1023U);
 
-        expect_parse_status("format_version = 1\nport.either.include = 65536\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
-        expect_parse_status("format_version = 1\nport.either.include = 9000-8000\n", AdvancedFlowFilterTextParseStatus::invalid_value);
-        expect_parse_status("format_version = 1\nport.either.include = 100-200-300\n", AdvancedFlowFilterTextParseStatus::invalid_value);
+        expect_parse_status("format_version = 2\nport.either.include = 65536\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+        expect_parse_status("format_version = 2\nport.either.include = 9000-8000\n", AdvancedFlowFilterTextParseStatus::invalid_value);
+        expect_parse_status("format_version = 2\nport.either.include = 100-200-300\n", AdvancedFlowFilterTextParseStatus::invalid_value);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "packet_count.min = 100\n"
             "packet_count.max = 200\n"
             "original_bytes.min = 1MiB\n"
@@ -1594,80 +1687,83 @@ void run_text_format_tests() {
             "max_captured_packet_length.max = 1KiB\n"
         );
 
-        PFL_REQUIRE(parsed.spec.aggregate.packet_count.has_value());
-        PFL_EXPECT(parsed.spec.aggregate.packet_count->min == 100U);
-        PFL_EXPECT(parsed.spec.aggregate.packet_count->max == 200U);
-        PFL_REQUIRE(parsed.spec.aggregate.original_bytes.has_value());
-        PFL_EXPECT(parsed.spec.aggregate.original_bytes->min == 1048576U);
-        PFL_EXPECT(parsed.spec.aggregate.original_bytes->max == 1536U);
-        PFL_REQUIRE(parsed.spec.aggregate.captured_bytes.has_value());
-        PFL_EXPECT(parsed.spec.aggregate.captured_bytes->min == 2048U);
-        PFL_EXPECT(parsed.spec.aggregate.captured_bytes->max == 2147483648ULL);
-        PFL_REQUIRE(parsed.spec.aggregate.duration_us.has_value());
-        PFL_EXPECT(parsed.spec.aggregate.duration_us->min == 1500000U);
-        PFL_EXPECT(parsed.spec.aggregate.duration_us->max == 7200000000ULL);
-        PFL_REQUIRE(parsed.spec.aggregate.max_original_packet_length.has_value());
-        PFL_EXPECT(parsed.spec.aggregate.max_original_packet_length->min == 1500U);
-        PFL_EXPECT(parsed.spec.aggregate.max_original_packet_length->max == 9000U);
-        PFL_REQUIRE(parsed.spec.aggregate.max_captured_packet_length.has_value());
-        PFL_EXPECT(parsed.spec.aggregate.max_captured_packet_length->min == 1024U);
-        PFL_EXPECT(parsed.spec.aggregate.max_captured_packet_length->max == 1024U);
+        const auto& spec = parsed.document.configured_spec;
+        PFL_REQUIRE(spec.aggregate.packet_count.has_value());
+        PFL_EXPECT(spec.aggregate.packet_count->min == 100U);
+        PFL_EXPECT(spec.aggregate.packet_count->max == 200U);
+        PFL_REQUIRE(spec.aggregate.original_bytes.has_value());
+        PFL_EXPECT(spec.aggregate.original_bytes->min == 1048576U);
+        PFL_EXPECT(spec.aggregate.original_bytes->max == 1536U);
+        PFL_REQUIRE(spec.aggregate.captured_bytes.has_value());
+        PFL_EXPECT(spec.aggregate.captured_bytes->min == 2048U);
+        PFL_EXPECT(spec.aggregate.captured_bytes->max == 2147483648ULL);
+        PFL_REQUIRE(spec.aggregate.duration_us.has_value());
+        PFL_EXPECT(spec.aggregate.duration_us->min == 1500000U);
+        PFL_EXPECT(spec.aggregate.duration_us->max == 7200000000ULL);
+        PFL_REQUIRE(spec.aggregate.max_original_packet_length.has_value());
+        PFL_EXPECT(spec.aggregate.max_original_packet_length->min == 1500U);
+        PFL_EXPECT(spec.aggregate.max_original_packet_length->max == 9000U);
+        PFL_REQUIRE(spec.aggregate.max_captured_packet_length.has_value());
+        PFL_EXPECT(spec.aggregate.max_captured_packet_length->min == 1024U);
+        PFL_EXPECT(spec.aggregate.max_captured_packet_length->max == 1024U);
 
-        expect_parse_status("format_version = 1\noriginal_bytes.min = 1MB\n", AdvancedFlowFilterTextParseStatus::invalid_value);
-        expect_parse_status("format_version = 1\ncaptured_bytes.min = 16777216TiB\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
-        expect_parse_status("format_version = 1\nduration.min = 18446744073709551615h\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+        expect_parse_status("format_version = 2\noriginal_bytes.min = 1MB\n", AdvancedFlowFilterTextParseStatus::invalid_value);
+        expect_parse_status("format_version = 2\ncaptured_bytes.min = 16777216TiB\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+        expect_parse_status("format_version = 2\nduration.min = 18446744073709551615h\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "ip.either.include = 192.0.2.10\n"
             "ip.a.exclude = 10.0.0.0/8\n"
             "ip.b.include = 2001:db8::1\n"
             "ip.either.exclude = 2001:db8::/32\n"
         );
-        PFL_REQUIRE(parsed.spec.addresses.ipv4_include.size() == 1U);
-        PFL_EXPECT(parsed.spec.addresses.ipv4_include[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::exact);
-        PFL_EXPECT(parsed.spec.addresses.ipv4_include[0].prefix_length == 32U);
-        PFL_REQUIRE(parsed.spec.addresses.ipv4_exclude.size() == 1U);
-        PFL_EXPECT(parsed.spec.addresses.ipv4_exclude[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr);
-        PFL_EXPECT(parsed.spec.addresses.ipv4_exclude[0].prefix_length == 8U);
-        PFL_REQUIRE(parsed.spec.addresses.ipv6_include.size() == 1U);
-        PFL_EXPECT(parsed.spec.addresses.ipv6_include[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::exact);
-        PFL_EXPECT(parsed.spec.addresses.ipv6_include[0].prefix_length == 128U);
-        PFL_REQUIRE(parsed.spec.addresses.ipv6_exclude.size() == 1U);
-        PFL_EXPECT(parsed.spec.addresses.ipv6_exclude[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr);
-        PFL_EXPECT(parsed.spec.addresses.ipv6_exclude[0].prefix_length == 32U);
+        const auto& spec = parsed.document.configured_spec;
+        PFL_REQUIRE(spec.addresses.ipv4_include.size() == 1U);
+        PFL_EXPECT(spec.addresses.ipv4_include[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::exact);
+        PFL_EXPECT(spec.addresses.ipv4_include[0].prefix_length == 32U);
+        PFL_REQUIRE(spec.addresses.ipv4_exclude.size() == 1U);
+        PFL_EXPECT(spec.addresses.ipv4_exclude[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr);
+        PFL_EXPECT(spec.addresses.ipv4_exclude[0].prefix_length == 8U);
+        PFL_REQUIRE(spec.addresses.ipv6_include.size() == 1U);
+        PFL_EXPECT(spec.addresses.ipv6_include[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::exact);
+        PFL_EXPECT(spec.addresses.ipv6_include[0].prefix_length == 128U);
+        PFL_REQUIRE(spec.addresses.ipv6_exclude.size() == 1U);
+        PFL_EXPECT(spec.addresses.ipv6_exclude[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr);
+        PFL_EXPECT(spec.addresses.ipv6_exclude[0].prefix_length == 32U);
 
-        expect_parse_status("format_version = 1\nip.either.include = 300.1.2.3\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
-        expect_parse_status("format_version = 1\nip.either.include = 2001:::1\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
+        expect_parse_status("format_version = 2\nip.either.include = 300.1.2.3\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
+        expect_parse_status("format_version = 2\nip.either.include = 2001:::1\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "service.state.include = known\n"
             "service.state.exclude = unknown\n"
             "service.equals.ci.include = \"Example # Service\"\n"
             "service.starts_with.cs.exclude = \"TEST\\\\prefix\"\n"
             "service.contains.ci.include = \"line\\nvalue\\t#\"\n"
         );
-        PFL_REQUIRE(parsed.spec.service.include.size() == 3U);
-        PFL_EXPECT(parsed.spec.service.include[0].kind == AdvancedFlowFilterServicePredicateKind::known);
-        PFL_EXPECT(parsed.spec.service.include[1].kind == AdvancedFlowFilterServicePredicateKind::equals);
-        PFL_EXPECT(parsed.spec.service.include[1].value == "Example # Service");
-        PFL_EXPECT(parsed.spec.service.include[2].value == "line\nvalue\t#");
-        PFL_REQUIRE(parsed.spec.service.exclude.size() == 2U);
-        PFL_EXPECT(parsed.spec.service.exclude[0].kind == AdvancedFlowFilterServicePredicateKind::unknown);
-        PFL_EXPECT(parsed.spec.service.exclude[1].value == "TEST\\prefix");
+        const auto& spec = parsed.document.configured_spec;
+        PFL_REQUIRE(spec.service.include.size() == 3U);
+        PFL_EXPECT(spec.service.include[0].kind == AdvancedFlowFilterServicePredicateKind::known);
+        PFL_EXPECT(spec.service.include[1].kind == AdvancedFlowFilterServicePredicateKind::equals);
+        PFL_EXPECT(spec.service.include[1].value == "Example # Service");
+        PFL_EXPECT(spec.service.include[2].value == "line\nvalue\t#");
+        PFL_REQUIRE(spec.service.exclude.size() == 2U);
+        PFL_EXPECT(spec.service.exclude[0].kind == AdvancedFlowFilterServicePredicateKind::unknown);
+        PFL_EXPECT(spec.service.exclude[1].value == "TEST\\prefix");
 
-        expect_parse_status("format_version = 1\nservice.contains.ci.include = \"bad\\q\"\n", AdvancedFlowFilterTextParseStatus::invalid_escape);
-        expect_parse_status("format_version = 1\nservice.contains.ci.include = \"unterminated\n", AdvancedFlowFilterTextParseStatus::unterminated_string);
+        expect_parse_status("format_version = 2\nservice.contains.ci.include = \"bad\\q\"\n", AdvancedFlowFilterTextParseStatus::invalid_escape);
+        expect_parse_status("format_version = 2\nservice.contains.ci.include = \"unterminated\n", AdvancedFlowFilterTextParseStatus::unterminated_string);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 1\n"
+            "format_version = 2\n"
             "protocol_path.exact.include = EthernetII > IPv4 > TCP\n"
             "protocol_path.prefix.include = EthernetII > VLAN(vid=100) > MPLS(label=16050) > IPv6\n"
             "protocol_path.contains.include = VXLAN(vni=42)\n"
@@ -1691,24 +1787,25 @@ void run_text_format_tests() {
             "protocol_path.contains.include = ARP\n"
             "protocol_path.contains.include = UDP\n"
         );
-        PFL_REQUIRE(parsed.spec.protocol_path.include.size() == 20U);
-        PFL_REQUIRE(parsed.spec.protocol_path.exclude.size() == 1U);
-        PFL_EXPECT(parsed.spec.protocol_path.include[0].match_kind == AdvancedFlowFilterProtocolPathMatchKind::exact_path);
-        PFL_EXPECT(parsed.spec.protocol_path.include[1].match_kind == AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
-        PFL_EXPECT(parsed.spec.protocol_path.include[2].match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
-        PFL_EXPECT(parsed.spec.protocol_path.include[2].layers[0].kind == ProtocolLayerKind::vxlan);
-        PFL_EXPECT(parsed.spec.protocol_path.include[2].layers[0].identifier->value == 42U);
-        PFL_EXPECT(parsed.spec.protocol_path.include[4].layers[0].identifier->kind == ProtocolLayerIdentifierKind::gre_key);
+        const auto& spec = parsed.document.configured_spec;
+        PFL_REQUIRE(spec.protocol_path.include.size() == 20U);
+        PFL_REQUIRE(spec.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(spec.protocol_path.include[0].match_kind == AdvancedFlowFilterProtocolPathMatchKind::exact_path);
+        PFL_EXPECT(spec.protocol_path.include[1].match_kind == AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_EXPECT(spec.protocol_path.include[2].match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_EXPECT(spec.protocol_path.include[2].layers[0].kind == ProtocolLayerKind::vxlan);
+        PFL_EXPECT(spec.protocol_path.include[2].layers[0].identifier->value == 42U);
+        PFL_EXPECT(spec.protocol_path.include[4].layers[0].identifier->kind == ProtocolLayerIdentifierKind::gre_key);
 
-        expect_parse_status("format_version = 1\nprotocol_path.contains.include = VLAN(vid=100) > IPv4\n",
+        expect_parse_status("format_version = 2\nprotocol_path.contains.include = VLAN(vid=100) > IPv4\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
-        expect_parse_status("format_version = 1\nprotocol_path.contains.include = UnknownLayer\n",
+        expect_parse_status("format_version = 2\nprotocol_path.contains.include = UnknownLayer\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
-        expect_parse_status("format_version = 1\nprotocol_path.contains.include = VLAN(foo=1)\n",
+        expect_parse_status("format_version = 2\nprotocol_path.contains.include = VLAN(foo=1)\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
 
         const auto invalid_protocol_path = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 1\nprotocol_path.contains.include = ESP(key=1)\n"
+            "format_version = 2\nprotocol_path.contains.include = ESP(key=1)\n"
         );
         PFL_EXPECT(invalid_protocol_path.status == AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
         PFL_REQUIRE(invalid_protocol_path.issue.has_value());
@@ -1719,7 +1816,7 @@ void run_text_format_tests() {
 
     {
         const auto realistic_tls_text =
-            "format_version = 1\n"
+            "format_version = 2\n"
             "flow_protocol.include = tcp\n"
             "detected_protocol.include = tls\n"
             "tls_version.include = tls1_3\n"
@@ -1731,14 +1828,18 @@ void run_text_format_tests() {
             "directionality.include = bidirectional\n"
             "service.contains.ci.include = \"example\"\n";
         const auto parsed = require_parse_success(realistic_tls_text);
-        const auto filter = require_compiled_filter(parsed.spec, fixture, fixture.default_settings);
+        const auto filter = require_compiled_filter(
+            session_detail::make_effective_advanced_flow_filter_spec(parsed.document),
+            fixture,
+            fixture.default_settings
+        );
         expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
-        expect_round_trip_stable(parsed.spec);
+        expect_round_trip_stable(parsed.document.configured_spec);
     }
 
     {
         const auto realistic_quic_text =
-            "format_version = 1\n"
+            "format_version = 2\n"
             "flow_protocol.include = udp\n"
             "detected_protocol.include = quic\n"
             "quic_version.include = v1\n"
@@ -1750,13 +1851,18 @@ void run_text_format_tests() {
             "directionality.include = unidirectional\n"
             "service.starts_with.ci.include = \"quic-\"\n";
         const auto parsed = require_parse_success(realistic_quic_text);
-        const auto filter = require_compiled_filter(parsed.spec, fixture, fixture.default_settings);
+        const auto filter = require_compiled_filter(
+            session_detail::make_effective_advanced_flow_filter_spec(parsed.document),
+            fixture,
+            fixture.default_settings
+        );
         expect_indices_equal(evaluate_matching_indices(connections, filter), {7U});
-        expect_round_trip_stable(parsed.spec);
+        expect_round_trip_stable(parsed.document.configured_spec);
     }
 
     {
-        AdvancedFlowFilterSpec spec {};
+        session_detail::AdvancedFlowFilterDocument document {};
+        auto& spec = document.configured_spec;
         spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
             .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
             .layers = {{.kind = ProtocolLayerKind::vlan, .identifier = ProtocolLayerIdentifier {
@@ -1813,18 +1919,18 @@ void run_text_format_tests() {
             },
         };
 
-        const auto first_text = require_format_success(spec);
+        const auto first_text = require_format_success(document);
         const auto reparsed = require_parse_success(first_text);
-        const auto second_text = require_format_success(reparsed.spec);
+        const auto second_text = require_format_success(reparsed.document);
         PFL_EXPECT(first_text == second_text);
-        PFL_EXPECT(first_text.find("format_version = 1\n") == 0U);
+        PFL_EXPECT(first_text.find("format_version = 2\n") == 0U);
         PFL_EXPECT(first_text.find("address_family.include = ipv4\n") != std::string::npos);
         PFL_EXPECT(first_text.find("flow_protocol.include = tcp\nflow_protocol.include = udp\n") != std::string::npos);
     }
 
     {
-        AdvancedFlowFilterSpec spec {};
-        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+        session_detail::AdvancedFlowFilterDocument document {};
+        document.configured_spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
             .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
             .layers = {{
                 .kind = ProtocolLayerKind::vlan,
@@ -1835,10 +1941,144 @@ void run_text_format_tests() {
             }},
         });
 
-        const auto formatted = session_detail::format_advanced_flow_filter_text(spec);
+        const auto formatted = session_detail::format_advanced_flow_filter_text(document);
         PFL_EXPECT(formatted.status == AdvancedFlowFilterTextFormatStatus::unrepresentable_spec);
         PFL_REQUIRE(formatted.issue.has_value());
         PFL_EXPECT(formatted.issue->category == "protocol_path");
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
+            "section.ports.enabled = false\n"
+            "port.either.include = 443\n"
+            "port.either.include = 8443\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.ports == false);
+        PFL_REQUIRE(parsed.document.configured_spec.ports.include.size() == 2U);
+        PFL_EXPECT(parsed.document.configured_spec.ports.include[0].range.first == 443U);
+        PFL_EXPECT(parsed.document.configured_spec.ports.include[1].range.first == 8443U);
+        PFL_EXPECT(
+            require_format_success(parsed.document) ==
+            std::string(
+                "format_version = 2\n"
+                "section.ports.enabled = false\n"
+                "port.either.include = 443\n"
+                "port.either.include = 8443\n"
+            )
+        );
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(parsed.document);
+        PFL_EXPECT(effective.ports == session_detail::AdvancedFlowFilterPortCriteria {});
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
+            "section.protocol_path.enabled = false\n"
+            "protocol_path.prefix.include = EthernetII > IPv4\n"
+            "protocol_path.contains.include = VXLAN(vni=100)\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.protocol_path == false);
+        PFL_EXPECT(parsed.document.section_states.contains_layer == true);
+        PFL_REQUIRE(parsed.document.configured_spec.protocol_path.include.size() == 2U);
+        PFL_EXPECT(parsed.document.configured_spec.protocol_path.include[0].match_kind == AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_EXPECT(parsed.document.configured_spec.protocol_path.include[1].match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_EXPECT(parsed.document == require_parse_success(require_format_success(parsed.document)).document);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
+            "section.contains_layer.enabled = false\n"
+            "protocol_path.exact.include = EthernetII > IPv4 > TCP\n"
+            "protocol_path.contains.exclude = GTP-U(teid=0x12345678)\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.protocol_path == true);
+        PFL_EXPECT(parsed.document.section_states.contains_layer == false);
+        PFL_REQUIRE(parsed.document.configured_spec.protocol_path.include.size() == 1U);
+        PFL_REQUIRE(parsed.document.configured_spec.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(parsed.document == require_parse_success(require_format_success(parsed.document)).document);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
+            "section.traffic.enabled = false\n"
+            "packet_count.min = 10\n"
+            "packet_count.max = 20\n"
+            "captured_bytes.min = 1KiB\n"
+            "duration.max = 5s\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.traffic == false);
+        PFL_REQUIRE(parsed.document.configured_spec.aggregate.packet_count.has_value());
+        PFL_EXPECT(parsed.document.configured_spec.aggregate.packet_count->min == 10U);
+        PFL_EXPECT(parsed.document.configured_spec.aggregate.packet_count->max == 20U);
+        PFL_REQUIRE(parsed.document.configured_spec.aggregate.captured_bytes.has_value());
+        PFL_EXPECT(parsed.document.configured_spec.aggregate.captured_bytes->min == 1024U);
+        PFL_REQUIRE(parsed.document.configured_spec.aggregate.duration_us.has_value());
+        PFL_EXPECT(parsed.document.configured_spec.aggregate.duration_us->max == 5000000U);
+        PFL_EXPECT(parsed.document == require_parse_success(require_format_success(parsed.document)).document);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
+            "section.ip_addresses.enabled = false\n"
+            "section.service.enabled = false\n"
+            "ip.either.include = 10.0.0.0/8\n"
+            "service.contains.ci.include = \"example\"\n"
+            "flow_protocol.include = tcp\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.ip_addresses == false);
+        PFL_EXPECT(parsed.document.section_states.service == false);
+        PFL_REQUIRE(parsed.document.configured_spec.addresses.ipv4_include.size() == 1U);
+        PFL_REQUIRE(parsed.document.configured_spec.service.include.size() == 1U);
+        const auto formatted = require_format_success(parsed.document);
+        PFL_EXPECT(formatted.find(
+            "section.ip_addresses.enabled = false\n"
+            "section.service.enabled = false\n"
+        ) != std::string::npos);
+        PFL_EXPECT(parsed.document == require_parse_success(formatted).document);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 2\n"
+            "section.address_family.enabled = false\n"
+            "address_family.include = ipv6\n"
+        );
+        PFL_EXPECT(parsed.document.section_states.address_family == false);
+        PFL_EXPECT(parsed.document.configured_spec.address_family.include == std::vector<FlowAddressFamily> {FlowAddressFamily::ipv6});
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(parsed.document);
+        PFL_EXPECT(effective.address_family == session_detail::AdvancedFlowFilterAddressFamilyCriteria {});
+        PFL_EXPECT(parsed.document == require_parse_success(require_format_success(parsed.document)).document);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterDocument document {};
+        document.section_states.service = false;
+        document.section_states.ports = false;
+        document.section_states.address_family = false;
+        document.configured_spec.service.include = {
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "example",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+        document.configured_spec.ports.include = {
+            {.scope = AdvancedFlowFilterPortScope::either_endpoint, .range = {.first = 443U, .last = 443U}},
+        };
+        document.configured_spec.address_family.include = {FlowAddressFamily::ipv4};
+        const auto text = require_format_success(document);
+        PFL_EXPECT(
+            text.find(
+                "section.address_family.enabled = false\n"
+                "section.ports.enabled = false\n"
+                "section.service.enabled = false\n"
+            ) == std::string("format_version = 2\n").size()
+        );
+        PFL_EXPECT(document == require_parse_success(text).document);
     }
 }
 

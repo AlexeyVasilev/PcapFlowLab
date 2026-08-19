@@ -30,7 +30,6 @@ Still deferred here:
 - Tauri parity details
 - final styling and polish
 - dedicated capture-level count-summary architecture
-- exact future `.filter` grammar for persisted section Enabled state
 - exact mapping/API between Protocol Path UI modes and backend match shapes
 - exact implementation structure for configured document state versus effective
   enabled spec
@@ -259,7 +258,7 @@ Action semantics:
 
 - discard the current unsaved configuration
 - restore the last saved baseline
-- restore saved section Enabled states as well once the format persists them
+- restore saved section Enabled states as well
 - apply the restored saved configuration
 - clear the dirty marker
 - do not modify the file on disk
@@ -289,7 +288,7 @@ the save succeeded.
 For a Custom filter without a source path, `Save` behaves as `Save As...`.
 
 Save must preserve the entire configured filter document, including disabled
-sections once the `.filter` format supports section Enabled state.
+sections and persisted section Enabled state.
 
 ### Save As
 
@@ -1572,38 +1571,26 @@ but that is polish rather than an initial requirement.
 
 ### Persisting Disabled Configuration
 
-Section Enabled state must eventually be persistable.
+Section Enabled state is now part of the current development `.filter` text
+format.
 
-It is not acceptable for Save to discard the configured rules of a disabled
+It remains unacceptable for Save to discard the configured rules of a disabled
 section.
 
-The current development `.filter` format does not yet encode this
-UI/document state.
+The current backend document format preserves both:
 
-This RFC records that gap as a format-evolution requirement.
-
-This RFC does not modify the current grammar.
+- configured predicates from disabled sections
+- persisted section Enabled state
 
 Before the first release containing Advanced Flow Filter, only the current
 development format version needs to be readable.
 
-Incompatible development-format bumps are allowed, and earlier unreleased
-versions may become unsupported immediately.
+Incompatible development-format bumps are still allowed, and earlier
+unreleased versions may become unsupported immediately.
 
-A future format version, likely `format_version = 2`, may add section-enabled
-state if needed.
-
-Conceptually:
-
-- while the current development format remains active, it has no persisted
-  section Enabled state
-- a future format revision can persist disabled sections without losing their
-  configured rules
-
-The exact future text grammar is deferred and must be designed separately
-before implementation.
-
-This RFC does not invent or lock in keys such as `port.enabled`.
+This RFC does not redesign the already implemented backend text grammar; it
+records the user-facing consequence that disabled sections are saved and
+restored without losing their configured rules.
 
 ### Effective Filter Model
 
@@ -1674,7 +1661,6 @@ discussion:
 
 - exact mapping/API between the three Protocol Path UI modes and the existing
   backend `exact_path` / `path_prefix` representation
-- exact future `.filter` format evolution for persisted section Enabled state
 - capture-level count-summary architecture
 - exact implementation structure for document/configured spec versus effective
   enabled spec

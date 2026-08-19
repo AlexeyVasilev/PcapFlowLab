@@ -24,7 +24,7 @@ namespace pfl::session_detail {
 namespace {
 
 constexpr std::string_view kFormatVersionKey {"format_version"};
-constexpr std::string_view kFormatVersionValue {"1"};
+constexpr std::string_view kFormatVersionValue {"2"};
 
 char ascii_lower(const char value) noexcept {
     if (value >= 'A' && value <= 'Z') {
@@ -44,6 +44,16 @@ bool equals_ascii_case_insensitive(const std::string_view left, const std::strin
         }
     }
     return true;
+}
+
+std::optional<bool> parse_bool_token(const std::string_view token) noexcept {
+    if (equals_ascii_case_insensitive(token, "true")) {
+        return true;
+    }
+    if (equals_ascii_case_insensitive(token, "false")) {
+        return false;
+    }
+    return std::nullopt;
 }
 
 bool is_ascii_whitespace(const char ch) noexcept {
@@ -1342,6 +1352,10 @@ std::string format_protocol_path_match_kind_token(const AdvancedFlowFilterProtoc
     return {};
 }
 
+std::string format_bool_token(const bool value) {
+    return value ? "true" : "false";
+}
+
 std::string escape_quoted_string(const std::string_view value) {
     std::string escaped {};
     escaped.reserve(value.size() + 2U);
@@ -1471,7 +1485,19 @@ std::string format_protocol_path_value(
 }
 
 bool is_scalar_key(const std::string_view key) {
-    return key == "packet_count.min" ||
+    return key == "section.address_family.enabled" ||
+        key == "section.flow_protocol.enabled" ||
+        key == "section.detected_protocol.enabled" ||
+        key == "section.tls_version.enabled" ||
+        key == "section.quic_version.enabled" ||
+        key == "section.directionality.enabled" ||
+        key == "section.ports.enabled" ||
+        key == "section.ip_addresses.enabled" ||
+        key == "section.traffic.enabled" ||
+        key == "section.service.enabled" ||
+        key == "section.protocol_path.enabled" ||
+        key == "section.contains_layer.enabled" ||
+        key == "packet_count.min" ||
         key == "packet_count.max" ||
         key == "original_bytes.min" ||
         key == "original_bytes.max" ||
@@ -1511,6 +1537,66 @@ void assign_range_bound(
     }
 }
 
+bool assign_section_enabled_state(
+    AdvancedFlowFilterDocumentSectionStates& states,
+    const std::string_view section_key,
+    const bool enabled
+) noexcept {
+    if (section_key == "address_family") {
+        states.address_family = enabled;
+    } else if (section_key == "flow_protocol") {
+        states.flow_protocol = enabled;
+    } else if (section_key == "detected_protocol") {
+        states.detected_protocol = enabled;
+    } else if (section_key == "tls_version") {
+        states.tls_version = enabled;
+    } else if (section_key == "quic_version") {
+        states.quic_version = enabled;
+    } else if (section_key == "directionality") {
+        states.directionality = enabled;
+    } else if (section_key == "ports") {
+        states.ports = enabled;
+    } else if (section_key == "ip_addresses") {
+        states.ip_addresses = enabled;
+    } else if (section_key == "traffic") {
+        states.traffic = enabled;
+    } else if (section_key == "service") {
+        states.service = enabled;
+    } else if (section_key == "protocol_path") {
+        states.protocol_path = enabled;
+    } else if (section_key == "contains_layer") {
+        states.contains_layer = enabled;
+    } else {
+        return false;
+    }
+
+    return true;
+}
+
+void append_non_default_section_state_lines(
+    std::vector<std::string>& lines,
+    const AdvancedFlowFilterDocumentSectionStates& section_states
+) {
+    auto append_if_disabled = [&](const std::string_view key, const bool enabled) {
+        if (!enabled) {
+            lines.push_back(std::string("section.") + std::string(key) + ".enabled = " + format_bool_token(false));
+        }
+    };
+
+    append_if_disabled("address_family", section_states.address_family);
+    append_if_disabled("flow_protocol", section_states.flow_protocol);
+    append_if_disabled("detected_protocol", section_states.detected_protocol);
+    append_if_disabled("tls_version", section_states.tls_version);
+    append_if_disabled("quic_version", section_states.quic_version);
+    append_if_disabled("directionality", section_states.directionality);
+    append_if_disabled("ports", section_states.ports);
+    append_if_disabled("ip_addresses", section_states.ip_addresses);
+    append_if_disabled("traffic", section_states.traffic);
+    append_if_disabled("service", section_states.service);
+    append_if_disabled("protocol_path", section_states.protocol_path);
+    append_if_disabled("contains_layer", section_states.contains_layer);
+}
+
 }  // namespace
 
 AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::string_view input_text) {
@@ -1523,6 +1609,8 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
     }
 
     AdvancedFlowFilterTextParseResult result {};
+    auto& configured_spec = result.document.configured_spec;
+    auto& section_states = result.document.section_states;
     bool seen_version = false;
     bool saw_meaningful_line = false;
     std::unordered_set<std::string> seen_scalar_keys {};
@@ -1572,7 +1660,7 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     1U,
                     std::string(key),
                     {},
-                    "The first meaningful line must be 'format_version = 1'."
+                    "The first meaningful line must be 'format_version = 2'."
                 );
             }
             saw_meaningful_line = true;
@@ -1602,14 +1690,14 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         "format_version must be a decimal integer."
                     );
                 }
-                if (parsed_version.value != 1U) {
+                if (parsed_version.value != 2U) {
                     return make_parse_error(
                         AdvancedFlowFilterTextParseStatus::unsupported_format_version,
                         line_number,
                         *equals + 2U,
                         std::string(key),
                         std::string(value),
-                        "Only format_version = 1 is currently supported."
+                        "Only format_version = 2 is currently supported."
                     );
                 }
 
@@ -1655,7 +1743,41 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                 const auto value_column = *equals + 2U;
                 const auto root = key_segments.values[0];
 
-                if (root == "address_family" && key_segments.values.size() == 2U) {
+                if (root == "section" && key_segments.values.size() == 3U) {
+                    if (key_segments.values[2] != "enabled") {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::unknown_key,
+                            line_number,
+                            1U,
+                            std::string(key),
+                            {},
+                            "Unknown section key."
+                        );
+                    }
+
+                    const auto enabled = parse_bool_token(value);
+                    if (!enabled.has_value()) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::invalid_value,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            std::string(value),
+                            "Section enabled state must be true or false."
+                        );
+                    }
+
+                    if (!assign_section_enabled_state(section_states, key_segments.values[1], *enabled)) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::unknown_key,
+                            line_number,
+                            1U,
+                            std::string(key),
+                            {},
+                            "Unknown section key."
+                        );
+                    }
+                } else if (root == "address_family" && key_segments.values.size() == 2U) {
                     auto family = parse_address_family_token(value);
                     if (!family.has_value()) {
                         return make_parse_error(
@@ -1669,9 +1791,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[1] == "include") {
-                        result.spec.address_family.include.push_back(*family);
+                        configured_spec.address_family.include.push_back(*family);
                     } else if (key_segments.values[1] == "exclude") {
-                        result.spec.address_family.exclude.push_back(*family);
+                        configured_spec.address_family.exclude.push_back(*family);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1696,9 +1818,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[1] == "include") {
-                        result.spec.flow_protocol.include.push_back(*protocol);
+                        configured_spec.flow_protocol.include.push_back(*protocol);
                     } else if (key_segments.values[1] == "exclude") {
-                        result.spec.flow_protocol.exclude.push_back(*protocol);
+                        configured_spec.flow_protocol.exclude.push_back(*protocol);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1723,9 +1845,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[1] == "include") {
-                        result.spec.detected_protocol.include.push_back(*hint);
+                        configured_spec.detected_protocol.include.push_back(*hint);
                     } else if (key_segments.values[1] == "exclude") {
-                        result.spec.detected_protocol.exclude.push_back(*hint);
+                        configured_spec.detected_protocol.exclude.push_back(*hint);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1750,9 +1872,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[1] == "include") {
-                        result.spec.tls_version.include.push_back(*version);
+                        configured_spec.tls_version.include.push_back(*version);
                     } else if (key_segments.values[1] == "exclude") {
-                        result.spec.tls_version.exclude.push_back(*version);
+                        configured_spec.tls_version.exclude.push_back(*version);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1777,9 +1899,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[1] == "include") {
-                        result.spec.quic_version.include.push_back(*version);
+                        configured_spec.quic_version.include.push_back(*version);
                     } else if (key_segments.values[1] == "exclude") {
-                        result.spec.quic_version.exclude.push_back(*version);
+                        configured_spec.quic_version.exclude.push_back(*version);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1804,9 +1926,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[1] == "include") {
-                        result.spec.directionality.include.push_back(*directionality);
+                        configured_spec.directionality.include.push_back(*directionality);
                     } else if (key_segments.values[1] == "exclude") {
-                        result.spec.directionality.exclude.push_back(*directionality);
+                        configured_spec.directionality.exclude.push_back(*directionality);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1859,9 +1981,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         .range = range.range,
                     };
                     if (key_segments.values[2] == "include") {
-                        result.spec.ports.include.push_back(predicate);
+                        configured_spec.ports.include.push_back(predicate);
                     } else if (key_segments.values[2] == "exclude") {
-                        result.spec.ports.exclude.push_back(predicate);
+                        configured_spec.ports.exclude.push_back(predicate);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1940,9 +2062,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         }
 
                         if (key_segments.values[2] == "include") {
-                            result.spec.addresses.ipv6_include.push_back(predicate);
+                            configured_spec.addresses.ipv6_include.push_back(predicate);
                         } else if (key_segments.values[2] == "exclude") {
-                            result.spec.addresses.ipv6_exclude.push_back(predicate);
+                            configured_spec.addresses.ipv6_exclude.push_back(predicate);
                         } else {
                             return make_parse_error(
                                 AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -1994,9 +2116,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         }
 
                         if (key_segments.values[2] == "include") {
-                            result.spec.addresses.ipv4_include.push_back(predicate);
+                            configured_spec.addresses.ipv4_include.push_back(predicate);
                         } else if (key_segments.values[2] == "exclude") {
-                            result.spec.addresses.ipv4_exclude.push_back(predicate);
+                            configured_spec.addresses.ipv4_exclude.push_back(predicate);
                         } else {
                             return make_parse_error(
                                 AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -2027,9 +2149,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (key_segments.values[2] == "include") {
-                        result.spec.service.include.push_back(predicate);
+                        configured_spec.service.include.push_back(predicate);
                     } else if (key_segments.values[2] == "exclude") {
-                        result.spec.service.exclude.push_back(predicate);
+                        configured_spec.service.exclude.push_back(predicate);
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -2092,9 +2214,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         .case_sensitivity = *case_sensitivity,
                     };
                     if (key_segments.values[3] == "include") {
-                        result.spec.service.include.push_back(std::move(predicate));
+                        configured_spec.service.include.push_back(std::move(predicate));
                     } else if (key_segments.values[3] == "exclude") {
-                        result.spec.service.exclude.push_back(std::move(predicate));
+                        configured_spec.service.exclude.push_back(std::move(predicate));
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -2138,9 +2260,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         .layers = *layers,
                     };
                     if (key_segments.values[2] == "include") {
-                        result.spec.protocol_path.include.push_back(std::move(predicate));
+                        configured_spec.protocol_path.include.push_back(std::move(predicate));
                     } else if (key_segments.values[2] == "exclude") {
-                        result.spec.protocol_path.exclude.push_back(std::move(predicate));
+                        configured_spec.protocol_path.exclude.push_back(std::move(predicate));
                     } else {
                         return make_parse_error(
                             AdvancedFlowFilterTextParseStatus::unknown_key,
@@ -2174,17 +2296,17 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (root == "packet_count") {
-                        assign_range_bound(result.spec.aggregate.packet_count, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.packet_count, key_segments.values[1], parsed_value.value);
                     } else if (root == "fragmented_packet_count") {
-                        assign_range_bound(result.spec.aggregate.fragmented_packet_count, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.fragmented_packet_count, key_segments.values[1], parsed_value.value);
                     } else if (root == "truncated_packet_count") {
-                        assign_range_bound(result.spec.aggregate.truncated_packet_count, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.truncated_packet_count, key_segments.values[1], parsed_value.value);
                     } else if (root == "tcp_syn_count") {
-                        assign_range_bound(result.spec.aggregate.tcp_syn_count, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.tcp_syn_count, key_segments.values[1], parsed_value.value);
                     } else if (root == "tcp_fin_count") {
-                        assign_range_bound(result.spec.aggregate.tcp_fin_count, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.tcp_fin_count, key_segments.values[1], parsed_value.value);
                     } else {
-                        assign_range_bound(result.spec.aggregate.tcp_rst_count, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.tcp_rst_count, key_segments.values[1], parsed_value.value);
                     }
                 } else if ((root == "original_bytes" ||
                             root == "captured_bytes" ||
@@ -2210,11 +2332,11 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (root == "original_bytes") {
-                        assign_range_bound(result.spec.aggregate.original_bytes, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.original_bytes, key_segments.values[1], parsed_value.value);
                     } else if (root == "captured_bytes") {
-                        assign_range_bound(result.spec.aggregate.captured_bytes, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.captured_bytes, key_segments.values[1], parsed_value.value);
                     } else {
-                        assign_range_bound(result.spec.aggregate.duration_us, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.duration_us, key_segments.values[1], parsed_value.value);
                     }
                 } else if ((root == "max_original_packet_length" ||
                             root == "max_captured_packet_length") &&
@@ -2235,9 +2357,9 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     }
 
                     if (root == "max_original_packet_length") {
-                        assign_range_bound(result.spec.aggregate.max_original_packet_length, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.max_original_packet_length, key_segments.values[1], parsed_value.value);
                     } else {
-                        assign_range_bound(result.spec.aggregate.max_captured_packet_length, key_segments.values[1], parsed_value.value);
+                        assign_range_bound(configured_spec.aggregate.max_captured_packet_length, key_segments.values[1], parsed_value.value);
                     }
                 } else {
                     return make_parse_error(
@@ -2266,17 +2388,19 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
             std::nullopt,
             {},
             {},
-            "Missing required format_version = 1 declaration."
+            "Missing required format_version = 2 declaration."
         );
     }
 
     return result;
 }
 
-AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const AdvancedFlowFilterSpec& spec) {
+AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const AdvancedFlowFilterDocument& document) {
     AdvancedFlowFilterTextFormatResult result {};
     std::vector<std::string> lines {};
-    lines.push_back("format_version = 1");
+    lines.push_back(std::string("format_version = ") + std::string(kFormatVersionValue));
+    append_non_default_section_state_lines(lines, document.section_states);
+    const auto& spec = document.configured_spec;
 
     auto append_line = [&](std::string key, std::string value) {
         lines.push_back(std::move(key) + " = " + std::move(value));
