@@ -29,10 +29,11 @@ Still deferred here:
 - exact Qt implementation staging details
 - Tauri parity details
 - final styling and polish
-- exact Open / Save / Save As interaction details
 - dedicated capture-level count-summary architecture
-- exact Traffic/numeric-section layout
-- exact Protocol Path editor interaction
+- exact future `.filter` grammar for persisted section Enabled state
+- exact mapping/API between Protocol Path UI modes and backend match shapes
+- exact implementation structure for configured document state versus effective
+  enabled spec
 
 ## Design Principles
 
@@ -102,6 +103,9 @@ marker, for example:
 tls_1_3_big *
 ```
 
+The compact user-facing display name for a file-backed filter uses the source
+file stem without the `.filter` extension.
+
 Notes:
 
 - The full file path may be shown through a tooltip.
@@ -109,12 +113,27 @@ Notes:
 
 ## Filter Document State
 
-The conceptual Advanced Filter UI document model contains:
+The conceptual Advanced Filter UI document model distinguishes configured
+document state from the effective backend filter spec.
 
-- current `AdvancedFlowFilterSpec`
+Configured filter document contains:
+
+- all configured predicates, including predicates retained inside disabled
+  sections
+- section Enabled states
 - optional source file path
 - saved baseline
 - dirty state
+
+Effective `AdvancedFlowFilterSpec`:
+
+- is derived from the configured document
+- contains only predicates from enabled sections
+- is the filter that is compiled/evaluated
+
+Draft:
+
+- is an editable configured-document state while Settings is open
 
 Three conceptual states must be distinguished:
 
@@ -125,7 +144,8 @@ Three conceptual states must be distinguished:
 Behavior:
 
 - Opening Settings creates or resumes a draft.
-- Apply validates and applies the draft.
+- Apply validates the current draft, derives the effective
+  `AdvancedFlowFilterSpec`, and applies it.
 - Cancel discards only the current draft and preserves the applied filter.
 - Applying a modified file-backed filter keeps it associated with the source
   file path but marks it dirty until saved.
@@ -137,6 +157,15 @@ Behavior:
 
 This means Advanced Filter UI behavior is document-oriented, but mode switching
 alone is not document-destructive.
+
+Protocol Path and Contains Layer are independently Enabled sections in the
+configured document.
+
+Today they map onto different match shapes within the existing backend
+protocol-path predicate family.
+
+Disabling Protocol Path must not implicitly disable Contains Layer, and
+disabling Contains Layer must not implicitly disable Protocol Path.
 
 ## Settings Window
 
@@ -191,6 +220,9 @@ The UI must not prompt merely because the current filter has capture-specific
 applicability warnings. Applicability warnings are transient and are not dirty
 document state.
 
+A read/parse/validation failure leaves the current configured document, applied
+filter, source association, and dirty state unchanged.
+
 A successfully opened filter becomes the current filter and is applied.
 
 Protocol Path / Contains Layer rules that are valid filter rules but are not
@@ -198,6 +230,9 @@ present in the current capture do not make Open fail.
 
 Instead, the filter is loaded and applied, and the already-agreed contextual
 applicability warnings are shown.
+
+If replacement was requested after choosing Save, replacement occurs only after
+that save succeeds.
 
 ### Clear Unsaved Changes
 
@@ -208,6 +243,12 @@ The button is active only when:
 
 - the current Advanced Filter is associated with a source `.filter` file
 - the current configuration has unsaved changes relative to that saved file
+
+While Settings is open, this means the current editor draft differs from the
+saved baseline.
+
+Outside an active Settings edit session, dirty state is based on the applied
+configured document versus saved baseline.
 
 It is disabled when:
 
@@ -242,6 +283,9 @@ Agreed Save behavior:
 - clear dirty state after successful save
 - keep the Settings window open
 
+If validation or writing fails, the UI must not clear dirty state or pretend
+the save succeeded.
+
 For a Custom filter without a source path, `Save` behaves as `Save As...`.
 
 Save must preserve the entire configured filter document, including disabled
@@ -259,6 +303,11 @@ sections once the `.filter` format supports section Enabled state.
 - updates its display name from the filename/basename
 - clears dirty state after successful save
 - keeps the Settings window open
+
+Cancelling the file chooser changes nothing.
+
+If validation or writing fails, the UI must not bind the new source path or
+clear dirty state.
 
 The UI does not introduce a separate embedded filter-name field solely for
 Save As.
@@ -375,6 +424,11 @@ No confirmation is required.
 The exact dialog wording/styling may be polished later, but this loss-based
 confirmation rule is agreed.
 
+If the destructive flow offers `Save and clear` or `Save As and clear`, the
+clear operation happens only after the save succeeds.
+
+If Save/Save As is cancelled or fails, the filter is not cleared.
+
 ### Main Flows Toolbar Clear
 
 The Advanced-mode `Clear` button in the main Flows toolbar uses the same
@@ -427,6 +481,22 @@ toolbar display remains simply:
 ```text
 Custom filter
 ```
+
+A newly created Custom filter has:
+
+- 0 configured predicates
+- 0 active rules
+
+Clear all returns to the same empty Custom-filter state.
+
+Default empty-state semantics:
+
+- finite predicate checkboxes are unchecked by default
+- repeatable rule collections are empty by default
+- numeric Minimum/Maximum inputs are empty by default
+- an Enabled section with no configured predicates contributes no rule
+- section Enabled controls may default to enabled, but Enabled by itself is not
+  a predicate and does not increase the rule count
 
 ### Draft / Applied / Saved Consistency
 
@@ -548,8 +618,8 @@ Planned checkbox UI:
 ```text
 Address family
 
-[x] IPv4
-[x] IPv6
+[ ] IPv4
+[ ] IPv6
 
 [ + Exclusions ]
 ```
@@ -557,6 +627,7 @@ Address family
 Current status:
 
 - this is agreed UI design
+- this is a conceptual non-default example and not the initial new-filter state
 - the backend `AdvancedFlowFilterSpec` does not yet expose a dedicated address
   family predicate
 - therefore address family is a small backend prerequisite before full UI
@@ -1503,14 +1574,21 @@ This RFC records that gap as a format-evolution requirement.
 
 This RFC does not modify the current grammar.
 
+Before the first release containing Advanced Flow Filter, only the current
+development format version needs to be readable.
+
+Incompatible development-format bumps are allowed, and earlier unreleased
+versions may become unsupported immediately.
+
 A future format version, likely `format_version = 2`, may add section-enabled
-state, and an incompatible development-format revision is allowed if needed.
+state if needed.
 
 Conceptually:
 
-- current files without persisted Enabled state are treated as enabled
-- a future format revision can persist disabled sections without
-  losing their configured rules
+- while the current development format remains active, it has no persisted
+  section Enabled state
+- a future format revision can persist disabled sections without losing their
+  configured rules
 
 The exact future text grammar is deferred and must be designed separately
 before implementation.

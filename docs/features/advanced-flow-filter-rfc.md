@@ -764,7 +764,7 @@ Deferred from the initial implementation:
 - arbitrary packet-content predicates
 - unrecognized-packet filtering
 - saved filter presets as part of the capture index
-- CLI / GUI integration
+- GUI integration
 
 ## Future Saved Filter Presets
 
@@ -784,18 +784,11 @@ indexes.
 - Should "known / unknown detected protocol" be represented as a dedicated
   filter control, or only as inclusion/exclusion over `FlowProtocolHint` plus
   `unknown`?
-- For Protocol Path predicates, should the first backend representation be a
-  small tagged union of matching modes, or a normalized path predicate object
-  that can carry multiple match shapes?
-- Should captured-byte filtering be available immediately in all frontends once
-  the aggregate exists, or staged after the backend/filter model is stabilized?
 - For time filters, should the first shared backend contract use absolute
   microsecond timestamps only, leaving relative-to-capture-start translation to
   frontends?
-- Should v1 include both include and exclude lists for every major family, or
-  ship includes first and add exclusions where clearly useful?
 
-## Risks To Resolve Before Implementation
+## Remaining Risks And Design Constraints
 
 - The shared filter contract must not blur canonical flow protocol, detected
   protocol hint, and service metadata. Each has different semantics and storage
@@ -805,7 +798,3 @@ indexes.
 - The implementation should avoid speculative aggregate sprawl. A compact,
   reviewable foundation is preferable to storing every imaginable future
   predicate source.
-- Packet-level fields currently persisted in `PacketRef` still support existing
-  index-only behavior. Any compaction plan must be paired with an explicit
-  product-level decision about what index-only packet/stream semantics are still
-  guaranteed.

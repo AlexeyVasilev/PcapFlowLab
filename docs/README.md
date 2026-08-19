@@ -79,12 +79,15 @@ different responsibilities.
 ## Active Design RFCs
 
 - [Advanced Flow Filter RFC](features/advanced-flow-filter-rfc.md)
-  Proposed product/backend filter model for future indexed flow search.
+  Backend filtering foundation, current development text format, and
+  `flows --adv-filter` CLI integration are in place; UI/document workflow
+  remains active design work.
 - [Advanced Flow Filter UI RFC](features/advanced-flow-filter-ui-rfc.md)
   Agreed future UI/document-state design for Advanced Flow Filter editing and
   mode switching.
 - [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
-  Proposed compact per-connection metadata foundation for future filtering.
+  Compact per-connection metadata foundation for filtering and related flow
+  queries.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)
   Proposed stable-header and section-compatibility baseline for the next major
   index format.
