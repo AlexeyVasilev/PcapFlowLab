@@ -1,15 +1,14 @@
 # Advanced Flow Filter RFC
 
 Status: staged RFC with backend compile/evaluate foundation, stable v1 text
-parse/format support, and current metadata-backed address and
-protocol-version predicates.
+parse/format support, current metadata-backed address and
+protocol-version predicates, and initial `flows --adv-filter` CLI integration.
 
 This document defines the product and backend-filter model for the Advanced
 Flow Filter in Pcap Flow Lab.
 
 The current backend stage introduces a separate structured filtering subsystem
-without changing legacy text-filter behavior, CLI syntax, UI, or index
-serialization.
+without changing legacy text-filter behavior, UI, or index serialization.
 
 Related RFCs:
 
@@ -49,14 +48,16 @@ match.
 membership tables, normalized numeric predicates, precompiled service
 predicates, and the fixed execution plan.
 
-Future CLI usage is expected to remain conceptually distinct:
+CLI usage is intentionally conceptually distinct:
 
 - `--filter "QUIC"` for the legacy text filter
 - `--adv-filter <filter-file>` for the structured Advanced Flow Filter
 
-Those modes are expected to be mutually exclusive. The current backend stage
-does not add `--adv-filter` and does not integrate Advanced Flow Filter into
-`FlowQuery`.
+Those modes are mutually exclusive. Advanced Flow Filter remains separate from
+legacy `FlowQuery`: the CLI parses the `.filter` file into
+`AdvancedFlowFilterSpec`, compiles/evaluates it against canonical flow
+metadata, and only then reuses the ordinary `flows` sort/limit/export path on
+the resulting canonical flow indices.
 
 The current backend stage now also defines a stable text contract for
 Advanced Flow Filter specs:
@@ -71,7 +72,26 @@ AdvancedFlowFilterResult
 
 The text contract is a serialization layer for `AdvancedFlowFilterSpec`. It
 is intentionally separate from filter compilation/evaluation and from any
-future CLI flag, UI editor, or file-loading workflow.
+future UI editor workflow.
+
+## Current CLI Integration
+
+The implemented CLI surface is:
+
+```text
+pcap-flow-lab flows <input> --adv-filter <path> [flow selection] [sort/limit/output options]
+```
+
+Current rules:
+
+- `--filter` and `--adv-filter` are mutually exclusive.
+- `--flow-number` and `--flow-numbers` remain candidate-scope selectors.
+- `--sort`, `--limit`, and `--out-flows-list` remain CLI presentation/export
+  concerns rather than part of the `.filter` file grammar.
+- `.filter` files contain only Advanced Flow Filter semantics.
+- Raw captures and compatible indexes both use the same metadata-backed
+  evaluator after open/import completes.
+- Ordinary evaluation does not require source packet bytes.
 
 ## Stable Text Format v1
 

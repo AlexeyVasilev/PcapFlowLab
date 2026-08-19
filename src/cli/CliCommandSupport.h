@@ -89,6 +89,7 @@ struct CliInvocationResult {
     const std::filesystem::path& input_path,
     std::span<const CliOutputTarget> outputs,
     bool force,
+    std::span<const std::filesystem::path> protected_input_paths = {},
     std::optional<std::string_view> distinct_outputs_error_text = std::nullopt
 );
 [[nodiscard]] FrontendOpenResult open_input_with_progress(

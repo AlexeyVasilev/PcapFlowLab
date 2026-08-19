@@ -8,6 +8,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "cli/CliCommandSupport.h"
 #include "cli/FlowsCommand.h"
@@ -119,6 +120,18 @@ cli::CliInvocationResult invoke_cli(const std::vector<std::string>& args_storage
         args.push_back(arg);
     }
     return cli::process_cli_invocation(args);
+}
+
+cli::CliInvocationResult invoke_cli_with_environment(
+    const std::vector<std::string>& args_storage,
+    const cli::CliRuntimeEnvironment& environment
+) {
+    std::vector<std::string_view> args {};
+    args.reserve(args_storage.size());
+    for (const auto& arg : args_storage) {
+        args.push_back(arg);
+    }
+    return cli::process_cli_invocation(args, environment);
 }
 
 std::string settings_json(
@@ -298,6 +311,10 @@ std::vector<std::size_t> one_based_numbers(std::span<const std::size_t> flow_ind
     return values;
 }
 
+std::filesystem::path write_temp_advanced_filter_file(const std::string& filename, const std::string& text) {
+    return write_temp_text_file(filename, text);
+}
+
 void expect_flows_help_and_parser_behavior() {
     {
         const std::vector<std::string> args {"flows", "-h"};
@@ -309,8 +326,10 @@ void expect_flows_help_and_parser_behavior() {
         PFL_EXPECT(contains_text(result.stdout_text, "pcap-flow-lab flows <input> [options]"));
         PFL_EXPECT(contains_text(result.stdout_text, "--flow-number <N>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--flow-numbers <ranges>"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--adv-filter <path>"));
         PFL_EXPECT(contains_text(result.stdout_text, "--sort <number|protocol|service|endpoint-a|endpoint-b|packets|bytes>:<asc|desc>"));
         PFL_EXPECT(contains_text(result.stdout_text, "default preview of 25 rows"));
+        PFL_EXPECT(contains_text(result.stdout_text, "--filter and --adv-filter are mutually exclusive"));
         PFL_EXPECT(contains_text(result.stdout_text, "Example range: 1-10,24,31-35"));
         PFL_EXPECT(!contains_text(result.stdout_text, "--source-capture"));
         PFL_EXPECT(!contains_text(result.stdout_text, "--format"));
@@ -393,6 +412,31 @@ void expect_flows_help_and_parser_behavior() {
         const auto parse_result = cli::parse_flows_command_arguments(args);
         PFL_EXPECT(!parse_result.ok);
         PFL_EXPECT(contains_text(parse_result.error_text, "Duplicate --filter"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--adv-filter", "rules.filter"};
+        const auto parse_result = cli::parse_flows_command_arguments(args);
+        PFL_REQUIRE(parse_result.ok);
+        PFL_REQUIRE(parse_result.options.has_value());
+        PFL_EXPECT(
+            parse_result.options->advanced_filter_path
+            == std::optional<std::filesystem::path> {std::filesystem::path {"rules.filter"}}
+        );
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--adv-filter", "rules.filter", "--filter", "TLS"};
+        const auto parse_result = cli::parse_flows_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "mutually exclusive"));
+    }
+
+    {
+        const std::vector<std::string_view> args {"capture.pcap", "--filter", "TLS", "--adv-filter", "rules.filter"};
+        const auto parse_result = cli::parse_flows_command_arguments(args);
+        PFL_EXPECT(!parse_result.ok);
+        PFL_EXPECT(contains_text(parse_result.error_text, "mutually exclusive"));
     }
 
     {
@@ -666,6 +710,12 @@ void expect_flows_runtime_behavior() {
     PFL_REQUIRE(baseline_query.status == session_detail::FlowQueryStatus::ok);
     PFL_REQUIRE(baseline_query.ordered_flow_indices.size() == 4U);
     PFL_EXPECT(baseline_query.result_count_before_limit == 4U);
+    const auto advanced_filter_path = write_temp_advanced_filter_file(
+        "pfl_cli_flows_http_adv.filter",
+        "format_version = 1\n"
+        "flow_protocol.include = tcp\n"
+        "port.b.include = 80\n"
+    );
 
     {
         const std::vector<std::string> args {"flows", capture_path.string(), "--flow-numbers", "1-1000000000000"};
@@ -770,6 +820,66 @@ void expect_flows_runtime_behavior() {
     }
 
     {
+        const auto parsed_filter = session_detail::parse_advanced_flow_filter_text(
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+            "port.b.include = 80\n"
+        );
+        PFL_REQUIRE(parsed_filter.status == session_detail::AdvancedFlowFilterTextParseStatus::ok);
+        const auto expected = adapter.query_advanced_flows(
+            parsed_filter.spec,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_REQUIRE(expected.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(expected.result_count_before_limit == 1U);
+
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--adv-filter",
+            advanced_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(extract_rendered_flow_numbers(result.stdout_text) == one_based_numbers(expected.ordered_flow_indices));
+    }
+
+    {
+        const auto parsed_filter = session_detail::parse_advanced_flow_filter_text(
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+        );
+        PFL_REQUIRE(parsed_filter.status == session_detail::AdvancedFlowFilterTextParseStatus::ok);
+        const auto expected = adapter.query_advanced_flows(
+            parsed_filter.spec,
+            std::optional<std::vector<std::size_t>> {std::vector<std::size_t> {baseline_query.ordered_flow_indices[2]}},
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_REQUIRE(expected.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(expected.result_count_before_limit == 1U);
+
+        const auto scoped_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_scoped_adv.filter",
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--adv-filter",
+            scoped_filter_path.string(),
+            "--flow-number",
+            std::to_string(baseline_query.ordered_flow_indices[2] + 1U),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(extract_rendered_flow_numbers(result.stdout_text) == one_based_numbers(expected.ordered_flow_indices));
+    }
+
+    {
         session_detail::FlowQuery query {};
         query.sort = session_detail::FlowQuerySortSpec {
             .key = session_detail::FlowQuerySortKey::packets,
@@ -831,6 +941,113 @@ void expect_flows_runtime_behavior() {
         PFL_EXPECT(result.stdout_text.empty());
         PFL_EXPECT(contains_text(result.stderr_text, "Requested flow number is outside the available canonical flow range"));
         PFL_EXPECT(!contains_text(result.stderr_text, "PcapFlowLab CLI - flows"));
+    }
+
+    {
+        const auto invalid_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_invalid_tls_token.filter",
+            "format_version = 1\n"
+            "tls_version.include = tls9_9\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            "definitely_missing_capture.pcap",
+            "--adv-filter",
+            invalid_filter_path.string(),
+        };
+        const auto result = invoke_cli_with_environment(
+            args,
+            cli::CliRuntimeEnvironment {
+                .stderr_is_terminal = false,
+            }
+        );
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid advanced flow filter file:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown TLS version token"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input:"));
+    }
+
+    {
+        const auto invalid_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_invalid_protocol_token.filter",
+            "format_version = 1\n"
+            "flow_protocol.include = tcpish\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            "definitely_missing_capture.pcap",
+            "--adv-filter",
+            invalid_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid advanced flow filter file:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Unknown flow protocol token"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input:"));
+    }
+
+    {
+        const auto invalid_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_bad_version.filter",
+            "format_version = 99\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            "definitely_missing_capture.pcap",
+            "--adv-filter",
+            invalid_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Invalid advanced flow filter file:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "Only format_version = 1 is currently supported."));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input:"));
+    }
+
+    {
+        const auto compile_invalid_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_compile_invalid.filter",
+            "format_version = 1\n"
+            "service.contains.ci.include = \"\"\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            "definitely_missing_capture.pcap",
+            "--adv-filter",
+            compile_invalid_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Failed to open input:"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Advanced flow filter is not valid for this capture or index:"));
+    }
+
+    {
+        const auto compile_invalid_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_compile_invalid_real_capture.filter",
+            "format_version = 1\n"
+            "service.contains.ci.include = \"\"\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--adv-filter",
+            compile_invalid_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Advanced flow filter is not valid for this capture or index:"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Invalid advanced flow filter file:"));
     }
 }
 
@@ -924,6 +1141,61 @@ void expect_preview_and_csv_behavior() {
         PFL_EXPECT(result.exit_code == 0);
         PFL_EXPECT(contains_text(result.stdout_text, "Showing 2 of 4 flows."));
         PFL_EXPECT(!contains_text(result.stdout_text, "Use --limit <N> to show more rows"));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() == 3U);
+        const auto first_data = split_csv_line(csv_lines[1]);
+        const auto second_data = split_csv_line(csv_lines[2]);
+        PFL_REQUIRE(first_data.size() == 16U);
+        PFL_REQUIRE(second_data.size() == 16U);
+        PFL_EXPECT(first_data[0] == std::to_string(expected.ordered_flow_indices[0] + 1U));
+        PFL_EXPECT(second_data[0] == std::to_string(expected.ordered_flow_indices[1] + 1U));
+    }
+
+    {
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_adv_subset.csv";
+        std::filesystem::remove(output_path);
+
+        const auto capture_path = build_cli_flows_capture_path();
+        const auto advanced_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_export_adv.filter",
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+        );
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+        const auto parsed_filter = session_detail::parse_advanced_flow_filter_text(
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+        );
+        PFL_REQUIRE(parsed_filter.status == session_detail::AdvancedFlowFilterTextParseStatus::ok);
+        const auto expected = adapter.query_advanced_flows(
+            parsed_filter.spec,
+            std::nullopt,
+            session_detail::FlowQuerySortSpec {
+                .key = session_detail::FlowQuerySortKey::bytes,
+                .direction = session_detail::FlowQuerySortDirection::descending,
+            },
+            2U
+        );
+        PFL_REQUIRE(expected.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_REQUIRE(expected.ordered_flow_indices.size() == 2U);
+
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--adv-filter",
+            advanced_filter_path.string(),
+            "--sort",
+            "bytes:desc",
+            "--limit",
+            "2",
+            "--out-flows-list",
+            output_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(contains_text(result.stderr_text, "Flows list written to:"));
 
         const auto csv_lines = read_text_file_lines(output_path);
         PFL_REQUIRE(csv_lines.size() == 3U);
@@ -1063,6 +1335,26 @@ void expect_preview_and_csv_behavior() {
             capture_path.string(),
             "--out-flows-list",
             capture_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite the input path"));
+    }
+
+    {
+        const auto capture_path = build_cli_flows_capture_path();
+        const auto advanced_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_collision_adv.filter",
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+        );
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--adv-filter",
+            advanced_filter_path.string(),
+            "--out-flows-list",
+            advanced_filter_path.string(),
         };
         const auto result = invoke_cli(args);
         PFL_EXPECT(result.exit_code == 1);

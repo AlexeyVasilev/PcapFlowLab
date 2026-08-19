@@ -309,13 +309,20 @@ CliOutputPreflightResult preflight_output_targets(
     const std::filesystem::path& input_path,
     const std::span<const CliOutputTarget> outputs,
     const bool force,
+    const std::span<const std::filesystem::path> protected_input_paths,
     const std::optional<std::string_view> distinct_outputs_error_text
 ) {
     CliOutputPreflightResult result {
         .ok = true,
     };
 
-    const auto normalized_input_path = normalized_comparison_path(input_path);
+    std::vector<std::filesystem::path> normalized_protected_input_paths {};
+    normalized_protected_input_paths.reserve(protected_input_paths.size() + 1U);
+    normalized_protected_input_paths.push_back(normalized_comparison_path(input_path));
+    for (const auto& protected_input_path : protected_input_paths) {
+        normalized_protected_input_paths.push_back(normalized_comparison_path(protected_input_path));
+    }
+
     std::vector<std::filesystem::path> normalized_output_paths {};
     normalized_output_paths.reserve(outputs.size());
 
@@ -323,10 +330,12 @@ CliOutputPreflightResult preflight_output_targets(
         const auto normalized_output_path = normalized_comparison_path(output.path);
         normalized_output_paths.push_back(normalized_output_path);
 
-        if (!normalized_input_path.empty() && normalized_output_path == normalized_input_path) {
-            result.ok = false;
-            result.error_text = std::string {output.label} + " cannot overwrite the input path.";
-            return result;
+        for (const auto& normalized_input_path : normalized_protected_input_paths) {
+            if (!normalized_input_path.empty() && normalized_output_path == normalized_input_path) {
+                result.ok = false;
+                result.error_text = std::string {output.label} + " cannot overwrite the input path.";
+                return result;
+            }
         }
 
         const auto parent_path = output.path.parent_path();
