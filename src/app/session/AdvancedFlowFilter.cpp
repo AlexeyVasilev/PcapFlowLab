@@ -1177,6 +1177,59 @@ bool matches_protocol_path_criteria(
     return !exclude_match;
 }
 
+bool is_contains_layer_protocol_path_predicate(
+    const AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    return predicate.match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer;
+}
+
+void append_effective_protocol_path_predicates(
+    std::vector<AdvancedFlowFilterProtocolPathPredicate>& destination,
+    const std::vector<AdvancedFlowFilterProtocolPathPredicate>& source,
+    const bool include_protocol_path_predicates,
+    const bool include_contains_layer_predicates
+) {
+    for (const auto& predicate : source) {
+        const bool is_contains_layer = is_contains_layer_protocol_path_predicate(predicate);
+        if ((!is_contains_layer && include_protocol_path_predicates) ||
+            (is_contains_layer && include_contains_layer_predicates)) {
+            destination.push_back(predicate);
+        }
+    }
+}
+
+template <typename T>
+std::size_t count_range_atomic_rules(
+    const std::optional<AdvancedFlowFilterInclusiveRange<T>>& range
+) noexcept {
+    if (!range.has_value()) {
+        return 0U;
+    }
+
+    std::size_t count = 0U;
+    if (range->min.has_value()) {
+        ++count;
+    }
+    if (range->max.has_value()) {
+        ++count;
+    }
+    return count;
+}
+
+std::size_t count_aggregate_atomic_rules(const AdvancedFlowFilterAggregateCriteria& aggregate) noexcept {
+    return count_range_atomic_rules(aggregate.packet_count) +
+        count_range_atomic_rules(aggregate.original_bytes) +
+        count_range_atomic_rules(aggregate.captured_bytes) +
+        count_range_atomic_rules(aggregate.duration_us) +
+        count_range_atomic_rules(aggregate.fragmented_packet_count) +
+        count_range_atomic_rules(aggregate.truncated_packet_count) +
+        count_range_atomic_rules(aggregate.tcp_syn_count) +
+        count_range_atomic_rules(aggregate.tcp_fin_count) +
+        count_range_atomic_rules(aggregate.tcp_rst_count) +
+        count_range_atomic_rules(aggregate.max_original_packet_length) +
+        count_range_atomic_rules(aggregate.max_captured_packet_length);
+}
+
 }  // namespace
 
 void AdvancedFlowFilterPortBitmap::set_range(const std::uint16_t first, const std::uint16_t last) noexcept {
@@ -1332,6 +1385,103 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
     }
 
     return result;
+}
+
+AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(
+    const AdvancedFlowFilterDocument& document
+) {
+    AdvancedFlowFilterSpec effective = document.configured_spec;
+    const auto& section_states = document.section_states;
+
+    if (!section_states.address_family) {
+        effective.address_family = {};
+    }
+    if (!section_states.flow_protocol) {
+        effective.flow_protocol = {};
+    }
+    if (!section_states.detected_protocol) {
+        effective.detected_protocol = {};
+    }
+    if (!section_states.tls_version) {
+        effective.tls_version = {};
+    }
+    if (!section_states.quic_version) {
+        effective.quic_version = {};
+    }
+    if (!section_states.directionality) {
+        effective.directionality = {};
+    }
+    if (!section_states.ports) {
+        effective.ports = {};
+    }
+    if (!section_states.ip_addresses) {
+        effective.addresses = {};
+    }
+    if (!section_states.traffic) {
+        effective.aggregate = {};
+    }
+    if (!section_states.service) {
+        effective.service = {};
+    }
+
+    effective.protocol_path = {};
+    append_effective_protocol_path_predicates(
+        effective.protocol_path.include,
+        document.configured_spec.protocol_path.include,
+        section_states.protocol_path,
+        section_states.contains_layer
+    );
+    append_effective_protocol_path_predicates(
+        effective.protocol_path.exclude,
+        document.configured_spec.protocol_path.exclude,
+        section_states.protocol_path,
+        section_states.contains_layer
+    );
+
+    return effective;
+}
+
+std::size_t count_advanced_flow_filter_atomic_rules(const AdvancedFlowFilterSpec& spec) noexcept {
+    return spec.protocol_path.include.size() +
+        spec.protocol_path.exclude.size() +
+        spec.address_family.include.size() +
+        spec.address_family.exclude.size() +
+        spec.flow_protocol.include.size() +
+        spec.flow_protocol.exclude.size() +
+        spec.detected_protocol.include.size() +
+        spec.detected_protocol.exclude.size() +
+        spec.tls_version.include.size() +
+        spec.tls_version.exclude.size() +
+        spec.quic_version.include.size() +
+        spec.quic_version.exclude.size() +
+        spec.ports.include.size() +
+        spec.ports.exclude.size() +
+        count_aggregate_atomic_rules(spec.aggregate) +
+        spec.directionality.include.size() +
+        spec.directionality.exclude.size() +
+        spec.addresses.ipv4_include.size() +
+        spec.addresses.ipv4_exclude.size() +
+        spec.addresses.ipv6_include.size() +
+        spec.addresses.ipv6_exclude.size() +
+        spec.service.include.size() +
+        spec.service.exclude.size();
+}
+
+std::size_t count_configured_advanced_flow_filter_atomic_rules(
+    const AdvancedFlowFilterDocument& document
+) noexcept {
+    return count_advanced_flow_filter_atomic_rules(document.configured_spec);
+}
+
+std::size_t count_active_advanced_flow_filter_atomic_rules(
+    const AdvancedFlowFilterDocument& document
+) {
+    return count_advanced_flow_filter_atomic_rules(make_effective_advanced_flow_filter_spec(document));
+}
+
+bool is_default_advanced_flow_filter_document(const AdvancedFlowFilterDocument& document) noexcept {
+    return count_configured_advanced_flow_filter_atomic_rules(document) == 0U &&
+        document.section_states == AdvancedFlowFilterDocumentSectionStates {};
 }
 
 }  // namespace pfl::session_detail

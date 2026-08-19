@@ -21,6 +21,8 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 }
 
 using session_detail::AdvancedFlowFilterCompileStatus;
+using session_detail::AdvancedFlowFilterDocument;
+using session_detail::AdvancedFlowFilterDocumentSectionStates;
 using session_detail::AdvancedFlowFilterEndpointScope;
 using session_detail::AdvancedFlowFilterDirectionality;
 using session_detail::AdvancedFlowFilterEvaluationStatus;
@@ -1115,6 +1117,197 @@ void run_address_and_version_tests() {
     }
 }
 
+void run_document_model_tests() {
+    ScopedTestContext context {"advanced_flow_filter/document_model"};
+    auto fixture = build_fixture();
+    const auto connections = listed_connections_for_fixture(fixture);
+    const std::vector<std::size_t> all_indices {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U};
+
+    {
+        const AdvancedFlowFilterDocument document {};
+        PFL_EXPECT(document == AdvancedFlowFilterDocument {});
+        PFL_EXPECT(session_detail::make_effective_advanced_flow_filter_spec(document) == AdvancedFlowFilterSpec {});
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 0U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+        PFL_EXPECT(session_detail::is_default_advanced_flow_filter_document(document));
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
+        document.configured_spec.address_family.include = {FlowAddressFamily::ipv6};
+
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 1U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 1U);
+
+        auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.address_family.include.size() == 1U);
+        PFL_EXPECT(effective.address_family.include.front() == FlowAddressFamily::ipv6);
+        expect_indices_equal(
+            evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
+            {6U}
+        );
+
+        document.section_states.address_family = false;
+        effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.address_family == session_detail::AdvancedFlowFilterAddressFamilyCriteria {});
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 1U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+        PFL_EXPECT(!session_detail::is_default_advanced_flow_filter_document(document));
+        expect_indices_equal(
+            evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
+            all_indices
+        );
+
+        document.section_states.address_family = true;
+        effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.address_family.include.size() == 1U);
+        PFL_EXPECT(effective.address_family.include.front() == FlowAddressFamily::ipv6);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 1U);
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
+        document.configured_spec.aggregate.packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U, .max = 20U};
+        document.configured_spec.aggregate.original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {};
+        document.configured_spec.aggregate.captured_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1024U};
+        document.configured_spec.aggregate.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 5000U};
+
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 4U);
+
+        document.section_states.traffic = false;
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.aggregate == session_detail::AdvancedFlowFilterAggregateCriteria {});
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
+        document.configured_spec.ports.include = {
+            {.scope = AdvancedFlowFilterPortScope::either_endpoint, .range = {.first = 443U, .last = 443U}},
+        };
+        document.configured_spec.ports.exclude = {
+            {.scope = AdvancedFlowFilterPortScope::endpoint_b, .range = {.first = 1U, .last = 1023U}},
+        };
+        document.configured_spec.addresses.ipv4_include = {
+            {
+                .match_kind = session_detail::AdvancedFlowFilterAddressMatchKind::exact,
+                .scope = AdvancedFlowFilterEndpointScope::endpoint_a,
+                .value = ipv4(10, 0, 0, 10),
+                .prefix_length = 32U,
+            },
+        };
+        document.configured_spec.service.include = {
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "alpha",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 4U);
+
+        document.section_states.service = false;
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.ports.include.size() == 1U);
+        PFL_EXPECT(effective.ports.exclude.size() == 1U);
+        PFL_EXPECT(effective.addresses.ipv4_include.size() == 1U);
+        PFL_EXPECT(effective.service == session_detail::AdvancedFlowFilterServiceCriteria {});
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 3U);
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
+        document.configured_spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::exact_path,
+            .layers = {
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+                {.kind = ProtocolLayerKind::tcp},
+            },
+        });
+        document.configured_spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+            .layers = {
+                {.kind = ProtocolLayerKind::vxlan, .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::vxlan_vni,
+                    .value = 100U,
+                }},
+            },
+        });
+        document.configured_spec.protocol_path.exclude.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+            .layers = {
+                {.kind = ProtocolLayerKind::gtpu, .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::gtpu_teid,
+                    .value = 0x12345678U,
+                }},
+            },
+        });
+
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 3U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 3U);
+
+        auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.protocol_path.include.size() == 2U);
+        PFL_EXPECT(effective.protocol_path.exclude.size() == 1U);
+
+        document.section_states.contains_layer = false;
+        effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.protocol_path.include.size() == 1U);
+        PFL_EXPECT(effective.protocol_path.include.front().match_kind == AdvancedFlowFilterProtocolPathMatchKind::exact_path);
+        PFL_EXPECT(effective.protocol_path.exclude.empty());
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 1U);
+        expect_indices_equal(
+            evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
+            {0U, 2U, 5U}
+        );
+
+        document.section_states.contains_layer = true;
+        document.section_states.protocol_path = false;
+        effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.protocol_path.include.size() == 1U);
+        PFL_EXPECT(effective.protocol_path.include.front().match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_EXPECT(effective.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(effective.protocol_path.exclude.front().match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 2U);
+        expect_indices_equal(
+            evaluate_matching_indices(connections, require_compiled_filter(effective, fixture, fixture.default_settings)),
+            {1U}
+        );
+
+        document.section_states.contains_layer = false;
+        effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.protocol_path == session_detail::AdvancedFlowFilterProtocolPathCriteria {});
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+    }
+
+    {
+        AdvancedFlowFilterDocument left {};
+        left.configured_spec.directionality.include = {AdvancedFlowFilterDirectionality::unidirectional};
+        AdvancedFlowFilterDocument right = left;
+        PFL_EXPECT(left == right);
+
+        right.section_states.contains_layer = false;
+        PFL_EXPECT(!(left == right));
+
+        right = left;
+        right.configured_spec.directionality.exclude = {AdvancedFlowFilterDirectionality::bidirectional};
+        PFL_EXPECT(!(left == right));
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
+        document.section_states.ports = false;
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 0U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+        PFL_EXPECT(!session_detail::is_default_advanced_flow_filter_document(document));
+        PFL_EXPECT(document.section_states != AdvancedFlowFilterDocumentSectionStates {});
+    }
+}
+
 void run_index_roundtrip_tests() {
     ScopedTestContext context {"advanced_flow_filter/index_roundtrip"};
 
@@ -1723,6 +1916,7 @@ void run_advanced_flow_filter_tests() {
     run_directionality_and_service_tests();
     run_address_family_tests();
     run_address_and_version_tests();
+    run_document_model_tests();
     run_index_roundtrip_tests();
     run_text_format_tests();
     run_metadata_only_evaluation_tests();
