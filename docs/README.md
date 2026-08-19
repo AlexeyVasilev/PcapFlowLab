@@ -80,6 +80,9 @@ different responsibilities.
 
 - [Advanced Flow Filter RFC](features/advanced-flow-filter-rfc.md)
   Proposed product/backend filter model for future indexed flow search.
+- [Advanced Flow Filter UI RFC](features/advanced-flow-filter-ui-rfc.md)
+  Agreed future UI/document-state design for Advanced Flow Filter editing and
+  mode switching.
 - [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
   Proposed compact per-connection metadata foundation for future filtering.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)

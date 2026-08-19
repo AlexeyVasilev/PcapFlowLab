@@ -1,7 +1,7 @@
 # Advanced Flow Filter RFC
 
-Status: staged RFC with backend compile/evaluate foundation, stable v1 text
-parse/format support, current metadata-backed address and
+Status: staged RFC with backend compile/evaluate foundation, current
+development text parse/format support, current metadata-backed address and
 protocol-version predicates, and initial `flows --adv-filter` CLI integration.
 
 This document defines the product and backend-filter model for the Advanced
@@ -59,12 +59,13 @@ legacy `FlowQuery`: the CLI parses the `.filter` file into
 metadata, and only then reuses the ordinary `flows` sort/limit/export path on
 the resulting canonical flow indices.
 
-The current backend stage now also defines a stable text contract for
+The current backend stage now also defines a current development text contract
+for
 Advanced Flow Filter specs:
 
 ```text
 AdvancedFlowFilterSpec
-    <-> parse/format stable text v1
+    <-> parse/format current text format v1
 CompiledAdvancedFlowFilter
     -> evaluate
 AdvancedFlowFilterResult
@@ -93,9 +94,30 @@ Current rules:
   evaluator after open/import completes.
 - Ordinary evaluation does not require source packet bytes.
 
-## Stable Text Format v1
+## Current Text Format v1
 
-The first stable text format is line-oriented and UTF-8 friendly.
+The current development text format is line-oriented and UTF-8 friendly.
+
+Advanced Flow Filter has not yet shipped as a released public/stable product
+feature. Therefore development versions of the `.filter` text format do not
+currently require backward compatibility.
+
+During pre-release development:
+
+- `format_version` may be incremented whenever the design requires an
+  incompatible format change
+- only the current development format version needs to be readable
+- previous experimental/development format versions may become unsupported
+  immediately
+- migration readers or compatibility branches are not required solely for
+  unreleased `.filter` versions
+- old development grammar does not need to be preserved merely because it once
+  used `format_version = 1`
+- only the final format version selected for the first release containing
+  Advanced Flow Filter becomes the compatibility baseline
+
+Backward-compatibility policy for released `.filter` files will be defined
+separately once the format actually ships.
 
 - A UTF-8 BOM is accepted at the beginning of the file.
 - Line endings may be `LF` or `CRLF`.
@@ -188,7 +210,7 @@ max_captured_packet_length.<min|max> = <packet-byte-quantity>
 
 ### Canonical tokens
 
-The stable canonical formatter emits:
+The current canonical formatter emits:
 
 - flow protocol:
   - `unknown`
@@ -286,7 +308,7 @@ Unterminated quotes and unknown escapes are parse errors.
 
 ### Protocol Path text mapping
 
-The stable Protocol Path v1 text uses the repository's canonical layer labels:
+The current Protocol Path v1 text uses the repository's canonical layer labels:
 
 - `EthernetII`
 - `IEEE 802.3`
