@@ -131,9 +131,6 @@ std::string format_packet_ref(const PacketRef& packet) {
         << ", caplen=" << packet.captured_length
         << ", origlen=" << packet.original_length
         << ", ts=" << packet.ts_sec << '.' << packet.ts_usec
-        << ", payload=" << packet.payload_length
-        << ", tcp_flags=" << static_cast<unsigned int>(packet.tcp_flags)
-        << ", fragmented=" << (packet.is_ip_fragmented ? "true" : "false")
         << '}';
     return builder.str();
 }
@@ -801,7 +798,7 @@ void expect_overlay_terminal_payload_length_regression() {
         auto decoded = PacketDecoder {}.decode(packet);
         PFL_REQUIRE(decoded.ipv4.has_value());
         PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
-        PFL_EXPECT(decoded.ipv4->packet_ref.payload_length == test_case.expected_inner_payload_length);
+        PFL_EXPECT(decoded.ipv4->import_metadata.transport_payload_length == test_case.expected_inner_payload_length);
         PFL_REQUIRE(decoded.terminal_transport_payload_bounds.has_value());
         const auto legacy_recovered_payload_length = derive_captured_terminal_transport_payload_length(
             packet,
@@ -820,7 +817,10 @@ void expect_overlay_terminal_payload_length_regression() {
         const auto decision = adapt_dissection_import_facts(facts);
         PFL_REQUIRE(decision.has_decoded_packet());
         PFL_REQUIRE(decision.decoded_packet->ipv4.has_value());
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == test_case.expected_inner_payload_length);
+        PFL_EXPECT(
+            decision.decoded_packet->ipv4->import_metadata.transport_payload_length ==
+            test_case.expected_inner_payload_length
+        );
         PFL_REQUIRE(decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         PFL_EXPECT(*decision.decoded_packet->terminal_transport_payload_bounds == *decoded.terminal_transport_payload_bounds);
 
@@ -835,7 +835,6 @@ void expect_overlay_terminal_payload_length_regression() {
         static_cast<void>(apply_decoded_packet_import(packet, imported, unified_state, hint_service));
         const auto unified_snapshot = snapshot_state(unified_state);
 
-        PFL_EXPECT(require_single_ingested_ipv4_packet_ref(unified_state).payload_length == test_case.expected_inner_payload_length);
         PFL_EXPECT(unified_snapshot == legacy_snapshot);
     }
 }

@@ -31,23 +31,30 @@ std::array<std::uint8_t, 16> ipv6(std::initializer_list<std::uint8_t> bytes) {
 
 PacketRef packet_ref(std::uint64_t index,
                      std::uint32_t original_length,
-                     std::uint32_t payload_length = 0U,
-                     bool is_ip_fragmented = false,
                      std::optional<std::uint32_t> captured_length = std::nullopt,
                      std::uint32_t ts_sec = 0U,
-                     std::uint32_t ts_usec = 0U,
-                     std::uint8_t tcp_flags = 0U) {
+                     std::uint32_t ts_usec = 0U) {
     return PacketRef {
         .packet_index = index,
+        .ts_sec = ts_sec,
+        .ts_usec = ts_usec,
         .byte_offset = index * 64U,
         .captured_length = captured_length.value_or(original_length),
         .original_length = original_length,
-        .ts_sec = ts_sec,
-        .ts_usec = ts_usec,
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+    };
+}
+
+PacketImportMetadata packet_import_metadata(
+    std::uint32_t payload_length = 0U,
+    const bool is_ip_fragmented = false,
+    std::uint8_t tcp_flags = 0U
+) {
+    PacketImportMetadata metadata {
         .is_ip_fragmented = is_ip_fragmented,
     };
+    metadata.transport_payload_length = payload_length;
+    metadata.tcp_flags = tcp_flags;
+    return metadata;
 }
 
 template <typename Connection, typename FlowKey>
@@ -56,7 +63,8 @@ void expect_tcp_connection_aggregate_stats(Connection& connection,
                                            const FlowKey& flow_ba) {
     connection.add_packet(
         flow_ab,
-        packet_ref(100, 100, 0U, false, 90U, 10U, 100U, 0x02U));
+        packet_ref(100, 100, 90U, 10U, 100U),
+        packet_import_metadata(0U, false, 0x02U));
     PFL_EXPECT(connection.aggregate_stats.first_timestamp_us == 10000100U);
     PFL_EXPECT(connection.aggregate_stats.last_timestamp_us == 10000100U);
     PFL_EXPECT(connection.aggregate_stats.captured_bytes == 90U);
@@ -69,7 +77,8 @@ void expect_tcp_connection_aggregate_stats(Connection& connection,
 
     connection.add_packet(
         flow_ba,
-        packet_ref(101, 140, 0U, true, 140U, 12U, 300U, 0x05U));
+        packet_ref(101, 140, 140U, 12U, 300U),
+        packet_import_metadata(0U, true, 0x05U));
     PFL_EXPECT(connection.aggregate_stats.first_timestamp_us == 10000100U);
     PFL_EXPECT(connection.aggregate_stats.last_timestamp_us == 12000300U);
     PFL_EXPECT(connection.aggregate_stats.captured_bytes == 230U);
@@ -82,7 +91,8 @@ void expect_tcp_connection_aggregate_stats(Connection& connection,
 
     connection.add_packet(
         flow_ab,
-        packet_ref(102, 120, 0U, false, 110U, 9U, 900U, 0x12U));
+        packet_ref(102, 120, 110U, 9U, 900U),
+        packet_import_metadata(0U, false, 0x12U));
 
     PFL_EXPECT(connection.packet_count == 3U);
     PFL_EXPECT(connection.total_bytes == 360U);
@@ -250,7 +260,8 @@ void run_connection_tests() {
         };
         udp_connection.add_packet(
             udp_flow_ab,
-            packet_ref(103, 77, 12U, false, 70U, 20U, 1U, 0x07U));
+            packet_ref(103, 77, 12U, 70U, 20U),
+            packet_import_metadata(1U, false, 0x07U));
 
         PFL_EXPECT(udp_connection.aggregate_stats.tcp_syn_count == 0U);
         PFL_EXPECT(udp_connection.aggregate_stats.tcp_fin_count == 0U);
@@ -261,25 +272,25 @@ void run_connection_tests() {
         ConnectionV4 http_connection {};
         http_connection.protocol_hint = FlowProtocolHint::http;
         PFL_EXPECT(!http_connection.hint_detection_settled());
-        PFL_EXPECT(http_connection.should_attempt_hint_detection(packet_ref(20, 64, 24), ProtocolId::tcp));
-        PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_ref(21, 64, 0), ProtocolId::tcp));
+        PFL_EXPECT(http_connection.should_attempt_hint_detection(packet_import_metadata(24U), ProtocolId::tcp));
+        PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_import_metadata(0U), ProtocolId::tcp));
 
         for (std::uint8_t attempt = 0; attempt < kMaxUnresolvedHintPayloadAttemptsPerConnection; ++attempt) {
-            http_connection.note_hint_detection_attempt(packet_ref(30U + attempt, 96, 24), ProtocolId::tcp);
+            http_connection.note_hint_detection_attempt(packet_import_metadata(24U), ProtocolId::tcp);
         }
 
         PFL_EXPECT(http_connection.hint_search_state.unresolved_payload_attempt_count ==
                    kMaxUnresolvedHintPayloadAttemptsPerConnection);
         PFL_EXPECT(http_connection.hint_search_state.unresolved_payload_attempt_budget_exhausted);
-        PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_ref(99, 96, 24), ProtocolId::tcp));
+        PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_import_metadata(24U), ProtocolId::tcp));
     }
 
     {
         ConnectionV4 settled_service_connection {};
         settled_service_connection.service_hint = "example.org";
         PFL_EXPECT(settled_service_connection.hint_detection_settled());
-        PFL_EXPECT(!settled_service_connection.should_attempt_hint_detection(packet_ref(40, 128, 64), ProtocolId::tcp));
-        settled_service_connection.note_hint_detection_attempt(packet_ref(41, 128, 64), ProtocolId::tcp);
+        PFL_EXPECT(!settled_service_connection.should_attempt_hint_detection(packet_import_metadata(64U), ProtocolId::tcp));
+        settled_service_connection.note_hint_detection_attempt(packet_import_metadata(64U), ProtocolId::tcp);
         PFL_EXPECT(settled_service_connection.hint_search_state.unresolved_payload_attempt_count == 0U);
         PFL_EXPECT(!settled_service_connection.hint_search_state.unresolved_payload_attempt_budget_exhausted);
     }
@@ -288,7 +299,7 @@ void run_connection_tests() {
         ConnectionV6 ssh_connection {};
         ssh_connection.protocol_hint = FlowProtocolHint::ssh;
         PFL_EXPECT(ssh_connection.hint_detection_settled());
-        PFL_EXPECT(!ssh_connection.should_attempt_hint_detection(packet_ref(50, 90, 12), ProtocolId::tcp));
+        PFL_EXPECT(!ssh_connection.should_attempt_hint_detection(packet_import_metadata(12U), ProtocolId::tcp));
     }
 
     {

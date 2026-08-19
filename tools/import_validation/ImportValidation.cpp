@@ -138,7 +138,10 @@ struct MismatchRecorder {
     return format_protocol_path(path);
 }
 
-[[nodiscard]] std::string format_packet_ref(const PacketRef& packet) {
+[[nodiscard]] std::string format_packet_ref(
+    const PacketRef& packet,
+    const PacketImportMetadata& metadata = {}
+) {
     std::ostringstream builder {};
     builder
         << "{index=" << packet.packet_index
@@ -147,9 +150,9 @@ struct MismatchRecorder {
         << ", caplen=" << packet.captured_length
         << ", origlen=" << packet.original_length
         << ", ts=" << packet.ts_sec << '.' << packet.ts_usec
-        << ", payload=" << packet.payload_length
-        << ", tcp_flags=" << static_cast<unsigned int>(packet.tcp_flags)
-        << ", fragmented=" << (packet.is_ip_fragmented ? "true" : "false")
+        << ", payload=" << metadata.transport_payload_length.value_or(0U)
+        << ", tcp_flags=" << static_cast<unsigned int>(metadata.tcp_flags.value_or(0U))
+        << ", fragmented=" << (metadata.is_ip_fragmented ? "true" : "false")
         << '}';
     return builder.str();
 }
@@ -205,17 +208,6 @@ struct MismatchRecorder {
         });
 }
 
-[[nodiscard]] PacketRef finalized_observation_packet_ref(
-    const RawPcapPacket& packet,
-    const PacketRef& semantic_packet_ref
-) {
-    auto packet_ref = packet_ref_from_raw_packet(packet);
-    packet_ref.payload_length = semantic_packet_ref.payload_length;
-    packet_ref.tcp_flags = semantic_packet_ref.tcp_flags;
-    packet_ref.is_ip_fragmented = semantic_packet_ref.is_ip_fragmented;
-    return packet_ref;
-}
-
 [[nodiscard]] ImportValidationPacketObservation make_base_observation(const RawPcapPacket& packet) {
     return ImportValidationPacketObservation {
         .packet_index = packet.packet_index,
@@ -229,7 +221,7 @@ struct MismatchRecorder {
 [[nodiscard]] ImportValidationPacketObservation make_ipv4_observation(
     const RawPcapPacket& packet,
     const FlowKeyV4& flow_key,
-    const PacketRef& packet_ref,
+    const PacketImportMetadata& metadata,
     const ProtocolPath& path,
     const ImportValidationPacketClassification classification,
     const dissection::ParseStatus final_status,
@@ -242,14 +234,14 @@ struct MismatchRecorder {
     observation.has_addresses = true;
     observation.src_addr_v4 = flow_key.src_addr;
     observation.dst_addr_v4 = flow_key.dst_addr;
-    observation.has_ports = flow_key.src_port != 0U || flow_key.dst_port != 0U;
+    observation.has_ports = !metadata.is_ip_fragmented && (flow_key.src_port != 0U || flow_key.dst_port != 0U);
     observation.src_port = flow_key.src_port;
     observation.dst_port = flow_key.dst_port;
-    observation.has_transport_payload_length = packet_ref.payload_length > 0U;
-    observation.captured_transport_payload_length = packet_ref.payload_length;
-    observation.has_tcp_flags = flow_key.protocol == ProtocolId::tcp;
-    observation.tcp_flags = packet_ref.tcp_flags;
-    observation.fragmented = packet_ref.is_ip_fragmented;
+    observation.has_transport_payload_length = metadata.transport_payload_length.has_value();
+    observation.captured_transport_payload_length = metadata.transport_payload_length.value_or(0U);
+    observation.has_tcp_flags = flow_key.protocol == ProtocolId::tcp && metadata.tcp_flags.has_value();
+    observation.tcp_flags = metadata.tcp_flags.value_or(0U);
+    observation.fragmented = metadata.is_ip_fragmented;
     observation.physical_path = path;
     observation.final_status = final_status;
     observation.stop_reason = stop_reason;
@@ -259,7 +251,7 @@ struct MismatchRecorder {
 [[nodiscard]] ImportValidationPacketObservation make_ipv6_observation(
     const RawPcapPacket& packet,
     const FlowKeyV6& flow_key,
-    const PacketRef& packet_ref,
+    const PacketImportMetadata& metadata,
     const ProtocolPath& path,
     const ImportValidationPacketClassification classification,
     const dissection::ParseStatus final_status,
@@ -272,14 +264,14 @@ struct MismatchRecorder {
     observation.has_addresses = true;
     observation.src_addr_v6 = flow_key.src_addr;
     observation.dst_addr_v6 = flow_key.dst_addr;
-    observation.has_ports = flow_key.src_port != 0U || flow_key.dst_port != 0U;
+    observation.has_ports = !metadata.is_ip_fragmented && (flow_key.src_port != 0U || flow_key.dst_port != 0U);
     observation.src_port = flow_key.src_port;
     observation.dst_port = flow_key.dst_port;
-    observation.has_transport_payload_length = packet_ref.payload_length > 0U;
-    observation.captured_transport_payload_length = packet_ref.payload_length;
-    observation.has_tcp_flags = flow_key.protocol == ProtocolId::tcp;
-    observation.tcp_flags = packet_ref.tcp_flags;
-    observation.fragmented = packet_ref.is_ip_fragmented;
+    observation.has_transport_payload_length = metadata.transport_payload_length.has_value();
+    observation.captured_transport_payload_length = metadata.transport_payload_length.value_or(0U);
+    observation.has_tcp_flags = flow_key.protocol == ProtocolId::tcp && metadata.tcp_flags.has_value();
+    observation.tcp_flags = metadata.tcp_flags.value_or(0U);
+    observation.fragmented = metadata.is_ip_fragmented;
     observation.physical_path = path;
     observation.final_status = final_status;
     observation.stop_reason = stop_reason;
@@ -316,7 +308,7 @@ struct MismatchRecorder {
         return make_ipv4_observation(
             packet,
             decoded.ipv4->flow_key,
-            finalized_observation_packet_ref(packet, decoded.ipv4->packet_ref),
+            decoded.ipv4->import_metadata,
             decoded.protocol_path_builder.to_path(),
             ImportValidationPacketClassification::recognized_flow,
             dissection::ParseStatus::complete,
@@ -326,7 +318,7 @@ struct MismatchRecorder {
     return make_ipv6_observation(
         packet,
         decoded.ipv6->flow_key,
-        finalized_observation_packet_ref(packet, decoded.ipv6->packet_ref),
+        decoded.ipv6->import_metadata,
         decoded.protocol_path_builder.to_path(),
         ImportValidationPacketClassification::recognized_flow,
         dissection::ParseStatus::complete,
@@ -342,7 +334,7 @@ struct MismatchRecorder {
         return make_ipv4_observation(
             packet,
             decision.decoded_packet->ipv4->flow_key,
-            finalized_observation_packet_ref(packet, decision.decoded_packet->ipv4->packet_ref),
+            decision.decoded_packet->ipv4->import_metadata,
             decision.physical_path.to_path(),
             ImportValidationPacketClassification::recognized_flow,
             decision.final_status,
@@ -353,7 +345,7 @@ struct MismatchRecorder {
         return make_ipv6_observation(
             packet,
             decision.decoded_packet->ipv6->flow_key,
-            finalized_observation_packet_ref(packet, decision.decoded_packet->ipv6->packet_ref),
+            decision.decoded_packet->ipv6->import_metadata,
             decision.physical_path.to_path(),
             ImportValidationPacketClassification::recognized_flow,
             decision.final_status,
@@ -624,7 +616,7 @@ bool process_classic_legacy_import_packet(
                     *decoded.terminal_transport_payload_bounds
                 );
                 payload_length.has_value()) {
-                decoded.ipv4->packet_ref.payload_length = *payload_length;
+                decoded.ipv4->import_metadata.transport_payload_length = *payload_length;
             }
         }
 
@@ -632,21 +624,21 @@ bool process_classic_legacy_import_packet(
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv4);
-        if (!decoded.ipv4->packet_ref.is_ip_fragmented &&
-            connection.should_attempt_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol) &&
-            requires_full_packet_for_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol)) {
+        if (!decoded.ipv4->import_metadata.is_ip_fragmented &&
+            connection.should_attempt_hint_detection(decoded.ipv4->import_metadata, decoded.ipv4->flow_key.protocol) &&
+            requires_full_packet_for_hint_detection(decoded.ipv4->import_metadata, decoded.ipv4->flow_key.protocol)) {
             if (!reader.materialize_packet_bytes(packet)) {
                 return false;
             }
 
             packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
             connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, decoded.ipv4->flow_key));
-            connection.note_hint_detection_attempt(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol);
+            connection.note_hint_detection_attempt(decoded.ipv4->import_metadata, decoded.ipv4->flow_key.protocol);
         } else {
             apply_import_hints_if_needed(
                 packet,
                 packet_bytes,
-                decoded.ipv4->packet_ref,
+                decoded.ipv4->import_metadata,
                 connection,
                 decoded.ipv4->flow_key,
                 hint_service);
@@ -661,7 +653,7 @@ bool process_classic_legacy_import_packet(
                     *decoded.terminal_transport_payload_bounds
                 );
                 payload_length.has_value()) {
-                decoded.ipv6->packet_ref.payload_length = *payload_length;
+                decoded.ipv6->import_metadata.transport_payload_length = *payload_length;
             }
         }
 
@@ -669,21 +661,21 @@ bool process_classic_legacy_import_packet(
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv6);
-        if (!decoded.ipv6->packet_ref.is_ip_fragmented &&
-            connection.should_attempt_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol) &&
-            requires_full_packet_for_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol)) {
+        if (!decoded.ipv6->import_metadata.is_ip_fragmented &&
+            connection.should_attempt_hint_detection(decoded.ipv6->import_metadata, decoded.ipv6->flow_key.protocol) &&
+            requires_full_packet_for_hint_detection(decoded.ipv6->import_metadata, decoded.ipv6->flow_key.protocol)) {
             if (!reader.materialize_packet_bytes(packet)) {
                 return false;
             }
 
             packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
             connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, decoded.ipv6->flow_key));
-            connection.note_hint_detection_attempt(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol);
+            connection.note_hint_detection_attempt(decoded.ipv6->import_metadata, decoded.ipv6->flow_key.protocol);
         } else {
             apply_import_hints_if_needed(
                 packet,
                 packet_bytes,
-                decoded.ipv6->packet_ref,
+                decoded.ipv6->import_metadata,
                 connection,
                 decoded.ipv6->flow_key,
                 hint_service);

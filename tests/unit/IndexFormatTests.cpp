@@ -237,6 +237,25 @@ std::vector<std::uint8_t> make_ipv6_tcp_segment_for_index_test(
     return bytes;
 }
 
+std::uint16_t expected_section_schema_version(const std::uint32_t section_id) {
+    switch (static_cast<detail::CaptureIndexSectionId>(section_id)) {
+    case detail::CaptureIndexSectionId::summary:
+        return detail::kCaptureIndexStableSummarySectionSchemaVersion;
+    case detail::CaptureIndexSectionId::protocol_paths:
+        return detail::kCaptureIndexStableProtocolPathsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::ipv4_connections:
+        return detail::kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::ipv6_connections:
+        return detail::kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::unrecognized_packets:
+        return detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::packet_locator:
+        return detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion;
+    default:
+        return 0U;
+    }
+}
+
 void expect_matching_packets(const std::vector<PacketRef>& left, const std::vector<PacketRef>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
@@ -247,9 +266,6 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].original_length == right[index].original_length);
         PFL_EXPECT(left[index].ts_sec == right[index].ts_sec);
         PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
-        PFL_EXPECT(left[index].payload_length == right[index].payload_length);
-        PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
-        PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
     }
 }
 
@@ -600,7 +616,7 @@ void run_index_format_tests() {
     PFL_EXPECT(inspection.source_info.capture_path == source_path);
     PFL_EXPECT(!inspection.sections.empty());
     for (const auto& section : inspection.sections) {
-        PFL_EXPECT(section.section_schema_version == detail::kCaptureIndexStableCoreSectionSchemaVersion);
+        PFL_EXPECT(section.section_schema_version == expected_section_schema_version(section.section_id));
         PFL_EXPECT((section.section_flags & detail::kCaptureIndexStableSectionFlagRequired) != 0U);
     }
 
@@ -613,6 +629,31 @@ void run_index_format_tests() {
     PFL_EXPECT(index_reader.read(future_revision_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
     PFL_EXPECT(loaded_capture_path == source_path);
     expect_matching_states(state, loaded_state);
+
+    {
+        auto legacy_packet_ref_schema_bytes = read_file_bytes(index_path);
+        const auto sections = parse_sections(legacy_packet_ref_schema_bytes);
+        const auto ipv4_section = std::find_if(sections.begin(), sections.end(), [](const SectionInfo& section) {
+            return section.id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections);
+        });
+        PFL_REQUIRE(ipv4_section != sections.end());
+        write_le16_at(legacy_packet_ref_schema_bytes, ipv4_section->offset + 4U, 1U);
+
+        const auto legacy_packet_ref_schema_path = write_temp_binary_file(
+            "pfl_index_legacy_packet_ref_schema.idx",
+            legacy_packet_ref_schema_bytes
+        );
+        PFL_EXPECT(!index_reader.read(
+            legacy_packet_ref_schema_path,
+            loaded_state,
+            loaded_capture_path,
+            &loaded_source_info
+        ));
+        PFL_EXPECT(
+            index_reader.last_error().reason ==
+            "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture"
+        );
+    }
 
     {
         const auto chunked_ipv4_source_path = write_temp_pcap(

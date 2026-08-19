@@ -89,10 +89,10 @@ CaptureSession build_shared_flow_query_session() {
             tcp_heavy_flow,
             PacketRef {
                 .packet_index = packet_offset,
-                .captured_length = 66U,
-                .original_length = 66U,
                 .ts_sec = 1U,
                 .ts_usec = static_cast<std::uint32_t>(100U + packet_offset),
+                .captured_length = 66U,
+                .original_length = 66U,
             }
         );
     }
@@ -114,20 +114,20 @@ CaptureSession build_shared_flow_query_session() {
         http_flow,
         PacketRef {
             .packet_index = 10U,
-            .captured_length = 100U,
-            .original_length = 100U,
             .ts_sec = 2U,
             .ts_usec = 100U,
+            .captured_length = 100U,
+            .original_length = 100U,
         }
     );
     http_connection.add_packet(
         http_flow,
         PacketRef {
             .packet_index = 11U,
-            .captured_length = 100U,
-            .original_length = 100U,
             .ts_sec = 2U,
             .ts_usec = 200U,
+            .captured_length = 100U,
+            .original_length = 100U,
         }
     );
     state.ipv4_connections.get_or_create(http_connection.key) = http_connection;
@@ -148,10 +148,10 @@ CaptureSession build_shared_flow_query_session() {
         dns_flow,
         PacketRef {
             .packet_index = 12U,
-            .captured_length = 90U,
-            .original_length = 90U,
             .ts_sec = 3U,
             .ts_usec = 100U,
+            .captured_length = 90U,
+            .original_length = 90U,
         }
     );
     state.ipv4_connections.get_or_create(dns_connection.key) = dns_connection;
@@ -170,10 +170,10 @@ CaptureSession build_shared_flow_query_session() {
         ipv6_udp_flow,
         PacketRef {
             .packet_index = 13U,
-            .captured_length = 70U,
-            .original_length = 70U,
             .ts_sec = 4U,
             .ts_usec = 100U,
+            .captured_length = 70U,
+            .original_length = 70U,
         }
     );
     state.ipv6_connections.get_or_create(ipv6_udp_connection.key) = ipv6_udp_connection;
@@ -877,10 +877,10 @@ void run_query_tests() {
                 flow,
                 PacketRef {
                     .packet_index = host_octet,
-                    .captured_length = 64U,
-                    .original_length = 64U,
                     .ts_sec = 5U,
                     .ts_usec = host_octet,
+                    .captured_length = 64U,
+                    .original_length = 64U,
                 }
             );
             state.ipv4_connections.get_or_create(connection.key) = connection;

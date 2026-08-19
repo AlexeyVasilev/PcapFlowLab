@@ -5,6 +5,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/services/CaptureImporter.h"
 
@@ -67,11 +68,11 @@ void run_fragmentation_tests() {
     PFL_REQUIRE(packet3.has_value());
     PFL_REQUIRE(packet4.has_value());
 
-    PFL_EXPECT(packet0->is_ip_fragmented);
-    PFL_EXPECT(packet1->is_ip_fragmented);
-    PFL_EXPECT(packet2->is_ip_fragmented);
-    PFL_EXPECT(!packet3->is_ip_fragmented);
-    PFL_EXPECT(!packet4->is_ip_fragmented);
+    PFL_EXPECT(session_detail::derive_transient_packet_metadata(session, *packet0).is_ip_fragmented.value_or(false));
+    PFL_EXPECT(session_detail::derive_transient_packet_metadata(session, *packet1).is_ip_fragmented.value_or(false));
+    PFL_EXPECT(session_detail::derive_transient_packet_metadata(session, *packet2).is_ip_fragmented.value_or(false));
+    PFL_EXPECT(!session_detail::derive_transient_packet_metadata(session, *packet3).is_ip_fragmented.value_or(false));
+    PFL_EXPECT(!session_detail::derive_transient_packet_metadata(session, *packet4).is_ip_fragmented.value_or(false));
 
     const auto details0 = session.read_packet_details(*packet0);
     PFL_REQUIRE(details0.has_value());
@@ -134,8 +135,8 @@ void run_fragmentation_tests() {
     const auto loaded_packet2 = loaded_session.find_packet(2);
     PFL_REQUIRE(loaded_packet0.has_value());
     PFL_REQUIRE(loaded_packet2.has_value());
-    PFL_EXPECT(loaded_packet0->is_ip_fragmented);
-    PFL_EXPECT(loaded_packet2->is_ip_fragmented);
+    PFL_EXPECT(session_detail::derive_transient_packet_metadata(loaded_session, *loaded_packet0).is_ip_fragmented.value_or(false));
+    PFL_EXPECT(session_detail::derive_transient_packet_metadata(loaded_session, *loaded_packet2).is_ip_fragmented.value_or(false));
 
     const auto mf_flow_packets = session.list_flow_packets(0);
     PFL_REQUIRE(!mf_flow_packets.empty());

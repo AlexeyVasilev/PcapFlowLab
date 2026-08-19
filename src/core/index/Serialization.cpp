@@ -609,28 +609,19 @@ bool write_packet_ref(std::ostream& stream, const PacketRef& packet) {
            write_u64(stream, packet.byte_offset) &&
            write_u32(stream, packet.data_link_type) &&
            write_u32(stream, packet.captured_length) &&
-           write_u32(stream, packet.original_length) &&
-           write_u32(stream, packet.payload_length) &&
-           write_u8(stream, packet.tcp_flags) &&
-           write_u8(stream, packet.is_ip_fragmented ? 1U : 0U);
+           write_u32(stream, packet.original_length);
 }
 
 bool read_packet_ref(std::istream& stream, PacketRef& packet) {
-    std::uint8_t is_ip_fragmented {0};
     if (!read_u64(stream, packet.packet_index) ||
         !read_u32(stream, packet.ts_sec) ||
         !read_u32(stream, packet.ts_usec) ||
         !read_u64(stream, packet.byte_offset) ||
         !read_u32(stream, packet.data_link_type) ||
         !read_u32(stream, packet.captured_length) ||
-        !read_u32(stream, packet.original_length) ||
-        !read_u32(stream, packet.payload_length) ||
-        !read_u8(stream, packet.tcp_flags) ||
-        !read_u8(stream, is_ip_fragmented)) {
+        !read_u32(stream, packet.original_length)) {
         return false;
     }
-
-    packet.is_ip_fragmented = is_ip_fragmented != 0;
     return true;
 }
 

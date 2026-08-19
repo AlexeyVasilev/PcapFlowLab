@@ -137,28 +137,28 @@ LegacyDirectFacts decode_legacy_direct(const RawPcapPacket& packet) {
         facts.has_addresses = true;
         facts.src_addr_v4 = decoded.ipv4->flow_key.src_addr;
         facts.dst_addr_v4 = decoded.ipv4->flow_key.dst_addr;
-        facts.is_ip_fragmented = decoded.ipv4->packet_ref.is_ip_fragmented;
+        facts.is_ip_fragmented = decoded.ipv4->import_metadata.is_ip_fragmented;
         facts.has_ports = !facts.is_ip_fragmented && protocol_uses_ports(facts.protocol);
         facts.src_port = decoded.ipv4->flow_key.src_port;
         facts.dst_port = decoded.ipv4->flow_key.dst_port;
-        facts.has_payload_length = !facts.is_ip_fragmented || decoded.ipv4->packet_ref.payload_length != 0U;
-        facts.captured_payload_length = decoded.ipv4->packet_ref.payload_length;
+        facts.has_payload_length = decoded.ipv4->import_metadata.transport_payload_length.has_value();
+        facts.captured_payload_length = decoded.ipv4->import_metadata.transport_payload_length.value_or(0U);
         facts.has_tcp_flags = facts.protocol == ProtocolId::tcp && !facts.is_ip_fragmented;
-        facts.tcp_flags = decoded.ipv4->packet_ref.tcp_flags;
+        facts.tcp_flags = decoded.ipv4->import_metadata.tcp_flags.value_or(0U);
     } else if (decoded.ipv6.has_value()) {
         facts.family = DissectionAddressFamily::ipv6;
         facts.protocol = decoded.ipv6->flow_key.protocol;
         facts.has_addresses = true;
         facts.src_addr_v6 = decoded.ipv6->flow_key.src_addr;
         facts.dst_addr_v6 = decoded.ipv6->flow_key.dst_addr;
-        facts.is_ip_fragmented = decoded.ipv6->packet_ref.is_ip_fragmented;
+        facts.is_ip_fragmented = decoded.ipv6->import_metadata.is_ip_fragmented;
         facts.has_ports = !facts.is_ip_fragmented && protocol_uses_ports(facts.protocol);
         facts.src_port = decoded.ipv6->flow_key.src_port;
         facts.dst_port = decoded.ipv6->flow_key.dst_port;
-        facts.has_payload_length = !facts.is_ip_fragmented || decoded.ipv6->packet_ref.payload_length != 0U;
-        facts.captured_payload_length = decoded.ipv6->packet_ref.payload_length;
+        facts.has_payload_length = decoded.ipv6->import_metadata.transport_payload_length.has_value();
+        facts.captured_payload_length = decoded.ipv6->import_metadata.transport_payload_length.value_or(0U);
         facts.has_tcp_flags = facts.protocol == ProtocolId::tcp && !facts.is_ip_fragmented;
-        facts.tcp_flags = decoded.ipv6->packet_ref.tcp_flags;
+        facts.tcp_flags = decoded.ipv6->import_metadata.tcp_flags.value_or(0U);
     }
 
     return facts;

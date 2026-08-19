@@ -109,6 +109,8 @@ bool parse_section_payload(const std::vector<std::uint8_t>& payload, Parser&& pa
 
 constexpr char kLegacyIndexRebuildMessage[] =
     "legacy index version 14 is no longer loadable; rebuild the index from the source capture";
+constexpr char kCompactPacketRefRebuildMessage[] =
+    "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture";
 
 }  // namespace
 
@@ -499,7 +501,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 return false;
             case detail::CaptureIndexSectionId::summary:
                 if (!required_section ||
-                    section_header.section_schema_version != detail::kCaptureIndexStableCoreSectionSchemaVersion ||
+                    section_header.section_schema_version != detail::kCaptureIndexStableSummarySectionSchemaVersion ||
                     has_summary) {
                     invalid_core_section_header("invalid summary section");
                     return false;
@@ -517,7 +519,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::protocol_paths:
                 if (!required_section ||
-                    section_header.section_schema_version != detail::kCaptureIndexStableCoreSectionSchemaVersion ||
+                    section_header.section_schema_version != detail::kCaptureIndexStableProtocolPathsSectionSchemaVersion ||
                     has_protocol_paths) {
                     invalid_core_section_header("invalid protocol-path section");
                     return false;
@@ -534,8 +536,15 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 has_protocol_paths = true;
                 break;
             case detail::CaptureIndexSectionId::ipv4_connections:
-                if (!required_section ||
-                    section_header.section_schema_version != detail::kCaptureIndexStableCoreSectionSchemaVersion) {
+                if (!required_section) {
+                    invalid_core_section_header("invalid IPv4 connection section");
+                    return false;
+                }
+                if (section_header.section_schema_version == 1U) {
+                    invalid_core_section_header(kCompactPacketRefRebuildMessage);
+                    return false;
+                }
+                if (section_header.section_schema_version != detail::kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion) {
                     invalid_core_section_header("invalid IPv4 connection section");
                     return false;
                 }
@@ -555,8 +564,15 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 has_ipv4_connections = true;
                 break;
             case detail::CaptureIndexSectionId::ipv6_connections:
-                if (!required_section ||
-                    section_header.section_schema_version != detail::kCaptureIndexStableCoreSectionSchemaVersion) {
+                if (!required_section) {
+                    invalid_core_section_header("invalid IPv6 connection section");
+                    return false;
+                }
+                if (section_header.section_schema_version == 1U) {
+                    invalid_core_section_header(kCompactPacketRefRebuildMessage);
+                    return false;
+                }
+                if (section_header.section_schema_version != detail::kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion) {
                     invalid_core_section_header("invalid IPv6 connection section");
                     return false;
                 }
@@ -576,9 +592,15 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 has_ipv6_connections = true;
                 break;
             case detail::CaptureIndexSectionId::unrecognized_packets:
-                if (!required_section ||
-                    section_header.section_schema_version != detail::kCaptureIndexStableCoreSectionSchemaVersion ||
-                    has_unrecognized_packets) {
+                if (!required_section || has_unrecognized_packets) {
+                    invalid_core_section_header("invalid unrecognized-packets section");
+                    return false;
+                }
+                if (section_header.section_schema_version == 1U) {
+                    invalid_core_section_header(kCompactPacketRefRebuildMessage);
+                    return false;
+                }
+                if (section_header.section_schema_version != detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion) {
                     invalid_core_section_header("invalid unrecognized-packets section");
                     return false;
                 }
@@ -599,7 +621,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                 break;
             case detail::CaptureIndexSectionId::packet_locator:
                 if (!required_section ||
-                    section_header.section_schema_version != detail::kCaptureIndexStableCoreSectionSchemaVersion ||
+                    section_header.section_schema_version != detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion ||
                     has_packet_locator) {
                     invalid_core_section_header("invalid packet-locator section");
                     return false;

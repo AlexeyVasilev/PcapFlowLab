@@ -25,7 +25,12 @@ enum class CaptureIndexSectionId : std::uint32_t {
 };
 
 inline constexpr std::uint16_t kCaptureIndexStableSectionFlagRequired = 0x0001U;
-inline constexpr std::uint16_t kCaptureIndexStableCoreSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableSummarySectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableProtocolPathsSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion = 2U;
+inline constexpr std::uint16_t kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion = 2U;
+inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion = 2U;
+inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorSectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
     8U + 2U + 2U + 4U + 4U + 4U + 1U + 8U + 8U + 8U + 4U;

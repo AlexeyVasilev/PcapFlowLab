@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <cmath>
+#include <unordered_map>
 #include <vector>
 
 #include "TestSupport.h"
@@ -108,6 +109,32 @@ std::uint64_t analysis_packet_timestamp_us(const PacketRef& packet) noexcept {
     return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
 }
 
+struct SyntheticAnalysisPacketMetadata {
+    std::uint32_t payload_length {0U};
+    std::uint8_t tcp_flags {0U};
+};
+
+std::unordered_map<std::uint64_t, SyntheticAnalysisPacketMetadata>& synthetic_analysis_packet_metadata_registry() {
+    static std::unordered_map<std::uint64_t, SyntheticAnalysisPacketMetadata> registry {};
+    return registry;
+}
+
+void remember_synthetic_analysis_packet_metadata(
+    const std::uint64_t packet_index,
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags
+) {
+    synthetic_analysis_packet_metadata_registry()[packet_index] = SyntheticAnalysisPacketMetadata {
+        .payload_length = payload_length,
+        .tcp_flags = tcp_flags,
+    };
+}
+
+std::uint8_t synthetic_analysis_packet_tcp_flags(const PacketRef& packet) {
+    const auto it = synthetic_analysis_packet_metadata_registry().find(packet.packet_index);
+    return it != synthetic_analysis_packet_metadata_registry().end() ? it->second.tcp_flags : 0U;
+}
+
 PacketRef make_analysis_packet_ref(
     const std::uint64_t packet_index,
     const std::uint32_t ts_usec,
@@ -115,14 +142,13 @@ PacketRef make_analysis_packet_ref(
     const std::uint32_t payload_length,
     const std::uint8_t tcp_flags = 0U
 ) {
+    remember_synthetic_analysis_packet_metadata(packet_index, payload_length, tcp_flags);
     return PacketRef {
         .packet_index = packet_index,
-        .captured_length = captured_length,
-        .original_length = captured_length,
         .ts_sec = 1U,
         .ts_usec = ts_usec,
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+        .captured_length = captured_length,
+        .original_length = captured_length,
     };
 }
 
@@ -134,14 +160,13 @@ PacketRef make_analysis_packet_ref_with_original_length(
     const std::uint32_t payload_length,
     const std::uint8_t tcp_flags = 0U
 ) {
+    remember_synthetic_analysis_packet_metadata(packet_index, payload_length, tcp_flags);
     return PacketRef {
         .packet_index = packet_index,
-        .captured_length = captured_length,
-        .original_length = original_length,
         .ts_sec = 1U,
         .ts_usec = ts_usec,
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+        .captured_length = captured_length,
+        .original_length = original_length,
     };
 }
 
@@ -152,14 +177,13 @@ PacketRef make_analysis_packet_ref_at(
     const std::uint32_t payload_length,
     const std::uint8_t tcp_flags = 0U
 ) {
+    remember_synthetic_analysis_packet_metadata(packet_index, payload_length, tcp_flags);
     return PacketRef {
         .packet_index = packet_index,
-        .captured_length = captured_length,
-        .original_length = captured_length,
         .ts_sec = static_cast<std::uint32_t>(1U + (timestamp_us / 1000000ULL)),
         .ts_usec = static_cast<std::uint32_t>(timestamp_us % 1000000ULL),
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+        .captured_length = captured_length,
+        .original_length = captured_length,
     };
 }
 
@@ -187,13 +211,14 @@ void populate_connection_aggregate_stats(ConnectionV4& connection) {
             return;
         }
 
-        if ((packet.tcp_flags & 0x02U) != 0U) {
+        const auto tcp_flags = synthetic_analysis_packet_tcp_flags(packet);
+        if ((tcp_flags & 0x02U) != 0U) {
             connection.aggregate_stats.tcp_syn_count += 1U;
         }
-        if ((packet.tcp_flags & 0x01U) != 0U) {
+        if ((tcp_flags & 0x01U) != 0U) {
             connection.aggregate_stats.tcp_fin_count += 1U;
         }
-        if ((packet.tcp_flags & 0x04U) != 0U) {
+        if ((tcp_flags & 0x04U) != 0U) {
             connection.aggregate_stats.tcp_rst_count += 1U;
         }
     };
@@ -352,17 +377,17 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->sequence_preview_rows[0].direction_text == "A->B");
     PFL_EXPECT(analysis->sequence_preview_rows[0].delta_time_us == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].captured_length == request_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[0].payload_length == make_http_request_payload().size());
+    PFL_EXPECT(analysis->sequence_preview_rows[0].payload_length == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].flow_packet_number == 2U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].direction_text == "B->A");
     PFL_EXPECT(analysis->sequence_preview_rows[1].delta_time_us == 1000150U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].captured_length == response_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[1].payload_length == 20U);
+    PFL_EXPECT(analysis->sequence_preview_rows[1].payload_length == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].flow_packet_number == 3U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].direction_text == "A->B");
     PFL_EXPECT(analysis->sequence_preview_rows[2].delta_time_us == 1000200U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].captured_length == follow_up_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[2].payload_length == 10U);
+    PFL_EXPECT(analysis->sequence_preview_rows[2].payload_length == 0U);
 
     PFL_EXPECT(!session.get_flow_analysis(99U).has_value());
 

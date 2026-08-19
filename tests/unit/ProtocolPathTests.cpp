@@ -15,6 +15,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
@@ -3085,7 +3086,7 @@ void expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_pa
                 const auto normalized_path_text =
                     normalized_protocol_path_text_for_flow_identity(session.state(), packet_path_id.value_or(kInvalidProtocolPathId));
                 tuple_path_ids[tuple_text].insert(normalized_path_text);
-                if (packet.payload_length == 0U) {
+                if (session_detail::derive_captured_transport_payload_length_from_headers(session, packet).value_or(0U) == 0U) {
                     payloadless_tuple_path_ids[tuple_text].insert(normalized_path_text);
                 } else {
                     payloadbearing_tuple_path_ids[tuple_text].insert(normalized_path_text);

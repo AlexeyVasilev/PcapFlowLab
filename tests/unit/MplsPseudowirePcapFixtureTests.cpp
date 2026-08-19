@@ -11,6 +11,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/PacketPayloadService.h"
@@ -300,7 +301,10 @@ void expect_single_ip_flow(
     const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
     if (expect_payload_extraction) {
         PFL_EXPECT(!transport_payload.empty());
-        PFL_EXPECT(static_cast<std::uint32_t>(transport_payload.size()) == packet.payload_length);
+        PFL_EXPECT(
+            session_detail::derive_captured_transport_payload_length_from_headers(session, packet) ==
+            transport_payload.size()
+        );
         PFL_EXPECT(!session.read_packet_payload_hex_dump(packet).empty());
     } else {
         PFL_EXPECT(transport_payload.empty());

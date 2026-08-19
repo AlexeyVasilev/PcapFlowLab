@@ -7,6 +7,7 @@
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/Flow.h"
 #include "core/domain/FlowHints.h"
+#include "core/domain/IngestedPacket.h"
 
 namespace pfl {
 
@@ -49,11 +50,11 @@ struct ConnectionV4 {
     ConnectionAggregateStats aggregate_stats {};
     ConnectionHintSearchState hint_search_state {};
 
-    void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet);
+    void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet, const PacketImportMetadata& metadata = {});
     void apply_hints(const FlowHintUpdate& hints);
     [[nodiscard]] bool hint_detection_settled() const noexcept;
-    [[nodiscard]] bool should_attempt_hint_detection(const PacketRef& packet, ProtocolId protocol) const noexcept;
-    void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
+    [[nodiscard]] bool should_attempt_hint_detection(const PacketImportMetadata& metadata, ProtocolId protocol) const noexcept;
+    void note_hint_detection_attempt(const PacketImportMetadata& metadata, ProtocolId protocol) noexcept;
 };
 
 struct ConnectionV6 {
@@ -76,11 +77,11 @@ struct ConnectionV6 {
     ConnectionAggregateStats aggregate_stats {};
     ConnectionHintSearchState hint_search_state {};
 
-    void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet);
+    void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet, const PacketImportMetadata& metadata = {});
     void apply_hints(const FlowHintUpdate& hints);
     [[nodiscard]] bool hint_detection_settled() const noexcept;
-    [[nodiscard]] bool should_attempt_hint_detection(const PacketRef& packet, ProtocolId protocol) const noexcept;
-    void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
+    [[nodiscard]] bool should_attempt_hint_detection(const PacketImportMetadata& metadata, ProtocolId protocol) const noexcept;
+    void note_hint_detection_attempt(const PacketImportMetadata& metadata, ProtocolId protocol) noexcept;
 };
 
 [[nodiscard]] std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept;

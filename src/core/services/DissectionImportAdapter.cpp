@@ -11,18 +11,18 @@ namespace {
     return has_ports ? port : static_cast<std::uint16_t>(0U);
 }
 
-PacketRef make_import_semantic_packet_ref(const dissection::ImportDissectionFacts& facts) noexcept {
-    PacketRef packet_ref {};
+PacketImportMetadata make_import_semantic_packet_metadata(const dissection::ImportDissectionFacts& facts) noexcept {
+    PacketImportMetadata metadata {};
     if (facts.has_transport_payload_length) {
-        packet_ref.payload_length = facts.captured_transport_payload_length;
+        metadata.transport_payload_length = facts.captured_transport_payload_length;
     }
     if (facts.has_tcp_flags && facts.terminal_protocol == ProtocolId::tcp) {
-        packet_ref.tcp_flags = facts.tcp_flags;
+        metadata.tcp_flags = facts.tcp_flags;
     }
-    packet_ref.is_ip_fragmented =
+    metadata.is_ip_fragmented =
         (facts.has_ipv4_fragmentation && facts.ipv4_fragmentation.is_fragmented) ||
         (facts.has_ipv6_fragmentation && facts.ipv6_fragmentation.has_fragment_header);
-    return packet_ref;
+    return metadata;
 }
 
 DecodedPacket make_ipv4_decoded_packet(const dissection::ImportDissectionFacts& facts) noexcept {
@@ -35,7 +35,7 @@ DecodedPacket make_ipv4_decoded_packet(const dissection::ImportDissectionFacts& 
             .dst_port = adapted_port_value(facts.has_ports, facts.dst_port),
             .protocol = facts.terminal_protocol,
         },
-        .packet_ref = make_import_semantic_packet_ref(facts),
+        .import_metadata = make_import_semantic_packet_metadata(facts),
     };
     decoded.protocol_path_builder = facts.physical_path;
     decoded.terminal_transport_payload_bounds = facts.terminal_transport_payload_bounds;
@@ -52,7 +52,7 @@ DecodedPacket make_ipv6_decoded_packet(const dissection::ImportDissectionFacts& 
             .dst_port = adapted_port_value(facts.has_ports, facts.dst_port),
             .protocol = facts.terminal_protocol,
         },
-        .packet_ref = make_import_semantic_packet_ref(facts),
+        .import_metadata = make_import_semantic_packet_metadata(facts),
     };
     decoded.protocol_path_builder = facts.physical_path;
     decoded.terminal_transport_payload_bounds = facts.terminal_transport_payload_bounds;

@@ -6,6 +6,7 @@
 #include "../../core/open_context.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecoder.h"
 #include "core/domain/CaptureState.h"
 #include "core/io/PcapReader.h"
@@ -319,7 +320,7 @@ void run_import_tests() {
         PFL_EXPECT(decoded.ipv4->flow_key.src_port == 53530);
         PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 443);
         PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
-        PFL_EXPECT(decoded.ipv4->packet_ref.payload_length == 4U);
+        PFL_EXPECT(decoded.ipv4->import_metadata.transport_payload_length == 4U);
         PFL_EXPECT(decoded.ipv4->packet_ref.captured_length == captured_udp_packet.size());
         PFL_EXPECT(decoded.ipv4->packet_ref.original_length == full_udp_packet.size());
     }
@@ -383,7 +384,9 @@ void run_import_tests() {
 
         const auto packet = session.find_packet(10U);
         PFL_REQUIRE(packet.has_value());
-        PFL_EXPECT(packet->payload_length == 512U);
+        PFL_EXPECT(
+            session_detail::derive_transient_packet_metadata(session, *packet).captured_transport_payload_length == 512U
+        );
     }
 
     {
@@ -438,7 +441,9 @@ void run_import_tests() {
         PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->captured_length == captured_udp_packet.size());
         PFL_EXPECT(packet->original_length == full_udp_packet.size());
-        PFL_EXPECT(packet->payload_length == 4U);
+        PFL_EXPECT(
+            session_detail::derive_transient_packet_metadata(session, *packet).captured_transport_payload_length == 4U
+        );
     }
 
     {
@@ -453,7 +458,9 @@ void run_import_tests() {
         PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->captured_length == 74U);
         PFL_EXPECT(packet->original_length == 332U);
-        PFL_EXPECT(packet->payload_length == 32U);
+        PFL_EXPECT(
+            session_detail::derive_transient_packet_metadata(session, *packet).captured_transport_payload_length == 32U
+        );
 
         const auto rows = session.list_flow_packets(0);
         PFL_EXPECT(rows.size() == 1U);

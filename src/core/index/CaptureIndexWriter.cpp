@@ -326,10 +326,7 @@ template <typename Connection>
            serialized_u64_size() +
            serialized_u32_size() +
            serialized_u32_size() +
-           serialized_u32_size() +
-           serialized_u32_size() +
-           serialized_u8_size() +
-           serialized_u8_size();
+           serialized_u32_size();
 }
 
 template <typename Flow>
@@ -504,6 +501,7 @@ template <typename Writer>
 bool write_marshaled_section(
     std::ofstream& stream,
     const detail::CaptureIndexSectionId section_id,
+    const std::uint16_t section_schema_version,
     const CaptureIndexWriteOptions& options,
     ThrottledProgressReporter& progress_reporter,
     const std::string& label,
@@ -569,7 +567,7 @@ bool write_marshaled_section(
 
     if (!detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
             .section_id = static_cast<std::uint32_t>(section_id),
-            .section_schema_version = detail::kCaptureIndexStableCoreSectionSchemaVersion,
+            .section_schema_version = section_schema_version,
             .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
             .payload_size = payload_size,
         })) {
@@ -617,6 +615,7 @@ template <typename ConnectionPtr>
 bool write_chunked_connection_sections(
     std::ofstream& stream,
     const detail::CaptureIndexSectionId section_id,
+    const std::uint16_t section_schema_version,
     const std::string& label,
     const ConnectionChunkPlan<ConnectionPtr>& plan,
     const CaptureIndexWriteOptions& options,
@@ -662,7 +661,7 @@ bool write_chunked_connection_sections(
 
         if (!detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
                 .section_id = static_cast<std::uint32_t>(section_id),
-                .section_schema_version = detail::kCaptureIndexStableCoreSectionSchemaVersion,
+                .section_schema_version = section_schema_version,
                 .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
                 .payload_size = chunk.payload_size,
             }) ||
@@ -823,6 +822,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::summary,
+            detail::kCaptureIndexStableSummarySectionSchemaVersion,
             options,
             progress_reporter,
             "summary section",
@@ -841,6 +841,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::protocol_paths,
+            detail::kCaptureIndexStableProtocolPathsSectionSchemaVersion,
             options,
             progress_reporter,
             "protocol path registry section",
@@ -859,6 +860,7 @@ bool CaptureIndexWriter::write(
     if (!write_chunked_connection_sections(
             stream,
             detail::CaptureIndexSectionId::ipv4_connections,
+            detail::kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion,
             "IPv4 connection section",
             *ipv4_chunk_plan,
             options,
@@ -873,6 +875,7 @@ bool CaptureIndexWriter::write(
     if (!write_chunked_connection_sections(
             stream,
             detail::CaptureIndexSectionId::ipv6_connections,
+            detail::kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion,
             "IPv6 connection section",
             *ipv6_chunk_plan,
             options,
@@ -887,6 +890,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::unrecognized_packets,
+            detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion,
             options,
             progress_reporter,
             "unrecognized packet section",
@@ -905,6 +909,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::packet_locator,
+            detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion,
             options,
             progress_reporter,
             "packet locator section",

@@ -103,9 +103,9 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
         .timestamp_text = format_packet_timestamp(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .payload_length = packet.payload_length,
-        .is_ip_fragmented = packet.is_ip_fragmented,
-        .tcp_flags_text = format_tcp_flags_text(packet.tcp_flags),
+        .payload_length = 0U,
+        .is_ip_fragmented = false,
+        .tcp_flags_text = {},
     };
 }
 

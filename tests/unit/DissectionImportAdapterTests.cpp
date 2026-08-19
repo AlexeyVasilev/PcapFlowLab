@@ -65,6 +65,15 @@ void expect_terminal_payload_bounds_match(
     PFL_EXPECT(adapted.terminal_transport_payload_bounds == legacy.terminal_transport_payload_bounds);
 }
 
+void expect_import_metadata_matches(
+    const PacketImportMetadata& adapted,
+    const PacketImportMetadata& legacy
+) {
+    PFL_EXPECT(adapted.transport_payload_length == legacy.transport_payload_length);
+    PFL_EXPECT(adapted.tcp_flags == legacy.tcp_flags);
+    PFL_EXPECT(adapted.is_ip_fragmented == legacy.is_ip_fragmented);
+}
+
 void expect_adapted_packet_matches_legacy_semantics(
     const std::filesystem::path& relative_path,
     const std::size_t packet_index = 0U
@@ -90,9 +99,10 @@ void expect_adapted_packet_matches_legacy_semantics(
         PFL_REQUIRE(adapted.decoded_packet->ipv4.has_value());
         PFL_EXPECT(!adapted.decoded_packet->ipv6.has_value());
         PFL_EXPECT(adapted.decoded_packet->ipv4->flow_key == legacy.ipv4->flow_key);
-        PFL_EXPECT(adapted.decoded_packet->ipv4->packet_ref.payload_length == legacy.ipv4->packet_ref.payload_length);
-        PFL_EXPECT(adapted.decoded_packet->ipv4->packet_ref.tcp_flags == legacy.ipv4->packet_ref.tcp_flags);
-        PFL_EXPECT(adapted.decoded_packet->ipv4->packet_ref.is_ip_fragmented == legacy.ipv4->packet_ref.is_ip_fragmented);
+        expect_import_metadata_matches(
+            adapted.decoded_packet->ipv4->import_metadata,
+            legacy.ipv4->import_metadata
+        );
         expect_packet_ref_context_unset(adapted.decoded_packet->ipv4->packet_ref);
         return;
     }
@@ -101,9 +111,10 @@ void expect_adapted_packet_matches_legacy_semantics(
     PFL_REQUIRE(adapted.decoded_packet->ipv6.has_value());
     PFL_EXPECT(!adapted.decoded_packet->ipv4.has_value());
     PFL_EXPECT(adapted.decoded_packet->ipv6->flow_key == legacy.ipv6->flow_key);
-    PFL_EXPECT(adapted.decoded_packet->ipv6->packet_ref.payload_length == legacy.ipv6->packet_ref.payload_length);
-    PFL_EXPECT(adapted.decoded_packet->ipv6->packet_ref.tcp_flags == legacy.ipv6->packet_ref.tcp_flags);
-    PFL_EXPECT(adapted.decoded_packet->ipv6->packet_ref.is_ip_fragmented == legacy.ipv6->packet_ref.is_ip_fragmented);
+    expect_import_metadata_matches(
+        adapted.decoded_packet->ipv6->import_metadata,
+        legacy.ipv6->import_metadata
+    );
     expect_packet_ref_context_unset(adapted.decoded_packet->ipv6->packet_ref);
 }
 
@@ -166,9 +177,9 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.src_port == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.dst_port == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.protocol == ProtocolId::icmp);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == 0U);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.tcp_flags == 0U);
-        PFL_EXPECT(!decision.decoded_packet->ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.transport_payload_length.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.is_ip_fragmented);
     }
 
     {
@@ -189,9 +200,9 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv6->flow_key.src_port == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv6->flow_key.dst_port == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv6->flow_key.protocol == ProtocolId::icmpv6);
-        PFL_EXPECT(decision.decoded_packet->ipv6->packet_ref.payload_length == 0U);
-        PFL_EXPECT(decision.decoded_packet->ipv6->packet_ref.tcp_flags == 0U);
-        PFL_EXPECT(!decision.decoded_packet->ipv6->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.transport_payload_length.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv6->import_metadata.is_ip_fragmented);
     }
 
     {
@@ -217,9 +228,9 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_REQUIRE(decision.decoded_packet->ipv4.has_value());
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.src_port == 443U);
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.dst_port == 51515U);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == 0U);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.tcp_flags == 0x12U);
-        PFL_EXPECT(!decision.decoded_packet->ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.transport_payload_length.has_value());
+        PFL_EXPECT(decision.decoded_packet->ipv4->import_metadata.tcp_flags == 0x12U);
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.is_ip_fragmented);
         PFL_EXPECT(!decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         expect_packet_ref_context_unset(decision.decoded_packet->ipv4->packet_ref);
     }
@@ -248,9 +259,9 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_REQUIRE(decision.decoded_packet->ipv4.has_value());
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.src_port == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv4->flow_key.dst_port == 0U);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == 0U);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.tcp_flags == 0U);
-        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.transport_payload_length.has_value());
+        PFL_EXPECT(!decision.decoded_packet->ipv4->import_metadata.tcp_flags.has_value());
+        PFL_EXPECT(decision.decoded_packet->ipv4->import_metadata.is_ip_fragmented);
         PFL_EXPECT(!decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         expect_packet_ref_context_unset(decision.decoded_packet->ipv4->packet_ref);
     }

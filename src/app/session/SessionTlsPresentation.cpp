@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/TlsInspectionParser.h"
@@ -2350,7 +2351,9 @@ TlsSelectedPacketAnalysis analyze_selected_packet_tls_contexts(
             break;
         }
 
-        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+        const auto metadata = derive_transient_packet_metadata(session, *packet);
+        if (metadata.captured_transport_payload_length.value_or(0U) == 0U ||
+            session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
             continue;
         }
 
@@ -2654,7 +2657,9 @@ std::optional<std::string> derive_tls_service_hint_for_loaded_flow_prefix(
             continue;
         }
 
-        if (packet->payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
+        const auto metadata = derive_transient_packet_metadata(session, *packet);
+        if (metadata.captured_transport_payload_length.value_or(0U) == 0U ||
+            session.should_suppress_selected_flow_tcp_payload(flow_index, packet->packet_index)) {
             continue;
         }
 

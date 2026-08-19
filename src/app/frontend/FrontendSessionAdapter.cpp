@@ -1957,6 +1957,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             return std::nullopt;
         }
 
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
         const auto timestamp_us = packet_timestamp_us(packet);
         const auto delta_us = previous_timestamp_us.has_value() && timestamp_us >= *previous_timestamp_us
             ? timestamp_us - *previous_timestamp_us
@@ -1971,7 +1972,9 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
             .transport_payload_length = session_detail::derive_original_transport_payload_length_from_headers(session, packet),
-            .tcp_flags_text = packet_row.tcp_flags_text,
+            .tcp_flags_text = metadata.tcp_flags.has_value()
+                ? session_detail::format_tcp_flags_text(*metadata.tcp_flags)
+                : packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
 

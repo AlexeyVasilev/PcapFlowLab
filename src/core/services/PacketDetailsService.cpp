@@ -1647,11 +1647,11 @@ void populate_vxlan_inner_packet_details(
     const auto inner_length = bounded_end - vxlan.inner_ethernet_offset;
     PacketRef inner_packet_ref {
         .packet_index = packet_ref.packet_index,
+        .ts_sec = packet_ref.ts_sec,
+        .ts_usec = packet_ref.ts_usec,
         .data_link_type = kLinkTypeEthernet,
         .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
         .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
-        .ts_sec = packet_ref.ts_sec,
-        .ts_usec = packet_ref.ts_usec,
     };
 
     const auto inner_bytes = packet_bytes.subspan(vxlan.inner_ethernet_offset, inner_length);
@@ -1894,11 +1894,11 @@ void populate_geneve_inner_packet_details(
     const auto inner_length = bounded_end - geneve.inner_ethernet_offset;
     PacketRef inner_packet_ref {
         .packet_index = packet_ref.packet_index,
+        .ts_sec = packet_ref.ts_sec,
+        .ts_usec = packet_ref.ts_usec,
         .data_link_type = kLinkTypeEthernet,
         .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
         .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
-        .ts_sec = packet_ref.ts_sec,
-        .ts_usec = packet_ref.ts_usec,
     };
 
     const auto inner_bytes = packet_bytes.subspan(geneve.inner_ethernet_offset, inner_length);
@@ -2709,11 +2709,11 @@ std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
         const auto inner_length = bounded_end - gre.inner_ethernet_offset;
         PacketRef synthetic_packet_ref {
             .packet_index = 0U,
+            .ts_sec = 0U,
+            .ts_usec = 0U,
             .data_link_type = kLinkTypeEthernet,
             .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
             .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
-            .ts_sec = 0U,
-            .ts_usec = 0U,
         };
         const auto inner_bytes = packet_bytes.subspan(gre.inner_ethernet_offset, inner_length);
         const auto decoded_inner = decode_packet_details(inner_bytes, synthetic_packet_ref, DecodeMode::best_effort);
@@ -2751,11 +2751,11 @@ std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
 
     PacketRef synthetic_packet_ref {
         .packet_index = 0U,
+        .ts_sec = 0U,
+        .ts_usec = 0U,
         .data_link_type = kLinkTypeEthernet,
         .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(synthetic_packet.size(), 0xFFFFFFFFU)),
         .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(synthetic_packet.size(), 0xFFFFFFFFU)),
-        .ts_sec = 0U,
-        .ts_usec = 0U,
     };
     const auto decoded_inner = decode_packet_details(
         std::span<const std::uint8_t> {synthetic_packet},

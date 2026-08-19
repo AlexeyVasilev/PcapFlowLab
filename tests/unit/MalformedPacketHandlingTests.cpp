@@ -31,11 +31,11 @@ RawPcapPacket make_raw_packet(const std::vector<std::uint8_t>& bytes, const std:
 PacketRef make_packet_ref(const std::vector<std::uint8_t>& bytes, const std::uint64_t packet_index = 7) {
     return PacketRef {
         .packet_index = packet_index,
+        .ts_sec = 1,
+        .ts_usec = 10,
         .byte_offset = 128,
         .captured_length = static_cast<std::uint32_t>(bytes.size()),
         .original_length = static_cast<std::uint32_t>(bytes.size()),
-        .ts_sec = 1,
-        .ts_usec = 10,
     };
 }
 
