@@ -200,6 +200,87 @@ bool matches_range(
     return true;
 }
 
+std::uint32_t ipv4_prefix_mask(const std::uint8_t prefix_length) noexcept {
+    if (prefix_length == 0U) {
+        return 0U;
+    }
+    if (prefix_length >= 32U) {
+        return 0xFFFFFFFFU;
+    }
+    return 0xFFFFFFFFU << (32U - prefix_length);
+}
+
+std::array<std::uint8_t, 16> normalize_ipv6_network(
+    std::array<std::uint8_t, 16> value,
+    const std::uint8_t prefix_length
+) noexcept {
+    const auto full_bytes = static_cast<std::size_t>(prefix_length / 8U);
+    const auto partial_bits = static_cast<std::uint8_t>(prefix_length % 8U);
+
+    if (full_bytes < value.size()) {
+        if (partial_bits == 0U) {
+            for (std::size_t index = full_bytes; index < value.size(); ++index) {
+                value[index] = 0U;
+            }
+        } else {
+            value[full_bytes] &= static_cast<std::uint8_t>(0xFFU << (8U - partial_bits));
+            for (std::size_t index = full_bytes + 1U; index < value.size(); ++index) {
+                value[index] = 0U;
+            }
+        }
+    }
+
+    return value;
+}
+
+bool is_valid_ipv4_address_predicate_shape(const AdvancedFlowFilterIpv4AddressPredicate& predicate) noexcept {
+    switch (predicate.match_kind) {
+    case AdvancedFlowFilterAddressMatchKind::exact:
+        return predicate.prefix_length == 32U;
+    case AdvancedFlowFilterAddressMatchKind::cidr:
+        return predicate.prefix_length <= 32U;
+    default:
+        return false;
+    }
+}
+
+bool is_valid_ipv6_address_predicate_shape(const AdvancedFlowFilterIpv6AddressPredicate& predicate) noexcept {
+    switch (predicate.match_kind) {
+    case AdvancedFlowFilterAddressMatchKind::exact:
+        return predicate.prefix_length == 128U;
+    case AdvancedFlowFilterAddressMatchKind::cidr:
+        return predicate.prefix_length <= 128U;
+    default:
+        return false;
+    }
+}
+
+CompiledAdvancedFlowFilterIpv4CidrPredicate compile_ipv4_address_predicate(
+    const AdvancedFlowFilterIpv4AddressPredicate& predicate
+) noexcept {
+    const auto prefix_length =
+        predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact ? static_cast<std::uint8_t>(32U) : predicate.prefix_length;
+    const auto mask = ipv4_prefix_mask(prefix_length);
+    return CompiledAdvancedFlowFilterIpv4CidrPredicate {
+        .scope = predicate.scope,
+        .network = predicate.value & mask,
+        .mask = mask,
+        .prefix_length = prefix_length,
+    };
+}
+
+CompiledAdvancedFlowFilterIpv6CidrPredicate compile_ipv6_address_predicate(
+    const AdvancedFlowFilterIpv6AddressPredicate& predicate
+) noexcept {
+    const auto prefix_length =
+        predicate.match_kind == AdvancedFlowFilterAddressMatchKind::exact ? static_cast<std::uint8_t>(128U) : predicate.prefix_length;
+    return CompiledAdvancedFlowFilterIpv6CidrPredicate {
+        .scope = predicate.scope,
+        .network = normalize_ipv6_network(predicate.value, prefix_length),
+        .prefix_length = prefix_length,
+    };
+}
+
 ProtocolPathId connection_protocol_path_id(const ListedConnectionRef& connection) noexcept {
     return connection.family == FlowAddressFamily::ipv4
         ? connection.ipv4->key.protocol_path_id
@@ -222,6 +303,24 @@ std::string_view service_hint_value(const ListedConnectionRef& connection) noexc
     return connection.family == FlowAddressFamily::ipv4
         ? std::string_view(connection.ipv4->service_hint)
         : std::string_view(connection.ipv6->service_hint);
+}
+
+FlowProtocolHint stored_protocol_hint(const ListedConnectionRef& connection) noexcept {
+    return connection.family == FlowAddressFamily::ipv4
+        ? connection.ipv4->protocol_hint
+        : connection.ipv6->protocol_hint;
+}
+
+TlsVersionHint tls_version_hint_value(const ListedConnectionRef& connection) noexcept {
+    return connection.family == FlowAddressFamily::ipv4
+        ? connection.ipv4->tls_version
+        : connection.ipv6->tls_version;
+}
+
+QuicVersionHint quic_version_hint_value(const ListedConnectionRef& connection) noexcept {
+    return connection.family == FlowAddressFamily::ipv4
+        ? connection.ipv4->quic_version
+        : connection.ipv6->quic_version;
 }
 
 std::pair<std::uint16_t, std::uint16_t> oriented_ports(const ConnectionV4& connection) noexcept {
@@ -248,6 +347,30 @@ std::pair<std::uint16_t, std::uint16_t> oriented_ports(const ListedConnectionRef
     return connection.family == FlowAddressFamily::ipv4
         ? oriented_ports(*connection.ipv4)
         : oriented_ports(*connection.ipv6);
+}
+
+std::pair<std::uint32_t, std::uint32_t> oriented_ipv4_addrs(const ConnectionV4& connection) noexcept {
+    if (const auto endpoint_a = first_observed_endpoint_a(connection),
+        endpoint_b = first_observed_endpoint_b(connection);
+        endpoint_a.has_value() && endpoint_b.has_value()) {
+        return {endpoint_a->addr, endpoint_b->addr};
+    }
+    if (connection.has_flow_a) {
+        return {connection.flow_a.key.src_addr, connection.flow_a.key.dst_addr};
+    }
+    return {connection.key.first.addr, connection.key.second.addr};
+}
+
+std::pair<std::array<std::uint8_t, 16>, std::array<std::uint8_t, 16>> oriented_ipv6_addrs(const ConnectionV6& connection) noexcept {
+    if (const auto endpoint_a = first_observed_endpoint_a(connection),
+        endpoint_b = first_observed_endpoint_b(connection);
+        endpoint_a.has_value() && endpoint_b.has_value()) {
+        return {endpoint_a->addr, endpoint_b->addr};
+    }
+    if (connection.has_flow_a) {
+        return {connection.flow_a.key.src_addr, connection.flow_a.key.dst_addr};
+    }
+    return {connection.key.first.addr, connection.key.second.addr};
 }
 
 std::pair<std::uint64_t, std::uint64_t> directional_packet_counts(const ListedConnectionRef& connection) noexcept {
@@ -319,6 +442,26 @@ bool matches_detected_protocol_membership(
     const FlowProtocolHint protocol_hint
 ) noexcept {
     const auto index = static_cast<std::size_t>(protocol_hint);
+    const bool include_match = !criteria.has_include_predicates || criteria.include_membership[index];
+    const bool exclude_match = criteria.has_exclude_predicates && criteria.exclude_membership[index];
+    return include_match && !exclude_match;
+}
+
+bool matches_tls_version_membership(
+    const CompiledAdvancedFlowFilterTlsVersionCriteria& criteria,
+    const TlsVersionHint version
+) noexcept {
+    const auto index = static_cast<std::size_t>(version);
+    const bool include_match = !criteria.has_include_predicates || criteria.include_membership[index];
+    const bool exclude_match = criteria.has_exclude_predicates && criteria.exclude_membership[index];
+    return include_match && !exclude_match;
+}
+
+bool matches_quic_version_membership(
+    const CompiledAdvancedFlowFilterQuicVersionCriteria& criteria,
+    const QuicVersionHint version
+) noexcept {
+    const auto index = static_cast<std::size_t>(version);
     const bool include_match = !criteria.has_include_predicates || criteria.include_membership[index];
     const bool exclude_match = criteria.has_exclude_predicates && criteria.exclude_membership[index];
     return include_match && !exclude_match;
@@ -398,6 +541,159 @@ bool matches_directionality_criteria(
             if (matches_directionality_value(static_cast<AdvancedFlowFilterDirectionality>(index), connection)) {
                 return false;
             }
+        }
+    }
+
+    return true;
+}
+
+bool matches_tls_version_criteria(
+    const CompiledAdvancedFlowFilterTlsVersionCriteria& criteria,
+    const ListedConnectionRef& connection
+) noexcept {
+    if (!criteria.has_include_predicates && !criteria.has_exclude_predicates) {
+        return true;
+    }
+
+    if (stored_protocol_hint(connection) != FlowProtocolHint::tls) {
+        return !criteria.has_include_predicates;
+    }
+
+    return matches_tls_version_membership(criteria, tls_version_hint_value(connection));
+}
+
+bool matches_quic_version_criteria(
+    const CompiledAdvancedFlowFilterQuicVersionCriteria& criteria,
+    const ListedConnectionRef& connection
+) noexcept {
+    if (!criteria.has_include_predicates && !criteria.has_exclude_predicates) {
+        return true;
+    }
+
+    if (stored_protocol_hint(connection) != FlowProtocolHint::quic) {
+        return !criteria.has_include_predicates;
+    }
+
+    return matches_quic_version_membership(criteria, quic_version_hint_value(connection));
+}
+
+bool matches_ipv4_cidr_address(
+    const std::uint32_t address,
+    const CompiledAdvancedFlowFilterIpv4CidrPredicate& predicate
+) noexcept {
+    return (address & predicate.mask) == predicate.network;
+}
+
+bool matches_ipv6_cidr_address(
+    const std::array<std::uint8_t, 16>& address,
+    const CompiledAdvancedFlowFilterIpv6CidrPredicate& predicate
+) noexcept {
+    const auto full_bytes = static_cast<std::size_t>(predicate.prefix_length / 8U);
+    const auto partial_bits = static_cast<std::uint8_t>(predicate.prefix_length % 8U);
+
+    for (std::size_t index = 0; index < full_bytes; ++index) {
+        if (address[index] != predicate.network[index]) {
+            return false;
+        }
+    }
+
+    if (partial_bits == 0U) {
+        return true;
+    }
+
+    const auto mask = static_cast<std::uint8_t>(0xFFU << (8U - partial_bits));
+    return (address[full_bytes] & mask) == predicate.network[full_bytes];
+}
+
+bool matches_ipv4_cidr_predicate(
+    const std::uint32_t endpoint_a_addr,
+    const std::uint32_t endpoint_b_addr,
+    const CompiledAdvancedFlowFilterIpv4CidrPredicate& predicate
+) noexcept {
+    switch (predicate.scope) {
+    case AdvancedFlowFilterEndpointScope::either_endpoint:
+        return matches_ipv4_cidr_address(endpoint_a_addr, predicate) ||
+            matches_ipv4_cidr_address(endpoint_b_addr, predicate);
+    case AdvancedFlowFilterEndpointScope::endpoint_a:
+        return matches_ipv4_cidr_address(endpoint_a_addr, predicate);
+    case AdvancedFlowFilterEndpointScope::endpoint_b:
+        return matches_ipv4_cidr_address(endpoint_b_addr, predicate);
+    default:
+        return false;
+    }
+}
+
+bool matches_ipv6_cidr_predicate(
+    const std::array<std::uint8_t, 16>& endpoint_a_addr,
+    const std::array<std::uint8_t, 16>& endpoint_b_addr,
+    const CompiledAdvancedFlowFilterIpv6CidrPredicate& predicate
+) noexcept {
+    switch (predicate.scope) {
+    case AdvancedFlowFilterEndpointScope::either_endpoint:
+        return matches_ipv6_cidr_address(endpoint_a_addr, predicate) ||
+            matches_ipv6_cidr_address(endpoint_b_addr, predicate);
+    case AdvancedFlowFilterEndpointScope::endpoint_a:
+        return matches_ipv6_cidr_address(endpoint_a_addr, predicate);
+    case AdvancedFlowFilterEndpointScope::endpoint_b:
+        return matches_ipv6_cidr_address(endpoint_b_addr, predicate);
+    default:
+        return false;
+    }
+}
+
+bool matches_address_criteria(
+    const CompiledAdvancedFlowFilterAddressCriteria& criteria,
+    const ListedConnectionRef& connection
+) noexcept {
+    if (!criteria.has_include_predicates() && !criteria.has_exclude_predicates()) {
+        return true;
+    }
+
+    if (connection.family == FlowAddressFamily::ipv4) {
+        const auto [endpoint_a_addr, endpoint_b_addr] = oriented_ipv4_addrs(*connection.ipv4);
+
+        bool include_match = !criteria.has_include_predicates();
+        if (!include_match) {
+            for (const auto& predicate : criteria.ipv4_include) {
+                if (matches_ipv4_cidr_predicate(endpoint_a_addr, endpoint_b_addr, predicate)) {
+                    include_match = true;
+                    break;
+                }
+            }
+        }
+
+        if (!include_match) {
+            return false;
+        }
+
+        for (const auto& predicate : criteria.ipv4_exclude) {
+            if (matches_ipv4_cidr_predicate(endpoint_a_addr, endpoint_b_addr, predicate)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    const auto [endpoint_a_addr, endpoint_b_addr] = oriented_ipv6_addrs(*connection.ipv6);
+
+    bool include_match = !criteria.has_include_predicates();
+    if (!include_match) {
+        for (const auto& predicate : criteria.ipv6_include) {
+            if (matches_ipv6_cidr_predicate(endpoint_a_addr, endpoint_b_addr, predicate)) {
+                include_match = true;
+                break;
+            }
+        }
+    }
+
+    if (!include_match) {
+        return false;
+    }
+
+    for (const auto& predicate : criteria.ipv6_exclude) {
+        if (matches_ipv6_cidr_predicate(endpoint_a_addr, endpoint_b_addr, predicate)) {
+            return false;
         }
     }
 
@@ -559,6 +855,38 @@ void compile_detected_protocol_membership(
     }
 }
 
+void compile_tls_version_membership(
+    const AdvancedFlowFilterTlsVersionCriteria& spec,
+    CompiledAdvancedFlowFilterTlsVersionCriteria& compiled
+) {
+    compiled.has_include_predicates = !spec.include.empty();
+    compiled.has_exclude_predicates = !spec.exclude.empty();
+
+    for (const auto version : spec.include) {
+        compiled.include_membership[static_cast<std::size_t>(version)] = true;
+    }
+
+    for (const auto version : spec.exclude) {
+        compiled.exclude_membership[static_cast<std::size_t>(version)] = true;
+    }
+}
+
+void compile_quic_version_membership(
+    const AdvancedFlowFilterQuicVersionCriteria& spec,
+    CompiledAdvancedFlowFilterQuicVersionCriteria& compiled
+) {
+    compiled.has_include_predicates = !spec.include.empty();
+    compiled.has_exclude_predicates = !spec.exclude.empty();
+
+    for (const auto version : spec.include) {
+        compiled.include_membership[static_cast<std::size_t>(version)] = true;
+    }
+
+    for (const auto version : spec.exclude) {
+        compiled.exclude_membership[static_cast<std::size_t>(version)] = true;
+    }
+}
+
 AdvancedFlowFilterCompileResult compile_port_criteria(
     const AdvancedFlowFilterPortCriteria& spec,
     CompiledAdvancedFlowFilterPortCriteria& compiled
@@ -668,6 +996,57 @@ void compile_directionality_criteria(
     for (const auto value : spec.exclude) {
         compiled.exclude_membership[static_cast<std::size_t>(value)] = true;
     }
+}
+
+AdvancedFlowFilterCompileResult compile_address_criteria(
+    const AdvancedFlowFilterAddressCriteria& spec,
+    CompiledAdvancedFlowFilterAddressCriteria& compiled
+) {
+    for (std::size_t index = 0; index < spec.ipv4_include.size(); ++index) {
+        if (!is_valid_ipv4_address_predicate_shape(spec.ipv4_include[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "addresses.ipv4_include",
+                index
+            );
+        }
+        compiled.ipv4_include.push_back(compile_ipv4_address_predicate(spec.ipv4_include[index]));
+    }
+
+    for (std::size_t index = 0; index < spec.ipv4_exclude.size(); ++index) {
+        if (!is_valid_ipv4_address_predicate_shape(spec.ipv4_exclude[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "addresses.ipv4_exclude",
+                index
+            );
+        }
+        compiled.ipv4_exclude.push_back(compile_ipv4_address_predicate(spec.ipv4_exclude[index]));
+    }
+
+    for (std::size_t index = 0; index < spec.ipv6_include.size(); ++index) {
+        if (!is_valid_ipv6_address_predicate_shape(spec.ipv6_include[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "addresses.ipv6_include",
+                index
+            );
+        }
+        compiled.ipv6_include.push_back(compile_ipv6_address_predicate(spec.ipv6_include[index]));
+    }
+
+    for (std::size_t index = 0; index < spec.ipv6_exclude.size(); ++index) {
+        if (!is_valid_ipv6_address_predicate_shape(spec.ipv6_exclude[index])) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_predicate,
+                "addresses.ipv6_exclude",
+                index
+            );
+        }
+        compiled.ipv6_exclude.push_back(compile_ipv6_address_predicate(spec.ipv6_exclude[index]));
+    }
+
+    return {};
 }
 
 AdvancedFlowFilterCompileResult compile_service_criteria(
@@ -792,6 +1171,14 @@ bool CompiledAdvancedFlowFilterServiceCriteria::has_include_predicates() const n
     return include_known || include_unknown || !include_text.empty();
 }
 
+bool CompiledAdvancedFlowFilterAddressCriteria::has_include_predicates() const noexcept {
+    return !ipv4_include.empty() || !ipv6_include.empty();
+}
+
+bool CompiledAdvancedFlowFilterAddressCriteria::has_exclude_predicates() const noexcept {
+    return !ipv4_exclude.empty() || !ipv6_exclude.empty();
+}
+
 AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
     const AdvancedFlowFilterSpec& spec,
     const ProtocolPathRegistry& protocol_path_registry,
@@ -807,6 +1194,8 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
 
     compile_protocol_membership(spec.flow_protocol, result.filter.flow_protocol);
     compile_detected_protocol_membership(spec.detected_protocol, settings, result.filter.detected_protocol);
+    compile_tls_version_membership(spec.tls_version, result.filter.tls_version);
+    compile_quic_version_membership(spec.quic_version, result.filter.quic_version);
 
     if (const auto error = compile_port_criteria(spec.ports, result.filter.ports);
         error.status != AdvancedFlowFilterCompileStatus::ok) {
@@ -819,6 +1208,11 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
     }
 
     compile_directionality_criteria(spec.directionality, result.filter.directionality);
+
+    if (const auto error = compile_address_criteria(spec.addresses, result.filter.addresses);
+        error.status != AdvancedFlowFilterCompileStatus::ok) {
+        return error;
+    }
 
     if (const auto error = compile_service_criteria(spec.service, result.filter.service);
         error.status != AdvancedFlowFilterCompileStatus::ok) {
@@ -874,6 +1268,14 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
             continue;
         }
 
+        if (!matches_tls_version_criteria(filter.tls_version, connection)) {
+            continue;
+        }
+
+        if (!matches_quic_version_criteria(filter.quic_version, connection)) {
+            continue;
+        }
+
         const auto [endpoint_a_port, endpoint_b_port] = oriented_ports(connection);
         if (!matches_port_criteria(filter.ports, endpoint_a_port, endpoint_b_port)) {
             continue;
@@ -884,6 +1286,10 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
         }
 
         if (!matches_directionality_criteria(filter.directionality, connection)) {
+            continue;
+        }
+
+        if (!matches_address_criteria(filter.addresses, connection)) {
             continue;
         }
 

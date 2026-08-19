@@ -1,6 +1,7 @@
 # Advanced Flow Filter RFC
 
-Status: staged RFC with initial backend compile/evaluate foundation.
+Status: staged RFC with backend compile/evaluate foundation plus current
+metadata-backed address and protocol-version predicates.
 
 This document defines the product and backend-filter model for the Advanced
 Flow Filter in Pcap Flow Lab.
@@ -86,8 +87,8 @@ Verified current-state facts from the current local branch:
   in the index.
 - Detected protocol hint and service hint already exist on canonical
   connections and are currently serialized in the index.
-- QUIC/TLS version hints already exist on canonical connections in memory, but
-  they are not serialized in the current index format.
+- QUIC/TLS version hints already exist on canonical connections and are
+  serialized in the current stable index format.
 - Captured-byte totals, time bounds, TCP SYN/FIN/RST counts, and packet-size
   extrema now exist as compact per-connection aggregate metadata in
   `ConnectionAggregateStats`.
@@ -100,6 +101,10 @@ The initial backend stage supports these predicate families:
 - flow protocol (`ProtocolId`)
 - detected protocol (`FlowProtocolHint`, including current possible-TLS /
   possible-QUIC semantics from `AnalysisSettings`)
+- TLS version (`TlsVersionHint`)
+- QUIC version (`QuicVersionHint`)
+- IPv4 exact-address and CIDR predicates
+- IPv6 exact-address and CIDR predicates
 - ports
 - cheap numeric / aggregate metadata
 - directionality
@@ -120,6 +125,23 @@ two states that fit the listable-flow model:
 
 - `unidirectional`: `flow_a` has packets and `flow_b` has none
 - `bidirectional`: both `flow_a` and `flow_b` have packets
+
+In the current backend stage, exact IP-address predicates compile to the same
+normalized backend representation as full-width CIDR predicates:
+
+- IPv4 exact -> `/32`
+- IPv6 exact -> `/128`
+
+Address predicates use canonical endpoint scope:
+
+- either endpoint
+- endpoint A
+- endpoint B
+
+TLS/QUIC version predicates use authoritative connection-level hint metadata.
+They do not require packet rescans, and non-TLS/non-QUIC flows do not satisfy
+version include predicates merely because their stored version enum is
+`unknown`.
 
 ## Longer-Term Planned Filter Families
 
@@ -294,10 +316,11 @@ The current backend stage uses this fixed execution order:
 
 1. initial candidate scope
 2. Protocol Path membership
-3. flow protocol / detected protocol
+3. flow protocol / detected protocol / TLS version / QUIC version
 4. ports
 5. cheap numeric / aggregate predicates and directionality
-6. service predicates
+6. IP address / CIDR predicates
+7. service predicates
 
 Service matching is deliberately last.
 
@@ -352,6 +375,8 @@ The filter can already rely on current canonical state for:
 - fragmentation count
 - detected protocol hint
 - service hint
+- TLS version hint
+- QUIC version hint
 
 The following compact per-connection aggregates are provided by
 [Flow Aggregate Metadata RFC](flow-aggregate-metadata-rfc.md) and are used by
@@ -399,8 +424,6 @@ Rationale:
 
 Deferred from the initial implementation:
 
-- IP/CIDR predicates
-- TLS/QUIC version predicates
 - rate predicates
 - regex service matching
 - arbitrary nested Boolean expression trees

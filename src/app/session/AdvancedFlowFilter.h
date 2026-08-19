@@ -52,6 +52,48 @@ struct AdvancedFlowFilterDetectedProtocolCriteria {
     std::vector<FlowProtocolHint> exclude {};
 };
 
+enum class AdvancedFlowFilterEndpointScope : std::uint8_t {
+    either_endpoint = 0,
+    endpoint_a,
+    endpoint_b,
+};
+
+enum class AdvancedFlowFilterAddressMatchKind : std::uint8_t {
+    exact = 0,
+    cidr,
+};
+
+struct AdvancedFlowFilterIpv4AddressPredicate {
+    AdvancedFlowFilterAddressMatchKind match_kind {AdvancedFlowFilterAddressMatchKind::exact};
+    AdvancedFlowFilterEndpointScope scope {AdvancedFlowFilterEndpointScope::either_endpoint};
+    std::uint32_t value {0};
+    std::uint8_t prefix_length {32};
+};
+
+struct AdvancedFlowFilterIpv6AddressPredicate {
+    AdvancedFlowFilterAddressMatchKind match_kind {AdvancedFlowFilterAddressMatchKind::exact};
+    AdvancedFlowFilterEndpointScope scope {AdvancedFlowFilterEndpointScope::either_endpoint};
+    std::array<std::uint8_t, 16> value {};
+    std::uint8_t prefix_length {128};
+};
+
+struct AdvancedFlowFilterAddressCriteria {
+    std::vector<AdvancedFlowFilterIpv4AddressPredicate> ipv4_include {};
+    std::vector<AdvancedFlowFilterIpv4AddressPredicate> ipv4_exclude {};
+    std::vector<AdvancedFlowFilterIpv6AddressPredicate> ipv6_include {};
+    std::vector<AdvancedFlowFilterIpv6AddressPredicate> ipv6_exclude {};
+};
+
+struct AdvancedFlowFilterTlsVersionCriteria {
+    std::vector<TlsVersionHint> include {};
+    std::vector<TlsVersionHint> exclude {};
+};
+
+struct AdvancedFlowFilterQuicVersionCriteria {
+    std::vector<QuicVersionHint> include {};
+    std::vector<QuicVersionHint> exclude {};
+};
+
 enum class AdvancedFlowFilterPortScope : std::uint8_t {
     either_endpoint = 0,
     endpoint_a,
@@ -127,9 +169,12 @@ struct AdvancedFlowFilterSpec {
     AdvancedFlowFilterProtocolPathCriteria protocol_path {};
     AdvancedFlowFilterProtocolCriteria flow_protocol {};
     AdvancedFlowFilterDetectedProtocolCriteria detected_protocol {};
+    AdvancedFlowFilterTlsVersionCriteria tls_version {};
+    AdvancedFlowFilterQuicVersionCriteria quic_version {};
     AdvancedFlowFilterPortCriteria ports {};
     AdvancedFlowFilterAggregateCriteria aggregate {};
     AdvancedFlowFilterDirectionalityCriteria directionality {};
+    AdvancedFlowFilterAddressCriteria addresses {};
     AdvancedFlowFilterServiceCriteria service {};
 };
 
@@ -137,6 +182,7 @@ enum class AdvancedFlowFilterCompileStatus : std::uint8_t {
     ok = 0,
     invalid_numeric_range,
     invalid_protocol_path_predicate,
+    invalid_address_predicate,
     invalid_service_predicate,
 };
 
@@ -176,6 +222,20 @@ struct CompiledAdvancedFlowFilterDetectedProtocolCriteria {
     bool use_possible_tls_quic {false};
 };
 
+struct CompiledAdvancedFlowFilterTlsVersionCriteria {
+    std::array<bool, 256> include_membership {};
+    std::array<bool, 256> exclude_membership {};
+    bool has_include_predicates {false};
+    bool has_exclude_predicates {false};
+};
+
+struct CompiledAdvancedFlowFilterQuicVersionCriteria {
+    std::array<bool, 256> include_membership {};
+    std::array<bool, 256> exclude_membership {};
+    bool has_include_predicates {false};
+    bool has_exclude_predicates {false};
+};
+
 struct CompiledAdvancedFlowFilterPortCriteria {
     AdvancedFlowFilterPortBitmap include_either {};
     AdvancedFlowFilterPortBitmap include_a {};
@@ -194,6 +254,29 @@ struct CompiledAdvancedFlowFilterDirectionalityCriteria {
     std::array<bool, 2> exclude_membership {};
     bool has_include_predicates {false};
     bool has_exclude_predicates {false};
+};
+
+struct CompiledAdvancedFlowFilterIpv4CidrPredicate {
+    AdvancedFlowFilterEndpointScope scope {AdvancedFlowFilterEndpointScope::either_endpoint};
+    std::uint32_t network {0};
+    std::uint32_t mask {0};
+    std::uint8_t prefix_length {0};
+};
+
+struct CompiledAdvancedFlowFilterIpv6CidrPredicate {
+    AdvancedFlowFilterEndpointScope scope {AdvancedFlowFilterEndpointScope::either_endpoint};
+    std::array<std::uint8_t, 16> network {};
+    std::uint8_t prefix_length {0};
+};
+
+struct CompiledAdvancedFlowFilterAddressCriteria {
+    std::vector<CompiledAdvancedFlowFilterIpv4CidrPredicate> ipv4_include {};
+    std::vector<CompiledAdvancedFlowFilterIpv4CidrPredicate> ipv4_exclude {};
+    std::vector<CompiledAdvancedFlowFilterIpv6CidrPredicate> ipv6_include {};
+    std::vector<CompiledAdvancedFlowFilterIpv6CidrPredicate> ipv6_exclude {};
+
+    [[nodiscard]] bool has_include_predicates() const noexcept;
+    [[nodiscard]] bool has_exclude_predicates() const noexcept;
 };
 
 struct CompiledAdvancedFlowFilterServicePredicate {
@@ -219,9 +302,12 @@ struct CompiledAdvancedFlowFilter {
     CompiledAdvancedFlowFilterProtocolPathCriteria protocol_path {};
     CompiledAdvancedFlowFilterProtocolCriteria flow_protocol {};
     CompiledAdvancedFlowFilterDetectedProtocolCriteria detected_protocol {};
+    CompiledAdvancedFlowFilterTlsVersionCriteria tls_version {};
+    CompiledAdvancedFlowFilterQuicVersionCriteria quic_version {};
     CompiledAdvancedFlowFilterPortCriteria ports {};
     CompiledAdvancedFlowFilterAggregateCriteria aggregate {};
     CompiledAdvancedFlowFilterDirectionalityCriteria directionality {};
+    CompiledAdvancedFlowFilterAddressCriteria addresses {};
     CompiledAdvancedFlowFilterServiceCriteria service {};
 };
 
