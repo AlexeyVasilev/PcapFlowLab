@@ -164,6 +164,9 @@ legal and preserve order inside their category.
 The implemented v1 keys are:
 
 ```text
+address_family.include = ipv4 | ipv6
+address_family.exclude = ipv4 | ipv6
+
 flow_protocol.include = <protocol>
 flow_protocol.exclude = <protocol>
 
@@ -251,6 +254,9 @@ The current canonical formatter emits:
   - `v1`
   - `draft29`
   - `v2`
+- address family:
+  - `ipv4`
+  - `ipv6`
 - directionality:
   - `unidirectional`
   - `bidirectional`
@@ -359,18 +365,19 @@ The formatter emits categories in this stable order:
 
 1. `format_version`
 2. Protocol Path include, then exclude
-3. flow protocol include, then exclude
-4. detected protocol include, then exclude
-5. TLS version include, then exclude
-6. QUIC version include, then exclude
-7. ports include, then exclude
-8. aggregate scalar predicates in fixed key order
-9. directionality include, then exclude
-10. IPv4 include
-11. IPv6 include
-12. IPv4 exclude
-13. IPv6 exclude
-14. service include, then exclude
+3. Address Family include, then exclude
+4. flow protocol include, then exclude
+5. detected protocol include, then exclude
+6. TLS version include, then exclude
+7. QUIC version include, then exclude
+8. ports include, then exclude
+9. aggregate scalar predicates in fixed key order
+10. directionality include, then exclude
+11. IPv4 include
+12. IPv6 include
+13. IPv4 exclude
+14. IPv6 exclude
+15. service include, then exclude
 
 The canonical formatter does not preserve:
 
@@ -424,6 +431,7 @@ Verified current-state facts from the current local branch:
 The initial backend stage supports these predicate families:
 
 - Protocol Path
+- Address Family (`FlowAddressFamily`)
 - flow protocol (`ProtocolId`)
 - detected protocol (`FlowProtocolHint`, including current possible-TLS /
   possible-QUIC semantics from `AnalysisSettings`)
@@ -673,12 +681,13 @@ The declarative filter specification does not define hot-path execution order.
 The current backend stage uses this fixed execution order:
 
 1. initial candidate scope
-2. Protocol Path membership
-3. flow protocol / detected protocol / TLS version / QUIC version
-4. ports
-5. cheap numeric / aggregate predicates and directionality
-6. IP address / CIDR predicates
-7. service predicates
+2. Address Family
+3. Protocol Path membership
+4. flow protocol / detected protocol / TLS version / QUIC version
+5. ports
+6. cheap numeric / aggregate predicates and directionality
+7. IP address / CIDR predicates
+8. service predicates
 
 Service matching is deliberately last.
 

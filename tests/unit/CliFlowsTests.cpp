@@ -847,6 +847,37 @@ void expect_flows_runtime_behavior() {
     }
 
     {
+        const auto address_family_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_address_family.filter",
+            "format_version = 1\n"
+            "address_family.include = ipv6\n"
+        );
+        const auto parsed_filter = session_detail::parse_advanced_flow_filter_text(
+            "format_version = 1\n"
+            "address_family.include = ipv6\n"
+        );
+        PFL_REQUIRE(parsed_filter.status == session_detail::AdvancedFlowFilterTextParseStatus::ok);
+        const auto expected = adapter.query_advanced_flows(
+            parsed_filter.spec,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_REQUIRE(expected.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(expected.result_count_before_limit == 1U);
+
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--adv-filter",
+            address_family_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(extract_rendered_flow_numbers(result.stdout_text) == one_based_numbers(expected.ordered_flow_indices));
+    }
+
+    {
         const auto parsed_filter = session_detail::parse_advanced_flow_filter_text(
             "format_version = 1\n"
             "flow_protocol.include = tcp\n"

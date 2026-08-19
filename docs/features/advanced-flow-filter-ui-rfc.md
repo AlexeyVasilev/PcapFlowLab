@@ -635,12 +635,12 @@ Current status:
 - this default unchecked checkbox state is consistent with the initial empty
   Custom-filter state
 - no Address Family predicate exists until the user selects a value
-- the backend `AdvancedFlowFilterSpec` does not yet expose a dedicated address
-  family predicate
-- therefore address family is a small backend prerequisite before full UI
-  implementation
+- the backend `AdvancedFlowFilterSpec` now exposes a dedicated address-family
+  predicate with IPv4 / IPv6 include-exclude semantics
+- the remaining work here is UI/document-state integration, not backend
+  predicate support
 
-This RFC records the dependency but does not implement it.
+This RFC records the UI design but does not implement it.
 
 ## Flow Protocol
 

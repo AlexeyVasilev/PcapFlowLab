@@ -878,6 +878,91 @@ void run_directionality_and_service_tests() {
     }
 }
 
+void run_address_family_tests() {
+    ScopedTestContext context {"advanced_flow_filter/address_family"};
+    auto fixture = build_fixture();
+    const auto connections = listed_connections_for_fixture(fixture);
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv6};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4, FlowAddressFamily::ipv6};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.exclude = {FlowAddressFamily::ipv6};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.exclude = {FlowAddressFamily::ipv4};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4, FlowAddressFamily::ipv6};
+        spec.address_family.exclude = {FlowAddressFamily::ipv6};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4};
+        spec.address_family.exclude = {FlowAddressFamily::ipv4};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4};
+        spec.flow_protocol.include = {ProtocolId::udp};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        const std::vector<std::size_t> candidate_scope {6U, 7U};
+        const auto result = session_detail::evaluate_advanced_flow_filter(
+            connections,
+            filter,
+            std::span<const std::size_t>(candidate_scope)
+        );
+        PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
+        expect_indices_equal(result.matching_flow_indices, {7U});
+    }
+}
+
 void run_address_and_version_tests() {
     ScopedTestContext context {"advanced_flow_filter/address_and_version"};
     auto fixture = build_fixture();
@@ -1188,6 +1273,44 @@ void run_text_format_tests() {
     {
         const auto parsed = require_parse_success(
             "format_version = 1\n"
+            "address_family.include = IPv4\n"
+            "address_family.include = ipv6\n"
+            "address_family.exclude = IPV6\n"
+        );
+        PFL_EXPECT((parsed.spec.address_family.include == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv4,
+            FlowAddressFamily::ipv6,
+        }));
+        PFL_EXPECT((parsed.spec.address_family.exclude == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv6,
+        }));
+        PFL_EXPECT(
+            require_format_success(parsed.spec) ==
+            std::string(
+                "format_version = 1\n"
+                "address_family.include = ipv4\n"
+                "address_family.include = ipv6\n"
+                "address_family.exclude = ipv6\n"
+            )
+        );
+    }
+
+    {
+        const auto invalid_family = session_detail::parse_advanced_flow_filter_text(
+            "format_version = 1\n"
+            "address_family.include = ipx\n"
+        );
+        PFL_EXPECT(invalid_family.status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
+        PFL_REQUIRE(invalid_family.issue.has_value());
+        PFL_EXPECT(invalid_family.issue->line == 2U);
+        PFL_EXPECT(invalid_family.issue->key == "address_family.include");
+        PFL_EXPECT(invalid_family.issue->token == "ipx");
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 1\n"
+            "address_family.include = IPv4\n"
             "flow_protocol.include = TCP\n"
             "flow_protocol.include = udp\n"
             "flow_protocol.exclude = IcmpV6\n"
@@ -1204,6 +1327,7 @@ void run_text_format_tests() {
         PFL_EXPECT((parsed.spec.detected_protocol.exclude == std::vector<FlowProtocolHint> {FlowProtocolHint::mdns}));
         PFL_EXPECT((parsed.spec.tls_version.include == std::vector<TlsVersionHint> {TlsVersionHint::tls13}));
         PFL_EXPECT((parsed.spec.quic_version.exclude == std::vector<QuicVersionHint> {QuicVersionHint::draft29}));
+        PFL_EXPECT((parsed.spec.address_family.include == std::vector<FlowAddressFamily> {FlowAddressFamily::ipv4}));
         PFL_EXPECT((
             parsed.spec.directionality.include ==
             std::vector<AdvancedFlowFilterDirectionality> {AdvancedFlowFilterDirectionality::bidirectional}
@@ -1213,6 +1337,7 @@ void run_text_format_tests() {
             require_format_success(parsed.spec) ==
             std::string(
                 "format_version = 1\n"
+                "address_family.include = ipv4\n"
                 "flow_protocol.include = tcp\n"
                 "flow_protocol.include = udp\n"
                 "flow_protocol.exclude = icmpv6\n"
@@ -1500,6 +1625,7 @@ void run_text_format_tests() {
         const auto second_text = require_format_success(reparsed.spec);
         PFL_EXPECT(first_text == second_text);
         PFL_EXPECT(first_text.find("format_version = 1\n") == 0U);
+        PFL_EXPECT(first_text.find("address_family.include = ipv4\n") != std::string::npos);
         PFL_EXPECT(first_text.find("flow_protocol.include = tcp\nflow_protocol.include = udp\n") != std::string::npos);
     }
 
@@ -1595,6 +1721,7 @@ void run_advanced_flow_filter_tests() {
     run_protocol_path_tests();
     run_port_and_aggregate_tests();
     run_directionality_and_service_tests();
+    run_address_family_tests();
     run_address_and_version_tests();
     run_index_roundtrip_tests();
     run_text_format_tests();

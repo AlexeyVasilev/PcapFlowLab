@@ -42,6 +42,11 @@ struct AdvancedFlowFilterProtocolPathCriteria {
     std::vector<AdvancedFlowFilterProtocolPathPredicate> exclude {};
 };
 
+struct AdvancedFlowFilterAddressFamilyCriteria {
+    std::vector<FlowAddressFamily> include {};
+    std::vector<FlowAddressFamily> exclude {};
+};
+
 struct AdvancedFlowFilterProtocolCriteria {
     std::vector<ProtocolId> include {};
     std::vector<ProtocolId> exclude {};
@@ -167,6 +172,7 @@ struct AdvancedFlowFilterServiceCriteria {
 
 struct AdvancedFlowFilterSpec {
     AdvancedFlowFilterProtocolPathCriteria protocol_path {};
+    AdvancedFlowFilterAddressFamilyCriteria address_family {};
     AdvancedFlowFilterProtocolCriteria flow_protocol {};
     AdvancedFlowFilterDetectedProtocolCriteria detected_protocol {};
     AdvancedFlowFilterTlsVersionCriteria tls_version {};
@@ -203,6 +209,13 @@ struct AdvancedFlowFilterPortBitmap {
 struct CompiledAdvancedFlowFilterProtocolPathCriteria {
     std::vector<std::uint8_t> include_membership {};
     std::vector<std::uint8_t> exclude_membership {};
+    bool has_include_predicates {false};
+    bool has_exclude_predicates {false};
+};
+
+struct CompiledAdvancedFlowFilterAddressFamilyCriteria {
+    std::array<bool, 2> include_membership {};
+    std::array<bool, 2> exclude_membership {};
     bool has_include_predicates {false};
     bool has_exclude_predicates {false};
 };
@@ -300,6 +313,7 @@ struct CompiledAdvancedFlowFilterServiceCriteria {
 
 struct CompiledAdvancedFlowFilter {
     CompiledAdvancedFlowFilterProtocolPathCriteria protocol_path {};
+    CompiledAdvancedFlowFilterAddressFamilyCriteria address_family {};
     CompiledAdvancedFlowFilterProtocolCriteria flow_protocol {};
     CompiledAdvancedFlowFilterDetectedProtocolCriteria detected_protocol {};
     CompiledAdvancedFlowFilterTlsVersionCriteria tls_version {};

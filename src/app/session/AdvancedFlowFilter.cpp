@@ -437,6 +437,16 @@ bool matches_protocol_membership(
     return include_match && !exclude_match;
 }
 
+bool matches_address_family_criteria(
+    const CompiledAdvancedFlowFilterAddressFamilyCriteria& criteria,
+    const FlowAddressFamily family
+) noexcept {
+    const auto index = static_cast<std::size_t>(family);
+    const bool include_match = !criteria.has_include_predicates || criteria.include_membership[index];
+    const bool exclude_match = criteria.has_exclude_predicates && criteria.exclude_membership[index];
+    return include_match && !exclude_match;
+}
+
 bool matches_detected_protocol_membership(
     const CompiledAdvancedFlowFilterDetectedProtocolCriteria& criteria,
     const FlowProtocolHint protocol_hint
@@ -821,6 +831,22 @@ AdvancedFlowFilterCompileResult compile_protocol_path_criteria(
     return {};
 }
 
+void compile_address_family_membership(
+    const AdvancedFlowFilterAddressFamilyCriteria& spec,
+    CompiledAdvancedFlowFilterAddressFamilyCriteria& compiled
+) {
+    compiled.has_include_predicates = !spec.include.empty();
+    compiled.has_exclude_predicates = !spec.exclude.empty();
+
+    for (const auto family : spec.include) {
+        compiled.include_membership[static_cast<std::size_t>(family)] = true;
+    }
+
+    for (const auto family : spec.exclude) {
+        compiled.exclude_membership[static_cast<std::size_t>(family)] = true;
+    }
+}
+
 void compile_protocol_membership(
     const AdvancedFlowFilterProtocolCriteria& spec,
     CompiledAdvancedFlowFilterProtocolCriteria& compiled
@@ -1192,6 +1218,7 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
         return error;
     }
 
+    compile_address_family_membership(spec.address_family, result.filter.address_family);
     compile_protocol_membership(spec.flow_protocol, result.filter.flow_protocol);
     compile_detected_protocol_membership(spec.detected_protocol, settings, result.filter.detected_protocol);
     compile_tls_version_membership(spec.tls_version, result.filter.tls_version);
@@ -1251,6 +1278,10 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
         }
 
         const auto& connection = connections[index];
+
+        if (!matches_address_family_criteria(filter.address_family, connection.family)) {
+            continue;
+        }
 
         if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(connection))) {
             continue;

@@ -659,6 +659,16 @@ std::optional<AdvancedFlowFilterDirectionality> parse_directionality_token(const
     return std::nullopt;
 }
 
+std::optional<FlowAddressFamily> parse_address_family_token(const std::string_view token) {
+    if (equals_ascii_case_insensitive(token, "ipv4")) {
+        return FlowAddressFamily::ipv4;
+    }
+    if (equals_ascii_case_insensitive(token, "ipv6")) {
+        return FlowAddressFamily::ipv6;
+    }
+    return std::nullopt;
+}
+
 std::optional<AdvancedFlowFilterPortScope> parse_port_scope_token(const std::string_view token) {
     if (token == "either") {
         return AdvancedFlowFilterPortScope::either_endpoint;
@@ -1262,6 +1272,17 @@ std::string format_directionality_token(const AdvancedFlowFilterDirectionality v
     return {};
 }
 
+std::string format_address_family_token(const FlowAddressFamily family) {
+    switch (family) {
+    case FlowAddressFamily::ipv4:
+        return "ipv4";
+    case FlowAddressFamily::ipv6:
+        return "ipv6";
+    default:
+        return {};
+    }
+}
+
 std::string format_port_scope_token(const AdvancedFlowFilterPortScope scope) {
     switch (scope) {
     case AdvancedFlowFilterPortScope::either_endpoint:
@@ -1634,7 +1655,34 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                 const auto value_column = *equals + 2U;
                 const auto root = key_segments.values[0];
 
-                if (root == "flow_protocol" && key_segments.values.size() == 2U) {
+                if (root == "address_family" && key_segments.values.size() == 2U) {
+                    auto family = parse_address_family_token(value);
+                    if (!family.has_value()) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::invalid_enum_token,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            std::string(value),
+                            "Unknown address family token."
+                        );
+                    }
+
+                    if (key_segments.values[1] == "include") {
+                        result.spec.address_family.include.push_back(*family);
+                    } else if (key_segments.values[1] == "exclude") {
+                        result.spec.address_family.exclude.push_back(*family);
+                    } else {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::unknown_key,
+                            line_number,
+                            1U,
+                            std::string(key),
+                            {},
+                            "Unknown address_family key."
+                        );
+                    }
+                } else if (root == "flow_protocol" && key_segments.values.size() == 2U) {
                     auto protocol = parse_protocol_id_token(value);
                     if (!protocol.has_value()) {
                         return make_parse_error(
@@ -2251,6 +2299,21 @@ AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const Advanc
             return make_format_error("protocol_path", "Spec contains an unrepresentable Protocol Path exclude predicate.");
         }
         append_line("protocol_path." + match_kind + ".exclude", value);
+    }
+
+    for (const auto family : spec.address_family.include) {
+        const auto token = format_address_family_token(family);
+        if (token.empty()) {
+            return make_format_error("address_family", "Spec contains an unrepresentable address family token.");
+        }
+        append_line("address_family.include", token);
+    }
+    for (const auto family : spec.address_family.exclude) {
+        const auto token = format_address_family_token(family);
+        if (token.empty()) {
+            return make_format_error("address_family", "Spec contains an unrepresentable address family token.");
+        }
+        append_line("address_family.exclude", token);
     }
 
     for (const auto protocol : spec.flow_protocol.include) {
