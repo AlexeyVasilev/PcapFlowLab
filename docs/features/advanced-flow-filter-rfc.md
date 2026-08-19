@@ -1,7 +1,8 @@
 # Advanced Flow Filter RFC
 
-Status: staged RFC with backend compile/evaluate foundation plus current
-metadata-backed address and protocol-version predicates.
+Status: staged RFC with backend compile/evaluate foundation, stable v1 text
+parse/format support, and current metadata-backed address and
+protocol-version predicates.
 
 This document defines the product and backend-filter model for the Advanced
 Flow Filter in Pcap Flow Lab.
@@ -54,8 +55,291 @@ Future CLI usage is expected to remain conceptually distinct:
 - `--adv-filter <filter-file>` for the structured Advanced Flow Filter
 
 Those modes are expected to be mutually exclusive. The current backend stage
-does not add `--adv-filter`, does not parse saved filter files, and does not
-integrate Advanced Flow Filter into `FlowQuery`.
+does not add `--adv-filter` and does not integrate Advanced Flow Filter into
+`FlowQuery`.
+
+The current backend stage now also defines a stable text contract for
+Advanced Flow Filter specs:
+
+```text
+AdvancedFlowFilterSpec
+    <-> parse/format stable text v1
+CompiledAdvancedFlowFilter
+    -> evaluate
+AdvancedFlowFilterResult
+```
+
+The text contract is a serialization layer for `AdvancedFlowFilterSpec`. It
+is intentionally separate from filter compilation/evaluation and from any
+future CLI flag, UI editor, or file-loading workflow.
+
+## Stable Text Format v1
+
+The first stable text format is line-oriented and UTF-8 friendly.
+
+- A UTF-8 BOM is accepted at the beginning of the file.
+- Line endings may be `LF` or `CRLF`.
+- `#` starts a comment outside quoted strings.
+- Blank lines are ignored.
+- The first meaningful line must be:
+
+```text
+format_version = 1
+```
+
+- `format_version` may appear only once.
+- Any filter predicate before `format_version` is an error.
+- Keys are ASCII and use canonical lowercase spellings.
+- Enum-like values are ASCII and case-insensitive on input.
+- Formatter output is canonical, lowercase where applicable, strips comments,
+  and always emits `format_version = 1` first.
+
+Each non-comment assignment is:
+
+```text
+<key> = <value>
+```
+
+The parser returns `AdvancedFlowFilterTextParseResult` with:
+
+- `status`
+- parsed `AdvancedFlowFilterSpec`
+- optional structured `issue` carrying line, optional column, key, token, and
+  diagnostic message
+
+The formatter returns `AdvancedFlowFilterTextFormatResult` with:
+
+- `status`
+- canonical serialized text
+- optional structured `issue` when the spec cannot be represented faithfully
+
+Scalar keys are unique within one file. Repeating a scalar key such as
+`packet_count.min` is an error. Repeated include/exclude predicates remain
+legal and preserve order inside their category.
+
+### Grammar shape
+
+The implemented v1 keys are:
+
+```text
+flow_protocol.include = <protocol>
+flow_protocol.exclude = <protocol>
+
+detected_protocol.include = <hint>
+detected_protocol.exclude = <hint>
+
+tls_version.include = <tls_version>
+tls_version.exclude = <tls_version>
+
+quic_version.include = <quic_version>
+quic_version.exclude = <quic_version>
+
+directionality.include = <directionality>
+directionality.exclude = <directionality>
+
+port.<either|a|b>.include = <port-or-range>
+port.<either|a|b>.exclude = <port-or-range>
+
+ip.<either|a|b>.include = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
+ip.<either|a|b>.exclude = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
+
+service.state.include = known | unknown
+service.state.exclude = known | unknown
+service.<equals|starts_with|contains>.<ci|cs>.include = <quoted-string>
+service.<equals|starts_with|contains>.<ci|cs>.exclude = <quoted-string>
+
+protocol_path.<exact|prefix|contains>.include = <protocol-path-value>
+protocol_path.<exact|prefix|contains>.exclude = <protocol-path-value>
+
+packet_count.<min|max> = <uint64>
+original_bytes.<min|max> = <byte-quantity>
+captured_bytes.<min|max> = <byte-quantity>
+duration.<min|max> = <duration-quantity>
+fragmented_packet_count.<min|max> = <uint64>
+truncated_packet_count.<min|max> = <uint64>
+tcp_syn_count.<min|max> = <uint64>
+tcp_fin_count.<min|max> = <uint64>
+tcp_rst_count.<min|max> = <uint64>
+max_original_packet_length.<min|max> = <packet-byte-quantity>
+max_captured_packet_length.<min|max> = <packet-byte-quantity>
+```
+
+`contains` Protocol Path predicates must contain exactly one layer.
+
+### Canonical tokens
+
+The stable canonical formatter emits:
+
+- flow protocol:
+  - `unknown`
+  - `icmp`
+  - `igmp`
+  - `tcp`
+  - `udp`
+  - `esp`
+  - `icmpv6`
+  - `sctp`
+  - `arp`
+- detected protocol:
+  - `unknown`
+  - `tls`
+  - `http`
+  - `dns`
+  - `quic`
+  - `ssh`
+  - `stun`
+  - `bittorrent`
+  - `dhcp`
+  - `mdns`
+  - `smtp`
+  - `pop3`
+  - `imap`
+  - `possible_tls`
+  - `possible_quic`
+  - `igmp`
+  - `igmpv1`
+  - `igmpv2`
+  - `igmpv3`
+- TLS version:
+  - `unknown`
+  - `tls1_2`
+  - `tls1_3`
+- QUIC version:
+  - `unknown`
+  - `v1`
+  - `draft29`
+  - `v2`
+- directionality:
+  - `unidirectional`
+  - `bidirectional`
+- endpoint scope:
+  - `either`
+  - `a`
+  - `b`
+- service case:
+  - `ci`
+  - `cs`
+- Protocol Path match kind:
+  - `exact`
+  - `prefix`
+  - `contains`
+
+### Numeric units
+
+Implemented byte units:
+
+- bare bytes for `original_bytes`, `captured_bytes`, and packet-length fields
+- explicit `B`
+- `KiB`
+- `MiB`
+- `GiB`
+- `TiB`
+
+Decimal SI byte suffixes such as `MB` are rejected.
+
+Implemented duration units:
+
+- `us`
+- `ms`
+- `s`
+- `m`
+- `h`
+
+Formatter output is canonical:
+
+- bytes use the largest exact binary unit, otherwise `B`
+- durations use the largest exact supported unit, otherwise `us`
+
+### Service strings
+
+Service text predicates use quoted strings.
+
+Supported escapes are:
+
+- `\\`
+- `\"`
+- `\n`
+- `\r`
+- `\t`
+
+Unterminated quotes and unknown escapes are parse errors.
+
+### Protocol Path text mapping
+
+The stable Protocol Path v1 text uses the repository's canonical layer labels:
+
+- `EthernetII`
+- `IEEE 802.3`
+- `LLC/SNAP`
+- `LinuxSll`
+- `LinuxSll2`
+- `VLAN`
+- `MPLS`
+- `MPLS PW`
+- `PBB`
+- `PPPoE`
+- `PPP`
+- `MACsec`
+- `IPv4`
+- `IPv6`
+- `TCP`
+- `UDP`
+- `SCTP`
+- `ICMP`
+- `ICMPv6`
+- `ARP`
+- `VXLAN`
+- `Geneve`
+- `GTP-U`
+- `GRE`
+- `AH`
+- `ESP`
+
+Identifier-bearing layers use:
+
+- `VLAN(vid=<decimal>)`
+- `MPLS(label=<decimal>)`
+- `PBB(isid=<decimal-or-0x...>)`
+- `VXLAN(vni=<decimal>)`
+- `Geneve(vni=<decimal>)`
+- `GTP-U(teid=<decimal-or-0x...>)`
+- `GRE(key=<decimal-or-0x...>)`
+- `AH(spi=<decimal-or-0x...>)`
+- `ESP(spi=<decimal-or-0x...>)`
+
+Formatter output uses canonical layer labels and canonical identifier names.
+It rejects unrepresentable combinations such as a mismatched identifier kind on
+the wrong layer.
+
+### Canonical formatting order
+
+The formatter emits categories in this stable order:
+
+1. `format_version`
+2. Protocol Path include, then exclude
+3. flow protocol include, then exclude
+4. detected protocol include, then exclude
+5. TLS version include, then exclude
+6. QUIC version include, then exclude
+7. ports include, then exclude
+8. aggregate scalar predicates in fixed key order
+9. directionality include, then exclude
+10. IPv4 include
+11. IPv6 include
+12. IPv4 exclude
+13. IPv6 exclude
+14. service include, then exclude
+
+The canonical formatter does not preserve:
+
+- comments
+- blank lines
+- original key casing
+- original enum token casing
+- original cross-family `ip.*` interleaving
+
+Semantic round-tripping is through `AdvancedFlowFilterSpec`, not through
+preserving source layout.
 
 ## Current State
 
@@ -438,7 +722,6 @@ Deferred from the initial implementation:
 - arbitrary packet-content predicates
 - unrecognized-packet filtering
 - saved filter presets as part of the capture index
-- `.filter` file parsing
 - CLI / GUI integration
 
 ## Future Saved Filter Presets
