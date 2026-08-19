@@ -55,6 +55,7 @@ void run_cli_flow_info_tests();
 void run_cli_packet_info_tests();
 void run_cli_summary_tests();
 void run_byte_export_tests();
+void run_advanced_flow_filter_tests();
 void run_selected_packet_byte_presentation_tests();
 void run_selected_stream_item_data_presentation_tests();
 void run_packet_payload_tests();
@@ -210,6 +211,7 @@ int main() {
         {"cli_packet_info", pfl::tests::run_cli_packet_info_tests},
         {"cli_summary", pfl::tests::run_cli_summary_tests},
         {"byte_export", pfl::tests::run_byte_export_tests},
+        {"advanced_flow_filter", pfl::tests::run_advanced_flow_filter_tests},
         {"selected_packet_byte_presentation", pfl::tests::run_selected_packet_byte_presentation_tests},
         {"selected_stream_item_data_presentation", pfl::tests::run_selected_stream_item_data_presentation_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},

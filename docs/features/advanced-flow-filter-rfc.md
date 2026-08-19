@@ -1,12 +1,13 @@
 # Advanced Flow Filter RFC
 
-Status: proposed design / RFC only.
+Status: staged RFC with initial backend compile/evaluate foundation.
 
-This document defines the planned product and backend-filter model for a future
-Advanced Flow Filter in Pcap Flow Lab.
+This document defines the product and backend-filter model for the Advanced
+Flow Filter in Pcap Flow Lab.
 
-This pass does not implement the filter, does not change current index
-serialization, and does not change runtime query behavior.
+The current backend stage introduces a separate structured filtering subsystem
+without changing legacy text-filter behavior, CLI syntax, UI, or index
+serialization.
 
 Related RFCs:
 
@@ -15,14 +16,45 @@ Related RFCs:
 
 ## Goal
 
-The future Advanced Flow Filter should operate on canonical flows/connections
-and indexed metadata.
+Advanced Flow Filter operates on canonical flows/connections and indexed
+metadata.
 
 Normal filter evaluation must not require rescanning the source capture or
 re-running expensive packet dissection just to answer an ordinary flow query.
 
 Unrecognized packets are not canonical flows and are outside the initial
 Advanced Flow Filter scope.
+
+## Current Backend Stage
+
+The implemented backend stage is intentionally separate from the lightweight
+legacy `FlowQuery` / `--filter` text-filter path.
+
+The architecture is:
+
+```text
+AdvancedFlowFilterSpec
+    -> compile
+CompiledAdvancedFlowFilter
+    -> evaluate
+AdvancedFlowFilterResult
+```
+
+`AdvancedFlowFilterSpec` is declarative: it describes what the caller wants to
+match.
+
+`CompiledAdvancedFlowFilter` is execution-oriented: it stores precompiled
+membership tables, normalized numeric predicates, precompiled service
+predicates, and the fixed execution plan.
+
+Future CLI usage is expected to remain conceptually distinct:
+
+- `--filter "QUIC"` for the legacy text filter
+- `--adv-filter <filter-file>` for the structured Advanced Flow Filter
+
+Those modes are expected to be mutually exclusive. The current backend stage
+does not add `--adv-filter`, does not parse saved filter files, and does not
+integrate Advanced Flow Filter into `FlowQuery`.
 
 ## Current State
 
@@ -39,7 +71,7 @@ layers that a filter can build on:
 - selected-flow Analysis
 - persistent capture indexes
 
-Verified current-state facts from code:
+Verified current-state facts from the current local branch:
 
 - Canonical connections already store total packet count and total original-byte
   volume at the connection level.
@@ -57,12 +89,41 @@ Verified current-state facts from code:
 - QUIC/TLS version hints already exist on canonical connections in memory, but
   they are not serialized in the current index format.
 - Captured-byte totals, time bounds, TCP SYN/FIN/RST counts, and packet-size
-  extrema are currently derived from `PacketRef` collections rather than stored
-  as compact flow aggregates.
+  extrema now exist as compact per-connection aggregate metadata in
+  `ConnectionAggregateStats`.
 
-## Proposed V1 Filter Families
+## Current Implemented Predicate Families
 
-The initial filter family set is:
+The initial backend stage supports these predicate families:
+
+- Protocol Path
+- flow protocol (`ProtocolId`)
+- detected protocol (`FlowProtocolHint`, including current possible-TLS /
+  possible-QUIC semantics from `AnalysisSettings`)
+- ports
+- cheap numeric / aggregate metadata
+- directionality
+- service string metadata
+
+Different active families combine with AND.
+
+Multiple include predicates inside one family combine with OR.
+
+Exclusion predicates reject a flow when any exclusion matches.
+
+An empty `AdvancedFlowFilterSpec` matches every listable flow.
+
+Arbitrary nested Boolean expressions remain deferred.
+
+In the current backend stage, directionality is intentionally limited to the
+two states that fit the listable-flow model:
+
+- `unidirectional`: `flow_a` has packets and `flow_b` has none
+- `bidirectional`: both `flow_a` and `flow_b` have packets
+
+## Longer-Term Planned Filter Families
+
+Beyond the current backend stage, the broader planned family set is:
 
 ### IP addresses and networks
 
@@ -209,7 +270,9 @@ Using canonical A/B orientation:
 - B->A packet count
 - A->B original bytes
 - B->A original bytes
-- unidirectional / bidirectional
+- current backend predicate values:
+  - unidirectional
+  - bidirectional
 - derived packet dominance / ratio
 - derived byte dominance / ratio
 
@@ -222,6 +285,32 @@ Where source aggregates are sufficient:
 
 These should be derived in O(1) from stored aggregates and not persisted as
 independent long-lived metadata.
+
+## Fixed Execution Order
+
+The declarative filter specification does not define hot-path execution order.
+
+The current backend stage uses this fixed execution order:
+
+1. initial candidate scope
+2. Protocol Path membership
+3. flow protocol / detected protocol
+4. ports
+5. cheap numeric / aggregate predicates and directionality
+6. service predicates
+
+Service matching is deliberately last.
+
+Protocol Path predicates are resolved during compile to dense
+`ProtocolPathId` membership tables derived from the session's
+`ProtocolPathRegistry`.
+
+The evaluator uses one candidate loop with early rejection. It does not:
+
+- inspect `PacketRef` collections
+- read source capture bytes
+- build rendered `FlowRow` strings for rejected candidates
+- dynamically reorder predicates
 
 ## Composition Rules For Initial Version
 
@@ -264,9 +353,9 @@ The filter can already rely on current canonical state for:
 - detected protocol hint
 - service hint
 
-The following compact per-connection aggregates are proposed in
-[Flow Aggregate Metadata RFC](flow-aggregate-metadata-rfc.md) because they are
-currently recomputed by scanning packet refs:
+The following compact per-connection aggregates are provided by
+[Flow Aggregate Metadata RFC](flow-aggregate-metadata-rfc.md) and are used by
+the current Advanced Flow Filter backend stage:
 
 - first timestamp
 - last timestamp
@@ -278,8 +367,8 @@ currently recomputed by scanning packet refs:
 - TCP FIN count
 - TCP RST count
 
-The v1 filter should be implemented on top of that agreed aggregate foundation
-rather than by repeatedly rescanning `PacketRef` vectors.
+The current backend stage evaluates numeric predicates from that aggregate
+foundation rather than by rescanning `PacketRef` vectors.
 
 ## Derived Data
 
@@ -310,6 +399,9 @@ Rationale:
 
 Deferred from the initial implementation:
 
+- IP/CIDR predicates
+- TLS/QUIC version predicates
+- rate predicates
 - regex service matching
 - arbitrary nested Boolean expression trees
 - minimum original packet length
@@ -323,6 +415,8 @@ Deferred from the initial implementation:
 - arbitrary packet-content predicates
 - unrecognized-packet filtering
 - saved filter presets as part of the capture index
+- `.filter` file parsing
+- CLI / GUI integration
 
 ## Future Saved Filter Presets
 
