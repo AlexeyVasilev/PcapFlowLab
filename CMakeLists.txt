@@ -218,6 +218,8 @@ if(PFL_BUILD_UI)
             src/ui/app/MainController.h
             src/ui/app/AdvancedFlowFilterEditorModel.cpp
             src/ui/app/AdvancedFlowFilterEditorModel.h
+            src/ui/app/AdvancedFlowFilterProtocolPathSelectorModel.cpp
+            src/ui/app/AdvancedFlowFilterProtocolPathSelectorModel.h
             src/ui/app/FlowListModel.cpp
             src/ui/app/FlowListModel.h
             src/ui/app/ProtocolPathStatsModel.cpp
@@ -250,6 +252,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/SettingsPane.qml
                 src/ui/qml/components/AppScrollBar.qml
                 src/ui/qml/components/AdvancedFlowFilterSettingsDialog.qml
+                src/ui/qml/components/AdvancedFlowFilterProtocolPathSelectorDialog.qml
                 src/ui/qml/components/SupportedProtocolsDialog.qml
                 src/ui/qml/components/SmartExportDialog.qml
         )
@@ -322,6 +325,7 @@ if(PFL_BUILD_UI)
                 tests/ui/MainControllerUiTests.cpp
                 src/ui/app/MainController.cpp
                 src/ui/app/AdvancedFlowFilterEditorModel.cpp
+                src/ui/app/AdvancedFlowFilterProtocolPathSelectorModel.cpp
                 src/ui/app/FlowListModel.cpp
                 src/ui/app/ProtocolPathStatsModel.cpp
                 src/ui/app/TopSummaryListModel.cpp

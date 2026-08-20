@@ -1,5 +1,7 @@
 #include "ui/app/AdvancedFlowFilterEditorModel.h"
 
+#include "app/session/ProtocolPathPresentation.h"
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -571,6 +573,63 @@ std::array<std::uint8_t, 16> qhost_to_ipv6_bytes(const QHostAddress& address) {
     return bytes;
 }
 
+std::vector<LayerKey> protocol_path_layers_from_predicate(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    std::vector<LayerKey> converted {};
+    converted.reserve(layers.size());
+    for (const auto& layer : layers) {
+        converted.push_back(LayerKey {
+            .kind = layer.kind,
+            .identifier = layer.identifier.value_or(ProtocolLayerIdentifier {}),
+        });
+    }
+    return converted;
+}
+
+bool protocol_path_predicate_is_ui_managed(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    return predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path ||
+        predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix;
+}
+
+ProtocolPathStatisticsMode protocol_path_selector_mode_from_predicate(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path) {
+        return ProtocolPathStatisticsMode::terminal_paths;
+    }
+
+    return std::any_of(predicate.layers.begin(), predicate.layers.end(), [](const auto& layer) {
+               return layer.identifier.has_value() &&
+                   layer.identifier->kind != ProtocolLayerIdentifierKind::none;
+           })
+        ? ProtocolPathStatisticsMode::identity_tree
+        : ProtocolPathStatisticsMode::kind_overview;
+}
+
+QString protocol_path_selector_mode_label(const ProtocolPathStatisticsMode mode) {
+    switch (mode) {
+    case ProtocolPathStatisticsMode::kind_overview:
+        return QStringLiteral("Kind");
+    case ProtocolPathStatisticsMode::identity_tree:
+        return QStringLiteral("Identity");
+    case ProtocolPathStatisticsMode::terminal_paths:
+        return QStringLiteral("Terminal");
+    }
+
+    return QStringLiteral("Path");
+}
+
+QString protocol_path_compact_display_text(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    const auto converted_layers = protocol_path_layers_from_predicate(layers);
+    const ProtocolPath path {converted_layers};
+    return QString::fromStdString(session_detail::format_protocol_path_compact_display_text(path));
+}
+
 std::optional<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection> advanced_flow_filter_section_from_int(
     const int section
 ) {
@@ -585,6 +644,7 @@ std::optional<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection> ad
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::ip_addresses:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::service:
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::protocol_path:
         return static_cast<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection>(section);
     default:
         return std::nullopt;
@@ -616,6 +676,8 @@ bool advanced_flow_filter_section_enabled(
         return states.traffic;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::service:
         return states.service;
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::protocol_path:
+        return states.protocol_path;
     }
 
     return false;
@@ -646,6 +708,8 @@ bool* advanced_flow_filter_section_enabled_mutable(
         return &states.traffic;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::service:
         return &states.service;
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::protocol_path:
+        return &states.protocol_path;
     }
 
     return nullptr;
@@ -722,6 +786,15 @@ bool AdvancedFlowFilterEditorModel::sectionHasExclusions(const int section) cons
             spec.service.exclude.begin(),
             spec.service.exclude.end(),
             [](const auto&) { return true; });
+    case AdvancedFlowFilterFiniteSection::protocol_path:
+        return document_state_.is_editing()
+            ? !protocol_path_exclude_rows_.empty()
+            : std::any_of(
+                  spec.protocol_path.exclude.begin(),
+                  spec.protocol_path.exclude.end(),
+                  [](const auto& predicate) {
+                      return protocol_path_predicate_is_ui_managed(predicate);
+                  });
     }
 
     return false;
@@ -751,6 +824,7 @@ QVariantList AdvancedFlowFilterEditorModel::includeOptions(const int section) co
     case AdvancedFlowFilterFiniteSection::ip_addresses:
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
+    case AdvancedFlowFilterFiniteSection::protocol_path:
         return {};
     }
 
@@ -781,6 +855,7 @@ QVariantList AdvancedFlowFilterEditorModel::excludeOptions(const int section) co
     case AdvancedFlowFilterFiniteSection::ip_addresses:
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
+    case AdvancedFlowFilterFiniteSection::protocol_path:
         return {};
     }
 
@@ -851,6 +926,10 @@ QVariantList AdvancedFlowFilterEditorModel::serviceOperatorOptions() const {
 
 QVariantList AdvancedFlowFilterEditorModel::serviceTextRows(const bool exclude) const {
     return buildServiceTextRowList(exclude);
+}
+
+QVariantList AdvancedFlowFilterEditorModel::protocolPathRows(const bool exclude) const {
+    return buildProtocolPathRowList(exclude);
 }
 
 void AdvancedFlowFilterEditorModel::setTrafficMinText(const int metric, const QString& text) {
@@ -1122,6 +1201,7 @@ void AdvancedFlowFilterEditorModel::setOptionChecked(
     case AdvancedFlowFilterFiniteSection::ip_addresses:
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
+    case AdvancedFlowFilterFiniteSection::protocol_path:
         break;
     }
 
@@ -1264,6 +1344,68 @@ void AdvancedFlowFilterEditorModel::setAddressRowPrefixText(const bool exclude, 
     notifyTextFieldEdited();
 }
 
+void AdvancedFlowFilterEditorModel::removeProtocolPathRow(const bool exclude, const int row) {
+    ensureEditingInitialized();
+    auto& rows = exclude ? protocol_path_exclude_rows_ : protocol_path_include_rows_;
+    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+        return;
+    }
+
+    rows.erase(rows.begin() + row);
+    (void)synchronizeDraftSections();
+    notifyRowsChanged();
+}
+
+void AdvancedFlowFilterEditorModel::setProtocolPathApplicabilityResolver(
+    std::function<std::optional<bool>(const session_detail::AdvancedFlowFilterProtocolPathPredicate&)> resolver
+) {
+    protocol_path_applicability_resolver_ = std::move(resolver);
+    refreshProtocolPathApplicability();
+}
+
+void AdvancedFlowFilterEditorModel::upsertProtocolPathRow(
+    const bool exclude,
+    const int row,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate,
+    const ProtocolPathStatisticsMode selectorMode
+) {
+    ensureEditingInitialized();
+    if (!protocol_path_predicate_is_ui_managed(predicate)) {
+        return;
+    }
+
+    auto& rows = exclude ? protocol_path_exclude_rows_ : protocol_path_include_rows_;
+    AdvancedFlowFilterProtocolPathEditorRow editor_row {
+        .predicate = predicate,
+        .selector_mode = selectorMode,
+        .applicable = protocol_path_applicability_resolver_
+            ? protocol_path_applicability_resolver_(predicate)
+            : std::nullopt,
+    };
+    if (row >= 0 && static_cast<std::size_t>(row) < rows.size()) {
+        rows[static_cast<std::size_t>(row)] = std::move(editor_row);
+    } else {
+        rows.push_back(std::move(editor_row));
+    }
+
+    (void)synchronizeDraftSections();
+    notifyRowsChanged();
+}
+
+void AdvancedFlowFilterEditorModel::refreshProtocolPathApplicability() {
+    const auto refresh_rows = [&](auto& rows) {
+        for (auto& row : rows) {
+            row.applicable = protocol_path_applicability_resolver_
+                ? protocol_path_applicability_resolver_(row.predicate)
+                : std::nullopt;
+        }
+    };
+
+    refresh_rows(protocol_path_include_rows_);
+    refresh_rows(protocol_path_exclude_rows_);
+    notifyStateChanged();
+}
+
 void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     const auto& document = document_state_.current_user_visible_document();
     port_include_rows_.clear();
@@ -1277,6 +1419,8 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     service_exclude_unknown_ = false;
     service_include_text_rows_.clear();
     service_exclude_text_rows_.clear();
+    protocol_path_include_rows_.clear();
+    protocol_path_exclude_rows_.clear();
 
     const auto append_port_rows =
         [](const auto& predicates, std::vector<AdvancedFlowFilterPortEditorRow>& rows) {
@@ -1380,6 +1524,25 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
         service_exclude_text_rows_
     );
 
+    const auto append_protocol_path_rows =
+        [&](const auto& predicates, std::vector<AdvancedFlowFilterProtocolPathEditorRow>& rows) {
+            for (const auto& predicate : predicates) {
+                if (!protocol_path_predicate_is_ui_managed(predicate)) {
+                    continue;
+                }
+
+                rows.push_back(AdvancedFlowFilterProtocolPathEditorRow {
+                    .predicate = predicate,
+                    .selector_mode = protocol_path_selector_mode_from_predicate(predicate),
+                    .applicable = protocol_path_applicability_resolver_
+                        ? protocol_path_applicability_resolver_(predicate)
+                        : std::nullopt,
+                });
+            }
+        };
+    append_protocol_path_rows(document.configured_spec.protocol_path.include, protocol_path_include_rows_);
+    append_protocol_path_rows(document.configured_spec.protocol_path.exclude, protocol_path_exclude_rows_);
+
     editing_initialized_ = true;
     clearValidationText();
     notifyStateChanged();
@@ -1397,6 +1560,8 @@ void AdvancedFlowFilterEditorModel::clearTransientState() noexcept {
     service_exclude_unknown_ = false;
     service_include_text_rows_.clear();
     service_exclude_text_rows_.clear();
+    protocol_path_include_rows_.clear();
+    protocol_path_exclude_rows_.clear();
     editing_initialized_ = false;
     validation_text_.clear();
     notifyStateChanged();
@@ -1412,6 +1577,19 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSections(QString* errorText)
     }
 
     auto updated_ports = draft_document->configured_spec.ports;
+    auto updated_protocol_path = draft_document->configured_spec.protocol_path;
+    const auto strip_ui_managed_protocol_path_predicates = [](auto& predicates) {
+        predicates.erase(
+            std::remove_if(
+                predicates.begin(),
+                predicates.end(),
+                [](const auto& predicate) { return protocol_path_predicate_is_ui_managed(predicate); }
+            ),
+            predicates.end()
+        );
+    };
+    strip_ui_managed_protocol_path_predicates(updated_protocol_path.include);
+    strip_ui_managed_protocol_path_predicates(updated_protocol_path.exclude);
     const auto append_port_rows =
         [&](const std::vector<AdvancedFlowFilterPortEditorRow>& rows,
             const bool exclude,
@@ -1834,10 +2012,18 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSections(QString* errorText)
         append_service_rows(service_exclude_text_rows_, true);
     }
 
+    for (const auto& row : protocol_path_include_rows_) {
+        updated_protocol_path.include.push_back(row.predicate);
+    }
+    for (const auto& row : protocol_path_exclude_rows_) {
+        updated_protocol_path.exclude.push_back(row.predicate);
+    }
+
     draft_document->configured_spec.ports = std::move(updated_ports);
     draft_document->configured_spec.addresses = std::move(updated_addresses);
     draft_document->configured_spec.aggregate = std::move(updated_aggregate);
     draft_document->configured_spec.service = std::move(updated_service);
+    draft_document->configured_spec.protocol_path = std::move(updated_protocol_path);
     return true;
 }
 
@@ -2046,6 +2232,53 @@ QVariantList AdvancedFlowFilterEditorModel::buildServiceTextRowList(const bool e
         value.insert(QStringLiteral("kind"), static_cast<int>(row.kind));
         value.insert(QStringLiteral("caseSensitive"), row.case_sensitive);
         value.insert(QStringLiteral("text"), row.text);
+        result.push_back(value);
+    }
+    return result;
+}
+
+QVariantList AdvancedFlowFilterEditorModel::buildProtocolPathRowList(const bool exclude) const {
+    std::vector<AdvancedFlowFilterProtocolPathEditorRow> fallback_rows {};
+    const auto* rows = exclude ? &protocol_path_exclude_rows_ : &protocol_path_include_rows_;
+    if (!document_state_.is_editing() || !editing_initialized_) {
+        const auto& predicates = exclude
+            ? document_state_.current_user_visible_document().configured_spec.protocol_path.exclude
+            : document_state_.current_user_visible_document().configured_spec.protocol_path.include;
+        for (const auto& predicate : predicates) {
+            if (!protocol_path_predicate_is_ui_managed(predicate)) {
+                continue;
+            }
+
+            fallback_rows.push_back(AdvancedFlowFilterProtocolPathEditorRow {
+                .predicate = predicate,
+                .selector_mode = protocol_path_selector_mode_from_predicate(predicate),
+                .applicable = protocol_path_applicability_resolver_
+                    ? protocol_path_applicability_resolver_(predicate)
+                    : std::nullopt,
+            });
+        }
+        rows = &fallback_rows;
+    }
+
+    QVariantList result {};
+    result.reserve(static_cast<qsizetype>(rows->size()));
+    for (std::size_t index = 0; index < rows->size(); ++index) {
+        const auto& row = (*rows)[index];
+        QVariantMap value {};
+        value.insert(QStringLiteral("row"), static_cast<int>(index));
+        value.insert(QStringLiteral("mode"), static_cast<int>(row.selector_mode));
+        value.insert(QStringLiteral("modeLabel"), protocol_path_selector_mode_label(row.selector_mode));
+        value.insert(QStringLiteral("compactText"), protocol_path_compact_display_text(row.predicate.layers));
+        value.insert(QStringLiteral("applicabilityKnown"), row.applicable.has_value());
+        value.insert(QStringLiteral("applicable"), row.applicable.value_or(false));
+        value.insert(
+            QStringLiteral("statusText"),
+            !row.applicable.has_value()
+                ? QStringLiteral("No current capture.")
+                : (row.applicable.value()
+                    ? QString {}
+                    : QStringLiteral("Not present in current capture"))
+        );
         result.push_back(value);
     }
     return result;

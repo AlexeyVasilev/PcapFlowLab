@@ -17,6 +17,7 @@
 #include "../../../core/open_progress.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/AdvancedFlowFilterEditorModel.h"
+#include "ui/app/AdvancedFlowFilterProtocolPathSelectorModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
 #include "ui/app/ProtocolPathStatsModel.h"
@@ -320,6 +321,7 @@ private:
     Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterClearAvailable READ advancedFlowFilterClearAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(QObject* advancedFlowFilterEditor READ advancedFlowFilterEditor CONSTANT)
+    Q_PROPERTY(QObject* advancedFlowFilterProtocolPathSelector READ advancedFlowFilterProtocolPathSelector CONSTANT)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
@@ -594,6 +596,7 @@ public:
     [[nodiscard]] int advancedFlowFilterEditorRevision() const noexcept;
     [[nodiscard]] QString advancedFlowFilterEditorValidationText() const;
     [[nodiscard]] QObject* advancedFlowFilterEditor() noexcept;
+    [[nodiscard]] QObject* advancedFlowFilterProtocolPathSelector() noexcept;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
 
@@ -654,6 +657,7 @@ public:
     Q_INVOKABLE QVariantList advancedFlowFilterAddressScopeOptions() const;
     Q_INVOKABLE QVariantList advancedFlowFilterPortRows(bool exclude) const;
     Q_INVOKABLE QVariantList advancedFlowFilterAddressRows(bool exclude) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterProtocolPathRows(bool exclude) const;
     Q_INVOKABLE void setAdvancedFlowFilterSectionEnabled(int section, bool enabled);
     Q_INVOKABLE void setAdvancedFlowFilterOptionChecked(int section, int value, bool exclude, bool checked);
     Q_INVOKABLE void addAdvancedFlowFilterPortRow(bool exclude);
@@ -668,6 +672,9 @@ public:
     Q_INVOKABLE void setAdvancedFlowFilterAddressRowSubnetEnabled(bool exclude, int row, bool enabled);
     Q_INVOKABLE void setAdvancedFlowFilterAddressRowAddressText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void setAdvancedFlowFilterAddressRowPrefixText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void beginAdvancedFlowFilterProtocolPathSelection(bool exclude, int row);
+    Q_INVOKABLE bool applyAdvancedFlowFilterProtocolPathSelection();
+    Q_INVOKABLE void removeAdvancedFlowFilterProtocolPathRow(bool exclude, int row);
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -773,6 +780,7 @@ private:
     void clearSelectedFlowAnalysis();
     void applyActiveFlowFilterModeToModel();
     void refreshAdvancedFlowFilter();
+    void refreshAdvancedFlowFilterProtocolPathApplicability();
     std::vector<int> smartExportCurrentFilterFlowIndices(bool matching) const;
     void clearPacketSelection();
     void clearStreamSelection();
@@ -862,6 +870,7 @@ private:
     FlowListModel flow_model_ {};
     session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
     AdvancedFlowFilterEditorModel advanced_flow_filter_editor_model_;
+    AdvancedFlowFilterProtocolPathSelectorModel advanced_flow_filter_protocol_path_selector_model_ {};
     ProtocolPathStatsModel protocol_path_stats_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
@@ -910,6 +919,8 @@ private:
     std::uint64_t active_protocol_path_filter_node_id_ {kInvalidProtocolPathStatisticsNodeId};
     QString active_protocol_path_filter_label_ {};
     std::vector<int> active_protocol_path_filter_flow_indices_ {};
+    bool advanced_flow_filter_protocol_path_selector_exclude_ {false};
+    int advanced_flow_filter_protocol_path_selector_row_ {-1};
     bool is_opening_ {false};
     bool is_applying_session_ {false};
     bool packets_loading_ {false};

@@ -44,6 +44,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "ui/app/AdvancedFlowFilterEditorModel.h"
+#include "ui/app/AdvancedFlowFilterProtocolPathSelectorModel.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
@@ -886,6 +887,25 @@ pfl::session_detail::AdvancedFlowFilterDocument make_service_text_entry_document
         .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
     });
     return document;
+}
+
+bool protocol_path_layers_have_identifiers(
+    const std::vector<pfl::session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    return std::any_of(layers.begin(), layers.end(), [](const auto& layer) {
+        return layer.identifier.has_value() &&
+            layer.identifier->kind != pfl::ProtocolLayerIdentifierKind::none;
+    });
+}
+
+const pfl::session_detail::AdvancedFlowFilterProtocolLayerPredicate* find_protocol_path_predicate_layer(
+    const pfl::session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate,
+    const pfl::ProtocolLayerKind kind
+) {
+    const auto it = std::find_if(predicate.layers.begin(), predicate.layers.end(), [&](const auto& layer) {
+        return layer.kind == kind;
+    });
+    return it == predicate.layers.end() ? nullptr : &*it;
 }
 
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
@@ -5099,6 +5119,243 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
         UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
+    });
+
+    run_ui_section("advanced_flow_filter_settings_editor_protocol_path", [&]() {
+        using MatchKind = pfl::session_detail::AdvancedFlowFilterProtocolPathMatchKind;
+
+        constexpr int protocol_path_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::protocol_path);
+        const auto selector_capture_path =
+            ui_test_root() / "data" / "parsing" / "vxlan" / "10_vxlan_same_inner_tuple_different_vni.pcap";
+        const auto applicability_capture_path =
+            ui_test_root() / "data" / "parsing" / "vxlan" / "13_vxlan_inner_vlan_ipv4_tcp.pcap";
+
+        MainController protocol_path_editor_controller {};
+        UI_EXPECT(open_capture_and_wait(app, protocol_path_editor_controller, selector_capture_path));
+        protocol_path_editor_controller.useAdvancedFlowFilter();
+
+        auto* protocol_path_editor_flow_model =
+            qobject_cast<FlowListModel*>(protocol_path_editor_controller.flowModel());
+        auto* protocol_path_stats_model =
+            qobject_cast<ProtocolPathStatsModel*>(protocol_path_editor_controller.protocolPathStatsModel());
+        auto* protocol_path_selector =
+            qobject_cast<pfl::AdvancedFlowFilterProtocolPathSelectorModel*>(
+                protocol_path_editor_controller.advancedFlowFilterProtocolPathSelector());
+        auto* protocol_path_selector_stats_model =
+            protocol_path_selector != nullptr
+                ? qobject_cast<ProtocolPathStatsModel*>(protocol_path_selector->statsModel())
+                : nullptr;
+        UI_REQUIRE(protocol_path_editor_flow_model != nullptr);
+        UI_REQUIRE(protocol_path_stats_model != nullptr);
+        UI_REQUIRE(protocol_path_selector != nullptr);
+        UI_REQUIRE(protocol_path_selector_stats_model != nullptr);
+
+        auto main_window = load_main_qml_component(protocol_path_editor_controller);
+        auto* settings_button = named_object(main_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* advanced_settings_dialog = named_object(main_window.object.get(), "advancedFlowFilterSettingsDialog");
+        auto* selector_dialog = named_object(main_window.object.get(), "advancedFlowFilterProtocolPathSelectorDialog");
+        UI_REQUIRE(settings_button != nullptr);
+        UI_REQUIRE(advanced_settings_dialog != nullptr);
+        UI_REQUIRE(selector_dialog != nullptr);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return advanced_settings_dialog->property("visible").toBool()
+                && popup_visual_item(advanced_settings_dialog, "advancedFlowFilterProtocolPathSection") != nullptr
+                && popup_visual_item(advanced_settings_dialog, "advancedFlowFilterProtocolPathEnabledCheckBox") != nullptr
+                && popup_visual_item(advanced_settings_dialog, "advancedFlowFilterProtocolPathAddIncludeButton") != nullptr
+                && popup_visual_item(advanced_settings_dialog, "advancedFlowFilterProtocolPathExclusionsToggleButton") != nullptr;
+        }));
+
+        auto* add_include_button =
+            popup_visual_item(advanced_settings_dialog, "advancedFlowFilterProtocolPathAddIncludeButton");
+        UI_REQUIRE(add_include_button != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(add_include_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return selector_dialog->property("visible").toBool()
+                && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathSelectorListView") != nullptr
+                && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathKindOverviewModeButton") != nullptr
+                && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathIdentityTreeModeButton") != nullptr
+                && popup_visual_item(selector_dialog, "advancedFlowFilterProtocolPathTerminalPathsModeButton") != nullptr
+                && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorCancelButton") != nullptr
+                && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorSelectButton") != nullptr;
+        }));
+        UI_REQUIRE(QMetaObject::invokeMethod(selector_dialog, "close"));
+        UI_REQUIRE(QMetaObject::invokeMethod(advanced_settings_dialog, "close"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        const int protocol_path_statistics_section =
+            static_cast<int>(MainController::StatisticsOptionalSection::protocol_path);
+        protocol_path_editor_controller.setCurrentTabIndex(2);
+        protocol_path_editor_controller.setStatisticsSectionExpanded(protocol_path_statistics_section, true);
+        protocol_path_editor_controller.setStatisticsMode(1);
+        protocol_path_stats_model->expandAll();
+        const auto baseline_identity_row = find_protocol_path_stats_row_by_path_text(
+            protocol_path_stats_model,
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)"));
+        UI_REQUIRE(baseline_identity_row >= 0);
+        const auto baseline_identity_node_id = protocol_path_stats_model->data(
+            protocol_path_stats_model->index(baseline_identity_row, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        protocol_path_stats_model->selectNode(baseline_identity_node_id);
+        const auto baseline_statistics_mode = protocol_path_editor_controller.statisticsMode();
+        const auto baseline_statistics_row_count = protocol_path_stats_model->rowCount();
+        UI_EXPECT(protocol_path_stats_model->selectedNodeId() == baseline_identity_node_id);
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterEdit();
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterProtocolPathSelection(false, -1);
+        protocol_path_selector->setMode(static_cast<int>(ProtocolPathStatisticsMode::kind_overview));
+        const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
+            protocol_path_selector_stats_model,
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN"));
+        UI_REQUIRE(kind_vxlan_row >= 0);
+        const auto kind_vxlan_node_id = protocol_path_selector_stats_model->data(
+            protocol_path_selector_stats_model->index(kind_vxlan_row, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        protocol_path_selector->selectNode(kind_vxlan_node_id);
+        const auto kind_predicate = protocol_path_selector->selectedPredicate();
+        UI_REQUIRE(kind_predicate.has_value());
+        UI_EXPECT(kind_predicate->match_kind == MatchKind::path_prefix);
+        UI_EXPECT(!protocol_path_layers_have_identifiers(kind_predicate->layers));
+        UI_EXPECT(protocol_path_editor_controller.applyAdvancedFlowFilterProtocolPathSelection());
+        auto include_row = advanced_filter_row_at(
+            protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(false),
+            0);
+        UI_EXPECT(include_row.value(QStringLiteral("mode")).toInt()
+            == static_cast<int>(ProtocolPathStatisticsMode::kind_overview));
+        UI_EXPECT(include_row.value(QStringLiteral("modeLabel")).toString() == QStringLiteral("Kind"));
+        UI_EXPECT(include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("VXLAN")));
+        UI_EXPECT(!include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("VNI")));
+        UI_EXPECT(!include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("200")));
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString().isEmpty());
+        UI_EXPECT(protocol_path_editor_controller.statisticsMode() == baseline_statistics_mode);
+        UI_EXPECT(protocol_path_stats_model->selectedNodeId() == baseline_identity_node_id);
+        UI_EXPECT(protocol_path_stats_model->rowCount() == baseline_statistics_row_count);
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterProtocolPathSelection(false, 0);
+        UI_EXPECT(protocol_path_selector->mode() == static_cast<int>(ProtocolPathStatisticsMode::kind_overview));
+        protocol_path_selector->setMode(static_cast<int>(ProtocolPathStatisticsMode::identity_tree));
+        const auto identity_vni_200_row = find_protocol_path_stats_row_by_path_text(
+            protocol_path_selector_stats_model,
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4"));
+        UI_REQUIRE(identity_vni_200_row >= 0);
+        const auto identity_vni_200_node_id = protocol_path_selector_stats_model->data(
+            protocol_path_selector_stats_model->index(identity_vni_200_row, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        protocol_path_selector->selectNode(identity_vni_200_node_id);
+        const auto identity_predicate = protocol_path_selector->selectedPredicate();
+        UI_REQUIRE(identity_predicate.has_value());
+        UI_EXPECT(identity_predicate->match_kind == MatchKind::path_prefix);
+        UI_EXPECT(protocol_path_layers_have_identifiers(identity_predicate->layers));
+        const auto* identity_vxlan_layer =
+            find_protocol_path_predicate_layer(*identity_predicate, pfl::ProtocolLayerKind::vxlan);
+        UI_REQUIRE(identity_vxlan_layer != nullptr);
+        UI_REQUIRE(identity_vxlan_layer->identifier.has_value());
+        UI_EXPECT(identity_vxlan_layer->identifier->kind == pfl::ProtocolLayerIdentifierKind::vxlan_vni);
+        UI_EXPECT(identity_vxlan_layer->identifier->value == 200U);
+        UI_EXPECT(protocol_path_editor_controller.applyAdvancedFlowFilterProtocolPathSelection());
+        include_row = advanced_filter_row_at(
+            protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(false),
+            0);
+        UI_EXPECT(include_row.value(QStringLiteral("mode")).toInt()
+            == static_cast<int>(ProtocolPathStatisticsMode::identity_tree));
+        UI_EXPECT(include_row.value(QStringLiteral("modeLabel")).toString() == QStringLiteral("Identity"));
+        UI_EXPECT(include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("VXLAN")));
+        UI_EXPECT(include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("VNI")));
+        UI_EXPECT(include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("200")));
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString().isEmpty());
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterProtocolPathSelection(false, 0);
+        UI_EXPECT(protocol_path_selector->mode() == static_cast<int>(ProtocolPathStatisticsMode::identity_tree));
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterProtocolPathSelection(true, -1);
+        protocol_path_selector->setMode(static_cast<int>(ProtocolPathStatisticsMode::terminal_paths));
+        const auto terminal_vni_100_row = find_protocol_path_stats_row_by_path_text(
+            protocol_path_selector_stats_model,
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+        UI_REQUIRE(terminal_vni_100_row >= 0);
+        const auto terminal_vni_100_node_id = protocol_path_selector_stats_model->data(
+            protocol_path_selector_stats_model->index(terminal_vni_100_row, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        protocol_path_selector->selectNode(terminal_vni_100_node_id);
+        const auto terminal_predicate = protocol_path_selector->selectedPredicate();
+        UI_REQUIRE(terminal_predicate.has_value());
+        UI_EXPECT(terminal_predicate->match_kind == MatchKind::exact_path);
+        UI_EXPECT(protocol_path_layers_have_identifiers(terminal_predicate->layers));
+        UI_EXPECT(protocol_path_editor_controller.applyAdvancedFlowFilterProtocolPathSelection());
+        auto exclude_row = advanced_filter_row_at(
+            protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(true),
+            0);
+        UI_EXPECT(exclude_row.value(QStringLiteral("mode")).toInt()
+            == static_cast<int>(ProtocolPathStatisticsMode::terminal_paths));
+        UI_EXPECT(exclude_row.value(QStringLiteral("modeLabel")).toString() == QStringLiteral("Terminal"));
+        UI_EXPECT(exclude_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("VXLAN")));
+        UI_EXPECT(exclude_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("VNI")));
+        UI_EXPECT(exclude_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("100")));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterSectionHasExclusions(protocol_path_section_id));
+
+        UI_EXPECT(protocol_path_editor_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(protocol_path_editor_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(protocol_path_editor_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+        UI_EXPECT(protocol_path_editor_flow_model->rowCount() == 1);
+        const auto visible_protocol_path_index = protocol_path_editor_flow_model->index(0, 0);
+        UI_EXPECT(
+            protocol_path_editor_flow_model->data(visible_protocol_path_index, FlowListModel::ProtocolPathTextRole)
+                .toString() ==
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP"));
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterSectionEnabled(protocol_path_section_id));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterSectionHasExclusions(protocol_path_section_id));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(false).size() == 1);
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(true).size() == 1);
+        protocol_path_editor_controller.setAdvancedFlowFilterSectionEnabled(protocol_path_section_id, false);
+        UI_EXPECT(protocol_path_editor_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(!protocol_path_editor_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(protocol_path_editor_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!protocol_path_editor_controller.advancedFlowFilterSectionEnabled(protocol_path_section_id));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(false).size() == 1);
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(true).size() == 1);
+        protocol_path_editor_controller.setAdvancedFlowFilterSectionEnabled(protocol_path_section_id, true);
+        protocol_path_editor_controller.removeAdvancedFlowFilterProtocolPathRow(true, 0);
+        UI_EXPECT(!protocol_path_editor_controller.advancedFlowFilterSectionHasExclusions(protocol_path_section_id));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        protocol_path_editor_controller.cancelAdvancedFlowFilterEdit();
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!protocol_path_editor_controller.advancedFlowFilterSectionEnabled(protocol_path_section_id));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(true).size() == 1);
+        protocol_path_editor_controller.setAdvancedFlowFilterSectionEnabled(protocol_path_section_id, true);
+        protocol_path_editor_controller.removeAdvancedFlowFilterProtocolPathRow(true, 0);
+        UI_EXPECT(protocol_path_editor_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(protocol_path_editor_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+
+        UI_EXPECT(open_capture_and_wait(app, protocol_path_editor_controller, applicability_capture_path));
+        UI_EXPECT(protocol_path_editor_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::advanced));
+        UI_EXPECT(protocol_path_editor_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(protocol_path_editor_flow_model->visibleFlowCount() == 0);
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(protocol_path_editor_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+
+        protocol_path_editor_controller.beginAdvancedFlowFilterEdit();
+        include_row = advanced_filter_row_at(
+            protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(false),
+            0);
+        UI_EXPECT(include_row.value(QStringLiteral("mode")).toInt()
+            == static_cast<int>(ProtocolPathStatisticsMode::identity_tree));
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString()
+            == QStringLiteral("Not present in current capture"));
+        protocol_path_editor_controller.cancelAdvancedFlowFilterEdit();
     });
 
     run_ui_section("advanced_flow_filter_controller_execution", [&]() {

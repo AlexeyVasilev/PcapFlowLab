@@ -127,6 +127,53 @@ QString advanced_filter_source_stem_text(const std::filesystem::path& path) {
     return filename.empty() ? QStringLiteral("Custom filter") : QString::fromStdWString(filename);
 }
 
+bool protocol_path_layers_have_identifiers(const std::vector<LayerKey>& layers) noexcept {
+    return std::any_of(layers.begin(), layers.end(), [](const LayerKey& layer) {
+        return layer.identifier.kind != ProtocolLayerIdentifierKind::none;
+    });
+}
+
+std::vector<LayerKey> protocol_path_layers_from_predicate(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    std::vector<LayerKey> converted {};
+    converted.reserve(layers.size());
+    for (const auto& layer : layers) {
+        converted.push_back(LayerKey {
+            .kind = layer.kind,
+            .identifier = layer.identifier.value_or(ProtocolLayerIdentifier {}),
+        });
+    }
+    return converted;
+}
+
+ProtocolPathStatisticsMode protocol_path_selector_mode_for_predicate(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path) {
+        return ProtocolPathStatisticsMode::terminal_paths;
+    }
+
+    return protocol_path_layers_have_identifiers(protocol_path_layers_from_predicate(predicate.layers))
+        ? ProtocolPathStatisticsMode::identity_tree
+        : ProtocolPathStatisticsMode::kind_overview;
+}
+
+std::optional<bool> protocol_path_predicate_applicability(
+    const CaptureSession& session,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    if (!session.has_capture()) {
+        return std::nullopt;
+    }
+
+    const auto summary = session.protocol_path_summary(protocol_path_selector_mode_for_predicate(predicate));
+    const auto predicate_layers = protocol_path_layers_from_predicate(predicate.layers);
+    return std::any_of(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.path.layers() == predicate_layers;
+    });
+}
+
 struct OpenJobResult {
     bool opened {false};
     bool cancelled {false};
@@ -2050,10 +2097,15 @@ std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_la
 MainController::MainController(QObject* parent)
     : QObject(parent)
     , advanced_flow_filter_editor_model_(advanced_flow_filter_document_state_, this)
+    , advanced_flow_filter_protocol_path_selector_model_(this)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
     flow_model_.setProtocolPathPresentationResolver([this](const ProtocolPathId protocol_path_id) {
         return session_detail::build_protocol_path_presentation(session_.state().protocol_path_registry, protocol_path_id);
+    });
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
+    advanced_flow_filter_editor_model_.setProtocolPathApplicabilityResolver([this](const auto& predicate) {
+        return protocol_path_predicate_applicability(session_, predicate);
     });
 
     QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
@@ -3541,6 +3593,10 @@ QObject* MainController::advancedFlowFilterEditor() noexcept {
     return &advanced_flow_filter_editor_model_;
 }
 
+QObject* MainController::advancedFlowFilterProtocolPathSelector() noexcept {
+    return &advanced_flow_filter_protocol_path_selector_model_;
+}
+
 bool MainController::advancedFlowFilterDraftClearAllAvailable() const noexcept {
     return advanced_flow_filter_editor_model_.draftClearAllAvailable();
 }
@@ -3575,6 +3631,10 @@ QVariantList MainController::advancedFlowFilterPortRows(const bool exclude) cons
 
 QVariantList MainController::advancedFlowFilterAddressRows(const bool exclude) const {
     return advanced_flow_filter_editor_model_.addressRows(exclude);
+}
+
+QVariantList MainController::advancedFlowFilterProtocolPathRows(const bool exclude) const {
+    return advanced_flow_filter_editor_model_.protocolPathRows(exclude);
 }
 
 int MainController::flowSortColumn() const noexcept {
@@ -4552,6 +4612,7 @@ void MainController::clearAdvancedFlowFilter() {
 void MainController::beginAdvancedFlowFilterEdit() {
     advanced_flow_filter_document_state_.begin_edit();
     advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+    refreshAdvancedFlowFilterProtocolPathApplicability();
 }
 
 void MainController::cancelAdvancedFlowFilterEdit() {
@@ -4561,6 +4622,8 @@ void MainController::cancelAdvancedFlowFilterEdit() {
 
     advanced_flow_filter_document_state_.cancel_edit();
     advanced_flow_filter_editor_model_.clearTransientState();
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
 }
 
 bool MainController::applyAdvancedFlowFilterEdit() {
@@ -4575,6 +4638,8 @@ bool MainController::applyAdvancedFlowFilterEdit() {
     }
 
     advanced_flow_filter_editor_model_.clearTransientState();
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
     refreshAdvancedFlowFilter();
     return true;
 }
@@ -4638,6 +4703,56 @@ void MainController::setAdvancedFlowFilterAddressRowAddressText(const bool exclu
 
 void MainController::setAdvancedFlowFilterAddressRowPrefixText(const bool exclude, const int row, const QString& text) {
     advanced_flow_filter_editor_model_.setAddressRowPrefixText(exclude, row, text);
+}
+
+void MainController::beginAdvancedFlowFilterProtocolPathSelection(const bool exclude, const int row) {
+    advanced_flow_filter_protocol_path_selector_exclude_ = exclude;
+    advanced_flow_filter_protocol_path_selector_row_ = row;
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
+    const auto current_rows = advanced_flow_filter_editor_model_.protocolPathRows(exclude);
+    if (row >= 0 && row < current_rows.size()) {
+        auto* draft_document = advanced_flow_filter_document_state_.draft_document();
+        if (draft_document != nullptr) {
+            const auto& predicates = exclude
+                ? draft_document->configured_spec.protocol_path.exclude
+                : draft_document->configured_spec.protocol_path.include;
+            int ui_index = -1;
+            for (const auto& predicate : predicates) {
+                if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer) {
+                    continue;
+                }
+                ++ui_index;
+                if (ui_index == row) {
+                    advanced_flow_filter_protocol_path_selector_model_.selectPredicate(predicate);
+                    return;
+                }
+            }
+        }
+    }
+
+    advanced_flow_filter_protocol_path_selector_model_.setMode(kProtocolPathStatisticsModeKindOverview);
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+}
+
+bool MainController::applyAdvancedFlowFilterProtocolPathSelection() {
+    const auto predicate = advanced_flow_filter_protocol_path_selector_model_.selectedPredicate();
+    if (!predicate.has_value()) {
+        return false;
+    }
+
+    advanced_flow_filter_editor_model_.upsertProtocolPathRow(
+        advanced_flow_filter_protocol_path_selector_exclude_,
+        advanced_flow_filter_protocol_path_selector_row_,
+        *predicate,
+        static_cast<ProtocolPathStatisticsMode>(advanced_flow_filter_protocol_path_selector_model_.mode())
+    );
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    return true;
+}
+
+void MainController::removeAdvancedFlowFilterProtocolPathRow(const bool exclude, const int row) {
+    advanced_flow_filter_editor_model_.removeProtocolPathRow(exclude, row);
 }
 
 void MainController::sortFlows(const int column) {
@@ -5684,6 +5799,7 @@ void MainController::applyAdvancedFlowFilterDocument(const session_detail::Advan
     advanced_flow_filter_document_state_.accept_custom_document(document);
     if (advanced_flow_filter_document_state_.is_editing()) {
         advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+        refreshAdvancedFlowFilterProtocolPathApplicability();
     } else {
         advanced_flow_filter_editor_model_.clearTransientState();
     }
@@ -6235,6 +6351,11 @@ void MainController::refreshAdvancedFlowFilter() {
     synchronizeFlowSelection();
 }
 
+void MainController::refreshAdvancedFlowFilterProtocolPathApplicability() {
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
+    advanced_flow_filter_editor_model_.refreshProtocolPathApplicability();
+}
+
 std::vector<int> MainController::smartExportCurrentFilterFlowIndices(const bool matching) const {
     std::optional<std::vector<std::size_t>> candidate_flow_indices {};
     if (has_active_protocol_path_filter_) {
@@ -6408,6 +6529,7 @@ void MainController::resetLoadedState() {
     current_input_path_.clear();
     finishOpenProgress();
     session_ = {};
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
     protocol_summary_ = {};
     unrecognized_packet_statistics_ = {};
     whole_capture_packet_count_ = 0U;
@@ -6449,11 +6571,13 @@ void MainController::resetLoadedState() {
     current_flow_analysis_.reset();
     setAnalysisSequenceExportState(false, {}, false);
     emit protocolPathFlowFilterChanged();
+    refreshAdvancedFlowFilterProtocolPathApplicability();
 }
 
 void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
     protocol_summary_ = session_.protocol_summary();
     unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
     const auto whole_capture_packet_size_statistics = session_.packet_size_statistics();
@@ -6478,6 +6602,7 @@ void MainController::applyLoadedState(const QString& path) {
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
     emit protocolPathFlowFilterChanged();
+    refreshAdvancedFlowFilterProtocolPathApplicability();
 }
 
 void MainController::refreshTopSummaryModels() {

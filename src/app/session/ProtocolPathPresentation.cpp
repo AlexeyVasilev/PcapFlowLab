@@ -231,6 +231,19 @@ std::string format_protocol_path_layer_display_text(const LayerKey& layer) {
     return text;
 }
 
+std::string format_protocol_path_compact_display_text(const ProtocolPath& path) {
+    std::ostringstream compact_text {};
+    bool first_layer = true;
+    for (const auto& layer : path.layers()) {
+        if (!first_layer) {
+            compact_text << " | ";
+        }
+        first_layer = false;
+        compact_text << format_protocol_path_layer_display_text(layer);
+    }
+    return compact_text.str();
+}
+
 ProtocolPathPresentation build_protocol_path_presentation(const ProtocolPath* path) {
     if (path == nullptr || path->empty()) {
         return unknown_protocol_path_presentation();

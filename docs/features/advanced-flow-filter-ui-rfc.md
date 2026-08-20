@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for finite checkbox sections, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, and the Service state/text-rule editor. Open/Save workflows, deferred editor sections beyond the currently implemented Qt subset, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for finite checkbox sections, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, and the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings. Open/Save workflows, deferred editor sections beyond the currently implemented Qt subset, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -30,7 +30,6 @@ Still deferred here:
 - Tauri parity details
 - final styling and polish
 - dedicated capture-level count-summary architecture
-- exact mapping/API between Protocol Path UI modes and backend match shapes
 
 ## Design Principles
 
@@ -1057,9 +1056,19 @@ Terminal paths:
 - selection represents one complete terminal path
 - it matches the complete selected path rather than a structural prefix
 
-The exact mapping from these UI selections into the existing backend
-`exact_path` / `path_prefix` representation must be verified during
-implementation, but the UI must not expose separate Exact/Prefix controls.
+The current Qt implementation maps these UI selections into the existing
+backend representation as follows:
+
+- Kind overview:
+  - `path_prefix`
+  - identifiers ignored/cleared from the stored predicate
+- Identity tree:
+  - `path_prefix`
+  - identifiers preserved exactly from the selected prefix
+- Terminal paths:
+  - `exact_path`
+
+The UI must not expose separate Exact/Prefix controls.
 
 ### Protocol Path Picker Data
 
@@ -1080,6 +1089,10 @@ where possible.
 If implementation reveals that a required statistics mode has a non-trivial
 first-use cost, that cost should be evaluated explicitly rather than silently
 adding another flow scan to the filter dialog.
+
+The current Qt implementation reuses `CaptureSession::protocol_path_summary(...)`
+through a selector-owned `ProtocolPathStatsModel` instance, so opening the
+selector does not introduce a second Advanced-Filter-specific path inventory.
 
 ### Selected Protocol Path Presentation
 
@@ -1728,8 +1741,6 @@ The exact helper/API for this count can be finalized during implementation.
 The following points remain intentionally open for future implementation
 discussion:
 
-- exact mapping/API between the three Protocol Path UI modes and the existing
-  backend `exact_path` / `path_prefix` representation
 - capture-level count-summary architecture
 - Qt implementation staging
 - Smart Export integration with Advanced-mode visibility/filter semantics

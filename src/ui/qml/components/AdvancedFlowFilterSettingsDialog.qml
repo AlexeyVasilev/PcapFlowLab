@@ -8,11 +8,13 @@ Dialog {
 
     property var controller: null
     readonly property var editor: root.controller ? root.controller.advancedFlowFilterEditor : null
+    readonly property var protocolPathSelector: root.controller ? root.controller.advancedFlowFilterProtocolPathSelector : null
     property bool applyingDraft: false
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
     readonly property int trafficSectionId: 8
     readonly property int serviceSectionId: 9
+    readonly property int protocolPathSectionId: 10
     readonly property int serviceKnownKind: 0
     readonly property int serviceUnknownKind: 1
 
@@ -36,6 +38,15 @@ Dialog {
         return 0
     }
 
+    function openProtocolPathSelector(exclude, row) {
+        if (!root.controller || !root.protocolPathSelector || !root.protocolPathSelector.hasCapture) {
+            return
+        }
+
+        root.controller.beginAdvancedFlowFilterProtocolPathSelection(exclude, row)
+        protocolPathSelectorDialog.open()
+    }
+
     width: 920
     height: 700
     modal: true
@@ -52,6 +63,7 @@ Dialog {
     }
 
     onClosed: {
+        protocolPathSelectorDialog.close()
         if (!applyingDraft && controller) {
             controller.cancelAdvancedFlowFilterEdit()
         }
@@ -1669,6 +1681,273 @@ Dialog {
                                 }
                             }
                         }
+
+                        Rectangle {
+                            id: protocolPathSection
+                            readonly property bool sectionEnabledState: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.protocolPathSectionId)
+                            }
+                            readonly property var includeRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.protocolPathRows(false)
+                            }
+                            readonly property var excludeRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.protocolPathRows(true)
+                            }
+
+                            objectName: "advancedFlowFilterProtocolPathSection"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: implicitHeight
+                            implicitHeight: protocolPathSectionLayout.implicitHeight + 28
+                            radius: 8
+                            color: "white"
+                            border.color: "#dbe4f0"
+
+                            property bool exclusionsExpanded: false
+
+                            function initializeExclusionsVisibility() {
+                                exclusionsExpanded = root.editor
+                                    ? root.editor.sectionHasExclusions(root.protocolPathSectionId)
+                                    : false
+                            }
+
+                            Component.onCompleted: initializeExclusionsVisibility()
+
+                            Connections {
+                                target: root
+
+                                function onInitializeDialogState() {
+                                    protocolPathSection.initializeExclusionsVisibility()
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: protocolPathSectionLayout
+                                x: 14
+                                y: 14
+                                width: parent.width - 28
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: "Protocol Path"
+                                        color: "#0f172a"
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                    }
+
+                                    CheckBox {
+                                        objectName: "advancedFlowFilterProtocolPathEnabledCheckBox"
+                                        text: "Enabled"
+                                        checked: protocolPathSection.sectionEnabledState
+                                        onToggled: {
+                                            if (root.editor) {
+                                                root.editor.setSectionEnabled(root.protocolPathSectionId, checked)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    enabled: protocolPathSection.sectionEnabledState
+                                    opacity: protocolPathSection.sectionEnabledState ? 1.0 : 0.55
+
+                                    Label {
+                                        text: "Include"
+                                        color: "#475569"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+
+                                    Repeater {
+                                        model: protocolPathSection.includeRows
+
+                                        delegate: Rectangle {
+                                            required property var modelData
+
+                                            Layout.fillWidth: true
+                                            implicitHeight: includeProtocolPathColumn.implicitHeight + 12
+                                            color: "#f8fafc"
+                                            border.color: "#e2e8f0"
+                                            radius: 6
+
+                                            ColumnLayout {
+                                                id: includeProtocolPathColumn
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 4
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Label {
+                                                        objectName: "advancedFlowFilterProtocolPathIncludeRow" + modelData.row + "ModeLabel"
+                                                        text: "[" + modelData.modeLabel + "]"
+                                                        color: "#1d4ed8"
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        objectName: "advancedFlowFilterProtocolPathIncludeRow" + modelData.row + "TextLabel"
+                                                        Layout.fillWidth: true
+                                                        text: modelData.compactText
+                                                        color: "#0f172a"
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    Button {
+                                                        objectName: "advancedFlowFilterProtocolPathIncludeRow" + modelData.row + "EditButton"
+                                                        text: "Edit"
+                                                        enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
+                                                        onClicked: root.openProtocolPathSelector(false, modelData.row)
+                                                    }
+
+                                                    Button {
+                                                        objectName: "advancedFlowFilterProtocolPathIncludeRow" + modelData.row + "RemoveButton"
+                                                        text: "Remove"
+                                                        onClicked: {
+                                                            if (root.controller) {
+                                                                root.controller.removeAdvancedFlowFilterProtocolPathRow(false, modelData.row)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    objectName: "advancedFlowFilterProtocolPathIncludeRow" + modelData.row + "StatusLabel"
+                                                    Layout.fillWidth: true
+                                                    visible: text.length > 0
+                                                    text: modelData.statusText
+                                                    color: "#b45309"
+                                                    font.pixelSize: 12
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterProtocolPathAddIncludeButton"
+                                        text: "+ Add path"
+                                        enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
+                                        onClicked: root.openProtocolPathSelector(false, -1)
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterProtocolPathExclusionsToggleButton"
+                                        text: protocolPathSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
+                                        onClicked: protocolPathSection.exclusionsExpanded = !protocolPathSection.exclusionsExpanded
+                                    }
+
+                                    ColumnLayout {
+                                        objectName: "advancedFlowFilterProtocolPathExclusionsSection"
+                                        Layout.fillWidth: true
+                                        visible: protocolPathSection.exclusionsExpanded
+                                        spacing: 10
+
+                                        Label {
+                                            text: "Exclude"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Repeater {
+                                            model: protocolPathSection.excludeRows
+
+                                            delegate: Rectangle {
+                                                required property var modelData
+
+                                                Layout.fillWidth: true
+                                                implicitHeight: excludeProtocolPathColumn.implicitHeight + 12
+                                                color: "#f8fafc"
+                                                border.color: "#e2e8f0"
+                                                radius: 6
+
+                                                ColumnLayout {
+                                                    id: excludeProtocolPathColumn
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    spacing: 4
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Label {
+                                                            objectName: "advancedFlowFilterProtocolPathExcludeRow" + modelData.row + "ModeLabel"
+                                                            text: "[" + modelData.modeLabel + "]"
+                                                            color: "#1d4ed8"
+                                                            font.bold: true
+                                                        }
+
+                                                        Label {
+                                                            objectName: "advancedFlowFilterProtocolPathExcludeRow" + modelData.row + "TextLabel"
+                                                            Layout.fillWidth: true
+                                                            text: modelData.compactText
+                                                            color: "#0f172a"
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        Button {
+                                                            objectName: "advancedFlowFilterProtocolPathExcludeRow" + modelData.row + "EditButton"
+                                                            text: "Edit"
+                                                            enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
+                                                            onClicked: root.openProtocolPathSelector(true, modelData.row)
+                                                        }
+
+                                                        Button {
+                                                            objectName: "advancedFlowFilterProtocolPathExcludeRow" + modelData.row + "RemoveButton"
+                                                            text: "Remove"
+                                                            onClicked: {
+                                                                if (root.controller) {
+                                                                    root.controller.removeAdvancedFlowFilterProtocolPathRow(true, modelData.row)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Label {
+                                                        objectName: "advancedFlowFilterProtocolPathExcludeRow" + modelData.row + "StatusLabel"
+                                                        Layout.fillWidth: true
+                                                        visible: text.length > 0
+                                                        text: modelData.statusText
+                                                        color: "#b45309"
+                                                        font.pixelSize: 12
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Button {
+                                            objectName: "advancedFlowFilterProtocolPathAddExcludeButton"
+                                            text: "+ Add path"
+                                            enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
+                                            onClicked: root.openProtocolPathSelector(true, -1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1681,6 +1960,19 @@ Dialog {
                 color: "#b91c1c"
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
+            }
+        }
+    }
+
+    AdvancedFlowFilterProtocolPathSelectorDialog {
+        id: protocolPathSelectorDialog
+        parent: root.parent
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
+        selector: root.protocolPathSelector
+        onSelectRequested: {
+            if (root.controller && root.controller.applyAdvancedFlowFilterProtocolPathSelection()) {
+                close()
             }
         }
     }

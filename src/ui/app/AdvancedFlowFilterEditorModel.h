@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
+#include <optional>
 #include <vector>
 
 #include <QObject>
@@ -9,6 +11,7 @@
 
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
+#include "app/session/FlowRows.h"
 
 namespace pfl {
 
@@ -30,6 +33,7 @@ public:
         ip_addresses,
         traffic,
         service,
+        protocol_path,
     };
 
     enum class AdvancedFlowFilterTrafficMetric {
@@ -85,6 +89,7 @@ public:
     Q_INVOKABLE bool serviceStateChecked(bool exclude, int stateKind) const noexcept;
     Q_INVOKABLE QVariantList serviceOperatorOptions() const;
     Q_INVOKABLE QVariantList serviceTextRows(bool exclude) const;
+    Q_INVOKABLE QVariantList protocolPathRows(bool exclude) const;
     Q_INVOKABLE void setServiceStateChecked(bool exclude, int stateKind, bool checked);
     Q_INVOKABLE void addServiceTextRow(bool exclude);
     Q_INVOKABLE void removeServiceTextRow(bool exclude, int row);
@@ -105,11 +110,22 @@ public:
     Q_INVOKABLE void setAddressRowSubnetEnabled(bool exclude, int row, bool enabled);
     Q_INVOKABLE void setAddressRowAddressText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void setAddressRowPrefixText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void removeProtocolPathRow(bool exclude, int row);
 
     void initializeFromCurrentDocument();
     void clearTransientState() noexcept;
     [[nodiscard]] bool synchronizeDraftSections(QString* errorText = nullptr);
     void setValidationText(const QString& text);
+    void setProtocolPathApplicabilityResolver(
+        std::function<std::optional<bool>(const session_detail::AdvancedFlowFilterProtocolPathPredicate&)> resolver
+    );
+    void upsertProtocolPathRow(
+        bool exclude,
+        int row,
+        const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate,
+        ProtocolPathStatisticsMode selectorMode
+    );
+    void refreshProtocolPathApplicability();
 
 signals:
     void revisionChanged();
@@ -146,6 +162,12 @@ private:
         QString text {};
     };
 
+    struct AdvancedFlowFilterProtocolPathEditorRow {
+        session_detail::AdvancedFlowFilterProtocolPathPredicate predicate {};
+        ProtocolPathStatisticsMode selector_mode {ProtocolPathStatisticsMode::kind_overview};
+        std::optional<bool> applicable {};
+    };
+
     void ensureEditingInitialized();
     void clearValidationText();
     void notifyRowsChanged();
@@ -155,6 +177,7 @@ private:
     [[nodiscard]] QVariantList buildAddressRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildTrafficRowList(bool additional) const;
     [[nodiscard]] QVariantList buildServiceTextRowList(bool exclude) const;
+    [[nodiscard]] QVariantList buildProtocolPathRowList(bool exclude) const;
 
     session_detail::AdvancedFlowFilterDocumentState& document_state_;
     int revision_ {0};
@@ -170,6 +193,10 @@ private:
     bool service_exclude_unknown_ {false};
     std::vector<AdvancedFlowFilterServiceTextEditorRow> service_include_text_rows_ {};
     std::vector<AdvancedFlowFilterServiceTextEditorRow> service_exclude_text_rows_ {};
+    std::vector<AdvancedFlowFilterProtocolPathEditorRow> protocol_path_include_rows_ {};
+    std::vector<AdvancedFlowFilterProtocolPathEditorRow> protocol_path_exclude_rows_ {};
+    std::function<std::optional<bool>(const session_detail::AdvancedFlowFilterProtocolPathPredicate&)>
+        protocol_path_applicability_resolver_ {};
     QString validation_text_ {};
 };
 
