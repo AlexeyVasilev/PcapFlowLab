@@ -131,6 +131,17 @@ void AdvancedFlowFilterDocumentState::accept_saved_document(
     accept_file_backed_document(document, path);
 }
 
+void AdvancedFlowFilterDocumentState::accept_custom_document(const AdvancedFlowFilterDocument& document) {
+    assert_invariant();
+    applied_document_ = document;
+    saved_baseline_.reset();
+    source_path_.reset();
+    if (draft_document_.has_value()) {
+        *draft_document_ = document;
+    }
+    assert_invariant();
+}
+
 void AdvancedFlowFilterDocumentState::clear_all() {
     assert_invariant();
     applied_document_ = {};

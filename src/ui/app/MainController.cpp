@@ -17,6 +17,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <span>
@@ -95,6 +96,22 @@ QString format_rule_count_text(const std::size_t count) {
     return count == 1U
         ? QStringLiteral("1 rule")
         : QStringLiteral("%1 rules").arg(QString::number(count));
+}
+
+bool is_advanced_filter_status_text(const QString& text) {
+    return text.startsWith(QStringLiteral("Advanced filter"));
+}
+
+QString format_advanced_filter_application_error(const session_detail::AdvancedFlowQueryResult& query_result) {
+    QString text = QStringLiteral("Advanced filter could not be applied to the current capture or index.");
+    if (query_result.compile_issue.has_value() && !query_result.compile_issue->category.empty()) {
+        text += QStringLiteral(" Category: %1").arg(QString::fromStdString(query_result.compile_issue->category));
+        if (query_result.compile_issue->predicate_index.has_value()) {
+            text += QStringLiteral(" #%1").arg(QString::number(*query_result.compile_issue->predicate_index + 1U));
+        }
+        text += QLatin1Char('.');
+    }
+    return text;
 }
 
 QString advanced_filter_source_stem_text(const std::filesystem::path& path) {
@@ -4088,11 +4105,11 @@ bool MainController::exportSmartFlows(
         break;
     }
     case kSmartExportFlowScopeMatchingCurrentFilter:
-        flow_indices = flow_model_.visibleFlowIndices();
+        flow_indices = smartExportCurrentFilterFlowIndices(true);
         empty_selection_message = QStringLiteral("No flows match the current filter for smart export.");
         break;
     case kSmartExportFlowScopeNotMatchingCurrentFilter:
-        flow_indices = flow_model_.hiddenFlowIndices();
+        flow_indices = smartExportCurrentFilterFlowIndices(false);
         empty_selection_message = QStringLiteral("No flows remain outside the current filter for smart export.");
         break;
     case kSmartExportFlowScopeUnrecognizedPackets:
@@ -4470,6 +4487,7 @@ void MainController::clearAdvancedFlowFilter() {
     }
 
     advanced_flow_filter_document_state_.clear_all();
+    refreshAdvancedFlowFilter();
     emit advancedFlowFilterPresentationChanged();
 }
 
@@ -4946,6 +4964,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
+        applyActiveFlowFilterModeToModel();
         if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
             protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
         }
@@ -5512,6 +5531,12 @@ void MainController::setFlowFilterText(const QString& text) {
     emit flowFilterTextChanged();
 }
 
+void MainController::applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document) {
+    advanced_flow_filter_document_state_.accept_custom_document(document);
+    refreshAdvancedFlowFilter();
+    emit advancedFlowFilterPresentationChanged();
+}
+
 bool MainController::ensureSourceCaptureAvailable(const QString& unavailableActionText) {
     if (!session_.has_capture()) {
         return false;
@@ -5970,12 +5995,156 @@ void MainController::clearSelectedFlowAnalysis() {
 
 void MainController::applyActiveFlowFilterModeToModel() {
     if (flow_filter_mode_ == FlowFilterMode::simple) {
+        flow_model_.clearAdvancedFilterFlowIndices();
         flow_model_.setFilterText(simple_flow_filter_text_);
-    } else {
-        flow_model_.setFilterText({});
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        synchronizeFlowSelection();
+        return;
+    }
+
+    flow_model_.setFilterText({});
+    refreshAdvancedFlowFilter();
+}
+
+void MainController::refreshAdvancedFlowFilter() {
+    if (flow_filter_mode_ != FlowFilterMode::advanced || !session_.has_capture()) {
+        flow_model_.clearAdvancedFilterFlowIndices();
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        synchronizeFlowSelection();
+        return;
+    }
+
+    const auto effective_spec = session_detail::make_effective_advanced_flow_filter_spec(
+        advanced_flow_filter_document_state_.applied_document()
+    );
+    if (session_detail::count_advanced_flow_filter_atomic_rules(effective_spec) == 0U) {
+        flow_model_.clearAdvancedFilterFlowIndices();
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        synchronizeFlowSelection();
+        return;
+    }
+
+    std::optional<std::vector<std::size_t>> candidate_flow_indices {};
+    if (has_active_protocol_path_filter_) {
+        candidate_flow_indices.emplace();
+        candidate_flow_indices->reserve(active_protocol_path_filter_flow_indices_.size());
+        for (const auto flow_index : active_protocol_path_filter_flow_indices_) {
+            if (flow_index < 0) {
+                flow_model_.clearAdvancedFilterFlowIndices();
+                setStatusText(QStringLiteral("Advanced filter could not be applied because a candidate flow index is invalid."), true);
+                synchronizeFlowSelection();
+                return;
+            }
+            candidate_flow_indices->push_back(static_cast<std::size_t>(flow_index));
+        }
+    }
+
+    const auto query_result = session_.query_advanced_flows(effective_spec, candidate_flow_indices, std::nullopt, std::nullopt);
+    switch (query_result.status) {
+    case session_detail::AdvancedFlowQueryStatus::ok: {
+        std::vector<int> matching_flow_indices {};
+        matching_flow_indices.reserve(query_result.ordered_flow_indices.size());
+        for (const auto flow_index : query_result.ordered_flow_indices) {
+            if (flow_index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                flow_model_.clearAdvancedFilterFlowIndices();
+                setStatusText(QStringLiteral("Advanced filter produced a flow index that is out of range."), true);
+                synchronizeFlowSelection();
+                return;
+            }
+            matching_flow_indices.push_back(static_cast<int>(flow_index));
+        }
+        flow_model_.setAdvancedFilterFlowIndices(std::move(matching_flow_indices));
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        break;
+    }
+    case session_detail::AdvancedFlowQueryStatus::invalid_advanced_filter:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(format_advanced_filter_application_error(query_result), true);
+        break;
+    case session_detail::AdvancedFlowQueryStatus::invalid_flow_index:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(QStringLiteral("Advanced filter could not be applied because a candidate flow index is invalid."), true);
+        break;
+    case session_detail::AdvancedFlowQueryStatus::invalid_limit:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(QStringLiteral("Advanced filter could not be applied because the limit is invalid."), true);
+        break;
     }
 
     synchronizeFlowSelection();
+}
+
+std::vector<int> MainController::smartExportCurrentFilterFlowIndices(const bool matching) const {
+    std::optional<std::vector<std::size_t>> candidate_flow_indices {};
+    if (has_active_protocol_path_filter_) {
+        candidate_flow_indices.emplace();
+        candidate_flow_indices->reserve(active_protocol_path_filter_flow_indices_.size());
+        for (const auto flow_index : active_protocol_path_filter_flow_indices_) {
+            if (flow_index < 0) {
+                return {};
+            }
+            candidate_flow_indices->push_back(static_cast<std::size_t>(flow_index));
+        }
+    }
+
+    const auto flow_query_result = session_.query_flows(session_detail::FlowQuery {
+        .selected_flow_indices = candidate_flow_indices,
+        .text_filter = simple_flow_filter_text_.toStdString(),
+        .sort = std::nullopt,
+        .limit = std::nullopt,
+    });
+    if (flow_query_result.status != session_detail::FlowQueryStatus::ok) {
+        return {};
+    }
+
+    std::vector<int> matching_flow_indices {};
+    matching_flow_indices.reserve(flow_query_result.ordered_flow_indices.size());
+    for (const auto flow_index : flow_query_result.ordered_flow_indices) {
+        if (flow_index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            return {};
+        }
+        matching_flow_indices.push_back(static_cast<int>(flow_index));
+    }
+    if (matching) {
+        return matching_flow_indices;
+    }
+
+    std::vector<int> candidate_indices {};
+    if (has_active_protocol_path_filter_) {
+        candidate_indices = active_protocol_path_filter_flow_indices_;
+    } else {
+        const auto rows = session_.list_flows();
+        candidate_indices.reserve(rows.size());
+        for (const auto& row : rows) {
+            if (row.index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                return {};
+            }
+            candidate_indices.push_back(static_cast<int>(row.index));
+        }
+    }
+
+    std::sort(candidate_indices.begin(), candidate_indices.end());
+    candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+    std::sort(matching_flow_indices.begin(), matching_flow_indices.end());
+
+    std::vector<int> hidden_flow_indices {};
+    hidden_flow_indices.reserve(candidate_indices.size());
+    std::set_difference(
+        candidate_indices.begin(),
+        candidate_indices.end(),
+        matching_flow_indices.begin(),
+        matching_flow_indices.end(),
+        std::back_inserter(hidden_flow_indices)
+    );
+    return hidden_flow_indices;
 }
 
 void MainController::clearPacketSelection() {

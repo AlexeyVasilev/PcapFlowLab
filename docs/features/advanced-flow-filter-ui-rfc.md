@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The initial Qt-visible shell pass is now implemented for Simple/Advanced mode switching, controller-owned document state, and the staged Advanced toolbar shell. Advanced Filter Settings editing, Open/Save workflows, section editors, evaluator application in Qt, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, and applied Advanced Filter evaluation into the flow list. Advanced Filter Settings editing, Open/Save workflows, section editors, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -36,6 +36,8 @@ Still deferred here:
 
 - Simple Filter and Advanced Filter are separate modes and are never applied
   together.
+- During the current staging period, Advanced mode composes with the existing
+  Statistics -> Protocol Path flow restriction by intersection.
 - The normal Flows table width must be preserved; the full Advanced Filter
   editor is not shown beside the flow table.
 - Editing uses an explicit draft model so users can cancel without losing the
@@ -162,6 +164,16 @@ Behavior:
 
 This means Advanced Filter UI behavior is document-oriented, but mode switching
 alone is not document-destructive.
+
+During the current Qt implementation stage, switching into Advanced mode
+applies the current applied document by evaluating the effective Advanced
+Filter against the active capture and constraining the visible flow list.
+
+If the separate Statistics -> Protocol Path flow restriction is active, the
+visible result is the intersection of:
+
+- the applied Advanced Filter result
+- the Statistics Protocol Path allowed-flow set
 
 Protocol Path and Contains Layer are independently Enabled sections in the
 configured document.
@@ -1670,6 +1682,7 @@ discussion:
   backend `exact_path` / `path_prefix` representation
 - capture-level count-summary architecture
 - Qt implementation staging
+- Smart Export integration with Advanced-mode visibility/filter semantics
 - Tauri parity
 - final styling and polish, including exact spacing, exact dialog wording, and
   any later reordering of common versus additional traffic rows

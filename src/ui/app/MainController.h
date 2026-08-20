@@ -665,6 +665,7 @@ public:
     void setSelectedPacketIndex(qulonglong packetIndex);
     void setSelectedStreamItemIndex(qulonglong streamItemIndex);
     void setFlowFilterText(const QString& text);
+    void applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document);
 
 signals:
     void stateChanged();
@@ -738,6 +739,8 @@ private:
     void refreshSelectedFlowAnalysis();
     void clearSelectedFlowAnalysis();
     void applyActiveFlowFilterModeToModel();
+    void refreshAdvancedFlowFilter();
+    std::vector<int> smartExportCurrentFilterFlowIndices(bool matching) const;
     void clearPacketSelection();
     void clearStreamSelection();
     void clearFlowSelection();

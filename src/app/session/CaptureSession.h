@@ -10,6 +10,7 @@
 #include <vector>
 #include <array>
 
+#include "app/session/AdvancedFlowFilter.h"
 #include "app/session/ByteExport.h"
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathTextExport.h"
@@ -231,6 +232,12 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
     [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
+    [[nodiscard]] session_detail::AdvancedFlowQueryResult query_advanced_flows(
+        const session_detail::AdvancedFlowFilterSpec& filter_spec,
+        const std::optional<std::vector<std::size_t>>& candidate_flow_indices = std::nullopt,
+        std::optional<session_detail::FlowQuerySortSpec> sort = std::nullopt,
+        std::optional<std::size_t> limit = std::nullopt
+    ) const;
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
     [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
         const PacketRef& packet

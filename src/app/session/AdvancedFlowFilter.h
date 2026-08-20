@@ -406,6 +406,22 @@ struct AdvancedFlowFilterResult {
     std::optional<std::size_t> invalid_candidate_index {};
 };
 
+enum class AdvancedFlowQueryStatus : std::uint8_t {
+    ok = 0,
+    invalid_flow_index,
+    invalid_limit,
+    invalid_advanced_filter,
+};
+
+struct AdvancedFlowQueryResult {
+    AdvancedFlowQueryStatus status {AdvancedFlowQueryStatus::ok};
+    std::vector<std::size_t> ordered_flow_indices {};
+    std::size_t result_count_before_limit {0U};
+    std::optional<std::size_t> invalid_flow_index {};
+    AdvancedFlowFilterCompileStatus compile_status {AdvancedFlowFilterCompileStatus::ok};
+    std::optional<AdvancedFlowFilterCompileIssue> compile_issue {};
+};
+
 [[nodiscard]] AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
     const AdvancedFlowFilterSpec& spec,
     const ProtocolPathRegistry& protocol_path_registry,

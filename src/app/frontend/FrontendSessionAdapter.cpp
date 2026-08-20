@@ -2976,56 +2976,28 @@ FrontendAdvancedFlowQueryResult FrontendSessionAdapter::query_advanced_flows(
     const std::optional<session_detail::FlowQuerySortSpec> sort,
     const std::optional<std::size_t> limit
 ) const {
-    const auto analysis_settings = to_analysis_settings(settings_);
-    const auto compile_result = session_detail::compile_advanced_flow_filter(
-        filter_spec,
-        session_.state().protocol_path_registry,
-        analysis_settings
-    );
-    if (compile_result.status != session_detail::AdvancedFlowFilterCompileStatus::ok) {
-        return FrontendAdvancedFlowQueryResult {
-            .status = FrontendAdvancedFlowQueryStatus::invalid_advanced_filter,
-            .compile_status = compile_result.status,
-            .compile_issue = compile_result.issue,
-        };
-    }
-
-    const auto connections = session_detail::list_connections(session_.state());
-    const auto candidate_span = candidate_flow_indices.has_value()
-        ? std::optional<std::span<const std::size_t>> {
-            std::span<const std::size_t>(candidate_flow_indices->data(), candidate_flow_indices->size())
-        }
-        : std::nullopt;
-    const auto filter_result =
-        session_detail::evaluate_advanced_flow_filter(connections, compile_result.filter, candidate_span);
-    if (filter_result.status == session_detail::AdvancedFlowFilterEvaluationStatus::invalid_candidate_index) {
-        return FrontendAdvancedFlowQueryResult {
-            .status = FrontendAdvancedFlowQueryStatus::invalid_flow_index,
-            .invalid_flow_index = filter_result.invalid_candidate_index,
-        };
-    }
-
-    const auto flow_query_result = session_.query_flows(session_detail::FlowQuery {
-        .selected_flow_indices = filter_result.matching_flow_indices,
-        .text_filter = {},
-        .sort = sort,
-        .limit = limit,
-    });
-    switch (flow_query_result.status) {
-    case session_detail::FlowQueryStatus::ok:
+    const auto query_result = session_.query_advanced_flows(filter_spec, candidate_flow_indices, sort, limit);
+    switch (query_result.status) {
+    case session_detail::AdvancedFlowQueryStatus::ok:
         return FrontendAdvancedFlowQueryResult {
             .status = FrontendAdvancedFlowQueryStatus::ok,
-            .ordered_flow_indices = flow_query_result.ordered_flow_indices,
-            .result_count_before_limit = flow_query_result.result_count_before_limit,
+            .ordered_flow_indices = query_result.ordered_flow_indices,
+            .result_count_before_limit = query_result.result_count_before_limit,
         };
-    case session_detail::FlowQueryStatus::invalid_flow_index:
+    case session_detail::AdvancedFlowQueryStatus::invalid_flow_index:
         return FrontendAdvancedFlowQueryResult {
             .status = FrontendAdvancedFlowQueryStatus::invalid_flow_index,
-            .invalid_flow_index = flow_query_result.invalid_flow_index,
+            .invalid_flow_index = query_result.invalid_flow_index,
         };
-    case session_detail::FlowQueryStatus::invalid_limit:
+    case session_detail::AdvancedFlowQueryStatus::invalid_limit:
         return FrontendAdvancedFlowQueryResult {
             .status = FrontendAdvancedFlowQueryStatus::invalid_limit,
+        };
+    case session_detail::AdvancedFlowQueryStatus::invalid_advanced_filter:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::invalid_advanced_filter,
+            .compile_status = query_result.compile_status,
+            .compile_issue = query_result.compile_issue,
         };
     }
 

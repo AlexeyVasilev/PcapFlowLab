@@ -3998,6 +3998,67 @@ session_detail::FlowQueryResult CaptureSession::query_flows(const session_detail
     return session_detail::query_flow_indices(listed_connections(), analysis_settings_, query);
 }
 
+session_detail::AdvancedFlowQueryResult CaptureSession::query_advanced_flows(
+    const session_detail::AdvancedFlowFilterSpec& filter_spec,
+    const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
+    const std::optional<session_detail::FlowQuerySortSpec> sort,
+    const std::optional<std::size_t> limit
+) const {
+    const auto compile_result = session_detail::compile_advanced_flow_filter(
+        filter_spec,
+        state_.protocol_path_registry,
+        analysis_settings_
+    );
+    if (compile_result.status != session_detail::AdvancedFlowFilterCompileStatus::ok) {
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_advanced_filter,
+            .compile_status = compile_result.status,
+            .compile_issue = compile_result.issue,
+        };
+    }
+
+    const auto& connections = listed_connections();
+    const auto candidate_span = candidate_flow_indices.has_value()
+        ? std::optional<std::span<const std::size_t>> {
+            std::span<const std::size_t>(candidate_flow_indices->data(), candidate_flow_indices->size())
+        }
+        : std::nullopt;
+    const auto filter_result =
+        session_detail::evaluate_advanced_flow_filter(connections, compile_result.filter, candidate_span);
+    if (filter_result.status == session_detail::AdvancedFlowFilterEvaluationStatus::invalid_candidate_index) {
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_flow_index,
+            .invalid_flow_index = filter_result.invalid_candidate_index,
+        };
+    }
+
+    const auto flow_query_result = query_flows(session_detail::FlowQuery {
+        .selected_flow_indices = filter_result.matching_flow_indices,
+        .text_filter = {},
+        .sort = sort,
+        .limit = limit,
+    });
+    switch (flow_query_result.status) {
+    case session_detail::FlowQueryStatus::ok:
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::ok,
+            .ordered_flow_indices = flow_query_result.ordered_flow_indices,
+            .result_count_before_limit = flow_query_result.result_count_before_limit,
+        };
+    case session_detail::FlowQueryStatus::invalid_flow_index:
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_flow_index,
+            .invalid_flow_index = flow_query_result.invalid_flow_index,
+        };
+    case session_detail::FlowQueryStatus::invalid_limit:
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_limit,
+        };
+    }
+
+    return session_detail::AdvancedFlowQueryResult {};
+}
+
 std::string CaptureSession::protocol_path_compact_text(const ProtocolPathId protocol_path_id) const {
     return session_detail::protocol_path_compact_text(state_.protocol_path_registry, protocol_path_id);
 }

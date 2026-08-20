@@ -34,6 +34,7 @@ public:
     [[nodiscard]] bool revert_to_saved_baseline();
     void accept_opened_document(const AdvancedFlowFilterDocument& document, const std::filesystem::path& path);
     void accept_saved_document(const AdvancedFlowFilterDocument& document, const std::filesystem::path& path);
+    void accept_custom_document(const AdvancedFlowFilterDocument& document);
     void clear_all();
 
 private:

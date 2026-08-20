@@ -654,6 +654,30 @@ std::vector<std::string> split_csv_line(const std::string& line) {
     return fields;
 }
 
+pfl::session_detail::AdvancedFlowFilterDocument make_flow_protocol_advanced_document(const pfl::ProtocolId protocol) {
+    pfl::session_detail::AdvancedFlowFilterDocument document {};
+    document.configured_spec.flow_protocol.include.push_back(protocol);
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_address_family_advanced_document(const pfl::FlowAddressFamily family) {
+    pfl::session_detail::AdvancedFlowFilterDocument document {};
+    document.configured_spec.address_family.include.push_back(family);
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_detected_protocol_advanced_document(const pfl::FlowProtocolHint hint) {
+    pfl::session_detail::AdvancedFlowFilterDocument document {};
+    document.configured_spec.detected_protocol.include.push_back(hint);
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_disabled_flow_protocol_advanced_document(const pfl::ProtocolId protocol) {
+    auto document = make_flow_protocol_advanced_document(protocol);
+    document.section_states.flow_protocol = false;
+    return document;
+}
+
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -680,6 +704,17 @@ int find_flow_index_by_service_hint(pfl::FlowListModel* model, const QString& se
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
         if (model->data(index, pfl::FlowListModel::ServiceHintRole).toString() == service_hint) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
+
+int find_flow_index_by_family(pfl::FlowListModel* model, const QString& family) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::FamilyRole).toString() == family) {
             return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
         }
     }
@@ -4102,6 +4137,141 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(advanced_filter_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
     });
 
+    run_ui_section("advanced_flow_filter_controller_execution", [&]() {
+        const auto ipv6_udp_flow_packet = make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+            54000,
+            443
+        );
+        const auto advanced_filter_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_execution.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 61, 0, 1), ipv4(10, 61, 0, 2), 51001, 80)},
+                {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 61, 0, 3), ipv4(10, 61, 0, 4), 53000, 53)},
+                {300U, ipv6_udp_flow_packet},
+            })
+        );
+        const auto advanced_filter_reopen_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_reopen.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 62, 0, 1), ipv4(10, 62, 0, 2), 54001, 443)},
+            })
+        );
+
+        MainController advanced_execution_controller {};
+        UI_EXPECT(open_capture_and_wait(app, advanced_execution_controller, advanced_filter_capture_path));
+        auto* advanced_execution_flow_model = qobject_cast<FlowListModel*>(advanced_execution_controller.flowModel());
+        auto* advanced_execution_stats_model =
+            qobject_cast<ProtocolPathStatsModel*>(advanced_execution_controller.protocolPathStatsModel());
+        UI_REQUIRE(advanced_execution_flow_model != nullptr);
+        UI_REQUIRE(advanced_execution_stats_model != nullptr);
+        UI_EXPECT(advanced_execution_flow_model->totalFlowCount() == 3);
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+
+        advanced_execution_controller.useAdvancedFlowFilter();
+        UI_EXPECT(advanced_execution_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::advanced));
+        UI_EXPECT(!advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!advanced_execution_flow_model->hasActiveFlowFilter());
+
+        advanced_execution_controller.applyAdvancedFlowFilterDocument(
+            make_address_family_advanced_document(FlowAddressFamily::ipv6)
+        );
+        UI_EXPECT(advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv6")) >= 0);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv4")) < 0);
+        UI_EXPECT(advanced_execution_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+
+        advanced_execution_controller.applyAdvancedFlowFilterDocument(
+            make_flow_protocol_advanced_document(ProtocolId::udp)
+        );
+        UI_EXPECT(advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(advanced_execution_flow_model->hasActiveFlowFilter());
+        UI_EXPECT(find_flow_index_by_protocol(advanced_execution_flow_model, QStringLiteral("UDP")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(advanced_execution_flow_model, QStringLiteral("TCP")) < 0);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv6")) >= 0);
+
+        advanced_execution_controller.setFlowFilterText(QStringLiteral("53000"));
+        UI_EXPECT(advanced_execution_controller.flowFilterText() == QStringLiteral("53000"));
+        UI_EXPECT(advanced_execution_flow_model->filterText().isEmpty());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_protocol(advanced_execution_flow_model, QStringLiteral("TCP")) < 0);
+
+        advanced_execution_controller.useSimpleFlowFilter();
+        UI_EXPECT(advanced_execution_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::simple));
+        UI_EXPECT(advanced_execution_flow_model->filterText() == QStringLiteral("53000"));
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv4")) >= 0);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv6")) < 0);
+        UI_EXPECT(!advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+
+        advanced_execution_controller.useAdvancedFlowFilter();
+        UI_EXPECT(advanced_execution_flow_model->filterText().isEmpty());
+        UI_EXPECT(advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_protocol(advanced_execution_flow_model, QStringLiteral("TCP")) < 0);
+
+        advanced_execution_controller.applyAdvancedFlowFilterDocument(
+            make_disabled_flow_protocol_advanced_document(ProtocolId::udp)
+        );
+        UI_EXPECT(!advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!advanced_execution_flow_model->hasActiveFlowFilter());
+
+        advanced_execution_controller.applyAdvancedFlowFilterDocument(
+            make_flow_protocol_advanced_document(ProtocolId::udp)
+        );
+        const int selected_ipv6_flow_index = find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv6"));
+        UI_REQUIRE(selected_ipv6_flow_index >= 0);
+        advanced_execution_controller.setSelectedFlowIndex(selected_ipv6_flow_index);
+        UI_EXPECT(advanced_execution_controller.selectedFlowIndex() == selected_ipv6_flow_index);
+        advanced_execution_controller.setCurrentTabIndex(2);
+        advanced_execution_controller.setStatisticsSectionExpanded(protocol_path_section, true);
+        advanced_execution_stats_model->expandAll();
+        const auto ipv4_row = find_protocol_path_stats_row_by_path_text(
+            advanced_execution_stats_model,
+            QStringLiteral("EthernetII -> IPv4")
+        );
+        UI_REQUIRE(ipv4_row >= 0);
+        const auto ipv4_node_id = advanced_execution_stats_model->data(
+            advanced_execution_stats_model->index(ipv4_row, 0),
+            ProtocolPathStatsModel::NodeIdRole
+        ).toULongLong();
+        advanced_execution_stats_model->selectNode(ipv4_node_id);
+        advanced_execution_controller.showSelectedProtocolPathFlows();
+        UI_EXPECT(advanced_execution_controller.hasProtocolPathFlowFilter());
+        UI_EXPECT(advanced_execution_flow_model->hasAllowedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv4")) >= 0);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv6")) < 0);
+        UI_EXPECT(advanced_execution_controller.selectedFlowIndex() == -1);
+
+        advanced_execution_controller.clearProtocolPathFlowFilter();
+        UI_EXPECT(!advanced_execution_controller.hasProtocolPathFlowFilter());
+        UI_EXPECT(!advanced_execution_flow_model->hasAllowedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_family(advanced_execution_flow_model, QStringLiteral("IPv6")) >= 0);
+
+        UI_EXPECT(open_capture_and_wait(app, advanced_execution_controller, advanced_filter_reopen_capture_path));
+        UI_EXPECT(advanced_execution_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::advanced));
+        UI_EXPECT(advanced_execution_controller.flowFilterText() == QStringLiteral("53000"));
+        UI_EXPECT(advanced_execution_flow_model->filterText().isEmpty());
+        UI_EXPECT(advanced_execution_flow_model->totalFlowCount() == 1);
+        UI_EXPECT(advanced_execution_flow_model->visibleFlowCount() == 0);
+        UI_EXPECT(advanced_execution_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_execution_flow_model->hasActiveFlowFilter());
+        UI_EXPECT(advanced_execution_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 0 of 1 flows."));
+    });
+
     protocol_path_and_text_controller.setStatisticsMode(0);
     protocol_path_and_text_stats_model->expandAll();
     const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
@@ -4299,6 +4469,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(model.hasActiveFlowFilter());
         UI_EXPECT(model.visibleFlowCount() == 1);
         UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+        UI_EXPECT(!model.hasAllowedFlowIndexFilter());
 
         const auto after_clearing_allowed = view_state_changed_count;
         model.setFilterText(QString());
@@ -4322,8 +4493,45 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
 
         const auto after_sort_key = view_state_changed_count;
-        model.setSortAscending(false);
+        model.setAdvancedFilterFlowIndices(std::vector<int> {0, 1});
         UI_EXPECT(view_state_changed_count > after_sort_key);
+        UI_EXPECT(model.hasAdvancedFlowIndexFilter());
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_advanced_passthrough = view_state_changed_count;
+        model.setAdvancedFilterFlowIndices(std::vector<int> {0});
+        UI_EXPECT(view_state_changed_count > after_advanced_passthrough);
+        UI_EXPECT(model.hasAdvancedFlowIndexFilter());
+        UI_EXPECT(model.visibleFlowCount() == 0);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 0 of 2 flows."));
+
+        const auto after_advanced_intersection = view_state_changed_count;
+        model.clearAllowedFlowIndices();
+        UI_EXPECT(view_state_changed_count > after_advanced_intersection);
+        UI_EXPECT(model.hasAdvancedFlowIndexFilter());
+        UI_EXPECT(!model.hasAllowedFlowIndexFilter());
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_clearing_statistics_filter = view_state_changed_count;
+        model.setFilterText(QStringLiteral("UDP"));
+        UI_EXPECT(view_state_changed_count > after_clearing_statistics_filter);
+        UI_EXPECT(model.visibleFlowCount() == 0);
+        UI_EXPECT(model.hasActiveFlowFilter());
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 0 of 2 flows."));
+
+        const auto after_text_and_advanced = view_state_changed_count;
+        model.clearAdvancedFilterFlowIndices();
+        UI_EXPECT(view_state_changed_count > after_text_and_advanced);
+        UI_EXPECT(!model.hasAdvancedFlowIndexFilter());
+        UI_EXPECT(model.visibleFlowCount() == 1);
+        UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
+
+        const auto after_clearing_advanced = view_state_changed_count;
+        model.setSortAscending(false);
+        UI_EXPECT(view_state_changed_count > after_clearing_advanced);
         UI_EXPECT(model.totalFlowCount() == 2);
         UI_EXPECT(model.visibleFlowCount() == 1);
         UI_EXPECT(model.filteredFlowCountText() == QStringLiteral("Filtered to 1 of 2 flows."));
@@ -4389,6 +4597,25 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(possible_hint_controller.protocolHintsSectionState() == section_ready);
     unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
     UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
+
+    possible_hint_controller.useAdvancedFlowFilter();
+    possible_hint_controller.applyAdvancedFlowFilterDocument(
+        make_detected_protocol_advanced_document(FlowProtocolHint::possible_tls)
+    );
+    UI_EXPECT(possible_hint_flow_model->hasAdvancedFlowIndexFilter());
+    UI_EXPECT(possible_hint_flow_model->visibleFlowCount() == 0);
+    UI_EXPECT(possible_hint_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 0 of 3 flows."));
+
+    possible_hint_controller.setUsePossibleTlsQuic(true);
+    UI_EXPECT(possible_hint_controller.usePossibleTlsQuic());
+    UI_EXPECT(possible_hint_flow_model->hasAdvancedFlowIndexFilter());
+    UI_EXPECT(possible_hint_flow_model->visibleFlowCount() == 1);
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) >= 0);
+
+    possible_hint_controller.setUsePossibleTlsQuic(false);
+    UI_EXPECT(!possible_hint_controller.usePossibleTlsQuic());
+    UI_EXPECT(possible_hint_flow_model->hasAdvancedFlowIndexFilter());
+    UI_EXPECT(possible_hint_flow_model->visibleFlowCount() == 0);
 
     const auto expect_checksum_fixture_summary = [&](const std::filesystem::path& fixture_path,
                                                      const QStringList& expected_snippets,
