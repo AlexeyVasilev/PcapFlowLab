@@ -7,6 +7,7 @@ Dialog {
     objectName: "advancedFlowFilterSettingsDialog"
 
     property var controller: null
+    readonly property var editor: root.controller ? root.controller.advancedFlowFilterEditor : null
     property bool applyingDraft: false
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
@@ -160,22 +161,22 @@ Dialog {
                                     if (!root.controller) {
                                         return false
                                     }
-                                    void(root.controller.advancedFlowFilterEditorRevision)
-                                    return root.controller.advancedFlowFilterSectionEnabled(sectionId)
+                                    void(root.editor.revision)
+                                    return root.editor.sectionEnabled(sectionId)
                                 }
                                 readonly property var includeOptions: {
-                                    if (!root.controller) {
+                                    if (!root.editor) {
                                         return []
                                     }
-                                    void(root.controller.advancedFlowFilterEditorRevision)
-                                    return root.controller.advancedFlowFilterIncludeOptions(sectionId)
+                                    void(root.editor.revision)
+                                    return root.editor.includeOptions(sectionId)
                                 }
                                 readonly property var excludeOptions: {
-                                    if (!root.controller) {
+                                    if (!root.editor) {
                                         return []
                                     }
-                                    void(root.controller.advancedFlowFilterEditorRevision)
-                                    return root.controller.advancedFlowFilterExcludeOptions(sectionId)
+                                    void(root.editor.revision)
+                                    return root.editor.excludeOptions(sectionId)
                                 }
 
                                 objectName: "advancedFlowFilter" + sectionObjectNamePrefix + "Section"
@@ -189,8 +190,8 @@ Dialog {
                                 property bool exclusionsExpanded: false
 
                                 function initializeExclusionsVisibility() {
-                                    exclusionsExpanded = root.controller
-                                        ? root.controller.advancedFlowFilterSectionHasExclusions(sectionId)
+                                    exclusionsExpanded = root.editor
+                                        ? root.editor.sectionHasExclusions(sectionId)
                                         : false
                                 }
 
@@ -228,8 +229,8 @@ Dialog {
                                             text: "Enabled"
                                             checked: finiteSectionCard.sectionEnabledState
                                             onToggled: {
-                                                if (root.controller) {
-                                                    root.controller.setAdvancedFlowFilterSectionEnabled(finiteSectionCard.sectionId, checked)
+                                                if (root.editor) {
+                                                    root.editor.setSectionEnabled(finiteSectionCard.sectionId, checked)
                                                 }
                                             }
                                         }
@@ -277,8 +278,8 @@ Dialog {
                                                     text: modelData.label
                                                     checked: modelData.checked
                                                     onToggled: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterOptionChecked(
+                                                        if (root.editor) {
+                                                            root.editor.setOptionChecked(
                                                                 finiteSectionCard.sectionId,
                                                                 modelData.value,
                                                                 false,
@@ -333,11 +334,11 @@ Dialog {
                                                         text: modelData.label
                                                         checked: modelData.checked
                                                         onToggled: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterOptionChecked(
-                                                                    finiteSectionCard.sectionId,
-                                                                    modelData.value,
-                                                                    true,
+                                                        if (root.editor) {
+                                                            root.editor.setOptionChecked(
+                                                                finiteSectionCard.sectionId,
+                                                                modelData.value,
+                                                                true,
                                                                     checked
                                                                 )
                                                             }
@@ -354,28 +355,28 @@ Dialog {
                         Rectangle {
                             id: portsSection
                             readonly property bool sectionEnabledState: {
-                                if (!root.controller) {
+                                if (!root.editor) {
                                     return false
                                 }
-                                void(root.controller.advancedFlowFilterEditorRevision)
-                                return root.controller.advancedFlowFilterSectionEnabled(root.portsSectionId)
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.portsSectionId)
                             }
-                            readonly property var scopeOptions: root.controller
-                                ? root.controller.advancedFlowFilterPortScopeOptions()
+                            readonly property var scopeOptions: root.editor
+                                ? root.editor.portScopeOptions()
                                 : []
                             readonly property var includeRows: {
-                                if (!root.controller) {
+                                if (!root.editor) {
                                     return []
                                 }
-                                void(root.controller.advancedFlowFilterEditorRevision)
-                                return root.controller.advancedFlowFilterPortRows(false)
+                                void(root.editor.revision)
+                                return root.editor.portRows(false)
                             }
                             readonly property var excludeRows: {
-                                if (!root.controller) {
+                                if (!root.editor) {
                                     return []
                                 }
-                                void(root.controller.advancedFlowFilterEditorRevision)
-                                return root.controller.advancedFlowFilterPortRows(true)
+                                void(root.editor.revision)
+                                return root.editor.portRows(true)
                             }
 
                             objectName: "advancedFlowFilterPortsSection"
@@ -389,8 +390,8 @@ Dialog {
                             property bool exclusionsExpanded: false
 
                             function initializeExclusionsVisibility() {
-                                exclusionsExpanded = root.controller
-                                    ? root.controller.advancedFlowFilterSectionHasExclusions(root.portsSectionId)
+                                exclusionsExpanded = root.editor
+                                    ? root.editor.sectionHasExclusions(root.portsSectionId)
                                     : false
                             }
 
@@ -428,8 +429,8 @@ Dialog {
                                         text: "Enabled"
                                         checked: portsSection.sectionEnabledState
                                         onToggled: {
-                                            if (root.controller) {
-                                                root.controller.setAdvancedFlowFilterSectionEnabled(root.portsSectionId, checked)
+                                            if (root.editor) {
+                                                root.editor.setSectionEnabled(root.portsSectionId, checked)
                                             }
                                         }
                                     }
@@ -474,8 +475,8 @@ Dialog {
                                                     textRole: "label"
                                                     currentIndex: root.optionIndex(model, modelData.scope)
                                                     onActivated: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterPortRowScope(false, modelData.row, model[currentIndex].value)
+                                                        if (root.editor) {
+                                                            root.editor.setPortRowScope(false, modelData.row, model[currentIndex].value)
                                                         }
                                                     }
                                                 }
@@ -485,8 +486,8 @@ Dialog {
                                                     text: "Range"
                                                     checked: modelData.rangeEnabled
                                                     onToggled: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterPortRowRangeEnabled(false, modelData.row, checked)
+                                                        if (root.editor) {
+                                                            root.editor.setPortRowRangeEnabled(false, modelData.row, checked)
                                                         }
                                                     }
                                                 }
@@ -504,8 +505,8 @@ Dialog {
                                                     text: modelData.primaryText
                                                     placeholderText: modelData.rangeEnabled ? "8000" : "443"
                                                     onTextEdited: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterPortRowPrimaryText(false, modelData.row, text)
+                                                        if (root.editor) {
+                                                            root.editor.setPortRowPrimaryText(false, modelData.row, text)
                                                         }
                                                     }
                                                 }
@@ -524,8 +525,8 @@ Dialog {
                                                     text: modelData.secondaryText
                                                     placeholderText: "9000"
                                                     onTextEdited: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterPortRowSecondaryText(false, modelData.row, text)
+                                                        if (root.editor) {
+                                                            root.editor.setPortRowSecondaryText(false, modelData.row, text)
                                                         }
                                                     }
                                                 }
@@ -534,8 +535,8 @@ Dialog {
                                                     objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "RemoveButton"
                                                     text: "Remove"
                                                     onClicked: {
-                                                        if (root.controller) {
-                                                            root.controller.removeAdvancedFlowFilterPortRow(false, modelData.row)
+                                                        if (root.editor) {
+                                                            root.editor.removePortRow(false, modelData.row)
                                                         }
                                                     }
                                                 }
@@ -547,8 +548,8 @@ Dialog {
                                         objectName: "advancedFlowFilterPortsAddIncludeButton"
                                         text: "+ Add port"
                                         onClicked: {
-                                            if (root.controller) {
-                                                root.controller.addAdvancedFlowFilterPortRow(false)
+                                            if (root.editor) {
+                                                root.editor.addPortRow(false)
                                             }
                                         }
                                     }
@@ -598,8 +599,8 @@ Dialog {
                                                         textRole: "label"
                                                         currentIndex: root.optionIndex(model, modelData.scope)
                                                         onActivated: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterPortRowScope(true, modelData.row, model[currentIndex].value)
+                                                            if (root.editor) {
+                                                                root.editor.setPortRowScope(true, modelData.row, model[currentIndex].value)
                                                             }
                                                         }
                                                     }
@@ -609,8 +610,8 @@ Dialog {
                                                         text: "Range"
                                                         checked: modelData.rangeEnabled
                                                         onToggled: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterPortRowRangeEnabled(true, modelData.row, checked)
+                                                            if (root.editor) {
+                                                                root.editor.setPortRowRangeEnabled(true, modelData.row, checked)
                                                             }
                                                         }
                                                     }
@@ -628,8 +629,8 @@ Dialog {
                                                         text: modelData.primaryText
                                                         placeholderText: modelData.rangeEnabled ? "1" : "53"
                                                         onTextEdited: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterPortRowPrimaryText(true, modelData.row, text)
+                                                            if (root.editor) {
+                                                                root.editor.setPortRowPrimaryText(true, modelData.row, text)
                                                             }
                                                         }
                                                     }
@@ -648,8 +649,8 @@ Dialog {
                                                         text: modelData.secondaryText
                                                         placeholderText: "1023"
                                                         onTextEdited: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterPortRowSecondaryText(true, modelData.row, text)
+                                                            if (root.editor) {
+                                                                root.editor.setPortRowSecondaryText(true, modelData.row, text)
                                                             }
                                                         }
                                                     }
@@ -658,8 +659,8 @@ Dialog {
                                                         objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "RemoveButton"
                                                         text: "Remove"
                                                         onClicked: {
-                                                            if (root.controller) {
-                                                                root.controller.removeAdvancedFlowFilterPortRow(true, modelData.row)
+                                                            if (root.editor) {
+                                                                root.editor.removePortRow(true, modelData.row)
                                                             }
                                                         }
                                                     }
@@ -671,8 +672,8 @@ Dialog {
                                             objectName: "advancedFlowFilterPortsAddExcludeButton"
                                             text: "+ Add port"
                                             onClicked: {
-                                                if (root.controller) {
-                                                    root.controller.addAdvancedFlowFilterPortRow(true)
+                                                if (root.editor) {
+                                                    root.editor.addPortRow(true)
                                                 }
                                             }
                                         }
@@ -684,28 +685,28 @@ Dialog {
                         Rectangle {
                             id: ipAddressesSection
                             readonly property bool sectionEnabledState: {
-                                if (!root.controller) {
+                                if (!root.editor) {
                                     return false
                                 }
-                                void(root.controller.advancedFlowFilterEditorRevision)
-                                return root.controller.advancedFlowFilterSectionEnabled(root.ipAddressesSectionId)
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.ipAddressesSectionId)
                             }
-                            readonly property var scopeOptions: root.controller
-                                ? root.controller.advancedFlowFilterAddressScopeOptions()
+                            readonly property var scopeOptions: root.editor
+                                ? root.editor.addressScopeOptions()
                                 : []
                             readonly property var includeRows: {
-                                if (!root.controller) {
+                                if (!root.editor) {
                                     return []
                                 }
-                                void(root.controller.advancedFlowFilterEditorRevision)
-                                return root.controller.advancedFlowFilterAddressRows(false)
+                                void(root.editor.revision)
+                                return root.editor.addressRows(false)
                             }
                             readonly property var excludeRows: {
-                                if (!root.controller) {
+                                if (!root.editor) {
                                     return []
                                 }
-                                void(root.controller.advancedFlowFilterEditorRevision)
-                                return root.controller.advancedFlowFilterAddressRows(true)
+                                void(root.editor.revision)
+                                return root.editor.addressRows(true)
                             }
 
                             objectName: "advancedFlowFilterIpAddressesSection"
@@ -719,8 +720,8 @@ Dialog {
                             property bool exclusionsExpanded: false
 
                             function initializeExclusionsVisibility() {
-                                exclusionsExpanded = root.controller
-                                    ? root.controller.advancedFlowFilterSectionHasExclusions(root.ipAddressesSectionId)
+                                exclusionsExpanded = root.editor
+                                    ? root.editor.sectionHasExclusions(root.ipAddressesSectionId)
                                     : false
                             }
 
@@ -758,8 +759,8 @@ Dialog {
                                         text: "Enabled"
                                         checked: ipAddressesSection.sectionEnabledState
                                         onToggled: {
-                                            if (root.controller) {
-                                                root.controller.setAdvancedFlowFilterSectionEnabled(root.ipAddressesSectionId, checked)
+                                            if (root.editor) {
+                                                root.editor.setSectionEnabled(root.ipAddressesSectionId, checked)
                                             }
                                         }
                                     }
@@ -804,8 +805,8 @@ Dialog {
                                                     textRole: "label"
                                                     currentIndex: root.optionIndex(model, modelData.scope)
                                                     onActivated: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterAddressRowScope(false, modelData.row, model[currentIndex].value)
+                                                        if (root.editor) {
+                                                            root.editor.setAddressRowScope(false, modelData.row, model[currentIndex].value)
                                                         }
                                                     }
                                                 }
@@ -815,8 +816,8 @@ Dialog {
                                                     text: "Subnet"
                                                     checked: modelData.subnetEnabled
                                                     onToggled: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterAddressRowSubnetEnabled(false, modelData.row, checked)
+                                                        if (root.editor) {
+                                                            root.editor.setAddressRowSubnetEnabled(false, modelData.row, checked)
                                                         }
                                                     }
                                                 }
@@ -833,8 +834,8 @@ Dialog {
                                                     text: modelData.addressText
                                                     placeholderText: modelData.subnetEnabled ? "10.0.0.0" : "192.168.1.10"
                                                     onTextEdited: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterAddressRowAddressText(false, modelData.row, text)
+                                                        if (root.editor) {
+                                                            root.editor.setAddressRowAddressText(false, modelData.row, text)
                                                         }
                                                     }
                                                 }
@@ -853,8 +854,8 @@ Dialog {
                                                     text: modelData.prefixText
                                                     placeholderText: "24"
                                                     onTextEdited: {
-                                                        if (root.controller) {
-                                                            root.controller.setAdvancedFlowFilterAddressRowPrefixText(false, modelData.row, text)
+                                                        if (root.editor) {
+                                                            root.editor.setAddressRowPrefixText(false, modelData.row, text)
                                                         }
                                                     }
                                                 }
@@ -863,8 +864,8 @@ Dialog {
                                                     objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "RemoveButton"
                                                     text: "Remove"
                                                     onClicked: {
-                                                        if (root.controller) {
-                                                            root.controller.removeAdvancedFlowFilterAddressRow(false, modelData.row)
+                                                        if (root.editor) {
+                                                            root.editor.removeAddressRow(false, modelData.row)
                                                         }
                                                     }
                                                 }
@@ -876,8 +877,8 @@ Dialog {
                                         objectName: "advancedFlowFilterIpAddressesAddIncludeButton"
                                         text: "+ Add address"
                                         onClicked: {
-                                            if (root.controller) {
-                                                root.controller.addAdvancedFlowFilterAddressRow(false)
+                                            if (root.editor) {
+                                                root.editor.addAddressRow(false)
                                             }
                                         }
                                     }
@@ -927,8 +928,8 @@ Dialog {
                                                         textRole: "label"
                                                         currentIndex: root.optionIndex(model, modelData.scope)
                                                         onActivated: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterAddressRowScope(true, modelData.row, model[currentIndex].value)
+                                                            if (root.editor) {
+                                                                root.editor.setAddressRowScope(true, modelData.row, model[currentIndex].value)
                                                             }
                                                         }
                                                     }
@@ -938,8 +939,8 @@ Dialog {
                                                         text: "Subnet"
                                                         checked: modelData.subnetEnabled
                                                         onToggled: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterAddressRowSubnetEnabled(true, modelData.row, checked)
+                                                            if (root.editor) {
+                                                                root.editor.setAddressRowSubnetEnabled(true, modelData.row, checked)
                                                             }
                                                         }
                                                     }
@@ -956,8 +957,8 @@ Dialog {
                                                         text: modelData.addressText
                                                         placeholderText: modelData.subnetEnabled ? "2001:db8::" : "2001:db8::1"
                                                         onTextEdited: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterAddressRowAddressText(true, modelData.row, text)
+                                                            if (root.editor) {
+                                                                root.editor.setAddressRowAddressText(true, modelData.row, text)
                                                             }
                                                         }
                                                     }
@@ -976,8 +977,8 @@ Dialog {
                                                         text: modelData.prefixText
                                                         placeholderText: "32"
                                                         onTextEdited: {
-                                                            if (root.controller) {
-                                                                root.controller.setAdvancedFlowFilterAddressRowPrefixText(true, modelData.row, text)
+                                                            if (root.editor) {
+                                                                root.editor.setAddressRowPrefixText(true, modelData.row, text)
                                                             }
                                                         }
                                                     }
@@ -986,8 +987,8 @@ Dialog {
                                                         objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "RemoveButton"
                                                         text: "Remove"
                                                         onClicked: {
-                                                            if (root.controller) {
-                                                                root.controller.removeAdvancedFlowFilterAddressRow(true, modelData.row)
+                                                            if (root.editor) {
+                                                                root.editor.removeAddressRow(true, modelData.row)
                                                             }
                                                         }
                                                     }
@@ -999,8 +1000,8 @@ Dialog {
                                             objectName: "advancedFlowFilterIpAddressesAddExcludeButton"
                                             text: "+ Add address"
                                             onClicked: {
-                                                if (root.controller) {
-                                                    root.controller.addAdvancedFlowFilterAddressRow(true)
+                                                if (root.editor) {
+                                                    root.editor.addAddressRow(true)
                                                 }
                                             }
                                         }
@@ -1016,7 +1017,7 @@ Dialog {
                 objectName: "advancedFlowFilterValidationLabel"
                 Layout.fillWidth: true
                 visible: text.length > 0
-                text: root.controller ? root.controller.advancedFlowFilterEditorValidationText : ""
+                text: root.editor ? root.editor.validationText : ""
                 color: "#b91c1c"
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
@@ -1031,7 +1032,7 @@ Dialog {
             Button {
                 objectName: "advancedFlowFilterClearAllButton"
                 text: "Clear all"
-                enabled: root.controller ? root.controller.advancedFlowFilterDraftClearAllAvailable() : false
+                enabled: root.editor ? root.editor.draftClearAllAvailable : false
             }
 
             Item {

@@ -155,236 +155,6 @@ struct TransportPayloadLengths {
     std::optional<bool> is_ip_fragmented {};
 };
 
-template <typename T>
-struct AdvancedFilterOptionDescriptor {
-    T value {};
-    const char* label {""};
-    const char* object_name_suffix {""};
-};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<FlowAddressFamily>, 2> kAdvancedFilterAddressFamilyOptions {{
-    {FlowAddressFamily::ipv4, "IPv4", "Ipv4"},
-    {FlowAddressFamily::ipv6, "IPv6", "Ipv6"},
-}};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<ProtocolId>, 8> kAdvancedFilterFlowProtocolOptions {{
-    {ProtocolId::tcp, "TCP", "Tcp"},
-    {ProtocolId::udp, "UDP", "Udp"},
-    {ProtocolId::sctp, "SCTP", "Sctp"},
-    {ProtocolId::icmp, "ICMP", "Icmp"},
-    {ProtocolId::icmpv6, "ICMPv6", "Icmpv6"},
-    {ProtocolId::igmp, "IGMP", "Igmp"},
-    {ProtocolId::arp, "ARP", "Arp"},
-    {ProtocolId::esp, "ESP", "Esp"},
-}};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<FlowProtocolHint>, 17> kAdvancedFilterDetectedProtocolOptions {{
-    {FlowProtocolHint::unknown, "Unknown", "Unknown"},
-    {FlowProtocolHint::tls, "TLS", "Tls"},
-    {FlowProtocolHint::http, "HTTP", "Http"},
-    {FlowProtocolHint::dns, "DNS", "Dns"},
-    {FlowProtocolHint::quic, "QUIC", "Quic"},
-    {FlowProtocolHint::ssh, "SSH", "Ssh"},
-    {FlowProtocolHint::stun, "STUN", "Stun"},
-    {FlowProtocolHint::bittorrent, "BitTorrent", "Bittorrent"},
-    {FlowProtocolHint::dhcp, "DHCP", "Dhcp"},
-    {FlowProtocolHint::mdns, "mDNS", "Mdns"},
-    {FlowProtocolHint::smtp, "SMTP", "Smtp"},
-    {FlowProtocolHint::pop3, "POP3", "Pop3"},
-    {FlowProtocolHint::imap, "IMAP", "Imap"},
-    {FlowProtocolHint::igmp, "IGMP", "Igmp"},
-    {FlowProtocolHint::igmpv1, "IGMPv1", "Igmpv1"},
-    {FlowProtocolHint::igmpv2, "IGMPv2", "Igmpv2"},
-    {FlowProtocolHint::igmpv3, "IGMPv3", "Igmpv3"},
-}};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<TlsVersionHint>, 3> kAdvancedFilterTlsVersionOptions {{
-    {TlsVersionHint::tls12, "TLS 1.2", "Tls12"},
-    {TlsVersionHint::tls13, "TLS 1.3", "Tls13"},
-    {TlsVersionHint::unknown, "Unknown TLS/SSL", "UnknownTlsSsl"},
-}};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<QuicVersionHint>, 4> kAdvancedFilterQuicVersionOptions {{
-    {QuicVersionHint::v1, "QUIC v1", "QuicV1"},
-    {QuicVersionHint::v2, "QUIC v2", "QuicV2"},
-    {QuicVersionHint::draft29, "QUIC draft-29", "QuicDraft29"},
-    {QuicVersionHint::unknown, "Unknown QUIC", "UnknownQuic"},
-}};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlowFilterDirectionality>, 2>
-    kAdvancedFilterDirectionalityOptions {{
-        {session_detail::AdvancedFlowFilterDirectionality::unidirectional, "One direction", "Unidirectional"},
-        {session_detail::AdvancedFlowFilterDirectionality::bidirectional, "Both directions", "Bidirectional"},
-    }};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlowFilterPortScope>, 3>
-    kAdvancedFlowFilterPortScopeOptions {{
-        {session_detail::AdvancedFlowFilterPortScope::either_endpoint, "Either endpoint", "EitherEndpoint"},
-        {session_detail::AdvancedFlowFilterPortScope::endpoint_a, "Endpoint A", "EndpointA"},
-        {session_detail::AdvancedFlowFilterPortScope::endpoint_b, "Endpoint B", "EndpointB"},
-    }};
-
-constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlowFilterEndpointScope>, 3>
-    kAdvancedFlowFilterAddressScopeOptions {{
-        {session_detail::AdvancedFlowFilterEndpointScope::either_endpoint, "Either endpoint", "EitherEndpoint"},
-        {session_detail::AdvancedFlowFilterEndpointScope::endpoint_a, "Endpoint A", "EndpointA"},
-        {session_detail::AdvancedFlowFilterEndpointScope::endpoint_b, "Endpoint B", "EndpointB"},
-    }};
-
-template <typename T>
-bool contains_advanced_filter_option(const std::vector<T>& values, const T value) {
-    return std::find(values.begin(), values.end(), value) != values.end();
-}
-
-template <typename T>
-bool set_advanced_filter_option_checked(std::vector<T>& values, const T value, const bool checked) {
-    if (checked) {
-        if (!contains_advanced_filter_option(values, value)) {
-            values.push_back(value);
-            return true;
-        }
-        return false;
-    }
-
-    const auto original_size = values.size();
-    std::erase(values, value);
-    return values.size() != original_size;
-}
-
-template <typename T, std::size_t N>
-QVariantList build_advanced_filter_option_list(
-    const std::vector<T>& selected_values,
-    const std::array<AdvancedFilterOptionDescriptor<T>, N>& descriptors
-) {
-    QVariantList options {};
-    options.reserve(static_cast<qsizetype>(descriptors.size()));
-    for (const auto& descriptor : descriptors) {
-        QVariantMap option {};
-        option.insert(QStringLiteral("value"), static_cast<int>(descriptor.value));
-        option.insert(QStringLiteral("label"), QString::fromLatin1(descriptor.label));
-        option.insert(
-            QStringLiteral("checked"),
-            contains_advanced_filter_option(selected_values, descriptor.value)
-        );
-        option.insert(
-            QStringLiteral("objectNameSuffix"),
-            QString::fromLatin1(descriptor.object_name_suffix)
-        );
-        options.push_back(option);
-    }
-    return options;
-}
-
-template <typename T, std::size_t N>
-QVariantList build_advanced_filter_static_option_list(
-    const std::array<AdvancedFilterOptionDescriptor<T>, N>& descriptors
-) {
-    QVariantList options {};
-    options.reserve(static_cast<qsizetype>(descriptors.size()));
-    for (const auto& descriptor : descriptors) {
-        QVariantMap option {};
-        option.insert(QStringLiteral("value"), static_cast<int>(descriptor.value));
-        option.insert(QStringLiteral("label"), QString::fromLatin1(descriptor.label));
-        option.insert(QStringLiteral("objectNameSuffix"), QString::fromLatin1(descriptor.object_name_suffix));
-        options.push_back(option);
-    }
-    return options;
-}
-
-std::optional<std::uint32_t> parse_ui_u32_text(const QString& text) {
-    const auto trimmed = text.trimmed();
-    if (trimmed.isEmpty()) {
-        return std::nullopt;
-    }
-
-    const auto latin1 = trimmed.toLatin1();
-    std::uint32_t value {0U};
-    const auto* begin = latin1.constData();
-    const auto* end = begin + latin1.size();
-    const auto result = std::from_chars(begin, end, value, 10);
-    if (result.ec != std::errc {} || result.ptr != end) {
-        return std::nullopt;
-    }
-    return value;
-}
-
-std::array<std::uint8_t, 16> qhost_to_ipv6_bytes(const QHostAddress& address) {
-    const auto ipv6 = address.toIPv6Address();
-    std::array<std::uint8_t, 16> bytes {};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        bytes[index] = ipv6[static_cast<qsizetype>(index)];
-    }
-    return bytes;
-}
-
-std::optional<MainController::AdvancedFlowFilterFiniteSection> advanced_flow_filter_section_from_int(const int section) {
-    switch (static_cast<MainController::AdvancedFlowFilterFiniteSection>(section)) {
-    case MainController::AdvancedFlowFilterFiniteSection::address_family:
-    case MainController::AdvancedFlowFilterFiniteSection::flow_protocol:
-    case MainController::AdvancedFlowFilterFiniteSection::detected_protocol:
-    case MainController::AdvancedFlowFilterFiniteSection::tls_version:
-    case MainController::AdvancedFlowFilterFiniteSection::quic_version:
-    case MainController::AdvancedFlowFilterFiniteSection::directionality:
-    case MainController::AdvancedFlowFilterFiniteSection::ports:
-    case MainController::AdvancedFlowFilterFiniteSection::ip_addresses:
-        return static_cast<MainController::AdvancedFlowFilterFiniteSection>(section);
-    default:
-        return std::nullopt;
-    }
-}
-
-bool advanced_flow_filter_section_enabled(
-    const session_detail::AdvancedFlowFilterDocumentSectionStates& states,
-    const MainController::AdvancedFlowFilterFiniteSection section
-) noexcept {
-    switch (section) {
-    case MainController::AdvancedFlowFilterFiniteSection::address_family:
-        return states.address_family;
-    case MainController::AdvancedFlowFilterFiniteSection::flow_protocol:
-        return states.flow_protocol;
-    case MainController::AdvancedFlowFilterFiniteSection::detected_protocol:
-        return states.detected_protocol;
-    case MainController::AdvancedFlowFilterFiniteSection::tls_version:
-        return states.tls_version;
-    case MainController::AdvancedFlowFilterFiniteSection::quic_version:
-        return states.quic_version;
-    case MainController::AdvancedFlowFilterFiniteSection::directionality:
-        return states.directionality;
-    case MainController::AdvancedFlowFilterFiniteSection::ports:
-        return states.ports;
-    case MainController::AdvancedFlowFilterFiniteSection::ip_addresses:
-        return states.ip_addresses;
-    }
-
-    return false;
-}
-
-bool* advanced_flow_filter_section_enabled_mutable(
-    session_detail::AdvancedFlowFilterDocumentSectionStates& states,
-    const MainController::AdvancedFlowFilterFiniteSection section
-) noexcept {
-    switch (section) {
-    case MainController::AdvancedFlowFilterFiniteSection::address_family:
-        return &states.address_family;
-    case MainController::AdvancedFlowFilterFiniteSection::flow_protocol:
-        return &states.flow_protocol;
-    case MainController::AdvancedFlowFilterFiniteSection::detected_protocol:
-        return &states.detected_protocol;
-    case MainController::AdvancedFlowFilterFiniteSection::tls_version:
-        return &states.tls_version;
-    case MainController::AdvancedFlowFilterFiniteSection::quic_version:
-        return &states.quic_version;
-    case MainController::AdvancedFlowFilterFiniteSection::directionality:
-        return &states.directionality;
-    case MainController::AdvancedFlowFilterFiniteSection::ports:
-        return &states.ports;
-    case MainController::AdvancedFlowFilterFiniteSection::ip_addresses:
-        return &states.ip_addresses;
-    }
-
-    return nullptr;
-}
-
 FlowListModel::SortKey sort_key_from_column(const int column) {
     switch (column) {
     case 0:
@@ -2279,6 +2049,7 @@ std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_la
 
 MainController::MainController(QObject* parent)
     : QObject(parent)
+    , advanced_flow_filter_editor_model_(advanced_flow_filter_document_state_, this)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
     flow_model_.setProtocolPathPresentationResolver([this](const ProtocolPathId protocol_path_id) {
@@ -2289,6 +2060,12 @@ MainController::MainController(QObject* parent)
         emit selectedFlowCountChanged();
         emit actionAvailabilityChanged();
     });
+    QObject::connect(
+        &advanced_flow_filter_editor_model_,
+        &AdvancedFlowFilterEditorModel::stateChanged,
+        this,
+        &MainController::advancedFlowFilterPresentationChanged
+    );
 }
 
 MainController::~MainController() {
@@ -3753,132 +3530,51 @@ bool MainController::advancedFlowFilterClearAvailable() const noexcept {
 }
 
 int MainController::advancedFlowFilterEditorRevision() const noexcept {
-    return advanced_flow_filter_editor_revision_;
+    return advanced_flow_filter_editor_model_.revision();
 }
 
 QString MainController::advancedFlowFilterEditorValidationText() const {
-    return advanced_flow_filter_editor_validation_text_;
+    return advanced_flow_filter_editor_model_.validationText();
+}
+
+QObject* MainController::advancedFlowFilterEditor() noexcept {
+    return &advanced_flow_filter_editor_model_;
 }
 
 bool MainController::advancedFlowFilterDraftClearAllAvailable() const noexcept {
-    return false;
+    return advanced_flow_filter_editor_model_.draftClearAllAvailable();
 }
 
 bool MainController::advancedFlowFilterSectionEnabled(const int section) const noexcept {
-    const auto parsed_section = advanced_flow_filter_section_from_int(section);
-    if (!parsed_section.has_value()) {
-        return false;
-    }
-
-    return advanced_flow_filter_section_enabled(
-        advanced_flow_filter_document_state_.current_user_visible_document().section_states,
-        *parsed_section
-    );
+    return advanced_flow_filter_editor_model_.sectionEnabled(section);
 }
 
 bool MainController::advancedFlowFilterSectionHasExclusions(const int section) const noexcept {
-    const auto parsed_section = advanced_flow_filter_section_from_int(section);
-    if (!parsed_section.has_value()) {
-        return false;
-    }
-
-    const auto& spec = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec;
-    switch (*parsed_section) {
-    case AdvancedFlowFilterFiniteSection::address_family:
-        return !spec.address_family.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::flow_protocol:
-        return !spec.flow_protocol.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::detected_protocol:
-        return !spec.detected_protocol.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::tls_version:
-        return !spec.tls_version.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::quic_version:
-        return !spec.quic_version.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::directionality:
-        return !spec.directionality.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::ports:
-        return advanced_flow_filter_document_state_.is_editing()
-            ? !advanced_flow_filter_port_exclude_rows_.empty()
-            : !spec.ports.exclude.empty();
-    case AdvancedFlowFilterFiniteSection::ip_addresses:
-        return advanced_flow_filter_document_state_.is_editing()
-            ? !advanced_flow_filter_address_exclude_rows_.empty()
-            : (!spec.addresses.ipv4_exclude.empty() || !spec.addresses.ipv6_exclude.empty());
-    }
-
-    return false;
+    return advanced_flow_filter_editor_model_.sectionHasExclusions(section);
 }
 
 QVariantList MainController::advancedFlowFilterIncludeOptions(const int section) const {
-    const auto parsed_section = advanced_flow_filter_section_from_int(section);
-    if (!parsed_section.has_value()) {
-        return {};
-    }
-
-    const auto& spec = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec;
-    switch (*parsed_section) {
-    case AdvancedFlowFilterFiniteSection::address_family:
-        return build_advanced_filter_option_list(spec.address_family.include, kAdvancedFilterAddressFamilyOptions);
-    case AdvancedFlowFilterFiniteSection::flow_protocol:
-        return build_advanced_filter_option_list(spec.flow_protocol.include, kAdvancedFilterFlowProtocolOptions);
-    case AdvancedFlowFilterFiniteSection::detected_protocol:
-        return build_advanced_filter_option_list(spec.detected_protocol.include, kAdvancedFilterDetectedProtocolOptions);
-    case AdvancedFlowFilterFiniteSection::tls_version:
-        return build_advanced_filter_option_list(spec.tls_version.include, kAdvancedFilterTlsVersionOptions);
-    case AdvancedFlowFilterFiniteSection::quic_version:
-        return build_advanced_filter_option_list(spec.quic_version.include, kAdvancedFilterQuicVersionOptions);
-    case AdvancedFlowFilterFiniteSection::directionality:
-        return build_advanced_filter_option_list(spec.directionality.include, kAdvancedFilterDirectionalityOptions);
-    case AdvancedFlowFilterFiniteSection::ports:
-    case AdvancedFlowFilterFiniteSection::ip_addresses:
-        return {};
-    }
-
-    return {};
+    return advanced_flow_filter_editor_model_.includeOptions(section);
 }
 
 QVariantList MainController::advancedFlowFilterExcludeOptions(const int section) const {
-    const auto parsed_section = advanced_flow_filter_section_from_int(section);
-    if (!parsed_section.has_value()) {
-        return {};
-    }
-
-    const auto& spec = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec;
-    switch (*parsed_section) {
-    case AdvancedFlowFilterFiniteSection::address_family:
-        return build_advanced_filter_option_list(spec.address_family.exclude, kAdvancedFilterAddressFamilyOptions);
-    case AdvancedFlowFilterFiniteSection::flow_protocol:
-        return build_advanced_filter_option_list(spec.flow_protocol.exclude, kAdvancedFilterFlowProtocolOptions);
-    case AdvancedFlowFilterFiniteSection::detected_protocol:
-        return build_advanced_filter_option_list(spec.detected_protocol.exclude, kAdvancedFilterDetectedProtocolOptions);
-    case AdvancedFlowFilterFiniteSection::tls_version:
-        return build_advanced_filter_option_list(spec.tls_version.exclude, kAdvancedFilterTlsVersionOptions);
-    case AdvancedFlowFilterFiniteSection::quic_version:
-        return build_advanced_filter_option_list(spec.quic_version.exclude, kAdvancedFilterQuicVersionOptions);
-    case AdvancedFlowFilterFiniteSection::directionality:
-        return build_advanced_filter_option_list(spec.directionality.exclude, kAdvancedFilterDirectionalityOptions);
-    case AdvancedFlowFilterFiniteSection::ports:
-    case AdvancedFlowFilterFiniteSection::ip_addresses:
-        return {};
-    }
-
-    return {};
+    return advanced_flow_filter_editor_model_.excludeOptions(section);
 }
 
 QVariantList MainController::advancedFlowFilterPortScopeOptions() const {
-    return build_advanced_filter_static_option_list(kAdvancedFlowFilterPortScopeOptions);
+    return advanced_flow_filter_editor_model_.portScopeOptions();
 }
 
 QVariantList MainController::advancedFlowFilterAddressScopeOptions() const {
-    return build_advanced_filter_static_option_list(kAdvancedFlowFilterAddressScopeOptions);
+    return advanced_flow_filter_editor_model_.addressScopeOptions();
 }
 
 QVariantList MainController::advancedFlowFilterPortRows(const bool exclude) const {
-    return buildAdvancedFlowFilterPortRowList(exclude);
+    return advanced_flow_filter_editor_model_.portRows(exclude);
 }
 
 QVariantList MainController::advancedFlowFilterAddressRows(const bool exclude) const {
-    return buildAdvancedFlowFilterAddressRowList(exclude);
+    return advanced_flow_filter_editor_model_.addressRows(exclude);
 }
 
 int MainController::flowSortColumn() const noexcept {
@@ -4849,15 +4545,13 @@ void MainController::clearAdvancedFlowFilter() {
     }
 
     advanced_flow_filter_document_state_.clear_all();
-    clearAdvancedFlowFilterStructuredEditorState();
+    advanced_flow_filter_editor_model_.clearTransientState();
     refreshAdvancedFlowFilter();
-    notifyAdvancedFlowFilterEditorStateChanged();
 }
 
 void MainController::beginAdvancedFlowFilterEdit() {
     advanced_flow_filter_document_state_.begin_edit();
-    initializeAdvancedFlowFilterStructuredEditorState();
-    notifyAdvancedFlowFilterEditorStateChanged();
+    advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
 }
 
 void MainController::cancelAdvancedFlowFilterEdit() {
@@ -4866,17 +4560,13 @@ void MainController::cancelAdvancedFlowFilterEdit() {
     }
 
     advanced_flow_filter_document_state_.cancel_edit();
-    clearAdvancedFlowFilterStructuredEditorState();
-    notifyAdvancedFlowFilterEditorStateChanged();
+    advanced_flow_filter_editor_model_.clearTransientState();
 }
 
 bool MainController::applyAdvancedFlowFilterEdit() {
     QString validation_error {};
-    if (!synchronizeAdvancedFlowFilterStructuredDraftSections(&validation_error)) {
-        if (advanced_flow_filter_editor_validation_text_ != validation_error) {
-            advanced_flow_filter_editor_validation_text_ = validation_error;
-            notifyAdvancedFlowFilterEditorStateChanged();
-        }
+    if (!advanced_flow_filter_editor_model_.synchronizeDraftSections(&validation_error)) {
+        advanced_flow_filter_editor_model_.setValidationText(validation_error);
         return false;
     }
 
@@ -4884,31 +4574,13 @@ bool MainController::applyAdvancedFlowFilterEdit() {
         return false;
     }
 
-    clearAdvancedFlowFilterStructuredEditorState();
+    advanced_flow_filter_editor_model_.clearTransientState();
     refreshAdvancedFlowFilter();
-    notifyAdvancedFlowFilterEditorStateChanged();
     return true;
 }
 
 void MainController::setAdvancedFlowFilterSectionEnabled(const int section, const bool enabled) {
-    const auto parsed_section = advanced_flow_filter_section_from_int(section);
-    if (!parsed_section.has_value()) {
-        return;
-    }
-
-    advanced_flow_filter_document_state_.begin_edit();
-    auto* draft_document = advanced_flow_filter_document_state_.draft_document();
-    if (draft_document == nullptr) {
-        return;
-    }
-
-    auto* section_enabled = advanced_flow_filter_section_enabled_mutable(draft_document->section_states, *parsed_section);
-    if (section_enabled == nullptr || *section_enabled == enabled) {
-        return;
-    }
-
-    *section_enabled = enabled;
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setSectionEnabled(section, enabled);
 }
 
 void MainController::setAdvancedFlowFilterOptionChecked(
@@ -4917,606 +4589,55 @@ void MainController::setAdvancedFlowFilterOptionChecked(
     const bool exclude,
     const bool checked
 ) {
-    const auto parsed_section = advanced_flow_filter_section_from_int(section);
-    if (!parsed_section.has_value()) {
-        return;
-    }
-
-    advanced_flow_filter_document_state_.begin_edit();
-    auto* draft_document = advanced_flow_filter_document_state_.draft_document();
-    if (draft_document == nullptr) {
-        return;
-    }
-
-    bool changed = false;
-    switch (*parsed_section) {
-    case AdvancedFlowFilterFiniteSection::address_family:
-        changed = set_advanced_filter_option_checked(
-            exclude ? draft_document->configured_spec.address_family.exclude : draft_document->configured_spec.address_family.include,
-            static_cast<FlowAddressFamily>(value),
-            checked
-        );
-        break;
-    case AdvancedFlowFilterFiniteSection::flow_protocol:
-        changed = set_advanced_filter_option_checked(
-            exclude ? draft_document->configured_spec.flow_protocol.exclude : draft_document->configured_spec.flow_protocol.include,
-            static_cast<ProtocolId>(value),
-            checked
-        );
-        break;
-    case AdvancedFlowFilterFiniteSection::detected_protocol:
-        changed = set_advanced_filter_option_checked(
-            exclude ? draft_document->configured_spec.detected_protocol.exclude : draft_document->configured_spec.detected_protocol.include,
-            static_cast<FlowProtocolHint>(value),
-            checked
-        );
-        break;
-    case AdvancedFlowFilterFiniteSection::tls_version:
-        changed = set_advanced_filter_option_checked(
-            exclude ? draft_document->configured_spec.tls_version.exclude : draft_document->configured_spec.tls_version.include,
-            static_cast<TlsVersionHint>(value),
-            checked
-        );
-        break;
-    case AdvancedFlowFilterFiniteSection::quic_version:
-        changed = set_advanced_filter_option_checked(
-            exclude ? draft_document->configured_spec.quic_version.exclude : draft_document->configured_spec.quic_version.include,
-            static_cast<QuicVersionHint>(value),
-            checked
-        );
-        break;
-    case AdvancedFlowFilterFiniteSection::directionality:
-        changed = set_advanced_filter_option_checked(
-            exclude ? draft_document->configured_spec.directionality.exclude : draft_document->configured_spec.directionality.include,
-            static_cast<session_detail::AdvancedFlowFilterDirectionality>(value),
-            checked
-        );
-        break;
-    case AdvancedFlowFilterFiniteSection::ports:
-    case AdvancedFlowFilterFiniteSection::ip_addresses:
-        break;
-    }
-
-    if (changed) {
-        notifyAdvancedFlowFilterEditorRowsChanged();
-    }
+    advanced_flow_filter_editor_model_.setOptionChecked(section, value, exclude, checked);
 }
 
 void MainController::addAdvancedFlowFilterPortRow(const bool exclude) {
-    advanced_flow_filter_document_state_.begin_edit();
-    if (!advanced_flow_filter_document_state_.is_editing()) {
-        return;
-    }
-
-    if (advanced_flow_filter_port_include_rows_.empty() &&
-        advanced_flow_filter_port_exclude_rows_.empty() &&
-        advanced_flow_filter_address_include_rows_.empty() &&
-        advanced_flow_filter_address_exclude_rows_.empty()) {
-        initializeAdvancedFlowFilterStructuredEditorState();
-    }
-
-    auto& rows = exclude ? advanced_flow_filter_port_exclude_rows_ : advanced_flow_filter_port_include_rows_;
-    rows.push_back({});
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.addPortRow(exclude);
 }
 
 void MainController::removeAdvancedFlowFilterPortRow(const bool exclude, const int row) {
-    auto& rows = exclude ? advanced_flow_filter_port_exclude_rows_ : advanced_flow_filter_port_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows.erase(rows.begin() + row);
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.removePortRow(exclude, row);
 }
 
 void MainController::setAdvancedFlowFilterPortRowScope(const bool exclude, const int row, const int scope) {
-    auto& rows = exclude ? advanced_flow_filter_port_exclude_rows_ : advanced_flow_filter_port_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].scope = static_cast<session_detail::AdvancedFlowFilterPortScope>(scope);
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setPortRowScope(exclude, row, scope);
 }
 
 void MainController::setAdvancedFlowFilterPortRowRangeEnabled(const bool exclude, const int row, const bool enabled) {
-    auto& rows = exclude ? advanced_flow_filter_port_exclude_rows_ : advanced_flow_filter_port_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].range_enabled = enabled;
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setPortRowRangeEnabled(exclude, row, enabled);
 }
 
 void MainController::setAdvancedFlowFilterPortRowPrimaryText(const bool exclude, const int row, const QString& text) {
-    auto& rows = exclude ? advanced_flow_filter_port_exclude_rows_ : advanced_flow_filter_port_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].primary_text = text;
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setPortRowPrimaryText(exclude, row, text);
 }
 
 void MainController::setAdvancedFlowFilterPortRowSecondaryText(const bool exclude, const int row, const QString& text) {
-    auto& rows = exclude ? advanced_flow_filter_port_exclude_rows_ : advanced_flow_filter_port_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].secondary_text = text;
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setPortRowSecondaryText(exclude, row, text);
 }
 
 void MainController::addAdvancedFlowFilterAddressRow(const bool exclude) {
-    advanced_flow_filter_document_state_.begin_edit();
-    if (!advanced_flow_filter_document_state_.is_editing()) {
-        return;
-    }
-
-    if (advanced_flow_filter_port_include_rows_.empty() &&
-        advanced_flow_filter_port_exclude_rows_.empty() &&
-        advanced_flow_filter_address_include_rows_.empty() &&
-        advanced_flow_filter_address_exclude_rows_.empty()) {
-        initializeAdvancedFlowFilterStructuredEditorState();
-    }
-
-    auto& rows = exclude ? advanced_flow_filter_address_exclude_rows_ : advanced_flow_filter_address_include_rows_;
-    rows.push_back({});
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.addAddressRow(exclude);
 }
 
 void MainController::removeAdvancedFlowFilterAddressRow(const bool exclude, const int row) {
-    auto& rows = exclude ? advanced_flow_filter_address_exclude_rows_ : advanced_flow_filter_address_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows.erase(rows.begin() + row);
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.removeAddressRow(exclude, row);
 }
 
 void MainController::setAdvancedFlowFilterAddressRowScope(const bool exclude, const int row, const int scope) {
-    auto& rows = exclude ? advanced_flow_filter_address_exclude_rows_ : advanced_flow_filter_address_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].scope = static_cast<session_detail::AdvancedFlowFilterEndpointScope>(scope);
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setAddressRowScope(exclude, row, scope);
 }
 
 void MainController::setAdvancedFlowFilterAddressRowSubnetEnabled(const bool exclude, const int row, const bool enabled) {
-    auto& rows = exclude ? advanced_flow_filter_address_exclude_rows_ : advanced_flow_filter_address_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].subnet_enabled = enabled;
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setAddressRowSubnetEnabled(exclude, row, enabled);
 }
 
 void MainController::setAdvancedFlowFilterAddressRowAddressText(const bool exclude, const int row, const QString& text) {
-    auto& rows = exclude ? advanced_flow_filter_address_exclude_rows_ : advanced_flow_filter_address_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].address_text = text;
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
+    advanced_flow_filter_editor_model_.setAddressRowAddressText(exclude, row, text);
 }
 
 void MainController::setAdvancedFlowFilterAddressRowPrefixText(const bool exclude, const int row, const QString& text) {
-    auto& rows = exclude ? advanced_flow_filter_address_exclude_rows_ : advanced_flow_filter_address_include_rows_;
-    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
-        return;
-    }
-
-    rows[static_cast<std::size_t>(row)].prefix_text = text;
-    (void)synchronizeAdvancedFlowFilterStructuredDraftSections();
-    notifyAdvancedFlowFilterEditorRowsChanged();
-}
-
-QVariantList MainController::buildAdvancedFlowFilterPortRowList(const bool exclude) const {
-    const auto* rows = exclude
-        ? &advanced_flow_filter_port_exclude_rows_
-        : &advanced_flow_filter_port_include_rows_;
-    std::vector<AdvancedFlowFilterPortEditorRow> fallback_rows {};
-    if (!advanced_flow_filter_document_state_.is_editing()) {
-        const auto& predicates = exclude
-            ? advanced_flow_filter_document_state_.current_user_visible_document().configured_spec.ports.exclude
-            : advanced_flow_filter_document_state_.current_user_visible_document().configured_spec.ports.include;
-        fallback_rows.reserve(predicates.size());
-        for (const auto& predicate : predicates) {
-            fallback_rows.push_back(AdvancedFlowFilterPortEditorRow {
-                .scope = predicate.scope,
-                .range_enabled = predicate.range.first != predicate.range.last,
-                .primary_text = QString::number(predicate.range.first),
-                .secondary_text = predicate.range.first == predicate.range.last
-                    ? QString {}
-                    : QString::number(predicate.range.last),
-            });
-        }
-        rows = &fallback_rows;
-    }
-
-    QVariantList result {};
-    result.reserve(static_cast<qsizetype>(rows->size()));
-    for (std::size_t index = 0; index < rows->size(); ++index) {
-        const auto& row = (*rows)[index];
-        QVariantMap value {};
-        value.insert(QStringLiteral("row"), static_cast<int>(index));
-        value.insert(QStringLiteral("scope"), static_cast<int>(row.scope));
-        value.insert(QStringLiteral("rangeEnabled"), row.range_enabled);
-        value.insert(QStringLiteral("primaryText"), row.primary_text);
-        value.insert(QStringLiteral("secondaryText"), row.secondary_text);
-        result.push_back(value);
-    }
-    return result;
-}
-
-QVariantList MainController::buildAdvancedFlowFilterAddressRowList(const bool exclude) const {
-    const auto* rows = exclude
-        ? &advanced_flow_filter_address_exclude_rows_
-        : &advanced_flow_filter_address_include_rows_;
-    std::vector<AdvancedFlowFilterAddressEditorRow> fallback_rows {};
-    if (!advanced_flow_filter_document_state_.is_editing()) {
-        const auto& addresses = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec.addresses;
-        const auto append_rows = [&](const auto& predicates) {
-            for (const auto& predicate : predicates) {
-                fallback_rows.push_back(AdvancedFlowFilterAddressEditorRow {
-                    .scope = predicate.scope,
-                    .subnet_enabled = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
-                    .address_text = [&]() {
-                        if constexpr (std::is_same_v<std::decay_t<decltype(predicate.value)>, std::uint32_t>) {
-                            return formatIpv4Address(predicate.value);
-                        } else {
-                            return formatIpv6Address(predicate.value);
-                        }
-                    }(),
-                    .prefix_text = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr
-                        ? QString::number(predicate.prefix_length)
-                        : QString {},
-                });
-            }
-        };
-        if (exclude) {
-            append_rows(addresses.ipv4_exclude);
-            append_rows(addresses.ipv6_exclude);
-        } else {
-            append_rows(addresses.ipv4_include);
-            append_rows(addresses.ipv6_include);
-        }
-        rows = &fallback_rows;
-    }
-
-    QVariantList result {};
-    result.reserve(static_cast<qsizetype>(rows->size()));
-    for (std::size_t index = 0; index < rows->size(); ++index) {
-        const auto& row = (*rows)[index];
-        QVariantMap value {};
-        value.insert(QStringLiteral("row"), static_cast<int>(index));
-        value.insert(QStringLiteral("scope"), static_cast<int>(row.scope));
-        value.insert(QStringLiteral("subnetEnabled"), row.subnet_enabled);
-        value.insert(QStringLiteral("addressText"), row.address_text);
-        value.insert(QStringLiteral("prefixText"), row.prefix_text);
-        result.push_back(value);
-    }
-    return result;
-}
-
-void MainController::initializeAdvancedFlowFilterStructuredEditorState() {
-    const auto& document = advanced_flow_filter_document_state_.current_user_visible_document();
-    advanced_flow_filter_port_include_rows_.clear();
-    advanced_flow_filter_port_exclude_rows_.clear();
-    advanced_flow_filter_address_include_rows_.clear();
-    advanced_flow_filter_address_exclude_rows_.clear();
-
-    const auto append_port_rows =
-        [](const auto& predicates, std::vector<AdvancedFlowFilterPortEditorRow>& rows) {
-            rows.reserve(predicates.size());
-            for (const auto& predicate : predicates) {
-                rows.push_back(AdvancedFlowFilterPortEditorRow {
-                    .scope = predicate.scope,
-                    .range_enabled = predicate.range.first != predicate.range.last,
-                    .primary_text = QString::number(predicate.range.first),
-                    .secondary_text = predicate.range.first == predicate.range.last
-                        ? QString {}
-                        : QString::number(predicate.range.last),
-                });
-            }
-        };
-    append_port_rows(document.configured_spec.ports.include, advanced_flow_filter_port_include_rows_);
-    append_port_rows(document.configured_spec.ports.exclude, advanced_flow_filter_port_exclude_rows_);
-
-    const auto append_ipv4_rows =
-        [](const auto& predicates, std::vector<AdvancedFlowFilterAddressEditorRow>& rows) {
-            rows.reserve(rows.size() + predicates.size());
-            for (const auto& predicate : predicates) {
-                rows.push_back(AdvancedFlowFilterAddressEditorRow {
-                    .scope = predicate.scope,
-                    .subnet_enabled = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
-                    .address_text = formatIpv4Address(predicate.value),
-                    .prefix_text = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr
-                        ? QString::number(predicate.prefix_length)
-                        : QString {},
-                });
-            }
-        };
-    const auto append_ipv6_rows =
-        [](const auto& predicates, std::vector<AdvancedFlowFilterAddressEditorRow>& rows) {
-            rows.reserve(rows.size() + predicates.size());
-            for (const auto& predicate : predicates) {
-                rows.push_back(AdvancedFlowFilterAddressEditorRow {
-                    .scope = predicate.scope,
-                    .subnet_enabled = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
-                    .address_text = formatIpv6Address(predicate.value),
-                    .prefix_text = predicate.match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr
-                        ? QString::number(predicate.prefix_length)
-                        : QString {},
-                });
-            }
-        };
-    append_ipv4_rows(document.configured_spec.addresses.ipv4_include, advanced_flow_filter_address_include_rows_);
-    append_ipv6_rows(document.configured_spec.addresses.ipv6_include, advanced_flow_filter_address_include_rows_);
-    append_ipv4_rows(document.configured_spec.addresses.ipv4_exclude, advanced_flow_filter_address_exclude_rows_);
-    append_ipv6_rows(document.configured_spec.addresses.ipv6_exclude, advanced_flow_filter_address_exclude_rows_);
-    clearAdvancedFlowFilterEditorValidationText();
-}
-
-void MainController::clearAdvancedFlowFilterStructuredEditorState() noexcept {
-    advanced_flow_filter_port_include_rows_.clear();
-    advanced_flow_filter_port_exclude_rows_.clear();
-    advanced_flow_filter_address_include_rows_.clear();
-    advanced_flow_filter_address_exclude_rows_.clear();
-    advanced_flow_filter_editor_validation_text_.clear();
-}
-
-void MainController::clearAdvancedFlowFilterEditorValidationText() {
-    advanced_flow_filter_editor_validation_text_.clear();
-}
-
-void MainController::notifyAdvancedFlowFilterEditorRowsChanged() {
-    clearAdvancedFlowFilterEditorValidationText();
-    notifyAdvancedFlowFilterEditorStateChanged();
-}
-
-bool MainController::synchronizeAdvancedFlowFilterStructuredDraftSections(QString* errorText) {
-    auto* draft_document = advanced_flow_filter_document_state_.draft_document();
-    if (draft_document == nullptr) {
-        if (errorText != nullptr) {
-            *errorText = QStringLiteral("Advanced Filter draft is unavailable.");
-        }
-        return false;
-    }
-
-    auto updated_ports = draft_document->configured_spec.ports;
-    const auto append_port_rows =
-        [&](const std::vector<AdvancedFlowFilterPortEditorRow>& rows,
-            const bool exclude,
-            const QString& family_label) -> bool {
-            auto& target = exclude ? updated_ports.exclude : updated_ports.include;
-            for (std::size_t index = 0; index < rows.size(); ++index) {
-                const auto& row = rows[index];
-                const auto primary = row.primary_text.trimmed();
-                const auto secondary = row.secondary_text.trimmed();
-                if (!row.range_enabled) {
-                    if (primary.isEmpty()) {
-                        continue;
-                    }
-
-                    const auto port = parse_ui_u32_text(primary);
-                    if (!port.has_value() || *port > 65535U) {
-                        if (errorText != nullptr) {
-                            *errorText = QStringLiteral("%1 row %2: Port must be an integer between 0 and 65535.")
-                                .arg(family_label)
-                                .arg(QString::number(index + 1U));
-                        }
-                        return false;
-                    }
-
-                    target.push_back(session_detail::AdvancedFlowFilterPortPredicate {
-                        .scope = row.scope,
-                        .range = {
-                            static_cast<std::uint16_t>(*port),
-                            static_cast<std::uint16_t>(*port),
-                        },
-                    });
-                    continue;
-                }
-
-                if (primary.isEmpty() && secondary.isEmpty()) {
-                    continue;
-                }
-                if (primary.isEmpty() || secondary.isEmpty()) {
-                    if (errorText != nullptr) {
-                        *errorText = QStringLiteral("%1 row %2: Range rules require both From and To values.")
-                            .arg(family_label)
-                            .arg(QString::number(index + 1U));
-                    }
-                    return false;
-                }
-
-                const auto first = parse_ui_u32_text(primary);
-                const auto last = parse_ui_u32_text(secondary);
-                if (!first.has_value() || !last.has_value() || *first > 65535U || *last > 65535U) {
-                    if (errorText != nullptr) {
-                        *errorText = QStringLiteral("%1 row %2: Range bounds must be integers between 0 and 65535.")
-                            .arg(family_label)
-                            .arg(QString::number(index + 1U));
-                    }
-                    return false;
-                }
-                if (*first > *last) {
-                    if (errorText != nullptr) {
-                        *errorText = QStringLiteral("%1 row %2: From must be less than or equal to To.")
-                            .arg(family_label)
-                            .arg(QString::number(index + 1U));
-                    }
-                    return false;
-                }
-
-                target.push_back(session_detail::AdvancedFlowFilterPortPredicate {
-                    .scope = row.scope,
-                    .range = {
-                        static_cast<std::uint16_t>(*first),
-                        static_cast<std::uint16_t>(*last),
-                    },
-                });
-            }
-            return true;
-        };
-
-    if (draft_document->section_states.ports) {
-        updated_ports = {};
-        if (!append_port_rows(advanced_flow_filter_port_include_rows_, false, QStringLiteral("Ports include")) ||
-            !append_port_rows(advanced_flow_filter_port_exclude_rows_, true, QStringLiteral("Ports exclude"))) {
-            return false;
-        }
-    }
-
-    auto updated_addresses = draft_document->configured_spec.addresses;
-    const auto append_address_rows =
-        [&](const std::vector<AdvancedFlowFilterAddressEditorRow>& rows,
-            const bool exclude,
-            const QString& family_label) -> bool {
-            for (std::size_t index = 0; index < rows.size(); ++index) {
-                const auto& row = rows[index];
-                const auto address_text = row.address_text.trimmed();
-                const auto prefix_text = row.prefix_text.trimmed();
-                if (!row.subnet_enabled) {
-                    if (address_text.isEmpty()) {
-                        continue;
-                    }
-                } else {
-                    if (address_text.isEmpty() && prefix_text.isEmpty()) {
-                        continue;
-                    }
-                    if (address_text.isEmpty() || prefix_text.isEmpty()) {
-                        if (errorText != nullptr) {
-                            *errorText = QStringLiteral("%1 row %2: Subnet rules require both Address and Prefix.")
-                                .arg(family_label)
-                                .arg(QString::number(index + 1U));
-                        }
-                        return false;
-                    }
-                }
-
-                QHostAddress address {};
-                if (!address.setAddress(address_text)) {
-                    if (errorText != nullptr) {
-                        *errorText = QStringLiteral("%1 row %2: Address must be a valid IPv4 or IPv6 value.")
-                            .arg(family_label)
-                            .arg(QString::number(index + 1U));
-                    }
-                    return false;
-                }
-
-                const auto protocol = address.protocol();
-                if (protocol != QAbstractSocket::IPv4Protocol &&
-                    protocol != QAbstractSocket::IPv6Protocol) {
-                    if (errorText != nullptr) {
-                        *errorText = QStringLiteral("%1 row %2: Address must be a valid IPv4 or IPv6 value.")
-                            .arg(family_label)
-                            .arg(QString::number(index + 1U));
-                    }
-                    return false;
-                }
-
-                if (!row.subnet_enabled) {
-                    if (protocol == QAbstractSocket::IPv4Protocol) {
-                        auto& target = exclude ? updated_addresses.ipv4_exclude : updated_addresses.ipv4_include;
-                        target.push_back(session_detail::AdvancedFlowFilterIpv4AddressPredicate {
-                            .match_kind = session_detail::AdvancedFlowFilterAddressMatchKind::exact,
-                            .scope = row.scope,
-                            .value = address.toIPv4Address(),
-                            .prefix_length = 32U,
-                        });
-                    } else {
-                        auto& target = exclude ? updated_addresses.ipv6_exclude : updated_addresses.ipv6_include;
-                        target.push_back(session_detail::AdvancedFlowFilterIpv6AddressPredicate {
-                            .match_kind = session_detail::AdvancedFlowFilterAddressMatchKind::exact,
-                            .scope = row.scope,
-                            .value = qhost_to_ipv6_bytes(address),
-                            .prefix_length = 128U,
-                        });
-                    }
-                    continue;
-                }
-
-                const auto prefix = parse_ui_u32_text(prefix_text);
-                if (!prefix.has_value()) {
-                    if (errorText != nullptr) {
-                        *errorText = QStringLiteral("%1 row %2: Prefix must be an integer.")
-                            .arg(family_label)
-                            .arg(QString::number(index + 1U));
-                    }
-                    return false;
-                }
-
-                if (protocol == QAbstractSocket::IPv4Protocol) {
-                    if (*prefix > 32U) {
-                        if (errorText != nullptr) {
-                            *errorText = QStringLiteral("%1 row %2: IPv4 prefix must be between 0 and 32.")
-                                .arg(family_label)
-                                .arg(QString::number(index + 1U));
-                        }
-                        return false;
-                    }
-
-                    auto& target = exclude ? updated_addresses.ipv4_exclude : updated_addresses.ipv4_include;
-                    target.push_back(session_detail::AdvancedFlowFilterIpv4AddressPredicate {
-                        .match_kind = session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
-                        .scope = row.scope,
-                        .value = address.toIPv4Address(),
-                        .prefix_length = static_cast<std::uint8_t>(*prefix),
-                    });
-                } else {
-                    if (*prefix > 128U) {
-                        if (errorText != nullptr) {
-                            *errorText = QStringLiteral("%1 row %2: IPv6 prefix must be between 0 and 128.")
-                                .arg(family_label)
-                                .arg(QString::number(index + 1U));
-                        }
-                        return false;
-                    }
-
-                    auto& target = exclude ? updated_addresses.ipv6_exclude : updated_addresses.ipv6_include;
-                    target.push_back(session_detail::AdvancedFlowFilterIpv6AddressPredicate {
-                        .match_kind = session_detail::AdvancedFlowFilterAddressMatchKind::cidr,
-                        .scope = row.scope,
-                        .value = qhost_to_ipv6_bytes(address),
-                        .prefix_length = static_cast<std::uint8_t>(*prefix),
-                    });
-                }
-            }
-            return true;
-        };
-
-    if (draft_document->section_states.ip_addresses) {
-        updated_addresses = {};
-        if (!append_address_rows(advanced_flow_filter_address_include_rows_, false, QStringLiteral("IP addresses include")) ||
-            !append_address_rows(advanced_flow_filter_address_exclude_rows_, true, QStringLiteral("IP addresses exclude"))) {
-            return false;
-        }
-    }
-
-    draft_document->configured_spec.ports = std::move(updated_ports);
-    draft_document->configured_spec.addresses = std::move(updated_addresses);
-    return true;
+    advanced_flow_filter_editor_model_.setAddressRowPrefixText(exclude, row, text);
 }
 
 void MainController::sortFlows(const int column) {
@@ -6561,8 +5682,12 @@ void MainController::setFlowFilterText(const QString& text) {
 
 void MainController::applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document) {
     advanced_flow_filter_document_state_.accept_custom_document(document);
+    if (advanced_flow_filter_document_state_.is_editing()) {
+        advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+    } else {
+        advanced_flow_filter_editor_model_.clearTransientState();
+    }
     refreshAdvancedFlowFilter();
-    notifyAdvancedFlowFilterEditorStateChanged();
 }
 
 bool MainController::ensureSourceCaptureAvailable(const QString& unavailableActionText) {
@@ -7019,12 +6144,6 @@ void MainController::clearSelectedFlowAnalysis() {
     if (hadState) {
         emit analysisStateChanged();
     }
-}
-
-void MainController::notifyAdvancedFlowFilterEditorStateChanged() {
-    ++advanced_flow_filter_editor_revision_;
-    emit advancedFlowFilterEditorStateChanged();
-    emit advancedFlowFilterPresentationChanged();
 }
 
 void MainController::applyActiveFlowFilterModeToModel() {

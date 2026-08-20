@@ -25,6 +25,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QGuiApplication>
+#include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -4502,7 +4503,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(advanced_filter_row_at(
             include_exclude_controller.advancedFlowFilterAddressRows(false),
             0
-        ).value(QStringLiteral("addressText")).toString() == QStringLiteral("2001:0db8:0072:0000:0000:0000:0000:0001"));
+        ).value(QStringLiteral("addressText")).toString() == QHostAddress(QStringLiteral("2001:0db8:0072:0000:0000:0000:0000:0001")).toString());
         include_exclude_controller.setAdvancedFlowFilterSectionEnabled(ip_addresses_section_id, true);
         UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);

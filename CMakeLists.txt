@@ -216,6 +216,8 @@ if(PFL_BUILD_UI)
             src/ui/app/main.cpp
             src/ui/app/MainController.cpp
             src/ui/app/MainController.h
+            src/ui/app/AdvancedFlowFilterEditorModel.cpp
+            src/ui/app/AdvancedFlowFilterEditorModel.h
             src/ui/app/FlowListModel.cpp
             src/ui/app/FlowListModel.h
             src/ui/app/ProtocolPathStatsModel.cpp
@@ -319,6 +321,7 @@ if(PFL_BUILD_UI)
                 pcap_flow_lab_ui_tests
                 tests/ui/MainControllerUiTests.cpp
                 src/ui/app/MainController.cpp
+                src/ui/app/AdvancedFlowFilterEditorModel.cpp
                 src/ui/app/FlowListModel.cpp
                 src/ui/app/ProtocolPathStatsModel.cpp
                 src/ui/app/TopSummaryListModel.cpp

@@ -16,6 +16,7 @@
 #include "core/services/AnalysisSettings.h"
 #include "../../../core/open_progress.h"
 #include "ui/app/FlowListModel.h"
+#include "ui/app/AdvancedFlowFilterEditorModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
 #include "ui/app/ProtocolPathStatsModel.h"
@@ -35,18 +36,6 @@ public:
         advanced,
     };
     Q_ENUM(FlowFilterMode)
-
-    enum class AdvancedFlowFilterFiniteSection {
-        address_family = 0,
-        flow_protocol,
-        detected_protocol,
-        tls_version,
-        quic_version,
-        directionality,
-        ports,
-        ip_addresses,
-    };
-    Q_ENUM(AdvancedFlowFilterFiniteSection)
 
     enum class StatisticsSectionRequestState {
         not_requested = 0,
@@ -330,12 +319,13 @@ private:
     Q_PROPERTY(QString advancedFlowFilterRuleCountText READ advancedFlowFilterRuleCountText NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterClearAvailable READ advancedFlowFilterClearAvailable NOTIFY advancedFlowFilterPresentationChanged)
-    Q_PROPERTY(int advancedFlowFilterEditorRevision READ advancedFlowFilterEditorRevision NOTIFY advancedFlowFilterEditorStateChanged)
-    Q_PROPERTY(QString advancedFlowFilterEditorValidationText READ advancedFlowFilterEditorValidationText NOTIFY advancedFlowFilterEditorStateChanged)
+    Q_PROPERTY(QObject* advancedFlowFilterEditor READ advancedFlowFilterEditor CONSTANT)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
 public:
+    using AdvancedFlowFilterFiniteSection = AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection;
+
     explicit MainController(QObject* parent = nullptr);
     ~MainController() override;
 
@@ -603,6 +593,7 @@ public:
     [[nodiscard]] bool advancedFlowFilterClearAvailable() const noexcept;
     [[nodiscard]] int advancedFlowFilterEditorRevision() const noexcept;
     [[nodiscard]] QString advancedFlowFilterEditorValidationText() const;
+    [[nodiscard]] QObject* advancedFlowFilterEditor() noexcept;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
 
@@ -735,7 +726,6 @@ signals:
     void flowFilterModeChanged();
     void flowFilterTextChanged();
     void advancedFlowFilterPresentationChanged();
-    void advancedFlowFilterEditorStateChanged();
     void flowSortChanged();
     void openProgressChanged();
     void packetListStateChanged();
@@ -783,7 +773,6 @@ private:
     void clearSelectedFlowAnalysis();
     void applyActiveFlowFilterModeToModel();
     void refreshAdvancedFlowFilter();
-    void notifyAdvancedFlowFilterEditorStateChanged();
     std::vector<int> smartExportCurrentFilterFlowIndices(bool matching) const;
     void clearPacketSelection();
     void clearStreamSelection();
@@ -842,13 +831,6 @@ private:
     void setSmartExportState(bool inProgress, qulonglong packetsProcessed, qulonglong totalPackets, const QString& progressText);
     void setIndexSaveState(bool inProgress, bool cancelRequested, double progressPercent, const QString& progressText);
     void setStatusText(const QString& text, bool isError = false);
-    void initializeAdvancedFlowFilterStructuredEditorState();
-    void clearAdvancedFlowFilterStructuredEditorState() noexcept;
-    void clearAdvancedFlowFilterEditorValidationText();
-    void notifyAdvancedFlowFilterEditorRowsChanged();
-    [[nodiscard]] bool synchronizeAdvancedFlowFilterStructuredDraftSections(QString* errorText = nullptr);
-    [[nodiscard]] QVariantList buildAdvancedFlowFilterPortRowList(bool exclude) const;
-    [[nodiscard]] QVariantList buildAdvancedFlowFilterAddressRowList(bool exclude) const;
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
     QString chooseFlowInfoCsvSaveFile() const;
@@ -879,6 +861,7 @@ private:
     TlsRecognitionStats tls_recognition_stats_ {};
     FlowListModel flow_model_ {};
     session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
+    AdvancedFlowFilterEditorModel advanced_flow_filter_editor_model_;
     ProtocolPathStatsModel protocol_path_stats_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
@@ -913,24 +896,6 @@ private:
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
     FlowFilterMode flow_filter_mode_ {FlowFilterMode::simple};
-    int advanced_flow_filter_editor_revision_ {0};
-    struct AdvancedFlowFilterPortEditorRow {
-        session_detail::AdvancedFlowFilterPortScope scope {session_detail::AdvancedFlowFilterPortScope::either_endpoint};
-        bool range_enabled {false};
-        QString primary_text {};
-        QString secondary_text {};
-    };
-    struct AdvancedFlowFilterAddressEditorRow {
-        session_detail::AdvancedFlowFilterEndpointScope scope {session_detail::AdvancedFlowFilterEndpointScope::either_endpoint};
-        bool subnet_enabled {false};
-        QString address_text {};
-        QString prefix_text {};
-    };
-    std::vector<AdvancedFlowFilterPortEditorRow> advanced_flow_filter_port_include_rows_ {};
-    std::vector<AdvancedFlowFilterPortEditorRow> advanced_flow_filter_port_exclude_rows_ {};
-    std::vector<AdvancedFlowFilterAddressEditorRow> advanced_flow_filter_address_include_rows_ {};
-    std::vector<AdvancedFlowFilterAddressEditorRow> advanced_flow_filter_address_exclude_rows_ {};
-    QString advanced_flow_filter_editor_validation_text_ {};
     QString simple_flow_filter_text_ {};
     QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};
