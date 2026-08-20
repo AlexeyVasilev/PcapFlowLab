@@ -41,12 +41,6 @@ using session_detail::CompiledAdvancedFlowFilter;
 struct FlowFilterFixture {
     CaptureSession session {};
     AnalysisSettings default_settings {};
-    AnalysisSettings possible_tls_quic_settings {
-        .http_use_path_as_service_hint = false,
-        .use_possible_tls_quic = true,
-        .ignore_vlan_and_mpls_layers_when_grouping_flows = false,
-        .ignore_gtpu_teids_when_grouping_inner_flows = false,
-    };
     ProtocolPathId tcp_path_id {kInvalidProtocolPathId};
     ProtocolPathId udp_path_id {kInvalidProtocolPathId};
     ProtocolPathId ipv6_udp_path_id {kInvalidProtocolPathId};
@@ -549,23 +543,6 @@ void run_protocol_and_candidate_scope_tests() {
         spec.detected_protocol.include = {FlowProtocolHint::dns};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
         expect_indices_equal(evaluate_matching_indices(connections, filter), {3U});
-    }
-
-    {
-        AdvancedFlowFilterSpec spec {};
-        spec.detected_protocol.include = {FlowProtocolHint::possible_tls};
-        const auto disabled_filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, disabled_filter), std::vector<std::size_t> {});
-
-        const auto enabled_filter = require_compiled_filter(spec, fixture, fixture.possible_tls_quic_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, enabled_filter), {2U});
-    }
-
-    {
-        AdvancedFlowFilterSpec spec {};
-        spec.detected_protocol.include = {FlowProtocolHint::possible_quic};
-        const auto enabled_filter = require_compiled_filter(spec, fixture, fixture.possible_tls_quic_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, enabled_filter), {4U});
     }
 }
 
@@ -1598,7 +1575,7 @@ void run_text_format_tests() {
             "flow_protocol.include = TCP\n"
             "flow_protocol.include = udp\n"
             "flow_protocol.exclude = IcmpV6\n"
-            "detected_protocol.include = Possible_TLS\n"
+            "detected_protocol.include = TLS\n"
             "detected_protocol.exclude = mDns\n"
             "tls_version.include = TLS1_3\n"
             "quic_version.exclude = Draft29\n"
@@ -1608,7 +1585,7 @@ void run_text_format_tests() {
         const auto& spec = parsed.document.configured_spec;
         PFL_EXPECT((spec.flow_protocol.include == std::vector<ProtocolId> {ProtocolId::tcp, ProtocolId::udp}));
         PFL_EXPECT((spec.flow_protocol.exclude == std::vector<ProtocolId> {ProtocolId::icmpv6}));
-        PFL_EXPECT((spec.detected_protocol.include == std::vector<FlowProtocolHint> {FlowProtocolHint::possible_tls}));
+        PFL_EXPECT((spec.detected_protocol.include == std::vector<FlowProtocolHint> {FlowProtocolHint::tls}));
         PFL_EXPECT((spec.detected_protocol.exclude == std::vector<FlowProtocolHint> {FlowProtocolHint::mdns}));
         PFL_EXPECT((spec.tls_version.include == std::vector<TlsVersionHint> {TlsVersionHint::tls13}));
         PFL_EXPECT((spec.quic_version.exclude == std::vector<QuicVersionHint> {QuicVersionHint::draft29}));
@@ -1626,7 +1603,7 @@ void run_text_format_tests() {
                 "flow_protocol.include = tcp\n"
                 "flow_protocol.include = udp\n"
                 "flow_protocol.exclude = icmpv6\n"
-                "detected_protocol.include = possible_tls\n"
+                "detected_protocol.include = tls\n"
                 "detected_protocol.exclude = mdns\n"
                 "tls_version.include = tls1_3\n"
                 "quic_version.exclude = draft29\n"
@@ -1634,6 +1611,17 @@ void run_text_format_tests() {
             )
         );
     }
+
+    expect_parse_status(
+        "format_version = 2\n"
+        "detected_protocol.include = possible_tls\n",
+        AdvancedFlowFilterTextParseStatus::invalid_enum_token
+    );
+    expect_parse_status(
+        "format_version = 2\n"
+        "detected_protocol.include = possible_quic\n",
+        AdvancedFlowFilterTextParseStatus::invalid_enum_token
+    );
 
     {
         const auto parsed = require_parse_success(
@@ -1945,6 +1933,16 @@ void run_text_format_tests() {
         PFL_EXPECT(formatted.status == AdvancedFlowFilterTextFormatStatus::unrepresentable_spec);
         PFL_REQUIRE(formatted.issue.has_value());
         PFL_EXPECT(formatted.issue->category == "protocol_path");
+    }
+
+    {
+        session_detail::AdvancedFlowFilterDocument document {};
+        document.configured_spec.detected_protocol.include = {FlowProtocolHint::possible_tls};
+
+        const auto formatted = session_detail::format_advanced_flow_filter_text(document);
+        PFL_EXPECT(formatted.status == AdvancedFlowFilterTextFormatStatus::unrepresentable_spec);
+        PFL_REQUIRE(formatted.issue.has_value());
+        PFL_EXPECT(formatted.issue->category == "detected_protocol");
     }
 
     {

@@ -152,6 +152,170 @@ struct TransportPayloadLengths {
     std::optional<bool> is_ip_fragmented {};
 };
 
+template <typename T>
+struct AdvancedFilterOptionDescriptor {
+    T value {};
+    const char* label {""};
+    const char* object_name_suffix {""};
+};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<FlowAddressFamily>, 2> kAdvancedFilterAddressFamilyOptions {{
+    {FlowAddressFamily::ipv4, "IPv4", "Ipv4"},
+    {FlowAddressFamily::ipv6, "IPv6", "Ipv6"},
+}};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<ProtocolId>, 8> kAdvancedFilterFlowProtocolOptions {{
+    {ProtocolId::tcp, "TCP", "Tcp"},
+    {ProtocolId::udp, "UDP", "Udp"},
+    {ProtocolId::sctp, "SCTP", "Sctp"},
+    {ProtocolId::icmp, "ICMP", "Icmp"},
+    {ProtocolId::icmpv6, "ICMPv6", "Icmpv6"},
+    {ProtocolId::igmp, "IGMP", "Igmp"},
+    {ProtocolId::arp, "ARP", "Arp"},
+    {ProtocolId::esp, "ESP", "Esp"},
+}};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<FlowProtocolHint>, 17> kAdvancedFilterDetectedProtocolOptions {{
+    {FlowProtocolHint::unknown, "Unknown", "Unknown"},
+    {FlowProtocolHint::tls, "TLS", "Tls"},
+    {FlowProtocolHint::http, "HTTP", "Http"},
+    {FlowProtocolHint::dns, "DNS", "Dns"},
+    {FlowProtocolHint::quic, "QUIC", "Quic"},
+    {FlowProtocolHint::ssh, "SSH", "Ssh"},
+    {FlowProtocolHint::stun, "STUN", "Stun"},
+    {FlowProtocolHint::bittorrent, "BitTorrent", "Bittorrent"},
+    {FlowProtocolHint::dhcp, "DHCP", "Dhcp"},
+    {FlowProtocolHint::mdns, "mDNS", "Mdns"},
+    {FlowProtocolHint::smtp, "SMTP", "Smtp"},
+    {FlowProtocolHint::pop3, "POP3", "Pop3"},
+    {FlowProtocolHint::imap, "IMAP", "Imap"},
+    {FlowProtocolHint::igmp, "IGMP", "Igmp"},
+    {FlowProtocolHint::igmpv1, "IGMPv1", "Igmpv1"},
+    {FlowProtocolHint::igmpv2, "IGMPv2", "Igmpv2"},
+    {FlowProtocolHint::igmpv3, "IGMPv3", "Igmpv3"},
+}};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<TlsVersionHint>, 3> kAdvancedFilterTlsVersionOptions {{
+    {TlsVersionHint::tls12, "TLS 1.2", "Tls12"},
+    {TlsVersionHint::tls13, "TLS 1.3", "Tls13"},
+    {TlsVersionHint::unknown, "Unknown TLS/SSL", "UnknownTlsSsl"},
+}};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<QuicVersionHint>, 4> kAdvancedFilterQuicVersionOptions {{
+    {QuicVersionHint::v1, "QUIC v1", "QuicV1"},
+    {QuicVersionHint::v2, "QUIC v2", "QuicV2"},
+    {QuicVersionHint::draft29, "QUIC draft-29", "QuicDraft29"},
+    {QuicVersionHint::unknown, "Unknown QUIC", "UnknownQuic"},
+}};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlowFilterDirectionality>, 2>
+    kAdvancedFilterDirectionalityOptions {{
+        {session_detail::AdvancedFlowFilterDirectionality::unidirectional, "One direction", "Unidirectional"},
+        {session_detail::AdvancedFlowFilterDirectionality::bidirectional, "Both directions", "Bidirectional"},
+    }};
+
+template <typename T>
+bool contains_advanced_filter_option(const std::vector<T>& values, const T value) {
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+template <typename T>
+bool set_advanced_filter_option_checked(std::vector<T>& values, const T value, const bool checked) {
+    if (checked) {
+        if (!contains_advanced_filter_option(values, value)) {
+            values.push_back(value);
+            return true;
+        }
+        return false;
+    }
+
+    const auto original_size = values.size();
+    std::erase(values, value);
+    return values.size() != original_size;
+}
+
+template <typename T, std::size_t N>
+QVariantList build_advanced_filter_option_list(
+    const std::vector<T>& selected_values,
+    const std::array<AdvancedFilterOptionDescriptor<T>, N>& descriptors
+) {
+    QVariantList options {};
+    options.reserve(static_cast<qsizetype>(descriptors.size()));
+    for (const auto& descriptor : descriptors) {
+        QVariantMap option {};
+        option.insert(QStringLiteral("value"), static_cast<int>(descriptor.value));
+        option.insert(QStringLiteral("label"), QString::fromLatin1(descriptor.label));
+        option.insert(
+            QStringLiteral("checked"),
+            contains_advanced_filter_option(selected_values, descriptor.value)
+        );
+        option.insert(
+            QStringLiteral("objectNameSuffix"),
+            QString::fromLatin1(descriptor.object_name_suffix)
+        );
+        options.push_back(option);
+    }
+    return options;
+}
+
+std::optional<MainController::AdvancedFlowFilterFiniteSection> advanced_flow_filter_section_from_int(const int section) {
+    switch (static_cast<MainController::AdvancedFlowFilterFiniteSection>(section)) {
+    case MainController::AdvancedFlowFilterFiniteSection::address_family:
+    case MainController::AdvancedFlowFilterFiniteSection::flow_protocol:
+    case MainController::AdvancedFlowFilterFiniteSection::detected_protocol:
+    case MainController::AdvancedFlowFilterFiniteSection::tls_version:
+    case MainController::AdvancedFlowFilterFiniteSection::quic_version:
+    case MainController::AdvancedFlowFilterFiniteSection::directionality:
+        return static_cast<MainController::AdvancedFlowFilterFiniteSection>(section);
+    default:
+        return std::nullopt;
+    }
+}
+
+bool advanced_flow_filter_section_enabled(
+    const session_detail::AdvancedFlowFilterDocumentSectionStates& states,
+    const MainController::AdvancedFlowFilterFiniteSection section
+) noexcept {
+    switch (section) {
+    case MainController::AdvancedFlowFilterFiniteSection::address_family:
+        return states.address_family;
+    case MainController::AdvancedFlowFilterFiniteSection::flow_protocol:
+        return states.flow_protocol;
+    case MainController::AdvancedFlowFilterFiniteSection::detected_protocol:
+        return states.detected_protocol;
+    case MainController::AdvancedFlowFilterFiniteSection::tls_version:
+        return states.tls_version;
+    case MainController::AdvancedFlowFilterFiniteSection::quic_version:
+        return states.quic_version;
+    case MainController::AdvancedFlowFilterFiniteSection::directionality:
+        return states.directionality;
+    }
+
+    return false;
+}
+
+bool* advanced_flow_filter_section_enabled_mutable(
+    session_detail::AdvancedFlowFilterDocumentSectionStates& states,
+    const MainController::AdvancedFlowFilterFiniteSection section
+) noexcept {
+    switch (section) {
+    case MainController::AdvancedFlowFilterFiniteSection::address_family:
+        return &states.address_family;
+    case MainController::AdvancedFlowFilterFiniteSection::flow_protocol:
+        return &states.flow_protocol;
+    case MainController::AdvancedFlowFilterFiniteSection::detected_protocol:
+        return &states.detected_protocol;
+    case MainController::AdvancedFlowFilterFiniteSection::tls_version:
+        return &states.tls_version;
+    case MainController::AdvancedFlowFilterFiniteSection::quic_version:
+        return &states.quic_version;
+    case MainController::AdvancedFlowFilterFiniteSection::directionality:
+        return &states.directionality;
+    }
+
+    return nullptr;
+}
+
 FlowListModel::SortKey sort_key_from_column(const int column) {
     switch (column) {
     case 0:
@@ -3510,13 +3674,108 @@ QString MainController::advancedFlowFilterRuleCountText() const {
 }
 
 bool MainController::advancedFlowFilterSettingsAvailable() const noexcept {
-    return false;
+    return true;
 }
 
 bool MainController::advancedFlowFilterClearAvailable() const noexcept {
     return !is_default_advanced_flow_filter_document(
                advanced_flow_filter_document_state_.current_user_visible_document())
         && !advanced_flow_filter_document_state_.would_lose_unsaved_configuration();
+}
+
+int MainController::advancedFlowFilterEditorRevision() const noexcept {
+    return advanced_flow_filter_editor_revision_;
+}
+
+bool MainController::advancedFlowFilterDraftClearAllAvailable() const noexcept {
+    return false;
+}
+
+bool MainController::advancedFlowFilterSectionEnabled(const int section) const noexcept {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return false;
+    }
+
+    return advanced_flow_filter_section_enabled(
+        advanced_flow_filter_document_state_.current_user_visible_document().section_states,
+        *parsed_section
+    );
+}
+
+bool MainController::advancedFlowFilterSectionHasExclusions(const int section) const noexcept {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return false;
+    }
+
+    const auto& spec = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec;
+    switch (*parsed_section) {
+    case AdvancedFlowFilterFiniteSection::address_family:
+        return !spec.address_family.exclude.empty();
+    case AdvancedFlowFilterFiniteSection::flow_protocol:
+        return !spec.flow_protocol.exclude.empty();
+    case AdvancedFlowFilterFiniteSection::detected_protocol:
+        return !spec.detected_protocol.exclude.empty();
+    case AdvancedFlowFilterFiniteSection::tls_version:
+        return !spec.tls_version.exclude.empty();
+    case AdvancedFlowFilterFiniteSection::quic_version:
+        return !spec.quic_version.exclude.empty();
+    case AdvancedFlowFilterFiniteSection::directionality:
+        return !spec.directionality.exclude.empty();
+    }
+
+    return false;
+}
+
+QVariantList MainController::advancedFlowFilterIncludeOptions(const int section) const {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return {};
+    }
+
+    const auto& spec = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec;
+    switch (*parsed_section) {
+    case AdvancedFlowFilterFiniteSection::address_family:
+        return build_advanced_filter_option_list(spec.address_family.include, kAdvancedFilterAddressFamilyOptions);
+    case AdvancedFlowFilterFiniteSection::flow_protocol:
+        return build_advanced_filter_option_list(spec.flow_protocol.include, kAdvancedFilterFlowProtocolOptions);
+    case AdvancedFlowFilterFiniteSection::detected_protocol:
+        return build_advanced_filter_option_list(spec.detected_protocol.include, kAdvancedFilterDetectedProtocolOptions);
+    case AdvancedFlowFilterFiniteSection::tls_version:
+        return build_advanced_filter_option_list(spec.tls_version.include, kAdvancedFilterTlsVersionOptions);
+    case AdvancedFlowFilterFiniteSection::quic_version:
+        return build_advanced_filter_option_list(spec.quic_version.include, kAdvancedFilterQuicVersionOptions);
+    case AdvancedFlowFilterFiniteSection::directionality:
+        return build_advanced_filter_option_list(spec.directionality.include, kAdvancedFilterDirectionalityOptions);
+    }
+
+    return {};
+}
+
+QVariantList MainController::advancedFlowFilterExcludeOptions(const int section) const {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return {};
+    }
+
+    const auto& spec = advanced_flow_filter_document_state_.current_user_visible_document().configured_spec;
+    switch (*parsed_section) {
+    case AdvancedFlowFilterFiniteSection::address_family:
+        return build_advanced_filter_option_list(spec.address_family.exclude, kAdvancedFilterAddressFamilyOptions);
+    case AdvancedFlowFilterFiniteSection::flow_protocol:
+        return build_advanced_filter_option_list(spec.flow_protocol.exclude, kAdvancedFilterFlowProtocolOptions);
+    case AdvancedFlowFilterFiniteSection::detected_protocol:
+        return build_advanced_filter_option_list(spec.detected_protocol.exclude, kAdvancedFilterDetectedProtocolOptions);
+    case AdvancedFlowFilterFiniteSection::tls_version:
+        return build_advanced_filter_option_list(spec.tls_version.exclude, kAdvancedFilterTlsVersionOptions);
+    case AdvancedFlowFilterFiniteSection::quic_version:
+        return build_advanced_filter_option_list(spec.quic_version.exclude, kAdvancedFilterQuicVersionOptions);
+    case AdvancedFlowFilterFiniteSection::directionality:
+        return build_advanced_filter_option_list(spec.directionality.exclude, kAdvancedFilterDirectionalityOptions);
+    }
+
+    return {};
 }
 
 int MainController::flowSortColumn() const noexcept {
@@ -4488,7 +4747,120 @@ void MainController::clearAdvancedFlowFilter() {
 
     advanced_flow_filter_document_state_.clear_all();
     refreshAdvancedFlowFilter();
-    emit advancedFlowFilterPresentationChanged();
+    notifyAdvancedFlowFilterEditorStateChanged();
+}
+
+void MainController::beginAdvancedFlowFilterEdit() {
+    advanced_flow_filter_document_state_.begin_edit();
+    notifyAdvancedFlowFilterEditorStateChanged();
+}
+
+void MainController::cancelAdvancedFlowFilterEdit() {
+    if (!advanced_flow_filter_document_state_.is_editing()) {
+        return;
+    }
+
+    advanced_flow_filter_document_state_.cancel_edit();
+    notifyAdvancedFlowFilterEditorStateChanged();
+}
+
+bool MainController::applyAdvancedFlowFilterEdit() {
+    if (!advanced_flow_filter_document_state_.apply_draft()) {
+        return false;
+    }
+
+    refreshAdvancedFlowFilter();
+    notifyAdvancedFlowFilterEditorStateChanged();
+    return true;
+}
+
+void MainController::setAdvancedFlowFilterSectionEnabled(const int section, const bool enabled) {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return;
+    }
+
+    advanced_flow_filter_document_state_.begin_edit();
+    auto* draft_document = advanced_flow_filter_document_state_.draft_document();
+    if (draft_document == nullptr) {
+        return;
+    }
+
+    auto* section_enabled = advanced_flow_filter_section_enabled_mutable(draft_document->section_states, *parsed_section);
+    if (section_enabled == nullptr || *section_enabled == enabled) {
+        return;
+    }
+
+    *section_enabled = enabled;
+    notifyAdvancedFlowFilterEditorStateChanged();
+}
+
+void MainController::setAdvancedFlowFilterOptionChecked(
+    const int section,
+    const int value,
+    const bool exclude,
+    const bool checked
+) {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return;
+    }
+
+    advanced_flow_filter_document_state_.begin_edit();
+    auto* draft_document = advanced_flow_filter_document_state_.draft_document();
+    if (draft_document == nullptr) {
+        return;
+    }
+
+    bool changed = false;
+    switch (*parsed_section) {
+    case AdvancedFlowFilterFiniteSection::address_family:
+        changed = set_advanced_filter_option_checked(
+            exclude ? draft_document->configured_spec.address_family.exclude : draft_document->configured_spec.address_family.include,
+            static_cast<FlowAddressFamily>(value),
+            checked
+        );
+        break;
+    case AdvancedFlowFilterFiniteSection::flow_protocol:
+        changed = set_advanced_filter_option_checked(
+            exclude ? draft_document->configured_spec.flow_protocol.exclude : draft_document->configured_spec.flow_protocol.include,
+            static_cast<ProtocolId>(value),
+            checked
+        );
+        break;
+    case AdvancedFlowFilterFiniteSection::detected_protocol:
+        changed = set_advanced_filter_option_checked(
+            exclude ? draft_document->configured_spec.detected_protocol.exclude : draft_document->configured_spec.detected_protocol.include,
+            static_cast<FlowProtocolHint>(value),
+            checked
+        );
+        break;
+    case AdvancedFlowFilterFiniteSection::tls_version:
+        changed = set_advanced_filter_option_checked(
+            exclude ? draft_document->configured_spec.tls_version.exclude : draft_document->configured_spec.tls_version.include,
+            static_cast<TlsVersionHint>(value),
+            checked
+        );
+        break;
+    case AdvancedFlowFilterFiniteSection::quic_version:
+        changed = set_advanced_filter_option_checked(
+            exclude ? draft_document->configured_spec.quic_version.exclude : draft_document->configured_spec.quic_version.include,
+            static_cast<QuicVersionHint>(value),
+            checked
+        );
+        break;
+    case AdvancedFlowFilterFiniteSection::directionality:
+        changed = set_advanced_filter_option_checked(
+            exclude ? draft_document->configured_spec.directionality.exclude : draft_document->configured_spec.directionality.include,
+            static_cast<session_detail::AdvancedFlowFilterDirectionality>(value),
+            checked
+        );
+        break;
+    }
+
+    if (changed) {
+        notifyAdvancedFlowFilterEditorStateChanged();
+    }
 }
 
 void MainController::sortFlows(const int column) {
@@ -5534,7 +5906,7 @@ void MainController::setFlowFilterText(const QString& text) {
 void MainController::applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document) {
     advanced_flow_filter_document_state_.accept_custom_document(document);
     refreshAdvancedFlowFilter();
-    emit advancedFlowFilterPresentationChanged();
+    notifyAdvancedFlowFilterEditorStateChanged();
 }
 
 bool MainController::ensureSourceCaptureAvailable(const QString& unavailableActionText) {
@@ -5991,6 +6363,12 @@ void MainController::clearSelectedFlowAnalysis() {
     if (hadState) {
         emit analysisStateChanged();
     }
+}
+
+void MainController::notifyAdvancedFlowFilterEditorStateChanged() {
+    ++advanced_flow_filter_editor_revision_;
+    emit advancedFlowFilterEditorStateChanged();
+    emit advancedFlowFilterPresentationChanged();
 }
 
 void MainController::applyActiveFlowFilterModeToModel() {

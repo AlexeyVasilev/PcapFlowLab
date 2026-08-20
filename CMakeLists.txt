@@ -247,6 +247,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/FlowAnalysisPane.qml
                 src/ui/qml/components/SettingsPane.qml
                 src/ui/qml/components/AppScrollBar.qml
+                src/ui/qml/components/AdvancedFlowFilterSettingsDialog.qml
                 src/ui/qml/components/SupportedProtocolsDialog.qml
                 src/ui/qml/components/SmartExportDialog.qml
         )

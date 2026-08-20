@@ -36,6 +36,16 @@ public:
     };
     Q_ENUM(FlowFilterMode)
 
+    enum class AdvancedFlowFilterFiniteSection {
+        address_family = 0,
+        flow_protocol,
+        detected_protocol,
+        tls_version,
+        quic_version,
+        directionality,
+    };
+    Q_ENUM(AdvancedFlowFilterFiniteSection)
+
     enum class StatisticsSectionRequestState {
         not_requested = 0,
         loading,
@@ -318,6 +328,7 @@ private:
     Q_PROPERTY(QString advancedFlowFilterRuleCountText READ advancedFlowFilterRuleCountText NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterClearAvailable READ advancedFlowFilterClearAvailable NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(int advancedFlowFilterEditorRevision READ advancedFlowFilterEditorRevision NOTIFY advancedFlowFilterEditorStateChanged)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
@@ -587,6 +598,7 @@ public:
     [[nodiscard]] QString advancedFlowFilterRuleCountText() const;
     [[nodiscard]] bool advancedFlowFilterSettingsAvailable() const noexcept;
     [[nodiscard]] bool advancedFlowFilterClearAvailable() const noexcept;
+    [[nodiscard]] int advancedFlowFilterEditorRevision() const noexcept;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
 
@@ -635,6 +647,16 @@ public:
     Q_INVOKABLE void useAdvancedFlowFilter();
     Q_INVOKABLE void useSimpleFlowFilter();
     Q_INVOKABLE void clearAdvancedFlowFilter();
+    Q_INVOKABLE void beginAdvancedFlowFilterEdit();
+    Q_INVOKABLE void cancelAdvancedFlowFilterEdit();
+    Q_INVOKABLE bool applyAdvancedFlowFilterEdit();
+    Q_INVOKABLE bool advancedFlowFilterDraftClearAllAvailable() const noexcept;
+    Q_INVOKABLE bool advancedFlowFilterSectionEnabled(int section) const noexcept;
+    Q_INVOKABLE bool advancedFlowFilterSectionHasExclusions(int section) const noexcept;
+    Q_INVOKABLE QVariantList advancedFlowFilterIncludeOptions(int section) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterExcludeOptions(int section) const;
+    Q_INVOKABLE void setAdvancedFlowFilterSectionEnabled(int section, bool enabled);
+    Q_INVOKABLE void setAdvancedFlowFilterOptionChecked(int section, int value, bool exclude, bool checked);
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -693,6 +715,7 @@ signals:
     void flowFilterModeChanged();
     void flowFilterTextChanged();
     void advancedFlowFilterPresentationChanged();
+    void advancedFlowFilterEditorStateChanged();
     void flowSortChanged();
     void openProgressChanged();
     void packetListStateChanged();
@@ -740,6 +763,7 @@ private:
     void clearSelectedFlowAnalysis();
     void applyActiveFlowFilterModeToModel();
     void refreshAdvancedFlowFilter();
+    void notifyAdvancedFlowFilterEditorStateChanged();
     std::vector<int> smartExportCurrentFilterFlowIndices(bool matching) const;
     void clearPacketSelection();
     void clearStreamSelection();
@@ -862,6 +886,7 @@ private:
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
     FlowFilterMode flow_filter_mode_ {FlowFilterMode::simple};
+    int advanced_flow_filter_editor_revision_ {0};
     QString simple_flow_filter_text_ {};
     QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};

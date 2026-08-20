@@ -609,12 +609,6 @@ std::optional<FlowProtocolHint> parse_flow_protocol_hint_token(const std::string
     if (equals_ascii_case_insensitive(token, "imap")) {
         return FlowProtocolHint::imap;
     }
-    if (equals_ascii_case_insensitive(token, "possible_tls")) {
-        return FlowProtocolHint::possible_tls;
-    }
-    if (equals_ascii_case_insensitive(token, "possible_quic")) {
-        return FlowProtocolHint::possible_quic;
-    }
     if (equals_ascii_case_insensitive(token, "igmp")) {
         return FlowProtocolHint::igmp;
     }
@@ -1231,9 +1225,9 @@ std::string format_flow_protocol_hint_token(const FlowProtocolHint hint) {
     case FlowProtocolHint::imap:
         return "imap";
     case FlowProtocolHint::possible_tls:
-        return "possible_tls";
+        return {};
     case FlowProtocolHint::possible_quic:
-        return "possible_quic";
+        return {};
     case FlowProtocolHint::igmp:
         return "igmp";
     case FlowProtocolHint::igmpv1:

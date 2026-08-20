@@ -306,8 +306,6 @@ The current canonical formatter emits:
   - `smtp`
   - `pop3`
   - `imap`
-  - `possible_tls`
-  - `possible_quic`
   - `igmp`
   - `igmpv1`
   - `igmpv2`
@@ -500,8 +498,8 @@ The initial backend stage supports these predicate families:
 - Protocol Path
 - Address Family (`FlowAddressFamily`)
 - flow protocol (`ProtocolId`)
-- detected protocol (`FlowProtocolHint`, including current possible-TLS /
-  possible-QUIC semantics from `AnalysisSettings`)
+- detected protocol (the current user-facing Advanced Flow Filter subset of
+  `FlowProtocolHint`)
 - TLS version (`TlsVersionHint`)
 - QUIC version (`QuicVersionHint`)
 - IPv4 exact-address and CIDR predicates

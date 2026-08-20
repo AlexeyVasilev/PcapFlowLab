@@ -566,6 +566,14 @@ ApplicationWindow {
         protocolCatalog: mainController.supportedProtocolCatalog
     }
 
+    AdvancedFlowFilterSettingsDialog {
+        id: advancedFlowFilterSettingsDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        controller: mainController
+    }
+
     SmartExportDialog {
         id: smartExportDialog
         parent: window.contentItem
@@ -1229,6 +1237,7 @@ ApplicationWindow {
                     mainController.useSimpleFlowFilter()
                 }
                 onAdvancedFilterSettingsRequested: function() {
+                    advancedFlowFilterSettingsDialog.open()
                 }
                 onClearAdvancedFilterRequested: function() {
                     mainController.clearAdvancedFlowFilter()

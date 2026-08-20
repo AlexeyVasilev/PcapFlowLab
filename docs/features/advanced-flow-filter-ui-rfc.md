@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, and applied Advanced Filter evaluation into the flow list. Advanced Filter Settings editing, Open/Save workflows, section editors, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, and the first dedicated Advanced Filter Settings dialog for finite checkbox sections. Open/Save workflows, deferred editor sections, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -213,6 +213,18 @@ Current agreed behavior:
 - `Apply` initially means apply and close
 - this may be revisited later during UI testing
 - exact spacing/styling remains polish
+- Qt now implements this dedicated Settings shell for:
+  - Address Family
+  - Flow Protocol
+  - Detected Protocol
+  - TLS Version
+  - QUIC Version
+  - Observed directions
+- Qt now applies section Enabled state, Include selections, collapsible
+  Exclusions, and draft Apply/Cancel behavior through
+  `AdvancedFlowFilterDocumentState`
+- Open/Save/Save As/Clear unsaved changes and confirmed destructive Clear-all
+  workflow remain deferred
 
 ### Open Filter
 
@@ -654,10 +666,8 @@ Current status:
 - no Address Family predicate exists until the user selects a value
 - the backend `AdvancedFlowFilterSpec` now exposes a dedicated address-family
   predicate with IPv4 / IPv6 include-exclude semantics
-- the remaining work here is UI/document-state integration, not backend
-  predicate support
-
-This RFC records the UI design but does not implement it.
+- Qt now implements the finite checkbox editor for this section, including
+  Enabled state plus Include / Exclude editing
 
 ## Flow Protocol
 
@@ -681,14 +691,17 @@ Interaction:
 
 - checkbox Include values
 - expandable Exclusions
+- Qt now implements this finite checkbox editor in the dedicated Advanced
+  Filter Settings dialog
 
 ## Detected Protocol
 
 Detected Protocol uses checkbox Include values with expandable Exclusions.
 
-The values come from current `FlowProtocolHint` semantics.
+The values come from the current Advanced Filter detected-protocol subset of
+`FlowProtocolHint`.
 
-Examples include current product concepts such as:
+Examples include:
 
 - TLS
 - HTTP
@@ -697,12 +710,13 @@ Examples include current product concepts such as:
 - SSH
 - SMTP
 - mDNS
-- Possible TLS
-- Possible QUIC
 - Unknown
 
 This RFC does not redefine backend hint semantics; it only records the agreed
 UI pattern.
+
+Qt now implements this finite checkbox editor in the dedicated Advanced Filter
+Settings dialog.
 
 ## TLS And QUIC Version
 
@@ -720,15 +734,18 @@ Conceptual labels:
 
 Counts may be shown only under the capture-level-count policy described above.
 
-## Directionality
+Qt now implements these finite checkbox sections in the dedicated Advanced
+Filter Settings dialog.
 
-Directionality uses the same checkbox Include plus expandable Exclusions
+## Observed Directions
+
+Observed directions use the same checkbox Include plus expandable Exclusions
 pattern.
 
 Values are exactly:
 
-- Unidirectional
-- Bidirectional
+- One direction
+- Both directions
 
 This UI must not reintroduce:
 
@@ -737,6 +754,14 @@ This UI must not reintroduce:
 - B-to-A-only
 
 That aligns with the current backend directionality model for listable flows.
+
+Helper text should clarify:
+
+- One direction means packets were observed in only one flow direction.
+- Both directions means at least one packet was observed in each direction.
+
+Qt now implements this finite checkbox editor in the dedicated Advanced Filter
+Settings dialog.
 
 ## Port Editor
 
@@ -1499,7 +1524,7 @@ Representative sections that may have Enabled state include:
 - Detected Protocol
 - TLS Version
 - QUIC Version
-- Directionality
+- Observed directions
 - Ports
 - IP addresses
 - Traffic
