@@ -15,8 +15,11 @@ Dialog {
     readonly property int trafficSectionId: 8
     readonly property int serviceSectionId: 9
     readonly property int protocolPathSectionId: 10
+    readonly property int containsLayerSectionId: 11
     readonly property int serviceKnownKind: 0
     readonly property int serviceUnknownKind: 1
+    readonly property int containsLayerIdentifierModeAny: 0
+    readonly property int containsLayerIdentifierModeExact: 1
 
     signal initializeDialogState()
 
@@ -1943,6 +1946,333 @@ Dialog {
                                             text: "+ Add path"
                                             enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
                                             onClicked: root.openProtocolPathSelector(true, -1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: containsLayerSection
+                            readonly property bool sectionEnabledState: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.containsLayerSectionId)
+                            }
+                            readonly property var layerOptions: root.editor
+                                ? root.editor.containsLayerOptions()
+                                : []
+                            readonly property var identifierModeOptions: root.editor
+                                ? root.editor.containsLayerIdentifierModeOptions()
+                                : []
+                            readonly property var includeRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.containsLayerRows(false)
+                            }
+                            readonly property var excludeRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.containsLayerRows(true)
+                            }
+
+                            objectName: "advancedFlowFilterContainsLayerSection"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: implicitHeight
+                            implicitHeight: containsLayerSectionLayout.implicitHeight + 28
+                            radius: 8
+                            color: "white"
+                            border.color: "#dbe4f0"
+
+                            property bool exclusionsExpanded: false
+
+                            function initializeExclusionsVisibility() {
+                                exclusionsExpanded = root.editor
+                                    ? root.editor.sectionHasExclusions(root.containsLayerSectionId)
+                                    : false
+                            }
+
+                            Component.onCompleted: initializeExclusionsVisibility()
+
+                            Connections {
+                                target: root
+
+                                function onInitializeDialogState() {
+                                    containsLayerSection.initializeExclusionsVisibility()
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: containsLayerSectionLayout
+                                x: 14
+                                y: 14
+                                width: parent.width - 28
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: "Contains Layer"
+                                        color: "#0f172a"
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                    }
+
+                                    CheckBox {
+                                        objectName: "advancedFlowFilterContainsLayerEnabledCheckBox"
+                                        text: "Enabled"
+                                        checked: containsLayerSection.sectionEnabledState
+                                        onToggled: {
+                                            if (root.editor) {
+                                                root.editor.setSectionEnabled(root.containsLayerSectionId, checked)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    enabled: containsLayerSection.sectionEnabledState
+                                    opacity: containsLayerSection.sectionEnabledState ? 1.0 : 0.55
+
+                                    Label {
+                                        text: "Include"
+                                        color: "#475569"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+
+                                    Repeater {
+                                        model: containsLayerSection.includeRows
+
+                                        delegate: Rectangle {
+                                            required property var modelData
+
+                                            Layout.fillWidth: true
+                                            implicitHeight: includeContainsLayerColumn.implicitHeight + 12
+                                            color: "#f8fafc"
+                                            border.color: "#e2e8f0"
+                                            radius: 6
+
+                                            ColumnLayout {
+                                                id: includeContainsLayerColumn
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 4
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    ComboBox {
+                                                        objectName: "advancedFlowFilterContainsLayerIncludeRow" + modelData.row + "LayerComboBox"
+                                                        Layout.preferredWidth: 170
+                                                        model: containsLayerSection.layerOptions
+                                                        textRole: "label"
+                                                        currentIndex: root.optionIndex(model, modelData.layerKind)
+                                                        onActivated: {
+                                                            if (root.editor) {
+                                                                root.editor.setContainsLayerRowKind(false, modelData.row, model[currentIndex].value)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    ComboBox {
+                                                        objectName: "advancedFlowFilterContainsLayerIncludeRow" + modelData.row + "IdentifierModeComboBox"
+                                                        Layout.preferredWidth: 130
+                                                        model: containsLayerSection.identifierModeOptions
+                                                        textRole: "label"
+                                                        currentIndex: root.optionIndex(model, modelData.identifierMode)
+                                                        onActivated: {
+                                                            if (root.editor) {
+                                                                root.editor.setContainsLayerRowIdentifierMode(false, modelData.row, model[currentIndex].value)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Label {
+                                                        objectName: "advancedFlowFilterContainsLayerIncludeRow" + modelData.row + "IdentifierLabel"
+                                                        visible: modelData.identifierMode === root.containsLayerIdentifierModeExact
+                                                        text: modelData.identifierLabel
+                                                        color: "#475569"
+                                                    }
+
+                                                    TextField {
+                                                        objectName: "advancedFlowFilterContainsLayerIncludeRow" + modelData.row + "ExactValueTextField"
+                                                        Layout.fillWidth: true
+                                                        visible: modelData.identifierMode === root.containsLayerIdentifierModeExact
+                                                        text: modelData.exactValueText
+                                                        placeholderText: modelData.exactValuePlaceholder
+                                                        onTextEdited: {
+                                                            if (root.editor) {
+                                                                root.editor.setContainsLayerRowExactValueText(false, modelData.row, text)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        objectName: "advancedFlowFilterContainsLayerIncludeRow" + modelData.row + "RemoveButton"
+                                                        text: "Remove"
+                                                        onClicked: {
+                                                            if (root.editor) {
+                                                                root.editor.removeContainsLayerRow(false, modelData.row)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    objectName: "advancedFlowFilterContainsLayerIncludeRow" + modelData.row + "StatusLabel"
+                                                    Layout.fillWidth: true
+                                                    visible: text.length > 0
+                                                    text: modelData.statusText
+                                                    color: "#b45309"
+                                                    font.pixelSize: 12
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterContainsLayerAddIncludeButton"
+                                        text: "+ Add layer"
+                                        onClicked: {
+                                            if (root.editor) {
+                                                root.editor.addContainsLayerRow(false)
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterContainsLayerExclusionsToggleButton"
+                                        text: containsLayerSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
+                                        onClicked: containsLayerSection.exclusionsExpanded = !containsLayerSection.exclusionsExpanded
+                                    }
+
+                                    ColumnLayout {
+                                        objectName: "advancedFlowFilterContainsLayerExclusionsSection"
+                                        Layout.fillWidth: true
+                                        visible: containsLayerSection.exclusionsExpanded
+                                        spacing: 10
+
+                                        Label {
+                                            text: "Exclude"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Repeater {
+                                            model: containsLayerSection.excludeRows
+
+                                            delegate: Rectangle {
+                                                required property var modelData
+
+                                                Layout.fillWidth: true
+                                                implicitHeight: excludeContainsLayerColumn.implicitHeight + 12
+                                                color: "#f8fafc"
+                                                border.color: "#e2e8f0"
+                                                radius: 6
+
+                                                ColumnLayout {
+                                                    id: excludeContainsLayerColumn
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    spacing: 4
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        ComboBox {
+                                                            objectName: "advancedFlowFilterContainsLayerExcludeRow" + modelData.row + "LayerComboBox"
+                                                            Layout.preferredWidth: 170
+                                                            model: containsLayerSection.layerOptions
+                                                            textRole: "label"
+                                                            currentIndex: root.optionIndex(model, modelData.layerKind)
+                                                            onActivated: {
+                                                                if (root.editor) {
+                                                                    root.editor.setContainsLayerRowKind(true, modelData.row, model[currentIndex].value)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        ComboBox {
+                                                            objectName: "advancedFlowFilterContainsLayerExcludeRow" + modelData.row + "IdentifierModeComboBox"
+                                                            Layout.preferredWidth: 130
+                                                            model: containsLayerSection.identifierModeOptions
+                                                            textRole: "label"
+                                                            currentIndex: root.optionIndex(model, modelData.identifierMode)
+                                                            onActivated: {
+                                                                if (root.editor) {
+                                                                    root.editor.setContainsLayerRowIdentifierMode(true, modelData.row, model[currentIndex].value)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            objectName: "advancedFlowFilterContainsLayerExcludeRow" + modelData.row + "IdentifierLabel"
+                                                            visible: modelData.identifierMode === root.containsLayerIdentifierModeExact
+                                                            text: modelData.identifierLabel
+                                                            color: "#475569"
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilterContainsLayerExcludeRow" + modelData.row + "ExactValueTextField"
+                                                            Layout.fillWidth: true
+                                                            visible: modelData.identifierMode === root.containsLayerIdentifierModeExact
+                                                            text: modelData.exactValueText
+                                                            placeholderText: modelData.exactValuePlaceholder
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setContainsLayerRowExactValueText(true, modelData.row, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Button {
+                                                            objectName: "advancedFlowFilterContainsLayerExcludeRow" + modelData.row + "RemoveButton"
+                                                            text: "Remove"
+                                                            onClicked: {
+                                                                if (root.editor) {
+                                                                    root.editor.removeContainsLayerRow(true, modelData.row)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Label {
+                                                        objectName: "advancedFlowFilterContainsLayerExcludeRow" + modelData.row + "StatusLabel"
+                                                        Layout.fillWidth: true
+                                                        visible: text.length > 0
+                                                        text: modelData.statusText
+                                                        color: "#b45309"
+                                                        font.pixelSize: 12
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Button {
+                                            objectName: "advancedFlowFilterContainsLayerAddExcludeButton"
+                                            text: "+ Add layer"
+                                            onClicked: {
+                                                if (root.editor) {
+                                                    root.editor.addContainsLayerRow(true)
+                                                }
+                                            }
                                         }
                                     }
                                 }

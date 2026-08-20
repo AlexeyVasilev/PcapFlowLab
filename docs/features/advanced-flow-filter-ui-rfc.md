@@ -225,6 +225,13 @@ Current agreed behavior:
   Exclusions, repeated structured Port/IP rule rows, transactional Apply
   validation, and draft Apply/Cancel behavior through
   `AdvancedFlowFilterDocumentState`
+- Qt now also implements a dedicated Contains Layer editor with:
+  - an independent Enabled state
+  - separate Include / Exclusions rows
+  - backend-driven eligible layer metadata
+  - `Any` / `Exact` identifier modes
+  - capture-specific applicability feedback derived from cached Protocol Path
+    summary data
 - Open/Save/Save As/Clear unsaved changes and confirmed destructive Clear-all
   workflow remain deferred
 
@@ -945,6 +952,9 @@ Path statistics model.
 Contains Layer matches the presence of an identifier-bearing intermediate or
 encapsulation layer.
 
+These are separate logical sections. The UI must not imply that Protocol Path
+and Contains Layer form one shared OR family.
+
 ### Protocol Path Section
 
 Conceptual section:
@@ -966,6 +976,8 @@ default according to the existing Include / Exclusions interaction model.
 
 Multiple enabled Include Protocol Path rules use the existing OR semantics.
 Any matching enabled exclusion rejects the flow.
+When the Contains Layer section is also enabled, the final Protocol Path
+result combines with Contains Layer using AND.
 
 ### Add And Edit Protocol Path Picker
 
@@ -1170,6 +1182,9 @@ filter dirty.
 An unavailable enabled Include rule simply cannot match that capture.
 
 Existing category OR semantics remain intact.
+For this area that OR guarantee applies within the Protocol Path section
+itself. It does not collapse Protocol Path and Contains Layer into one shared
+OR category.
 
 Example:
 
@@ -1218,6 +1233,10 @@ layers.
 The UI does not offer ordinary terminal/basic protocols here when equivalent
 dedicated Advanced Filter categories already exist.
 
+Contains Layer keeps its own include/exclude semantics: include rows use OR,
+matching excludes reject, and the final section result combines with Protocol
+Path using AND when both sections are enabled.
+
 Examples that must not be offered in Contains Layer:
 
 - TCP
@@ -1250,8 +1269,9 @@ Representative examples include:
 - AH -> SPI
 - ESP -> SPI
 
-This list should not become a permanently hardcoded UI contract if the backend
-already has authoritative layer/identifier metadata that can drive it.
+The implemented Qt editor is expected to consume authoritative backend
+layer/identifier metadata rather than duplicating a separate hardcoded QML
+mapping.
 
 Implementation should avoid UI/backend drift.
 
@@ -1322,6 +1342,12 @@ Such warnings:
 - do not make the filter document invalid
 - do not automatically disable the rule or section
 - are transient capture-specific information only
+
+The implemented Qt applicability signal is intentionally cheap:
+
+- it uses cached Protocol Path summary data
+- it does not scan flows
+- it does not read packet bytes
 
 ## Traffic And Numeric Filters
 

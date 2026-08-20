@@ -1593,6 +1593,17 @@ void append_non_default_section_state_lines(
 
 }  // namespace
 
+AdvancedFlowFilterParsedUnsignedIntegerText parse_advanced_flow_filter_unsigned_integer_text(
+    const std::string_view text
+) {
+    const auto parsed = parse_uint64_decimal_or_hex(text);
+    return AdvancedFlowFilterParsedUnsignedIntegerText {
+        .ok = parsed.ok,
+        .overflow = parsed.overflow,
+        .value = parsed.value,
+    };
+}
+
 AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::string_view input_text) {
     std::string_view text = input_text;
     if (text.size() >= 3U &&

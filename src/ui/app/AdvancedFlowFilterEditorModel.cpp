@@ -1,5 +1,6 @@
 #include "ui/app/AdvancedFlowFilterEditorModel.h"
 
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ProtocolPathPresentation.h"
 
 #include <algorithm>
@@ -117,6 +118,14 @@ constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlow
         {session_detail::AdvancedFlowFilterServicePredicateKind::equals, "Equals", "Equals"},
         {session_detail::AdvancedFlowFilterServicePredicateKind::starts_with, "Starts with", "StartsWith"},
         {session_detail::AdvancedFlowFilterServicePredicateKind::contains, "Contains", "Contains"},
+    }};
+
+constexpr std::array<
+    AdvancedFilterOptionDescriptor<AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode>,
+    2>
+    kAdvancedFlowFilterContainsLayerIdentifierModeOptions {{
+        {AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode::any, "Any", "Any"},
+        {AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode::exact, "Exact", "Exact"},
     }};
 
 enum class TrafficMetricValueKind : std::uint8_t {
@@ -630,6 +639,165 @@ QString protocol_path_compact_display_text(
     return QString::fromStdString(session_detail::format_protocol_path_compact_display_text(path));
 }
 
+ProtocolLayerKind default_contains_layer_kind() noexcept {
+    const auto descriptors = session_detail::protocol_path_contains_layer_descriptors();
+    return descriptors.empty() ? ProtocolLayerKind::unknown : descriptors.front().kind;
+}
+
+std::optional<AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode>
+contains_layer_identifier_mode_from_int(const int mode) {
+    switch (static_cast<AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode>(mode)) {
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode::any:
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode::exact:
+        return static_cast<AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode>(mode);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ProtocolLayerKind> contains_layer_kind_from_int(const int kind) {
+    const auto converted = static_cast<ProtocolLayerKind>(kind);
+    return session_detail::protocol_path_contains_layer_descriptor(converted) != nullptr
+        ? std::optional<ProtocolLayerKind> {converted}
+        : std::nullopt;
+}
+
+QVariantList build_contains_layer_option_list() {
+    QVariantList options {};
+    const auto descriptors = session_detail::protocol_path_contains_layer_descriptors();
+    options.reserve(static_cast<qsizetype>(descriptors.size()));
+    for (const auto& descriptor : descriptors) {
+        QVariantMap option {};
+        option.insert(QStringLiteral("value"), static_cast<int>(descriptor.kind));
+        option.insert(QStringLiteral("label"), QString::fromLatin1(descriptor.layer_label));
+        option.insert(QStringLiteral("objectNameSuffix"), QString::fromLatin1(descriptor.object_name_suffix));
+        option.insert(QStringLiteral("identifierLabel"), QString::fromLatin1(descriptor.identifier_label));
+        option.insert(
+            QStringLiteral("preferredInputFormat"),
+            static_cast<int>(descriptor.preferred_input_format)
+        );
+        options.push_back(option);
+    }
+    return options;
+}
+
+QString contains_layer_exact_placeholder_text(const session_detail::ProtocolPathContainsLayerDescriptor& descriptor) {
+    switch (descriptor.preferred_input_format) {
+    case session_detail::ProtocolPathIdentifierInputFormat::decimal:
+        return descriptor.max_value > 9999U ? QStringLiteral("200") : QStringLiteral("413");
+    case session_detail::ProtocolPathIdentifierInputFormat::hexadecimal:
+        return descriptor.max_value <= 0xFFFFFFU
+            ? QStringLiteral("0x123456")
+            : QStringLiteral("0x12345678");
+    }
+
+    return {};
+}
+
+QString contains_layer_compact_text(
+    const session_detail::ProtocolPathContainsLayerDescriptor& descriptor,
+    const AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode mode,
+    const QString& exact_value_text
+) {
+    if (mode == AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode::any) {
+        return QStringLiteral("%1 / Any").arg(QString::fromLatin1(descriptor.layer_label));
+    }
+
+    const auto trimmed = exact_value_text.trimmed();
+    if (trimmed.isEmpty()) {
+        return QStringLiteral("%1 / %2").arg(
+            QString::fromLatin1(descriptor.layer_label),
+            QString::fromLatin1(descriptor.identifier_label)
+        );
+    }
+
+    return QStringLiteral("%1 / %2 %3").arg(
+        QString::fromLatin1(descriptor.layer_label),
+        QString::fromLatin1(descriptor.identifier_label),
+        trimmed
+    );
+}
+
+bool contains_layer_predicate_is_ui_managed(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    return predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer;
+}
+
+std::optional<session_detail::AdvancedFlowFilterProtocolPathPredicate> contains_layer_predicate_from_editor_row(
+    const auto& row,
+    QString* error_text,
+    const QString& row_label
+) {
+    const auto* descriptor = session_detail::protocol_path_contains_layer_descriptor(row.kind);
+    if (descriptor == nullptr) {
+        if (error_text != nullptr) {
+            *error_text = QStringLiteral("%1: Layer kind is unsupported.").arg(row_label);
+        }
+        return std::nullopt;
+    }
+
+    session_detail::AdvancedFlowFilterProtocolLayerPredicate layer {
+        .kind = descriptor->kind,
+        .identifier = std::nullopt,
+    };
+    if (row.identifier_mode == AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode::exact) {
+        const auto trimmed = row.exact_value_text.trimmed();
+        if (trimmed.isEmpty()) {
+            if (error_text != nullptr) {
+                *error_text = QStringLiteral("%1: %2 value is required for Exact mode.")
+                    .arg(row_label, QString::fromLatin1(descriptor->identifier_label));
+            }
+            return std::nullopt;
+        }
+
+        const auto parsed = session_detail::parse_advanced_flow_filter_unsigned_integer_text(trimmed.toStdString());
+        if (!parsed.ok) {
+            if (error_text != nullptr) {
+                *error_text = parsed.overflow
+                    ? QStringLiteral("%1: %2 value is too large.")
+                          .arg(row_label, QString::fromLatin1(descriptor->identifier_label))
+                    : QStringLiteral("%1: %2 value must be a valid integer.")
+                          .arg(row_label, QString::fromLatin1(descriptor->identifier_label));
+            }
+            return std::nullopt;
+        }
+        if (parsed.value > descriptor->max_value) {
+            if (error_text != nullptr) {
+                *error_text = QStringLiteral("%1: %2 value is out of range.")
+                    .arg(row_label, QString::fromLatin1(descriptor->identifier_label));
+            }
+            return std::nullopt;
+        }
+
+        layer.identifier = ProtocolLayerIdentifier {
+            .kind = descriptor->identifier_kind,
+            .value = parsed.value,
+        };
+    }
+
+    return session_detail::AdvancedFlowFilterProtocolPathPredicate {
+        .match_kind = session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+        .layers = {std::move(layer)},
+    };
+}
+
+std::optional<bool> contains_layer_row_applicability(
+    const auto& row,
+    const std::function<std::optional<bool>(const session_detail::AdvancedFlowFilterProtocolPathPredicate&)>& resolver,
+    bool* predicate_valid = nullptr
+) {
+    QString ignored_error {};
+    const auto predicate = contains_layer_predicate_from_editor_row(row, &ignored_error, QStringLiteral("Contains Layer"));
+    if (predicate_valid != nullptr) {
+        *predicate_valid = predicate.has_value();
+    }
+    if (!predicate.has_value()) {
+        return std::nullopt;
+    }
+    return resolver ? resolver(*predicate) : std::nullopt;
+}
+
 std::optional<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection> advanced_flow_filter_section_from_int(
     const int section
 ) {
@@ -645,6 +813,7 @@ std::optional<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection> ad
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::service:
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::protocol_path:
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::contains_layer:
         return static_cast<AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection>(section);
     default:
         return std::nullopt;
@@ -678,6 +847,8 @@ bool advanced_flow_filter_section_enabled(
         return states.service;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::protocol_path:
         return states.protocol_path;
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::contains_layer:
+        return states.contains_layer;
     }
 
     return false;
@@ -710,6 +881,8 @@ bool* advanced_flow_filter_section_enabled_mutable(
         return &states.service;
     case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::protocol_path:
         return &states.protocol_path;
+    case AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection::contains_layer:
+        return &states.contains_layer;
     }
 
     return nullptr;
@@ -795,6 +968,15 @@ bool AdvancedFlowFilterEditorModel::sectionHasExclusions(const int section) cons
                   [](const auto& predicate) {
                       return protocol_path_predicate_is_ui_managed(predicate);
                   });
+    case AdvancedFlowFilterFiniteSection::contains_layer:
+        return document_state_.is_editing()
+            ? !contains_layer_exclude_rows_.empty()
+            : std::any_of(
+                  spec.protocol_path.exclude.begin(),
+                  spec.protocol_path.exclude.end(),
+                  [](const auto& predicate) {
+                      return contains_layer_predicate_is_ui_managed(predicate);
+                  });
     }
 
     return false;
@@ -825,6 +1007,7 @@ QVariantList AdvancedFlowFilterEditorModel::includeOptions(const int section) co
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
     case AdvancedFlowFilterFiniteSection::protocol_path:
+    case AdvancedFlowFilterFiniteSection::contains_layer:
         return {};
     }
 
@@ -856,6 +1039,7 @@ QVariantList AdvancedFlowFilterEditorModel::excludeOptions(const int section) co
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
     case AdvancedFlowFilterFiniteSection::protocol_path:
+    case AdvancedFlowFilterFiniteSection::contains_layer:
         return {};
     }
 
@@ -930,6 +1114,18 @@ QVariantList AdvancedFlowFilterEditorModel::serviceTextRows(const bool exclude) 
 
 QVariantList AdvancedFlowFilterEditorModel::protocolPathRows(const bool exclude) const {
     return buildProtocolPathRowList(exclude);
+}
+
+QVariantList AdvancedFlowFilterEditorModel::containsLayerRows(const bool exclude) const {
+    return buildContainsLayerRowList(exclude);
+}
+
+QVariantList AdvancedFlowFilterEditorModel::containsLayerOptions() const {
+    return build_contains_layer_option_list();
+}
+
+QVariantList AdvancedFlowFilterEditorModel::containsLayerIdentifierModeOptions() const {
+    return build_advanced_filter_static_option_list(kAdvancedFlowFilterContainsLayerIdentifierModeOptions);
 }
 
 void AdvancedFlowFilterEditorModel::setTrafficMinText(const int metric, const QString& text) {
@@ -1202,6 +1398,7 @@ void AdvancedFlowFilterEditorModel::setOptionChecked(
     case AdvancedFlowFilterFiniteSection::traffic:
     case AdvancedFlowFilterFiniteSection::service:
     case AdvancedFlowFilterFiniteSection::protocol_path:
+    case AdvancedFlowFilterFiniteSection::contains_layer:
         break;
     }
 
@@ -1344,6 +1541,95 @@ void AdvancedFlowFilterEditorModel::setAddressRowPrefixText(const bool exclude, 
     notifyTextFieldEdited();
 }
 
+void AdvancedFlowFilterEditorModel::addContainsLayerRow(const bool exclude) {
+    ensureEditingInitialized();
+    if (!document_state_.is_editing()) {
+        return;
+    }
+
+    auto& rows = exclude ? contains_layer_exclude_rows_ : contains_layer_include_rows_;
+    rows.push_back(AdvancedFlowFilterContainsLayerEditorRow {
+        .kind = default_contains_layer_kind(),
+        .identifier_mode = AdvancedFlowFilterContainsLayerIdentifierMode::any,
+        .exact_value_text = {},
+        .applicable = std::nullopt,
+    });
+    if (!rows.empty()) {
+        rows.back().applicable = contains_layer_row_applicability(rows.back(), protocol_path_applicability_resolver_);
+    }
+    (void)synchronizeDraftSections();
+    notifyRowsChanged();
+}
+
+void AdvancedFlowFilterEditorModel::removeContainsLayerRow(const bool exclude, const int row) {
+    auto& rows = exclude ? contains_layer_exclude_rows_ : contains_layer_include_rows_;
+    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+        return;
+    }
+
+    rows.erase(rows.begin() + row);
+    (void)synchronizeDraftSections();
+    notifyRowsChanged();
+}
+
+void AdvancedFlowFilterEditorModel::setContainsLayerRowKind(const bool exclude, const int row, const int kind) {
+    auto& rows = exclude ? contains_layer_exclude_rows_ : contains_layer_include_rows_;
+    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+        return;
+    }
+
+    const auto parsed_kind = contains_layer_kind_from_int(kind);
+    if (!parsed_kind.has_value()) {
+        return;
+    }
+
+    auto& editor_row = rows[static_cast<std::size_t>(row)];
+    editor_row.kind = *parsed_kind;
+    editor_row.exact_value_text.clear();
+    editor_row.applicable = contains_layer_row_applicability(editor_row, protocol_path_applicability_resolver_);
+    (void)synchronizeDraftSections();
+    notifyRowsChanged();
+}
+
+void AdvancedFlowFilterEditorModel::setContainsLayerRowIdentifierMode(
+    const bool exclude,
+    const int row,
+    const int mode
+) {
+    auto& rows = exclude ? contains_layer_exclude_rows_ : contains_layer_include_rows_;
+    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+        return;
+    }
+
+    const auto parsed_mode = contains_layer_identifier_mode_from_int(mode);
+    if (!parsed_mode.has_value()) {
+        return;
+    }
+
+    auto& editor_row = rows[static_cast<std::size_t>(row)];
+    editor_row.identifier_mode = *parsed_mode;
+    editor_row.applicable = contains_layer_row_applicability(editor_row, protocol_path_applicability_resolver_);
+    (void)synchronizeDraftSections();
+    notifyRowsChanged();
+}
+
+void AdvancedFlowFilterEditorModel::setContainsLayerRowExactValueText(
+    const bool exclude,
+    const int row,
+    const QString& text
+) {
+    auto& rows = exclude ? contains_layer_exclude_rows_ : contains_layer_include_rows_;
+    if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
+        return;
+    }
+
+    auto& editor_row = rows[static_cast<std::size_t>(row)];
+    editor_row.exact_value_text = text;
+    editor_row.applicable = contains_layer_row_applicability(editor_row, protocol_path_applicability_resolver_);
+    (void)synchronizeDraftSections();
+    notifyTextFieldEdited();
+}
+
 void AdvancedFlowFilterEditorModel::removeProtocolPathRow(const bool exclude, const int row) {
     ensureEditingInitialized();
     auto& rows = exclude ? protocol_path_exclude_rows_ : protocol_path_include_rows_;
@@ -1403,6 +1689,13 @@ void AdvancedFlowFilterEditorModel::refreshProtocolPathApplicability() {
 
     refresh_rows(protocol_path_include_rows_);
     refresh_rows(protocol_path_exclude_rows_);
+    const auto refresh_contains_rows = [&](auto& rows) {
+        for (auto& row : rows) {
+            row.applicable = contains_layer_row_applicability(row, protocol_path_applicability_resolver_);
+        }
+    };
+    refresh_contains_rows(contains_layer_include_rows_);
+    refresh_contains_rows(contains_layer_exclude_rows_);
     notifyStateChanged();
 }
 
@@ -1421,6 +1714,8 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     service_exclude_text_rows_.clear();
     protocol_path_include_rows_.clear();
     protocol_path_exclude_rows_.clear();
+    contains_layer_include_rows_.clear();
+    contains_layer_exclude_rows_.clear();
 
     const auto append_port_rows =
         [](const auto& predicates, std::vector<AdvancedFlowFilterPortEditorRow>& rows) {
@@ -1543,6 +1838,39 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     append_protocol_path_rows(document.configured_spec.protocol_path.include, protocol_path_include_rows_);
     append_protocol_path_rows(document.configured_spec.protocol_path.exclude, protocol_path_exclude_rows_);
 
+    const auto append_contains_layer_rows =
+        [&](const auto& predicates, std::vector<AdvancedFlowFilterContainsLayerEditorRow>& rows) {
+            for (const auto& predicate : predicates) {
+                if (!contains_layer_predicate_is_ui_managed(predicate) || predicate.layers.size() != 1U) {
+                    continue;
+                }
+
+                const auto& layer = predicate.layers.front();
+                const auto* descriptor = session_detail::protocol_path_contains_layer_descriptor(layer.kind);
+                if (descriptor == nullptr) {
+                    continue;
+                }
+
+                rows.push_back(AdvancedFlowFilterContainsLayerEditorRow {
+                    .kind = descriptor->kind,
+                    .identifier_mode = layer.identifier.has_value()
+                        ? AdvancedFlowFilterContainsLayerIdentifierMode::exact
+                        : AdvancedFlowFilterContainsLayerIdentifierMode::any,
+                    .exact_value_text = layer.identifier.has_value()
+                        ? QString::fromStdString(session_detail::format_protocol_path_identifier_editor_text(
+                              layer.identifier->kind,
+                              layer.identifier->value
+                          ))
+                        : QString {},
+                    .applicable = protocol_path_applicability_resolver_
+                        ? protocol_path_applicability_resolver_(predicate)
+                        : std::nullopt,
+                });
+            }
+        };
+    append_contains_layer_rows(document.configured_spec.protocol_path.include, contains_layer_include_rows_);
+    append_contains_layer_rows(document.configured_spec.protocol_path.exclude, contains_layer_exclude_rows_);
+
     editing_initialized_ = true;
     clearValidationText();
     notifyStateChanged();
@@ -1562,6 +1890,8 @@ void AdvancedFlowFilterEditorModel::clearTransientState() noexcept {
     service_exclude_text_rows_.clear();
     protocol_path_include_rows_.clear();
     protocol_path_exclude_rows_.clear();
+    contains_layer_include_rows_.clear();
+    contains_layer_exclude_rows_.clear();
     editing_initialized_ = false;
     validation_text_.clear();
     notifyStateChanged();
@@ -1578,7 +1908,7 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSections(QString* errorText)
 
     auto updated_ports = draft_document->configured_spec.ports;
     auto updated_protocol_path = draft_document->configured_spec.protocol_path;
-    const auto strip_ui_managed_protocol_path_predicates = [](auto& predicates) {
+    const auto strip_protocol_path_selection_predicates = [](auto& predicates) {
         predicates.erase(
             std::remove_if(
                 predicates.begin(),
@@ -1588,8 +1918,22 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSections(QString* errorText)
             predicates.end()
         );
     };
-    strip_ui_managed_protocol_path_predicates(updated_protocol_path.include);
-    strip_ui_managed_protocol_path_predicates(updated_protocol_path.exclude);
+    strip_protocol_path_selection_predicates(updated_protocol_path.include);
+    strip_protocol_path_selection_predicates(updated_protocol_path.exclude);
+    if (draft_document->section_states.contains_layer) {
+        const auto strip_contains_layer_predicates = [](auto& predicates) {
+            predicates.erase(
+                std::remove_if(
+                    predicates.begin(),
+                    predicates.end(),
+                    [](const auto& predicate) { return contains_layer_predicate_is_ui_managed(predicate); }
+                ),
+                predicates.end()
+            );
+        };
+        strip_contains_layer_predicates(updated_protocol_path.include);
+        strip_contains_layer_predicates(updated_protocol_path.exclude);
+    }
     const auto append_port_rows =
         [&](const std::vector<AdvancedFlowFilterPortEditorRow>& rows,
             const bool exclude,
@@ -2019,6 +2363,37 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSections(QString* errorText)
         updated_protocol_path.exclude.push_back(row.predicate);
     }
 
+    if (draft_document->section_states.contains_layer) {
+        const auto append_contains_layer_rows =
+            [&](const std::vector<AdvancedFlowFilterContainsLayerEditorRow>& rows,
+                const bool exclude) -> bool {
+                auto& target = exclude ? updated_protocol_path.exclude : updated_protocol_path.include;
+                for (std::size_t index = 0; index < rows.size(); ++index) {
+                    QString row_error {};
+                    const auto predicate = contains_layer_predicate_from_editor_row(
+                        rows[index],
+                        &row_error,
+                        QStringLiteral("Contains Layer %1 row %2")
+                            .arg(exclude ? QStringLiteral("exclude") : QStringLiteral("include"))
+                            .arg(QString::number(index + 1U))
+                    );
+                    if (!predicate.has_value()) {
+                        if (errorText != nullptr) {
+                            *errorText = row_error;
+                        }
+                        return false;
+                    }
+                    target.push_back(*predicate);
+                }
+                return true;
+            };
+
+        if (!append_contains_layer_rows(contains_layer_include_rows_, false) ||
+            !append_contains_layer_rows(contains_layer_exclude_rows_, true)) {
+            return false;
+        }
+    }
+
     draft_document->configured_spec.ports = std::move(updated_ports);
     draft_document->configured_spec.addresses = std::move(updated_addresses);
     draft_document->configured_spec.aggregate = std::move(updated_aggregate);
@@ -2278,6 +2653,93 @@ QVariantList AdvancedFlowFilterEditorModel::buildProtocolPathRowList(const bool 
                 : (row.applicable.value()
                     ? QString {}
                     : QStringLiteral("Not present in current capture"))
+        );
+        result.push_back(value);
+    }
+    return result;
+}
+
+QVariantList AdvancedFlowFilterEditorModel::buildContainsLayerRowList(const bool exclude) const {
+    std::vector<AdvancedFlowFilterContainsLayerEditorRow> fallback_rows {};
+    const auto* rows = exclude ? &contains_layer_exclude_rows_ : &contains_layer_include_rows_;
+    if (!document_state_.is_editing() || !editing_initialized_) {
+        const auto& predicates = exclude
+            ? document_state_.current_user_visible_document().configured_spec.protocol_path.exclude
+            : document_state_.current_user_visible_document().configured_spec.protocol_path.include;
+        for (const auto& predicate : predicates) {
+            if (!contains_layer_predicate_is_ui_managed(predicate) || predicate.layers.size() != 1U) {
+                continue;
+            }
+
+            const auto& layer = predicate.layers.front();
+            const auto* descriptor = session_detail::protocol_path_contains_layer_descriptor(layer.kind);
+            if (descriptor == nullptr) {
+                continue;
+            }
+
+            fallback_rows.push_back(AdvancedFlowFilterContainsLayerEditorRow {
+                .kind = descriptor->kind,
+                .identifier_mode = layer.identifier.has_value()
+                    ? AdvancedFlowFilterContainsLayerIdentifierMode::exact
+                    : AdvancedFlowFilterContainsLayerIdentifierMode::any,
+                .exact_value_text = layer.identifier.has_value()
+                    ? QString::fromStdString(session_detail::format_protocol_path_identifier_editor_text(
+                          layer.identifier->kind,
+                          layer.identifier->value
+                      ))
+                    : QString {},
+                .applicable = protocol_path_applicability_resolver_
+                    ? protocol_path_applicability_resolver_(predicate)
+                    : std::nullopt,
+            });
+        }
+        rows = &fallback_rows;
+    }
+
+    QVariantList result {};
+    result.reserve(static_cast<qsizetype>(rows->size()));
+    for (std::size_t index = 0; index < rows->size(); ++index) {
+        const auto& row = (*rows)[index];
+        const auto* descriptor = session_detail::protocol_path_contains_layer_descriptor(row.kind);
+        if (descriptor == nullptr) {
+            continue;
+        }
+
+        bool predicate_valid = false;
+        const auto applicability = contains_layer_row_applicability(
+            row,
+            protocol_path_applicability_resolver_,
+            &predicate_valid
+        );
+
+        QVariantMap value {};
+        value.insert(QStringLiteral("row"), static_cast<int>(index));
+        value.insert(QStringLiteral("layerKind"), static_cast<int>(descriptor->kind));
+        value.insert(QStringLiteral("layerLabel"), QString::fromLatin1(descriptor->layer_label));
+        value.insert(QStringLiteral("layerObjectNameSuffix"), QString::fromLatin1(descriptor->object_name_suffix));
+        value.insert(QStringLiteral("identifierLabel"), QString::fromLatin1(descriptor->identifier_label));
+        value.insert(QStringLiteral("identifierMode"), static_cast<int>(row.identifier_mode));
+        value.insert(QStringLiteral("exactValueText"), row.exact_value_text);
+        value.insert(QStringLiteral("exactValuePlaceholder"), contains_layer_exact_placeholder_text(*descriptor));
+        value.insert(
+            QStringLiteral("preferredInputFormat"),
+            static_cast<int>(descriptor->preferred_input_format)
+        );
+        value.insert(
+            QStringLiteral("compactText"),
+            contains_layer_compact_text(*descriptor, row.identifier_mode, row.exact_value_text)
+        );
+        value.insert(QStringLiteral("applicabilityKnown"), predicate_valid && applicability.has_value());
+        value.insert(QStringLiteral("applicable"), predicate_valid && applicability.value_or(false));
+        value.insert(
+            QStringLiteral("statusText"),
+            !predicate_valid
+                ? QString {}
+                : (!applicability.has_value()
+                    ? QStringLiteral("No current capture.")
+                    : (applicability.value()
+                        ? QString {}
+                        : QStringLiteral("Not present in current capture")))
         );
         result.push_back(value);
     }

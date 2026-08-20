@@ -278,6 +278,15 @@ independently controls `contains_layer` predicates during effective-spec
 projection. The formatter still serializes all configured protocol-path
 predicates regardless of either section state.
 
+At evaluation time these configured predicates do not form one flat OR family.
+They compile into two logical groups:
+
+- Protocol Path group: `exact_path` and `path_prefix`
+- Contains Layer group: `contains_layer`
+
+Within each group, include predicates use OR and matching excludes reject.
+Between the two groups, the evaluator uses AND.
+
 ### Canonical tokens
 
 The current canonical formatter emits:
@@ -760,6 +769,13 @@ Protocol Path predicates are resolved during compile to dense
 `ProtocolPathId` membership tables derived from the session's
 `ProtocolPathRegistry`.
 
+This compile step partitions the configured `protocol_path` family into:
+
+- a Protocol Path membership group for `exact_path` and `path_prefix`
+- a Contains Layer membership group for `contains_layer`
+
+Each group keeps its own include/exclude membership tables.
+
 The evaluator uses one candidate loop with early rejection. It does not:
 
 - inspect `PacketRef` collections
@@ -774,6 +790,11 @@ The initial composition model is:
 - OR within one filter section/list
 - AND between independent filter sections
 - include / exclude predicates
+
+Protocol Path is the one intentional structured exception: configured
+`protocol_path` predicates are stored together, but the evaluator treats
+Protocol Path (`exact_path` / `path_prefix`) and Contains Layer
+(`contains_layer`) as two independent groups combined with AND.
 
 Example:
 

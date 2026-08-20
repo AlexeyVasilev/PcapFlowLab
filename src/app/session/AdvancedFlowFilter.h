@@ -270,11 +270,16 @@ struct AdvancedFlowFilterPortBitmap {
     [[nodiscard]] bool contains(std::uint16_t port) const noexcept;
 };
 
-struct CompiledAdvancedFlowFilterProtocolPathCriteria {
+struct CompiledAdvancedFlowFilterProtocolPathPredicateGroup {
     std::vector<std::uint8_t> include_membership {};
     std::vector<std::uint8_t> exclude_membership {};
     bool has_include_predicates {false};
     bool has_exclude_predicates {false};
+};
+
+struct CompiledAdvancedFlowFilterProtocolPathCriteria {
+    CompiledAdvancedFlowFilterProtocolPathPredicateGroup protocol_path_group {};
+    CompiledAdvancedFlowFilterProtocolPathPredicateGroup contains_layer_group {};
 };
 
 struct CompiledAdvancedFlowFilterAddressFamilyCriteria {

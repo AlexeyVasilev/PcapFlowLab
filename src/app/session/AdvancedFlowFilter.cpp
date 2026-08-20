@@ -780,8 +780,34 @@ AdvancedFlowFilterCompileResult compile_protocol_path_criteria(
     const ProtocolPathRegistry& registry,
     CompiledAdvancedFlowFilterProtocolPathCriteria& compiled
 ) {
-    compiled.has_include_predicates = !spec.include.empty();
-    compiled.has_exclude_predicates = !spec.exclude.empty();
+    const auto is_protocol_path_predicate = [](const AdvancedFlowFilterProtocolPathPredicate& predicate) noexcept {
+        return predicate.match_kind == AdvancedFlowFilterProtocolPathMatchKind::exact_path ||
+            predicate.match_kind == AdvancedFlowFilterProtocolPathMatchKind::path_prefix;
+    };
+    const auto is_contains_layer_predicate = [](const AdvancedFlowFilterProtocolPathPredicate& predicate) noexcept {
+        return predicate.match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer;
+    };
+
+    compiled.protocol_path_group.has_include_predicates = std::any_of(
+        spec.include.begin(),
+        spec.include.end(),
+        is_protocol_path_predicate
+    );
+    compiled.protocol_path_group.has_exclude_predicates = std::any_of(
+        spec.exclude.begin(),
+        spec.exclude.end(),
+        is_protocol_path_predicate
+    );
+    compiled.contains_layer_group.has_include_predicates = std::any_of(
+        spec.include.begin(),
+        spec.include.end(),
+        is_contains_layer_predicate
+    );
+    compiled.contains_layer_group.has_exclude_predicates = std::any_of(
+        spec.exclude.begin(),
+        spec.exclude.end(),
+        is_contains_layer_predicate
+    );
 
     for (std::size_t index = 0; index < spec.include.size(); ++index) {
         if (!is_valid_protocol_path_predicate_shape(spec.include[index])) {
@@ -803,29 +829,51 @@ AdvancedFlowFilterCompileResult compile_protocol_path_criteria(
         }
     }
 
-    if (!compiled.has_include_predicates && !compiled.has_exclude_predicates) {
+    const auto initialize_group_membership = [&](CompiledAdvancedFlowFilterProtocolPathPredicateGroup& group) {
+        if (!group.has_include_predicates && !group.has_exclude_predicates) {
+            return;
+        }
+        group.include_membership.assign(registry.size() + 1U, 0U);
+        group.exclude_membership.assign(registry.size() + 1U, 0U);
+    };
+    initialize_group_membership(compiled.protocol_path_group);
+    initialize_group_membership(compiled.contains_layer_group);
+
+    if ((!compiled.protocol_path_group.has_include_predicates &&
+         !compiled.protocol_path_group.has_exclude_predicates) &&
+        (!compiled.contains_layer_group.has_include_predicates &&
+         !compiled.contains_layer_group.has_exclude_predicates)) {
         return {};
     }
-
-    compiled.include_membership.assign(registry.size() + 1U, 0U);
-    compiled.exclude_membership.assign(registry.size() + 1U, 0U);
 
     const auto& paths = registry.paths();
     for (std::size_t index = 0; index < paths.size(); ++index) {
         const auto id = static_cast<ProtocolPathId>(index + 1U);
-        for (const auto& predicate : spec.include) {
-            if (matches_protocol_path_predicate(paths[index], predicate)) {
-                compiled.include_membership[id] = 1U;
-                break;
-            }
-        }
+        const auto populate_membership =
+            [&](const auto& predicates,
+                const auto predicate_selector,
+                CompiledAdvancedFlowFilterProtocolPathPredicateGroup& group,
+                const bool include_membership) {
+                auto& membership = include_membership ? group.include_membership : group.exclude_membership;
+                if (membership.empty()) {
+                    return;
+                }
 
-        for (const auto& predicate : spec.exclude) {
-            if (matches_protocol_path_predicate(paths[index], predicate)) {
-                compiled.exclude_membership[id] = 1U;
-                break;
-            }
-        }
+                for (const auto& predicate : predicates) {
+                    if (!predicate_selector(predicate)) {
+                        continue;
+                    }
+                    if (matches_protocol_path_predicate(paths[index], predicate)) {
+                        membership[id] = 1U;
+                        break;
+                    }
+                }
+            };
+
+        populate_membership(spec.include, is_protocol_path_predicate, compiled.protocol_path_group, true);
+        populate_membership(spec.exclude, is_protocol_path_predicate, compiled.protocol_path_group, false);
+        populate_membership(spec.include, is_contains_layer_predicate, compiled.contains_layer_group, true);
+        populate_membership(spec.exclude, is_contains_layer_predicate, compiled.contains_layer_group, false);
     }
 
     return {};
@@ -1159,22 +1207,29 @@ AdvancedFlowFilterCompileResult compile_service_criteria(
     return {};
 }
 
-bool matches_protocol_path_criteria(
-    const CompiledAdvancedFlowFilterProtocolPathCriteria& criteria,
+bool matches_protocol_path_predicate_group(
+    const CompiledAdvancedFlowFilterProtocolPathPredicateGroup& group,
     const ProtocolPathId protocol_path_id
 ) noexcept {
-    const bool include_match = !criteria.has_include_predicates ||
-        (static_cast<std::size_t>(protocol_path_id) < criteria.include_membership.size() &&
-         criteria.include_membership[protocol_path_id] != 0U);
-
+    const bool include_match = !group.has_include_predicates ||
+        (static_cast<std::size_t>(protocol_path_id) < group.include_membership.size() &&
+         group.include_membership[protocol_path_id] != 0U);
     if (!include_match) {
         return false;
     }
 
-    const bool exclude_match = criteria.has_exclude_predicates &&
-        static_cast<std::size_t>(protocol_path_id) < criteria.exclude_membership.size() &&
-        criteria.exclude_membership[protocol_path_id] != 0U;
+    const bool exclude_match = group.has_exclude_predicates &&
+        static_cast<std::size_t>(protocol_path_id) < group.exclude_membership.size() &&
+        group.exclude_membership[protocol_path_id] != 0U;
     return !exclude_match;
+}
+
+bool matches_protocol_path_criteria(
+    const CompiledAdvancedFlowFilterProtocolPathCriteria& criteria,
+    const ProtocolPathId protocol_path_id
+) noexcept {
+    return matches_protocol_path_predicate_group(criteria.protocol_path_group, protocol_path_id) &&
+        matches_protocol_path_predicate_group(criteria.contains_layer_group, protocol_path_id);
 }
 
 bool is_contains_layer_protocol_path_predicate(

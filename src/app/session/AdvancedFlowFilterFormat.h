@@ -59,7 +59,16 @@ struct AdvancedFlowFilterTextFormatResult {
     std::optional<AdvancedFlowFilterTextFormatIssue> issue {};
 };
 
+struct AdvancedFlowFilterParsedUnsignedIntegerText {
+    bool ok {false};
+    bool overflow {false};
+    std::uint64_t value {0U};
+};
+
 [[nodiscard]] AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(std::string_view text);
+[[nodiscard]] AdvancedFlowFilterParsedUnsignedIntegerText parse_advanced_flow_filter_unsigned_integer_text(
+    std::string_view text
+);
 
 [[nodiscard]] AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(
     const AdvancedFlowFilterDocument& document

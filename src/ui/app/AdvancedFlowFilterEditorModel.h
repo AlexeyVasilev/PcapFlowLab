@@ -10,6 +10,7 @@
 #include <QVariantList>
 
 #include "app/session/AdvancedFlowFilter.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "app/session/FlowRows.h"
 
@@ -34,6 +35,12 @@ public:
         traffic,
         service,
         protocol_path,
+        contains_layer,
+    };
+
+    enum class AdvancedFlowFilterContainsLayerIdentifierMode {
+        any = 0,
+        exact,
     };
 
     enum class AdvancedFlowFilterTrafficMetric {
@@ -90,6 +97,9 @@ public:
     Q_INVOKABLE QVariantList serviceOperatorOptions() const;
     Q_INVOKABLE QVariantList serviceTextRows(bool exclude) const;
     Q_INVOKABLE QVariantList protocolPathRows(bool exclude) const;
+    Q_INVOKABLE QVariantList containsLayerRows(bool exclude) const;
+    Q_INVOKABLE QVariantList containsLayerOptions() const;
+    Q_INVOKABLE QVariantList containsLayerIdentifierModeOptions() const;
     Q_INVOKABLE void setServiceStateChecked(bool exclude, int stateKind, bool checked);
     Q_INVOKABLE void addServiceTextRow(bool exclude);
     Q_INVOKABLE void removeServiceTextRow(bool exclude, int row);
@@ -111,6 +121,11 @@ public:
     Q_INVOKABLE void setAddressRowAddressText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void setAddressRowPrefixText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void removeProtocolPathRow(bool exclude, int row);
+    Q_INVOKABLE void addContainsLayerRow(bool exclude);
+    Q_INVOKABLE void removeContainsLayerRow(bool exclude, int row);
+    Q_INVOKABLE void setContainsLayerRowKind(bool exclude, int row, int kind);
+    Q_INVOKABLE void setContainsLayerRowIdentifierMode(bool exclude, int row, int mode);
+    Q_INVOKABLE void setContainsLayerRowExactValueText(bool exclude, int row, const QString& text);
 
     void initializeFromCurrentDocument();
     void clearTransientState() noexcept;
@@ -168,6 +183,15 @@ private:
         std::optional<bool> applicable {};
     };
 
+    struct AdvancedFlowFilterContainsLayerEditorRow {
+        ProtocolLayerKind kind {ProtocolLayerKind::vlan};
+        AdvancedFlowFilterContainsLayerIdentifierMode identifier_mode {
+            AdvancedFlowFilterContainsLayerIdentifierMode::any
+        };
+        QString exact_value_text {};
+        std::optional<bool> applicable {};
+    };
+
     void ensureEditingInitialized();
     void clearValidationText();
     void notifyRowsChanged();
@@ -178,6 +202,7 @@ private:
     [[nodiscard]] QVariantList buildTrafficRowList(bool additional) const;
     [[nodiscard]] QVariantList buildServiceTextRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildProtocolPathRowList(bool exclude) const;
+    [[nodiscard]] QVariantList buildContainsLayerRowList(bool exclude) const;
 
     session_detail::AdvancedFlowFilterDocumentState& document_state_;
     int revision_ {0};
@@ -195,6 +220,8 @@ private:
     std::vector<AdvancedFlowFilterServiceTextEditorRow> service_exclude_text_rows_ {};
     std::vector<AdvancedFlowFilterProtocolPathEditorRow> protocol_path_include_rows_ {};
     std::vector<AdvancedFlowFilterProtocolPathEditorRow> protocol_path_exclude_rows_ {};
+    std::vector<AdvancedFlowFilterContainsLayerEditorRow> contains_layer_include_rows_ {};
+    std::vector<AdvancedFlowFilterContainsLayerEditorRow> contains_layer_exclude_rows_ {};
     std::function<std::optional<bool>(const session_detail::AdvancedFlowFilterProtocolPathPredicate&)>
         protocol_path_applicability_resolver_ {};
     QString validation_text_ {};

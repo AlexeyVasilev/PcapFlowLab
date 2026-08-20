@@ -638,7 +638,67 @@ void run_protocol_path_tests() {
             },
         });
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
-        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+            .layers = {
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+                {.kind = ProtocolLayerKind::udp},
+                {.kind = ProtocolLayerKind::vxlan, .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::vxlan_vni,
+                    .value = 100U,
+                }},
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+            },
+        });
+        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+            .layers = {{
+                .kind = ProtocolLayerKind::vxlan,
+                .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::vxlan_vni,
+                    .value = 200U,
+                },
+            }},
+        });
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+            .layers = {
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+                {.kind = ProtocolLayerKind::udp},
+                {.kind = ProtocolLayerKind::vxlan, .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::vxlan_vni,
+                    .value = 100U,
+                }},
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+            },
+        });
+        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+            .layers = {{
+                .kind = ProtocolLayerKind::vxlan,
+                .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::vxlan_vni,
+                    .value = 100U,
+                },
+            }},
+        });
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U});
     }
 
     {

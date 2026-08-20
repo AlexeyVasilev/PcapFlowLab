@@ -889,6 +889,23 @@ pfl::session_detail::AdvancedFlowFilterDocument make_service_text_entry_document
     return document;
 }
 
+pfl::session_detail::AdvancedFlowFilterDocument make_contains_layer_text_entry_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+        .match_kind = AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+        .layers = {{
+            .kind = pfl::ProtocolLayerKind::vxlan,
+            .identifier = pfl::ProtocolLayerIdentifier {
+                .kind = pfl::ProtocolLayerIdentifierKind::vxlan_vni,
+                .value = 100U,
+            },
+        }},
+    });
+    return document;
+}
+
 bool protocol_path_layers_have_identifiers(
     const std::vector<pfl::session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
 ) {
@@ -939,6 +956,14 @@ int find_flow_index_by_service_hint(pfl::FlowListModel* model, const QString& se
     }
 
     return -1;
+}
+
+QStringList visible_flow_protocol_paths(pfl::FlowListModel* model) {
+    QStringList texts {};
+    for (int row = 0; row < model->rowCount(); ++row) {
+        texts.push_back(model->data(model->index(row, 0), pfl::FlowListModel::ProtocolPathTextRole).toString());
+    }
+    return texts;
 }
 
 int find_flow_index_by_family(pfl::FlowListModel* model, const QString& family) {
@@ -4572,6 +4597,17 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(revision_editor->revision() == service_revision_before);
         revision_controller.cancelAdvancedFlowFilterEdit();
 
+        revision_controller.applyAdvancedFlowFilterDocument(make_contains_layer_text_entry_document());
+        revision_controller.beginAdvancedFlowFilterEdit();
+        const auto contains_layer_revision_before = revision_editor->revision();
+        revision_editor->setContainsLayerRowExactValueText(false, 0, QStringLiteral("200"));
+        UI_EXPECT(advanced_filter_row_at(
+            revision_editor->containsLayerRows(false),
+            0
+        ).value(QStringLiteral("exactValueText")).toString() == QStringLiteral("200"));
+        UI_EXPECT(revision_editor->revision() == contains_layer_revision_before);
+        revision_controller.cancelAdvancedFlowFilterEdit();
+
         revision_controller.applyAdvancedFlowFilterDocument(pfl::session_detail::AdvancedFlowFilterDocument {});
         revision_controller.beginAdvancedFlowFilterEdit();
         const auto structural_revision_before = revision_editor->revision();
@@ -5356,6 +5392,196 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString()
             == QStringLiteral("Not present in current capture"));
         protocol_path_editor_controller.cancelAdvancedFlowFilterEdit();
+    });
+
+    run_ui_section("advanced_flow_filter_settings_editor_contains_layer", [&]() {
+        using MatchKind = pfl::session_detail::AdvancedFlowFilterProtocolPathMatchKind;
+        using IdentifierMode = pfl::AdvancedFlowFilterEditorModel::AdvancedFlowFilterContainsLayerIdentifierMode;
+
+        constexpr int contains_layer_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::contains_layer);
+        const auto selector_capture_path =
+            ui_test_root() / "data" / "parsing" / "vxlan" / "10_vxlan_same_inner_tuple_different_vni.pcap";
+        const auto applicability_capture_path =
+            ui_test_root() / "data" / "parsing" / "vxlan" / "13_vxlan_inner_vlan_ipv4_tcp.pcap";
+
+        MainController contains_layer_controller {};
+        UI_EXPECT(open_capture_and_wait(app, contains_layer_controller, selector_capture_path));
+        contains_layer_controller.useAdvancedFlowFilter();
+
+        auto* contains_layer_flow_model = qobject_cast<FlowListModel*>(contains_layer_controller.flowModel());
+        auto* contains_layer_editor = advanced_filter_editor(contains_layer_controller);
+        UI_REQUIRE(contains_layer_flow_model != nullptr);
+        UI_REQUIRE(contains_layer_editor != nullptr);
+
+        UI_EXPECT(contains_layer_controller.advancedFlowFilterSectionEnabled(contains_layer_section_id));
+        UI_EXPECT(!contains_layer_controller.advancedFlowFilterSectionHasExclusions(contains_layer_section_id));
+        UI_EXPECT(contains_layer_editor->containsLayerRows(false).isEmpty());
+        UI_EXPECT(!contains_layer_editor->containsLayerOptions().isEmpty());
+        UI_EXPECT(contains_layer_editor->containsLayerIdentifierModeOptions().size() == 2);
+        {
+            QStringList option_labels {};
+            for (const auto& option : contains_layer_editor->containsLayerOptions()) {
+                option_labels.push_back(option.toMap().value(QStringLiteral("label")).toString());
+            }
+            UI_EXPECT(option_labels.contains(QStringLiteral("VLAN")));
+            UI_EXPECT(option_labels.contains(QStringLiteral("VXLAN")));
+            UI_EXPECT(option_labels.contains(QStringLiteral("GTP-U")));
+            UI_EXPECT(!option_labels.contains(QStringLiteral("TCP")));
+            UI_EXPECT(!option_labels.contains(QStringLiteral("IPv4")));
+            UI_EXPECT(!option_labels.contains(QStringLiteral("Ethernet II")));
+        }
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        contains_layer_editor->addContainsLayerRow(false);
+        auto include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("identifierMode")).toInt()
+            == static_cast<int>(IdentifierMode::any));
+        UI_EXPECT(include_row.value(QStringLiteral("exactValueText")).toString().isEmpty());
+        UI_EXPECT(include_row.value(QStringLiteral("layerLabel")).toString() == QStringLiteral("VLAN"));
+        contains_layer_editor->setContainsLayerRowKind(false, 0, static_cast<int>(pfl::ProtocolLayerKind::vxlan));
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("layerLabel")).toString() == QStringLiteral("VXLAN"));
+        UI_EXPECT(include_row.value(QStringLiteral("identifierLabel")).toString() == QStringLiteral("VNI"));
+        UI_EXPECT(include_row.value(QStringLiteral("exactValuePlaceholder")).toString() == QStringLiteral("200"));
+        UI_EXPECT(include_row.value(QStringLiteral("compactText")).toString() == QStringLiteral("VXLAN / Any"));
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString().isEmpty());
+        UI_EXPECT(contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(visible_flow_protocol_paths(contains_layer_flow_model).contains(
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP")));
+        UI_EXPECT(visible_flow_protocol_paths(contains_layer_flow_model).contains(
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP")));
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::exact));
+        contains_layer_editor->setContainsLayerRowExactValueText(false, 0, QStringLiteral("200"));
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("exactValueText")).toString() == QStringLiteral("200"));
+        UI_EXPECT(include_row.value(QStringLiteral("compactText")).toString() == QStringLiteral("VXLAN / VNI 200"));
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::any));
+        UI_EXPECT(advanced_filter_row_at(
+            contains_layer_editor->containsLayerRows(false),
+            0
+        ).value(QStringLiteral("exactValueText")).toString() == QStringLiteral("200"));
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::exact));
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("exactValueText")).toString() == QStringLiteral("200"));
+        contains_layer_editor->setContainsLayerRowExactValueText(false, 0, QStringLiteral(""));
+        UI_EXPECT(!contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(contains_layer_controller.advancedFlowFilterEditorValidationText().contains(QStringLiteral("value is required")));
+        contains_layer_editor->setContainsLayerRowExactValueText(false, 0, QStringLiteral("0x1000000"));
+        UI_EXPECT(!contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(contains_layer_controller.advancedFlowFilterEditorValidationText().contains(QStringLiteral("out of range")));
+        contains_layer_editor->setContainsLayerRowExactValueText(false, 0, QStringLiteral("200"));
+        UI_EXPECT(contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(visible_flow_protocol_paths(contains_layer_flow_model).first()
+            == QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP"));
+        UI_EXPECT(contains_layer_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        contains_layer_editor->setContainsLayerRowKind(false, 0, static_cast<int>(pfl::ProtocolLayerKind::geneve));
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::any));
+        contains_layer_editor->addContainsLayerRow(true);
+        contains_layer_editor->setContainsLayerRowKind(true, 0, static_cast<int>(pfl::ProtocolLayerKind::vxlan));
+        contains_layer_editor->setContainsLayerRowIdentifierMode(true, 0, static_cast<int>(IdentifierMode::exact));
+        contains_layer_editor->setContainsLayerRowExactValueText(true, 0, QStringLiteral("100"));
+        contains_layer_controller.cancelAdvancedFlowFilterEdit();
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("layerLabel")).toString() == QStringLiteral("VXLAN"));
+        UI_EXPECT(include_row.value(QStringLiteral("identifierMode")).toInt()
+            == static_cast<int>(IdentifierMode::exact));
+        UI_EXPECT(include_row.value(QStringLiteral("exactValueText")).toString() == QStringLiteral("200"));
+        UI_EXPECT(!contains_layer_controller.advancedFlowFilterSectionHasExclusions(contains_layer_section_id));
+        contains_layer_controller.cancelAdvancedFlowFilterEdit();
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::any));
+        contains_layer_editor->addContainsLayerRow(true);
+        contains_layer_editor->setContainsLayerRowKind(true, 0, static_cast<int>(pfl::ProtocolLayerKind::vxlan));
+        contains_layer_editor->setContainsLayerRowIdentifierMode(true, 0, static_cast<int>(IdentifierMode::exact));
+        contains_layer_editor->setContainsLayerRowExactValueText(true, 0, QStringLiteral("100"));
+        UI_EXPECT(contains_layer_controller.advancedFlowFilterSectionHasExclusions(contains_layer_section_id));
+        UI_EXPECT(contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(visible_flow_protocol_paths(contains_layer_flow_model).first().contains(QStringLiteral("VXLAN(vni=200)")));
+        UI_EXPECT(contains_layer_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        auto exclude_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(true), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString().isEmpty());
+        UI_EXPECT(exclude_row.value(QStringLiteral("statusText")).toString().isEmpty());
+        contains_layer_controller.cancelAdvancedFlowFilterEdit();
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        contains_layer_editor->removeContainsLayerRow(true, 0);
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::exact));
+        contains_layer_editor->setContainsLayerRowExactValueText(false, 0, QStringLiteral("200"));
+        UI_EXPECT(contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(open_capture_and_wait(app, contains_layer_controller, applicability_capture_path));
+        UI_EXPECT(contains_layer_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::advanced));
+        UI_EXPECT(contains_layer_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 0);
+
+        contains_layer_controller.beginAdvancedFlowFilterEdit();
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString()
+            == QStringLiteral("Not present in current capture"));
+        contains_layer_editor->setContainsLayerRowIdentifierMode(false, 0, static_cast<int>(IdentifierMode::any));
+        include_row = advanced_filter_row_at(contains_layer_editor->containsLayerRows(false), 0);
+        UI_EXPECT(include_row.value(QStringLiteral("statusText")).toString().isEmpty());
+        UI_EXPECT(contains_layer_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 1);
+
+        auto exact_vni_100_prefix = pfl::session_detail::AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = MatchKind::path_prefix,
+            .layers = {
+                {.kind = pfl::ProtocolLayerKind::ethernet_ii, .identifier = std::nullopt},
+                {.kind = pfl::ProtocolLayerKind::ipv4, .identifier = std::nullopt},
+                {.kind = pfl::ProtocolLayerKind::udp, .identifier = std::nullopt},
+                {.kind = pfl::ProtocolLayerKind::vxlan,
+                 .identifier = pfl::ProtocolLayerIdentifier {
+                     .kind = pfl::ProtocolLayerIdentifierKind::vxlan_vni,
+                     .value = 100U,
+                 }},
+                {.kind = pfl::ProtocolLayerKind::ethernet_ii, .identifier = std::nullopt},
+                {.kind = pfl::ProtocolLayerKind::ipv4, .identifier = std::nullopt},
+            },
+        };
+        auto contains_vni_200 = pfl::session_detail::AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = MatchKind::contains_layer,
+            .layers = {{
+                .kind = pfl::ProtocolLayerKind::vxlan,
+                .identifier = pfl::ProtocolLayerIdentifier {
+                    .kind = pfl::ProtocolLayerIdentifierKind::vxlan_vni,
+                    .value = 200U,
+                },
+            }},
+        };
+        pfl::session_detail::AdvancedFlowFilterDocument independence_document {};
+        independence_document.configured_spec.protocol_path.include.push_back(exact_vni_100_prefix);
+        independence_document.configured_spec.protocol_path.include.push_back(contains_vni_200);
+
+        UI_EXPECT(open_capture_and_wait(app, contains_layer_controller, selector_capture_path));
+        contains_layer_controller.applyAdvancedFlowFilterDocument(independence_document);
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 0);
+
+        independence_document.section_states.protocol_path = false;
+        independence_document.section_states.contains_layer = true;
+        contains_layer_controller.applyAdvancedFlowFilterDocument(independence_document);
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(visible_flow_protocol_paths(contains_layer_flow_model).first().contains(QStringLiteral("VXLAN(vni=200)")));
+
+        independence_document.section_states.protocol_path = true;
+        independence_document.section_states.contains_layer = false;
+        contains_layer_controller.applyAdvancedFlowFilterDocument(independence_document);
+        UI_EXPECT(contains_layer_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(visible_flow_protocol_paths(contains_layer_flow_model).first().contains(QStringLiteral("VXLAN(vni=100)")));
     });
 
     run_ui_section("advanced_flow_filter_controller_execution", [&]() {
