@@ -12,6 +12,7 @@
 #include <QVariantList>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "core/services/AnalysisSettings.h"
 #include "../../../core/open_progress.h"
 #include "ui/app/FlowListModel.h"
@@ -29,6 +30,12 @@ class MainController final : public QObject {
     Q_OBJECT
 
 public:
+    enum class FlowFilterMode {
+        simple = 0,
+        advanced,
+    };
+    Q_ENUM(FlowFilterMode)
+
     enum class StatisticsSectionRequestState {
         not_requested = 0,
         loading,
@@ -305,7 +312,12 @@ private:
     Q_PROPERTY(qulonglong unrecognizedPacketCount READ unrecognizedPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong selectedPacketIndex READ selectedPacketIndex WRITE setSelectedPacketIndex NOTIFY selectedPacketIndexChanged)
     Q_PROPERTY(qulonglong selectedStreamItemIndex READ selectedStreamItemIndex WRITE setSelectedStreamItemIndex NOTIFY selectedStreamItemIndexChanged)
+    Q_PROPERTY(int flowFilterMode READ flowFilterMode NOTIFY flowFilterModeChanged)
     Q_PROPERTY(QString flowFilterText READ flowFilterText WRITE setFlowFilterText NOTIFY flowFilterTextChanged)
+    Q_PROPERTY(QString advancedFlowFilterDisplayName READ advancedFlowFilterDisplayName NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(QString advancedFlowFilterRuleCountText READ advancedFlowFilterRuleCountText NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(bool advancedFlowFilterClearAvailable READ advancedFlowFilterClearAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
@@ -569,7 +581,12 @@ public:
     [[nodiscard]] qulonglong unrecognizedPacketCount() const noexcept;
     [[nodiscard]] qulonglong selectedPacketIndex() const noexcept;
     [[nodiscard]] qulonglong selectedStreamItemIndex() const noexcept;
+    [[nodiscard]] int flowFilterMode() const noexcept;
     [[nodiscard]] QString flowFilterText() const;
+    [[nodiscard]] QString advancedFlowFilterDisplayName() const;
+    [[nodiscard]] QString advancedFlowFilterRuleCountText() const;
+    [[nodiscard]] bool advancedFlowFilterSettingsAvailable() const noexcept;
+    [[nodiscard]] bool advancedFlowFilterClearAvailable() const noexcept;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
 
@@ -615,6 +632,9 @@ public:
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
     Q_INVOKABLE void copyTextToClipboard(const QString& text);
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
+    Q_INVOKABLE void useAdvancedFlowFilter();
+    Q_INVOKABLE void useSimpleFlowFilter();
+    Q_INVOKABLE void clearAdvancedFlowFilter();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -669,7 +689,9 @@ signals:
     void selectedFlowCountChanged();
     void selectedPacketIndexChanged();
     void selectedStreamItemIndexChanged();
+    void flowFilterModeChanged();
     void flowFilterTextChanged();
+    void advancedFlowFilterPresentationChanged();
     void flowSortChanged();
     void openProgressChanged();
     void packetListStateChanged();
@@ -715,6 +737,7 @@ private:
     void refreshSelectedStreamItems(bool resetRows);
     void refreshSelectedFlowAnalysis();
     void clearSelectedFlowAnalysis();
+    void applyActiveFlowFilterModeToModel();
     void clearPacketSelection();
     void clearStreamSelection();
     void clearFlowSelection();
@@ -801,6 +824,7 @@ private:
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};
     FlowListModel flow_model_ {};
+    session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
     ProtocolPathStatsModel protocol_path_stats_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
@@ -834,6 +858,8 @@ private:
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
+    FlowFilterMode flow_filter_mode_ {FlowFilterMode::simple};
+    QString simple_flow_filter_text_ {};
     QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};
     bool packet_size_distribution_expanded_ {false};

@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: design-only RFC for the future Advanced Flow Filter user interface.
+Status: active UI design RFC. The initial Qt-visible shell pass is now implemented for Simple/Advanced mode switching, controller-owned document state, and the staged Advanced toolbar shell. Advanced Filter Settings editing, Open/Save workflows, section editors, evaluator application in Qt, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation

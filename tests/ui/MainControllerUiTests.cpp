@@ -4011,6 +4011,97 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText().isEmpty());
     UI_EXPECT(!item_visible(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel"));
 
+    run_ui_section("advanced_flow_filter_toolbar_mode_switching", [&]() {
+        MainController advanced_filter_controller {};
+        UI_EXPECT(open_capture_and_wait(app, advanced_filter_controller, protocol_path_and_text_capture_path));
+        auto* advanced_filter_flow_model = qobject_cast<FlowListModel*>(advanced_filter_controller.flowModel());
+        UI_REQUIRE(advanced_filter_flow_model != nullptr);
+
+        auto main_window = load_main_qml_component(advanced_filter_controller);
+        auto* flow_text_filter_field = named_object(main_window.object.get(), "flowTextFilterField");
+        auto* use_advanced_filter_button = named_object(main_window.object.get(), "useAdvancedFlowFilterButton");
+        auto* simple_clear_button = named_object(main_window.object.get(), "flowTextFilterClearButton");
+        auto* advanced_settings_button = named_object(main_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* advanced_display_name_label = named_object(main_window.object.get(), "advancedFlowFilterDisplayNameLabel");
+        auto* advanced_rule_count_label = named_object(main_window.object.get(), "advancedFlowFilterRuleCountLabel");
+        auto* use_simple_filter_button = named_object(main_window.object.get(), "useSimpleFlowFilterButton");
+        auto* advanced_clear_button = named_object(main_window.object.get(), "advancedFlowFilterClearButton");
+        auto* global_settings_dialog = named_object(main_window.object.get(), "settingsDialog");
+        UI_REQUIRE(flow_text_filter_field != nullptr);
+        UI_REQUIRE(use_advanced_filter_button != nullptr);
+        UI_REQUIRE(simple_clear_button != nullptr);
+        UI_REQUIRE(advanced_settings_button != nullptr);
+        UI_REQUIRE(advanced_display_name_label != nullptr);
+        UI_REQUIRE(advanced_rule_count_label != nullptr);
+        UI_REQUIRE(use_simple_filter_button != nullptr);
+        UI_REQUIRE(advanced_clear_button != nullptr);
+        UI_REQUIRE(global_settings_dialog != nullptr);
+
+        UI_EXPECT(advanced_filter_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::simple));
+        UI_EXPECT(advanced_filter_controller.flowFilterText().isEmpty());
+        UI_EXPECT(advanced_filter_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(advanced_filter_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(!advanced_filter_controller.advancedFlowFilterSettingsAvailable());
+        UI_EXPECT(!advanced_filter_controller.advancedFlowFilterClearAvailable());
+        UI_EXPECT(item_visible(main_window.object.get(), "flowTextFilterField"));
+        UI_EXPECT(item_visible(main_window.object.get(), "useAdvancedFlowFilterButton"));
+        UI_EXPECT(item_visible(main_window.object.get(), "flowTextFilterClearButton"));
+        UI_EXPECT(!item_visible(main_window.object.get(), "advancedFlowFilterSettingsButton"));
+        UI_EXPECT(!advanced_settings_button->property("enabled").toBool());
+        UI_EXPECT(advanced_settings_button != global_settings_dialog);
+
+        advanced_filter_controller.setFlowFilterText(QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_controller.flowFilterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_flow_model->filterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(advanced_filter_flow_model->hasActiveFlowFilter());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(use_advanced_filter_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(advanced_filter_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::advanced));
+        UI_EXPECT(advanced_filter_controller.flowFilterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_flow_model->filterText().isEmpty());
+        UI_EXPECT(advanced_filter_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(!advanced_filter_flow_model->hasActiveFlowFilter());
+        UI_EXPECT(item_visible(main_window.object.get(), "advancedFlowFilterSettingsButton"));
+        UI_EXPECT(item_visible(main_window.object.get(), "advancedFlowFilterDisplayNameLabel"));
+        UI_EXPECT(item_visible(main_window.object.get(), "advancedFlowFilterRuleCountLabel"));
+        UI_EXPECT(item_visible(main_window.object.get(), "useSimpleFlowFilterButton"));
+        UI_EXPECT(item_visible(main_window.object.get(), "advancedFlowFilterClearButton"));
+        UI_EXPECT(!item_visible(main_window.object.get(), "flowTextFilterField"));
+        UI_EXPECT(advanced_display_name_label->property("text").toString() == QStringLiteral("Filter: Custom filter"));
+        UI_EXPECT(advanced_rule_count_label->property("text").toString() == QStringLiteral("0 rules"));
+        UI_EXPECT(!advanced_clear_button->property("enabled").toBool());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(use_simple_filter_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(advanced_filter_controller.flowFilterMode()
+            == static_cast<int>(MainController::FlowFilterMode::simple));
+        UI_EXPECT(advanced_filter_controller.flowFilterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_flow_model->filterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(advanced_filter_flow_model->hasActiveFlowFilter());
+        UI_EXPECT(item_visible(main_window.object.get(), "flowTextFilterField"));
+        UI_EXPECT(!item_visible(main_window.object.get(), "advancedFlowFilterSettingsButton"));
+
+        advanced_filter_controller.useAdvancedFlowFilter();
+        advanced_filter_controller.useSimpleFlowFilter();
+        UI_EXPECT(advanced_filter_controller.flowFilterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_flow_model->filterText() == QStringLiteral("10001"));
+        UI_EXPECT(advanced_filter_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(advanced_filter_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+
+        UI_REQUIRE(QMetaObject::invokeMethod(simple_clear_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(advanced_filter_controller.flowFilterText().isEmpty());
+        UI_EXPECT(advanced_filter_flow_model->filterText().isEmpty());
+        UI_EXPECT(advanced_filter_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(advanced_filter_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(advanced_filter_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+    });
+
     protocol_path_and_text_controller.setStatisticsMode(0);
     protocol_path_and_text_stats_model->expandAll();
     const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
@@ -4097,22 +4188,32 @@ int main(int argc, char* argv[]) {
 
     protocol_path_filter_controller.showSelectedProtocolPathFlows();
     UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    protocol_path_filter_controller.useAdvancedFlowFilter();
+    UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 1);
+    protocol_path_filter_controller.useSimpleFlowFilter();
+    UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 1);
     UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_capture_path));
     UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText().isEmpty());
 
+    protocol_path_and_text_controller.setFlowFilterText(QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
     protocol_path_and_text_controller.showSelectedProtocolPathFlows();
     UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
     UI_EXPECT(open_capture_and_wait(app, protocol_path_and_text_controller, protocol_path_capture_path));
     UI_EXPECT(!protocol_path_and_text_controller.hasProtocolPathFlowFilter());
-    UI_EXPECT(protocol_path_and_text_controller.flowFilterText().isEmpty());
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
     UI_EXPECT(protocol_path_and_text_flow_model->totalFlowCount() == 1);
-    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 1);
-    UI_EXPECT(!protocol_path_and_text_flow_model->hasActiveFlowFilter());
-    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText().isEmpty());
+    UI_EXPECT(protocol_path_and_text_flow_model->visibleFlowCount() == 0);
+    UI_EXPECT(protocol_path_and_text_flow_model->hasActiveFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->filteredFlowCountText() == QStringLiteral("Filtered to 0 of 1 flows."));
     UI_EXPECT(wait_until(app, [&]() {
         auto* label = named_object(protocol_path_and_text_flow_table.object.get(), "flowFilterStatusLabel");
-        return label != nullptr && !label->property("visible").toBool();
+        return label != nullptr &&
+            label->property("visible").toBool() &&
+            label->property("text").toString() == QStringLiteral("Filtered to 0 of 1 flows.");
     }));
 
     MainController unrecognized_filter_controller {};

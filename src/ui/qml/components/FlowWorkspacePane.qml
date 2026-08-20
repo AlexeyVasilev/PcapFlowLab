@@ -10,7 +10,12 @@ Item {
     property bool unrecognizedPacketsSelected: false
     property int unrecognizedPacketCount: 0
     property bool sourceCaptureAvailable: true
+    property int flowFilterMode: 0
     property string filterText: ""
+    property string advancedFilterDisplayName: "Custom filter"
+    property string advancedFilterRuleCountText: "0 rules"
+    property bool advancedFilterSettingsAvailable: false
+    property bool advancedFilterClearAvailable: false
     property string protocolPathFilterText: ""
     property bool protocolPathFilterVisible: false
     property string wiresharkFilterText: ""
@@ -91,6 +96,10 @@ Item {
     signal unrecognizedPacketsRequested()
     signal filterTextEdited(string text)
     signal clearTextFilterRequested()
+    signal useAdvancedFilterRequested()
+    signal useSimpleFilterRequested()
+    signal advancedFilterSettingsRequested()
+    signal clearAdvancedFilterRequested()
     signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
@@ -119,7 +128,12 @@ Item {
             selectedFlowIndex: root.selectedFlowIndex
             unrecognizedPacketsSelected: root.unrecognizedPacketsSelected
             unrecognizedPacketCount: root.unrecognizedPacketCount
+            flowFilterMode: root.flowFilterMode
             filterText: root.filterText
+            advancedFilterDisplayName: root.advancedFilterDisplayName
+            advancedFilterRuleCountText: root.advancedFilterRuleCountText
+            advancedFilterSettingsAvailable: root.advancedFilterSettingsAvailable
+            advancedFilterClearAvailable: root.advancedFilterClearAvailable
             protocolPathFilterText: root.protocolPathFilterText
             protocolPathFilterVisible: root.protocolPathFilterVisible
             wiresharkFilterText: root.wiresharkFilterText
@@ -136,6 +150,18 @@ Item {
             }
             onClearTextFilterRequested: function() {
                 root.clearTextFilterRequested()
+            }
+            onUseAdvancedFilterRequested: function() {
+                root.useAdvancedFilterRequested()
+            }
+            onUseSimpleFilterRequested: function() {
+                root.useSimpleFilterRequested()
+            }
+            onAdvancedFilterSettingsRequested: function() {
+                root.advancedFilterSettingsRequested()
+            }
+            onClearAdvancedFilterRequested: function() {
+                root.clearAdvancedFilterRequested()
             }
             onClearProtocolPathFilterRequested: function() {
                 root.clearProtocolPathFilterRequested()

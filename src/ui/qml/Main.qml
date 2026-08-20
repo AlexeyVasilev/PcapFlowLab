@@ -1177,7 +1177,12 @@ ApplicationWindow {
                 unrecognizedPacketsSelected: mainController.unrecognizedPacketsSelected
                 unrecognizedPacketCount: mainController.unrecognizedPacketCount
                 sourceCaptureAvailable: mainController.hasSourceCapture
+                flowFilterMode: mainController.flowFilterMode
                 filterText: mainController.flowFilterText
+                advancedFilterDisplayName: mainController.advancedFlowFilterDisplayName
+                advancedFilterRuleCountText: mainController.advancedFlowFilterRuleCountText
+                advancedFilterSettingsAvailable: mainController.advancedFlowFilterSettingsAvailable
+                advancedFilterClearAvailable: mainController.advancedFlowFilterClearAvailable
                 protocolPathFilterText: mainController.protocolPathFlowFilterText
                 protocolPathFilterVisible: mainController.hasProtocolPathFlowFilter
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
@@ -1216,6 +1221,17 @@ ApplicationWindow {
                 }
                 onClearTextFilterRequested: function() {
                     mainController.flowFilterText = ""
+                }
+                onUseAdvancedFilterRequested: function() {
+                    mainController.useAdvancedFlowFilter()
+                }
+                onUseSimpleFilterRequested: function() {
+                    mainController.useSimpleFlowFilter()
+                }
+                onAdvancedFilterSettingsRequested: function() {
+                }
+                onClearAdvancedFilterRequested: function() {
+                    mainController.clearAdvancedFlowFilter()
                 }
                 onClearProtocolPathFilterRequested: function() {
                     mainController.clearProtocolPathFlowFilter()

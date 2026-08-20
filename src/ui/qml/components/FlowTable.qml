@@ -7,7 +7,12 @@ Frame {
 
     property var flowModel: null
     property int selectedFlowIndex: -1
+    property int flowFilterMode: 0
     property string filterText: ""
+    property string advancedFilterDisplayName: "Custom filter"
+    property string advancedFilterRuleCountText: "0 rules"
+    property bool advancedFilterSettingsAvailable: false
+    property bool advancedFilterClearAvailable: false
     property string protocolPathFilterText: ""
     property bool protocolPathFilterVisible: false
     property string wiresharkFilterText: ""
@@ -55,10 +60,15 @@ Frame {
         + root.bytesColumnWidth
         + root.tableRowSpacing * (root.flowTableColumnCount - 1)
     readonly property int flowTableContentWidth: root.flowTableBaseWidth + flowListView.rightGutter
+    readonly property bool advancedFilterModeActive: root.flowFilterMode === 1
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
     signal clearTextFilterRequested()
+    signal useAdvancedFilterRequested()
+    signal useSimpleFilterRequested()
+    signal advancedFilterSettingsRequested()
+    signal clearAdvancedFilterRequested()
     signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
@@ -180,6 +190,7 @@ Frame {
         }
 
         RowLayout {
+            objectName: "flowFilterToolbarRow"
             Layout.fillWidth: true
             spacing: 6
 
@@ -187,6 +198,7 @@ Frame {
                 id: filterField
                 objectName: "flowTextFilterField"
                 Layout.fillWidth: true
+                visible: !root.advancedFilterModeActive
                 placeholderText: "Filter by protocol, hint, service, address, or port"
                 text: root.filterText
                 onTextEdited: function() {
@@ -195,10 +207,63 @@ Frame {
             }
 
             Button {
+                objectName: "useAdvancedFlowFilterButton"
+                visible: !root.advancedFilterModeActive
+                text: "Use advanced filter"
+                onClicked: root.useAdvancedFilterRequested()
+            }
+
+            Button {
                 objectName: "flowTextFilterClearButton"
+                visible: !root.advancedFilterModeActive
                 text: "Clear"
                 enabled: root.filterText.length > 0
                 onClicked: root.clearTextFilterRequested()
+            }
+
+            Button {
+                objectName: "advancedFlowFilterSettingsButton"
+                visible: root.advancedFilterModeActive
+                text: "Settings"
+                enabled: root.advancedFilterSettingsAvailable
+                onClicked: root.advancedFilterSettingsRequested()
+            }
+
+            Label {
+                objectName: "advancedFlowFilterDisplayNameLabel"
+                visible: root.advancedFilterModeActive
+                text: visible ? "Filter: " + root.advancedFilterDisplayName : ""
+                color: "#0f172a"
+                elide: Text.ElideRight
+                Layout.preferredWidth: 220
+                Layout.maximumWidth: 320
+            }
+
+            Label {
+                objectName: "advancedFlowFilterRuleCountLabel"
+                visible: root.advancedFilterModeActive
+                text: visible ? root.advancedFilterRuleCountText : ""
+                color: "#475569"
+            }
+
+            Item {
+                visible: root.advancedFilterModeActive
+                Layout.fillWidth: true
+            }
+
+            Button {
+                objectName: "useSimpleFlowFilterButton"
+                visible: root.advancedFilterModeActive
+                text: "Use simple filter"
+                onClicked: root.useSimpleFilterRequested()
+            }
+
+            Button {
+                objectName: "advancedFlowFilterClearButton"
+                visible: root.advancedFilterModeActive
+                text: "Clear"
+                enabled: root.advancedFilterClearAvailable
+                onClicked: root.clearAdvancedFilterRequested()
             }
         }
 

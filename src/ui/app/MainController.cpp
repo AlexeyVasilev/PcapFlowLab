@@ -91,6 +91,22 @@ QString sanitize_export_filename_component(QString text) {
     return text.isEmpty() ? QStringLiteral("bytes") : text;
 }
 
+QString format_rule_count_text(const std::size_t count) {
+    return count == 1U
+        ? QStringLiteral("1 rule")
+        : QStringLiteral("%1 rules").arg(QString::number(count));
+}
+
+QString advanced_filter_source_stem_text(const std::filesystem::path& path) {
+    const auto stem = path.stem().wstring();
+    if (!stem.empty()) {
+        return QString::fromStdWString(stem);
+    }
+
+    const auto filename = path.filename().wstring();
+    return filename.empty() ? QStringLiteral("Custom filter") : QString::fromStdWString(filename);
+}
+
 struct OpenJobResult {
     bool opened {false};
     bool cancelled {false};
@@ -3451,8 +3467,39 @@ qulonglong MainController::selectedStreamItemIndex() const noexcept {
     return selected_stream_item_index_;
 }
 
+int MainController::flowFilterMode() const noexcept {
+    return static_cast<int>(flow_filter_mode_);
+}
+
 QString MainController::flowFilterText() const {
-    return flow_model_.filterText();
+    return simple_flow_filter_text_;
+}
+
+QString MainController::advancedFlowFilterDisplayName() const {
+    const auto* source_path = advanced_flow_filter_document_state_.source_path();
+    if (source_path == nullptr) {
+        return QStringLiteral("Custom filter");
+    }
+
+    QString display_name = advanced_filter_source_stem_text(*source_path);
+    if (advanced_flow_filter_document_state_.has_unsaved_changes()) {
+        display_name += QStringLiteral(" *");
+    }
+    return display_name;
+}
+
+QString MainController::advancedFlowFilterRuleCountText() const {
+    return format_rule_count_text(advanced_flow_filter_document_state_.active_rule_count());
+}
+
+bool MainController::advancedFlowFilterSettingsAvailable() const noexcept {
+    return false;
+}
+
+bool MainController::advancedFlowFilterClearAvailable() const noexcept {
+    return !is_default_advanced_flow_filter_document(
+               advanced_flow_filter_document_state_.current_user_visible_document())
+        && !advanced_flow_filter_document_state_.would_lose_unsaved_configuration();
 }
 
 int MainController::flowSortColumn() const noexcept {
@@ -4397,6 +4444,35 @@ void MainController::copyTextToClipboard(const QString& text) {
     }
 }
 
+void MainController::useAdvancedFlowFilter() {
+    if (flow_filter_mode_ == FlowFilterMode::advanced) {
+        return;
+    }
+
+    flow_filter_mode_ = FlowFilterMode::advanced;
+    applyActiveFlowFilterModeToModel();
+    emit flowFilterModeChanged();
+}
+
+void MainController::useSimpleFlowFilter() {
+    if (flow_filter_mode_ == FlowFilterMode::simple) {
+        return;
+    }
+
+    flow_filter_mode_ = FlowFilterMode::simple;
+    applyActiveFlowFilterModeToModel();
+    emit flowFilterModeChanged();
+}
+
+void MainController::clearAdvancedFlowFilter() {
+    if (!advancedFlowFilterClearAvailable()) {
+        return;
+    }
+
+    advanced_flow_filter_document_state_.clear_all();
+    emit advancedFlowFilterPresentationChanged();
+}
+
 void MainController::sortFlows(const int column) {
     const auto requestedKey = sort_key_from_column(column);
 
@@ -4414,6 +4490,7 @@ void MainController::sortFlows(const int column) {
 void MainController::drillDownToFlows(const QString& filterText) {
     setCurrentTabIndex(kFlowTabIndex);
     clearFlowSelection();
+    useSimpleFlowFilter();
     setFlowFilterText(filterText.trimmed());
 }
 
@@ -5423,12 +5500,15 @@ void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex
 }
 
 void MainController::setFlowFilterText(const QString& text) {
-    if (flow_model_.filterText() == text) {
+    if (simple_flow_filter_text_ == text) {
         return;
     }
 
-    flow_model_.setFilterText(text);
-    synchronizeFlowSelection();
+    simple_flow_filter_text_ = text;
+    if (flow_filter_mode_ == FlowFilterMode::simple) {
+        flow_model_.setFilterText(simple_flow_filter_text_);
+        synchronizeFlowSelection();
+    }
     emit flowFilterTextChanged();
 }
 
@@ -5888,6 +5968,16 @@ void MainController::clearSelectedFlowAnalysis() {
     }
 }
 
+void MainController::applyActiveFlowFilterModeToModel() {
+    if (flow_filter_mode_ == FlowFilterMode::simple) {
+        flow_model_.setFilterText(simple_flow_filter_text_);
+    } else {
+        flow_model_.setFilterText({});
+    }
+
+    synchronizeFlowSelection();
+}
+
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
@@ -6005,6 +6095,7 @@ void MainController::resetLoadedState() {
     clearProtocolPathFlowFilterState();
     flow_model_.clear();
     flow_model_.resetViewState();
+    applyActiveFlowFilterModeToModel();
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
@@ -6055,6 +6146,7 @@ void MainController::applyLoadedState(const QString& path) {
     flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
+    applyActiveFlowFilterModeToModel();
     setOpenErrorText({});
     setStatusText({});
     if (current_tab_index_ == kStatsTabIndex) {
