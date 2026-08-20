@@ -261,6 +261,17 @@ bool advanced_filter_option_present(const QVariantList& options, const QString& 
     return false;
 }
 
+QVariantMap advanced_filter_row_at(const QVariantList& rows, const int row) {
+    for (const auto& row_variant : rows) {
+        const auto candidate = row_variant.toMap();
+        if (candidate.value(QStringLiteral("row")).toInt() == row) {
+            return candidate;
+        }
+    }
+
+    return {};
+}
+
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -4194,10 +4205,16 @@ int main(int argc, char* argv[]) {
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::directionality);
         constexpr int flow_protocol_section_id =
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::flow_protocol);
+        constexpr int ports_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::ports);
+        constexpr int ip_addresses_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::ip_addresses);
 
         advanced_settings_controller.useAdvancedFlowFilter();
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterSettingsAvailable());
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(flow_protocol_section_id));
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(ports_section_id));
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(ip_addresses_section_id));
         UI_EXPECT(!advanced_filter_option_present(
             advanced_settings_controller.advancedFlowFilterIncludeOptions(detected_protocol_section_id),
             QStringLiteral("Possible TLS")));
@@ -4220,13 +4237,46 @@ int main(int argc, char* argv[]) {
             advanced_settings_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
             QStringLiteral("UDP")));
         UI_EXPECT(!advanced_settings_controller.advancedFlowFilterDraftClearAllAvailable());
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterPortRows(false).isEmpty());
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterAddressRows(false).isEmpty());
+        UI_EXPECT(!advanced_settings_controller.advancedFlowFilterSectionHasExclusions(ports_section_id));
+        UI_EXPECT(!advanced_settings_controller.advancedFlowFilterSectionHasExclusions(ip_addresses_section_id));
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterEditorValidationText().isEmpty());
 
         advanced_settings_controller.beginAdvancedFlowFilterEdit();
+        advanced_settings_controller.addAdvancedFlowFilterPortRow(false);
+        advanced_settings_controller.setAdvancedFlowFilterPortRowRangeEnabled(false, 0, true);
+        advanced_settings_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("8000"));
+        UI_EXPECT(!advanced_settings_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Range rules require both From and To values")));
+        UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!advanced_settings_flow_model->hasAdvancedFlowIndexFilter());
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        advanced_settings_controller.cancelAdvancedFlowFilterEdit();
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterPortRows(false).isEmpty());
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!advanced_settings_flow_model->hasAdvancedFlowIndexFilter());
+
+        advanced_settings_controller.beginAdvancedFlowFilterEdit();
+        advanced_settings_controller.addAdvancedFlowFilterPortRow(false);
+        advanced_settings_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("80"));
+        const auto port_row_zero = advanced_filter_row_at(
+            advanced_settings_controller.advancedFlowFilterPortRows(false),
+            0
+        );
+        UI_EXPECT(port_row_zero.value(QStringLiteral("scope")).toInt()
+            == static_cast<int>(pfl::session_detail::AdvancedFlowFilterPortScope::either_endpoint));
+        UI_EXPECT(!port_row_zero.value(QStringLiteral("rangeEnabled")).toBool());
+        UI_EXPECT(port_row_zero.value(QStringLiteral("primaryText")).toString() == QStringLiteral("80"));
+        UI_EXPECT(port_row_zero.value(QStringLiteral("secondaryText")).toString().isEmpty());
         advanced_settings_controller.setAdvancedFlowFilterOptionChecked(
             flow_protocol_section_id,
             static_cast<int>(ProtocolId::udp),
             false,
             true);
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
         UI_EXPECT(advanced_filter_option_checked(
             advanced_settings_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
             QStringLiteral("UDP")));
@@ -4234,30 +4284,30 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 3);
         UI_EXPECT(!advanced_settings_flow_model->hasAdvancedFlowIndexFilter());
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterPortRows(false).isEmpty());
 
         advanced_settings_controller.beginAdvancedFlowFilterEdit();
-        advanced_settings_controller.setAdvancedFlowFilterOptionChecked(
-            flow_protocol_section_id,
-            static_cast<int>(ProtocolId::udp),
-            false,
-            true);
+        advanced_settings_controller.addAdvancedFlowFilterPortRow(false);
+        advanced_settings_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("80"));
         UI_EXPECT(advanced_settings_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(advanced_settings_flow_model->hasAdvancedFlowIndexFilter());
-        UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 2);
-        UI_EXPECT(find_flow_index_by_protocol(advanced_settings_flow_model, QStringLiteral("UDP")) >= 0);
-        UI_EXPECT(find_flow_index_by_protocol(advanced_settings_flow_model, QStringLiteral("TCP")) < 0);
+        UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_protocol(advanced_settings_flow_model, QStringLiteral("TCP")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(advanced_settings_flow_model, QStringLiteral("UDP")) < 0);
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
 
         advanced_settings_controller.beginAdvancedFlowFilterEdit();
-        UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(flow_protocol_section_id));
-        UI_EXPECT(advanced_filter_option_checked(
-            advanced_settings_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
-            QStringLiteral("UDP")));
-        advanced_settings_controller.setAdvancedFlowFilterSectionEnabled(flow_protocol_section_id, false);
-        UI_EXPECT(!advanced_settings_controller.advancedFlowFilterSectionEnabled(flow_protocol_section_id));
-        UI_EXPECT(advanced_filter_option_checked(
-            advanced_settings_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
-            QStringLiteral("UDP")));
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(ports_section_id));
+        UI_EXPECT(advanced_filter_row_at(
+            advanced_settings_controller.advancedFlowFilterPortRows(false),
+            0
+        ).value(QStringLiteral("primaryText")).toString() == QStringLiteral("80"));
+        advanced_settings_controller.setAdvancedFlowFilterSectionEnabled(ports_section_id, false);
+        UI_EXPECT(!advanced_settings_controller.advancedFlowFilterSectionEnabled(ports_section_id));
+        UI_EXPECT(advanced_filter_row_at(
+            advanced_settings_controller.advancedFlowFilterPortRows(false),
+            0
+        ).value(QStringLiteral("primaryText")).toString() == QStringLiteral("80"));
         UI_EXPECT(advanced_settings_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(!advanced_settings_flow_model->hasAdvancedFlowIndexFilter());
         UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 3);
@@ -4265,19 +4315,21 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
 
         advanced_settings_controller.beginAdvancedFlowFilterEdit();
-        UI_EXPECT(!advanced_settings_controller.advancedFlowFilterSectionEnabled(flow_protocol_section_id));
-        UI_EXPECT(advanced_filter_option_checked(
-            advanced_settings_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
-            QStringLiteral("UDP")));
-        advanced_settings_controller.setAdvancedFlowFilterSectionEnabled(flow_protocol_section_id, true);
-        UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(flow_protocol_section_id));
-        UI_EXPECT(advanced_filter_option_checked(
-            advanced_settings_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
-            QStringLiteral("UDP")));
+        UI_EXPECT(!advanced_settings_controller.advancedFlowFilterSectionEnabled(ports_section_id));
+        UI_EXPECT(advanced_filter_row_at(
+            advanced_settings_controller.advancedFlowFilterPortRows(false),
+            0
+        ).value(QStringLiteral("primaryText")).toString() == QStringLiteral("80"));
+        advanced_settings_controller.setAdvancedFlowFilterSectionEnabled(ports_section_id, true);
+        UI_EXPECT(advanced_settings_controller.advancedFlowFilterSectionEnabled(ports_section_id));
+        UI_EXPECT(advanced_filter_row_at(
+            advanced_settings_controller.advancedFlowFilterPortRows(false),
+            0
+        ).value(QStringLiteral("primaryText")).toString() == QStringLiteral("80"));
         UI_EXPECT(advanced_settings_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(advanced_settings_flow_model->hasAdvancedFlowIndexFilter());
-        UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 2);
-        UI_EXPECT(find_flow_index_by_protocol(advanced_settings_flow_model, QStringLiteral("UDP")) >= 0);
+        UI_EXPECT(advanced_settings_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_protocol(advanced_settings_flow_model, QStringLiteral("TCP")) >= 0);
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
     });
 
@@ -4304,6 +4356,10 @@ int main(int argc, char* argv[]) {
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::address_family);
         constexpr int flow_protocol_section_id =
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::flow_protocol);
+        constexpr int ports_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::ports);
+        constexpr int ip_addresses_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::ip_addresses);
 
         include_exclude_controller.useAdvancedFlowFilter();
         include_exclude_controller.beginAdvancedFlowFilterEdit();
@@ -4368,6 +4424,89 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv4")) < 0);
         UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("UDP")) >= 0);
         UI_EXPECT(include_exclude_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+
+        include_exclude_controller.applyAdvancedFlowFilterDocument({});
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!include_exclude_flow_model->hasAdvancedFlowIndexFilter());
+
+        include_exclude_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!include_exclude_controller.advancedFlowFilterSectionHasExclusions(ports_section_id));
+        include_exclude_controller.addAdvancedFlowFilterPortRow(false);
+        include_exclude_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("443"));
+        include_exclude_controller.addAdvancedFlowFilterPortRow(false);
+        include_exclude_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 1, QStringLiteral("53"));
+        include_exclude_controller.addAdvancedFlowFilterPortRow(true);
+        include_exclude_controller.setAdvancedFlowFilterPortRowScope(
+            true,
+            0,
+            static_cast<int>(pfl::session_detail::AdvancedFlowFilterPortScope::endpoint_b)
+        );
+        include_exclude_controller.setAdvancedFlowFilterPortRowPrimaryText(true, 0, QStringLiteral("53"));
+        UI_EXPECT(include_exclude_controller.advancedFlowFilterSectionHasExclusions(ports_section_id));
+        UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("UDP")) >= 0);
+
+        include_exclude_controller.applyAdvancedFlowFilterDocument({});
+        include_exclude_controller.beginAdvancedFlowFilterEdit();
+        include_exclude_controller.addAdvancedFlowFilterPortRow(false);
+        include_exclude_controller.setAdvancedFlowFilterPortRowRangeEnabled(false, 0, true);
+        include_exclude_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("53000"));
+        include_exclude_controller.setAdvancedFlowFilterPortRowSecondaryText(false, 0, QStringLiteral("54000"));
+        UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv4")) >= 0);
+        UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("TCP")) < 0);
+
+        include_exclude_controller.applyAdvancedFlowFilterDocument({});
+        include_exclude_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!include_exclude_controller.advancedFlowFilterSectionHasExclusions(ip_addresses_section_id));
+        include_exclude_controller.addAdvancedFlowFilterAddressRow(false);
+        include_exclude_controller.setAdvancedFlowFilterAddressRowSubnetEnabled(false, 0, true);
+        include_exclude_controller.setAdvancedFlowFilterAddressRowAddressText(false, 0, QStringLiteral("10.72.0.0"));
+        include_exclude_controller.setAdvancedFlowFilterAddressRowPrefixText(false, 0, QStringLiteral("24"));
+        include_exclude_controller.addAdvancedFlowFilterAddressRow(true);
+        include_exclude_controller.setAdvancedFlowFilterAddressRowScope(
+            true,
+            0,
+            static_cast<int>(pfl::session_detail::AdvancedFlowFilterEndpointScope::endpoint_b)
+        );
+        include_exclude_controller.setAdvancedFlowFilterAddressRowAddressText(true, 0, QStringLiteral("10.72.0.4"));
+        UI_EXPECT(include_exclude_controller.advancedFlowFilterSectionHasExclusions(ip_addresses_section_id));
+        UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("TCP")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("UDP")) < 0);
+
+        include_exclude_controller.applyAdvancedFlowFilterDocument({});
+        include_exclude_controller.beginAdvancedFlowFilterEdit();
+        include_exclude_controller.addAdvancedFlowFilterAddressRow(false);
+        include_exclude_controller.setAdvancedFlowFilterAddressRowAddressText(
+            false,
+            0,
+            QStringLiteral("2001:0db8:0072:0000:0000:0000:0000:0001")
+        );
+        UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
+
+        include_exclude_controller.beginAdvancedFlowFilterEdit();
+        include_exclude_controller.setAdvancedFlowFilterSectionEnabled(ip_addresses_section_id, false);
+        UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 3);
+
+        include_exclude_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!include_exclude_controller.advancedFlowFilterSectionEnabled(ip_addresses_section_id));
+        UI_EXPECT(advanced_filter_row_at(
+            include_exclude_controller.advancedFlowFilterAddressRows(false),
+            0
+        ).value(QStringLiteral("addressText")).toString() == QStringLiteral("2001:0db8:0072:0000:0000:0000:0000:0001"));
+        include_exclude_controller.setAdvancedFlowFilterSectionEnabled(ip_addresses_section_id, true);
+        UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
     });
 
     run_ui_section("advanced_flow_filter_controller_execution", [&]() {

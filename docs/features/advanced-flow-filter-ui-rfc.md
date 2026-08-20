@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, and the first dedicated Advanced Filter Settings dialog for finite checkbox sections. Open/Save workflows, deferred editor sections, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for finite checkbox sections, and the first structured repeated-row editors for Ports and IP addresses / CIDR. Open/Save workflows, deferred editor sections beyond Ports/IP, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -220,8 +220,11 @@ Current agreed behavior:
   - TLS Version
   - QUIC Version
   - Observed directions
+  - Ports
+  - IP addresses
 - Qt now applies section Enabled state, Include selections, collapsible
-  Exclusions, and draft Apply/Cancel behavior through
+  Exclusions, repeated structured Port/IP rule rows, transactional Apply
+  validation, and draft Apply/Cancel behavior through
   `AdvancedFlowFilterDocumentState`
 - Open/Save/Save As/Clear unsaved changes and confirmed destructive Clear-all
   workflow remain deferred
@@ -809,6 +812,11 @@ Rules:
 - an empty Include set plus Exclusions is valid
 - the UI must not calculate flow counts for arbitrary port rules
 
+Qt now implements this repeated-row Ports editor in the dedicated Advanced
+Filter Settings dialog, including Include/Exclude collections, Add/Remove,
+Range toggle draft preservation, section Enabled retention, and transactional
+Apply validation.
+
 ## IP And CIDR Editor
 
 IP rules use the same general interaction model as Ports.
@@ -864,6 +872,11 @@ Network: 192.168.1.0/24
 - include rules use OR
 - exclusion rules reuse the same editor pattern and are hidden by default
 - the UI must not calculate arbitrary IP/CIDR counts when opening the dialog
+
+Qt now implements this repeated-row IP/CIDR editor in the dedicated Advanced
+Filter Settings dialog, including Include/Exclude collections, Add/Remove,
+Subnet toggle draft preservation, section Enabled retention, and transactional
+Apply validation.
 
 ## Service Editor
 
@@ -1709,6 +1722,8 @@ discussion:
 - Qt implementation staging
 - Smart Export integration with Advanced-mode visibility/filter semantics
 - Tauri parity
+- exact Advanced-mode Clear behavior and its interaction with file-backed,
+  dirty, and Custom filter document state
 - final styling and polish, including exact spacing, exact dialog wording, and
   any later reordering of common versus additional traffic rows
 
@@ -1734,16 +1749,14 @@ Expected staged direction:
 2. filter document/state model
 3. main Flows-toolbar mode switching
 4. settings-window shell plus checkbox groups
-5. Ports editor
-6. IP/CIDR editor
-7. Traffic editor
-8. Service editor
-9. Protocol Path picker
-10. Contains Layer editor
-11. section Enabled state / configured-document support
-12. format evolution and persistence
-13. Open / Save / dirty integration
-14. optional capture-level counts
+5. Traffic editor
+6. Service editor
+7. Protocol Path picker
+8. Contains Layer editor
+9. section Enabled state / configured-document support
+10. format evolution and persistence
+11. Open / Save / dirty integration
+12. optional capture-level counts
 15. Tauri parity
 16. polish, tests, and docs
 

@@ -43,6 +43,8 @@ public:
         tls_version,
         quic_version,
         directionality,
+        ports,
+        ip_addresses,
     };
     Q_ENUM(AdvancedFlowFilterFiniteSection)
 
@@ -329,6 +331,7 @@ private:
     Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterClearAvailable READ advancedFlowFilterClearAvailable NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(int advancedFlowFilterEditorRevision READ advancedFlowFilterEditorRevision NOTIFY advancedFlowFilterEditorStateChanged)
+    Q_PROPERTY(QString advancedFlowFilterEditorValidationText READ advancedFlowFilterEditorValidationText NOTIFY advancedFlowFilterEditorStateChanged)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
@@ -599,6 +602,7 @@ public:
     [[nodiscard]] bool advancedFlowFilterSettingsAvailable() const noexcept;
     [[nodiscard]] bool advancedFlowFilterClearAvailable() const noexcept;
     [[nodiscard]] int advancedFlowFilterEditorRevision() const noexcept;
+    [[nodiscard]] QString advancedFlowFilterEditorValidationText() const;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
 
@@ -655,8 +659,24 @@ public:
     Q_INVOKABLE bool advancedFlowFilterSectionHasExclusions(int section) const noexcept;
     Q_INVOKABLE QVariantList advancedFlowFilterIncludeOptions(int section) const;
     Q_INVOKABLE QVariantList advancedFlowFilterExcludeOptions(int section) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterPortScopeOptions() const;
+    Q_INVOKABLE QVariantList advancedFlowFilterAddressScopeOptions() const;
+    Q_INVOKABLE QVariantList advancedFlowFilterPortRows(bool exclude) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterAddressRows(bool exclude) const;
     Q_INVOKABLE void setAdvancedFlowFilterSectionEnabled(int section, bool enabled);
     Q_INVOKABLE void setAdvancedFlowFilterOptionChecked(int section, int value, bool exclude, bool checked);
+    Q_INVOKABLE void addAdvancedFlowFilterPortRow(bool exclude);
+    Q_INVOKABLE void removeAdvancedFlowFilterPortRow(bool exclude, int row);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowScope(bool exclude, int row, int scope);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowRangeEnabled(bool exclude, int row, bool enabled);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowPrimaryText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowSecondaryText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void addAdvancedFlowFilterAddressRow(bool exclude);
+    Q_INVOKABLE void removeAdvancedFlowFilterAddressRow(bool exclude, int row);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowScope(bool exclude, int row, int scope);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowSubnetEnabled(bool exclude, int row, bool enabled);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowAddressText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowPrefixText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -822,6 +842,13 @@ private:
     void setSmartExportState(bool inProgress, qulonglong packetsProcessed, qulonglong totalPackets, const QString& progressText);
     void setIndexSaveState(bool inProgress, bool cancelRequested, double progressPercent, const QString& progressText);
     void setStatusText(const QString& text, bool isError = false);
+    void initializeAdvancedFlowFilterStructuredEditorState();
+    void clearAdvancedFlowFilterStructuredEditorState() noexcept;
+    void clearAdvancedFlowFilterEditorValidationText();
+    void notifyAdvancedFlowFilterEditorRowsChanged();
+    [[nodiscard]] bool synchronizeAdvancedFlowFilterStructuredDraftSections(QString* errorText = nullptr);
+    [[nodiscard]] QVariantList buildAdvancedFlowFilterPortRowList(bool exclude) const;
+    [[nodiscard]] QVariantList buildAdvancedFlowFilterAddressRowList(bool exclude) const;
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
     QString chooseFlowInfoCsvSaveFile() const;
@@ -887,6 +914,23 @@ private:
     qulonglong selected_stream_item_index_ {0};
     FlowFilterMode flow_filter_mode_ {FlowFilterMode::simple};
     int advanced_flow_filter_editor_revision_ {0};
+    struct AdvancedFlowFilterPortEditorRow {
+        session_detail::AdvancedFlowFilterPortScope scope {session_detail::AdvancedFlowFilterPortScope::either_endpoint};
+        bool range_enabled {false};
+        QString primary_text {};
+        QString secondary_text {};
+    };
+    struct AdvancedFlowFilterAddressEditorRow {
+        session_detail::AdvancedFlowFilterEndpointScope scope {session_detail::AdvancedFlowFilterEndpointScope::either_endpoint};
+        bool subnet_enabled {false};
+        QString address_text {};
+        QString prefix_text {};
+    };
+    std::vector<AdvancedFlowFilterPortEditorRow> advanced_flow_filter_port_include_rows_ {};
+    std::vector<AdvancedFlowFilterPortEditorRow> advanced_flow_filter_port_exclude_rows_ {};
+    std::vector<AdvancedFlowFilterAddressEditorRow> advanced_flow_filter_address_include_rows_ {};
+    std::vector<AdvancedFlowFilterAddressEditorRow> advanced_flow_filter_address_exclude_rows_ {};
+    QString advanced_flow_filter_editor_validation_text_ {};
     QString simple_flow_filter_text_ {};
     QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};
