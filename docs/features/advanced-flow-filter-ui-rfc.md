@@ -31,8 +31,6 @@ Still deferred here:
 - final styling and polish
 - dedicated capture-level count-summary architecture
 - exact mapping/API between Protocol Path UI modes and backend match shapes
-- exact implementation structure for configured document state versus effective
-  enabled spec
 
 ## Design Principles
 
@@ -115,14 +113,22 @@ Notes:
 The conceptual Advanced Filter UI document model distinguishes configured
 document state from the effective backend filter spec.
 
+This frontend-neutral workflow state is now represented in the application
+layer by `AdvancedFlowFilterDocumentState`.
+
 Configured filter document contains:
 
 - all configured predicates, including predicates retained inside disabled
   sections
 - section Enabled states
+
+Workflow/document state owns:
+
+- applied configured document
+- optional draft document while Settings is open
+- optional saved baseline
 - optional source file path
-- saved baseline
-- dirty state
+- derived dirty / unsaved semantics
 
 Effective `AdvancedFlowFilterSpec`:
 
@@ -1615,8 +1621,9 @@ transient applicability status
 Applicability warnings do not mutate the configured document and do not
 silently alter Enabled state.
 
-The exact implementation structure/API can be designed later during the
-document-state and backend-prerequisite passes.
+The frontend-neutral document/workflow state model now exists in the
+application layer, while UI wiring and applicability presentation remain
+future implementation work.
 
 ## Validation UX
 
@@ -1662,8 +1669,6 @@ discussion:
 - exact mapping/API between the three Protocol Path UI modes and the existing
   backend `exact_path` / `path_prefix` representation
 - capture-level count-summary architecture
-- exact implementation structure for document/configured spec versus effective
-  enabled spec
 - Qt implementation staging
 - Tauri parity
 - final styling and polish, including exact spacing, exact dialog wording, and

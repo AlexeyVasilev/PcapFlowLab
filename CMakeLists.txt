@@ -112,6 +112,7 @@ add_library(
     src/app/frontend/FrontendSettingsJson.cpp
     src/app/session/ByteExport.cpp
     src/app/session/AdvancedFlowFilter.cpp
+    src/app/session/AdvancedFlowFilterDocumentState.cpp
     src/app/session/AdvancedFlowFilterFormat.cpp
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
@@ -424,6 +425,7 @@ if(BUILD_TESTING)
         tests/unit/CliSummaryTests.cpp
         tests/unit/ByteExportTests.cpp
         tests/unit/AdvancedFlowFilterTests.cpp
+        tests/unit/AdvancedFlowFilterDocumentStateTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
         tests/unit/PacketPayloadTests.cpp
