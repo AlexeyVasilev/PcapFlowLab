@@ -14,9 +14,9 @@ namespace pfl {
 
 class AdvancedFlowFilterEditorModel final : public QObject {
     Q_OBJECT
-    Q_PROPERTY(int revision READ revision NOTIFY stateChanged)
-    Q_PROPERTY(QString validationText READ validationText NOTIFY stateChanged)
-    Q_PROPERTY(bool draftClearAllAvailable READ draftClearAllAvailable NOTIFY stateChanged)
+    Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
+    Q_PROPERTY(QString validationText READ validationText NOTIFY validationTextChanged)
+    Q_PROPERTY(bool draftClearAllAvailable READ draftClearAllAvailable NOTIFY draftClearAllAvailableChanged)
 
 public:
     enum class AdvancedFlowFilterFiniteSection {
@@ -28,6 +28,35 @@ public:
         directionality,
         ports,
         ip_addresses,
+        traffic,
+        service,
+    };
+
+    enum class AdvancedFlowFilterTrafficMetric {
+        packet_count = 0,
+        original_bytes,
+        captured_bytes,
+        duration,
+        max_original_packet_size,
+        max_captured_packet_size,
+        fragmented_packet_count,
+        truncated_packet_count,
+        tcp_syn_count,
+        tcp_fin_count,
+        tcp_rst_count,
+    };
+
+    enum class AdvancedFlowFilterTrafficUnit {
+        bytes = 0,
+        kib,
+        mib,
+        gib,
+        tib,
+        microseconds,
+        milliseconds,
+        seconds,
+        minutes,
+        hours,
     };
 
     explicit AdvancedFlowFilterEditorModel(
@@ -47,6 +76,21 @@ public:
     Q_INVOKABLE QVariantList addressScopeOptions() const;
     Q_INVOKABLE QVariantList portRows(bool exclude) const;
     Q_INVOKABLE QVariantList addressRows(bool exclude) const;
+    Q_INVOKABLE QVariantList commonTrafficRows() const;
+    Q_INVOKABLE QVariantList additionalTrafficRows() const;
+    Q_INVOKABLE bool trafficAdditionalFiltersExpandedSuggested() const noexcept;
+    Q_INVOKABLE void setTrafficMinText(int metric, const QString& text);
+    Q_INVOKABLE void setTrafficMaxText(int metric, const QString& text);
+    Q_INVOKABLE bool setTrafficUnit(int metric, int unit);
+    Q_INVOKABLE bool serviceStateChecked(bool exclude, int stateKind) const noexcept;
+    Q_INVOKABLE QVariantList serviceOperatorOptions() const;
+    Q_INVOKABLE QVariantList serviceTextRows(bool exclude) const;
+    Q_INVOKABLE void setServiceStateChecked(bool exclude, int stateKind, bool checked);
+    Q_INVOKABLE void addServiceTextRow(bool exclude);
+    Q_INVOKABLE void removeServiceTextRow(bool exclude, int row);
+    Q_INVOKABLE void setServiceTextRowKind(bool exclude, int row, int kind);
+    Q_INVOKABLE void setServiceTextRowCaseSensitive(bool exclude, int row, bool caseSensitive);
+    Q_INVOKABLE void setServiceTextRowText(bool exclude, int row, const QString& text);
     Q_INVOKABLE void setSectionEnabled(int section, bool enabled);
     Q_INVOKABLE void setOptionChecked(int section, int value, bool exclude, bool checked);
     Q_INVOKABLE void addPortRow(bool exclude);
@@ -68,6 +112,9 @@ public:
     void setValidationText(const QString& text);
 
 signals:
+    void revisionChanged();
+    void validationTextChanged();
+    void draftClearAllAvailableChanged();
     void stateChanged();
 
 private:
@@ -85,20 +132,44 @@ private:
         QString prefix_text {};
     };
 
-    [[nodiscard]] bool hasTransientEditorRows() const noexcept;
+    struct AdvancedFlowFilterTrafficEditorRow {
+        QString min_text {};
+        QString max_text {};
+        AdvancedFlowFilterTrafficUnit unit {AdvancedFlowFilterTrafficUnit::bytes};
+    };
+
+    struct AdvancedFlowFilterServiceTextEditorRow {
+        session_detail::AdvancedFlowFilterServicePredicateKind kind {
+            session_detail::AdvancedFlowFilterServicePredicateKind::contains
+        };
+        bool case_sensitive {false};
+        QString text {};
+    };
+
     void ensureEditingInitialized();
     void clearValidationText();
     void notifyRowsChanged();
+    void notifyTextFieldEdited();
     void notifyStateChanged();
     [[nodiscard]] QVariantList buildPortRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildAddressRowList(bool exclude) const;
+    [[nodiscard]] QVariantList buildTrafficRowList(bool additional) const;
+    [[nodiscard]] QVariantList buildServiceTextRowList(bool exclude) const;
 
     session_detail::AdvancedFlowFilterDocumentState& document_state_;
     int revision_ {0};
+    bool editing_initialized_ {false};
     std::vector<AdvancedFlowFilterPortEditorRow> port_include_rows_ {};
     std::vector<AdvancedFlowFilterPortEditorRow> port_exclude_rows_ {};
     std::vector<AdvancedFlowFilterAddressEditorRow> address_include_rows_ {};
     std::vector<AdvancedFlowFilterAddressEditorRow> address_exclude_rows_ {};
+    std::vector<AdvancedFlowFilterTrafficEditorRow> traffic_rows_ {};
+    bool service_include_known_ {false};
+    bool service_include_unknown_ {false};
+    bool service_exclude_known_ {false};
+    bool service_exclude_unknown_ {false};
+    std::vector<AdvancedFlowFilterServiceTextEditorRow> service_include_text_rows_ {};
+    std::vector<AdvancedFlowFilterServiceTextEditorRow> service_exclude_text_rows_ {};
     QString validation_text_ {};
 };
 

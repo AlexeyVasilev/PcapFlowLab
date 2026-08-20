@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for finite checkbox sections, and the first structured repeated-row editors for Ports and IP addresses / CIDR. Open/Save workflows, deferred editor sections beyond Ports/IP, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for finite checkbox sections, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, and the Service state/text-rule editor. Open/Save workflows, deferred editor sections beyond the currently implemented Qt subset, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -922,6 +922,12 @@ Initial non-goals:
 - no regex
 - no arbitrary service-rule counts
 
+Qt now implements this Service editor in the dedicated Advanced Filter
+Settings dialog, including Known/Unknown state predicates, Include/Exclude
+text rules, Equals/Starts with/Contains operators, case-sensitivity mapping,
+section Enabled retention, exclusion expansion based on configured state, and
+transactional Apply validation.
+
 ## Protocol Path
 
 Protocol Path and Contains Layer are two distinct UI sections.
@@ -1499,6 +1505,12 @@ are empty.
 Validation follows this RFC's existing non-aggressive draft-validation rules.
 
 The UI must not calculate dynamic flow counts for arbitrary numeric ranges.
+
+Qt now implements this Traffic editor in the dedicated Advanced Filter
+Settings dialog, including the common/additional metric split, integer-only
+Minimum/Maximum handling, exact byte/duration unit conversion, additional-row
+auto-expansion when configured, section Enabled retention, and transactional
+Apply validation.
 
 ## Section Enabled State
 

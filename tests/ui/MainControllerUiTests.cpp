@@ -29,6 +29,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QMetaEnum>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -42,6 +43,7 @@
 #include "app/session/CaptureSession.h"
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "ui/app/AdvancedFlowFilterEditorModel.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
@@ -271,6 +273,21 @@ QVariantMap advanced_filter_row_at(const QVariantList& rows, const int row) {
     }
 
     return {};
+}
+
+QVariantMap advanced_filter_metric_row_at(const QVariantList& rows, const int metric_id) {
+    for (const auto& row_variant : rows) {
+        const auto candidate = row_variant.toMap();
+        if (candidate.value(QStringLiteral("metricId")).toInt() == metric_id) {
+            return candidate;
+        }
+    }
+
+    return {};
+}
+
+pfl::AdvancedFlowFilterEditorModel* advanced_filter_editor(pfl::MainController& controller) {
+    return qobject_cast<pfl::AdvancedFlowFilterEditorModel*>(controller.advancedFlowFilterEditor());
 }
 
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
@@ -549,7 +566,111 @@ QObject* named_object(QObject* root, const char* objectName) {
     return root->findChild<QObject*>(QString::fromLatin1(objectName));
 }
 
+QQuickItem* find_quick_item_by_object_name(QQuickItem* root, const QString& object_name) {
+    if (root == nullptr) {
+        return nullptr;
+    }
+
+    if (root->objectName() == object_name) {
+        return root;
+    }
+
+    const auto child_items = root->childItems();
+    for (auto* child : child_items) {
+        if (auto* match = find_quick_item_by_object_name(child, object_name); match != nullptr) {
+            return match;
+        }
+    }
+
+    return nullptr;
+}
+
+QQuickItem* popup_content_item(QObject* popup) {
+    if (popup == nullptr) {
+        return nullptr;
+    }
+
+    const auto content_item_value = popup->property("contentItem");
+    if (content_item_value.isValid()) {
+        if (auto* content_object = qvariant_cast<QObject*>(content_item_value);
+            auto* content_item = qobject_cast<QQuickItem*>(content_object)) {
+            return content_item;
+        }
+    }
+
+    const auto window_value = popup->property("window");
+    if (window_value.isValid()) {
+        if (auto* window = qvariant_cast<QQuickWindow*>(window_value); window != nullptr) {
+            return window->contentItem();
+        }
+    }
+
+    return nullptr;
+}
+
+QQuickItem* popup_visual_item(QObject* popup, const char* objectName) {
+    return find_quick_item_by_object_name(popup_content_item(popup), QString::fromLatin1(objectName));
+}
+
 QObject* find_object_with_text(QObject* root, const QString& text);
+
+int qt_key_for_text_character(const QChar character) {
+    if (character.isDigit()) {
+        return Qt::Key_0 + character.digitValue();
+    }
+
+    if (character.isLetter()) {
+        const auto upper = character.toUpper().unicode();
+        if (upper >= 'A' && upper <= 'Z') {
+            return Qt::Key_A + static_cast<int>(upper - 'A');
+        }
+    }
+
+    switch (character.unicode()) {
+    case '.':
+        return Qt::Key_Period;
+    case ':':
+        return Qt::Key_Colon;
+    case '-':
+        return Qt::Key_Minus;
+    case '_':
+        return Qt::Key_Underscore;
+    default:
+        return 0;
+    }
+}
+
+bool type_text_into_field(QApplication& app, QQuickWindow* window, QObject* field, const QString& text) {
+    auto* item = qobject_cast<QQuickItem*>(field);
+    if (window == nullptr || item == nullptr) {
+        return false;
+    }
+
+    window->requestActivate();
+    item->forceActiveFocus(Qt::OtherFocusReason);
+    app.processEvents(QEventLoop::AllEvents, 25);
+
+    for (const auto character : text) {
+        const auto key = qt_key_for_text_character(character);
+        if (key == 0) {
+            return false;
+        }
+
+        auto* focus_object = QGuiApplication::focusObject();
+        if (focus_object == nullptr) {
+            return false;
+        }
+
+        const QString key_text(character);
+        QKeyEvent press_event(QEvent::KeyPress, key, Qt::NoModifier, key_text);
+        QCoreApplication::sendEvent(focus_object, &press_event);
+        QKeyEvent release_event(QEvent::KeyRelease, key, Qt::NoModifier, key_text);
+        QCoreApplication::sendEvent(focus_object, &release_event);
+        app.processEvents(QEventLoop::AllEvents, 25);
+    }
+
+    return true;
+}
 
 QObject* find_object_with_text(QObject* root, const QString& text) {
     if (root == nullptr) {
@@ -719,6 +840,51 @@ pfl::session_detail::AdvancedFlowFilterDocument make_address_family_advanced_doc
 pfl::session_detail::AdvancedFlowFilterDocument make_disabled_flow_protocol_advanced_document(const pfl::ProtocolId protocol) {
     auto document = make_flow_protocol_advanced_document(protocol);
     document.section_states.flow_protocol = false;
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_port_text_entry_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.ports.include.push_back(AdvancedFlowFilterPortPredicate {
+        .scope = AdvancedFlowFilterPortScope::either_endpoint,
+        .range = AdvancedFlowFilterPortRange {.first = 8U, .last = 8U},
+    });
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_address_prefix_text_entry_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.addresses.ipv4_include.push_back(AdvancedFlowFilterIpv4AddressPredicate {
+        .match_kind = AdvancedFlowFilterAddressMatchKind::cidr,
+        .scope = AdvancedFlowFilterEndpointScope::either_endpoint,
+        .value = pfl::tests::ipv4(10, 71, 0, 0),
+        .prefix_length = 1U,
+    });
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_traffic_text_entry_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.aggregate.packet_count =
+        AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1ULL, .max = std::nullopt};
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_service_text_entry_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.service.include.push_back(AdvancedFlowFilterServicePredicate {
+        .kind = AdvancedFlowFilterServicePredicateKind::contains,
+        .value = "u",
+        .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+    });
     return document;
 }
 
@@ -4334,6 +4500,117 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(advanced_settings_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
     });
 
+    run_ui_section("advanced_flow_filter_settings_text_input_focus_stability", [&]() {
+        using TrafficMetric = pfl::AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric;
+
+        MainController revision_controller {};
+        auto* revision_editor = advanced_filter_editor(revision_controller);
+        UI_REQUIRE(revision_editor != nullptr);
+        constexpr auto packet_count_metric = static_cast<int>(TrafficMetric::packet_count);
+
+        revision_controller.applyAdvancedFlowFilterDocument(make_port_text_entry_document());
+        revision_controller.beginAdvancedFlowFilterEdit();
+        const auto port_revision_before = revision_editor->revision();
+        revision_editor->setPortRowPrimaryText(false, 0, QStringLiteral("80"));
+        UI_EXPECT(advanced_filter_row_at(
+            revision_editor->portRows(false),
+            0
+        ).value(QStringLiteral("primaryText")).toString() == QStringLiteral("80"));
+        UI_EXPECT(revision_editor->revision() == port_revision_before);
+        revision_controller.cancelAdvancedFlowFilterEdit();
+
+        revision_controller.applyAdvancedFlowFilterDocument(make_address_prefix_text_entry_document());
+        revision_controller.beginAdvancedFlowFilterEdit();
+        const auto address_revision_before = revision_editor->revision();
+        revision_editor->setAddressRowPrefixText(false, 0, QStringLiteral("16"));
+        UI_EXPECT(advanced_filter_row_at(
+            revision_editor->addressRows(false),
+            0
+        ).value(QStringLiteral("prefixText")).toString() == QStringLiteral("16"));
+        UI_EXPECT(revision_editor->revision() == address_revision_before);
+        revision_controller.cancelAdvancedFlowFilterEdit();
+
+        revision_controller.applyAdvancedFlowFilterDocument(make_traffic_text_entry_document());
+        revision_controller.beginAdvancedFlowFilterEdit();
+        const auto traffic_revision_before = revision_editor->revision();
+        revision_editor->setTrafficMinText(packet_count_metric, QStringLiteral("12"));
+        UI_EXPECT(advanced_filter_metric_row_at(
+            revision_editor->commonTrafficRows(),
+            packet_count_metric
+        ).value(QStringLiteral("minText")).toString() == QStringLiteral("12"));
+        UI_EXPECT(revision_editor->revision() == traffic_revision_before);
+        revision_controller.cancelAdvancedFlowFilterEdit();
+
+        revision_controller.applyAdvancedFlowFilterDocument(make_service_text_entry_document());
+        revision_controller.beginAdvancedFlowFilterEdit();
+        const auto service_revision_before = revision_editor->revision();
+        revision_editor->setServiceTextRowText(false, 0, QStringLiteral("ui"));
+        UI_EXPECT(advanced_filter_row_at(
+            revision_editor->serviceTextRows(false),
+            0
+        ).value(QStringLiteral("text")).toString() == QStringLiteral("ui"));
+        UI_EXPECT(revision_editor->revision() == service_revision_before);
+        revision_controller.cancelAdvancedFlowFilterEdit();
+
+        revision_controller.applyAdvancedFlowFilterDocument(pfl::session_detail::AdvancedFlowFilterDocument {});
+        revision_controller.beginAdvancedFlowFilterEdit();
+        const auto structural_revision_before = revision_editor->revision();
+        revision_editor->addPortRow(false);
+        UI_EXPECT(revision_editor->revision() > structural_revision_before);
+        revision_controller.cancelAdvancedFlowFilterEdit();
+
+        const auto focus_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_text_input_focus_stability.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 91, 0, 1), ipv4(10, 91, 0, 2), 51001, 80)},
+                {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 91, 0, 3), ipv4(10, 91, 0, 4), 53000, 53)},
+            })
+        );
+
+        MainController focus_controller {};
+        UI_EXPECT(open_capture_and_wait(app, focus_controller, focus_capture_path));
+        focus_controller.useAdvancedFlowFilter();
+        focus_controller.applyAdvancedFlowFilterDocument(make_port_text_entry_document());
+
+        auto main_window = load_main_qml_component(focus_controller);
+        auto* window = qobject_cast<QQuickWindow*>(main_window.object.get());
+        auto* settings_button = named_object(main_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* advanced_settings_dialog = named_object(main_window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(window != nullptr);
+        UI_REQUIRE(settings_button != nullptr);
+        UI_REQUIRE(advanced_settings_dialog != nullptr);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return advanced_settings_dialog->property("visible").toBool()
+                && popup_content_item(advanced_settings_dialog) != nullptr;
+        }));
+
+        UI_EXPECT(wait_until(app, [&]() {
+            return popup_visual_item(
+                advanced_settings_dialog,
+                "advancedFlowFilterPortsIncludeRow0PrimaryTextField"
+            ) != nullptr;
+        }));
+
+        auto* port_text_field = popup_visual_item(
+            advanced_settings_dialog,
+            "advancedFlowFilterPortsIncludeRow0PrimaryTextField"
+        );
+        UI_REQUIRE(port_text_field != nullptr);
+        UI_EXPECT(type_text_into_field(app, window, port_text_field, QStringLiteral("01234")));
+        UI_EXPECT(port_text_field->property("text").toString() == QStringLiteral("801234"));
+        UI_EXPECT(advanced_filter_row_at(
+            focus_controller.advancedFlowFilterPortRows(false),
+            0
+        ).value(QStringLiteral("primaryText")).toString() == QStringLiteral("801234"));
+        UI_EXPECT(port_text_field->property("activeFocus").toBool());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(advanced_settings_dialog, "close"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+    });
+
     run_ui_section("advanced_flow_filter_settings_editor_include_exclude_and_multi_section", [&]() {
         const auto include_exclude_capture_path = write_temp_pcap(
             "pfl_ui_advanced_filter_settings_include_exclude.pcap",
@@ -4508,6 +4785,320 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(include_exclude_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
         UI_EXPECT(find_flow_index_by_family(include_exclude_flow_model, QStringLiteral("IPv6")) >= 0);
+    });
+
+    run_ui_section("advanced_flow_filter_settings_editor_traffic", [&]() {
+        using TrafficMetric = pfl::AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric;
+        using TrafficUnit = pfl::AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit;
+
+        const auto traffic_filter_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_traffic.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 81, 0, 1), ipv4(10, 81, 0, 2), 51001, 80, 24, 0x18)},
+                {200U, make_ethernet_ipv4_udp_packet_with_payload(ipv4(10, 81, 0, 3), ipv4(10, 81, 0, 4), 53000, 53, 48)},
+                {300U, make_ethernet_ipv4_udp_packet_with_payload(ipv4(10, 81, 0, 3), ipv4(10, 81, 0, 4), 53000, 53, 48)},
+                {400U, make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 81, 0, 5), ipv4(10, 81, 0, 6), 54000, 443, 64, 0x18)},
+                {500U, make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 81, 0, 5), ipv4(10, 81, 0, 6), 54000, 443, 64, 0x18)},
+                {600U, make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 81, 0, 5), ipv4(10, 81, 0, 6), 54000, 443, 64, 0x18)},
+            })
+        );
+
+        MainController traffic_controller {};
+        UI_EXPECT(open_capture_and_wait(app, traffic_controller, traffic_filter_capture_path));
+        auto* traffic_flow_model = qobject_cast<FlowListModel*>(traffic_controller.flowModel());
+        auto* traffic_editor = advanced_filter_editor(traffic_controller);
+        UI_REQUIRE(traffic_flow_model != nullptr);
+        UI_REQUIRE(traffic_editor != nullptr);
+
+        constexpr int traffic_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::traffic);
+        constexpr auto packet_count_metric = static_cast<int>(TrafficMetric::packet_count);
+        constexpr auto original_bytes_metric = static_cast<int>(TrafficMetric::original_bytes);
+        constexpr auto duration_metric = static_cast<int>(TrafficMetric::duration);
+        constexpr auto max_original_packet_size_metric = static_cast<int>(TrafficMetric::max_original_packet_size);
+
+        traffic_controller.useAdvancedFlowFilter();
+        UI_EXPECT(traffic_controller.advancedFlowFilterSectionEnabled(traffic_section_id));
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        traffic_editor->setTrafficMinText(packet_count_metric, QStringLiteral("2"));
+        traffic_editor->setTrafficMaxText(packet_count_metric, QStringLiteral("2"));
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(!traffic_flow_model->hasAdvancedFlowIndexFilter());
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        traffic_editor->setTrafficMinText(packet_count_metric, QStringLiteral("2"));
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("UDP")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("TCP")) >= 0);
+        UI_EXPECT(traffic_flow_model->hasAdvancedFlowIndexFilter());
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        traffic_editor->setTrafficMaxText(packet_count_metric, QStringLiteral("1"));
+        UI_EXPECT(!traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Packets minimum must not exceed maximum")));
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("UDP")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("TCP")) >= 0);
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+
+        traffic_controller.applyAdvancedFlowFilterDocument({});
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(traffic_editor->setTrafficUnit(
+            original_bytes_metric,
+            static_cast<int>(TrafficUnit::mib)));
+        traffic_editor->setTrafficMinText(original_bytes_metric, QStringLiteral("10"));
+        UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 0);
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        auto original_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            original_bytes_metric
+        );
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::mib));
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10"));
+        traffic_editor->setTrafficMinText(original_bytes_metric, QStringLiteral("11"));
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        original_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            original_bytes_metric
+        );
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::mib));
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10"));
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+
+        pfl::session_detail::AdvancedFlowFilterDocument traffic_document {};
+        traffic_document.configured_spec.aggregate.original_bytes =
+            pfl::session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t> {
+                .min = 10485761ULL,
+                .max = 10485761ULL,
+            };
+        traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        original_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            original_bytes_metric
+        );
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::bytes));
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10485761"));
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("10485761"));
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+
+        traffic_document = {};
+        traffic_document.configured_spec.aggregate.duration_us =
+            pfl::session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t> {
+                .max = 7200000000ULL,
+            };
+        traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        const auto duration_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            duration_metric
+        );
+        UI_EXPECT(duration_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::hours));
+        UI_EXPECT(duration_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("2"));
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+
+        traffic_document = {};
+        traffic_document.configured_spec.aggregate.max_original_packet_length =
+            pfl::session_detail::AdvancedFlowFilterInclusiveRange<std::uint32_t> {
+                .min = 10485760U,
+                .max = 10485760U,
+            };
+        traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(traffic_editor->trafficAdditionalFiltersExpandedSuggested());
+        auto max_original_row = advanced_filter_metric_row_at(
+            traffic_editor->additionalTrafficRows(),
+            max_original_packet_size_metric
+        );
+        UI_EXPECT(max_original_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::mib));
+        UI_EXPECT(max_original_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10"));
+        UI_EXPECT(max_original_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("10"));
+        traffic_controller.setAdvancedFlowFilterSectionEnabled(traffic_section_id, false);
+        UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!traffic_controller.advancedFlowFilterSectionEnabled(traffic_section_id));
+        max_original_row = advanced_filter_metric_row_at(
+            traffic_editor->additionalTrafficRows(),
+            max_original_packet_size_metric
+        );
+        UI_EXPECT(max_original_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::mib));
+        UI_EXPECT(max_original_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10"));
+        traffic_controller.setAdvancedFlowFilterSectionEnabled(traffic_section_id, true);
+        UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 0);
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+
+        traffic_controller.applyAdvancedFlowFilterDocument({});
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(traffic_editor->setTrafficUnit(
+            max_original_packet_size_metric,
+            static_cast<int>(TrafficUnit::gib)));
+        traffic_editor->setTrafficMinText(max_original_packet_size_metric, QStringLiteral("8"));
+        UI_EXPECT(!traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Maximum original packet size minimum is too large")));
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 3);
+        traffic_controller.cancelAdvancedFlowFilterEdit();
+    });
+
+    run_ui_section("advanced_flow_filter_settings_editor_service", [&]() {
+        using ServiceKind = pfl::session_detail::AdvancedFlowFilterServicePredicateKind;
+
+        const auto http_payload = make_http_request_payload();
+        const auto dns_payload = make_dns_query_payload();
+        const auto service_filter_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_service.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 82, 0, 1), ipv4(10, 82, 0, 2), 51001, 80, http_payload, 0x18)},
+                {200U, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 82, 0, 3), ipv4(10, 82, 0, 4), 53000, 53, dns_payload)},
+                {300U, make_ethernet_ipv4_tcp_packet_with_payload(
+                    ipv4(10, 82, 0, 5), ipv4(10, 82, 0, 6), 54000, 443, 32, 0x18)},
+            })
+        );
+
+        MainController service_controller {};
+        UI_EXPECT(open_capture_and_wait(app, service_controller, service_filter_capture_path));
+        auto* service_flow_model = qobject_cast<FlowListModel*>(service_controller.flowModel());
+        auto* service_editor = advanced_filter_editor(service_controller);
+        UI_REQUIRE(service_flow_model != nullptr);
+        UI_REQUIRE(service_editor != nullptr);
+
+        constexpr int service_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::service);
+        constexpr auto known_kind = static_cast<int>(ServiceKind::known);
+        constexpr auto unknown_kind = static_cast<int>(ServiceKind::unknown);
+        constexpr auto equals_kind = static_cast<int>(ServiceKind::equals);
+        constexpr auto starts_with_kind = static_cast<int>(ServiceKind::starts_with);
+
+        service_controller.useAdvancedFlowFilter();
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->addServiceTextRow(false);
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 3);
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->setServiceStateChecked(false, known_kind, true);
+        service_editor->addServiceTextRow(false);
+        service_editor->setServiceTextRowText(false, 0, QStringLiteral("ui.example"));
+        UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+        service_controller.cancelAdvancedFlowFilterEdit();
+        UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 3);
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->setServiceStateChecked(false, known_kind, true);
+        UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) >= 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->setServiceStateChecked(false, unknown_kind, true);
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) < 0);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) < 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->addServiceTextRow(false);
+        service_editor->setServiceTextRowText(false, 0, QStringLiteral("example"));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) >= 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->addServiceTextRow(false);
+        service_editor->setServiceTextRowKind(false, 0, starts_with_kind);
+        service_editor->setServiceTextRowText(false, 0, QStringLiteral("ui."));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->addServiceTextRow(false);
+        service_editor->setServiceTextRowKind(false, 0, equals_kind);
+        service_editor->setServiceTextRowText(false, 0, QStringLiteral("API.EXAMPLE"));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) >= 0);
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        auto service_include_row = advanced_filter_row_at(service_editor->serviceTextRows(false), 0);
+        UI_EXPECT(service_include_row.value(QStringLiteral("kind")).toInt() == equals_kind);
+        UI_EXPECT(!service_include_row.value(QStringLiteral("caseSensitive")).toBool());
+        service_editor->setServiceTextRowCaseSensitive(false, 0, true);
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->setServiceStateChecked(false, known_kind, true);
+        service_editor->addServiceTextRow(true);
+        service_editor->setServiceTextRowKind(true, 0, equals_kind);
+        service_editor->setServiceTextRowText(true, 0, QStringLiteral("api.example"));
+        UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+        UI_EXPECT(service_controller.advancedFlowFilterSectionHasExclusions(service_section_id));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) < 0);
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(service_controller.advancedFlowFilterSectionHasExclusions(service_section_id));
+        UI_EXPECT(service_editor->serviceStateChecked(false, known_kind));
+        auto service_exclude_row = advanced_filter_row_at(service_editor->serviceTextRows(true), 0);
+        UI_EXPECT(service_exclude_row.value(QStringLiteral("text")).toString() == QStringLiteral("api.example"));
+        service_editor->setServiceTextRowText(true, 0, QStringLiteral("ui.example"));
+        service_controller.cancelAdvancedFlowFilterEdit();
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(service_controller.advancedFlowFilterSectionHasExclusions(service_section_id));
+        UI_EXPECT(service_editor->serviceStateChecked(false, known_kind));
+        service_exclude_row = advanced_filter_row_at(service_editor->serviceTextRows(true), 0);
+        UI_EXPECT(service_exclude_row.value(QStringLiteral("text")).toString() == QStringLiteral("api.example"));
+        service_controller.setAdvancedFlowFilterSectionEnabled(service_section_id, false);
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+
+        service_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!service_controller.advancedFlowFilterSectionEnabled(service_section_id));
+        UI_EXPECT(service_editor->serviceStateChecked(false, known_kind));
+        service_exclude_row = advanced_filter_row_at(service_editor->serviceTextRows(true), 0);
+        UI_EXPECT(service_exclude_row.value(QStringLiteral("text")).toString() == QStringLiteral("api.example"));
+        service_controller.setAdvancedFlowFilterSectionEnabled(service_section_id, true);
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
     });
 
     run_ui_section("advanced_flow_filter_controller_execution", [&]() {

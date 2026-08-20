@@ -11,6 +11,10 @@ Dialog {
     property bool applyingDraft: false
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
+    readonly property int trafficSectionId: 8
+    readonly property int serviceSectionId: 9
+    readonly property int serviceKnownKind: 0
+    readonly property int serviceUnknownKind: 1
 
     signal initializeDialogState()
 
@@ -1002,6 +1006,662 @@ Dialog {
                                             onClicked: {
                                                 if (root.editor) {
                                                     root.editor.addAddressRow(true)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: trafficSection
+                            readonly property bool sectionEnabledState: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.trafficSectionId)
+                            }
+                            readonly property var commonRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.commonTrafficRows()
+                            }
+                            readonly property var additionalRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.additionalTrafficRows()
+                            }
+
+                            objectName: "advancedFlowFilterTrafficSection"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: implicitHeight
+                            implicitHeight: trafficSectionLayout.implicitHeight + 28
+                            radius: 8
+                            color: "white"
+                            border.color: "#dbe4f0"
+
+                            property bool additionalExpanded: false
+
+                            function initializeAdditionalVisibility() {
+                                additionalExpanded = root.editor
+                                    ? root.editor.trafficAdditionalFiltersExpandedSuggested()
+                                    : false
+                            }
+
+                            Component.onCompleted: initializeAdditionalVisibility()
+
+                            Connections {
+                                target: root
+
+                                function onInitializeDialogState() {
+                                    trafficSection.initializeAdditionalVisibility()
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: trafficSectionLayout
+                                x: 14
+                                y: 14
+                                width: parent.width - 28
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: "Traffic"
+                                        color: "#0f172a"
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                    }
+
+                                    CheckBox {
+                                        objectName: "advancedFlowFilterTrafficEnabledCheckBox"
+                                        text: "Enabled"
+                                        checked: trafficSection.sectionEnabledState
+                                        onToggled: {
+                                            if (root.editor) {
+                                                root.editor.setSectionEnabled(root.trafficSectionId, checked)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    enabled: trafficSection.sectionEnabledState
+                                    opacity: trafficSection.sectionEnabledState ? 1.0 : 0.55
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Label {
+                                            Layout.preferredWidth: 250
+                                            text: "Value"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: 120
+                                            text: "Minimum"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: 120
+                                            text: "Maximum"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: 120
+                                            text: "Unit"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Repeater {
+                                        model: trafficSection.commonRows
+
+                                        delegate: RowLayout {
+                                            required property var modelData
+
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Label {
+                                                Layout.preferredWidth: 250
+                                                text: modelData.label
+                                                color: "#0f172a"
+                                                elide: Text.ElideRight
+                                            }
+
+                                            TextField {
+                                                objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MinTextField"
+                                                Layout.preferredWidth: 120
+                                                text: modelData.minText
+                                                placeholderText: "0"
+                                                onTextEdited: {
+                                                    if (root.editor) {
+                                                        root.editor.setTrafficMinText(modelData.metricId, text)
+                                                    }
+                                                }
+                                            }
+
+                                            TextField {
+                                                objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MaxTextField"
+                                                Layout.preferredWidth: 120
+                                                text: modelData.maxText
+                                                placeholderText: "100"
+                                                onTextEdited: {
+                                                    if (root.editor) {
+                                                        root.editor.setTrafficMaxText(modelData.metricId, text)
+                                                    }
+                                                }
+                                            }
+
+                                            ComboBox {
+                                                objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitComboBox"
+                                                Layout.preferredWidth: 120
+                                                visible: modelData.hasUnitSelector
+                                                model: modelData.unitOptions
+                                                textRole: "label"
+                                                currentIndex: root.optionIndex(model, modelData.selectedUnit)
+                                                onActivated: {
+                                                    if (root.editor) {
+                                                        root.editor.setTrafficUnit(modelData.metricId, model[currentIndex].value)
+                                                    }
+                                                }
+                                            }
+
+                                            Label {
+                                                objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitLabel"
+                                                Layout.preferredWidth: 120
+                                                visible: !modelData.hasUnitSelector
+                                                text: modelData.unitText
+                                                color: "#475569"
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterTrafficAdditionalToggleButton"
+                                        text: trafficSection.additionalExpanded
+                                            ? "Hide additional traffic filters"
+                                            : "+ More traffic filters"
+                                        onClicked: trafficSection.additionalExpanded = !trafficSection.additionalExpanded
+                                    }
+
+                                    ColumnLayout {
+                                        objectName: "advancedFlowFilterTrafficAdditionalSection"
+                                        Layout.fillWidth: true
+                                        visible: trafficSection.additionalExpanded
+                                        spacing: 8
+
+                                        Repeater {
+                                            model: trafficSection.additionalRows
+
+                                            delegate: RowLayout {
+                                                required property var modelData
+
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Label {
+                                                    Layout.preferredWidth: 250
+                                                    text: modelData.label
+                                                    color: "#0f172a"
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                TextField {
+                                                    objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MinTextField"
+                                                    Layout.preferredWidth: 120
+                                                    text: modelData.minText
+                                                    placeholderText: "0"
+                                                    onTextEdited: {
+                                                        if (root.editor) {
+                                                            root.editor.setTrafficMinText(modelData.metricId, text)
+                                                        }
+                                                    }
+                                                }
+
+                                                TextField {
+                                                    objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MaxTextField"
+                                                    Layout.preferredWidth: 120
+                                                    text: modelData.maxText
+                                                    placeholderText: "100"
+                                                    onTextEdited: {
+                                                        if (root.editor) {
+                                                            root.editor.setTrafficMaxText(modelData.metricId, text)
+                                                        }
+                                                    }
+                                                }
+
+                                                ComboBox {
+                                                    objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitComboBox"
+                                                    Layout.preferredWidth: 120
+                                                    visible: modelData.hasUnitSelector
+                                                    model: modelData.unitOptions
+                                                    textRole: "label"
+                                                    currentIndex: root.optionIndex(model, modelData.selectedUnit)
+                                                    onActivated: {
+                                                        if (root.editor) {
+                                                            root.editor.setTrafficUnit(modelData.metricId, model[currentIndex].value)
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitLabel"
+                                                    Layout.preferredWidth: 120
+                                                    visible: !modelData.hasUnitSelector
+                                                    text: modelData.unitText
+                                                    color: "#475569"
+                                                    verticalAlignment: Text.AlignVCenter
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: serviceSection
+                            readonly property bool sectionEnabledState: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.serviceSectionId)
+                            }
+                            readonly property bool includeKnownChecked: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceStateChecked(false, root.serviceKnownKind)
+                            }
+                            readonly property bool includeUnknownChecked: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceStateChecked(false, root.serviceUnknownKind)
+                            }
+                            readonly property bool excludeKnownChecked: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceStateChecked(true, root.serviceKnownKind)
+                            }
+                            readonly property bool excludeUnknownChecked: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceStateChecked(true, root.serviceUnknownKind)
+                            }
+                            readonly property var operatorOptions: root.editor
+                                ? root.editor.serviceOperatorOptions()
+                                : []
+                            readonly property var includeTextRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceTextRows(false)
+                            }
+                            readonly property var excludeTextRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceTextRows(true)
+                            }
+
+                            objectName: "advancedFlowFilterServiceSection"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: implicitHeight
+                            implicitHeight: serviceSectionLayout.implicitHeight + 28
+                            radius: 8
+                            color: "white"
+                            border.color: "#dbe4f0"
+
+                            property bool exclusionsExpanded: false
+
+                            function initializeExclusionsVisibility() {
+                                exclusionsExpanded = root.editor
+                                    ? root.editor.sectionHasExclusions(root.serviceSectionId)
+                                    : false
+                            }
+
+                            Component.onCompleted: initializeExclusionsVisibility()
+
+                            Connections {
+                                target: root
+
+                                function onInitializeDialogState() {
+                                    serviceSection.initializeExclusionsVisibility()
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: serviceSectionLayout
+                                x: 14
+                                y: 14
+                                width: parent.width - 28
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: "Service"
+                                        color: "#0f172a"
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                    }
+
+                                    CheckBox {
+                                        objectName: "advancedFlowFilterServiceEnabledCheckBox"
+                                        text: "Enabled"
+                                        checked: serviceSection.sectionEnabledState
+                                        onToggled: {
+                                            if (root.editor) {
+                                                root.editor.setSectionEnabled(root.serviceSectionId, checked)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    enabled: serviceSection.sectionEnabledState
+                                    opacity: serviceSection.sectionEnabledState ? 1.0 : 0.55
+
+                                    Label {
+                                        text: "Include"
+                                        color: "#475569"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+
+                                    Label {
+                                        text: "State"
+                                        color: "#475569"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 18
+
+                                        CheckBox {
+                                            objectName: "advancedFlowFilterServiceIncludeKnownCheckBox"
+                                            text: "Known"
+                                            checked: serviceSection.includeKnownChecked
+                                            onToggled: {
+                                                if (root.editor) {
+                                                    root.editor.setServiceStateChecked(false, root.serviceKnownKind, checked)
+                                                }
+                                            }
+                                        }
+
+                                        CheckBox {
+                                            objectName: "advancedFlowFilterServiceIncludeUnknownCheckBox"
+                                            text: "Unknown"
+                                            checked: serviceSection.includeUnknownChecked
+                                            onToggled: {
+                                                if (root.editor) {
+                                                    root.editor.setServiceStateChecked(false, root.serviceUnknownKind, checked)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Text rules"
+                                        color: "#475569"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+
+                                    Repeater {
+                                        model: serviceSection.includeTextRows
+
+                                        delegate: Rectangle {
+                                            required property var modelData
+
+                                            Layout.fillWidth: true
+                                            implicitHeight: includeServiceRowLayout.implicitHeight + 12
+                                            color: "#f8fafc"
+                                            border.color: "#e2e8f0"
+                                            radius: 6
+
+                                            RowLayout {
+                                                id: includeServiceRowLayout
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 8
+
+                                                ComboBox {
+                                                    objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "KindComboBox"
+                                                    Layout.preferredWidth: 150
+                                                    model: serviceSection.operatorOptions
+                                                    textRole: "label"
+                                                    currentIndex: root.optionIndex(model, modelData.kind)
+                                                    onActivated: {
+                                                        if (root.editor) {
+                                                            root.editor.setServiceTextRowKind(false, modelData.row, model[currentIndex].value)
+                                                        }
+                                                    }
+                                                }
+
+                                                CheckBox {
+                                                    objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "CaseSensitiveCheckBox"
+                                                    text: "Case sensitive"
+                                                    checked: modelData.caseSensitive
+                                                    onToggled: {
+                                                        if (root.editor) {
+                                                            root.editor.setServiceTextRowCaseSensitive(false, modelData.row, checked)
+                                                        }
+                                                    }
+                                                }
+
+                                                TextField {
+                                                    objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "TextField"
+                                                    Layout.fillWidth: true
+                                                    text: modelData.text
+                                                    placeholderText: "youtube.com"
+                                                    onTextEdited: {
+                                                        if (root.editor) {
+                                                            root.editor.setServiceTextRowText(false, modelData.row, text)
+                                                        }
+                                                    }
+                                                }
+
+                                                Button {
+                                                    objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "RemoveButton"
+                                                    text: "Remove"
+                                                    onClicked: {
+                                                        if (root.editor) {
+                                                            root.editor.removeServiceTextRow(false, modelData.row)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterServiceAddIncludeRuleButton"
+                                        text: "+ Add service rule"
+                                        onClicked: {
+                                            if (root.editor) {
+                                                root.editor.addServiceTextRow(false)
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        objectName: "advancedFlowFilterServiceExclusionsToggleButton"
+                                        text: serviceSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
+                                        onClicked: serviceSection.exclusionsExpanded = !serviceSection.exclusionsExpanded
+                                    }
+
+                                    ColumnLayout {
+                                        objectName: "advancedFlowFilterServiceExclusionsSection"
+                                        Layout.fillWidth: true
+                                        visible: serviceSection.exclusionsExpanded
+                                        spacing: 10
+
+                                        Label {
+                                            text: "Exclude"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Label {
+                                            text: "State"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 18
+
+                                            CheckBox {
+                                                objectName: "advancedFlowFilterServiceExcludeKnownCheckBox"
+                                                text: "Known"
+                                                checked: serviceSection.excludeKnownChecked
+                                                onToggled: {
+                                                    if (root.editor) {
+                                                        root.editor.setServiceStateChecked(true, root.serviceKnownKind, checked)
+                                                    }
+                                                }
+                                            }
+
+                                            CheckBox {
+                                                objectName: "advancedFlowFilterServiceExcludeUnknownCheckBox"
+                                                text: "Unknown"
+                                                checked: serviceSection.excludeUnknownChecked
+                                                onToggled: {
+                                                    if (root.editor) {
+                                                        root.editor.setServiceStateChecked(true, root.serviceUnknownKind, checked)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Label {
+                                            text: "Text rules"
+                                            color: "#475569"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Repeater {
+                                            model: serviceSection.excludeTextRows
+
+                                            delegate: Rectangle {
+                                                required property var modelData
+
+                                                Layout.fillWidth: true
+                                                implicitHeight: excludeServiceRowLayout.implicitHeight + 12
+                                                color: "#f8fafc"
+                                                border.color: "#e2e8f0"
+                                                radius: 6
+
+                                                RowLayout {
+                                                    id: excludeServiceRowLayout
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    spacing: 8
+
+                                                    ComboBox {
+                                                        objectName: "advancedFlowFilterServiceExcludeRow" + modelData.row + "KindComboBox"
+                                                        Layout.preferredWidth: 150
+                                                        model: serviceSection.operatorOptions
+                                                        textRole: "label"
+                                                        currentIndex: root.optionIndex(model, modelData.kind)
+                                                        onActivated: {
+                                                            if (root.editor) {
+                                                                root.editor.setServiceTextRowKind(true, modelData.row, model[currentIndex].value)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    CheckBox {
+                                                        objectName: "advancedFlowFilterServiceExcludeRow" + modelData.row + "CaseSensitiveCheckBox"
+                                                        text: "Case sensitive"
+                                                        checked: modelData.caseSensitive
+                                                        onToggled: {
+                                                            if (root.editor) {
+                                                                root.editor.setServiceTextRowCaseSensitive(true, modelData.row, checked)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    TextField {
+                                                        objectName: "advancedFlowFilterServiceExcludeRow" + modelData.row + "TextField"
+                                                        Layout.fillWidth: true
+                                                        text: modelData.text
+                                                        placeholderText: "api.example.com"
+                                                        onTextEdited: {
+                                                            if (root.editor) {
+                                                                root.editor.setServiceTextRowText(true, modelData.row, text)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        objectName: "advancedFlowFilterServiceExcludeRow" + modelData.row + "RemoveButton"
+                                                        text: "Remove"
+                                                        onClicked: {
+                                                            if (root.editor) {
+                                                                root.editor.removeServiceTextRow(true, modelData.row)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Button {
+                                            objectName: "advancedFlowFilterServiceAddExcludeRuleButton"
+                                            text: "+ Add service rule"
+                                            onClicked: {
+                                                if (root.editor) {
+                                                    root.editor.addServiceTextRow(true)
                                                 }
                                             }
                                         }
