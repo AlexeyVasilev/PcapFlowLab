@@ -146,6 +146,9 @@ Each non-comment assignment is:
 <key> = <value>
 ```
 
+The first `=` outside quoted strings is the assignment separator. Any later
+`=` characters belong to the value.
+
 The parser returns `AdvancedFlowFilterTextParseResult` with:
 
 - `status`

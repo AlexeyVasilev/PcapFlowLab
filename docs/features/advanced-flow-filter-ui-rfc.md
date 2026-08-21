@@ -236,8 +236,14 @@ Current agreed behavior:
   - `Any` / `Exact` identifier modes
   - capture-specific applicability feedback derived from cached Protocol Path
     summary data
-- Open/Save/Save As/Clear unsaved changes and confirmed destructive Clear-all
-  workflow remain deferred
+- Qt now also implements:
+  - `Open filter...` with transactional read/parse/application behavior
+  - `Save` / `Save As...` with transactional configured-document persistence
+  - file-backed display-name presentation using the source file stem
+  - dirty `*` presentation for modified file-backed filters
+  - unsaved-replacement protection when opening another filter over dirty state
+- `Clear unsaved changes` and confirmed destructive Clear-all workflow remain
+  deferred
 
 ### Open Filter
 

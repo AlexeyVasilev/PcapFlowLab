@@ -1,5 +1,6 @@
 ﻿#include "ui/app/MainController.h"
 
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketBytePresentation.h"
@@ -26,9 +27,14 @@
 
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QHostAddress>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QSaveFile>
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
@@ -125,6 +131,38 @@ QString advanced_filter_source_stem_text(const std::filesystem::path& path) {
 
     const auto filename = path.filename().wstring();
     return filename.empty() ? QStringLiteral("Custom filter") : QString::fromStdWString(filename);
+}
+
+QString format_advanced_filter_text_parse_error(
+    const session_detail::AdvancedFlowFilterTextParseResult& parse_result,
+    const std::filesystem::path& path
+) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    if (!parse_result.issue.has_value()) {
+        return QStringLiteral("Failed to open advanced filter file %1.").arg(file_name);
+    }
+
+    const auto& issue = *parse_result.issue;
+    QString location = QStringLiteral("line %1").arg(QString::number(issue.line));
+    if (issue.column.has_value()) {
+        location += QStringLiteral(", column %1").arg(QString::number(*issue.column));
+    }
+
+    QString message = QString::fromStdString(issue.message);
+    if (message.isEmpty()) {
+        message = QStringLiteral("Invalid advanced filter text.");
+    }
+
+    return QStringLiteral("Failed to open advanced filter file %1 at %2: %3")
+        .arg(file_name, location, message);
+}
+
+QString format_advanced_filter_write_error(const std::filesystem::path& path, const QString& error_text) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    if (error_text.isEmpty()) {
+        return QStringLiteral("Failed to save advanced filter file %1.").arg(file_name);
+    }
+    return QStringLiteral("Failed to save advanced filter file %1: %2").arg(file_name, error_text);
 }
 
 bool protocol_path_layers_have_identifiers(const std::vector<LayerKey>& layers) noexcept {
@@ -4678,6 +4716,98 @@ bool MainController::applyAdvancedFlowFilterEdit() {
     return true;
 }
 
+void MainController::openAdvancedFlowFilterFile() {
+    const bool file_backed_dirty =
+        advanced_flow_filter_document_state_.source_path() != nullptr
+        && advanced_flow_filter_document_state_.has_unsaved_changes();
+    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration()) {
+        switch (confirmAdvancedFlowFilterOpenUnsaved(file_backed_dirty)) {
+        case AdvancedFlowFilterOpenUnsavedDecision::save_and_open:
+            if (!saveAdvancedFlowFilterFile()) {
+                return;
+            }
+            break;
+        case AdvancedFlowFilterOpenUnsavedDecision::save_as_and_open:
+            if (!saveAdvancedFlowFilterFileAs()) {
+                return;
+            }
+            break;
+        case AdvancedFlowFilterOpenUnsavedDecision::discard_and_open:
+            break;
+        case AdvancedFlowFilterOpenUnsavedDecision::cancel:
+            return;
+        }
+    }
+
+    const QString selected_path = chooseAdvancedFlowFilterOpenFile();
+    if (selected_path.trimmed().isEmpty()) {
+        return;
+    }
+
+    QString error_text {};
+    if (!openAdvancedFlowFilterFileAtPath(std::filesystem::path {selected_path.toStdWString()}, &error_text)) {
+        advanced_flow_filter_editor_model_.setValidationText(error_text);
+    }
+}
+
+bool MainController::saveAdvancedFlowFilterFile() {
+    QString validation_error {};
+    if (!synchronizeAdvancedFlowFilterDraft(&validation_error)) {
+        advanced_flow_filter_editor_model_.setValidationText(validation_error);
+        return false;
+    }
+
+    const auto* source_path = advanced_flow_filter_document_state_.source_path();
+    if (source_path == nullptr) {
+        return saveAdvancedFlowFilterFileAs();
+    }
+
+    QString error_text {};
+    if (!saveAdvancedFlowFilterDraftToPath(*source_path, &error_text)) {
+        advanced_flow_filter_editor_model_.setValidationText(error_text);
+        return false;
+    }
+
+    return true;
+}
+
+bool MainController::saveAdvancedFlowFilterFileAs() {
+    QString validation_error {};
+    if (!synchronizeAdvancedFlowFilterDraft(&validation_error)) {
+        advanced_flow_filter_editor_model_.setValidationText(validation_error);
+        return false;
+    }
+
+    const QString selected_path = chooseAdvancedFlowFilterSaveAsFile(advancedFlowFilterSuggestedFileName());
+    if (selected_path.trimmed().isEmpty()) {
+        return false;
+    }
+
+    QString error_text {};
+    if (!saveAdvancedFlowFilterDraftToPath(std::filesystem::path {selected_path.toStdWString()}, &error_text)) {
+        advanced_flow_filter_editor_model_.setValidationText(error_text);
+        return false;
+    }
+
+    return true;
+}
+
+void MainController::setAdvancedFlowFilterOpenFileChooserForTests(std::function<QString()> chooser) {
+    advanced_flow_filter_open_file_chooser_for_tests_ = std::move(chooser);
+}
+
+void MainController::setAdvancedFlowFilterSaveAsFileChooserForTests(
+    std::function<QString(const QString& suggestedFileName)> chooser
+) {
+    advanced_flow_filter_save_as_file_chooser_for_tests_ = std::move(chooser);
+}
+
+void MainController::setAdvancedFlowFilterUnsavedOpenDecisionForTests(
+    std::function<AdvancedFlowFilterOpenUnsavedDecision(bool fileBackedDirty)> resolver
+) {
+    advanced_flow_filter_unsaved_open_decision_for_tests_ = std::move(resolver);
+}
+
 void MainController::setAdvancedFlowFilterSectionEnabled(const int section, const bool enabled) {
     advanced_flow_filter_editor_model_.setSectionEnabled(section, enabled);
 }
@@ -7494,6 +7624,45 @@ void MainController::setStatusText(const QString& text, const bool isError) {
     emit statusTextChanged();
 }
 
+QString MainController::chooseAdvancedFlowFilterOpenFile() const {
+    if (advanced_flow_filter_open_file_chooser_for_tests_) {
+        return advanced_flow_filter_open_file_chooser_for_tests_();
+    }
+
+    const QString directory = last_directory_path_.isEmpty() ? QString {} : last_directory_path_;
+    return QFileDialog::getOpenFileName(
+        nullptr,
+        QStringLiteral("Open Advanced Filter"),
+        directory,
+        QStringLiteral("Advanced Filter Files (*.filter);;All Files (*)")
+    );
+}
+
+QString MainController::chooseAdvancedFlowFilterSaveAsFile(const QString& suggestedFileName) const {
+    if (advanced_flow_filter_save_as_file_chooser_for_tests_) {
+        return advanced_flow_filter_save_as_file_chooser_for_tests_(suggestedFileName);
+    }
+
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(QStringLiteral("Save Advanced Filter As"));
+    dialog.setNameFilter(QStringLiteral("Advanced Filter Files (*.filter);;All Files (*)"));
+    dialog.setDefaultSuffix(QStringLiteral("filter"));
+    if (!suggestedFileName.isEmpty()) {
+        dialog.selectFile(suggestedFileName);
+    }
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
 QString MainController::chooseFile(const bool forIndex) const {
     const QString directory = last_directory_path_.isEmpty() ? QString {} : last_directory_path_;
     const QString title = forIndex ? QStringLiteral("Open Index") : QStringLiteral("Open Capture");
@@ -7536,6 +7705,150 @@ QString MainController::chooseDirectory(const QString& title) const {
         last_directory_path_,
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
     );
+}
+
+MainController::AdvancedFlowFilterOpenUnsavedDecision
+MainController::confirmAdvancedFlowFilterOpenUnsaved(const bool fileBackedDirty) const {
+    if (advanced_flow_filter_unsaved_open_decision_for_tests_) {
+        return advanced_flow_filter_unsaved_open_decision_for_tests_(fileBackedDirty);
+    }
+
+    QMessageBox box {};
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(QStringLiteral("Unsaved Advanced Filter"));
+    box.setText(QStringLiteral("Opening another filter would discard unsaved Advanced Filter changes."));
+    box.setInformativeText(
+        fileBackedDirty
+            ? QStringLiteral("Save the current file-backed filter before opening another filter?")
+            : QStringLiteral("Save the current custom filter before opening another filter?")
+    );
+
+    QAbstractButton* save_button = box.addButton(
+        fileBackedDirty
+            ? QStringLiteral("Save and open")
+            : QStringLiteral("Save As and open"),
+        QMessageBox::AcceptRole
+    );
+    QAbstractButton* discard_button = box.addButton(QStringLiteral("Discard and open"), QMessageBox::DestructiveRole);
+    QAbstractButton* cancel_button = box.addButton(QMessageBox::Cancel);
+
+    box.exec();
+    if (box.clickedButton() == save_button) {
+        return fileBackedDirty
+            ? AdvancedFlowFilterOpenUnsavedDecision::save_and_open
+            : AdvancedFlowFilterOpenUnsavedDecision::save_as_and_open;
+    }
+    if (box.clickedButton() == discard_button) {
+        return AdvancedFlowFilterOpenUnsavedDecision::discard_and_open;
+    }
+    Q_UNUSED(cancel_button);
+    return AdvancedFlowFilterOpenUnsavedDecision::cancel;
+}
+
+QString MainController::advancedFlowFilterSuggestedFileName() const {
+    if (const auto* source_path = advanced_flow_filter_document_state_.source_path(); source_path != nullptr) {
+        const QString file_name = QString::fromStdWString(source_path->filename().wstring());
+        if (!file_name.trimmed().isEmpty()) {
+            return file_name;
+        }
+    }
+    return QStringLiteral("advanced-filter.filter");
+}
+
+bool MainController::synchronizeAdvancedFlowFilterDraft(QString* errorText) {
+    if (!advanced_flow_filter_document_state_.is_editing()) {
+        advanced_flow_filter_document_state_.begin_edit();
+        advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+        refreshAdvancedFlowFilterProtocolPathApplicability();
+    }
+
+    return advanced_flow_filter_editor_model_.synchronizeDraftSections(errorText);
+}
+
+bool MainController::saveAdvancedFlowFilterDraftToPath(const std::filesystem::path& path, QString* errorText) {
+    const auto* draft_document = advanced_flow_filter_document_state_.draft_document();
+    if (draft_document == nullptr) {
+        if (errorText != nullptr) {
+            *errorText = QStringLiteral("Advanced filter draft is unavailable.");
+        }
+        return false;
+    }
+
+    const auto formatted = session_detail::format_advanced_flow_filter_text(*draft_document);
+    if (formatted.status != session_detail::AdvancedFlowFilterTextFormatStatus::ok) {
+        if (errorText != nullptr) {
+            const QString message = formatted.issue.has_value()
+                ? QString::fromStdString(formatted.issue->message)
+                : QStringLiteral("Advanced filter document could not be formatted.");
+            *errorText = message;
+        }
+        return false;
+    }
+
+    const QString path_text = QString::fromStdWString(path.wstring());
+    QSaveFile file(path_text);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_write_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    const QByteArray bytes = QByteArray::fromStdString(formatted.text);
+    if (file.write(bytes) != bytes.size()) {
+        file.cancelWriting();
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_write_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    if (!file.commit()) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_write_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    advanced_flow_filter_document_state_.accept_saved_document(*draft_document, path);
+    advanced_flow_filter_editor_model_.setValidationText({});
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+    refreshAdvancedFlowFilter();
+    setLastDirectoryFromPath(path);
+    emit advancedFlowFilterPresentationChanged();
+    return true;
+}
+
+bool MainController::openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText) {
+    const QString path_text = QString::fromStdWString(path.wstring());
+    QFile file(path_text);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (errorText != nullptr) {
+            *errorText = QStringLiteral("Failed to open advanced filter file %1: %2")
+                .arg(QFileInfo(path_text).fileName(), file.errorString());
+        }
+        return false;
+    }
+
+    const QByteArray bytes = file.readAll();
+    const auto parse_result = session_detail::parse_advanced_flow_filter_text(std::string_view(bytes.constData(), static_cast<std::size_t>(bytes.size())));
+    if (parse_result.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_text_parse_error(parse_result, path);
+        }
+        return false;
+    }
+
+    advanced_flow_filter_document_state_.accept_opened_document(parse_result.document, path);
+    advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+    advanced_flow_filter_editor_model_.setValidationText({});
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+    refreshAdvancedFlowFilter();
+    setLastDirectoryFromPath(path);
+    emit advancedFlowFilterPresentationChanged();
+    return true;
 }
 
 QString MainController::chooseSequenceCsvSaveFile() const {

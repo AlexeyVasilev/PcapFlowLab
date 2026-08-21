@@ -1852,6 +1852,37 @@ void run_text_format_tests() {
         expect_parse_status("format_version = 2\nprotocol_path.contains.include = VLAN(foo=1)\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
 
+        const auto identifier_bearing_paths = require_parse_success(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
+            "protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n"
+            "protocol_path.contains.include = AH(spi=0x11111111)\n"
+        );
+        PFL_REQUIRE(identifier_bearing_paths.document.configured_spec.protocol_path.include.size() == 3U);
+        const auto& geneve_prefix = identifier_bearing_paths.document.configured_spec.protocol_path.include[0];
+        PFL_EXPECT(geneve_prefix.match_kind == AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_REQUIRE(geneve_prefix.layers.size() == 4U);
+        PFL_EXPECT(geneve_prefix.layers[3].kind == ProtocolLayerKind::geneve);
+        PFL_REQUIRE(geneve_prefix.layers[3].identifier.has_value());
+        PFL_EXPECT(geneve_prefix.layers[3].identifier->kind == ProtocolLayerIdentifierKind::geneve_vni);
+        PFL_EXPECT(geneve_prefix.layers[3].identifier->value == 100U);
+
+        const auto& gtpu_exact = identifier_bearing_paths.document.configured_spec.protocol_path.include[1];
+        PFL_EXPECT(gtpu_exact.match_kind == AdvancedFlowFilterProtocolPathMatchKind::exact_path);
+        PFL_REQUIRE(gtpu_exact.layers.size() == 6U);
+        PFL_EXPECT(gtpu_exact.layers[3].kind == ProtocolLayerKind::gtpu);
+        PFL_REQUIRE(gtpu_exact.layers[3].identifier.has_value());
+        PFL_EXPECT(gtpu_exact.layers[3].identifier->kind == ProtocolLayerIdentifierKind::gtpu_teid);
+        PFL_EXPECT(gtpu_exact.layers[3].identifier->value == 0x01020304U);
+
+        const auto& ah_contains = identifier_bearing_paths.document.configured_spec.protocol_path.include[2];
+        PFL_EXPECT(ah_contains.match_kind == AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_REQUIRE(ah_contains.layers.size() == 1U);
+        PFL_EXPECT(ah_contains.layers[0].kind == ProtocolLayerKind::ah);
+        PFL_REQUIRE(ah_contains.layers[0].identifier.has_value());
+        PFL_EXPECT(ah_contains.layers[0].identifier->kind == ProtocolLayerIdentifierKind::ah_spi);
+        PFL_EXPECT(ah_contains.layers[0].identifier->value == 0x11111111U);
+
         const auto invalid_protocol_path = session_detail::parse_advanced_flow_filter_text(
             "format_version = 2\nprotocol_path.contains.include = ESP(key=1)\n"
         );
@@ -1860,6 +1891,24 @@ void run_text_format_tests() {
         PFL_EXPECT(invalid_protocol_path.issue->line == 2U);
         PFL_EXPECT(invalid_protocol_path.issue->key == "protocol_path.contains.include");
         PFL_EXPECT(invalid_protocol_path.issue->token == "ESP(key=1)");
+
+        const auto quoted_equals_service = require_parse_success(
+            "format_version = 2\n"
+            "service.contains.ci.include = \"a=b\"\n"
+        );
+        PFL_REQUIRE(quoted_equals_service.document.configured_spec.service.include.size() == 1U);
+        PFL_EXPECT(quoted_equals_service.document.configured_spec.service.include[0].value == "a=b");
+    }
+
+    {
+        const auto formatted_shape = require_parse_success(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve > EthernetII > IPv4 > TCP\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
+            "protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n"
+            "protocol_path.contains.include = VLAN\n"
+        );
+        PFL_REQUIRE(formatted_shape.document.configured_spec.protocol_path.include.size() == 4U);
     }
 
     {
@@ -1918,6 +1967,32 @@ void run_text_format_tests() {
                 .value = 100U,
             }}},
         });
+        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+            .layers = {
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+                {.kind = ProtocolLayerKind::udp},
+                {.kind = ProtocolLayerKind::geneve, .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::geneve_vni,
+                    .value = 100U,
+                }},
+            },
+        });
+        spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = AdvancedFlowFilterProtocolPathMatchKind::exact_path,
+            .layers = {
+                {.kind = ProtocolLayerKind::ethernet_ii},
+                {.kind = ProtocolLayerKind::ipv4},
+                {.kind = ProtocolLayerKind::udp},
+                {.kind = ProtocolLayerKind::gtpu, .identifier = ProtocolLayerIdentifier {
+                    .kind = ProtocolLayerIdentifierKind::gtpu_teid,
+                    .value = 0x01020304U,
+                }},
+                {.kind = ProtocolLayerKind::ipv4},
+                {.kind = ProtocolLayerKind::tcp},
+            },
+        });
         spec.flow_protocol.include = {ProtocolId::tcp, ProtocolId::udp};
         spec.detected_protocol.include = {FlowProtocolHint::tls, FlowProtocolHint::quic};
         spec.tls_version.include = {TlsVersionHint::tls13};
@@ -1972,8 +2047,11 @@ void run_text_format_tests() {
         const auto second_text = require_format_success(reparsed.document);
         PFL_EXPECT(first_text == second_text);
         PFL_EXPECT(first_text.find("format_version = 2\n") == 0U);
+        PFL_EXPECT(first_text.find("protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n") != std::string::npos);
+        PFL_EXPECT(first_text.find("protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n") != std::string::npos);
         PFL_EXPECT(first_text.find("address_family.include = ipv4\n") != std::string::npos);
         PFL_EXPECT(first_text.find("flow_protocol.include = tcp\nflow_protocol.include = udp\n") != std::string::npos);
+        PFL_EXPECT(reparsed.document == document);
     }
 
     {

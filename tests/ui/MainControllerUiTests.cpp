@@ -40,6 +40,7 @@
 #include <QStringList>
 #include <QVariantMap>
 
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/CaptureSession.h"
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
@@ -796,6 +797,24 @@ std::string read_text_file_text(const std::filesystem::path& path) {
     return std::string(std::istreambuf_iterator<char> {stream}, std::istreambuf_iterator<char> {});
 }
 
+std::filesystem::path write_temp_advanced_filter_file(const std::string& filename, const std::string& text) {
+    const auto path = std::filesystem::temp_directory_path() / filename;
+    std::ofstream stream {path, std::ios::binary | std::ios::trunc};
+    UI_REQUIRE(stream.is_open());
+    stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+    UI_REQUIRE(stream.good());
+    return path;
+}
+
+std::filesystem::path write_temp_advanced_filter_document(
+    const std::string& filename,
+    const pfl::session_detail::AdvancedFlowFilterDocument& document
+) {
+    const auto formatted = pfl::session_detail::format_advanced_flow_filter_text(document);
+    UI_REQUIRE(formatted.status == pfl::session_detail::AdvancedFlowFilterTextFormatStatus::ok);
+    return write_temp_advanced_filter_file(filename, formatted.text);
+}
+
 std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> fields {};
     std::string current {};
@@ -902,6 +921,39 @@ pfl::session_detail::AdvancedFlowFilterDocument make_contains_layer_text_entry_d
                 .value = 100U,
             },
         }},
+    });
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_protocol_path_identifier_file_workflow_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+        .match_kind = AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+        .layers = {
+            {.kind = pfl::ProtocolLayerKind::ethernet_ii},
+            {.kind = pfl::ProtocolLayerKind::ipv4},
+            {.kind = pfl::ProtocolLayerKind::udp},
+            {.kind = pfl::ProtocolLayerKind::geneve, .identifier = pfl::ProtocolLayerIdentifier {
+                .kind = pfl::ProtocolLayerIdentifierKind::geneve_vni,
+                .value = 100U,
+            }},
+        },
+    });
+    document.configured_spec.protocol_path.include.push_back(AdvancedFlowFilterProtocolPathPredicate {
+        .match_kind = AdvancedFlowFilterProtocolPathMatchKind::exact_path,
+        .layers = {
+            {.kind = pfl::ProtocolLayerKind::ethernet_ii},
+            {.kind = pfl::ProtocolLayerKind::ipv4},
+            {.kind = pfl::ProtocolLayerKind::udp},
+            {.kind = pfl::ProtocolLayerKind::gtpu, .identifier = pfl::ProtocolLayerIdentifier {
+                .kind = pfl::ProtocolLayerIdentifierKind::gtpu_teid,
+                .value = 0x01020304U,
+            }},
+            {.kind = pfl::ProtocolLayerKind::ipv4},
+            {.kind = pfl::ProtocolLayerKind::tcp},
+        },
     });
     return document;
 }
@@ -4665,6 +4717,226 @@ int main(int argc, char* argv[]) {
 
         UI_REQUIRE(QMetaObject::invokeMethod(advanced_settings_dialog, "close"));
         app.processEvents(QEventLoop::AllEvents, 25);
+    });
+
+    run_ui_section("advanced_flow_filter_file_workflow", [&]() {
+        const auto file_workflow_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_file_workflow.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 92, 0, 1), ipv4(10, 92, 0, 2), 51001, 80)},
+                {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 92, 0, 3), ipv4(10, 92, 0, 4), 53000, 53)},
+                {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x92, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x92, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                    54000,
+                    443
+                )},
+            })
+        );
+
+        constexpr int flow_protocol_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::flow_protocol);
+
+        MainController file_workflow_controller {};
+        UI_EXPECT(open_capture_and_wait(app, file_workflow_controller, file_workflow_capture_path));
+        auto* file_workflow_flow_model = qobject_cast<FlowListModel*>(file_workflow_controller.flowModel());
+        UI_REQUIRE(file_workflow_flow_model != nullptr);
+        file_workflow_controller.useAdvancedFlowFilter();
+        file_workflow_controller.beginAdvancedFlowFilterEdit();
+
+        const auto tcp_filter_path = write_temp_advanced_filter_document(
+            "pfl_ui_tcp_open.filter",
+            make_flow_protocol_advanced_document(ProtocolId::tcp)
+        );
+        file_workflow_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(tcp_filter_path.wstring());
+        });
+        file_workflow_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_tcp_open"));
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(file_workflow_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_protocol(file_workflow_flow_model, QStringLiteral("TCP")) >= 0);
+
+        const auto malformed_filter_path = write_temp_advanced_filter_file(
+            "pfl_ui_invalid_open.filter",
+            "format_version = 2\n"
+            "flow_protocol.include = tcpish\n"
+        );
+        file_workflow_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(malformed_filter_path.wstring());
+        });
+        file_workflow_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_tcp_open"));
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(file_workflow_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Unknown flow protocol token")));
+
+        file_workflow_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            false);
+        file_workflow_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_tcp_open *"));
+        UI_EXPECT(file_workflow_controller.saveAdvancedFlowFilterFile());
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_tcp_open"));
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(read_text_file_text(tcp_filter_path).find("flow_protocol.include = udp\n") != std::string::npos);
+        UI_EXPECT(file_workflow_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_protocol(file_workflow_flow_model, QStringLiteral("TCP")) < 0);
+        UI_EXPECT(find_flow_index_by_protocol(file_workflow_flow_model, QStringLiteral("UDP")) >= 0);
+
+        file_workflow_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            false);
+        file_workflow_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            true);
+        const auto ipv6_filter_path = write_temp_advanced_filter_document(
+            "pfl_ui_ipv6_open.filter",
+            make_address_family_advanced_document(FlowAddressFamily::ipv6)
+        );
+        file_workflow_controller.setAdvancedFlowFilterUnsavedOpenDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterOpenUnsavedDecision::save_and_open;
+        });
+        file_workflow_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(ipv6_filter_path.wstring());
+        });
+        file_workflow_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(read_text_file_text(tcp_filter_path).find("flow_protocol.include = tcp\n") != std::string::npos);
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_ipv6_open"));
+        UI_EXPECT(file_workflow_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(file_workflow_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(file_workflow_flow_model, QStringLiteral("IPv6")) >= 0);
+
+        MainController custom_save_controller {};
+        UI_EXPECT(open_capture_and_wait(app, custom_save_controller, file_workflow_capture_path));
+        auto* custom_save_flow_model = qobject_cast<FlowListModel*>(custom_save_controller.flowModel());
+        UI_REQUIRE(custom_save_flow_model != nullptr);
+        custom_save_controller.useAdvancedFlowFilter();
+        custom_save_controller.beginAdvancedFlowFilterEdit();
+        custom_save_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        UI_EXPECT(custom_save_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(custom_save_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+
+        bool saw_custom_suggested_name = false;
+        custom_save_controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString& suggested_file_name) {
+            saw_custom_suggested_name = (suggested_file_name == QStringLiteral("advanced-filter.filter"));
+            return QString {};
+        });
+        UI_EXPECT(!custom_save_controller.saveAdvancedFlowFilterFileAs());
+        UI_EXPECT(saw_custom_suggested_name);
+        UI_EXPECT(custom_save_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(custom_save_flow_model->visibleFlowCount() == 3);
+
+        const auto custom_saved_path = std::filesystem::temp_directory_path() / "pfl_ui_custom_saved.filter";
+        std::filesystem::remove(custom_saved_path);
+        custom_save_controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString& suggested_file_name) {
+            saw_custom_suggested_name = (suggested_file_name == QStringLiteral("advanced-filter.filter"));
+            return QString::fromStdWString(custom_saved_path.wstring());
+        });
+        UI_EXPECT(custom_save_controller.saveAdvancedFlowFilterFile());
+        UI_EXPECT(saw_custom_suggested_name);
+        UI_EXPECT(custom_save_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_custom_saved"));
+        UI_EXPECT(custom_save_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(read_text_file_text(custom_saved_path).find("flow_protocol.include = udp\n") != std::string::npos);
+        UI_EXPECT(custom_save_flow_model->visibleFlowCount() == 2);
+        UI_EXPECT(find_flow_index_by_protocol(custom_save_flow_model, QStringLiteral("UDP")) >= 0);
+
+        MainController protocol_path_file_controller {};
+        UI_EXPECT(open_capture_and_wait(app, protocol_path_file_controller, file_workflow_capture_path));
+        auto* protocol_path_file_flow_model = qobject_cast<FlowListModel*>(protocol_path_file_controller.flowModel());
+        UI_REQUIRE(protocol_path_file_flow_model != nullptr);
+        protocol_path_file_controller.useAdvancedFlowFilter();
+        protocol_path_file_controller.applyAdvancedFlowFilterDocument(
+            make_protocol_path_identifier_file_workflow_document()
+        );
+        const auto protocol_path_saved_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_protocol_path_round_trip.filter";
+        std::filesystem::remove(protocol_path_saved_path);
+        protocol_path_file_controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString::fromStdWString(protocol_path_saved_path.wstring());
+        });
+        UI_EXPECT(protocol_path_file_controller.saveAdvancedFlowFilterFile());
+        UI_EXPECT(protocol_path_file_controller.advancedFlowFilterDisplayName()
+            == QStringLiteral("pfl_ui_protocol_path_round_trip"));
+        UI_EXPECT(protocol_path_file_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+        UI_EXPECT(read_text_file_text(protocol_path_saved_path).find("Geneve(vni=100)") != std::string::npos);
+        UI_EXPECT(read_text_file_text(protocol_path_saved_path).find("GTP-U(teid=0x01020304)") != std::string::npos);
+
+        protocol_path_file_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(protocol_path_saved_path.wstring());
+        });
+        protocol_path_file_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(protocol_path_file_controller.advancedFlowFilterDisplayName()
+            == QStringLiteral("pfl_ui_protocol_path_round_trip"));
+        UI_EXPECT(protocol_path_file_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(protocol_path_file_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
+        UI_EXPECT(protocol_path_file_flow_model->visibleFlowCount() == 0);
+        protocol_path_file_controller.beginAdvancedFlowFilterEdit();
+        UI_REQUIRE(protocol_path_file_controller.advancedFlowFilterProtocolPathRows(false).size() == 2);
+        const auto saved_prefix_row = advanced_filter_row_at(
+            protocol_path_file_controller.advancedFlowFilterProtocolPathRows(false),
+            0
+        );
+        const auto saved_exact_row = advanced_filter_row_at(
+            protocol_path_file_controller.advancedFlowFilterProtocolPathRows(false),
+            1
+        );
+        UI_EXPECT(saved_prefix_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("Geneve")));
+        UI_EXPECT(saved_prefix_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("100")));
+        UI_EXPECT(saved_exact_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("GTP-U")));
+        UI_EXPECT(saved_exact_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("01020304")));
+        UI_EXPECT(saved_prefix_row.value(QStringLiteral("statusText")).toString()
+            == QStringLiteral("Not present in current capture"));
+        UI_EXPECT(saved_exact_row.value(QStringLiteral("statusText")).toString()
+            == QStringLiteral("Not present in current capture"));
+        protocol_path_file_controller.cancelAdvancedFlowFilterEdit();
+
+        const auto tcp_reopen_path = write_temp_advanced_filter_document(
+            "pfl_ui_reopen_tcp.filter",
+            make_flow_protocol_advanced_document(ProtocolId::tcp)
+        );
+        const auto ipv6_reopen_path = write_temp_advanced_filter_document(
+            "pfl_ui_reopen_ipv6.filter",
+            make_address_family_advanced_document(FlowAddressFamily::ipv6)
+        );
+        custom_save_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(ipv6_reopen_path.wstring());
+        });
+        custom_save_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(custom_save_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_reopen_ipv6"));
+        custom_save_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        custom_save_controller.setAdvancedFlowFilterUnsavedOpenDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterOpenUnsavedDecision::cancel;
+        });
+        custom_save_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(tcp_reopen_path.wstring());
+        });
+        custom_save_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(custom_save_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_reopen_ipv6 *"));
+        UI_EXPECT(custom_save_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(custom_save_flow_model, QStringLiteral("IPv6")) >= 0);
     });
 
     run_ui_section("advanced_flow_filter_settings_editor_include_exclude_and_multi_section", [&]() {

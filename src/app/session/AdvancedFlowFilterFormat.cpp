@@ -202,7 +202,6 @@ ParsedAssignmentLine strip_trailing_comment(const std::string_view raw_line) {
 std::optional<std::size_t> find_assignment_equals(const std::string_view line) {
     bool in_quotes = false;
     bool escaped = false;
-    std::optional<std::size_t> equals_pos {};
 
     for (std::size_t index = 0; index < line.size(); ++index) {
         const auto ch = line[index];
@@ -226,14 +225,11 @@ std::optional<std::size_t> find_assignment_equals(const std::string_view line) {
             continue;
         }
         if (ch == '=') {
-            if (equals_pos.has_value()) {
-                return std::nullopt;
-            }
-            equals_pos = index;
+            return index;
         }
     }
 
-    return equals_pos;
+    return std::nullopt;
 }
 
 KeySegments split_key_segments(const std::string_view key) {
@@ -1641,7 +1637,7 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     std::nullopt,
                     {},
                     std::string(stripped.content),
-                    "Expected exactly one assignment separator '='."
+                    "Expected assignment separator '='."
                 );
             }
 

@@ -90,7 +90,8 @@ Dialog {
                 Button {
                     objectName: "advancedFlowFilterOpenFilterButton"
                     text: "Open filter..."
-                    enabled: false
+                    enabled: root.controller !== null
+                    onClicked: root.controller.openAdvancedFlowFilterFile()
                 }
 
                 Button {
@@ -106,13 +107,15 @@ Dialog {
                 Button {
                     objectName: "advancedFlowFilterSaveButton"
                     text: "Save"
-                    enabled: false
+                    enabled: root.controller !== null
+                    onClicked: root.controller.saveAdvancedFlowFilterFile()
                 }
 
                 Button {
                     objectName: "advancedFlowFilterSaveAsButton"
                     text: "Save As..."
-                    enabled: false
+                    enabled: root.controller !== null
+                    onClicked: root.controller.saveAdvancedFlowFilterFileAs()
                 }
             }
 

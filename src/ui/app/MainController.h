@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -56,6 +57,13 @@ public:
         top_endpoints_ports,
     };
     Q_ENUM(StatisticsOptionalSection)
+
+    enum class AdvancedFlowFilterOpenUnsavedDecision {
+        save_and_open = 0,
+        save_as_and_open,
+        discard_and_open,
+        cancel,
+    };
 
 private:
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
@@ -648,6 +656,9 @@ public:
     Q_INVOKABLE void beginAdvancedFlowFilterEdit();
     Q_INVOKABLE void cancelAdvancedFlowFilterEdit();
     Q_INVOKABLE bool applyAdvancedFlowFilterEdit();
+    Q_INVOKABLE void openAdvancedFlowFilterFile();
+    Q_INVOKABLE bool saveAdvancedFlowFilterFile();
+    Q_INVOKABLE bool saveAdvancedFlowFilterFileAs();
     Q_INVOKABLE bool advancedFlowFilterDraftClearAllAvailable() const noexcept;
     Q_INVOKABLE bool advancedFlowFilterSectionEnabled(int section) const noexcept;
     Q_INVOKABLE bool advancedFlowFilterSectionHasExclusions(int section) const noexcept;
@@ -706,6 +717,11 @@ public:
     void setSelectedStreamItemIndex(qulonglong streamItemIndex);
     void setFlowFilterText(const QString& text);
     void applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document);
+    void setAdvancedFlowFilterOpenFileChooserForTests(std::function<QString()> chooser);
+    void setAdvancedFlowFilterSaveAsFileChooserForTests(std::function<QString(const QString& suggestedFileName)> chooser);
+    void setAdvancedFlowFilterUnsavedOpenDecisionForTests(
+        std::function<AdvancedFlowFilterOpenUnsavedDecision(bool fileBackedDirty)> resolver
+    );
 
 signals:
     void stateChanged();
@@ -841,6 +857,8 @@ private:
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
+    QString chooseAdvancedFlowFilterOpenFile() const;
+    QString chooseAdvancedFlowFilterSaveAsFile(const QString& suggestedFileName) const;
     QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
     QString chooseProtocolPathTreeSaveFile() const;
@@ -851,6 +869,11 @@ private:
         bool binaryOutput
     ) const;
     QString chooseDirectory(const QString& title) const;
+    AdvancedFlowFilterOpenUnsavedDecision confirmAdvancedFlowFilterOpenUnsaved(bool fileBackedDirty) const;
+    QString advancedFlowFilterSuggestedFileName() const;
+    bool synchronizeAdvancedFlowFilterDraft(QString* errorText);
+    bool saveAdvancedFlowFilterDraftToPath(const std::filesystem::path& path, QString* errorText = nullptr);
+    bool openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText = nullptr);
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
     CaptureSession session_ {};
@@ -953,6 +976,9 @@ private:
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
+    std::function<QString()> advanced_flow_filter_open_file_chooser_for_tests_ {};
+    std::function<QString(const QString&)> advanced_flow_filter_save_as_file_chooser_for_tests_ {};
+    std::function<AdvancedFlowFilterOpenUnsavedDecision(bool)> advanced_flow_filter_unsaved_open_decision_for_tests_ {};
     qulonglong smart_export_progress_packets_ {0};
     qulonglong smart_export_progress_total_packets_ {0};
     QString smart_export_progress_text_ {};
