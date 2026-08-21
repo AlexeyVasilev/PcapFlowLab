@@ -10,6 +10,7 @@ Dialog {
     readonly property var editor: root.controller ? root.controller.advancedFlowFilterEditor : null
     readonly property var protocolPathSelector: root.controller ? root.controller.advancedFlowFilterProtocolPathSelector : null
     property bool applyingDraft: false
+    property var sectionExpansionState: ({})
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
     readonly property int trafficSectionId: 8
@@ -20,6 +21,15 @@ Dialog {
     readonly property int serviceUnknownKind: 1
     readonly property int containsLayerIdentifierModeAny: 0
     readonly property int containsLayerIdentifierModeExact: 1
+    readonly property var allSectionIds: [
+        0, 1, 2, 3, 4, 5,
+        root.portsSectionId,
+        root.ipAddressesSectionId,
+        root.trafficSectionId,
+        root.serviceSectionId,
+        root.protocolPathSectionId,
+        root.containsLayerSectionId
+    ]
 
     signal initializeDialogState()
 
@@ -50,6 +60,31 @@ Dialog {
         protocolPathSelectorDialog.open()
     }
 
+    function sectionExpanded(sectionId) {
+        const key = String(sectionId)
+        if (sectionExpansionState[key] === undefined) {
+            return false
+        }
+        return sectionExpansionState[key]
+    }
+
+    function setSectionExpanded(sectionId, expanded) {
+        const nextState = Object.assign({}, sectionExpansionState)
+        nextState[String(sectionId)] = expanded
+        sectionExpansionState = nextState
+    }
+
+    function initializeSectionExpansionState() {
+        const nextState = {}
+        for (let index = 0; index < allSectionIds.length; ++index) {
+            const sectionId = allSectionIds[index]
+            nextState[String(sectionId)] = root.editor
+                ? root.editor.sectionHasConfiguredPredicates(sectionId)
+                : false
+        }
+        sectionExpansionState = nextState
+    }
+
     width: 920
     height: 700
     modal: true
@@ -62,6 +97,7 @@ Dialog {
         if (controller) {
             controller.beginAdvancedFlowFilterEdit()
         }
+        initializeSectionExpansionState()
         initializeDialogState()
     }
 
@@ -177,7 +213,7 @@ Dialog {
                         Repeater {
                             model: root.sectionDescriptors
 
-                            delegate: Rectangle {
+                            delegate: AdvancedFlowFilterSection {
                                 id: finiteSectionCard
                                 required property var modelData
 
@@ -205,14 +241,25 @@ Dialog {
                                     void(root.editor.revision)
                                     return root.editor.excludeOptions(sectionId)
                                 }
+                                readonly property string sectionSummaryText: {
+                                    if (!root.editor) {
+                                        return ""
+                                    }
+                                    void(root.editor.sectionSummaryRevision)
+                                    return root.editor.sectionSummaryText(sectionId)
+                                }
 
-                                objectName: "advancedFlowFilter" + sectionObjectNamePrefix + "Section"
+                                sectionObjectName: "advancedFlowFilter" + sectionObjectNamePrefix + "Section"
+                                collapseButtonObjectName: "advancedFlowFilter" + sectionObjectNamePrefix + "CollapseButton"
+                                enabledCheckBoxObjectName: "advancedFlowFilter" + sectionObjectNamePrefix + "EnabledCheckBox"
+                                contentObjectName: "advancedFlowFilter" + sectionObjectNamePrefix + "Content"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: implicitHeight
-                                implicitHeight: finiteSectionCardLayout.implicitHeight + 28
-                                radius: 8
-                                color: "white"
-                                border.color: "#dbe4f0"
+                                title: sectionTitle
+                                summaryText: sectionSummaryText
+                                expanded: root.sectionExpanded(sectionId)
+                                sectionEnabled: sectionEnabledState
+                                contentEnabled: sectionEnabledState
 
                                 property bool exclusionsExpanded: false
 
@@ -232,144 +279,110 @@ Dialog {
                                     }
                                 }
 
-                                ColumnLayout {
-                                    id: finiteSectionCardLayout
-                                    x: 14
-                                    y: 14
-                                    width: parent.width - 28
-                                    spacing: 10
+                                onToggleRequested: root.setSectionExpanded(sectionId, !root.sectionExpanded(sectionId))
+                                onSectionEnabledToggled: function(checked) {
+                                    if (root.editor) {
+                                        root.editor.setSectionEnabled(finiteSectionCard.sectionId, checked)
+                                    }
+                                }
 
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 10
+                                Label {
+                                    Layout.fillWidth: true
+                                    visible: finiteSectionCard.sectionId === 5
+                                    text: "One direction means packets were observed in only one flow direction. Both directions means at least one packet was observed in each direction."
+                                    color: "#64748b"
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                }
 
-                                        Label {
-                                            Layout.fillWidth: true
-                                            text: finiteSectionCard.sectionTitle
-                                            color: "#0f172a"
-                                            font.pixelSize: 14
-                                            font.bold: true
-                                        }
+                                Label {
+                                    text: "Include"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
 
-                                        CheckBox {
-                                            objectName: "advancedFlowFilter" + finiteSectionCard.sectionObjectNamePrefix + "EnabledCheckBox"
-                                            text: "Enabled"
-                                            checked: finiteSectionCard.sectionEnabledState
+                                Flow {
+                                    Layout.fillWidth: true
+                                    width: parent.width
+                                    spacing: 16
+
+                                    Repeater {
+                                        model: finiteSectionCard.includeOptions
+
+                                        delegate: CheckBox {
+                                            required property var modelData
+
+                                            objectName: "advancedFlowFilter"
+                                                + finiteSectionCard.sectionObjectNamePrefix
+                                                + "Include"
+                                                + modelData.objectNameSuffix
+                                                + "CheckBox"
+                                            text: modelData.label
+                                            checked: modelData.checked
                                             onToggled: {
                                                 if (root.editor) {
-                                                    root.editor.setSectionEnabled(finiteSectionCard.sectionId, checked)
+                                                    root.editor.setOptionChecked(
+                                                        finiteSectionCard.sectionId,
+                                                        modelData.value,
+                                                        false,
+                                                        checked
+                                                    )
                                                 }
                                             }
                                         }
                                     }
+                                }
 
-                                    ColumnLayout {
+                                Button {
+                                    objectName: "advancedFlowFilter"
+                                        + finiteSectionCard.sectionObjectNamePrefix
+                                        + "ExclusionsToggleButton"
+                                    text: finiteSectionCard.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
+                                    onClicked: finiteSectionCard.exclusionsExpanded = !finiteSectionCard.exclusionsExpanded
+                                }
+
+                                ColumnLayout {
+                                    objectName: "advancedFlowFilter"
+                                        + finiteSectionCard.sectionObjectNamePrefix
+                                        + "ExclusionsSection"
+                                    Layout.fillWidth: true
+                                    visible: finiteSectionCard.exclusionsExpanded
+                                    spacing: 10
+
+                                    Label {
+                                        text: "Exclude"
+                                        color: "#475569"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+
+                                    Flow {
                                         Layout.fillWidth: true
-                                        spacing: 10
-                                        enabled: finiteSectionCard.sectionEnabledState
-                                        opacity: finiteSectionCard.sectionEnabledState ? 1.0 : 0.55
+                                        width: parent.width
+                                        spacing: 16
 
-                                        Label {
-                                            Layout.fillWidth: true
-                                            visible: finiteSectionCard.sectionId === 5
-                                            text: "One direction means packets were observed in only one flow direction. Both directions means at least one packet was observed in each direction."
-                                            color: "#64748b"
-                                            font.pixelSize: 12
-                                            wrapMode: Text.WordWrap
-                                        }
+                                        Repeater {
+                                            model: finiteSectionCard.excludeOptions
 
-                                        Label {
-                                            text: "Include"
-                                            color: "#475569"
-                                            font.pixelSize: 12
-                                            font.bold: true
-                                        }
+                                            delegate: CheckBox {
+                                                required property var modelData
 
-                                        GridLayout {
-                                            Layout.fillWidth: true
-                                            columns: 2
-                                            columnSpacing: 20
-                                            rowSpacing: 8
-
-                                            Repeater {
-                                                model: finiteSectionCard.includeOptions
-
-                                                delegate: CheckBox {
-                                                    required property var modelData
-
-                                                    objectName: "advancedFlowFilter"
-                                                        + finiteSectionCard.sectionObjectNamePrefix
-                                                        + "Include"
-                                                        + modelData.objectNameSuffix
-                                                        + "CheckBox"
-                                                    text: modelData.label
-                                                    checked: modelData.checked
-                                                    onToggled: {
-                                                        if (root.editor) {
-                                                            root.editor.setOptionChecked(
-                                                                finiteSectionCard.sectionId,
-                                                                modelData.value,
-                                                                false,
-                                                                checked
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Button {
-                                            objectName: "advancedFlowFilter"
-                                                + finiteSectionCard.sectionObjectNamePrefix
-                                                + "ExclusionsToggleButton"
-                                            text: finiteSectionCard.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
-                                            onClicked: finiteSectionCard.exclusionsExpanded = !finiteSectionCard.exclusionsExpanded
-                                        }
-
-                                        ColumnLayout {
-                                            objectName: "advancedFlowFilter"
-                                                + finiteSectionCard.sectionObjectNamePrefix
-                                                + "ExclusionsSection"
-                                            Layout.fillWidth: true
-                                            visible: finiteSectionCard.exclusionsExpanded
-                                            spacing: 10
-
-                                            Label {
-                                                text: "Exclude"
-                                                color: "#475569"
-                                                font.pixelSize: 12
-                                                font.bold: true
-                                            }
-
-                                            GridLayout {
-                                                Layout.fillWidth: true
-                                                columns: 2
-                                                columnSpacing: 20
-                                                rowSpacing: 8
-
-                                                Repeater {
-                                                    model: finiteSectionCard.excludeOptions
-
-                                                    delegate: CheckBox {
-                                                        required property var modelData
-
-                                                        objectName: "advancedFlowFilter"
-                                                            + finiteSectionCard.sectionObjectNamePrefix
-                                                            + "Exclude"
-                                                            + modelData.objectNameSuffix
-                                                            + "CheckBox"
-                                                        text: modelData.label
-                                                        checked: modelData.checked
-                                                        onToggled: {
-                                                        if (root.editor) {
-                                                            root.editor.setOptionChecked(
-                                                                finiteSectionCard.sectionId,
-                                                                modelData.value,
-                                                                true,
-                                                                    checked
-                                                                )
-                                                            }
-                                                        }
+                                                objectName: "advancedFlowFilter"
+                                                    + finiteSectionCard.sectionObjectNamePrefix
+                                                    + "Exclude"
+                                                    + modelData.objectNameSuffix
+                                                    + "CheckBox"
+                                                text: modelData.label
+                                                checked: modelData.checked
+                                                onToggled: {
+                                                    if (root.editor) {
+                                                        root.editor.setOptionChecked(
+                                                            finiteSectionCard.sectionId,
+                                                            modelData.value,
+                                                            true,
+                                                            checked
+                                                        )
                                                     }
                                                 }
                                             }
@@ -379,7 +392,7 @@ Dialog {
                             }
                         }
 
-                        Rectangle {
+                        AdvancedFlowFilterSection {
                             id: portsSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -388,9 +401,7 @@ Dialog {
                                 void(root.editor.revision)
                                 return root.editor.sectionEnabled(root.portsSectionId)
                             }
-                            readonly property var scopeOptions: root.editor
-                                ? root.editor.portScopeOptions()
-                                : []
+                            readonly property var scopeOptions: root.editor ? root.editor.portScopeOptions() : []
                             readonly property var includeRows: {
                                 if (!root.editor) {
                                     return []
@@ -405,14 +416,25 @@ Dialog {
                                 void(root.editor.revision)
                                 return root.editor.portRows(true)
                             }
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.portsSectionId)
+                            }
 
-                            objectName: "advancedFlowFilterPortsSection"
+                            sectionObjectName: "advancedFlowFilterPortsSection"
+                            collapseButtonObjectName: "advancedFlowFilterPortsCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterPortsEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterPortsContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
-                            implicitHeight: portsSectionLayout.implicitHeight + 28
-                            radius: 8
-                            color: "white"
-                            border.color: "#dbe4f0"
+                            title: "Ports"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.portsSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
 
                             property bool exclusionsExpanded: false
 
@@ -432,284 +454,250 @@ Dialog {
                                 }
                             }
 
-                            ColumnLayout {
-                                id: portsSectionLayout
-                                x: 14
-                                y: 14
-                                width: parent.width - 28
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: "Ports"
-                                        color: "#0f172a"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                    }
-
-                                    CheckBox {
-                                        objectName: "advancedFlowFilterPortsEnabledCheckBox"
-                                        text: "Enabled"
-                                        checked: portsSection.sectionEnabledState
-                                        onToggled: {
-                                            if (root.editor) {
-                                                root.editor.setSectionEnabled(root.portsSectionId, checked)
-                                            }
-                                        }
-                                    }
+                            onToggleRequested: root.setSectionExpanded(root.portsSectionId, !root.sectionExpanded(root.portsSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.portsSectionId, checked)
                                 }
+                            }
 
-                                ColumnLayout {
+                            Label {
+                                text: "Include"
+                                color: "#475569"
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
+
+                            Repeater {
+                                model: portsSection.includeRows
+
+                                delegate: Rectangle {
+                                    required property var modelData
+
                                     Layout.fillWidth: true
-                                    spacing: 10
-                                    enabled: portsSection.sectionEnabledState
-                                    opacity: portsSection.sectionEnabledState ? 1.0 : 0.55
+                                    implicitHeight: includePortRowFlow.implicitHeight + 12
+                                    color: "#f8fafc"
+                                    border.color: "#e2e8f0"
+                                    radius: 6
 
-                                    Label {
-                                        text: "Include"
-                                        color: "#475569"
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                    }
+                                    Flow {
+                                        id: includePortRowFlow
+                                        x: 10
+                                        y: 6
+                                        width: parent.width - 20
+                                        spacing: 8
 
-                                    Repeater {
-                                        model: portsSection.includeRows
-
-                                        delegate: Rectangle {
-                                            required property var modelData
-
-                                            Layout.fillWidth: true
-                                            implicitHeight: includePortRowFlow.implicitHeight + 12
-                                            color: "#f8fafc"
-                                            border.color: "#e2e8f0"
-                                            radius: 6
-
-                                            Flow {
-                                                id: includePortRowFlow
-                                                x: 10
-                                                y: 6
-                                                width: parent.width - 20
-                                                spacing: 8
-
-                                                ComboBox {
-                                                    objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "ScopeComboBox"
-                                                    width: 170
-                                                    model: portsSection.scopeOptions
-                                                    textRole: "label"
-                                                    currentIndex: root.optionIndex(model, modelData.scope)
-                                                    onActivated: {
-                                                        if (root.editor) {
-                                                            root.editor.setPortRowScope(false, modelData.row, model[currentIndex].value)
-                                                        }
-                                                    }
-                                                }
-
-                                                CheckBox {
-                                                    objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "RangeCheckBox"
-                                                    text: "Range"
-                                                    checked: modelData.rangeEnabled
-                                                    onToggled: {
-                                                        if (root.editor) {
-                                                            root.editor.setPortRowRangeEnabled(false, modelData.row, checked)
-                                                        }
-                                                    }
-                                                }
-
-                                                Label {
-                                                    text: modelData.rangeEnabled ? "From"
-                                                                                : "Port"
-                                                    color: "#475569"
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
-
-                                                TextField {
-                                                    objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "PrimaryTextField"
-                                                    width: 96
-                                                    text: modelData.primaryText
-                                                    placeholderText: modelData.rangeEnabled ? "8000" : "443"
-                                                    onTextEdited: {
-                                                        if (root.editor) {
-                                                            root.editor.setPortRowPrimaryText(false, modelData.row, text)
-                                                        }
-                                                    }
-                                                }
-
-                                                Label {
-                                                    visible: modelData.rangeEnabled
-                                                    text: "To"
-                                                    color: "#475569"
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
-
-                                                TextField {
-                                                    objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "SecondaryTextField"
-                                                    visible: modelData.rangeEnabled
-                                                    width: 96
-                                                    text: modelData.secondaryText
-                                                    placeholderText: "9000"
-                                                    onTextEdited: {
-                                                        if (root.editor) {
-                                                            root.editor.setPortRowSecondaryText(false, modelData.row, text)
-                                                        }
-                                                    }
-                                                }
-
-                                                Button {
-                                                    objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "RemoveButton"
-                                                    text: "Remove"
-                                                    onClicked: {
-                                                        if (root.editor) {
-                                                            root.editor.removePortRow(false, modelData.row)
-                                                        }
-                                                    }
+                                        ComboBox {
+                                            objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "ScopeComboBox"
+                                            width: 170
+                                            model: portsSection.scopeOptions
+                                            textRole: "label"
+                                            currentIndex: root.optionIndex(model, modelData.scope)
+                                            onActivated: {
+                                                if (root.editor) {
+                                                    root.editor.setPortRowScope(false, modelData.row, model[currentIndex].value)
                                                 }
                                             }
                                         }
-                                    }
 
-                                    Button {
-                                        objectName: "advancedFlowFilterPortsAddIncludeButton"
-                                        text: "+ Add port"
-                                        onClicked: {
-                                            if (root.editor) {
-                                                root.editor.addPortRow(false)
+                                        CheckBox {
+                                            objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "RangeCheckBox"
+                                            text: "Range"
+                                            checked: modelData.rangeEnabled
+                                            onToggled: {
+                                                if (root.editor) {
+                                                    root.editor.setPortRowRangeEnabled(false, modelData.row, checked)
+                                                }
                                             }
                                         }
-                                    }
-
-                                    Button {
-                                        objectName: "advancedFlowFilterPortsExclusionsToggleButton"
-                                        text: portsSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
-                                        onClicked: portsSection.exclusionsExpanded = !portsSection.exclusionsExpanded
-                                    }
-
-                                    ColumnLayout {
-                                        objectName: "advancedFlowFilterPortsExclusionsSection"
-                                        Layout.fillWidth: true
-                                        visible: portsSection.exclusionsExpanded
-                                        spacing: 10
 
                                         Label {
-                                            text: "Exclude"
+                                            text: modelData.rangeEnabled ? "From" : "Port"
                                             color: "#475569"
-                                            font.pixelSize: 12
-                                            font.bold: true
+                                            verticalAlignment: Text.AlignVCenter
                                         }
 
-                                        Repeater {
-                                            model: portsSection.excludeRows
+                                        TextField {
+                                            objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "PrimaryTextField"
+                                            width: 96
+                                            text: modelData.primaryText
+                                            placeholderText: modelData.rangeEnabled ? "8000" : "443"
+                                            onTextEdited: {
+                                                if (root.editor) {
+                                                    root.editor.setPortRowPrimaryText(false, modelData.row, text)
+                                                }
+                                            }
+                                        }
 
-                                            delegate: Rectangle {
-                                                required property var modelData
+                                        Label {
+                                            visible: modelData.rangeEnabled
+                                            text: "To"
+                                            color: "#475569"
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
 
-                                                Layout.fillWidth: true
-                                                implicitHeight: excludePortRowFlow.implicitHeight + 12
-                                                color: "#f8fafc"
-                                                border.color: "#e2e8f0"
-                                                radius: 6
-
-                                                Flow {
-                                                    id: excludePortRowFlow
-                                                    x: 10
-                                                    y: 6
-                                                    width: parent.width - 20
-                                                    spacing: 8
-
-                                                    ComboBox {
-                                                        objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "ScopeComboBox"
-                                                        width: 170
-                                                        model: portsSection.scopeOptions
-                                                        textRole: "label"
-                                                        currentIndex: root.optionIndex(model, modelData.scope)
-                                                        onActivated: {
-                                                            if (root.editor) {
-                                                                root.editor.setPortRowScope(true, modelData.row, model[currentIndex].value)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    CheckBox {
-                                                        objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "RangeCheckBox"
-                                                        text: "Range"
-                                                        checked: modelData.rangeEnabled
-                                                        onToggled: {
-                                                            if (root.editor) {
-                                                                root.editor.setPortRowRangeEnabled(true, modelData.row, checked)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    Label {
-                                                        text: modelData.rangeEnabled ? "From"
-                                                                                    : "Port"
-                                                        color: "#475569"
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    TextField {
-                                                        objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "PrimaryTextField"
-                                                        width: 96
-                                                        text: modelData.primaryText
-                                                        placeholderText: modelData.rangeEnabled ? "1" : "53"
-                                                        onTextEdited: {
-                                                            if (root.editor) {
-                                                                root.editor.setPortRowPrimaryText(true, modelData.row, text)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    Label {
-                                                        visible: modelData.rangeEnabled
-                                                        text: "To"
-                                                        color: "#475569"
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    TextField {
-                                                        objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "SecondaryTextField"
-                                                        visible: modelData.rangeEnabled
-                                                        width: 96
-                                                        text: modelData.secondaryText
-                                                        placeholderText: "1023"
-                                                        onTextEdited: {
-                                                            if (root.editor) {
-                                                                root.editor.setPortRowSecondaryText(true, modelData.row, text)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    Button {
-                                                        objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "RemoveButton"
-                                                        text: "Remove"
-                                                        onClicked: {
-                                                            if (root.editor) {
-                                                                root.editor.removePortRow(true, modelData.row)
-                                                            }
-                                                        }
-                                                    }
+                                        TextField {
+                                            objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "SecondaryTextField"
+                                            visible: modelData.rangeEnabled
+                                            width: 96
+                                            text: modelData.secondaryText
+                                            placeholderText: "9000"
+                                            onTextEdited: {
+                                                if (root.editor) {
+                                                    root.editor.setPortRowSecondaryText(false, modelData.row, text)
                                                 }
                                             }
                                         }
 
                                         Button {
-                                            objectName: "advancedFlowFilterPortsAddExcludeButton"
-                                            text: "+ Add port"
+                                            objectName: "advancedFlowFilterPortsIncludeRow" + modelData.row + "RemoveButton"
+                                            text: "Remove"
                                             onClicked: {
                                                 if (root.editor) {
-                                                    root.editor.addPortRow(true)
+                                                    root.editor.removePortRow(false, modelData.row)
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            Button {
+                                objectName: "advancedFlowFilterPortsAddIncludeButton"
+                                text: "+ Add port"
+                                onClicked: {
+                                    if (root.editor) {
+                                        root.editor.addPortRow(false)
+                                    }
+                                }
+                            }
+
+                            Button {
+                                objectName: "advancedFlowFilterPortsExclusionsToggleButton"
+                                text: portsSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
+                                onClicked: portsSection.exclusionsExpanded = !portsSection.exclusionsExpanded
+                            }
+
+                            ColumnLayout {
+                                objectName: "advancedFlowFilterPortsExclusionsSection"
+                                Layout.fillWidth: true
+                                visible: portsSection.exclusionsExpanded
+                                spacing: 10
+
+                                Label {
+                                    text: "Exclude"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Repeater {
+                                    model: portsSection.excludeRows
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+
+                                        Layout.fillWidth: true
+                                        implicitHeight: excludePortRowFlow.implicitHeight + 12
+                                        color: "#f8fafc"
+                                        border.color: "#e2e8f0"
+                                        radius: 6
+
+                                        Flow {
+                                            id: excludePortRowFlow
+                                            x: 10
+                                            y: 6
+                                            width: parent.width - 20
+                                            spacing: 8
+
+                                            ComboBox {
+                                                objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "ScopeComboBox"
+                                                width: 170
+                                                model: portsSection.scopeOptions
+                                                textRole: "label"
+                                                currentIndex: root.optionIndex(model, modelData.scope)
+                                                onActivated: {
+                                                    if (root.editor) {
+                                                        root.editor.setPortRowScope(true, modelData.row, model[currentIndex].value)
+                                                    }
+                                                }
+                                            }
+
+                                            CheckBox {
+                                                objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "RangeCheckBox"
+                                                text: "Range"
+                                                checked: modelData.rangeEnabled
+                                                onToggled: {
+                                                    if (root.editor) {
+                                                        root.editor.setPortRowRangeEnabled(true, modelData.row, checked)
+                                                    }
+                                                }
+                                            }
+
+                                            Label {
+                                                text: modelData.rangeEnabled ? "From" : "Port"
+                                                color: "#475569"
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            TextField {
+                                                objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "PrimaryTextField"
+                                                width: 96
+                                                text: modelData.primaryText
+                                                placeholderText: modelData.rangeEnabled ? "1" : "53"
+                                                onTextEdited: {
+                                                    if (root.editor) {
+                                                        root.editor.setPortRowPrimaryText(true, modelData.row, text)
+                                                    }
+                                                }
+                                            }
+
+                                            Label {
+                                                visible: modelData.rangeEnabled
+                                                text: "To"
+                                                color: "#475569"
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            TextField {
+                                                objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "SecondaryTextField"
+                                                visible: modelData.rangeEnabled
+                                                width: 96
+                                                text: modelData.secondaryText
+                                                placeholderText: "1023"
+                                                onTextEdited: {
+                                                    if (root.editor) {
+                                                        root.editor.setPortRowSecondaryText(true, modelData.row, text)
+                                                    }
+                                                }
+                                            }
+
+                                            Button {
+                                                objectName: "advancedFlowFilterPortsExcludeRow" + modelData.row + "RemoveButton"
+                                                text: "Remove"
+                                                onClicked: {
+                                                    if (root.editor) {
+                                                        root.editor.removePortRow(true, modelData.row)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Button {
+                                    objectName: "advancedFlowFilterPortsAddExcludeButton"
+                                    text: "+ Add port"
+                                    onClicked: {
+                                        if (root.editor) {
+                                            root.editor.addPortRow(true)
+                                        }
+                                    }
+                                }
+                            }
                         }
 
-                        Rectangle {
+                        AdvancedFlowFilterSection {
                             id: ipAddressesSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -718,9 +706,7 @@ Dialog {
                                 void(root.editor.revision)
                                 return root.editor.sectionEnabled(root.ipAddressesSectionId)
                             }
-                            readonly property var scopeOptions: root.editor
-                                ? root.editor.addressScopeOptions()
-                                : []
+                            readonly property var scopeOptions: root.editor ? root.editor.addressScopeOptions() : []
                             readonly property var includeRows: {
                                 if (!root.editor) {
                                     return []
@@ -735,14 +721,25 @@ Dialog {
                                 void(root.editor.revision)
                                 return root.editor.addressRows(true)
                             }
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.ipAddressesSectionId)
+                            }
 
-                            objectName: "advancedFlowFilterIpAddressesSection"
+                            sectionObjectName: "advancedFlowFilterIpAddressesSection"
+                            collapseButtonObjectName: "advancedFlowFilterIpAddressesCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterIpAddressesEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterIpAddressesContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
-                            implicitHeight: ipAddressesSectionLayout.implicitHeight + 28
-                            radius: 8
-                            color: "white"
-                            border.color: "#dbe4f0"
+                            title: "IP addresses"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.ipAddressesSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
 
                             property bool exclusionsExpanded: false
 
@@ -762,282 +759,250 @@ Dialog {
                                 }
                             }
 
-                            ColumnLayout {
-                                id: ipAddressesSectionLayout
-                                x: 14
-                                y: 14
-                                width: parent.width - 28
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: "IP addresses"
-                                        color: "#0f172a"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                    }
-
-                                    CheckBox {
-                                        objectName: "advancedFlowFilterIpAddressesEnabledCheckBox"
-                                        text: "Enabled"
-                                        checked: ipAddressesSection.sectionEnabledState
-                                        onToggled: {
-                                            if (root.editor) {
-                                                root.editor.setSectionEnabled(root.ipAddressesSectionId, checked)
-                                            }
-                                        }
-                                    }
+                            onToggleRequested: root.setSectionExpanded(root.ipAddressesSectionId, !root.sectionExpanded(root.ipAddressesSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.ipAddressesSectionId, checked)
                                 }
+                            }
 
-                                ColumnLayout {
+                            Label {
+                                text: "Include"
+                                color: "#475569"
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
+
+                            Repeater {
+                                model: ipAddressesSection.includeRows
+
+                                delegate: Rectangle {
+                                    required property var modelData
+
                                     Layout.fillWidth: true
-                                    spacing: 10
-                                    enabled: ipAddressesSection.sectionEnabledState
-                                    opacity: ipAddressesSection.sectionEnabledState ? 1.0 : 0.55
+                                    implicitHeight: includeAddressRowFlow.implicitHeight + 12
+                                    color: "#f8fafc"
+                                    border.color: "#e2e8f0"
+                                    radius: 6
 
-                                    Label {
-                                        text: "Include"
-                                        color: "#475569"
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                    }
+                                    Flow {
+                                        id: includeAddressRowFlow
+                                        x: 10
+                                        y: 6
+                                        width: parent.width - 20
+                                        spacing: 8
 
-                                    Repeater {
-                                        model: ipAddressesSection.includeRows
-
-                                        delegate: Rectangle {
-                                            required property var modelData
-
-                                            Layout.fillWidth: true
-                                            implicitHeight: includeAddressRowFlow.implicitHeight + 12
-                                            color: "#f8fafc"
-                                            border.color: "#e2e8f0"
-                                            radius: 6
-
-                                            Flow {
-                                                id: includeAddressRowFlow
-                                                x: 10
-                                                y: 6
-                                                width: parent.width - 20
-                                                spacing: 8
-
-                                                ComboBox {
-                                                    objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "ScopeComboBox"
-                                                    width: 170
-                                                    model: ipAddressesSection.scopeOptions
-                                                    textRole: "label"
-                                                    currentIndex: root.optionIndex(model, modelData.scope)
-                                                    onActivated: {
-                                                        if (root.editor) {
-                                                            root.editor.setAddressRowScope(false, modelData.row, model[currentIndex].value)
-                                                        }
-                                                    }
-                                                }
-
-                                                CheckBox {
-                                                    objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "SubnetCheckBox"
-                                                    text: "Subnet"
-                                                    checked: modelData.subnetEnabled
-                                                    onToggled: {
-                                                        if (root.editor) {
-                                                            root.editor.setAddressRowSubnetEnabled(false, modelData.row, checked)
-                                                        }
-                                                    }
-                                                }
-
-                                                Label {
-                                                    text: "Address"
-                                                    color: "#475569"
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
-
-                                                TextField {
-                                                    objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "AddressTextField"
-                                                    width: 220
-                                                    text: modelData.addressText
-                                                    placeholderText: modelData.subnetEnabled ? "10.0.0.0" : "192.168.1.10"
-                                                    onTextEdited: {
-                                                        if (root.editor) {
-                                                            root.editor.setAddressRowAddressText(false, modelData.row, text)
-                                                        }
-                                                    }
-                                                }
-
-                                                Label {
-                                                    visible: modelData.subnetEnabled
-                                                    text: "Prefix"
-                                                    color: "#475569"
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
-
-                                                TextField {
-                                                    objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "PrefixTextField"
-                                                    visible: modelData.subnetEnabled
-                                                    width: 76
-                                                    text: modelData.prefixText
-                                                    placeholderText: "24"
-                                                    onTextEdited: {
-                                                        if (root.editor) {
-                                                            root.editor.setAddressRowPrefixText(false, modelData.row, text)
-                                                        }
-                                                    }
-                                                }
-
-                                                Button {
-                                                    objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "RemoveButton"
-                                                    text: "Remove"
-                                                    onClicked: {
-                                                        if (root.editor) {
-                                                            root.editor.removeAddressRow(false, modelData.row)
-                                                        }
-                                                    }
+                                        ComboBox {
+                                            objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "ScopeComboBox"
+                                            width: 170
+                                            model: ipAddressesSection.scopeOptions
+                                            textRole: "label"
+                                            currentIndex: root.optionIndex(model, modelData.scope)
+                                            onActivated: {
+                                                if (root.editor) {
+                                                    root.editor.setAddressRowScope(false, modelData.row, model[currentIndex].value)
                                                 }
                                             }
                                         }
-                                    }
 
-                                    Button {
-                                        objectName: "advancedFlowFilterIpAddressesAddIncludeButton"
-                                        text: "+ Add address"
-                                        onClicked: {
-                                            if (root.editor) {
-                                                root.editor.addAddressRow(false)
+                                        CheckBox {
+                                            objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "SubnetCheckBox"
+                                            text: "Subnet"
+                                            checked: modelData.subnetEnabled
+                                            onToggled: {
+                                                if (root.editor) {
+                                                    root.editor.setAddressRowSubnetEnabled(false, modelData.row, checked)
+                                                }
                                             }
                                         }
-                                    }
-
-                                    Button {
-                                        objectName: "advancedFlowFilterIpAddressesExclusionsToggleButton"
-                                        text: ipAddressesSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
-                                        onClicked: ipAddressesSection.exclusionsExpanded = !ipAddressesSection.exclusionsExpanded
-                                    }
-
-                                    ColumnLayout {
-                                        objectName: "advancedFlowFilterIpAddressesExclusionsSection"
-                                        Layout.fillWidth: true
-                                        visible: ipAddressesSection.exclusionsExpanded
-                                        spacing: 10
 
                                         Label {
-                                            text: "Exclude"
+                                            text: "Address"
                                             color: "#475569"
-                                            font.pixelSize: 12
-                                            font.bold: true
+                                            verticalAlignment: Text.AlignVCenter
                                         }
 
-                                        Repeater {
-                                            model: ipAddressesSection.excludeRows
+                                        TextField {
+                                            objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "AddressTextField"
+                                            width: 220
+                                            text: modelData.addressText
+                                            placeholderText: modelData.subnetEnabled ? "10.0.0.0" : "192.168.1.10"
+                                            onTextEdited: {
+                                                if (root.editor) {
+                                                    root.editor.setAddressRowAddressText(false, modelData.row, text)
+                                                }
+                                            }
+                                        }
 
-                                            delegate: Rectangle {
-                                                required property var modelData
+                                        Label {
+                                            visible: modelData.subnetEnabled
+                                            text: "Prefix"
+                                            color: "#475569"
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
 
-                                                Layout.fillWidth: true
-                                                implicitHeight: excludeAddressRowFlow.implicitHeight + 12
-                                                color: "#f8fafc"
-                                                border.color: "#e2e8f0"
-                                                radius: 6
-
-                                                Flow {
-                                                    id: excludeAddressRowFlow
-                                                    x: 10
-                                                    y: 6
-                                                    width: parent.width - 20
-                                                    spacing: 8
-
-                                                    ComboBox {
-                                                        objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "ScopeComboBox"
-                                                        width: 170
-                                                        model: ipAddressesSection.scopeOptions
-                                                        textRole: "label"
-                                                        currentIndex: root.optionIndex(model, modelData.scope)
-                                                        onActivated: {
-                                                            if (root.editor) {
-                                                                root.editor.setAddressRowScope(true, modelData.row, model[currentIndex].value)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    CheckBox {
-                                                        objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "SubnetCheckBox"
-                                                        text: "Subnet"
-                                                        checked: modelData.subnetEnabled
-                                                        onToggled: {
-                                                            if (root.editor) {
-                                                                root.editor.setAddressRowSubnetEnabled(true, modelData.row, checked)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    Label {
-                                                        text: "Address"
-                                                        color: "#475569"
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    TextField {
-                                                        objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "AddressTextField"
-                                                        width: 220
-                                                        text: modelData.addressText
-                                                        placeholderText: modelData.subnetEnabled ? "2001:db8::" : "2001:db8::1"
-                                                        onTextEdited: {
-                                                            if (root.editor) {
-                                                                root.editor.setAddressRowAddressText(true, modelData.row, text)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    Label {
-                                                        visible: modelData.subnetEnabled
-                                                        text: "Prefix"
-                                                        color: "#475569"
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    TextField {
-                                                        objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "PrefixTextField"
-                                                        visible: modelData.subnetEnabled
-                                                        width: 76
-                                                        text: modelData.prefixText
-                                                        placeholderText: "32"
-                                                        onTextEdited: {
-                                                            if (root.editor) {
-                                                                root.editor.setAddressRowPrefixText(true, modelData.row, text)
-                                                            }
-                                                        }
-                                                    }
-
-                                                    Button {
-                                                        objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "RemoveButton"
-                                                        text: "Remove"
-                                                        onClicked: {
-                                                            if (root.editor) {
-                                                                root.editor.removeAddressRow(true, modelData.row)
-                                                            }
-                                                        }
-                                                    }
+                                        TextField {
+                                            objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "PrefixTextField"
+                                            visible: modelData.subnetEnabled
+                                            width: 76
+                                            text: modelData.prefixText
+                                            placeholderText: "24"
+                                            onTextEdited: {
+                                                if (root.editor) {
+                                                    root.editor.setAddressRowPrefixText(false, modelData.row, text)
                                                 }
                                             }
                                         }
 
                                         Button {
-                                            objectName: "advancedFlowFilterIpAddressesAddExcludeButton"
-                                            text: "+ Add address"
+                                            objectName: "advancedFlowFilterIpAddressesIncludeRow" + modelData.row + "RemoveButton"
+                                            text: "Remove"
                                             onClicked: {
                                                 if (root.editor) {
-                                                    root.editor.addAddressRow(true)
+                                                    root.editor.removeAddressRow(false, modelData.row)
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            Button {
+                                objectName: "advancedFlowFilterIpAddressesAddIncludeButton"
+                                text: "+ Add address"
+                                onClicked: {
+                                    if (root.editor) {
+                                        root.editor.addAddressRow(false)
+                                    }
+                                }
+                            }
+
+                            Button {
+                                objectName: "advancedFlowFilterIpAddressesExclusionsToggleButton"
+                                text: ipAddressesSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
+                                onClicked: ipAddressesSection.exclusionsExpanded = !ipAddressesSection.exclusionsExpanded
+                            }
+
+                            ColumnLayout {
+                                objectName: "advancedFlowFilterIpAddressesExclusionsSection"
+                                Layout.fillWidth: true
+                                visible: ipAddressesSection.exclusionsExpanded
+                                spacing: 10
+
+                                Label {
+                                    text: "Exclude"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Repeater {
+                                    model: ipAddressesSection.excludeRows
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+
+                                        Layout.fillWidth: true
+                                        implicitHeight: excludeAddressRowFlow.implicitHeight + 12
+                                        color: "#f8fafc"
+                                        border.color: "#e2e8f0"
+                                        radius: 6
+
+                                        Flow {
+                                            id: excludeAddressRowFlow
+                                            x: 10
+                                            y: 6
+                                            width: parent.width - 20
+                                            spacing: 8
+
+                                            ComboBox {
+                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "ScopeComboBox"
+                                                width: 170
+                                                model: ipAddressesSection.scopeOptions
+                                                textRole: "label"
+                                                currentIndex: root.optionIndex(model, modelData.scope)
+                                                onActivated: {
+                                                    if (root.editor) {
+                                                        root.editor.setAddressRowScope(true, modelData.row, model[currentIndex].value)
+                                                    }
+                                                }
+                                            }
+
+                                            CheckBox {
+                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "SubnetCheckBox"
+                                                text: "Subnet"
+                                                checked: modelData.subnetEnabled
+                                                onToggled: {
+                                                    if (root.editor) {
+                                                        root.editor.setAddressRowSubnetEnabled(true, modelData.row, checked)
+                                                    }
+                                                }
+                                            }
+
+                                            Label {
+                                                text: "Address"
+                                                color: "#475569"
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            TextField {
+                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "AddressTextField"
+                                                width: 220
+                                                text: modelData.addressText
+                                                placeholderText: modelData.subnetEnabled ? "2001:db8::" : "2001:db8::1"
+                                                onTextEdited: {
+                                                    if (root.editor) {
+                                                        root.editor.setAddressRowAddressText(true, modelData.row, text)
+                                                    }
+                                                }
+                                            }
+
+                                            Label {
+                                                visible: modelData.subnetEnabled
+                                                text: "Prefix"
+                                                color: "#475569"
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            TextField {
+                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "PrefixTextField"
+                                                visible: modelData.subnetEnabled
+                                                width: 76
+                                                text: modelData.prefixText
+                                                placeholderText: "32"
+                                                onTextEdited: {
+                                                    if (root.editor) {
+                                                        root.editor.setAddressRowPrefixText(true, modelData.row, text)
+                                                    }
+                                                }
+                                            }
+
+                                            Button {
+                                                objectName: "advancedFlowFilterIpAddressesExcludeRow" + modelData.row + "RemoveButton"
+                                                text: "Remove"
+                                                onClicked: {
+                                                    if (root.editor) {
+                                                        root.editor.removeAddressRow(true, modelData.row)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Button {
+                                    objectName: "advancedFlowFilterIpAddressesAddExcludeButton"
+                                    text: "+ Add address"
+                                    onClicked: {
+                                        if (root.editor) {
+                                            root.editor.addAddressRow(true)
+                                        }
+                                    }
+                                }
+                            }
                         }
 
-                        Rectangle {
+                        AdvancedFlowFilterSection {
                             id: trafficSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -1061,13 +1026,25 @@ Dialog {
                                 return root.editor.additionalTrafficRows()
                             }
 
-                            objectName: "advancedFlowFilterTrafficSection"
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.trafficSectionId)
+                            }
+
+                            sectionObjectName: "advancedFlowFilterTrafficSection"
+                            collapseButtonObjectName: "advancedFlowFilterTrafficCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterTrafficEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterTrafficContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
-                            implicitHeight: trafficSectionLayout.implicitHeight + 28
-                            radius: 8
-                            color: "white"
-                            border.color: "#dbe4f0"
+                            title: "Traffic"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.trafficSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
 
                             property bool additionalExpanded: false
 
@@ -1087,44 +1064,14 @@ Dialog {
                                 }
                             }
 
-                            ColumnLayout {
-                                id: trafficSectionLayout
-                                x: 14
-                                y: 14
-                                width: parent.width - 28
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: "Traffic"
-                                        color: "#0f172a"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                    }
-
-                                    CheckBox {
-                                        objectName: "advancedFlowFilterTrafficEnabledCheckBox"
-                                        text: "Enabled"
-                                        checked: trafficSection.sectionEnabledState
-                                        onToggled: {
-                                            if (root.editor) {
-                                                root.editor.setSectionEnabled(root.trafficSectionId, checked)
-                                            }
-                                        }
-                                    }
+                            onToggleRequested: root.setSectionExpanded(root.trafficSectionId, !root.sectionExpanded(root.trafficSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.trafficSectionId, checked)
                                 }
+                            }
 
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-                                    enabled: trafficSection.sectionEnabledState
-                                    opacity: trafficSection.sectionEnabledState ? 1.0 : 0.55
-
-                                    RowLayout {
+                            RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 8
 
@@ -1159,9 +1106,9 @@ Dialog {
                                             font.pixelSize: 12
                                             font.bold: true
                                         }
-                                    }
+                            }
 
-                                    Repeater {
+                            Repeater {
                                         model: trafficSection.commonRows
 
                                         delegate: RowLayout {
@@ -1224,17 +1171,17 @@ Dialog {
                                                 verticalAlignment: Text.AlignVCenter
                                             }
                                         }
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterTrafficAdditionalToggleButton"
                                         text: trafficSection.additionalExpanded
                                             ? "Hide additional traffic filters"
                                             : "+ More traffic filters"
                                         onClicked: trafficSection.additionalExpanded = !trafficSection.additionalExpanded
-                                    }
+                            }
 
-                                    ColumnLayout {
+                            ColumnLayout {
                                         objectName: "advancedFlowFilterTrafficAdditionalSection"
                                         Layout.fillWidth: true
                                         visible: trafficSection.additionalExpanded
@@ -1304,12 +1251,10 @@ Dialog {
                                                 }
                                             }
                                         }
-                                    }
-                                }
                             }
                         }
 
-                        Rectangle {
+                        AdvancedFlowFilterSection {
                             id: serviceSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -1364,13 +1309,25 @@ Dialog {
                                 return root.editor.serviceTextRows(true)
                             }
 
-                            objectName: "advancedFlowFilterServiceSection"
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.serviceSectionId)
+                            }
+
+                            sectionObjectName: "advancedFlowFilterServiceSection"
+                            collapseButtonObjectName: "advancedFlowFilterServiceCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterServiceEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterServiceContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
-                            implicitHeight: serviceSectionLayout.implicitHeight + 28
-                            radius: 8
-                            color: "white"
-                            border.color: "#dbe4f0"
+                            title: "Service"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.serviceSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
 
                             property bool exclusionsExpanded: false
 
@@ -1390,92 +1347,62 @@ Dialog {
                                 }
                             }
 
-                            ColumnLayout {
-                                id: serviceSectionLayout
-                                x: 14
-                                y: 14
-                                width: parent.width - 28
-                                spacing: 10
+                            onToggleRequested: root.setSectionExpanded(root.serviceSectionId, !root.sectionExpanded(root.serviceSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.serviceSectionId, checked)
+                                }
+                            }
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
+                            Label {
+                                text: "Include"
+                                color: "#475569"
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
 
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: "Service"
-                                        color: "#0f172a"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                    }
+                            Label {
+                                text: "State"
+                                color: "#475569"
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
 
-                                    CheckBox {
-                                        objectName: "advancedFlowFilterServiceEnabledCheckBox"
-                                        text: "Enabled"
-                                        checked: serviceSection.sectionEnabledState
-                                        onToggled: {
-                                            if (root.editor) {
-                                                root.editor.setSectionEnabled(root.serviceSectionId, checked)
-                                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 18
+
+                                CheckBox {
+                                    objectName: "advancedFlowFilterServiceIncludeKnownCheckBox"
+                                    text: "Known"
+                                    checked: serviceSection.includeKnownChecked
+                                    onToggled: {
+                                        if (root.editor) {
+                                            root.editor.setServiceStateChecked(false, root.serviceKnownKind, checked)
                                         }
                                     }
                                 }
 
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-                                    enabled: serviceSection.sectionEnabledState
-                                    opacity: serviceSection.sectionEnabledState ? 1.0 : 0.55
-
-                                    Label {
-                                        text: "Include"
-                                        color: "#475569"
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                    }
-
-                                    Label {
-                                        text: "State"
-                                        color: "#475569"
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 18
-
-                                        CheckBox {
-                                            objectName: "advancedFlowFilterServiceIncludeKnownCheckBox"
-                                            text: "Known"
-                                            checked: serviceSection.includeKnownChecked
-                                            onToggled: {
-                                                if (root.editor) {
-                                                    root.editor.setServiceStateChecked(false, root.serviceKnownKind, checked)
-                                                }
-                                            }
-                                        }
-
-                                        CheckBox {
-                                            objectName: "advancedFlowFilterServiceIncludeUnknownCheckBox"
-                                            text: "Unknown"
-                                            checked: serviceSection.includeUnknownChecked
-                                            onToggled: {
-                                                if (root.editor) {
-                                                    root.editor.setServiceStateChecked(false, root.serviceUnknownKind, checked)
-                                                }
-                                            }
+                                CheckBox {
+                                    objectName: "advancedFlowFilterServiceIncludeUnknownCheckBox"
+                                    text: "Unknown"
+                                    checked: serviceSection.includeUnknownChecked
+                                    onToggled: {
+                                        if (root.editor) {
+                                            root.editor.setServiceStateChecked(false, root.serviceUnknownKind, checked)
                                         }
                                     }
+                                }
+                            }
 
-                                    Label {
-                                        text: "Text rules"
-                                        color: "#475569"
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                    }
+                            Label {
+                                text: "Text rules"
+                                color: "#475569"
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
 
-                                    Repeater {
+                            Repeater {
                                         model: serviceSection.includeTextRows
 
                                         delegate: Rectangle {
@@ -1540,9 +1467,9 @@ Dialog {
                                                 }
                                             }
                                         }
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterServiceAddIncludeRuleButton"
                                         text: "+ Add service rule"
                                         onClicked: {
@@ -1550,35 +1477,35 @@ Dialog {
                                                 root.editor.addServiceTextRow(false)
                                             }
                                         }
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterServiceExclusionsToggleButton"
                                         text: serviceSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
                                         onClicked: serviceSection.exclusionsExpanded = !serviceSection.exclusionsExpanded
-                                    }
+                            }
 
-                                    ColumnLayout {
+                            ColumnLayout {
                                         objectName: "advancedFlowFilterServiceExclusionsSection"
                                         Layout.fillWidth: true
                                         visible: serviceSection.exclusionsExpanded
                                         spacing: 10
 
-                                        Label {
+                                Label {
                                             text: "Exclude"
                                             color: "#475569"
                                             font.pixelSize: 12
                                             font.bold: true
-                                        }
+                                }
 
-                                        Label {
+                                Label {
                                             text: "State"
                                             color: "#475569"
                                             font.pixelSize: 12
                                             font.bold: true
-                                        }
+                                }
 
-                                        RowLayout {
+                                RowLayout {
                                             Layout.fillWidth: true
                                             spacing: 18
 
@@ -1603,16 +1530,16 @@ Dialog {
                                                     }
                                                 }
                                             }
-                                        }
+                                }
 
-                                        Label {
+                                Label {
                                             text: "Text rules"
                                             color: "#475569"
                                             font.pixelSize: 12
                                             font.bold: true
-                                        }
+                                }
 
-                                        Repeater {
+                                Repeater {
                                             model: serviceSection.excludeTextRows
 
                                             delegate: Rectangle {
@@ -1677,9 +1604,9 @@ Dialog {
                                                     }
                                                 }
                                             }
-                                        }
+                                }
 
-                                        Button {
+                                Button {
                                             objectName: "advancedFlowFilterServiceAddExcludeRuleButton"
                                             text: "+ Add service rule"
                                             onClicked: {
@@ -1687,13 +1614,11 @@ Dialog {
                                                     root.editor.addServiceTextRow(true)
                                                 }
                                             }
-                                        }
-                                    }
                                 }
                             }
                         }
 
-                        Rectangle {
+                        AdvancedFlowFilterSection {
                             id: protocolPathSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -1717,13 +1642,25 @@ Dialog {
                                 return root.editor.protocolPathRows(true)
                             }
 
-                            objectName: "advancedFlowFilterProtocolPathSection"
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.protocolPathSectionId)
+                            }
+
+                            sectionObjectName: "advancedFlowFilterProtocolPathSection"
+                            collapseButtonObjectName: "advancedFlowFilterProtocolPathCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterProtocolPathEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterProtocolPathContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
-                            implicitHeight: protocolPathSectionLayout.implicitHeight + 28
-                            radius: 8
-                            color: "white"
-                            border.color: "#dbe4f0"
+                            title: "Protocol Path"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.protocolPathSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
 
                             property bool exclusionsExpanded: false
 
@@ -1743,60 +1680,30 @@ Dialog {
                                 }
                             }
 
-                            ColumnLayout {
-                                id: protocolPathSectionLayout
-                                x: 14
-                                y: 14
-                                width: parent.width - 28
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: "Protocol Path"
-                                        color: "#0f172a"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                    }
-
-                                    CheckBox {
-                                        objectName: "advancedFlowFilterProtocolPathEnabledCheckBox"
-                                        text: "Enabled"
-                                        checked: protocolPathSection.sectionEnabledState
-                                        onToggled: {
-                                            if (root.editor) {
-                                                root.editor.setSectionEnabled(root.protocolPathSectionId, checked)
-                                            }
-                                        }
-                                    }
+                            onToggleRequested: root.setSectionExpanded(root.protocolPathSectionId, !root.sectionExpanded(root.protocolPathSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.protocolPathSectionId, checked)
                                 }
+                            }
 
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-                                    enabled: protocolPathSection.sectionEnabledState
-                                    opacity: protocolPathSection.sectionEnabledState ? 1.0 : 0.55
-
-                                    Label {
+                            Label {
                                         Layout.fillWidth: true
                                         visible: !(root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false)
                                         text: "Open a capture to select protocol paths."
                                         color: "#64748b"
                                         font.pixelSize: 12
                                         wrapMode: Text.WordWrap
-                                    }
+                            }
 
-                                    Label {
+                            Label {
                                         text: "Include"
                                         color: "#475569"
                                         font.pixelSize: 12
                                         font.bold: true
-                                    }
+                            }
 
-                                    Repeater {
+                            Repeater {
                                         model: protocolPathSection.includeRows
 
                                         delegate: Rectangle {
@@ -1862,35 +1769,35 @@ Dialog {
                                                 }
                                             }
                                         }
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterProtocolPathAddIncludeButton"
                                         text: "+ Add path"
                                         enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
                                         onClicked: root.openProtocolPathSelector(false, -1)
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterProtocolPathExclusionsToggleButton"
                                         text: protocolPathSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
                                         onClicked: protocolPathSection.exclusionsExpanded = !protocolPathSection.exclusionsExpanded
-                                    }
+                            }
 
-                                    ColumnLayout {
+                            ColumnLayout {
                                         objectName: "advancedFlowFilterProtocolPathExclusionsSection"
                                         Layout.fillWidth: true
                                         visible: protocolPathSection.exclusionsExpanded
                                         spacing: 10
 
-                                        Label {
+                                Label {
                                             text: "Exclude"
                                             color: "#475569"
                                             font.pixelSize: 12
                                             font.bold: true
-                                        }
+                                }
 
-                                        Repeater {
+                                Repeater {
                                             model: protocolPathSection.excludeRows
 
                                             delegate: Rectangle {
@@ -1956,20 +1863,18 @@ Dialog {
                                                     }
                                                 }
                                             }
-                                        }
+                                }
 
-                                        Button {
+                                Button {
                                             objectName: "advancedFlowFilterProtocolPathAddExcludeButton"
                                             text: "+ Add path"
                                             enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
                                             onClicked: root.openProtocolPathSelector(true, -1)
-                                        }
-                                    }
                                 }
                             }
                         }
 
-                        Rectangle {
+                        AdvancedFlowFilterSection {
                             id: containsLayerSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -1999,13 +1904,25 @@ Dialog {
                                 return root.editor.containsLayerRows(true)
                             }
 
-                            objectName: "advancedFlowFilterContainsLayerSection"
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.containsLayerSectionId)
+                            }
+
+                            sectionObjectName: "advancedFlowFilterContainsLayerSection"
+                            collapseButtonObjectName: "advancedFlowFilterContainsLayerCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterContainsLayerEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterContainsLayerContent"
                             Layout.fillWidth: true
                             Layout.preferredHeight: implicitHeight
-                            implicitHeight: containsLayerSectionLayout.implicitHeight + 28
-                            radius: 8
-                            color: "white"
-                            border.color: "#dbe4f0"
+                            title: "Contains Layer"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.containsLayerSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
 
                             property bool exclusionsExpanded: false
 
@@ -2025,51 +1942,21 @@ Dialog {
                                 }
                             }
 
-                            ColumnLayout {
-                                id: containsLayerSectionLayout
-                                x: 14
-                                y: 14
-                                width: parent.width - 28
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: "Contains Layer"
-                                        color: "#0f172a"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                    }
-
-                                    CheckBox {
-                                        objectName: "advancedFlowFilterContainsLayerEnabledCheckBox"
-                                        text: "Enabled"
-                                        checked: containsLayerSection.sectionEnabledState
-                                        onToggled: {
-                                            if (root.editor) {
-                                                root.editor.setSectionEnabled(root.containsLayerSectionId, checked)
-                                            }
-                                        }
-                                    }
+                            onToggleRequested: root.setSectionExpanded(root.containsLayerSectionId, !root.sectionExpanded(root.containsLayerSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.containsLayerSectionId, checked)
                                 }
+                            }
 
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-                                    enabled: containsLayerSection.sectionEnabledState
-                                    opacity: containsLayerSection.sectionEnabledState ? 1.0 : 0.55
-
-                                    Label {
+                            Label {
                                         text: "Include"
                                         color: "#475569"
                                         font.pixelSize: 12
                                         font.bold: true
-                                    }
+                            }
 
-                                    Repeater {
+                            Repeater {
                                         model: containsLayerSection.includeRows
 
                                         delegate: Rectangle {
@@ -2159,9 +2046,9 @@ Dialog {
                                                 }
                                             }
                                         }
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterContainsLayerAddIncludeButton"
                                         text: "+ Add layer"
                                         onClicked: {
@@ -2169,28 +2056,28 @@ Dialog {
                                                 root.editor.addContainsLayerRow(false)
                                             }
                                         }
-                                    }
+                            }
 
-                                    Button {
+                            Button {
                                         objectName: "advancedFlowFilterContainsLayerExclusionsToggleButton"
                                         text: containsLayerSection.exclusionsExpanded ? "Hide exclusions" : "Exclusions"
                                         onClicked: containsLayerSection.exclusionsExpanded = !containsLayerSection.exclusionsExpanded
-                                    }
+                            }
 
-                                    ColumnLayout {
+                            ColumnLayout {
                                         objectName: "advancedFlowFilterContainsLayerExclusionsSection"
                                         Layout.fillWidth: true
                                         visible: containsLayerSection.exclusionsExpanded
                                         spacing: 10
 
-                                        Label {
+                                Label {
                                             text: "Exclude"
                                             color: "#475569"
                                             font.pixelSize: 12
                                             font.bold: true
-                                        }
+                                }
 
-                                        Repeater {
+                                Repeater {
                                             model: containsLayerSection.excludeRows
 
                                             delegate: Rectangle {
@@ -2280,9 +2167,9 @@ Dialog {
                                                     }
                                                 }
                                             }
-                                        }
+                                }
 
-                                        Button {
+                                Button {
                                             objectName: "advancedFlowFilterContainsLayerAddExcludeButton"
                                             text: "+ Add layer"
                                             onClicked: {
@@ -2290,8 +2177,6 @@ Dialog {
                                                     root.editor.addContainsLayerRow(true)
                                                 }
                                             }
-                                        }
-                                    }
                                 }
                             }
                         }

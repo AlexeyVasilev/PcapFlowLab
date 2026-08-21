@@ -573,6 +573,36 @@ QString formatIpv6Address(const std::array<std::uint8_t, 16>& address) {
     return QHostAddress(qt_address).toString();
 }
 
+std::size_t count_range_atomic_rules(
+    const std::optional<session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t>>& range
+) noexcept {
+    return (range.has_value() && range->min.has_value() ? 1U : 0U) +
+        (range.has_value() && range->max.has_value() ? 1U : 0U);
+}
+
+std::size_t count_range_atomic_rules(
+    const std::optional<session_detail::AdvancedFlowFilterInclusiveRange<std::uint32_t>>& range
+) noexcept {
+    return (range.has_value() && range->min.has_value() ? 1U : 0U) +
+        (range.has_value() && range->max.has_value() ? 1U : 0U);
+}
+
+std::size_t count_aggregate_atomic_rules(
+    const session_detail::AdvancedFlowFilterAggregateCriteria& aggregate
+) noexcept {
+    return count_range_atomic_rules(aggregate.packet_count) +
+        count_range_atomic_rules(aggregate.original_bytes) +
+        count_range_atomic_rules(aggregate.captured_bytes) +
+        count_range_atomic_rules(aggregate.duration_us) +
+        count_range_atomic_rules(aggregate.fragmented_packet_count) +
+        count_range_atomic_rules(aggregate.truncated_packet_count) +
+        count_range_atomic_rules(aggregate.tcp_syn_count) +
+        count_range_atomic_rules(aggregate.tcp_fin_count) +
+        count_range_atomic_rules(aggregate.tcp_rst_count) +
+        count_range_atomic_rules(aggregate.max_original_packet_length) +
+        count_range_atomic_rules(aggregate.max_captured_packet_length);
+}
+
 std::array<std::uint8_t, 16> qhost_to_ipv6_bytes(const QHostAddress& address) {
     const auto ipv6 = address.toIPv6Address();
     std::array<std::uint8_t, 16> bytes {};
@@ -888,6 +918,161 @@ bool* advanced_flow_filter_section_enabled_mutable(
     return nullptr;
 }
 
+std::size_t count_configured_port_rows(const auto& rows) {
+    std::size_t count {0};
+    for (const auto& row : rows) {
+        const auto primary = row.primary_text.trimmed();
+        const auto secondary = row.secondary_text.trimmed();
+        if (!row.range_enabled) {
+            const auto port = parse_ui_u32_text(primary);
+            if (port.has_value() && *port <= 65535U) {
+                ++count;
+            }
+            continue;
+        }
+
+        if (primary.isEmpty() || secondary.isEmpty()) {
+            continue;
+        }
+
+        const auto first = parse_ui_u32_text(primary);
+        const auto last = parse_ui_u32_text(secondary);
+        if (first.has_value() && last.has_value() && *first <= 65535U && *last <= 65535U && *first <= *last) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t count_configured_address_rows(const auto& rows) {
+    std::size_t count {0};
+    for (const auto& row : rows) {
+        const auto address_text = row.address_text.trimmed();
+        const auto prefix_text = row.prefix_text.trimmed();
+        if (address_text.isEmpty()) {
+            continue;
+        }
+
+        QHostAddress address {};
+        if (!address.setAddress(address_text)) {
+            continue;
+        }
+
+        const auto protocol = address.protocol();
+        if (protocol != QAbstractSocket::IPv4Protocol && protocol != QAbstractSocket::IPv6Protocol) {
+            continue;
+        }
+
+        if (!row.subnet_enabled) {
+            ++count;
+            continue;
+        }
+
+        const auto prefix = parse_ui_u32_text(prefix_text);
+        if (!prefix.has_value()) {
+            continue;
+        }
+
+        if ((protocol == QAbstractSocket::IPv4Protocol && *prefix <= 32U) ||
+            (protocol == QAbstractSocket::IPv6Protocol && *prefix <= 128U)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t count_configured_traffic_rows(const auto& rows) {
+    std::size_t count {0};
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        const auto metric = static_cast<AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric>(index);
+        const auto* descriptor = std::find_if(
+            kTrafficMetricDescriptors.begin(),
+            kTrafficMetricDescriptors.end(),
+            [&](const auto& candidate) { return candidate.metric == metric; }
+        );
+        if (descriptor == kTrafficMetricDescriptors.end()) {
+            continue;
+        }
+
+        const auto minimum_text = rows[index].min_text.trimmed();
+        const auto maximum_text = rows[index].max_text.trimmed();
+        if (minimum_text.isEmpty() && maximum_text.isEmpty()) {
+            continue;
+        }
+
+        const auto multiplier = traffic_metric_has_unit_selector(*descriptor)
+            ? traffic_unit_multiplier(rows[index].unit)
+            : 1ULL;
+        const auto uses_u32_storage = descriptor->value_kind == TrafficMetricValueKind::bytes_u32;
+        const auto min_valid = minimum_text.isEmpty() ||
+            (uses_u32_storage
+                ? checked_parse_scaled_value<std::uint32_t>(minimum_text, multiplier).has_value()
+                : checked_parse_scaled_value<std::uint64_t>(minimum_text, multiplier).has_value());
+        const auto max_valid = maximum_text.isEmpty() ||
+            (uses_u32_storage
+                ? checked_parse_scaled_value<std::uint32_t>(maximum_text, multiplier).has_value()
+                : checked_parse_scaled_value<std::uint64_t>(maximum_text, multiplier).has_value());
+        if (!min_valid || !max_valid) {
+            continue;
+        }
+
+        if (uses_u32_storage) {
+            const auto parsed_min = minimum_text.isEmpty()
+                ? std::optional<std::uint32_t> {}
+                : checked_parse_scaled_value<std::uint32_t>(minimum_text, multiplier);
+            const auto parsed_max = maximum_text.isEmpty()
+                ? std::optional<std::uint32_t> {}
+                : checked_parse_scaled_value<std::uint32_t>(maximum_text, multiplier);
+            if (parsed_min.has_value() && parsed_max.has_value() && *parsed_min > *parsed_max) {
+                continue;
+            }
+        } else {
+            const auto parsed_min = minimum_text.isEmpty()
+                ? std::optional<std::uint64_t> {}
+                : checked_parse_scaled_value<std::uint64_t>(minimum_text, multiplier);
+            const auto parsed_max = maximum_text.isEmpty()
+                ? std::optional<std::uint64_t> {}
+                : checked_parse_scaled_value<std::uint64_t>(maximum_text, multiplier);
+            if (parsed_min.has_value() && parsed_max.has_value() && *parsed_min > *parsed_max) {
+                continue;
+            }
+        }
+
+        count += minimum_text.isEmpty() ? 0U : 1U;
+        count += maximum_text.isEmpty() ? 0U : 1U;
+    }
+    return count;
+}
+
+std::size_t count_configured_service_rows(const auto& rows) {
+    return static_cast<std::size_t>(std::count_if(
+        rows.begin(),
+        rows.end(),
+        [](const auto& row) { return !row.text.trimmed().isEmpty(); }
+    ));
+}
+
+std::size_t count_configured_contains_layer_rows(const auto& rows) {
+    std::size_t count {0};
+    for (const auto& row : rows) {
+        if (contains_layer_predicate_from_editor_row(row, nullptr, QStringLiteral("Contains Layer")).has_value()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+QString format_section_summary_text(const std::size_t configured_rule_count, const bool enabled) {
+    if (configured_rule_count == 0U) {
+        return enabled ? QString {} : QStringLiteral("Disabled");
+    }
+
+    const auto rule_text = QStringLiteral("%1 %2")
+        .arg(QString::number(configured_rule_count))
+        .arg(configured_rule_count == 1U ? QStringLiteral("rule") : QStringLiteral("rules"));
+    return enabled ? rule_text : QStringLiteral("%1 · Disabled").arg(rule_text);
+}
+
 }  // namespace
 
 AdvancedFlowFilterEditorModel::AdvancedFlowFilterEditorModel(
@@ -899,6 +1084,10 @@ AdvancedFlowFilterEditorModel::AdvancedFlowFilterEditorModel(
 
 int AdvancedFlowFilterEditorModel::revision() const noexcept {
     return revision_;
+}
+
+int AdvancedFlowFilterEditorModel::sectionSummaryRevision() const noexcept {
+    return section_summary_revision_;
 }
 
 QString AdvancedFlowFilterEditorModel::validationText() const {
@@ -923,6 +1112,10 @@ bool AdvancedFlowFilterEditorModel::sectionEnabled(const int section) const noex
         document_state_.current_user_visible_document().section_states,
         *parsed_section
     );
+}
+
+bool AdvancedFlowFilterEditorModel::sectionHasConfiguredPredicates(const int section) const noexcept {
+    return sectionConfiguredRuleCount(section) > 0;
 }
 
 bool AdvancedFlowFilterEditorModel::sectionHasExclusions(const int section) const noexcept {
@@ -984,6 +1177,100 @@ bool AdvancedFlowFilterEditorModel::sectionHasExclusions(const int section) cons
     }
 
     return false;
+}
+
+int AdvancedFlowFilterEditorModel::sectionConfiguredRuleCount(const int section) const noexcept {
+    const auto parsed_section = advanced_flow_filter_section_from_int(section);
+    if (!parsed_section.has_value()) {
+        return 0;
+    }
+
+    const auto& document = document_state_.current_user_visible_document();
+    const auto& spec = document.configured_spec;
+    std::size_t count {0};
+
+    switch (*parsed_section) {
+    case AdvancedFlowFilterFiniteSection::address_family:
+        count = spec.address_family.include.size() + spec.address_family.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::flow_protocol:
+        count = spec.flow_protocol.include.size() + spec.flow_protocol.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::detected_protocol:
+        count = spec.detected_protocol.include.size() + spec.detected_protocol.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::tls_version:
+        count = spec.tls_version.include.size() + spec.tls_version.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::quic_version:
+        count = spec.quic_version.include.size() + spec.quic_version.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::directionality:
+        count = spec.directionality.include.size() + spec.directionality.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::ports:
+        count = document_state_.is_editing()
+            ? count_configured_port_rows(port_include_rows_) + count_configured_port_rows(port_exclude_rows_)
+            : spec.ports.include.size() + spec.ports.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::ip_addresses:
+        count = document_state_.is_editing()
+            ? count_configured_address_rows(address_include_rows_) + count_configured_address_rows(address_exclude_rows_)
+            : spec.addresses.ipv4_include.size() + spec.addresses.ipv4_exclude.size() +
+                spec.addresses.ipv6_include.size() + spec.addresses.ipv6_exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::traffic:
+        count = document_state_.is_editing()
+            ? count_configured_traffic_rows(traffic_rows_)
+            : count_aggregate_atomic_rules(spec.aggregate);
+        break;
+    case AdvancedFlowFilterFiniteSection::service:
+        count = document_state_.is_editing()
+            ? (service_include_known_ ? 1U : 0U) + (service_include_unknown_ ? 1U : 0U) +
+                (service_exclude_known_ ? 1U : 0U) + (service_exclude_unknown_ ? 1U : 0U) +
+                count_configured_service_rows(service_include_text_rows_) +
+                count_configured_service_rows(service_exclude_text_rows_)
+            : spec.service.include.size() + spec.service.exclude.size();
+        break;
+    case AdvancedFlowFilterFiniteSection::protocol_path:
+        count = document_state_.is_editing()
+            ? protocol_path_include_rows_.size() + protocol_path_exclude_rows_.size()
+            : static_cast<std::size_t>(std::count_if(
+                  spec.protocol_path.include.begin(),
+                  spec.protocol_path.include.end(),
+                  [](const auto& predicate) { return protocol_path_predicate_is_ui_managed(predicate); }
+              )) +
+                static_cast<std::size_t>(std::count_if(
+                    spec.protocol_path.exclude.begin(),
+                    spec.protocol_path.exclude.end(),
+                    [](const auto& predicate) { return protocol_path_predicate_is_ui_managed(predicate); }
+                ));
+        break;
+    case AdvancedFlowFilterFiniteSection::contains_layer:
+        count = document_state_.is_editing()
+            ? count_configured_contains_layer_rows(contains_layer_include_rows_) +
+                count_configured_contains_layer_rows(contains_layer_exclude_rows_)
+            : static_cast<std::size_t>(std::count_if(
+                  spec.protocol_path.include.begin(),
+                  spec.protocol_path.include.end(),
+                  [](const auto& predicate) { return contains_layer_predicate_is_ui_managed(predicate); }
+              )) +
+                static_cast<std::size_t>(std::count_if(
+                    spec.protocol_path.exclude.begin(),
+                    spec.protocol_path.exclude.end(),
+                    [](const auto& predicate) { return contains_layer_predicate_is_ui_managed(predicate); }
+                ));
+        break;
+    }
+
+    return static_cast<int>(count);
+}
+
+QString AdvancedFlowFilterEditorModel::sectionSummaryText(const int section) const {
+    return format_section_summary_text(
+        static_cast<std::size_t>(std::max(sectionConfiguredRuleCount(section), 0)),
+        sectionEnabled(section)
+    );
 }
 
 QVariantList AdvancedFlowFilterEditorModel::includeOptions(const int section) const {
@@ -2433,6 +2720,11 @@ void AdvancedFlowFilterEditorModel::clearValidationText() {
     emit stateChanged();
 }
 
+void AdvancedFlowFilterEditorModel::notifySectionSummaryChanged() {
+    ++section_summary_revision_;
+    emit sectionSummaryRevisionChanged();
+}
+
 void AdvancedFlowFilterEditorModel::notifyRowsChanged() {
     clearValidationText();
     notifyStateChanged();
@@ -2440,6 +2732,7 @@ void AdvancedFlowFilterEditorModel::notifyRowsChanged() {
 
 void AdvancedFlowFilterEditorModel::notifyTextFieldEdited() {
     clearValidationText();
+    notifySectionSummaryChanged();
     emit draftClearUnsavedChangesAvailableChanged();
     emit draftClearAllAvailableChanged();
     emit stateChanged();
@@ -2448,6 +2741,7 @@ void AdvancedFlowFilterEditorModel::notifyTextFieldEdited() {
 void AdvancedFlowFilterEditorModel::notifyStateChanged() {
     ++revision_;
     emit revisionChanged();
+    notifySectionSummaryChanged();
     emit draftClearUnsavedChangesAvailableChanged();
     emit draftClearAllAvailableChanged();
     emit stateChanged();

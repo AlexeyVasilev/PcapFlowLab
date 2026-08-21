@@ -19,6 +19,7 @@ namespace pfl {
 class AdvancedFlowFilterEditorModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
+    Q_PROPERTY(int sectionSummaryRevision READ sectionSummaryRevision NOTIFY sectionSummaryRevisionChanged)
     Q_PROPERTY(QString validationText READ validationText NOTIFY validationTextChanged)
     Q_PROPERTY(bool draftClearUnsavedChangesAvailable READ draftClearUnsavedChangesAvailable NOTIFY draftClearUnsavedChangesAvailableChanged)
     Q_PROPERTY(bool draftClearAllAvailable READ draftClearAllAvailable NOTIFY draftClearAllAvailableChanged)
@@ -77,12 +78,16 @@ public:
     );
 
     [[nodiscard]] int revision() const noexcept;
+    [[nodiscard]] int sectionSummaryRevision() const noexcept;
     [[nodiscard]] QString validationText() const;
 
     [[nodiscard]] bool draftClearUnsavedChangesAvailable() const noexcept;
     [[nodiscard]] bool draftClearAllAvailable() const noexcept;
     Q_INVOKABLE bool sectionEnabled(int section) const noexcept;
+    Q_INVOKABLE bool sectionHasConfiguredPredicates(int section) const noexcept;
     Q_INVOKABLE bool sectionHasExclusions(int section) const noexcept;
+    Q_INVOKABLE int sectionConfiguredRuleCount(int section) const noexcept;
+    Q_INVOKABLE QString sectionSummaryText(int section) const;
     Q_INVOKABLE QVariantList includeOptions(int section) const;
     Q_INVOKABLE QVariantList excludeOptions(int section) const;
     Q_INVOKABLE QVariantList portScopeOptions() const;
@@ -146,6 +151,7 @@ public:
 
 signals:
     void revisionChanged();
+    void sectionSummaryRevisionChanged();
     void validationTextChanged();
     void draftClearUnsavedChangesAvailableChanged();
     void draftClearAllAvailableChanged();
@@ -197,6 +203,7 @@ private:
 
     void ensureEditingInitialized();
     void clearValidationText();
+    void notifySectionSummaryChanged();
     void notifyRowsChanged();
     void notifyTextFieldEdited();
     void notifyStateChanged();
@@ -209,6 +216,7 @@ private:
 
     session_detail::AdvancedFlowFilterDocumentState& document_state_;
     int revision_ {0};
+    int section_summary_revision_ {0};
     bool editing_initialized_ {false};
     std::vector<AdvancedFlowFilterPortEditorRow> port_include_rows_ {};
     std::vector<AdvancedFlowFilterPortEditorRow> port_exclude_rows_ {};

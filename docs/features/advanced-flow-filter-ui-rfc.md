@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings, and the dedicated Contains Layer editor with independent Enabled semantics and Protocol Path/Contains Layer AND behavior. Open/Save workflows, final destructive Clear/Clear-unsaved-changes workflows, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive horizontal wrapping for finite checkbox sections, collapsible main section cards with configured-rule header summaries whose expansion is presentation-only and independent from Enabled, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings, and the dedicated Contains Layer editor with independent Enabled semantics and Protocol Path/Contains Layer AND behavior. Open/Save workflows, final destructive Clear/Clear-unsaved-changes workflows, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -29,6 +29,7 @@ Still deferred here:
 - exact Qt implementation staging details
 - Tauri parity details
 - final styling and polish
+- semantic Include/Exclude background colors for Advanced Filter sections
 - dedicated capture-level count-summary architecture
 
 ## Design Principles
@@ -229,6 +230,14 @@ Current agreed behavior:
   Exclusions, repeated structured Port/IP rule rows, transactional Apply
   validation, and draft Apply/Cancel behavior through
   `AdvancedFlowFilterDocumentState`
+- Qt now also presents:
+  - responsive horizontal wrapping for finite checkbox sections
+  - collapsible main section cards for all Advanced Filter sections
+  - initial expansion driven by whether a section retains configured predicates
+  - compact header summaries based on configured rule count, with `Disabled`
+    appended when the section is off
+  - transient in-dialog collapse state that never affects document semantics,
+    dirty state, or `.filter` persistence
 - Qt now also implements a dedicated Contains Layer editor with:
   - an independent Enabled state
   - separate Include / Exclusions rows
