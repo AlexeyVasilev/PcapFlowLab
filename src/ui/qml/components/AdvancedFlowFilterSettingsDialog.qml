@@ -24,7 +24,7 @@ Dialog {
     signal initializeDialogState()
 
     readonly property var sectionDescriptors: [
-        { sectionId: 0, title: "Address family", objectNamePrefix: "AddressFamily" },
+        { sectionId: 0, title: "Address Family", objectNamePrefix: "AddressFamily" },
         { sectionId: 1, title: "Flow Protocol", objectNamePrefix: "FlowProtocol" },
         { sectionId: 2, title: "Detected Protocol", objectNamePrefix: "DetectedProtocol" },
         { sectionId: 3, title: "TLS Version", objectNamePrefix: "TlsVersion" },
@@ -1771,6 +1771,15 @@ Dialog {
                                     spacing: 10
                                     enabled: protocolPathSection.sectionEnabledState
                                     opacity: protocolPathSection.sectionEnabledState ? 1.0 : 0.55
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        visible: !(root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false)
+                                        text: "Open a capture to select protocol paths."
+                                        color: "#64748b"
+                                        font.pixelSize: 12
+                                        wrapMode: Text.WordWrap
+                                    }
 
                                     Label {
                                         text: "Include"

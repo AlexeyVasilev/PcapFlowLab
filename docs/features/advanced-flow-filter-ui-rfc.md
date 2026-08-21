@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for finite checkbox sections, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, and the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings. Open/Save workflows, deferred editor sections beyond the currently implemented Qt subset, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings, and the dedicated Contains Layer editor with independent Enabled semantics and Protocol Path/Contains Layer AND behavior. Open/Save workflows, final destructive Clear/Clear-unsaved-changes workflows, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -221,6 +221,10 @@ Current agreed behavior:
   - Observed directions
   - Ports
   - IP addresses
+  - Traffic
+  - Service
+  - Protocol Path
+  - Contains Layer
 - Qt now applies section Enabled state, Include selections, collapsible
   Exclusions, repeated structured Port/IP rule rows, transactional Apply
   validation, and draft Apply/Cancel behavior through
@@ -659,7 +663,7 @@ Future note:
 Planned checkbox UI:
 
 ```text
-Address family
+Address Family
 
 [ ] IPv4
 [ ] IPv6
@@ -1778,14 +1782,12 @@ discussion:
 
 ## Backend Prerequisite Notes
 
-Most of the UI described here maps onto backend semantics already documented in
-the backend RFC, but one explicitly noted prerequisite remains:
+The current Qt editor pass maps onto backend semantics already documented in
+the backend RFC.
 
-- Address family checkbox filtering needs a dedicated backend predicate before
-  the full agreed UI can be implemented cleanly
-
-This RFC does not propose changing any other backend contract in order to
-describe the UI.
+Future UI/file-workflow work should continue to reuse those established
+document/evaluation contracts rather than introducing a separate frontend-only
+filter model.
 
 ## Implementation Strategy
 
