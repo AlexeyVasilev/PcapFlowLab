@@ -3649,8 +3649,7 @@ bool MainController::advancedFlowFilterSettingsAvailable() const noexcept {
 
 bool MainController::advancedFlowFilterClearAvailable() const noexcept {
     return !is_default_advanced_flow_filter_document(
-               advanced_flow_filter_document_state_.current_user_visible_document())
-        && !advanced_flow_filter_document_state_.would_lose_unsaved_configuration();
+        advanced_flow_filter_document_state_.current_user_visible_document());
 }
 
 int MainController::advancedFlowFilterEditorRevision() const noexcept {
@@ -4676,9 +4675,48 @@ void MainController::clearAdvancedFlowFilter() {
         return;
     }
 
-    advanced_flow_filter_document_state_.clear_all();
-    advanced_flow_filter_editor_model_.clearTransientState();
-    refreshAdvancedFlowFilter();
+    const bool editing = advanced_flow_filter_document_state_.is_editing();
+    const bool file_backed_dirty =
+        advanced_flow_filter_document_state_.source_path() != nullptr &&
+        advanced_flow_filter_document_state_.has_unsaved_changes();
+    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration()) {
+        switch (confirmAdvancedFlowFilterClear(file_backed_dirty)) {
+        case AdvancedFlowFilterClearDecision::save_and_clear:
+            if (!saveAdvancedFlowFilterFile()) {
+                if (!editing && !advanced_flow_filter_editor_model_.validationText().isEmpty()) {
+                    setStatusText(advanced_flow_filter_editor_model_.validationText(), true);
+                }
+                return;
+            }
+            break;
+        case AdvancedFlowFilterClearDecision::save_as_and_clear:
+            if (!saveAdvancedFlowFilterFileAs()) {
+                if (!editing && !advanced_flow_filter_editor_model_.validationText().isEmpty()) {
+                    setStatusText(advanced_flow_filter_editor_model_.validationText(), true);
+                }
+                return;
+            }
+            break;
+        case AdvancedFlowFilterClearDecision::discard_and_clear:
+            break;
+        case AdvancedFlowFilterClearDecision::cancel:
+            return;
+        }
+    }
+
+    finalizeAdvancedFlowFilterClearAll();
+}
+
+void MainController::clearAdvancedFlowFilterUnsavedChanges() {
+    if (!advanced_flow_filter_document_state_.can_clear_unsaved_changes()) {
+        return;
+    }
+
+    if (!advanced_flow_filter_document_state_.revert_to_saved_baseline()) {
+        return;
+    }
+
+    refreshAdvancedFlowFilterEditingPresentation();
 }
 
 void MainController::beginAdvancedFlowFilterEdit() {
@@ -4806,6 +4844,18 @@ void MainController::setAdvancedFlowFilterUnsavedOpenDecisionForTests(
     std::function<AdvancedFlowFilterOpenUnsavedDecision(bool fileBackedDirty)> resolver
 ) {
     advanced_flow_filter_unsaved_open_decision_for_tests_ = std::move(resolver);
+}
+
+void MainController::setAdvancedFlowFilterClearDecisionForTests(
+    std::function<AdvancedFlowFilterClearDecision(bool fileBackedDirty)> resolver
+) {
+    advanced_flow_filter_clear_decision_for_tests_ = std::move(resolver);
+}
+
+void MainController::setAdvancedFlowFilterSaveErrorForTests(
+    std::function<std::optional<QString>(const std::filesystem::path& path)> provider
+) {
+    advanced_flow_filter_save_error_for_tests_ = std::move(provider);
 }
 
 void MainController::setAdvancedFlowFilterSectionEnabled(const int section, const bool enabled) {
@@ -5968,6 +6018,7 @@ void MainController::applyAdvancedFlowFilterDocument(const session_detail::Advan
         advanced_flow_filter_editor_model_.clearTransientState();
     }
     refreshAdvancedFlowFilter();
+    emit advancedFlowFilterPresentationChanged();
 }
 
 bool MainController::ensureSourceCaptureAvailable(const QString& unavailableActionText) {
@@ -7745,6 +7796,44 @@ MainController::confirmAdvancedFlowFilterOpenUnsaved(const bool fileBackedDirty)
     return AdvancedFlowFilterOpenUnsavedDecision::cancel;
 }
 
+MainController::AdvancedFlowFilterClearDecision
+MainController::confirmAdvancedFlowFilterClear(const bool fileBackedDirty) const {
+    if (advanced_flow_filter_clear_decision_for_tests_) {
+        return advanced_flow_filter_clear_decision_for_tests_(fileBackedDirty);
+    }
+
+    QMessageBox box {};
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(QStringLiteral("Clear Advanced Filter"));
+    box.setText(QStringLiteral("Clearing the filter would discard the current Advanced Filter configuration."));
+    box.setInformativeText(
+        fileBackedDirty
+            ? QStringLiteral("This filter has unsaved changes. Save the changes before clearing the filter?")
+            : QStringLiteral("This custom filter has not been saved. Save it before clearing the filter?")
+    );
+
+    QAbstractButton* save_button = box.addButton(
+        fileBackedDirty
+            ? QStringLiteral("Save and clear")
+            : QStringLiteral("Save As and clear"),
+        QMessageBox::AcceptRole
+    );
+    QAbstractButton* discard_button = box.addButton(QStringLiteral("Discard and clear"), QMessageBox::DestructiveRole);
+    QAbstractButton* cancel_button = box.addButton(QMessageBox::Cancel);
+
+    box.exec();
+    if (box.clickedButton() == save_button) {
+        return fileBackedDirty
+            ? AdvancedFlowFilterClearDecision::save_and_clear
+            : AdvancedFlowFilterClearDecision::save_as_and_clear;
+    }
+    if (box.clickedButton() == discard_button) {
+        return AdvancedFlowFilterClearDecision::discard_and_clear;
+    }
+    Q_UNUSED(cancel_button);
+    return AdvancedFlowFilterClearDecision::cancel;
+}
+
 QString MainController::advancedFlowFilterSuggestedFileName() const {
     if (const auto* source_path = advanced_flow_filter_document_state_.source_path(); source_path != nullptr) {
         const QString file_name = QString::fromStdWString(source_path->filename().wstring());
@@ -7785,6 +7874,15 @@ bool MainController::saveAdvancedFlowFilterDraftToPath(const std::filesystem::pa
         return false;
     }
 
+    if (advanced_flow_filter_save_error_for_tests_) {
+        if (const auto injected_error = advanced_flow_filter_save_error_for_tests_(path); injected_error.has_value()) {
+            if (errorText != nullptr) {
+                *errorText = *injected_error;
+            }
+            return false;
+        }
+    }
+
     const QString path_text = QString::fromStdWString(path.wstring());
     QSaveFile file(path_text);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -7817,6 +7915,25 @@ bool MainController::saveAdvancedFlowFilterDraftToPath(const std::filesystem::pa
     setLastDirectoryFromPath(path);
     emit advancedFlowFilterPresentationChanged();
     return true;
+}
+
+void MainController::finalizeAdvancedFlowFilterClearAll() {
+    advanced_flow_filter_document_state_.clear_all();
+    refreshAdvancedFlowFilterEditingPresentation();
+}
+
+void MainController::refreshAdvancedFlowFilterEditingPresentation() {
+    if (advanced_flow_filter_document_state_.is_editing()) {
+        advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+        refreshAdvancedFlowFilterProtocolPathApplicability();
+    } else {
+        advanced_flow_filter_editor_model_.clearTransientState();
+    }
+    advanced_flow_filter_editor_model_.setValidationText({});
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    refreshAdvancedFlowFilter();
+    emit advancedFlowFilterPresentationChanged();
 }
 
 bool MainController::openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText) {

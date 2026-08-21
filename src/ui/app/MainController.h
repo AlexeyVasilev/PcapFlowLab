@@ -65,6 +65,13 @@ public:
         cancel,
     };
 
+    enum class AdvancedFlowFilterClearDecision {
+        save_and_clear = 0,
+        save_as_and_clear,
+        discard_and_clear,
+        cancel,
+    };
+
 private:
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
     Q_PROPERTY(QString applicationVersion READ applicationVersion CONSTANT)
@@ -653,6 +660,7 @@ public:
     Q_INVOKABLE void useAdvancedFlowFilter();
     Q_INVOKABLE void useSimpleFlowFilter();
     Q_INVOKABLE void clearAdvancedFlowFilter();
+    Q_INVOKABLE void clearAdvancedFlowFilterUnsavedChanges();
     Q_INVOKABLE void beginAdvancedFlowFilterEdit();
     Q_INVOKABLE void cancelAdvancedFlowFilterEdit();
     Q_INVOKABLE bool applyAdvancedFlowFilterEdit();
@@ -721,6 +729,12 @@ public:
     void setAdvancedFlowFilterSaveAsFileChooserForTests(std::function<QString(const QString& suggestedFileName)> chooser);
     void setAdvancedFlowFilterUnsavedOpenDecisionForTests(
         std::function<AdvancedFlowFilterOpenUnsavedDecision(bool fileBackedDirty)> resolver
+    );
+    void setAdvancedFlowFilterClearDecisionForTests(
+        std::function<AdvancedFlowFilterClearDecision(bool fileBackedDirty)> resolver
+    );
+    void setAdvancedFlowFilterSaveErrorForTests(
+        std::function<std::optional<QString>(const std::filesystem::path& path)> provider
     );
 
 signals:
@@ -870,11 +884,14 @@ private:
     ) const;
     QString chooseDirectory(const QString& title) const;
     AdvancedFlowFilterOpenUnsavedDecision confirmAdvancedFlowFilterOpenUnsaved(bool fileBackedDirty) const;
+    AdvancedFlowFilterClearDecision confirmAdvancedFlowFilterClear(bool fileBackedDirty) const;
     QString advancedFlowFilterSuggestedFileName() const;
     bool synchronizeAdvancedFlowFilterDraft(QString* errorText);
     bool saveAdvancedFlowFilterDraftToPath(const std::filesystem::path& path, QString* errorText = nullptr);
     bool openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText = nullptr);
     void setLastDirectoryFromPath(const std::filesystem::path& path);
+    void finalizeAdvancedFlowFilterClearAll();
+    void refreshAdvancedFlowFilterEditingPresentation();
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
@@ -979,6 +996,8 @@ private:
     std::function<QString()> advanced_flow_filter_open_file_chooser_for_tests_ {};
     std::function<QString(const QString&)> advanced_flow_filter_save_as_file_chooser_for_tests_ {};
     std::function<AdvancedFlowFilterOpenUnsavedDecision(bool)> advanced_flow_filter_unsaved_open_decision_for_tests_ {};
+    std::function<AdvancedFlowFilterClearDecision(bool)> advanced_flow_filter_clear_decision_for_tests_ {};
+    std::function<std::optional<QString>(const std::filesystem::path&)> advanced_flow_filter_save_error_for_tests_ {};
     qulonglong smart_export_progress_packets_ {0};
     qulonglong smart_export_progress_total_packets_ {0};
     QString smart_export_progress_text_ {};

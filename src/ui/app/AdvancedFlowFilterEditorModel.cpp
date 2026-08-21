@@ -905,8 +905,12 @@ QString AdvancedFlowFilterEditorModel::validationText() const {
     return validation_text_;
 }
 
+bool AdvancedFlowFilterEditorModel::draftClearUnsavedChangesAvailable() const noexcept {
+    return document_state_.can_clear_unsaved_changes();
+}
+
 bool AdvancedFlowFilterEditorModel::draftClearAllAvailable() const noexcept {
-    return false;
+    return !is_default_advanced_flow_filter_document(document_state_.current_user_visible_document());
 }
 
 bool AdvancedFlowFilterEditorModel::sectionEnabled(const int section) const noexcept {
@@ -2436,6 +2440,7 @@ void AdvancedFlowFilterEditorModel::notifyRowsChanged() {
 
 void AdvancedFlowFilterEditorModel::notifyTextFieldEdited() {
     clearValidationText();
+    emit draftClearUnsavedChangesAvailableChanged();
     emit draftClearAllAvailableChanged();
     emit stateChanged();
 }
@@ -2443,6 +2448,7 @@ void AdvancedFlowFilterEditorModel::notifyTextFieldEdited() {
 void AdvancedFlowFilterEditorModel::notifyStateChanged() {
     ++revision_;
     emit revisionChanged();
+    emit draftClearUnsavedChangesAvailableChanged();
     emit draftClearAllAvailableChanged();
     emit stateChanged();
 }

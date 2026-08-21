@@ -242,8 +242,12 @@ Current agreed behavior:
   - file-backed display-name presentation using the source file stem
   - dirty `*` presentation for modified file-backed filters
   - unsaved-replacement protection when opening another filter over dirty state
-- `Clear unsaved changes` and confirmed destructive Clear-all workflow remain
-  deferred
+  - `Clear unsaved changes` using the in-memory saved baseline
+  - `Clear all` in Settings and the matching toolbar `Clear` operation
+  - clean file-backed direct Clear without confirmation
+  - dirty file-backed `Save / Discard / Cancel` clear confirmation
+  - Custom `Save As / Discard / Cancel` clear confirmation
+  - transactional save-before-clear behavior
 
 ### Open Filter
 

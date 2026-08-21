@@ -20,6 +20,7 @@ class AdvancedFlowFilterEditorModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
     Q_PROPERTY(QString validationText READ validationText NOTIFY validationTextChanged)
+    Q_PROPERTY(bool draftClearUnsavedChangesAvailable READ draftClearUnsavedChangesAvailable NOTIFY draftClearUnsavedChangesAvailableChanged)
     Q_PROPERTY(bool draftClearAllAvailable READ draftClearAllAvailable NOTIFY draftClearAllAvailableChanged)
 
 public:
@@ -78,6 +79,7 @@ public:
     [[nodiscard]] int revision() const noexcept;
     [[nodiscard]] QString validationText() const;
 
+    [[nodiscard]] bool draftClearUnsavedChangesAvailable() const noexcept;
     [[nodiscard]] bool draftClearAllAvailable() const noexcept;
     Q_INVOKABLE bool sectionEnabled(int section) const noexcept;
     Q_INVOKABLE bool sectionHasExclusions(int section) const noexcept;
@@ -145,6 +147,7 @@ public:
 signals:
     void revisionChanged();
     void validationTextChanged();
+    void draftClearUnsavedChangesAvailableChanged();
     void draftClearAllAvailableChanged();
     void stateChanged();
 

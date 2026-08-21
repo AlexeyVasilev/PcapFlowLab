@@ -4939,6 +4939,292 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_index_by_family(custom_save_flow_model, QStringLiteral("IPv6")) >= 0);
     });
 
+    run_ui_section("advanced_flow_filter_clear_workflow", [&]() {
+        const auto clear_capture_path = write_temp_pcap(
+            "pfl_ui_advanced_filter_clear_workflow.pcap",
+            make_classic_pcap({
+                {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 93, 0, 1), ipv4(10, 93, 0, 2), 51001, 80)},
+                {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 93, 0, 3), ipv4(10, 93, 0, 4), 53000, 53)},
+                {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x93, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x93, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                    54000,
+                    443
+                )},
+            })
+        );
+
+        constexpr int flow_protocol_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::flow_protocol);
+
+        const auto draft_clear_unsaved_available = [](MainController& controller) {
+            auto* editor = controller.advancedFlowFilterEditor();
+            return editor != nullptr && editor->property("draftClearUnsavedChangesAvailable").toBool();
+        };
+        const auto draft_clear_all_available = [](MainController& controller) {
+            auto* editor = controller.advancedFlowFilterEditor();
+            return editor != nullptr && editor->property("draftClearAllAvailable").toBool();
+        };
+
+        MainController clear_controller {};
+        UI_EXPECT(open_capture_and_wait(app, clear_controller, clear_capture_path));
+        auto* clear_flow_model = qobject_cast<FlowListModel*>(clear_controller.flowModel());
+        UI_REQUIRE(clear_flow_model != nullptr);
+        clear_controller.useAdvancedFlowFilter();
+        UI_EXPECT(!clear_controller.advancedFlowFilterClearAvailable());
+
+        clear_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!draft_clear_unsaved_available(clear_controller));
+        UI_EXPECT(!draft_clear_all_available(clear_controller));
+        clear_controller.cancelAdvancedFlowFilterEdit();
+
+        clear_controller.applyAdvancedFlowFilterDocument(make_flow_protocol_advanced_document(ProtocolId::udp));
+        UI_EXPECT(clear_controller.advancedFlowFilterClearAvailable());
+        UI_EXPECT(clear_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(clear_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+
+        clear_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(!file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::cancel;
+        });
+        clear_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(clear_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(clear_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(clear_flow_model->visibleFlowCount() == 2);
+
+        clear_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(!file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::discard_and_clear;
+        });
+        clear_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(clear_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(clear_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(!clear_controller.advancedFlowFilterClearAvailable());
+        UI_EXPECT(clear_flow_model->visibleFlowCount() == 3);
+
+        clear_controller.applyAdvancedFlowFilterDocument(make_flow_protocol_advanced_document(ProtocolId::udp));
+        const auto custom_clear_saved_path =
+            std::filesystem::temp_directory_path() / "pfl_ui_custom_clear_saved.filter";
+        std::filesystem::remove(custom_clear_saved_path);
+        clear_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(!file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::save_as_and_clear;
+        });
+        clear_controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString::fromStdWString(custom_clear_saved_path.wstring());
+        });
+        clear_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(std::filesystem::exists(custom_clear_saved_path));
+        UI_EXPECT(read_text_file_text(custom_clear_saved_path).find("flow_protocol.include = udp\n") != std::string::npos);
+        UI_EXPECT(clear_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(clear_flow_model->visibleFlowCount() == 3);
+
+        clear_controller.applyAdvancedFlowFilterDocument(make_flow_protocol_advanced_document(ProtocolId::udp));
+        clear_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(!file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::save_as_and_clear;
+        });
+        clear_controller.setAdvancedFlowFilterSaveAsFileChooserForTests([&](const QString&) {
+            return QString {};
+        });
+        clear_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(clear_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(clear_flow_model->visibleFlowCount() == 2);
+
+        const auto file_backed_path = write_temp_advanced_filter_document(
+            "pfl_ui_clear_file_backed.filter",
+            make_flow_protocol_advanced_document(ProtocolId::tcp)
+        );
+        const auto original_file_backed_text = read_text_file_text(file_backed_path);
+
+        MainController file_backed_controller {};
+        UI_EXPECT(open_capture_and_wait(app, file_backed_controller, clear_capture_path));
+        auto* file_backed_flow_model = qobject_cast<FlowListModel*>(file_backed_controller.flowModel());
+        UI_REQUIRE(file_backed_flow_model != nullptr);
+        file_backed_controller.useAdvancedFlowFilter();
+        file_backed_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(file_backed_path.wstring());
+        });
+        file_backed_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
+
+        bool clear_confirmation_called = false;
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool) {
+            clear_confirmation_called = true;
+            return MainController::AdvancedFlowFilterClearDecision::cancel;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(!clear_confirmation_called);
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(!file_backed_controller.advancedFlowFilterClearAvailable());
+        UI_EXPECT(std::filesystem::exists(file_backed_path));
+        UI_EXPECT(read_text_file_text(file_backed_path) == original_file_backed_text);
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 3);
+
+        file_backed_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(file_backed_path.wstring());
+        });
+        file_backed_controller.openAdvancedFlowFilterFile();
+        file_backed_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!draft_clear_unsaved_available(file_backed_controller));
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            false);
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        UI_EXPECT(draft_clear_unsaved_available(file_backed_controller));
+        UI_EXPECT(draft_clear_all_available(file_backed_controller));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed *"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 2);
+        file_backed_controller.clearAdvancedFlowFilterUnsavedChanges();
+        UI_EXPECT(!draft_clear_unsaved_available(file_backed_controller));
+        UI_EXPECT(draft_clear_all_available(file_backed_controller));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(advanced_filter_option_checked(
+            file_backed_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
+            QStringLiteral("TCP")));
+        UI_EXPECT(!advanced_filter_option_checked(
+            file_backed_controller.advancedFlowFilterIncludeOptions(flow_protocol_section_id),
+            QStringLiteral("UDP")));
+        file_backed_controller.cancelAdvancedFlowFilterEdit();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
+
+        file_backed_controller.beginAdvancedFlowFilterEdit();
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            false);
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        file_backed_controller.addAdvancedFlowFilterPortRow(false);
+        file_backed_controller.setAdvancedFlowFilterPortRowRangeEnabled(false, 0, true);
+        file_backed_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("8000"));
+        file_backed_controller.clearAdvancedFlowFilterUnsavedChanges();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterPortRows(false).isEmpty());
+        UI_EXPECT(file_backed_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
+
+        file_backed_controller.beginAdvancedFlowFilterEdit();
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            false);
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::cancel;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed *"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 2);
+
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::discard_and_clear;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(read_text_file_text(file_backed_path) == original_file_backed_text);
+
+        file_backed_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(file_backed_path.wstring());
+        });
+        file_backed_controller.openAdvancedFlowFilterFile();
+        file_backed_controller.beginAdvancedFlowFilterEdit();
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            false);
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::save_and_clear;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(read_text_file_text(file_backed_path).find("flow_protocol.include = udp\n") != std::string::npos);
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 3);
+
+        file_backed_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(file_backed_path.wstring());
+        });
+        file_backed_controller.openAdvancedFlowFilterFile();
+        file_backed_controller.beginAdvancedFlowFilterEdit();
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::tcp),
+            false,
+            false);
+        file_backed_controller.setAdvancedFlowFilterOptionChecked(
+            flow_protocol_section_id,
+            static_cast<int>(ProtocolId::udp),
+            false,
+            true);
+        file_backed_controller.addAdvancedFlowFilterPortRow(false);
+        file_backed_controller.setAdvancedFlowFilterPortRowRangeEnabled(false, 0, true);
+        file_backed_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("9000"));
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::save_and_clear;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed *"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Range rules require both From and To values")));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
+
+        file_backed_controller.setAdvancedFlowFilterPortRowSecondaryText(false, 0, QStringLiteral("9100"));
+        file_backed_controller.setAdvancedFlowFilterSaveErrorForTests([&](const std::filesystem::path&) -> std::optional<QString> {
+            return QStringLiteral("Injected save failure.");
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed *"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterEditorValidationText() == QStringLiteral("Injected save failure."));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
+        file_backed_controller.setAdvancedFlowFilterSaveErrorForTests(
+            std::function<std::optional<QString>(const std::filesystem::path&)> {}
+        );
+
+        file_backed_controller.setAdvancedFlowFilterPortRowSecondaryText(false, 0, QStringLiteral("9200"));
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::discard_and_clear;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 3);
+        file_backed_controller.cancelAdvancedFlowFilterEdit();
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+    });
+
     run_ui_section("advanced_flow_filter_settings_editor_include_exclude_and_multi_section", [&]() {
         const auto include_exclude_capture_path = write_temp_pcap(
             "pfl_ui_advanced_filter_settings_include_exclude.pcap",

@@ -97,7 +97,12 @@ Dialog {
                 Button {
                     objectName: "advancedFlowFilterClearUnsavedChangesButton"
                     text: "Clear unsaved changes"
-                    enabled: false
+                    enabled: root.editor ? root.editor.draftClearUnsavedChangesAvailable : false
+                    onClicked: {
+                        if (root.controller) {
+                            root.controller.clearAdvancedFlowFilterUnsavedChanges()
+                        }
+                    }
                 }
 
                 Item {
@@ -2327,6 +2332,11 @@ Dialog {
                 objectName: "advancedFlowFilterClearAllButton"
                 text: "Clear all"
                 enabled: root.editor ? root.editor.draftClearAllAvailable : false
+                onClicked: {
+                    if (root.controller) {
+                        root.controller.clearAdvancedFlowFilter()
+                    }
+                }
             }
 
             Item {
