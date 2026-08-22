@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive horizontal wrapping for finite checkbox sections, collapsible main section cards with configured-rule header summaries whose expansion is presentation-only and independent from Enabled, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings, and the dedicated Contains Layer editor with independent Enabled semantics and Protocol Path/Contains Layer AND behavior. Open/Save workflows, final destructive Clear/Clear-unsaved-changes workflows, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive horizontal wrapping for finite checkbox sections, collapsible main section cards with configured-rule header summaries whose expansion is presentation-only and independent from Enabled, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings, the dedicated Contains Layer editor with independent Enabled semantics and Protocol Path/Contains Layer AND behavior, and a second polish pass with semantic Include/Exclude grouping, denser repeated rows, lighter row-removal controls, semantic document-reload reinitialization of configured section/exclusion presentation, slightly stronger but still subtle Include/Exclude tinting, and shared Select/double-click acceptance wiring in the Protocol Path selector. Open/Save workflows, final destructive Clear/Clear-unsaved-changes workflows, Smart Export parity with Advanced mode, and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior and implementation
@@ -234,10 +234,15 @@ Current agreed behavior:
   - responsive horizontal wrapping for finite checkbox sections
   - collapsible main section cards for all Advanced Filter sections
   - initial expansion driven by whether a section retains configured predicates
+  - semantic document replacement reinitializing section presentation so
+    configured sections reopen and configured exclusions reopen both the parent
+    section and the Exclude subgroup
   - compact header summaries based on configured rule count, with `Disabled`
     appended when the section is off
   - transient in-dialog collapse state that never affects document semantics,
     dirty state, or `.filter` persistence
+  - manual section collapse / Exclude hiding remaining stable during ordinary
+    edits until another real document replacement occurs
 - Qt now also implements a dedicated Contains Layer editor with:
   - an independent Enabled state
   - separate Include / Exclusions rows
@@ -630,7 +635,7 @@ Flow protocol
 [ ] UDP
 [ ] SCTP
 
-[ + Exclusions ]
+[ Exclusions ]
 ```
 
 Expanded concept:
@@ -639,13 +644,18 @@ Expanded concept:
 Include
 ...
 
-Exclude
-...
+[ Exclusions ]                (compact affordance when hidden)
 
-[ - Hide exclusions ]
+Exclude                                        [ Hide ]
+...
 ```
 
 This interaction is used consistently for finite enum-like categories.
+
+When a semantic document load/reload introduces configured exclusions, the
+parent section starts expanded and the Exclude subgroup also starts expanded.
+Ordinary edits do not continuously reopen either one after the user collapses
+them manually.
 
 Semantic mapping:
 
@@ -687,7 +697,7 @@ Address Family
 [ ] IPv4
 [ ] IPv6
 
-[ + Exclusions ]
+[ Exclusions ]
 ```
 
 Current status:
@@ -836,7 +846,7 @@ Rules:
 - allowed port range is `0..65535`
 - ranges require `From <= To`
 - include rows use OR
-- exclusions are hidden by default behind `[ + Exclusions ]`
+- exclusions use the same compact `Exclusions` affordance when hidden
 - exclusion rows reuse the same editor pattern
 - an empty Include set plus Exclusions is valid
 - the UI must not calculate flow counts for arbitrary port rules
@@ -943,7 +953,8 @@ Mapping rules:
   escaping syntax
 - text rules are OR within the Service include family
 - state and text include predicates follow the current backend OR semantics
-- exclusions are hidden by default using the same `[ + Exclusions ]` pattern
+- exclusions use the same compact `Exclusions` affordance and inline Hide
+  action pattern as the other repeated-row editors
 - exclusion state/text rules use equivalent controls
 
 Initial non-goals:
@@ -991,11 +1002,11 @@ Include
 
 [ + Add path ]
 
-[ + Exclusions ]
+[ Exclusions ]
 ```
 
-Exclusions use the same selected-path rule representation and are hidden by
-default according to the existing Include / Exclusions interaction model.
+Exclusions use the same selected-path rule representation and the same compact
+hidden/showing interaction model as the other Include / Exclude sections.
 
 Multiple enabled Include Protocol Path rules use the existing OR semantics.
 Any matching enabled exclusion rejects the flow.
@@ -1181,12 +1192,14 @@ Example:
 
 ```text
 Identity
-EII | VXLAN VNI 500 | IPv4 | TCP
-
-Warning: Not present in current capture
+EII | VXLAN VNI 500 | IPv4 | TCP     [⚠ Not present]
 ```
 
 The rule remains enabled unless the user explicitly disables its section.
+
+These applicability warnings should be visually quieter than destructive
+validation errors. They are contextual capture feedback, not invalid-document
+states.
 
 Rationale:
 
@@ -1246,6 +1259,17 @@ Conceptually:
 
 Exact implementation details may be finalized later.
 
+Long configured Protocol Path summaries in the main editor row may elide in
+place, but the full selected path text should remain available through a
+tooltip or equivalent hover affordance. Current-capture applicability feedback
+should use a compact inline warning presentation rather than a separate mostly
+empty warning line; if wording is shortened in-row, the full text remains
+available through a tooltip.
+
+The Protocol Path selector accepts the current valid selection through the
+`Select` button and the same accept path may also be triggered by row
+double-click.
+
 ## Contains Layer
 
 Contains Layer is separate from Protocol Path.
@@ -1259,6 +1283,9 @@ dedicated Advanced Filter categories already exist.
 Contains Layer keeps its own include/exclude semantics: include rows use OR,
 matching excludes reject, and the final section result combines with Protocol
 Path using AND when both sections are enabled.
+
+Contains Layer should use the same compact applicability-warning treatment as
+Protocol Path where contextual capture feedback is shown.
 
 Examples that must not be offered in Contains Layer:
 
@@ -1313,7 +1340,7 @@ Layer          Identifier
 
 [ + Add layer ]
 
-[ + Exclusions ]
+[ Exclusions ]
 ```
 
 Exclusions are hidden by default and reuse the same row editor.
@@ -1352,12 +1379,12 @@ Examples:
 
 ```text
 VXLAN / Any
-Warning: No VXLAN layer is present in this capture.
+[⚠ Not present in current capture]
 ```
 
 ```text
 GTP-U / TEID 0x1234
-Warning: This TEID is not present in this capture.
+[⚠ Not present in current capture]
 ```
 
 Such warnings:
@@ -1586,7 +1613,7 @@ Flow Protocol                             Enabled [x]
 [x] TCP
 [ ] UDP
 
-[ + Exclusions ]
+[ Exclusions ]
 ```
 
 ```text
@@ -1621,6 +1648,10 @@ Representative sections that may have Enabled state include:
 
 The exact visual placement may be polished later, but the state must remain
 clear.
+
+Repeated-row sections should use slightly denser row spacing and lighter row
+removal controls than the first implementation pass so the dialog remains more
+scannable when several rows are configured.
 
 ### Enabled Semantics
 
@@ -1721,6 +1752,12 @@ unreleased versions may become unsupported immediately.
 This RFC does not redesign the already implemented backend text grammar; it
 records the user-facing consequence that disabled sections are saved and
 restored without losing their configured rules.
+
+Configured Exclude groups that contain saved exclusion rules should open in
+their visible/expanded presentation state when a filter document is first
+loaded into the editor or when the current document is replaced by another
+document. Manual collapse or expansion after the document is loaded remains a
+presentation-only choice and should stay stable during ordinary draft edits.
 
 ### Effective Filter Model
 

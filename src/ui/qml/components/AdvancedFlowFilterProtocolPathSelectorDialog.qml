@@ -9,6 +9,12 @@ Dialog {
     property var selector: null
     signal selectRequested()
 
+    function tryAcceptSelection() {
+        if (root.selector && root.selector.selectionAvailable) {
+            root.selectRequested()
+        }
+    }
+
     readonly property real tablePadding: 10
     readonly property real indentWidth: 18
     readonly property real labelColumnWidth: 520
@@ -41,8 +47,12 @@ Dialog {
     }
 
     contentItem: Item {
+        focus: true
         implicitWidth: 1040
         implicitHeight: selectorContentLayout.implicitHeight + 24
+
+        Keys.onReturnPressed: root.tryAcceptSelection()
+        Keys.onEnterPressed: root.tryAcceptSelection()
 
         ColumnLayout {
             id: selectorContentLayout
@@ -242,6 +252,12 @@ Dialog {
                                         root.selector.selectNode(nodeId)
                                     }
                                 }
+                                onDoubleClicked: {
+                                    if (root.selector) {
+                                        root.selector.selectNode(nodeId)
+                                    }
+                                    root.tryAcceptSelection()
+                                }
                             }
 
                             HoverHandler {
@@ -304,7 +320,7 @@ Dialog {
                 text: "Select"
                 highlighted: true
                 enabled: root.selector ? root.selector.selectionAvailable : false
-                onClicked: root.selectRequested()
+                onClicked: root.tryAcceptSelection()
             }
         }
     }

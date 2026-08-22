@@ -25,22 +25,25 @@ Rectangle {
     radius: 8
     color: "white"
     border.color: "#dbe4f0"
-    implicitHeight: cardLayout.implicitHeight + 28
+    implicitHeight: cardLayout.implicitHeight + 20
 
     ColumnLayout {
         id: cardLayout
-        x: 14
-        y: 14
-        width: parent.width - 28
-        spacing: 10
+        x: 10
+        y: 10
+        width: parent.width - 20
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: 6
 
             ToolButton {
                 objectName: collapseButtonObjectName
                 text: root.expanded ? "\u25be" : "\u25b8"
+                padding: 2
+                implicitWidth: 24
+                implicitHeight: 24
                 onClicked: root.toggleRequested()
                 ToolTip.visible: hovered
                 ToolTip.text: root.collapseToolTipText
@@ -57,7 +60,7 @@ Rectangle {
                 background: Item {}
 
                 contentItem: RowLayout {
-                    spacing: 10
+                    spacing: 8
 
                     Label {
                         text: root.title
@@ -81,6 +84,7 @@ Rectangle {
                 objectName: enabledCheckBoxObjectName
                 text: "Enabled"
                 checked: root.sectionEnabled
+                Layout.alignment: Qt.AlignVCenter
                 onToggled: root.sectionEnabledToggled(checked)
             }
         }
@@ -97,7 +101,7 @@ Rectangle {
                 id: contentColumn
                 anchors.left: parent.left
                 anchors.right: parent.right
-                spacing: 10
+                spacing: 7
                 enabled: root.contentEnabled
                 opacity: root.contentEnabled ? 1.0 : 0.55
             }

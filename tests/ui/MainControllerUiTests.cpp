@@ -863,6 +863,29 @@ pfl::session_detail::AdvancedFlowFilterDocument make_disabled_flow_protocol_adva
     return document;
 }
 
+pfl::session_detail::AdvancedFlowFilterDocument make_flow_protocol_include_exclude_advanced_document() {
+    pfl::session_detail::AdvancedFlowFilterDocument document {};
+    document.configured_spec.flow_protocol.include.push_back(pfl::ProtocolId::tcp);
+    document.configured_spec.flow_protocol.include.push_back(pfl::ProtocolId::udp);
+    document.configured_spec.flow_protocol.exclude.push_back(pfl::ProtocolId::udp);
+    return document;
+}
+
+pfl::session_detail::AdvancedFlowFilterDocument make_ports_include_exclude_advanced_document() {
+    using namespace pfl::session_detail;
+
+    AdvancedFlowFilterDocument document {};
+    document.configured_spec.ports.include.push_back(AdvancedFlowFilterPortPredicate {
+        .scope = AdvancedFlowFilterPortScope::either_endpoint,
+        .range = AdvancedFlowFilterPortRange {.first = 80U, .last = 80U},
+    });
+    document.configured_spec.ports.exclude.push_back(AdvancedFlowFilterPortPredicate {
+        .scope = AdvancedFlowFilterPortScope::either_endpoint,
+        .range = AdvancedFlowFilterPortRange {.first = 53U, .last = 53U},
+    });
+    return document;
+}
+
 pfl::session_detail::AdvancedFlowFilterDocument make_port_text_entry_document() {
     using namespace pfl::session_detail;
 
@@ -5430,6 +5453,143 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("TCP")) >= 0);
         UI_EXPECT(find_flow_index_by_protocol(include_exclude_flow_model, QStringLiteral("UDP")) < 0);
 
+        auto include_exclude_window = load_main_qml_component(include_exclude_controller);
+        auto* include_exclude_settings_button =
+            named_object(include_exclude_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* include_exclude_settings_dialog =
+            named_object(include_exclude_window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(include_exclude_settings_button != nullptr);
+        UI_REQUIRE(include_exclude_settings_dialog != nullptr);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(include_exclude_settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return include_exclude_settings_dialog->property("visible").toBool()
+                && popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExclusionsToggleButton") != nullptr
+                && popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExclusionsSection") != nullptr
+                && popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolIncludeTcpCheckBox") != nullptr
+                && popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExcludeUdpCheckBox") != nullptr;
+        }));
+
+        auto* flow_protocol_exclusions_toggle =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExclusionsToggleButton");
+        auto* flow_protocol_exclusions_section =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExclusionsSection");
+        auto* flow_protocol_hide_exclusions_button =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolHideExclusionsButton");
+        auto* flow_protocol_include_tcp_checkbox =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolIncludeTcpCheckBox");
+        auto* flow_protocol_exclude_udp_checkbox =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExcludeUdpCheckBox");
+        UI_REQUIRE(flow_protocol_exclusions_toggle != nullptr);
+        UI_REQUIRE(flow_protocol_exclusions_section != nullptr);
+        UI_REQUIRE(flow_protocol_hide_exclusions_button != nullptr);
+        UI_REQUIRE(flow_protocol_include_tcp_checkbox != nullptr);
+        UI_REQUIRE(flow_protocol_exclude_udp_checkbox != nullptr);
+        UI_EXPECT(flow_protocol_exclusions_section->property("visible").toBool());
+        UI_EXPECT(flow_protocol_exclude_udp_checkbox->property("checked").toBool());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(flow_protocol_hide_exclusions_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!flow_protocol_exclusions_section->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(flow_protocol_include_tcp_checkbox, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!flow_protocol_exclusions_section->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(flow_protocol_include_tcp_checkbox, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!flow_protocol_exclusions_section->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(include_exclude_settings_dialog, "close"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
+        const auto flow_protocol_reload_path = write_temp_advanced_filter_document(
+            "pfl_ui_polish_flow_protocol_reload.filter",
+            make_flow_protocol_include_exclude_advanced_document()
+        );
+        const auto ports_reload_path = write_temp_advanced_filter_document(
+            "pfl_ui_polish_ports_reload.filter",
+            make_ports_include_exclude_advanced_document()
+        );
+        include_exclude_controller.setAdvancedFlowFilterUnsavedOpenDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(!file_backed_dirty);
+            return MainController::AdvancedFlowFilterOpenUnsavedDecision::discard_and_open;
+        });
+        include_exclude_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(flow_protocol_reload_path.wstring());
+        });
+        include_exclude_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(include_exclude_flow_model->visibleFlowCount() == 1);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(include_exclude_settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            auto* section = popup_visual_item(
+                include_exclude_settings_dialog,
+                "advancedFlowFilterFlowProtocolExclusionsSection"
+            );
+            auto* content = popup_visual_item(
+                include_exclude_settings_dialog,
+                "advancedFlowFilterFlowProtocolContent"
+            );
+            return include_exclude_settings_dialog->property("visible").toBool()
+                && content != nullptr
+                && content->property("visible").toBool()
+                && section != nullptr
+                && section->property("visible").toBool();
+        }));
+        flow_protocol_exclusions_toggle =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExclusionsToggleButton");
+        flow_protocol_exclusions_section =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolExclusionsSection");
+        flow_protocol_hide_exclusions_button =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolHideExclusionsButton");
+        auto* flow_protocol_content =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterFlowProtocolContent");
+        UI_REQUIRE(flow_protocol_exclusions_toggle != nullptr);
+        UI_REQUIRE(flow_protocol_exclusions_section != nullptr);
+        UI_REQUIRE(flow_protocol_hide_exclusions_button != nullptr);
+        UI_REQUIRE(flow_protocol_content != nullptr);
+        UI_EXPECT(flow_protocol_content->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(flow_protocol_hide_exclusions_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!flow_protocol_exclusions_section->property("visible").toBool());
+
+        include_exclude_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(ports_reload_path.wstring());
+        });
+        include_exclude_controller.openAdvancedFlowFilterFile();
+        auto* ports_collapse_button =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterPortsCollapseButton");
+        auto* ports_content =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterPortsContent");
+        UI_REQUIRE(ports_collapse_button != nullptr);
+        UI_REQUIRE(ports_content != nullptr);
+        UI_EXPECT(wait_until(app, [&]() {
+            auto* content = popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterPortsContent");
+            auto* section = popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterPortsExclusionsSection");
+            return content != nullptr
+                && content->property("visible").toBool()
+                && section != nullptr
+                && section->property("visible").toBool();
+        }));
+        auto* ports_exclusions_section =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterPortsExclusionsSection");
+        auto* ports_exclude_row =
+            popup_visual_item(include_exclude_settings_dialog, "advancedFlowFilterPortsExcludeRow0PrimaryTextField");
+        UI_REQUIRE(ports_exclusions_section != nullptr);
+        UI_REQUIRE(ports_exclude_row != nullptr);
+        UI_EXPECT(ports_content->property("visible").toBool());
+        UI_EXPECT(ports_exclusions_section->property("visible").toBool());
+        UI_EXPECT(ports_exclude_row->property("text").toString() == QStringLiteral("53"));
+        UI_REQUIRE(QMetaObject::invokeMethod(include_exclude_settings_dialog, "close"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        include_exclude_controller.setAdvancedFlowFilterUnsavedOpenDecisionForTests(
+            std::function<MainController::AdvancedFlowFilterOpenUnsavedDecision(bool)> {}
+        );
+        include_exclude_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(flow_protocol_reload_path.wstring());
+        });
+        include_exclude_controller.openAdvancedFlowFilterFile();
+
         include_exclude_controller.beginAdvancedFlowFilterEdit();
         include_exclude_controller.setAdvancedFlowFilterOptionChecked(
             flow_protocol_section_id,
@@ -5922,7 +6082,26 @@ int main(int argc, char* argv[]) {
                 && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorCancelButton") != nullptr
                 && named_object(selector_dialog, "advancedFlowFilterProtocolPathSelectorSelectButton") != nullptr;
         }));
-        UI_REQUIRE(QMetaObject::invokeMethod(selector_dialog, "close"));
+        protocol_path_selector->setMode(static_cast<int>(ProtocolPathStatisticsMode::identity_tree));
+        const auto selector_identity_row = find_protocol_path_stats_row_by_path_text(
+            protocol_path_selector_stats_model,
+            QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4"));
+        UI_REQUIRE(selector_identity_row >= 0);
+        const auto selector_identity_node_id = protocol_path_selector_stats_model->data(
+            protocol_path_selector_stats_model->index(selector_identity_row, 0),
+            ProtocolPathStatsModel::NodeIdRole).toULongLong();
+        protocol_path_selector->selectNode(selector_identity_node_id);
+        UI_EXPECT(protocol_path_selector->selectionAvailable());
+        UI_REQUIRE(QMetaObject::invokeMethod(selector_dialog, "tryAcceptSelection"));
+        UI_EXPECT(wait_until(app, [&]() {
+            return !selector_dialog->property("visible").toBool();
+        }));
+        auto selector_include_row = advanced_filter_row_at(
+            protocol_path_editor_controller.advancedFlowFilterProtocolPathRows(false),
+            0);
+        UI_EXPECT(selector_include_row.value(QStringLiteral("mode")).toInt()
+            == static_cast<int>(ProtocolPathStatisticsMode::identity_tree));
+        UI_EXPECT(selector_include_row.value(QStringLiteral("compactText")).toString().contains(QStringLiteral("200")));
         UI_REQUIRE(QMetaObject::invokeMethod(advanced_settings_dialog, "close"));
         app.processEvents(QEventLoop::AllEvents, 25);
 

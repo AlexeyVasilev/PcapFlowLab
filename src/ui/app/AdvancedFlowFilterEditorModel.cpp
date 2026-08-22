@@ -669,6 +669,14 @@ QString protocol_path_compact_display_text(
     return QString::fromStdString(session_detail::format_protocol_path_compact_display_text(path));
 }
 
+QString protocol_path_full_display_text(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    const auto converted_layers = protocol_path_layers_from_predicate(layers);
+    const ProtocolPath path {converted_layers};
+    return QString::fromStdString(session_detail::build_protocol_path_presentation(&path).full_text);
+}
+
 ProtocolLayerKind default_contains_layer_kind() noexcept {
     const auto descriptors = session_detail::protocol_path_contains_layer_descriptors();
     return descriptors.empty() ? ProtocolLayerKind::unknown : descriptors.front().kind;
@@ -1088,6 +1096,10 @@ int AdvancedFlowFilterEditorModel::revision() const noexcept {
 
 int AdvancedFlowFilterEditorModel::sectionSummaryRevision() const noexcept {
     return section_summary_revision_;
+}
+
+int AdvancedFlowFilterEditorModel::documentReloadRevision() const noexcept {
+    return document_reload_revision_;
 }
 
 QString AdvancedFlowFilterEditorModel::validationText() const {
@@ -2163,6 +2175,8 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     append_contains_layer_rows(document.configured_spec.protocol_path.exclude, contains_layer_exclude_rows_);
 
     editing_initialized_ = true;
+    ++document_reload_revision_;
+    emit documentReloadRevisionChanged();
     clearValidationText();
     notifyStateChanged();
 }
@@ -2184,6 +2198,8 @@ void AdvancedFlowFilterEditorModel::clearTransientState() noexcept {
     contains_layer_include_rows_.clear();
     contains_layer_exclude_rows_.clear();
     editing_initialized_ = false;
+    ++document_reload_revision_;
+    emit documentReloadRevisionChanged();
     validation_text_.clear();
     notifyStateChanged();
 }
@@ -2944,6 +2960,7 @@ QVariantList AdvancedFlowFilterEditorModel::buildProtocolPathRowList(const bool 
         value.insert(QStringLiteral("mode"), static_cast<int>(row.selector_mode));
         value.insert(QStringLiteral("modeLabel"), protocol_path_selector_mode_label(row.selector_mode));
         value.insert(QStringLiteral("compactText"), protocol_path_compact_display_text(row.predicate.layers));
+        value.insert(QStringLiteral("fullText"), protocol_path_full_display_text(row.predicate.layers));
         value.insert(QStringLiteral("applicabilityKnown"), row.applicable.has_value());
         value.insert(QStringLiteral("applicable"), row.applicable.value_or(false));
         value.insert(

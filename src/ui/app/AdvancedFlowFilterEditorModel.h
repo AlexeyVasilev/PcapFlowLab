@@ -20,6 +20,7 @@ class AdvancedFlowFilterEditorModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
     Q_PROPERTY(int sectionSummaryRevision READ sectionSummaryRevision NOTIFY sectionSummaryRevisionChanged)
+    Q_PROPERTY(int documentReloadRevision READ documentReloadRevision NOTIFY documentReloadRevisionChanged)
     Q_PROPERTY(QString validationText READ validationText NOTIFY validationTextChanged)
     Q_PROPERTY(bool draftClearUnsavedChangesAvailable READ draftClearUnsavedChangesAvailable NOTIFY draftClearUnsavedChangesAvailableChanged)
     Q_PROPERTY(bool draftClearAllAvailable READ draftClearAllAvailable NOTIFY draftClearAllAvailableChanged)
@@ -79,6 +80,7 @@ public:
 
     [[nodiscard]] int revision() const noexcept;
     [[nodiscard]] int sectionSummaryRevision() const noexcept;
+    [[nodiscard]] int documentReloadRevision() const noexcept;
     [[nodiscard]] QString validationText() const;
 
     [[nodiscard]] bool draftClearUnsavedChangesAvailable() const noexcept;
@@ -152,6 +154,7 @@ public:
 signals:
     void revisionChanged();
     void sectionSummaryRevisionChanged();
+    void documentReloadRevisionChanged();
     void validationTextChanged();
     void draftClearUnsavedChangesAvailableChanged();
     void draftClearAllAvailableChanged();
@@ -217,6 +220,7 @@ private:
     session_detail::AdvancedFlowFilterDocumentState& document_state_;
     int revision_ {0};
     int section_summary_revision_ {0};
+    int document_reload_revision_ {0};
     bool editing_initialized_ {false};
     std::vector<AdvancedFlowFilterPortEditorRow> port_include_rows_ {};
     std::vector<AdvancedFlowFilterPortEditorRow> port_exclude_rows_ {};
