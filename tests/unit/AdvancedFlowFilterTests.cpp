@@ -870,6 +870,81 @@ void run_directionality_and_service_tests() {
     {
         AdvancedFlowFilterSpec spec {};
         spec.service.include = {
+            {.kind = AdvancedFlowFilterServicePredicateKind::unknown},
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "youtube",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.service.include = {
+            {.kind = AdvancedFlowFilterServicePredicateKind::known},
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "nested",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.service.include = {
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "ALPHA",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "beta",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 3U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.service.include = {
+            {.kind = AdvancedFlowFilterServicePredicateKind::known},
+            {.kind = AdvancedFlowFilterServicePredicateKind::unknown},
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "quic",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.service.exclude = {
+            {.kind = AdvancedFlowFilterServicePredicateKind::unknown},
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "nested",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 3U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.service.include = {
             {
                 .kind = AdvancedFlowFilterServicePredicateKind::equals,
                 .value = "alpha.example",

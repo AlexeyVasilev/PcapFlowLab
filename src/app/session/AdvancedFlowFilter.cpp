@@ -718,15 +718,23 @@ bool matches_service_criteria(
 
     bool include_match = !criteria.has_include_predicates();
     if (!include_match) {
-        include_match = (criteria.include_known && known) || (criteria.include_unknown && !known);
-        if (!include_match) {
+        const bool recognition_include_configured = criteria.include_known || criteria.include_unknown;
+        const bool text_include_configured = !criteria.include_text.empty();
+
+        const bool recognition_include_match = !recognition_include_configured ||
+            ((criteria.include_known && known) || (criteria.include_unknown && !known));
+
+        bool text_include_match = !text_include_configured;
+        if (!text_include_match) {
             for (const auto& predicate : criteria.include_text) {
                 if (matches_service_text_predicate(service_hint, predicate)) {
-                    include_match = true;
+                    text_include_match = true;
                     break;
                 }
             }
         }
+
+        include_match = recognition_include_match && text_include_match;
     }
 
     if (!include_match) {

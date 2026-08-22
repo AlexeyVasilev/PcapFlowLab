@@ -616,12 +616,38 @@ These concepts must remain distinct:
 
 Already implemented baseline:
 
-- multiple strings
-- case-insensitive contains
-- equals
-- starts-with
-- known / unknown service
+- known / unknown service recognition predicates
+- equals / starts-with / contains text predicates
 - include / exclude support
+
+Service is one deliberate structured exception inside the filter model.
+
+Include evaluation uses two optional subgroups:
+
+- recognition predicates:
+  - `known`
+  - `unknown`
+- text predicates:
+  - `equals`
+  - `starts_with`
+  - `contains`
+
+Composition is:
+
+- OR within recognition
+- OR within text
+- AND between recognition and text
+
+So:
+
+- no Service include predicates means Service imposes no restriction
+- `known + contains("example")` means recognized AND containing `example`
+- `known + unknown` with no text rules is effectively no Service restriction
+
+Exclude remains simple OR rejection:
+
+- matching any recognition exclusion rejects
+- matching any text exclusion rejects
 
 Future extension:
 
@@ -794,10 +820,15 @@ The initial composition model is:
 - AND between independent filter sections
 - include / exclude predicates
 
-Protocol Path is the one intentional structured exception: configured
-`protocol_path` predicates are stored together, but the evaluator treats
-Protocol Path (`exact_path` / `path_prefix`) and Contains Layer
-(`contains_layer`) as two independent groups combined with AND.
+There are two intentional structured exceptions:
+
+- Protocol Path: configured `protocol_path` predicates are stored together, but
+  the evaluator treats Protocol Path (`exact_path` / `path_prefix`) and
+  Contains Layer (`contains_layer`) as two independent groups combined with
+  AND.
+- Service: include uses OR within recognition, OR within text, and AND between
+  those two subgroups. Exclude remains any-match rejection across both
+  subgroup types.
 
 Example:
 

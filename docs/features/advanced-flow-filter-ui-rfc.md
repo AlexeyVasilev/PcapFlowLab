@@ -921,9 +921,9 @@ Apply validation.
 
 Service filtering uses one Include section containing:
 
-- state checkboxes:
-  - Known
-  - Unknown
+- recognition checkboxes:
+  - Recognized
+  - Unrecognized
 - repeatable text rules
 
 Supported text operators:
@@ -951,8 +951,28 @@ Mapping rules:
 - checked Case sensitive maps to case-sensitive semantics
 - the GUI accepts a plain text value and does not require `.filter` quoting or
   escaping syntax
-- text rules are OR within the Service include family
-- state and text include predicates follow the current backend OR semantics
+- Service Include uses two optional subgroups:
+  - Recognition: OR within Recognized / Unrecognized
+  - Text: OR within Equals / Starts with / Contains rows
+  - final Include result: Recognition subgroup AND Text subgroup
+- if no Recognition predicates are selected, the Recognition subgroup imposes
+  no restriction
+- if no Include text rules are configured, the Text subgroup imposes no
+  restriction
+- Exclude keeps independent any-match rejection semantics across recognition
+  and text predicates
+- when Include Recognition is Unrecognized-only, the Include text-rule
+  operator controls, Case sensitive controls, value fields, and Add service
+  rule action are disabled
+- retained Include text rows remain visible and removable in that state
+- the UI shows a helper message:
+
+```text
+Text rules apply only to recognized services.
+```
+
+- retained Include text predicates cannot match while only Unrecognized is
+  selected, but this does not make the filter document structurally invalid
 - exclusions use the same compact `Exclusions` affordance and inline Hide
   action pattern as the other repeated-row editors
 - exclusion state/text rules use equivalent controls
@@ -963,8 +983,10 @@ Initial non-goals:
 - no arbitrary service-rule counts
 
 Qt now implements this Service editor in the dedicated Advanced Filter
-Settings dialog, including Known/Unknown state predicates, Include/Exclude
-text rules, Equals/Starts with/Contains operators, case-sensitivity mapping,
+Settings dialog, including Recognized/Unrecognized presentation labels,
+structured Include recognition/text grouping, Include/Exclude text rules,
+Equals/Starts with/Contains operators, case-sensitivity mapping,
+Unrecognized-only Include text-rule disabling with retained-row removal,
 section Enabled retention, exclusion expansion based on configured state, and
 transactional Apply validation.
 
@@ -1412,8 +1434,8 @@ Traffic
 Value                         Minimum      Maximum      Unit
 ----------------------------------------------------------------
 Packets                       [       ]    [       ]    packets
-Original bytes                [       ]    [       ]    [ MiB ▼ ]
-Captured bytes                [       ]    [       ]    [ MiB ▼ ]
+Original bytes                [       ]    [       ]    [ KiB ▼ ]
+Captured bytes                [       ]    [       ]    [ KiB ▼ ]
 Duration                      [       ]    [       ]    [ s   ▼ ]
 
 [ + More traffic filters ]
@@ -1453,11 +1475,11 @@ Expanded concept:
 Value                         Minimum      Maximum      Unit
 ----------------------------------------------------------------
 Packets                       [       ]    [       ]    packets
-Original bytes                [       ]    [       ]    [ MiB ▼ ]
-Captured bytes                [       ]    [       ]    [ MiB ▼ ]
+Original bytes                [       ]    [       ]    [ KiB ▼ ]
+Captured bytes                [       ]    [       ]    [ KiB ▼ ]
 Duration                      [       ]    [       ]    [ s   ▼ ]
-Maximum original packet size  [       ]    [       ]    [ KiB ▼ ]
-Maximum captured packet size  [       ]    [       ]    [ KiB ▼ ]
+Maximum original packet size  [       ]    [       ]    [ B   ▼ ]
+Maximum captured packet size  [       ]    [       ]    [ B   ▼ ]
 Fragmented packets            [       ]    [       ]    packets
 Truncated packets             [       ]    [       ]    packets
 TCP SYN packets               [       ]    [       ]    packets
@@ -1506,13 +1528,18 @@ Each row uses one shared unit selector for both Minimum and Maximum.
 
 The UI does not use separate units for the two bounds.
 
-Byte-based rows use:
+Aggregate byte-total rows use:
 
 - B
 - KiB
 - MiB
 - GiB
 - TiB
+
+Maximum packet-size rows use:
+
+- B
+- KiB
 
 Duration uses user-friendly labels:
 
@@ -1530,6 +1557,14 @@ Packet/count rows do not need a unit selector. They may show a static
 
 The UI may display `min` even if the stable `.filter` text format uses a
 different canonical token such as `m`.
+
+Default empty editor units are:
+
+- Original bytes: `KiB`
+- Captured bytes: `KiB`
+- Duration: `s`
+- Maximum original packet size: `B`
+- Maximum captured packet size: `B`
 
 ### UI Units Are Presentation State
 
@@ -1573,6 +1608,15 @@ If no larger unit represents the value exactly:
 The UI must not introduce floating-point filtering semantics merely for display
 purposes.
 
+Maximum packet-size rows choose exact loaded representations only from `B` and
+`KiB`.
+
+Examples:
+
+- `1500 bytes -> 1500 B`
+- `9000 bytes -> 9000 B`
+- `65536 bytes -> 64 KiB`
+
 ### Rule Count
 
 Each populated bound remains one atomic predicate for the main-toolbar rule
@@ -1596,8 +1640,9 @@ Validation follows this RFC's existing non-aggressive draft-validation rules.
 The UI must not calculate dynamic flow counts for arbitrary numeric ranges.
 
 Qt now implements this Traffic editor in the dedicated Advanced Filter
-Settings dialog, including the common/additional metric split, integer-only
-Minimum/Maximum handling, exact byte/duration unit conversion, additional-row
+Settings dialog, including the common/additional metric split, default `KiB`
+aggregate-byte units, default `s` duration units, `B/KiB` packet-size unit
+selection, exact integer-only byte/duration conversion, additional-row
 auto-expansion when configured, section Enabled retention, and transactional
 Apply validation.
 

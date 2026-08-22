@@ -1434,6 +1434,13 @@ Dialog {
                                 void(root.editor.revision)
                                 return root.editor.serviceStateChecked(true, root.serviceUnknownKind)
                             }
+                            readonly property bool includeTextRulesEditable: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.serviceTextRulesEditable(false)
+                            }
                             readonly property var operatorOptions: root.editor
                                 ? root.editor.serviceOperatorOptions()
                                 : []
@@ -1508,7 +1515,7 @@ Dialog {
                                 strokeColor: root.includeRegionBorderColor
 
                                 Label {
-                                    text: "State"
+                                    text: "Recognition"
                                     color: root.secondaryTextColor
                                     font.pixelSize: 12
                                     font.bold: true
@@ -1520,7 +1527,7 @@ Dialog {
 
                                     CheckBox {
                                         objectName: "advancedFlowFilterServiceIncludeKnownCheckBox"
-                                        text: "Known"
+                                        text: "Recognized"
                                         checked: serviceSection.includeKnownChecked
                                         onToggled: {
                                             if (root.editor) {
@@ -1531,7 +1538,7 @@ Dialog {
 
                                     CheckBox {
                                         objectName: "advancedFlowFilterServiceIncludeUnknownCheckBox"
-                                        text: "Unknown"
+                                        text: "Unrecognized"
                                         checked: serviceSection.includeUnknownChecked
                                         onToggled: {
                                             if (root.editor) {
@@ -1546,6 +1553,14 @@ Dialog {
                                     color: root.secondaryTextColor
                                     font.pixelSize: 12
                                     font.bold: true
+                                }
+
+                                Label {
+                                    visible: !serviceSection.includeTextRulesEditable
+                                    text: "Text rules apply only to recognized services."
+                                    color: root.secondaryTextColor
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
                                 }
 
                                 Repeater {
@@ -1569,6 +1584,7 @@ Dialog {
                                                 ComboBox {
                                                     objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "KindComboBox"
                                                     Layout.preferredWidth: 150
+                                                    enabled: serviceSection.includeTextRulesEditable
                                                     model: serviceSection.operatorOptions
                                                     textRole: "label"
                                                     currentIndex: root.optionIndex(model, modelData.kind)
@@ -1582,6 +1598,7 @@ Dialog {
                                                 CheckBox {
                                                     objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "CaseSensitiveCheckBox"
                                                     text: "Case sensitive"
+                                                    enabled: serviceSection.includeTextRulesEditable
                                                     checked: modelData.caseSensitive
                                                     onToggled: {
                                                         if (root.editor) {
@@ -1593,6 +1610,7 @@ Dialog {
                                                 TextField {
                                                     objectName: "advancedFlowFilterServiceIncludeRow" + modelData.row + "TextField"
                                                     Layout.fillWidth: true
+                                                    enabled: serviceSection.includeTextRulesEditable
                                                     text: modelData.text
                                                     placeholderText: "youtube.com"
                                                     onTextEdited: {
@@ -1619,6 +1637,7 @@ Dialog {
                                 FilterTextButton {
                                         objectName: "advancedFlowFilterServiceAddIncludeRuleButton"
                                         text: "+ Add service rule"
+                                        enabled: serviceSection.includeTextRulesEditable
                                         onClicked: {
                                             if (root.editor) {
                                                 root.editor.addServiceTextRow(false)
@@ -1656,7 +1675,7 @@ Dialog {
                                         onActionTriggered: serviceSection.exclusionsExpanded = false
 
                                 Label {
-                                            text: "State"
+                                            text: "Recognition"
                                             color: root.secondaryTextColor
                                             font.pixelSize: 12
                                             font.bold: true
@@ -1668,7 +1687,7 @@ Dialog {
 
                                             CheckBox {
                                                 objectName: "advancedFlowFilterServiceExcludeKnownCheckBox"
-                                                text: "Known"
+                                                text: "Recognized"
                                                 checked: serviceSection.excludeKnownChecked
                                                 onToggled: {
                                                     if (root.editor) {
@@ -1679,7 +1698,7 @@ Dialog {
 
                                             CheckBox {
                                                 objectName: "advancedFlowFilterServiceExcludeUnknownCheckBox"
-                                                text: "Unknown"
+                                                text: "Unrecognized"
                                                 checked: serviceSection.excludeUnknownChecked
                                                 onToggled: {
                                                     if (root.editor) {

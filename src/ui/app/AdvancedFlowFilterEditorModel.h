@@ -103,6 +103,7 @@ public:
     Q_INVOKABLE void setTrafficMaxText(int metric, const QString& text);
     Q_INVOKABLE bool setTrafficUnit(int metric, int unit);
     Q_INVOKABLE bool serviceStateChecked(bool exclude, int stateKind) const noexcept;
+    Q_INVOKABLE bool serviceTextRulesEditable(bool exclude) const noexcept;
     Q_INVOKABLE QVariantList serviceOperatorOptions() const;
     Q_INVOKABLE QVariantList serviceTextRows(bool exclude) const;
     Q_INVOKABLE QVariantList protocolPathRows(bool exclude) const;

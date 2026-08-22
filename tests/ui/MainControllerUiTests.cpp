@@ -5733,8 +5733,10 @@ int main(int argc, char* argv[]) {
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::traffic);
         constexpr auto packet_count_metric = static_cast<int>(TrafficMetric::packet_count);
         constexpr auto original_bytes_metric = static_cast<int>(TrafficMetric::original_bytes);
+        constexpr auto captured_bytes_metric = static_cast<int>(TrafficMetric::captured_bytes);
         constexpr auto duration_metric = static_cast<int>(TrafficMetric::duration);
         constexpr auto max_original_packet_size_metric = static_cast<int>(TrafficMetric::max_original_packet_size);
+        constexpr auto max_captured_packet_size_metric = static_cast<int>(TrafficMetric::max_captured_packet_size);
 
         traffic_controller.useAdvancedFlowFilter();
         UI_EXPECT(traffic_controller.advancedFlowFilterSectionEnabled(traffic_section_id));
@@ -5746,6 +5748,43 @@ int main(int argc, char* argv[]) {
         traffic_controller.cancelAdvancedFlowFilterEdit();
         UI_EXPECT(traffic_flow_model->visibleFlowCount() == 3);
         UI_EXPECT(!traffic_flow_model->hasAdvancedFlowIndexFilter());
+
+        traffic_controller.applyAdvancedFlowFilterDocument({});
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        auto original_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            original_bytes_metric
+        );
+        const auto captured_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            captured_bytes_metric
+        );
+        const auto duration_row = advanced_filter_metric_row_at(
+            traffic_editor->commonTrafficRows(),
+            duration_metric
+        );
+        auto max_original_row = advanced_filter_metric_row_at(
+            traffic_editor->additionalTrafficRows(),
+            max_original_packet_size_metric
+        );
+        const auto max_captured_row = advanced_filter_metric_row_at(
+            traffic_editor->additionalTrafficRows(),
+            max_captured_packet_size_metric
+        );
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::kib));
+        UI_EXPECT(captured_bytes_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::kib));
+        UI_EXPECT(duration_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::seconds));
+        UI_EXPECT(max_original_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::bytes));
+        UI_EXPECT(max_captured_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::bytes));
+        UI_EXPECT(original_bytes_row.value(QStringLiteral("unitOptions")).toList().size() == 5);
+        UI_EXPECT(max_original_row.value(QStringLiteral("unitOptions")).toList().size() == 2);
+        UI_EXPECT(max_captured_row.value(QStringLiteral("unitOptions")).toList().size() == 2);
+        traffic_controller.cancelAdvancedFlowFilterEdit();
 
         traffic_controller.beginAdvancedFlowFilterEdit();
         traffic_editor->setTrafficMinText(packet_count_metric, QStringLiteral("2"));
@@ -5776,7 +5815,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(traffic_flow_model->visibleFlowCount() == 0);
 
         traffic_controller.beginAdvancedFlowFilterEdit();
-        auto original_bytes_row = advanced_filter_metric_row_at(
+        original_bytes_row = advanced_filter_metric_row_at(
             traffic_editor->commonTrafficRows(),
             original_bytes_metric
         );
@@ -5821,13 +5860,13 @@ int main(int argc, char* argv[]) {
             };
         traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
         traffic_controller.beginAdvancedFlowFilterEdit();
-        const auto duration_row = advanced_filter_metric_row_at(
+        const auto loaded_duration_row = advanced_filter_metric_row_at(
             traffic_editor->commonTrafficRows(),
             duration_metric
         );
-        UI_EXPECT(duration_row.value(QStringLiteral("selectedUnit")).toInt()
+        UI_EXPECT(loaded_duration_row.value(QStringLiteral("selectedUnit")).toInt()
             == static_cast<int>(TrafficUnit::hours));
-        UI_EXPECT(duration_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("2"));
+        UI_EXPECT(loaded_duration_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("2"));
         traffic_controller.cancelAdvancedFlowFilterEdit();
 
         traffic_document = {};
@@ -5839,14 +5878,14 @@ int main(int argc, char* argv[]) {
         traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
         traffic_controller.beginAdvancedFlowFilterEdit();
         UI_EXPECT(traffic_editor->trafficAdditionalFiltersExpandedSuggested());
-        auto max_original_row = advanced_filter_metric_row_at(
+        max_original_row = advanced_filter_metric_row_at(
             traffic_editor->additionalTrafficRows(),
             max_original_packet_size_metric
         );
         UI_EXPECT(max_original_row.value(QStringLiteral("selectedUnit")).toInt()
-            == static_cast<int>(TrafficUnit::mib));
-        UI_EXPECT(max_original_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10"));
-        UI_EXPECT(max_original_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("10"));
+            == static_cast<int>(TrafficUnit::kib));
+        UI_EXPECT(max_original_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10240"));
+        UI_EXPECT(max_original_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("10240"));
         traffic_controller.setAdvancedFlowFilterSectionEnabled(traffic_section_id, false);
         UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(traffic_flow_model->visibleFlowCount() == 3);
@@ -5859,8 +5898,8 @@ int main(int argc, char* argv[]) {
             max_original_packet_size_metric
         );
         UI_EXPECT(max_original_row.value(QStringLiteral("selectedUnit")).toInt()
-            == static_cast<int>(TrafficUnit::mib));
-        UI_EXPECT(max_original_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10"));
+            == static_cast<int>(TrafficUnit::kib));
+        UI_EXPECT(max_original_row.value(QStringLiteral("minText")).toString() == QStringLiteral("10240"));
         traffic_controller.setAdvancedFlowFilterSectionEnabled(traffic_section_id, true);
         UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(traffic_flow_model->visibleFlowCount() == 0);
@@ -5868,10 +5907,13 @@ int main(int argc, char* argv[]) {
 
         traffic_controller.applyAdvancedFlowFilterDocument({});
         traffic_controller.beginAdvancedFlowFilterEdit();
-        UI_EXPECT(traffic_editor->setTrafficUnit(
+        UI_EXPECT(!traffic_editor->setTrafficUnit(
             max_original_packet_size_metric,
             static_cast<int>(TrafficUnit::gib)));
-        traffic_editor->setTrafficMinText(max_original_packet_size_metric, QStringLiteral("8"));
+        UI_EXPECT(traffic_editor->setTrafficUnit(
+            max_original_packet_size_metric,
+            static_cast<int>(TrafficUnit::kib)));
+        traffic_editor->setTrafficMinText(max_original_packet_size_metric, QStringLiteral("5000000"));
         UI_EXPECT(!traffic_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(traffic_controller.advancedFlowFilterEditorValidationText().contains(
             QStringLiteral("Maximum original packet size minimum is too large")));
@@ -5945,12 +5987,41 @@ int main(int argc, char* argv[]) {
 
         service_controller.applyAdvancedFlowFilterDocument({});
         service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->setServiceStateChecked(false, known_kind, true);
+        service_editor->addServiceTextRow(false);
+        service_editor->setServiceTextRowText(false, 0, QStringLiteral("ui.example"));
+        UI_EXPECT(service_editor->serviceTextRulesEditable(false));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) < 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
         service_editor->addServiceTextRow(false);
         service_editor->setServiceTextRowText(false, 0, QStringLiteral("example"));
         UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(service_flow_model->visibleFlowCount() == 2);
         UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) >= 0);
         UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) >= 0);
+
+        service_controller.applyAdvancedFlowFilterDocument({});
+        service_controller.beginAdvancedFlowFilterEdit();
+        service_editor->addServiceTextRow(false);
+        service_editor->setServiceTextRowText(false, 0, QStringLiteral("example"));
+        service_editor->setServiceStateChecked(false, unknown_kind, true);
+        UI_EXPECT(!service_editor->serviceTextRulesEditable(false));
+        UI_EXPECT(service_editor->serviceTextRulesEditable(true));
+        auto contradictory_include_row = advanced_filter_row_at(service_editor->serviceTextRows(false), 0);
+        UI_EXPECT(contradictory_include_row.value(QStringLiteral("text")).toString() == QStringLiteral("example"));
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 0);
+        service_editor->removeServiceTextRow(false, 0);
+        UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(service_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("ui.example")) < 0);
+        UI_EXPECT(find_flow_index_by_service_hint(service_flow_model, QStringLiteral("api.example")) < 0);
 
         service_controller.applyAdvancedFlowFilterDocument({});
         service_controller.beginAdvancedFlowFilterEdit();
@@ -5980,10 +6051,11 @@ int main(int argc, char* argv[]) {
 
         service_controller.applyAdvancedFlowFilterDocument({});
         service_controller.beginAdvancedFlowFilterEdit();
-        service_editor->setServiceStateChecked(false, known_kind, true);
+        service_editor->setServiceStateChecked(true, unknown_kind, true);
         service_editor->addServiceTextRow(true);
         service_editor->setServiceTextRowKind(true, 0, equals_kind);
         service_editor->setServiceTextRowText(true, 0, QStringLiteral("api.example"));
+        UI_EXPECT(service_editor->serviceTextRulesEditable(true));
         UI_EXPECT(service_controller.advancedFlowFilterRuleCountText() == QStringLiteral("2 rules"));
         UI_EXPECT(service_controller.advancedFlowFilterSectionHasExclusions(service_section_id));
         UI_EXPECT(service_controller.applyAdvancedFlowFilterEdit());
@@ -5993,7 +6065,7 @@ int main(int argc, char* argv[]) {
 
         service_controller.beginAdvancedFlowFilterEdit();
         UI_EXPECT(service_controller.advancedFlowFilterSectionHasExclusions(service_section_id));
-        UI_EXPECT(service_editor->serviceStateChecked(false, known_kind));
+        UI_EXPECT(service_editor->serviceStateChecked(true, unknown_kind));
         auto service_exclude_row = advanced_filter_row_at(service_editor->serviceTextRows(true), 0);
         UI_EXPECT(service_exclude_row.value(QStringLiteral("text")).toString() == QStringLiteral("api.example"));
         service_editor->setServiceTextRowText(true, 0, QStringLiteral("ui.example"));
@@ -6001,7 +6073,7 @@ int main(int argc, char* argv[]) {
 
         service_controller.beginAdvancedFlowFilterEdit();
         UI_EXPECT(service_controller.advancedFlowFilterSectionHasExclusions(service_section_id));
-        UI_EXPECT(service_editor->serviceStateChecked(false, known_kind));
+        UI_EXPECT(service_editor->serviceStateChecked(true, unknown_kind));
         service_exclude_row = advanced_filter_row_at(service_editor->serviceTextRows(true), 0);
         UI_EXPECT(service_exclude_row.value(QStringLiteral("text")).toString() == QStringLiteral("api.example"));
         service_controller.setAdvancedFlowFilterSectionEnabled(service_section_id, false);
@@ -6011,7 +6083,7 @@ int main(int argc, char* argv[]) {
 
         service_controller.beginAdvancedFlowFilterEdit();
         UI_EXPECT(!service_controller.advancedFlowFilterSectionEnabled(service_section_id));
-        UI_EXPECT(service_editor->serviceStateChecked(false, known_kind));
+        UI_EXPECT(service_editor->serviceStateChecked(true, unknown_kind));
         service_exclude_row = advanced_filter_row_at(service_editor->serviceTextRows(true), 0);
         UI_EXPECT(service_exclude_row.value(QStringLiteral("text")).toString() == QStringLiteral("api.example"));
         service_controller.setAdvancedFlowFilterSectionEnabled(service_section_id, true);

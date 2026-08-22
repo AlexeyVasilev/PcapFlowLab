@@ -104,6 +104,12 @@ constexpr std::array<AdvancedFilterOptionDescriptor<AdvancedFlowFilterEditorMode
         {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::tib, "TiB", "TiB"},
     }};
 
+constexpr std::array<AdvancedFilterOptionDescriptor<AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit>, 2>
+    kAdvancedFlowFilterPacketSizeUnitOptions {{
+        {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::bytes, "B", "Bytes"},
+        {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::kib, "KiB", "KiB"},
+    }};
+
 constexpr std::array<AdvancedFilterOptionDescriptor<AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit>, 5>
     kAdvancedFlowFilterDurationUnitOptions {{
         {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::microseconds, "us", "Us"},
@@ -391,6 +397,10 @@ bool traffic_metric_uses_byte_units(const TrafficMetricDescriptor& descriptor) n
         descriptor.value_kind == TrafficMetricValueKind::bytes_u32;
 }
 
+bool traffic_metric_uses_packet_size_units(const TrafficMetricDescriptor& descriptor) noexcept {
+    return descriptor.value_kind == TrafficMetricValueKind::bytes_u32;
+}
+
 bool traffic_metric_uses_duration_units(const TrafficMetricDescriptor& descriptor) noexcept {
     return descriptor.value_kind == TrafficMetricValueKind::duration_us;
 }
@@ -404,6 +414,9 @@ QString traffic_metric_static_unit_text(const TrafficMetricDescriptor& descripto
 }
 
 QVariantList traffic_metric_unit_options(const TrafficMetricDescriptor& descriptor) {
+    if (traffic_metric_uses_packet_size_units(descriptor)) {
+        return build_advanced_filter_static_option_list(kAdvancedFlowFilterPacketSizeUnitOptions);
+    }
     if (traffic_metric_uses_byte_units(descriptor)) {
         return build_advanced_filter_static_option_list(kAdvancedFlowFilterByteUnitOptions);
     }
@@ -431,21 +444,40 @@ bool traffic_unit_allowed_for_metric(
     const TrafficMetricDescriptor& descriptor,
     const AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit unit
 ) noexcept {
-    if (traffic_metric_uses_byte_units(descriptor)) {
-        return unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::bytes ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::kib ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::mib ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::gib ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::tib;
-    }
-    if (traffic_metric_uses_duration_units(descriptor)) {
-        return unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::microseconds ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::milliseconds ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::seconds ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::minutes ||
-            unit == AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::hours;
+    const auto options = traffic_metric_unit_options(descriptor);
+    for (const auto& option : options) {
+        if (option.toMap().value(QStringLiteral("value")).toInt() == static_cast<int>(unit)) {
+            return true;
+        }
     }
     return false;
+}
+
+AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit traffic_metric_default_empty_unit(
+    const TrafficMetricDescriptor& descriptor
+) noexcept {
+    using TrafficMetric = AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric;
+    using TrafficUnit = AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit;
+
+    switch (descriptor.metric) {
+    case TrafficMetric::original_bytes:
+    case TrafficMetric::captured_bytes:
+        return TrafficUnit::kib;
+    case TrafficMetric::duration:
+        return TrafficUnit::seconds;
+    case TrafficMetric::max_original_packet_size:
+    case TrafficMetric::max_captured_packet_size:
+        return TrafficUnit::bytes;
+    case TrafficMetric::packet_count:
+    case TrafficMetric::fragmented_packet_count:
+    case TrafficMetric::truncated_packet_count:
+    case TrafficMetric::tcp_syn_count:
+    case TrafficMetric::tcp_fin_count:
+    case TrafficMetric::tcp_rst_count:
+        return TrafficUnit::bytes;
+    }
+
+    return TrafficUnit::bytes;
 }
 
 std::optional<std::uint64_t> exact_scaled_value_for_text(
@@ -464,6 +496,10 @@ AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit choose_largest_exac
         return AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit::bytes;
     }
 
+    if (!minimum.has_value() && !maximum.has_value()) {
+        return traffic_metric_default_empty_unit(descriptor);
+    }
+
     const auto choose_from = [&](const auto& options) {
         for (auto it = options.rbegin(); it != options.rend(); ++it) {
             const auto multiplier = traffic_unit_multiplier(it->value);
@@ -476,6 +512,9 @@ AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit choose_largest_exac
         return options.front().value;
     };
 
+    if (traffic_metric_uses_packet_size_units(descriptor)) {
+        return choose_from(kAdvancedFlowFilterPacketSizeUnitOptions);
+    }
     if (traffic_metric_uses_byte_units(descriptor)) {
         return choose_from(kAdvancedFlowFilterByteUnitOptions);
     }
@@ -559,6 +598,10 @@ bool any_additional_traffic_metric_active(const session_detail::AdvancedFlowFilt
 bool service_kind_is_state(const session_detail::AdvancedFlowFilterServicePredicateKind kind) noexcept {
     return kind == session_detail::AdvancedFlowFilterServicePredicateKind::known ||
         kind == session_detail::AdvancedFlowFilterServicePredicateKind::unknown;
+}
+
+bool service_text_rules_disabled_for_include_state(const bool include_known, const bool include_unknown) noexcept {
+    return include_unknown && !include_known;
 }
 
 QString formatIpv4Address(const std::uint32_t address) {
@@ -1407,6 +1450,27 @@ bool AdvancedFlowFilterEditorModel::serviceStateChecked(const bool exclude, cons
     });
 }
 
+bool AdvancedFlowFilterEditorModel::serviceTextRulesEditable(const bool exclude) const noexcept {
+    if (exclude) {
+        return true;
+    }
+
+    if (document_state_.is_editing()) {
+        return !service_text_rules_disabled_for_include_state(service_include_known_, service_include_unknown_);
+    }
+
+    bool include_known = false;
+    bool include_unknown = false;
+    for (const auto& predicate : document_state_.current_user_visible_document().configured_spec.service.include) {
+        if (predicate.kind == session_detail::AdvancedFlowFilterServicePredicateKind::known) {
+            include_known = true;
+        } else if (predicate.kind == session_detail::AdvancedFlowFilterServicePredicateKind::unknown) {
+            include_unknown = true;
+        }
+    }
+    return !service_text_rules_disabled_for_include_state(include_known, include_unknown);
+}
+
 QVariantList AdvancedFlowFilterEditorModel::serviceOperatorOptions() const {
     return build_advanced_filter_static_option_list(kAdvancedFlowFilterServiceOperatorOptions);
 }
@@ -1549,6 +1613,9 @@ void AdvancedFlowFilterEditorModel::setServiceStateChecked(const bool exclude, c
 
 void AdvancedFlowFilterEditorModel::addServiceTextRow(const bool exclude) {
     ensureEditingInitialized();
+    if (!exclude && !serviceTextRulesEditable(false)) {
+        return;
+    }
     auto& rows = exclude ? service_exclude_text_rows_ : service_include_text_rows_;
     rows.push_back({});
     (void)synchronizeDraftSections();
@@ -1569,6 +1636,9 @@ void AdvancedFlowFilterEditorModel::removeServiceTextRow(const bool exclude, con
 
 void AdvancedFlowFilterEditorModel::setServiceTextRowKind(const bool exclude, const int row, const int kind) {
     ensureEditingInitialized();
+    if (!exclude && !serviceTextRulesEditable(false)) {
+        return;
+    }
     auto& rows = exclude ? service_exclude_text_rows_ : service_include_text_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -1592,6 +1662,9 @@ void AdvancedFlowFilterEditorModel::setServiceTextRowCaseSensitive(
     const bool caseSensitive
 ) {
     ensureEditingInitialized();
+    if (!exclude && !serviceTextRulesEditable(false)) {
+        return;
+    }
     auto& rows = exclude ? service_exclude_text_rows_ : service_include_text_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
@@ -1604,6 +1677,9 @@ void AdvancedFlowFilterEditorModel::setServiceTextRowCaseSensitive(
 
 void AdvancedFlowFilterEditorModel::setServiceTextRowText(const bool exclude, const int row, const QString& text) {
     ensureEditingInitialized();
+    if (!exclude && !serviceTextRulesEditable(false)) {
+        return;
+    }
     auto& rows = exclude ? service_exclude_text_rows_ : service_include_text_rows_;
     if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
         return;
