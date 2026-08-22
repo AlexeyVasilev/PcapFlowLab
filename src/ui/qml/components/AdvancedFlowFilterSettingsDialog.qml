@@ -17,13 +17,15 @@ Dialog {
     readonly property color sectionBorderColor: "#dbe4f0"
     readonly property color rowBorderColor: "#e2e8f0"
     readonly property color rowSurfaceColor: palette.base
-    readonly property color includeRegionColor: Qt.tint(palette.base, Qt.rgba(0.20, 0.39, 0.72, 0.09))
-    readonly property color includeRegionBorderColor: Qt.tint(palette.base, Qt.rgba(0.20, 0.39, 0.72, 0.20))
+    readonly property color includeRegionColor: Qt.tint(palette.base, Qt.rgba(0.20, 0.45, 0.88, 0.14))
+    readonly property color includeRegionBorderColor: Qt.tint(palette.base, Qt.rgba(0.20, 0.45, 0.88, 0.26))
     readonly property color excludeRegionColor: Qt.tint(palette.base, Qt.rgba(0.74, 0.48, 0.12, 0.10))
     readonly property color excludeRegionBorderColor: Qt.tint(palette.base, Qt.rgba(0.74, 0.48, 0.12, 0.23))
     readonly property color warningTextColor: "#8a4d00"
     readonly property color warningIconFillColor: "#fff4db"
     readonly property color warningIconBorderColor: "#f0d08b"
+    readonly property int textButtonHorizontalPadding: 12
+    readonly property int compactTextButtonHorizontalPadding: 10
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
     readonly property int trafficSectionId: 8
@@ -133,6 +135,25 @@ Dialog {
         initializeDialogState()
     }
 
+    component FilterTextButton: Button {
+        leftPadding: root.textButtonHorizontalPadding
+        rightPadding: root.textButtonHorizontalPadding
+        implicitWidth: Math.max(
+            implicitBackgroundWidth + leftInset + rightInset,
+            implicitContentWidth + leftPadding + rightPadding
+        )
+    }
+
+    component FilterFlatTextButton: Button {
+        flat: true
+        leftPadding: root.compactTextButtonHorizontalPadding
+        rightPadding: root.compactTextButtonHorizontalPadding
+        implicitWidth: Math.max(
+            implicitBackgroundWidth + leftInset + rightInset,
+            implicitContentWidth + leftPadding + rightPadding
+        )
+    }
+
     width: 920
     height: 700
     modal: true
@@ -172,14 +193,14 @@ Dialog {
                 Layout.fillWidth: true
                 spacing: 8
 
-                Button {
+                FilterTextButton {
                     objectName: "advancedFlowFilterOpenFilterButton"
                     text: "Open filter..."
                     enabled: root.controller !== null
                     onClicked: root.controller.openAdvancedFlowFilterFile()
                 }
 
-                Button {
+                FilterTextButton {
                     objectName: "advancedFlowFilterClearUnsavedChangesButton"
                     text: "Clear unsaved changes"
                     enabled: root.editor ? root.editor.draftClearUnsavedChangesAvailable : false
@@ -194,14 +215,14 @@ Dialog {
                     Layout.fillWidth: true
                 }
 
-                Button {
+                FilterTextButton {
                     objectName: "advancedFlowFilterSaveButton"
                     text: "Save"
                     enabled: root.controller !== null
                     onClicked: root.controller.saveAdvancedFlowFilterFile()
                 }
 
-                Button {
+                FilterTextButton {
                     objectName: "advancedFlowFilterSaveAsButton"
                     text: "Save As..."
                     enabled: root.controller !== null
@@ -395,12 +416,11 @@ Dialog {
                                         Layout.fillWidth: true
                                     }
 
-                                    Button {
+                                    FilterFlatTextButton {
                                         objectName: "advancedFlowFilter"
                                             + finiteSectionCard.sectionObjectNamePrefix
                                             + "ExclusionsToggleButton"
                                         text: "Exclusions"
-                                        flat: true
                                         padding: 2
                                         onClicked: finiteSectionCard.exclusionsExpanded = true
                                     }
@@ -638,7 +658,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterPortsAddIncludeButton"
                                     text: "+ Add port"
                                     onClicked: {
@@ -657,10 +677,9 @@ Dialog {
                                     Layout.fillWidth: true
                                 }
 
-                                Button {
+                                FilterFlatTextButton {
                                     objectName: "advancedFlowFilterPortsExclusionsToggleButton"
                                     text: "Exclusions"
-                                    flat: true
                                     padding: 2
                                     onClicked: portsSection.exclusionsExpanded = true
                                 }
@@ -780,7 +799,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterPortsAddExcludeButton"
                                     text: "+ Add port"
                                     onClicked: {
@@ -973,7 +992,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterIpAddressesAddIncludeButton"
                                     text: "+ Add address"
                                     onClicked: {
@@ -992,10 +1011,9 @@ Dialog {
                                     Layout.fillWidth: true
                                 }
 
-                                Button {
+                                FilterFlatTextButton {
                                     objectName: "advancedFlowFilterIpAddressesExclusionsToggleButton"
                                     text: "Exclusions"
-                                    flat: true
                                     padding: 2
                                     onClicked: ipAddressesSection.exclusionsExpanded = true
                                 }
@@ -1115,7 +1133,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterIpAddressesAddExcludeButton"
                                     text: "+ Add address"
                                     onClicked: {
@@ -1298,7 +1316,7 @@ Dialog {
                                         }
                             }
 
-                            Button {
+                            FilterTextButton {
                                         objectName: "advancedFlowFilterTrafficAdditionalToggleButton"
                                         text: trafficSection.additionalExpanded
                                             ? "Hide additional traffic filters"
@@ -1598,7 +1616,7 @@ Dialog {
                                         }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                         objectName: "advancedFlowFilterServiceAddIncludeRuleButton"
                                         text: "+ Add service rule"
                                         onClicked: {
@@ -1617,10 +1635,9 @@ Dialog {
                                     Layout.fillWidth: true
                                 }
 
-                                Button {
+                                FilterFlatTextButton {
                                     objectName: "advancedFlowFilterServiceExclusionsToggleButton"
                                     text: "Exclusions"
-                                    flat: true
                                     padding: 2
                                     onClicked: serviceSection.exclusionsExpanded = true
                                 }
@@ -1747,7 +1764,7 @@ Dialog {
                                             }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                             objectName: "advancedFlowFilterServiceAddExcludeRuleButton"
                                             text: "+ Add service rule"
                                             onClicked: {
@@ -1910,7 +1927,7 @@ Dialog {
                                                 }
                                             }
 
-                                            Button {
+                                            FilterTextButton {
                                                 objectName: "advancedFlowFilterProtocolPathIncludeRow" + modelData.row + "EditButton"
                                                 text: "Edit"
                                                 enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
@@ -1931,7 +1948,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterProtocolPathAddIncludeButton"
                                     text: "+ Add path"
                                     enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
@@ -1947,10 +1964,9 @@ Dialog {
                                     Layout.fillWidth: true
                                 }
 
-                                Button {
+                                FilterFlatTextButton {
                                     objectName: "advancedFlowFilterProtocolPathExclusionsToggleButton"
                                     text: "Exclusions"
-                                    flat: true
                                     padding: 2
                                     onClicked: protocolPathSection.exclusionsExpanded = true
                                 }
@@ -2031,7 +2047,7 @@ Dialog {
                                                 }
                                             }
 
-                                            Button {
+                                            FilterTextButton {
                                                 objectName: "advancedFlowFilterProtocolPathExcludeRow" + modelData.row + "EditButton"
                                                 text: "Edit"
                                                 enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
@@ -2052,7 +2068,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterProtocolPathAddExcludeButton"
                                     text: "+ Add path"
                                     enabled: root.protocolPathSelector ? root.protocolPathSelector.hasCapture : false
@@ -2253,7 +2269,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterContainsLayerAddIncludeButton"
                                     text: "+ Add layer"
                                     onClicked: {
@@ -2272,10 +2288,9 @@ Dialog {
                                     Layout.fillWidth: true
                                 }
 
-                                Button {
+                                FilterFlatTextButton {
                                     objectName: "advancedFlowFilterContainsLayerExclusionsToggleButton"
                                     text: "Exclusions"
-                                    flat: true
                                     padding: 2
                                     onClicked: containsLayerSection.exclusionsExpanded = true
                                 }
@@ -2401,7 +2416,7 @@ Dialog {
                                     }
                                 }
 
-                                Button {
+                                FilterTextButton {
                                     objectName: "advancedFlowFilterContainsLayerAddExcludeButton"
                                     text: "+ Add layer"
                                     onClicked: {
@@ -2445,7 +2460,7 @@ Dialog {
         contentItem: RowLayout {
             spacing: 8
 
-            Button {
+            FilterTextButton {
                 objectName: "advancedFlowFilterClearAllButton"
                 text: "Clear all"
                 enabled: root.editor ? root.editor.draftClearAllAvailable : false
@@ -2460,13 +2475,13 @@ Dialog {
                 Layout.fillWidth: true
             }
 
-            Button {
+            FilterTextButton {
                 objectName: "advancedFlowFilterCancelButton"
                 text: "Cancel"
                 onClicked: root.close()
             }
 
-            Button {
+            FilterTextButton {
                 objectName: "advancedFlowFilterApplyButton"
                 text: "Apply"
                 highlighted: true

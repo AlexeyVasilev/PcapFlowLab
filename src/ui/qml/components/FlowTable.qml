@@ -61,6 +61,16 @@ Frame {
         + root.tableRowSpacing * (root.flowTableColumnCount - 1)
     readonly property int flowTableContentWidth: root.flowTableBaseWidth + flowListView.rightGutter
     readonly property bool advancedFilterModeActive: root.flowFilterMode === 1
+    readonly property int filterToolbarButtonHorizontalPadding: 12
+
+    component FilterToolbarButton: Button {
+        leftPadding: root.filterToolbarButtonHorizontalPadding
+        rightPadding: root.filterToolbarButtonHorizontalPadding
+        implicitWidth: Math.max(
+            implicitBackgroundWidth + leftInset + rightInset,
+            implicitContentWidth + leftPadding + rightPadding
+        )
+    }
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
@@ -206,14 +216,14 @@ Frame {
                 }
             }
 
-            Button {
+            FilterToolbarButton {
                 objectName: "useAdvancedFlowFilterButton"
                 visible: !root.advancedFilterModeActive
                 text: "Use advanced filter"
                 onClicked: root.useAdvancedFilterRequested()
             }
 
-            Button {
+            FilterToolbarButton {
                 objectName: "flowTextFilterClearButton"
                 visible: !root.advancedFilterModeActive
                 text: "Clear"
@@ -221,7 +231,7 @@ Frame {
                 onClicked: root.clearTextFilterRequested()
             }
 
-            Button {
+            FilterToolbarButton {
                 objectName: "advancedFlowFilterSettingsButton"
                 visible: root.advancedFilterModeActive
                 text: "Settings"
@@ -251,14 +261,14 @@ Frame {
                 Layout.fillWidth: true
             }
 
-            Button {
+            FilterToolbarButton {
                 objectName: "useSimpleFlowFilterButton"
                 visible: root.advancedFilterModeActive
                 text: "Use simple filter"
                 onClicked: root.useSimpleFilterRequested()
             }
 
-            Button {
+            FilterToolbarButton {
                 objectName: "advancedFlowFilterClearButton"
                 visible: root.advancedFilterModeActive
                 text: "Clear"

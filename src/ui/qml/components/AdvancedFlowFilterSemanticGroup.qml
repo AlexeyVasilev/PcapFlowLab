@@ -13,6 +13,7 @@ Rectangle {
     property string actionText: ""
     property string actionObjectName: ""
     property bool actionVisible: false
+    property int actionHorizontalPadding: 10
 
     signal actionTriggered()
 
@@ -51,6 +52,12 @@ Rectangle {
                 text: root.actionText
                 flat: true
                 padding: 2
+                leftPadding: root.actionHorizontalPadding
+                rightPadding: root.actionHorizontalPadding
+                implicitWidth: Math.max(
+                    implicitBackgroundWidth + leftInset + rightInset,
+                    implicitContentWidth + leftPadding + rightPadding
+                )
                 onClicked: root.actionTriggered()
             }
         }

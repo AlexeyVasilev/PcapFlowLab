@@ -25,18 +25,18 @@ Rectangle {
     radius: 8
     color: "white"
     border.color: "#dbe4f0"
-    implicitHeight: cardLayout.implicitHeight + 20
+    implicitHeight: cardLayout.implicitHeight + 14
 
     ColumnLayout {
         id: cardLayout
-        x: 10
-        y: 10
-        width: parent.width - 20
-        spacing: 6
+        x: 8
+        y: 7
+        width: parent.width - 16
+        spacing: 3
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: 5
 
             ToolButton {
                 objectName: collapseButtonObjectName
@@ -60,7 +60,7 @@ Rectangle {
                 background: Item {}
 
                 contentItem: RowLayout {
-                    spacing: 8
+                    spacing: 6
 
                     Label {
                         text: root.title
@@ -101,7 +101,7 @@ Rectangle {
                 id: contentColumn
                 anchors.left: parent.left
                 anchors.right: parent.right
-                spacing: 7
+                spacing: 6
                 enabled: root.contentEnabled
                 opacity: root.contentEnabled ? 1.0 : 0.55
             }

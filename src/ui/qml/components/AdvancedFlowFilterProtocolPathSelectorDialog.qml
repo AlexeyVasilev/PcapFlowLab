@@ -8,11 +8,21 @@ Dialog {
 
     property var selector: null
     signal selectRequested()
+    readonly property int textButtonHorizontalPadding: 12
 
     function tryAcceptSelection() {
         if (root.selector && root.selector.selectionAvailable) {
             root.selectRequested()
         }
+    }
+
+    component SelectorTextButton: Button {
+        leftPadding: root.textButtonHorizontalPadding
+        rightPadding: root.textButtonHorizontalPadding
+        implicitWidth: Math.max(
+            implicitBackgroundWidth + leftInset + rightInset,
+            implicitContentWidth + leftPadding + rightPadding
+        )
     }
 
     readonly property real tablePadding: 10
@@ -77,7 +87,7 @@ Dialog {
                         id: selectorModeButtonGroup
                     }
 
-                    Button {
+                    SelectorTextButton {
                         objectName: "advancedFlowFilterProtocolPathKindOverviewModeButton"
                         text: "Kind overview"
                         checkable: true
@@ -91,7 +101,7 @@ Dialog {
                         }
                     }
 
-                    Button {
+                    SelectorTextButton {
                         objectName: "advancedFlowFilterProtocolPathIdentityTreeModeButton"
                         text: "Identity tree"
                         checkable: true
@@ -105,7 +115,7 @@ Dialog {
                         }
                     }
 
-                    Button {
+                    SelectorTextButton {
                         objectName: "advancedFlowFilterProtocolPathTerminalPathsModeButton"
                         text: "Terminal paths"
                         checkable: true
@@ -309,13 +319,13 @@ Dialog {
                 Layout.fillWidth: true
             }
 
-            Button {
+            SelectorTextButton {
                 objectName: "advancedFlowFilterProtocolPathSelectorCancelButton"
                 text: "Cancel"
                 onClicked: root.close()
             }
 
-            Button {
+            SelectorTextButton {
                 objectName: "advancedFlowFilterProtocolPathSelectorSelectButton"
                 text: "Select"
                 highlighted: true
