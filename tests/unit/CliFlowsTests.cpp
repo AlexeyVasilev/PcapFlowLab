@@ -1011,6 +1011,27 @@ void expect_flows_runtime_behavior() {
     }
 
     {
+        const auto oversized_filter_path = write_temp_text_file(
+            "pfl_cli_flows_oversized.filter",
+            std::string(session_detail::kAdvancedFlowFilterMaxFileBytes + 1U, 'a')
+        );
+        const std::vector<std::string> args {
+            "flows",
+            "definitely_missing_capture.pcap",
+            "--adv-filter",
+            oversized_filter_path.string(),
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.handled);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(result.stdout_text.empty());
+        PFL_EXPECT(contains_text(result.stderr_text, "Advanced filter file is too large:"));
+        PFL_EXPECT(contains_text(result.stderr_text, "(maximum 1 MiB)."));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Invalid advanced flow filter file:"));
+        PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input:"));
+    }
+
+    {
         const auto compile_invalid_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_compile_invalid.filter",
             "format_version = 1\n"
