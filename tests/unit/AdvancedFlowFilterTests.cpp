@@ -503,6 +503,19 @@ void run_protocol_and_candidate_scope_tests() {
     {
         const AdvancedFlowFilterSpec spec {};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        const std::vector<std::size_t> candidate_scope {};
+        const auto result = session_detail::evaluate_advanced_flow_filter(
+            connections,
+            filter,
+            std::span<const std::size_t>(candidate_scope)
+        );
+        PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
+        expect_indices_equal(result.matching_flow_indices, {});
+    }
+
+    {
+        const AdvancedFlowFilterSpec spec {};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
         const std::vector<std::size_t> candidate_scope {0U, 99U};
         const auto result = session_detail::evaluate_advanced_flow_filter(
             connections,
@@ -511,6 +524,35 @@ void run_protocol_and_candidate_scope_tests() {
         );
         PFL_EXPECT(result.status == AdvancedFlowFilterEvaluationStatus::invalid_candidate_index);
         PFL_EXPECT(result.invalid_candidate_index == 99U);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.flow_protocol.include = {ProtocolId::udp};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        const std::vector<std::size_t> candidate_scope {7U};
+        const auto result = session_detail::evaluate_advanced_flow_filter(
+            connections,
+            filter,
+            std::span<const std::size_t>(candidate_scope)
+        );
+        PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
+        expect_indices_equal(result.matching_flow_indices, {7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.flow_protocol.include = {ProtocolId::udp};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        const std::vector<std::size_t> candidate_scope {6U, 3U, 6U, 7U, 4U};
+        const auto result = session_detail::evaluate_advanced_flow_filter(
+            connections,
+            filter,
+            std::span<const std::size_t>(candidate_scope)
+        );
+        PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
+        expect_indices_equal(result.matching_flow_indices, {3U, 4U, 6U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 6U, 7U});
     }
 
     {
@@ -800,6 +842,28 @@ void run_directionality_and_service_tests() {
         spec.flow_protocol.include = {ProtocolId::udp};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
         expect_indices_equal(evaluate_matching_indices(connections, filter), {3U, 4U, 6U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.directionality.include = {static_cast<AdvancedFlowFilterDirectionality>(2)};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_directionality_predicate);
+        PFL_REQUIRE(compile_result.issue.has_value());
+        PFL_EXPECT(compile_result.issue->category == "directionality");
+        PFL_EXPECT(compile_result.issue->predicate_index == 0U);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.directionality.exclude = {static_cast<AdvancedFlowFilterDirectionality>(2)};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_directionality_predicate);
+        PFL_REQUIRE(compile_result.issue.has_value());
+        PFL_EXPECT(compile_result.issue->category == "directionality");
+        PFL_EXPECT(compile_result.issue->predicate_index == 0U);
     }
 
     {
@@ -1520,6 +1584,50 @@ void run_text_format_tests() {
         PFL_EXPECT(formatted.status == AdvancedFlowFilterTextFormatStatus::unrepresentable_spec);
         PFL_REQUIRE(formatted.issue.has_value());
         PFL_EXPECT(formatted.issue->category == "protocol_path");
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.ports.include = {{
+            .scope = AdvancedFlowFilterPortScope::either_endpoint,
+            .range = {.first = 9000U, .last = 8000U},
+        }};
+
+        const auto formatted = session_detail::format_advanced_flow_filter_text(spec);
+        PFL_EXPECT(formatted.status == AdvancedFlowFilterTextFormatStatus::unrepresentable_spec);
+        PFL_REQUIRE(formatted.issue.has_value());
+        PFL_EXPECT(formatted.issue->category == "ports");
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.ports.exclude = {{
+            .scope = AdvancedFlowFilterPortScope::either_endpoint,
+            .range = {.first = 9000U, .last = 8000U},
+        }};
+
+        const auto formatted = session_detail::format_advanced_flow_filter_text(spec);
+        PFL_EXPECT(formatted.status == AdvancedFlowFilterTextFormatStatus::unrepresentable_spec);
+        PFL_REQUIRE(formatted.issue.has_value());
+        PFL_EXPECT(formatted.issue->category == "ports");
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.ports.include = {{
+            .scope = AdvancedFlowFilterPortScope::endpoint_a,
+            .range = {.first = 443U, .last = 443U},
+        }};
+        expect_round_trip_stable(spec);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.ports.exclude = {{
+            .scope = AdvancedFlowFilterPortScope::endpoint_b,
+            .range = {.first = 8000U, .last = 9000U},
+        }};
+        expect_round_trip_stable(spec);
     }
 }
 

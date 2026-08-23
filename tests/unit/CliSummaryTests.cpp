@@ -1138,7 +1138,7 @@ void expect_index_output_contracts() {
         same_path_options.out_index_path = capture_path;
         const auto same_path_result = cli::execute_summary_command(same_path_options);
         PFL_EXPECT(same_path_result.exit_code == 1);
-        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite an input or configuration path"));
     }
 }
 
@@ -1217,7 +1217,7 @@ void expect_protocol_path_export_contracts() {
         same_path_options.out_protocol_path_tree_path = capture_path;
         const auto same_path_result = cli::execute_summary_command(same_path_options);
         PFL_EXPECT(same_path_result.exit_code == 1);
-        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite an input or configuration path"));
     }
 }
 
@@ -1327,7 +1327,7 @@ void expect_flow_list_export_contracts() {
         same_path_options.out_flows_list_path = capture_path;
         const auto same_path_result = cli::execute_summary_command(same_path_options);
         PFL_EXPECT(same_path_result.exit_code == 1);
-        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(same_path_result.stderr_text, "cannot overwrite an input or configuration path"));
     }
 
     {

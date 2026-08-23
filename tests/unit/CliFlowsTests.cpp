@@ -1359,7 +1359,7 @@ void expect_preview_and_csv_behavior() {
         };
         const auto result = invoke_cli(args);
         PFL_EXPECT(result.exit_code == 1);
-        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite an input or configuration path"));
     }
 
     {
@@ -1379,7 +1379,7 @@ void expect_preview_and_csv_behavior() {
         };
         const auto result = invoke_cli(args);
         PFL_EXPECT(result.exit_code == 1);
-        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite an input or configuration path"));
     }
 
     {
@@ -1400,7 +1400,7 @@ void expect_preview_and_csv_behavior() {
         };
         const auto result = invoke_cli(args);
         PFL_EXPECT(result.exit_code == 1);
-        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite an input or configuration path"));
         PFL_EXPECT(read_text_file_lines(settings_path) == original_settings_lines);
     }
 

@@ -1971,7 +1971,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = session_detail::derive_original_transport_payload_length_from_headers(session, packet),
+            .transport_payload_length = metadata.original_transport_payload_length,
             .tcp_flags_text = metadata.tcp_flags.has_value()
                 ? session_detail::format_tcp_flags_text(*metadata.tcp_flags)
                 : packet_row.tcp_flags_text,
