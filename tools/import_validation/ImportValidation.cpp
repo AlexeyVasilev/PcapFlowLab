@@ -142,6 +142,13 @@ struct MismatchRecorder {
     const PacketRef& packet,
     const PacketImportMetadata& metadata = {}
 ) {
+    const auto format_optional_u32 = [](const std::optional<std::uint32_t>& value) {
+        return value.has_value() ? std::to_string(*value) : std::string {"unknown"};
+    };
+    const auto format_optional_u8 = [](const std::optional<std::uint8_t>& value) {
+        return value.has_value() ? std::to_string(static_cast<unsigned int>(*value)) : std::string {"unknown"};
+    };
+
     std::ostringstream builder {};
     builder
         << "{index=" << packet.packet_index
@@ -150,8 +157,8 @@ struct MismatchRecorder {
         << ", caplen=" << packet.captured_length
         << ", origlen=" << packet.original_length
         << ", ts=" << packet.ts_sec << '.' << packet.ts_usec
-        << ", payload=" << metadata.transport_payload_length.value_or(0U)
-        << ", tcp_flags=" << static_cast<unsigned int>(metadata.tcp_flags.value_or(0U))
+        << ", payload=" << format_optional_u32(metadata.transport_payload_length)
+        << ", tcp_flags=" << format_optional_u8(metadata.tcp_flags)
         << ", fragmented=" << (metadata.is_ip_fragmented ? "true" : "false")
         << '}';
     return builder.str();
