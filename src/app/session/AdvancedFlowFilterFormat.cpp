@@ -1383,6 +1383,10 @@ std::string format_port_range_value(const AdvancedFlowFilterPortRange& range) {
     return std::to_string(range.first) + "-" + std::to_string(range.last);
 }
 
+bool is_representable_port_range(const AdvancedFlowFilterPortRange& range) noexcept {
+    return range.first <= range.last;
+}
+
 std::string format_byte_quantity_value(const std::uint64_t value) {
     struct Unit {
         const char* suffix;
@@ -2506,12 +2510,18 @@ AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const Advanc
         if (scope.empty()) {
             return make_format_error("ports", "Spec contains an unrepresentable port-scope predicate.");
         }
+        if (!is_representable_port_range(predicate.range)) {
+            return make_format_error("ports", "Spec contains an unrepresentable port range.");
+        }
         append_line("port." + scope + ".include", format_port_range_value(predicate.range));
     }
     for (const auto& predicate : spec.ports.exclude) {
         const auto scope = format_port_scope_token(predicate.scope);
         if (scope.empty()) {
             return make_format_error("ports", "Spec contains an unrepresentable port-scope predicate.");
+        }
+        if (!is_representable_port_range(predicate.range)) {
+            return make_format_error("ports", "Spec contains an unrepresentable port range.");
         }
         append_line("port." + scope + ".exclude", format_port_range_value(predicate.range));
     }

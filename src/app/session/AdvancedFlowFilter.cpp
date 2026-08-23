@@ -402,6 +402,16 @@ bool matches_directionality_value(
     }
 }
 
+bool is_valid_directionality_value(const AdvancedFlowFilterDirectionality value) noexcept {
+    switch (value) {
+    case AdvancedFlowFilterDirectionality::unidirectional:
+    case AdvancedFlowFilterDirectionality::bidirectional:
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool matches_service_text_predicate(
     const std::string_view service_hint,
     const CompiledAdvancedFlowFilterServicePredicate& predicate
@@ -1064,20 +1074,38 @@ AdvancedFlowFilterCompileResult compile_aggregate_criteria(
     return {};
 }
 
-void compile_directionality_criteria(
+AdvancedFlowFilterCompileResult compile_directionality_criteria(
     const AdvancedFlowFilterDirectionalityCriteria& spec,
     CompiledAdvancedFlowFilterDirectionalityCriteria& compiled
 ) {
     compiled.has_include_predicates = !spec.include.empty();
     compiled.has_exclude_predicates = !spec.exclude.empty();
 
-    for (const auto value : spec.include) {
+    for (std::size_t index = 0; index < spec.include.size(); ++index) {
+        const auto value = spec.include[index];
+        if (!is_valid_directionality_value(value)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_directionality_predicate,
+                "directionality",
+                index
+            );
+        }
         compiled.include_membership[static_cast<std::size_t>(value)] = true;
     }
 
-    for (const auto value : spec.exclude) {
+    for (std::size_t index = 0; index < spec.exclude.size(); ++index) {
+        const auto value = spec.exclude[index];
+        if (!is_valid_directionality_value(value)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_directionality_predicate,
+                "directionality",
+                index
+            );
+        }
         compiled.exclude_membership[static_cast<std::size_t>(value)] = true;
     }
+
+    return {};
 }
 
 AdvancedFlowFilterCompileResult compile_address_criteria(
@@ -1350,7 +1378,10 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
         return error;
     }
 
-    compile_directionality_criteria(spec.directionality, result.filter.directionality);
+    if (const auto error = compile_directionality_criteria(spec.directionality, result.filter.directionality);
+        error.status != AdvancedFlowFilterCompileStatus::ok) {
+        return error;
+    }
 
     if (const auto error = compile_address_criteria(spec.addresses, result.filter.addresses);
         error.status != AdvancedFlowFilterCompileStatus::ok) {
@@ -1372,9 +1403,7 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
 ) {
     AdvancedFlowFilterResult result {};
 
-    std::vector<std::uint8_t> candidate_membership {};
     if (candidate_flow_indices.has_value()) {
-        candidate_membership.assign(connections.size(), 0U);
         for (const auto index : *candidate_flow_indices) {
             if (index >= connections.size()) {
                 result.status = AdvancedFlowFilterEvaluationStatus::invalid_candidate_index;
@@ -1382,17 +1411,74 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
                 result.matching_flow_indices.clear();
                 return result;
             }
-            candidate_membership[index] = 1U;
         }
+
+        if (candidate_flow_indices->empty()) {
+            return result;
+        }
+
+        std::vector<std::size_t> candidate_indices(candidate_flow_indices->begin(), candidate_flow_indices->end());
+        std::sort(candidate_indices.begin(), candidate_indices.end());
+        candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+        result.matching_flow_indices.reserve(candidate_indices.size());
+
+        for (const auto index : candidate_indices) {
+            const auto& connection = connections[index];
+
+            if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(connection))) {
+                continue;
+            }
+
+            if (!matches_protocol_membership(filter.flow_protocol, protocol_id(connection))) {
+                continue;
+            }
+
+            AnalysisSettings hint_settings {};
+            hint_settings.use_possible_tls_quic = filter.detected_protocol.use_possible_tls_quic;
+            if (!matches_detected_protocol_membership(
+                    filter.detected_protocol,
+                    effective_protocol_hint(connection, hint_settings))) {
+                continue;
+            }
+
+            if (!matches_tls_version_criteria(filter.tls_version, connection)) {
+                continue;
+            }
+
+            if (!matches_quic_version_criteria(filter.quic_version, connection)) {
+                continue;
+            }
+
+            const auto [endpoint_a_port, endpoint_b_port] = oriented_ports(connection);
+            if (!matches_port_criteria(filter.ports, endpoint_a_port, endpoint_b_port)) {
+                continue;
+            }
+
+            if (!matches_aggregate_criteria(filter.aggregate, connection)) {
+                continue;
+            }
+
+            if (!matches_directionality_criteria(filter.directionality, connection)) {
+                continue;
+            }
+
+            if (!matches_address_criteria(filter.addresses, connection)) {
+                continue;
+            }
+
+            if (!matches_service_criteria(filter.service, service_hint_value(connection))) {
+                continue;
+            }
+
+            result.matching_flow_indices.push_back(index);
+        }
+
+        return result;
     }
 
-    result.matching_flow_indices.reserve(candidate_flow_indices.has_value() ? candidate_flow_indices->size() : connections.size());
+    result.matching_flow_indices.reserve(connections.size());
 
     for (std::size_t index = 0; index < connections.size(); ++index) {
-        if (candidate_flow_indices.has_value() && candidate_membership[index] == 0U) {
-            continue;
-        }
-
         const auto& connection = connections[index];
 
         if (!matches_address_family_criteria(filter.address_family, connection.family)) {

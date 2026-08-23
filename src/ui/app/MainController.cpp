@@ -654,13 +654,6 @@ std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
     return static_cast<std::uint64_t>(value);
 }
 
-std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
-    const CaptureSession& session,
-    const PacketRef& packet
-) {
-    return session_detail::derive_original_transport_payload_length_from_headers(session, packet);
-}
-
 TransportPayloadLengths resolve_transport_payload_lengths(
     const PacketDetails& details,
     std::span<const std::uint8_t> packet_bytes,
@@ -726,7 +719,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = derive_original_transport_payload_length_from_headers(session, packet),
+            .transport_payload_length = metadata.original_transport_payload_length,
             .tcp_flags_text = metadata.tcp_flags.has_value()
                 ? session_detail::format_tcp_flags_text(*metadata.tcp_flags)
                 : packet_row.tcp_flags_text,

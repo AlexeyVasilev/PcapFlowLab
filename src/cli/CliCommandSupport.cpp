@@ -333,7 +333,7 @@ CliOutputPreflightResult preflight_output_targets(
         for (const auto& normalized_input_path : normalized_protected_input_paths) {
             if (!normalized_input_path.empty() && normalized_output_path == normalized_input_path) {
                 result.ok = false;
-                result.error_text = std::string {output.label} + " cannot overwrite the input path.";
+                result.error_text = std::string {output.label} + " cannot overwrite an input or configuration path.";
                 return result;
             }
         }
