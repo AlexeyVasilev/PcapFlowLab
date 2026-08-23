@@ -14,6 +14,7 @@
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionQuicPresentation.h"
@@ -319,6 +320,10 @@ public:
     void prepare_selected_flow_packet_cache(std::size_t flow_index, std::size_t max_packets_to_scan) const;
     void clear_selected_flow_packet_cache() noexcept;
     [[nodiscard]] std::optional<SelectedFlowPacketCacheInfo> selected_flow_packet_cache_info() const noexcept;
+    [[nodiscard]] std::optional<session_detail::TransientPacketDerivedMetadata> selected_flow_cached_packet_metadata(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const noexcept;
     [[nodiscard]] std::optional<SelectedFlowStreamContextInfo> selected_flow_stream_context_info() const noexcept;
     [[nodiscard]] bool selected_flow_packet_cache_limit_reached() const noexcept;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_cached_packet_number(
@@ -439,6 +444,7 @@ private:
         std::size_t cache_length {0};
         std::uint32_t payload_length {0};
         bool payload_cached {false};
+        session_detail::TransientPacketDerivedMetadata metadata {};
     };
 
     struct SelectedFlowPacketCache {

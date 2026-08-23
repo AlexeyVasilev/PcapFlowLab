@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/domain/CaptureState.h"
@@ -86,6 +87,8 @@ bool write_capture_index_stable_header(
     std::span<const std::uint8_t> extension_bytes = {}
 );
 bool read_capture_index_stable_header(std::istream& stream, CaptureIndexStableHeader& header);
+[[nodiscard]] std::string filesystem_path_to_generic_utf8(const std::filesystem::path& path);
+[[nodiscard]] std::filesystem::path filesystem_path_from_generic_utf8(std::string_view utf8_path);
 bool write_capture_index_stable_section_header(
     std::ostream& stream,
     const CaptureIndexStableSectionHeader& header

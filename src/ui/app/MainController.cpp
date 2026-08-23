@@ -526,8 +526,12 @@ TransportPayloadLengths resolve_transport_payload_lengths(
     };
 }
 
-void apply_transient_packet_row_metadata(CaptureSession& session, std::vector<PacketRow>& rows) {
-    session_detail::populate_transient_packet_row_metadata(session, rows);
+void apply_transient_packet_row_metadata(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    std::vector<PacketRow>& rows
+) {
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
 }
 
 std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
@@ -5670,7 +5674,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     if (!rows.empty()) {
         session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
         prepareSelectedFlowTcpContributionState(offset + rows.size());
-        apply_transient_packet_row_metadata(session_, rows);
+        apply_transient_packet_row_metadata(session_, static_cast<std::size_t>(selected_flow_index_), rows);
     }
 
     for (auto& packet_row : rows) {

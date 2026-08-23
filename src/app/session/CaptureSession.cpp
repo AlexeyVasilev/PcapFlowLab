@@ -3666,6 +3666,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .cache_length = additional_bytes,
             .payload_length = static_cast<std::uint32_t>(cached_payload_length),
             .payload_cached = payload_cached,
+            .metadata = metadata,
         });
 
         cache.cached_packet_window_count = static_cast<std::size_t>(window_packet.flow_local_packet_number);
@@ -3779,6 +3780,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .cache_length = additional_bytes,
             .payload_length = static_cast<std::uint32_t>(cached_payload_length),
             .payload_cached = payload_cached,
+            .metadata = metadata,
         });
 
         cache.cached_packet_window_count = static_cast<std::size_t>(window_packet.flow_local_packet_number);
@@ -3858,6 +3860,18 @@ std::optional<SelectedFlowPacketCacheInfo> CaptureSession::selected_flow_packet_
         .limit_reached = cache.limit_reached,
         .window_fully_cached = cache.window_fully_cached,
     };
+}
+
+std::optional<session_detail::TransientPacketDerivedMetadata> CaptureSession::selected_flow_cached_packet_metadata(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const noexcept {
+    const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet_index);
+    if (entry == nullptr) {
+        return std::nullopt;
+    }
+
+    return entry->metadata;
 }
 
 std::optional<SelectedFlowStreamContextInfo> CaptureSession::selected_flow_stream_context_info() const noexcept {

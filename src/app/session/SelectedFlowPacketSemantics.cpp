@@ -69,6 +69,20 @@ std::optional<std::uint32_t> derive_original_transport_payload_length_from_row_m
     );
 }
 
+void apply_transient_metadata_to_row(
+    PacketRow& row,
+    const TransientPacketDerivedMetadata& metadata
+) {
+    row.derived_payload_length =
+        metadata.original_transport_payload_length.has_value()
+            ? metadata.original_transport_payload_length
+            : metadata.captured_transport_payload_length;
+    row.derived_is_ip_fragmented = metadata.is_ip_fragmented;
+    if (metadata.tcp_flags.has_value()) {
+        row.derived_tcp_flags_text = format_tcp_flags_text(*metadata.tcp_flags);
+    }
+}
+
 std::optional<std::uint32_t> derive_transport_payload_length_from_ah_payload(
     const std::span<const std::uint8_t> bounded_bytes,
     const PacketRef& packet,
@@ -574,11 +588,21 @@ void apply_original_transport_payload_lengths(CaptureSession& session, std::vect
     }
 }
 
-void populate_transient_packet_row_metadata(CaptureSession& session, std::vector<PacketRow>& rows) {
+void populate_transient_packet_row_metadata(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    std::vector<PacketRow>& rows
+) {
     for (auto& row : rows) {
         row.derived_payload_length.reset();
         row.derived_is_ip_fragmented.reset();
         row.derived_tcp_flags_text.reset();
+
+        if (const auto cached_metadata = session.selected_flow_cached_packet_metadata(flow_index, row.packet_index);
+            cached_metadata.has_value()) {
+            apply_transient_metadata_to_row(row, *cached_metadata);
+            continue;
+        }
 
         const auto packet = session.find_packet(row.packet_index);
         if (!packet.has_value()) {
@@ -586,14 +610,7 @@ void populate_transient_packet_row_metadata(CaptureSession& session, std::vector
         }
 
         const auto metadata = derive_transient_packet_metadata(session, *packet);
-        row.derived_payload_length =
-            metadata.original_transport_payload_length.has_value()
-                ? metadata.original_transport_payload_length
-                : metadata.captured_transport_payload_length;
-        row.derived_is_ip_fragmented = metadata.is_ip_fragmented;
-        if (metadata.tcp_flags.has_value()) {
-            row.derived_tcp_flags_text = format_tcp_flags_text(*metadata.tcp_flags);
-        }
+        apply_transient_metadata_to_row(row, metadata);
     }
 }
 

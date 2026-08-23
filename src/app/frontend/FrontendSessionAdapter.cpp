@@ -3174,7 +3174,7 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
     auto rows = session_.list_flow_packets(flow_index, offset, limit);
     if (!rows.empty()) {
         session_.prepare_selected_flow_packet_cache(flow_index, offset + rows.size());
-        session_detail::populate_transient_packet_row_metadata(session_, rows);
+        session_detail::populate_transient_packet_row_metadata(session_, flow_index, rows);
 
         const auto scanned_packet_count = offset + rows.size();
         const auto retransmission_packet_indices = session_.suspected_tcp_retransmission_packet_indices(flow_index, scanned_packet_count);

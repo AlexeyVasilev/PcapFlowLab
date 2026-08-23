@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -63,6 +64,10 @@ struct TransientPacketDerivedMetadata {
 
 void apply_original_transport_payload_lengths(CaptureSession& session, std::vector<PacketRow>& rows);
 
-void populate_transient_packet_row_metadata(CaptureSession& session, std::vector<PacketRow>& rows);
+void populate_transient_packet_row_metadata(
+    CaptureSession& session,
+    std::size_t flow_index,
+    std::vector<PacketRow>& rows
+);
 
 }  // namespace pfl::session_detail
