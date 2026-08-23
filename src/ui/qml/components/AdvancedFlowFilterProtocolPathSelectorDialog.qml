@@ -16,6 +16,30 @@ Dialog {
         }
     }
 
+    function selectCurrentRow() {
+        if (!root.selector || selectorListView.currentIndex < 0 || selectorListView.currentItem === null) {
+            return
+        }
+        root.selector.selectNode(selectorListView.currentItem.nodeId)
+    }
+
+    function moveCurrentRow(delta) {
+        if (selectorListView.count <= 0) {
+            return
+        }
+
+        let nextIndex = selectorListView.currentIndex
+        if (nextIndex < 0) {
+            nextIndex = delta > 0 ? 0 : selectorListView.count - 1
+        } else {
+            nextIndex = Math.max(0, Math.min(selectorListView.count - 1, nextIndex + delta))
+        }
+
+        selectorListView.currentIndex = nextIndex
+        selectorListView.positionViewAtIndex(nextIndex, ListView.Contain)
+        root.selectCurrentRow()
+    }
+
     component SelectorTextButton: Button {
         leftPadding: root.textButtonHorizontalPadding
         rightPadding: root.textButtonHorizontalPadding
@@ -210,10 +234,36 @@ Dialog {
                     anchors.fill: parent
                     anchors.margins: 1
                     clip: true
+                    focus: true
+                    activeFocusOnTab: true
                     model: root.selector ? root.selector.statsModel : null
                     boundsBehavior: Flickable.StopAtBounds
                     reuseItems: true
                     cacheBuffer: root.rowHeight * 16
+                    currentIndex: -1
+
+                    Keys.onUpPressed: function(event) {
+                        root.moveCurrentRow(-1)
+                        event.accepted = true
+                    }
+                    Keys.onDownPressed: function(event) {
+                        root.moveCurrentRow(1)
+                        event.accepted = true
+                    }
+                    Keys.onSpacePressed: function(event) {
+                        root.selectCurrentRow()
+                        event.accepted = true
+                    }
+                    Keys.onReturnPressed: function(event) {
+                        root.selectCurrentRow()
+                        root.tryAcceptSelection()
+                        event.accepted = true
+                    }
+                    Keys.onEnterPressed: function(event) {
+                        root.selectCurrentRow()
+                        root.tryAcceptSelection()
+                        event.accepted = true
+                    }
 
                     ScrollBar.vertical: AppScrollBar {
                         policy: selectorListView.contentHeight > selectorListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
@@ -258,11 +308,13 @@ Dialog {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
+                                    selectorListView.currentIndex = rowIndex
                                     if (root.selector) {
                                         root.selector.selectNode(nodeId)
                                     }
                                 }
                                 onDoubleClicked: {
+                                    selectorListView.currentIndex = rowIndex
                                     if (root.selector) {
                                         root.selector.selectNode(nodeId)
                                     }

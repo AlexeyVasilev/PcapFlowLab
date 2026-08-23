@@ -1475,7 +1475,7 @@ void expect_preview_and_csv_behavior() {
         );
         const auto advanced_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_distinct_paths.filter",
-            "format_version = 1\n"
+            "format_version = 2\n"
             "flow_protocol.include = tcp\n"
         );
         const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_distinct_paths.csv";

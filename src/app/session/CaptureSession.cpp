@@ -2168,24 +2168,6 @@ std::vector<PacketRef> merge_packet_refs_by_index(
 
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept;
 
-template <typename Connection>
-std::vector<PacketRef> build_time_ordered_analysis_packet_refs(const Connection& connection) {
-    std::vector<PacketRef> ordered_packets {};
-    ordered_packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
-    ordered_packets.insert(ordered_packets.end(), connection.flow_a.packets.begin(), connection.flow_a.packets.end());
-    ordered_packets.insert(ordered_packets.end(), connection.flow_b.packets.begin(), connection.flow_b.packets.end());
-    std::stable_sort(ordered_packets.begin(), ordered_packets.end(), [](const PacketRef& left, const PacketRef& right) {
-        const auto left_timestamp = packet_timestamp_us(left);
-        const auto right_timestamp = packet_timestamp_us(right);
-        if (left_timestamp != right_timestamp) {
-            return left_timestamp < right_timestamp;
-        }
-
-        return left.packet_index < right.packet_index;
-    });
-    return ordered_packets;
-}
-
 std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     const CaptureSession& session,
     const ListedConnectionRef& connection,
@@ -3620,17 +3602,14 @@ void CaptureSession::enrich_flow_analysis_sequence_preview(
         return;
     }
 
-    const auto ordered_packets = connections[flow_index].family == FlowAddressFamily::ipv4
-        ? build_time_ordered_analysis_packet_refs(*connections[flow_index].ipv4)
-        : build_time_ordered_analysis_packet_refs(*connections[flow_index].ipv6);
-    const auto preview_count = std::min(result.sequence_preview_rows.size(), ordered_packets.size());
+    const auto preview_count = std::min(result.sequence_preview_rows.size(), result.sequence_preview_packets.size());
     if (preview_count == 0U) {
         return;
     }
 
     const auto preview_metadata = derive_transient_packet_metadata_batch(
         flow_index,
-        std::span<const PacketRef>(ordered_packets.data(), preview_count)
+        std::span<const PacketRef>(result.sequence_preview_packets.data(), preview_count)
     );
     for (std::size_t index = 0; index < preview_count && index < preview_metadata.size(); ++index) {
         result.sequence_preview_rows[index].payload_length = preview_metadata[index].original_transport_payload_length;

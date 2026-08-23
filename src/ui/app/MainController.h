@@ -331,6 +331,7 @@ private:
     Q_PROPERTY(qulonglong selectedStreamItemIndex READ selectedStreamItemIndex WRITE setSelectedStreamItemIndex NOTIFY selectedStreamItemIndexChanged)
     Q_PROPERTY(int flowFilterMode READ flowFilterMode NOTIFY flowFilterModeChanged)
     Q_PROPERTY(QString flowFilterText READ flowFilterText WRITE setFlowFilterText NOTIFY flowFilterTextChanged)
+    Q_PROPERTY(bool smartExportCurrentFilterAvailable READ smartExportCurrentFilterAvailable NOTIFY smartExportCurrentFilterAvailableChanged)
     Q_PROPERTY(QString advancedFlowFilterDisplayName READ advancedFlowFilterDisplayName NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(QString advancedFlowFilterRuleCountText READ advancedFlowFilterRuleCountText NOTIFY advancedFlowFilterPresentationChanged)
     Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
@@ -604,6 +605,7 @@ public:
     [[nodiscard]] qulonglong selectedStreamItemIndex() const noexcept;
     [[nodiscard]] int flowFilterMode() const noexcept;
     [[nodiscard]] QString flowFilterText() const;
+    [[nodiscard]] bool smartExportCurrentFilterAvailable() const noexcept;
     [[nodiscard]] QString advancedFlowFilterDisplayName() const;
     [[nodiscard]] QString advancedFlowFilterRuleCountText() const;
     [[nodiscard]] bool advancedFlowFilterSettingsAvailable() const noexcept;
@@ -762,6 +764,7 @@ signals:
     void selectedStreamItemIndexChanged();
     void flowFilterModeChanged();
     void flowFilterTextChanged();
+    void smartExportCurrentFilterAvailableChanged();
     void advancedFlowFilterPresentationChanged();
     void flowSortChanged();
     void openProgressChanged();

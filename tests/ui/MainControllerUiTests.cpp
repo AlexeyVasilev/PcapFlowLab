@@ -8652,6 +8652,26 @@ int main(int argc, char* argv[]) {
         ));
         UI_EXPECT(wait_for_smart_export_to_finish(app, cancel_export_controller));
         UI_EXPECT(!cancel_export_controller.smartExportInProgress());
+
+        cancel_export_controller.useSimpleFlowFilter();
+        cancel_export_controller.setFlowFilterText(QStringLiteral("203.0.113.50"));
+        UI_EXPECT(cancel_export_controller.smartExportCurrentFilterAvailable());
+        cancel_export_controller.useAdvancedFlowFilter();
+        UI_EXPECT(!cancel_export_controller.smartExportCurrentFilterAvailable());
+        UI_EXPECT(!cancel_export_controller.browseSmartExportFlows(
+            1,
+            4,
+            0,
+            QStringLiteral(""),
+            QStringLiteral(""),
+            QString::fromStdWString(retry_output_directory.wstring()),
+            QStringLiteral("128"),
+            false,
+            false,
+            QStringLiteral("")
+        ));
+        UI_EXPECT(cancel_export_controller.statusText() ==
+            QStringLiteral("Current-filter smart export is available only in Simple filter mode with a non-empty filter."));
     }
 
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json");

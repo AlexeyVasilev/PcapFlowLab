@@ -1147,6 +1147,43 @@ void run_address_family_tests() {
         PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
         expect_indices_equal(result.matching_flow_indices, {7U});
     }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {FlowAddressFamily::ipv4};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        const std::vector<std::size_t> candidate_scope {0U, 6U, 7U};
+        const auto scoped_result = session_detail::evaluate_advanced_flow_filter(
+            connections,
+            filter,
+            std::span<const std::size_t>(candidate_scope)
+        );
+        PFL_REQUIRE(scoped_result.status == AdvancedFlowFilterEvaluationStatus::ok);
+        expect_indices_equal(scoped_result.matching_flow_indices, {0U, 7U});
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.include = {static_cast<FlowAddressFamily>(255)};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_address_family_predicate);
+        PFL_EXPECT(compile_result.issue.has_value());
+        PFL_EXPECT(compile_result.issue->category == "address_family");
+        PFL_EXPECT(compile_result.issue->predicate_index == 0U);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.address_family.exclude = {static_cast<FlowAddressFamily>(255)};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_address_family_predicate);
+        PFL_EXPECT(compile_result.issue.has_value());
+        PFL_EXPECT(compile_result.issue->category == "address_family");
+        PFL_EXPECT(compile_result.issue->predicate_index == 0U);
+    }
 }
 
 void run_address_and_version_tests() {

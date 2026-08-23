@@ -255,6 +255,7 @@ enum class AdvancedFlowFilterCompileStatus : std::uint8_t {
     invalid_address_predicate,
     invalid_service_predicate,
     invalid_directionality_predicate,
+    invalid_address_family_predicate,
 };
 
 struct AdvancedFlowFilterCompileIssue {

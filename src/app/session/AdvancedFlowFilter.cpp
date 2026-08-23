@@ -200,6 +200,16 @@ bool matches_range(
     return true;
 }
 
+bool is_valid_address_family_value(const FlowAddressFamily family) noexcept {
+    switch (family) {
+    case FlowAddressFamily::ipv4:
+    case FlowAddressFamily::ipv6:
+        return true;
+    default:
+        return false;
+    }
+}
+
 std::uint32_t ipv4_prefix_mask(const std::uint8_t prefix_length) noexcept {
     if (prefix_length == 0U) {
         return 0U;
@@ -897,20 +907,38 @@ AdvancedFlowFilterCompileResult compile_protocol_path_criteria(
     return {};
 }
 
-void compile_address_family_membership(
+AdvancedFlowFilterCompileResult compile_address_family_membership(
     const AdvancedFlowFilterAddressFamilyCriteria& spec,
     CompiledAdvancedFlowFilterAddressFamilyCriteria& compiled
 ) {
     compiled.has_include_predicates = !spec.include.empty();
     compiled.has_exclude_predicates = !spec.exclude.empty();
 
-    for (const auto family : spec.include) {
+    for (std::size_t index = 0; index < spec.include.size(); ++index) {
+        const auto family = spec.include[index];
+        if (!is_valid_address_family_value(family)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_family_predicate,
+                "address_family",
+                index
+            );
+        }
         compiled.include_membership[static_cast<std::size_t>(family)] = true;
     }
 
-    for (const auto family : spec.exclude) {
+    for (std::size_t index = 0; index < spec.exclude.size(); ++index) {
+        const auto family = spec.exclude[index];
+        if (!is_valid_address_family_value(family)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_address_family_predicate,
+                "address_family",
+                index
+            );
+        }
         compiled.exclude_membership[static_cast<std::size_t>(family)] = true;
     }
+
+    return {};
 }
 
 void compile_protocol_membership(
@@ -1362,7 +1390,10 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
         return error;
     }
 
-    compile_address_family_membership(spec.address_family, result.filter.address_family);
+    if (const auto error = compile_address_family_membership(spec.address_family, result.filter.address_family);
+        error.status != AdvancedFlowFilterCompileStatus::ok) {
+        return error;
+    }
     compile_protocol_membership(spec.flow_protocol, result.filter.flow_protocol);
     compile_detected_protocol_membership(spec.detected_protocol, settings, result.filter.detected_protocol);
     compile_tls_version_membership(spec.tls_version, result.filter.tls_version);
@@ -1424,6 +1455,10 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
 
         for (const auto index : candidate_indices) {
             const auto& connection = connections[index];
+
+            if (!matches_address_family_criteria(filter.address_family, connection.family)) {
+                continue;
+            }
 
             if (!matches_protocol_path_criteria(filter.protocol_path, connection_protocol_path_id(connection))) {
                 continue;

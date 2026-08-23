@@ -103,6 +103,7 @@ struct FlowAnalysisResult {
     std::vector<FlowAnalysisInterArrivalHistogramRow> inter_arrival_histogram_rows {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> packet_size_histogram_rows {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};
+    std::vector<PacketRef> sequence_preview_packets {};
 };
 
 class FlowAnalysisService {

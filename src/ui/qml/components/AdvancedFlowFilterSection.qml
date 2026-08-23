@@ -44,6 +44,7 @@ Rectangle {
                 padding: 2
                 implicitWidth: 24
                 implicitHeight: 24
+                Accessible.name: root.collapseToolTipText
                 onClicked: root.toggleRequested()
                 ToolTip.visible: hovered
                 ToolTip.text: root.collapseToolTipText
@@ -55,6 +56,7 @@ Rectangle {
                 padding: 0
                 horizontalPadding: 0
                 verticalPadding: 0
+                Accessible.name: root.collapseToolTipText
                 onClicked: root.toggleRequested()
 
                 background: Item {}

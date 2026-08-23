@@ -580,7 +580,7 @@ ApplicationWindow {
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         chooseDestinationFolderCallback: function() { return mainController.chooseSmartExportDestinationFolder() }
-        currentFilterAvailable: mainController.flowFilterText.trim().length > 0
+        currentFilterAvailable: mainController.smartExportCurrentFilterAvailable
         hasCurrentFlowSelection: mainController.selectedFlowIndex >= 0
         hasUnrecognizedPackets: mainController.unrecognizedPacketCount > 0
         onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, bufferBudgetPresetText, includeLastPacket, includeEveryKthPacket, everyKText) {

@@ -328,13 +328,17 @@ FlowAnalysisRateGraph build_rate_graph(const std::vector<PacketPreviewCandidate>
     return rate_graph;
 }
 
-template <typename Connection>
-std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(const Connection& connection) {
-    const auto ordered_packets = build_time_ordered_packet_refs(connection);
-
+std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(
+    const std::vector<PacketPreviewCandidate>& ordered_packets,
+    std::vector<PacketRef>* preview_packets
+) {
     const auto preview_count = std::min(kSequencePreviewLimit, ordered_packets.size());
     std::vector<FlowAnalysisSequencePreviewRow> rows {};
     rows.reserve(preview_count);
+    if (preview_packets != nullptr) {
+        preview_packets->clear();
+        preview_packets->reserve(preview_count);
+    }
 
     std::optional<std::uint64_t> previous_timestamp_us {};
     for (std::size_t index = 0; index < preview_count; ++index) {
@@ -353,6 +357,9 @@ std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(const Co
             .payload_length = std::nullopt,
             .timestamp_text = format_packet_timestamp(*candidate.packet),
         });
+        if (preview_packets != nullptr) {
+            preview_packets->push_back(*candidate.packet);
+        }
 
         previous_timestamp_us = current_timestamp_us;
     }
@@ -633,7 +640,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     result.rate_graph = build_rate_graph(ordered_packets);
     result.inter_arrival_histogram_rows = result.inter_arrival_histograms.histogram_all;
     result.packet_size_histogram_rows = result.packet_size_histograms.histogram_all;
-    result.sequence_preview_rows = build_sequence_preview_rows(connection);
+    result.sequence_preview_rows = build_sequence_preview_rows(ordered_packets, &result.sequence_preview_packets);
 
     return result;
 }

@@ -3676,6 +3676,10 @@ QString MainController::flowFilterText() const {
     return simple_flow_filter_text_;
 }
 
+bool MainController::smartExportCurrentFilterAvailable() const noexcept {
+    return flow_filter_mode_ == FlowFilterMode::simple && !simple_flow_filter_text_.trimmed().isEmpty();
+}
+
 QString MainController::advancedFlowFilterDisplayName() const {
     const auto* source_path = advanced_flow_filter_document_state_.source_path();
     if (source_path == nullptr) {
@@ -4344,10 +4348,18 @@ bool MainController::exportSmartFlows(
         break;
     }
     case kSmartExportFlowScopeMatchingCurrentFilter:
+        if (!smartExportCurrentFilterAvailable()) {
+            setStatusText(QStringLiteral("Current-filter smart export is available only in Simple filter mode with a non-empty filter."), true);
+            return false;
+        }
         flow_indices = smartExportCurrentFilterFlowIndices(true);
         empty_selection_message = QStringLiteral("No flows match the current filter for smart export.");
         break;
     case kSmartExportFlowScopeNotMatchingCurrentFilter:
+        if (!smartExportCurrentFilterAvailable()) {
+            setStatusText(QStringLiteral("Current-filter smart export is available only in Simple filter mode with a non-empty filter."), true);
+            return false;
+        }
         flow_indices = smartExportCurrentFilterFlowIndices(false);
         empty_selection_message = QStringLiteral("No flows remain outside the current filter for smart export.");
         break;
@@ -4708,6 +4720,7 @@ void MainController::useAdvancedFlowFilter() {
     flow_filter_mode_ = FlowFilterMode::advanced;
     applyActiveFlowFilterModeToModel();
     emit flowFilterModeChanged();
+    emit smartExportCurrentFilterAvailableChanged();
 }
 
 void MainController::useSimpleFlowFilter() {
@@ -4718,6 +4731,7 @@ void MainController::useSimpleFlowFilter() {
     flow_filter_mode_ = FlowFilterMode::simple;
     applyActiveFlowFilterModeToModel();
     emit flowFilterModeChanged();
+    emit smartExportCurrentFilterAvailableChanged();
 }
 
 void MainController::clearAdvancedFlowFilter() {
@@ -6057,6 +6071,7 @@ void MainController::setFlowFilterText(const QString& text) {
         synchronizeFlowSelection();
     }
     emit flowFilterTextChanged();
+    emit smartExportCurrentFilterAvailableChanged();
 }
 
 void MainController::applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document) {
@@ -6622,6 +6637,10 @@ void MainController::refreshAdvancedFlowFilterProtocolPathApplicability() {
 }
 
 std::vector<int> MainController::smartExportCurrentFilterFlowIndices(const bool matching) const {
+    if (!smartExportCurrentFilterAvailable()) {
+        return {};
+    }
+
     std::optional<std::vector<std::size_t>> candidate_flow_indices {};
     if (has_active_protocol_path_filter_) {
         candidate_flow_indices.emplace();
