@@ -815,6 +815,23 @@ std::filesystem::path write_temp_advanced_filter_document(
     return write_temp_advanced_filter_file(filename, formatted.text);
 }
 
+std::filesystem::path write_temp_sized_advanced_filter_service_document(
+    const std::string& filename,
+    const std::size_t total_size
+) {
+    constexpr std::string_view prefix = "format_version = 2\nservice.contains.ci.include = \"";
+    constexpr std::string_view suffix = "\"\n";
+    UI_REQUIRE(total_size >= prefix.size() + suffix.size());
+
+    std::string text {};
+    text.reserve(total_size);
+    text += prefix;
+    text.append(total_size - prefix.size() - suffix.size(), 'a');
+    text += suffix;
+    UI_REQUIRE(text.size() == total_size);
+    return write_temp_advanced_filter_file(filename, text);
+}
+
 std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> fields {};
     std::string current {};
@@ -4956,6 +4973,44 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(file_workflow_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
         UI_EXPECT(file_workflow_flow_model->visibleFlowCount() == 1);
         UI_EXPECT(find_flow_index_by_family(file_workflow_flow_model, QStringLiteral("IPv6")) >= 0);
+
+        MainController bounded_open_controller {};
+        UI_EXPECT(open_capture_and_wait(app, bounded_open_controller, file_workflow_capture_path));
+        auto* bounded_open_flow_model = qobject_cast<FlowListModel*>(bounded_open_controller.flowModel());
+        UI_REQUIRE(bounded_open_flow_model != nullptr);
+        bounded_open_controller.useAdvancedFlowFilter();
+        bounded_open_controller.beginAdvancedFlowFilterEdit();
+
+        const auto exact_limit_filter_path = write_temp_sized_advanced_filter_service_document(
+            "pfl_ui_exact_limit.filter",
+            pfl::session_detail::kAdvancedFlowFilterMaxFileBytes
+        );
+        bounded_open_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(exact_limit_filter_path.wstring());
+        });
+        bounded_open_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_exact_limit"));
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(bounded_open_flow_model->visibleFlowCount() == 0);
+
+        const auto oversized_filter_path = write_temp_sized_advanced_filter_service_document(
+            "pfl_ui_oversized.filter",
+            pfl::session_detail::kAdvancedFlowFilterMaxFileBytes + 1U
+        );
+        bounded_open_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(oversized_filter_path.wstring());
+        });
+        bounded_open_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_exact_limit"));
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterRuleCountText() == QStringLiteral("1 rule"));
+        UI_EXPECT(bounded_open_flow_model->visibleFlowCount() == 0);
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("file is too large")));
+        UI_EXPECT(bounded_open_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("maximum 1 MiB")));
+        UI_EXPECT(!bounded_open_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Unknown")));
 
         MainController custom_save_controller {};
         UI_EXPECT(open_capture_and_wait(app, custom_save_controller, file_workflow_capture_path));

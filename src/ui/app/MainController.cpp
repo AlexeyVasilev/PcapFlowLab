@@ -165,6 +165,74 @@ QString format_advanced_filter_write_error(const std::filesystem::path& path, co
     return QStringLiteral("Failed to save advanced filter file %1: %2").arg(file_name, error_text);
 }
 
+QString format_advanced_filter_read_error(const std::filesystem::path& path, const QString& error_text) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    if (error_text.isEmpty()) {
+        return QStringLiteral("Failed to read advanced filter file %1.").arg(file_name);
+    }
+    return QStringLiteral("Failed to read advanced filter file %1: %2").arg(file_name, error_text);
+}
+
+QString format_advanced_filter_file_too_large_error(const std::filesystem::path& path) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    return QStringLiteral("Failed to open advanced filter file %1: file is too large (maximum 1 MiB).")
+        .arg(file_name);
+}
+
+struct AdvancedFlowFilterFileReadResult final {
+    enum class Status : std::uint8_t {
+        ok = 0,
+        read_failed,
+        too_large,
+    };
+
+    Status status {Status::ok};
+    QByteArray bytes {};
+};
+
+AdvancedFlowFilterFileReadResult read_advanced_flow_filter_file_bounded(QFile& file) {
+    AdvancedFlowFilterFileReadResult result {};
+    result.bytes.reserve(static_cast<qsizetype>(
+        std::min<std::size_t>(session_detail::kAdvancedFlowFilterMaxFileBytes + 1U, 64U * 1024U)));
+
+    std::array<char, 4096U> chunk {};
+    const auto max_bytes = static_cast<qsizetype>(session_detail::kAdvancedFlowFilterMaxFileBytes);
+
+    while (true) {
+        const auto remaining_bytes = static_cast<qint64>(
+            session_detail::kAdvancedFlowFilterMaxFileBytes + 1U - static_cast<std::size_t>(result.bytes.size()));
+        const auto bytes_to_read = std::min(static_cast<qint64>(chunk.size()), remaining_bytes);
+        const auto bytes_read = file.read(chunk.data(), bytes_to_read);
+        if (bytes_read < 0) {
+            result.status = AdvancedFlowFilterFileReadResult::Status::read_failed;
+            result.bytes.clear();
+            return result;
+        }
+
+        if (bytes_read == 0) {
+            if (file.atEnd()) {
+                break;
+            }
+            result.status = AdvancedFlowFilterFileReadResult::Status::read_failed;
+            result.bytes.clear();
+            return result;
+        }
+
+        result.bytes.append(chunk.data(), static_cast<qsizetype>(bytes_read));
+        if (result.bytes.size() > max_bytes) {
+            result.status = AdvancedFlowFilterFileReadResult::Status::too_large;
+            result.bytes.clear();
+            return result;
+        }
+
+        if (file.atEnd()) {
+            break;
+        }
+    }
+
+    return result;
+}
+
 bool protocol_path_layers_have_identifiers(const std::vector<LayerKey>& layers) noexcept {
     return std::any_of(layers.begin(), layers.end(), [](const LayerKey& layer) {
         return layer.identifier.kind != ProtocolLayerIdentifierKind::none;
@@ -7929,7 +7997,22 @@ bool MainController::openAdvancedFlowFilterFileAtPath(const std::filesystem::pat
         return false;
     }
 
-    const QByteArray bytes = file.readAll();
+    const auto read_result = read_advanced_flow_filter_file_bounded(file);
+    if (read_result.status == AdvancedFlowFilterFileReadResult::Status::read_failed) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_read_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    if (read_result.status == AdvancedFlowFilterFileReadResult::Status::too_large) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_file_too_large_error(path);
+        }
+        return false;
+    }
+
+    const QByteArray& bytes = read_result.bytes;
     const auto parse_result = session_detail::parse_advanced_flow_filter_text(std::string_view(bytes.constData(), static_cast<std::size_t>(bytes.size())));
     if (parse_result.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
         if (errorText != nullptr) {
