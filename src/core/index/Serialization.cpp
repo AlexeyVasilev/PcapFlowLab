@@ -525,6 +525,24 @@ bool read_capture_index_stable_header(std::istream& stream, CaptureIndexStableHe
     return skip_exact_bytes(stream, header.header_size - bytes_consumed);
 }
 
+std::string filesystem_path_to_generic_utf8(const std::filesystem::path& path) {
+    const auto utf8 = path.generic_u8string();
+    return std::string(
+        reinterpret_cast<const char*>(utf8.data()),
+        utf8.size()
+    );
+}
+
+std::filesystem::path filesystem_path_from_generic_utf8(const std::string_view utf8_path) {
+    std::u8string utf8 {};
+    utf8.reserve(utf8_path.size());
+    for (const char byte : utf8_path) {
+        utf8.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
+    }
+
+    return std::filesystem::path(utf8);
+}
+
 bool write_capture_index_stable_section_header(std::ostream& stream,
                                                const CaptureIndexStableSectionHeader& header) {
     return write_u32(stream, header.section_id) &&

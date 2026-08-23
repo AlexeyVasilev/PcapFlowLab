@@ -95,6 +95,14 @@ CaptureSourceInfo stable_header_source_info() {
     };
 }
 
+std::string stable_header_unicode_generic_utf8() {
+    return "/tmp/\xD1\x82\xD0\xB5\xD1\x81\xD1\x82/\xE4\xBE\x8B/pcap_flow_lab_showcase.pcap";
+}
+
+std::filesystem::path stable_header_unicode_path() {
+    return detail::filesystem_path_from_generic_utf8(stable_header_unicode_generic_utf8());
+}
+
 detail::CaptureIndexStableHeader make_stable_header() {
     const auto source_info = stable_header_source_info();
     return detail::CaptureIndexStableHeader {
@@ -108,7 +116,7 @@ detail::CaptureIndexStableHeader make_stable_header() {
         .source_file_size = source_info.file_size,
         .source_last_write_time = source_info.last_write_time,
         .source_content_fingerprint = source_info.content_fingerprint,
-        .source_capture_path_utf8 = "/tmp/\xD1\x82\xD0\xB5\xD1\x81\xD1\x82/\xE4\xBE\x8B/pcap_flow_lab_showcase.pcap",
+        .source_capture_path_utf8 = detail::filesystem_path_to_generic_utf8(stable_header_unicode_path()),
     };
 }
 
@@ -389,6 +397,26 @@ void expect_matching_states(const CaptureState& left, const CaptureState& right)
 
 void run_index_format_tests() {
     {
+        const auto unicode_path = stable_header_unicode_path();
+        const auto unicode_utf8 = detail::filesystem_path_to_generic_utf8(unicode_path);
+        PFL_EXPECT(unicode_utf8 == stable_header_unicode_generic_utf8());
+        PFL_EXPECT(
+            detail::filesystem_path_to_generic_utf8(
+                detail::filesystem_path_from_generic_utf8(unicode_utf8)
+            ) == unicode_utf8
+        );
+
+        const auto ascii_path = std::filesystem::path("/tmp/ascii/pcap_flow_lab_showcase.pcap");
+        const auto ascii_utf8 = detail::filesystem_path_to_generic_utf8(ascii_path);
+        PFL_EXPECT(ascii_utf8 == "/tmp/ascii/pcap_flow_lab_showcase.pcap");
+        PFL_EXPECT(
+            detail::filesystem_path_to_generic_utf8(
+                detail::filesystem_path_from_generic_utf8(ascii_utf8)
+            ) == ascii_utf8
+        );
+    }
+
+    {
         const auto header = make_stable_header();
         const detail::CaptureIndexStableSectionHeader first_section {
             .section_id = 0x00000002U,
@@ -629,6 +657,55 @@ void run_index_format_tests() {
     PFL_EXPECT(index_reader.read(future_revision_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
     PFL_EXPECT(loaded_capture_path == source_path);
     expect_matching_states(state, loaded_state);
+
+    const auto unicode_source_path =
+        std::filesystem::temp_directory_path() /
+        detail::filesystem_path_from_generic_utf8(
+            "pfl_index_utf8/\xD1\x82\xD0\xB5\xD1\x81\xD1\x82/\xE4\xBE\x8B/pcap_flow_lab_showcase.pcap"
+        );
+    std::filesystem::create_directories(unicode_source_path.parent_path());
+    std::filesystem::copy_file(source_path, unicode_source_path, std::filesystem::copy_options::overwrite_existing);
+
+    const auto unicode_index_path = std::filesystem::temp_directory_path() / "pfl_sectioned_index_utf8.idx";
+    std::filesystem::remove(unicode_index_path);
+    PFL_EXPECT(index_writer.write(unicode_index_path, state, unicode_source_path));
+
+    auto unicode_index_bytes = read_file_bytes(unicode_index_path);
+    detail::CaptureIndexStableHeader unicode_header {};
+    std::istringstream unicode_header_stream(
+        std::string(unicode_index_bytes.begin(), unicode_index_bytes.end()),
+        std::ios::binary | std::ios::in
+    );
+    PFL_REQUIRE(detail::read_capture_index_stable_header(unicode_header_stream, unicode_header));
+    PFL_EXPECT(
+        unicode_header.source_capture_path_utf8 ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+
+    CaptureState unicode_loaded_state {};
+    std::filesystem::path unicode_loaded_capture_path {};
+    CaptureSourceInfo unicode_loaded_source_info {};
+    PFL_EXPECT(index_reader.read(
+        unicode_index_path,
+        unicode_loaded_state,
+        unicode_loaded_capture_path,
+        &unicode_loaded_source_info
+    ));
+    PFL_EXPECT(
+        detail::filesystem_path_to_generic_utf8(unicode_loaded_capture_path) ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+    PFL_EXPECT(
+        detail::filesystem_path_to_generic_utf8(unicode_loaded_source_info.capture_path) ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+
+    CaptureIndexInspection unicode_inspection {};
+    PFL_EXPECT(index_reader.inspect(unicode_index_path, unicode_inspection));
+    PFL_EXPECT(
+        detail::filesystem_path_to_generic_utf8(unicode_inspection.source_info.capture_path) ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
 
     {
         auto legacy_packet_ref_schema_bytes = read_file_bytes(index_path);

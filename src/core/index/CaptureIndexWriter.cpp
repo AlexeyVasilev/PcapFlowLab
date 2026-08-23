@@ -811,7 +811,7 @@ bool CaptureIndexWriter::write(
             .source_file_size = source_info.file_size,
             .source_last_write_time = source_info.last_write_time,
             .source_content_fingerprint = source_info.content_fingerprint,
-            .source_capture_path_utf8 = source_info.capture_path.generic_string(),
+            .source_capture_path_utf8 = detail::filesystem_path_to_generic_utf8(source_info.capture_path),
         })) {
         cleanup_temp();
         set_error_text(out_error_text, "Failed to write index header.");

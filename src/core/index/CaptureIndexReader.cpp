@@ -99,7 +99,7 @@ bool parse_section_payload(const std::vector<std::uint8_t>& payload, Parser&& pa
 
 [[nodiscard]] CaptureSourceInfo stable_header_source_info(const detail::CaptureIndexStableHeader& header) {
     return CaptureSourceInfo {
-        .capture_path = std::filesystem::path(header.source_capture_path_utf8),
+        .capture_path = detail::filesystem_path_from_generic_utf8(header.source_capture_path_utf8),
         .format = header.source_format,
         .file_size = header.source_file_size,
         .last_write_time = header.source_last_write_time,
