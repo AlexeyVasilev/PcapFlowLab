@@ -1,11 +1,12 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, the staged Advanced toolbar shell, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive horizontal wrapping for finite checkbox sections, collapsible main section cards with configured-rule header summaries whose expansion is presentation-only and independent from Enabled, structured repeated-row editors for Ports and IP addresses / CIDR, the Traffic numeric editor with exact unit conversion, the Service state/text-rule editor, the Protocol Path section with its dedicated Kind/Identity/Terminal selector dialog plus current-capture applicability warnings, the dedicated Contains Layer editor with independent Enabled semantics and Protocol Path/Contains Layer AND behavior, and a second polish pass with semantic Include/Exclude grouping, denser repeated rows, lighter row-removal controls, semantic document-reload reinitialization of configured section/exclusion presentation, slightly stronger but still subtle Include/Exclude tinting, and shared Select/double-click acceptance wiring in the Protocol Path selector. Open/Save workflows, final destructive Clear/Clear-unsaved-changes workflows, Smart Export parity with Advanced mode, and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive finite-option and repeated-row presentation, the complete agreed Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer surface, transactional Open/Save/Save As/Clear workflows, and the accepted dense desktop-oriented Qt presentation with semantic Include/Exclude grouping and shared Select/double-click Protocol Path acceptance wiring. Smart Export parity with Advanced mode and Tauri parity remain future work.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
-It is intentionally limited to UI/document-state behavior and implementation
-staging. It does not change the backend filter model, `AdvancedFlowFilterSpec`,
-CLI behavior, or current Qt/Tauri behavior.
+It is intentionally limited to UI/document-state behavior, current Qt
+reference behavior, and remaining future-facing notes. It does not change the
+backend filter model, `AdvancedFlowFilterSpec`, CLI behavior, or current
+Qt/Tauri behavior.
 
 The backend semantic reference remains:
 
@@ -13,7 +14,8 @@ The backend semantic reference remains:
 
 ## Scope And Boundary
 
-This RFC is the UI source of truth for later implementation passes.
+This RFC is the UI source of truth for the current Qt implementation and later
+follow-up passes.
 
 Agreed here:
 
@@ -22,15 +24,15 @@ Agreed here:
 - Advanced Filter settings window concept
 - agreed editor interaction patterns for current and near-term predicate families
 - validation and rule-count presentation
-- staged implementation direction
+- future-facing follow-up direction where work remains deferred
 
 Still deferred here:
 
-- exact Qt implementation staging details
 - Tauri parity details
-- final styling and polish
-- semantic Include/Exclude background colors for Advanced Filter sections
+- Smart Export parity with Advanced mode
 - dedicated capture-level count-summary architecture
+- broader future predicate/editor work such as arbitrary Boolean-expression
+  trees and wider time/rate extensions described by the backend RFC
 
 ## Design Principles
 
@@ -1192,7 +1194,8 @@ Each selected rule has:
 - Edit
 - remove
 
-Final styling remains deferred.
+The current Qt presentation is the reference implementation; further cosmetic
+refinements may still occur.
 
 ### Capture Applicability Of Protocol Path Rules
 
@@ -1873,13 +1876,12 @@ The following points remain intentionally open for future implementation
 discussion:
 
 - capture-level count-summary architecture
-- Qt implementation staging
 - Smart Export integration with Advanced-mode visibility/filter semantics
 - Tauri parity
-- exact Advanced-mode Clear behavior and its interaction with file-backed,
-  dirty, and Custom filter document state
-- final styling and polish, including exact spacing, exact dialog wording, and
-  any later reordering of common versus additional traffic rows
+- broader future predicate/editor work such as arbitrary Boolean-expression
+  trees and wider time/rate extensions described by the backend RFC
+- further cosmetic refinements, including exact spacing, exact dialog wording,
+  and any later reordering of common versus additional traffic rows
 
 ## Backend Prerequisite Notes
 
