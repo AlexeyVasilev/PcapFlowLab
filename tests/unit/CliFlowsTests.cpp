@@ -1383,6 +1383,58 @@ void expect_preview_and_csv_behavior() {
     }
 
     {
+        const auto capture_path = build_cli_flows_capture_path();
+        const auto settings_path = write_temp_text_file(
+            "pfl_cli_flows_collision_settings.json",
+            settings_json(false, false, false)
+        );
+        const auto original_settings_lines = read_text_file_lines(settings_path);
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--settings",
+            settings_path.string(),
+            "--out-flows-list",
+            settings_path.string(),
+            "--force",
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 1);
+        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(read_text_file_lines(settings_path) == original_settings_lines);
+    }
+
+    {
+        const auto capture_path = build_cli_flows_capture_path();
+        const auto settings_path = write_temp_text_file(
+            "pfl_cli_flows_distinct_settings.json",
+            settings_json(false, false, false)
+        );
+        const auto advanced_filter_path = write_temp_advanced_filter_file(
+            "pfl_cli_flows_distinct_paths.filter",
+            "format_version = 1\n"
+            "flow_protocol.include = tcp\n"
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_distinct_paths.csv";
+        std::filesystem::remove(output_path);
+
+        const std::vector<std::string> args {
+            "flows",
+            capture_path.string(),
+            "--settings",
+            settings_path.string(),
+            "--adv-filter",
+            advanced_filter_path.string(),
+            "--out-flows-list",
+            output_path.string(),
+            "--force",
+        };
+        const auto result = invoke_cli(args);
+        PFL_EXPECT(result.exit_code == 0);
+        PFL_EXPECT(std::filesystem::exists(output_path));
+    }
+
+    {
         const auto source_path = write_temp_pcap(
             "pfl_cli_flows_index_only_source.pcap",
             make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {

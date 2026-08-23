@@ -5708,7 +5708,7 @@
             <td>${escapeHtml(row.delta_time_text || "-")}</td>
             <td>${formatNumber(row.captured_length)}</td>
             <td>${formatNumber(row.original_length)}</td>
-            <td>${formatNumber(row.payload_length)}</td>
+            <td>${row.payload_length == null ? "-" : formatNumber(row.payload_length)}</td>
             <td>${escapeHtml(row.timestamp_text || "-")}</td>
           </tr>
         `)

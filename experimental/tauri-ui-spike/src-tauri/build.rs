@@ -194,6 +194,8 @@ fn main() {
         "src/app/frontend/FrontendSettingsJson.cpp",
         "src/app/frontend/FrontendSessionAdapterBridge.cpp",
         "src/app/session/ByteExport.cpp",
+        "src/app/session/AdvancedFlowFilter.cpp",
+        "src/app/session/AdvancedFlowFilterFormat.cpp",
         "src/app/session/CaptureSession.cpp",
         "src/app/session/ProtocolPathPresentation.cpp",
         "src/app/session/ProtocolPathTextExport.cpp",

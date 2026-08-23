@@ -1256,8 +1256,13 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
                 << "\"timestamp_text\":" << json_string(row.timestamp_text) << ','
                 << "\"captured_length\":" << row.captured_length << ','
                 << "\"original_length\":" << row.original_length << ','
-                << "\"payload_length\":" << row.payload_length
-                << '}';
+                << "\"payload_length\":";
+            if (row.payload_length.has_value()) {
+                rows_out << *row.payload_length;
+            } else {
+                rows_out << "null";
+            }
+            rows_out << '}';
         }
         rows_out << ']';
         return rows_out.str();

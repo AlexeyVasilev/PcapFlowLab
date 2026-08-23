@@ -339,16 +339,20 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
             .path = options.out_flows_list_path.value_or(std::filesystem::path {}),
         },
     }};
-    std::array<std::filesystem::path, 1> protected_input_paths {{
-        options.advanced_filter_path.value_or(std::filesystem::path {}),
-    }};
     const auto output_count = options.out_flows_list_path.has_value() ? std::size_t {1U} : std::size_t {0U};
-    const auto protected_input_count = options.advanced_filter_path.has_value() ? std::size_t {1U} : std::size_t {0U};
+    std::vector<std::filesystem::path> protected_input_paths {};
+    protected_input_paths.reserve(2U);
+    if (options.settings_path.has_value()) {
+        protected_input_paths.push_back(*options.settings_path);
+    }
+    if (options.advanced_filter_path.has_value()) {
+        protected_input_paths.push_back(*options.advanced_filter_path);
+    }
     const auto preflight = preflight_output_targets(
         options.input_path,
         std::span<const CliOutputTarget>(outputs.data(), output_count),
         options.force,
-        std::span<const std::filesystem::path>(protected_input_paths.data(), protected_input_count)
+        std::span<const std::filesystem::path>(protected_input_paths.data(), protected_input_paths.size())
     );
     if (!preflight.ok) {
         return {
