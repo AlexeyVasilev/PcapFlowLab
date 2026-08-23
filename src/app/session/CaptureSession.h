@@ -469,6 +469,7 @@ private:
         PacketRef packet {};
         Direction direction {Direction::a_to_b};
         std::uint64_t flow_local_packet_number {0};
+        std::optional<session_detail::TransientPacketDerivedMetadata> metadata {};
     };
 
     struct SelectedFlowTcpPrefixContext {
@@ -543,6 +544,11 @@ private:
         std::size_t flow_index,
         std::size_t max_packets_to_scan
     ) const;
+    [[nodiscard]] std::vector<session_detail::TransientPacketDerivedMetadata> derive_transient_packet_metadata_batch(
+        std::size_t flow_index,
+        std::span<const PacketRef> packets
+    ) const;
+    void enrich_flow_analysis_sequence_preview(std::size_t flow_index, FlowAnalysisResult& result) const;
     [[nodiscard]] const std::vector<std::uint8_t>* find_selected_flow_full_packet_cache_bytes(std::uint64_t packet_index) const noexcept;
     [[nodiscard]] const SelectedFlowPacketCacheEntry* find_selected_flow_packet_cache_entry(
         std::size_t flow_index,

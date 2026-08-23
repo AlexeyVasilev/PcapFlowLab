@@ -602,7 +602,7 @@ pub struct AnalysisSequencePreviewRowDto {
     pub timestamp_text: String,
     pub captured_length: u32,
     pub original_length: u32,
-    pub payload_length: u32,
+    pub payload_length: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

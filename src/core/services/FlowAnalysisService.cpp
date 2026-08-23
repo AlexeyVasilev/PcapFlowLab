@@ -350,7 +350,7 @@ std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(const Co
             .delta_time_us = delta_time_us,
             .captured_length = candidate.packet->captured_length,
             .original_length = candidate.packet->original_length,
-            .payload_length = 0U,
+            .payload_length = std::nullopt,
             .timestamp_text = format_packet_timestamp(*candidate.packet),
         });
 

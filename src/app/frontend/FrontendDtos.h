@@ -577,7 +577,7 @@ struct FrontendAnalysisSequencePreviewRowDto {
     std::string timestamp_text {};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
-    std::uint32_t payload_length {0};
+    std::optional<std::uint32_t> payload_length {};
 };
 
 struct FrontendAnalysisHistogramRowDto {

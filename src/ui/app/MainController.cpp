@@ -3032,26 +3032,11 @@ QVariantList MainController::analysisSequencePreview() const {
         return rows;
     }
 
-    std::vector<PacketRef> ordered_packets {};
-    if (selected_flow_index_ >= 0) {
-        if (const auto packets = session_.flow_packets(static_cast<std::size_t>(selected_flow_index_)); packets.has_value()) {
-            ordered_packets = *packets;
-            std::stable_sort(ordered_packets.begin(), ordered_packets.end(), [](const PacketRef& left, const PacketRef& right) {
-                return packet_timestamp_us(left) < packet_timestamp_us(right);
-            });
-        }
-    }
-
     rows.reserve(static_cast<qsizetype>(current_flow_analysis_->sequence_preview_rows.size()));
-    for (std::size_t index = 0; index < current_flow_analysis_->sequence_preview_rows.size(); ++index) {
-        const auto& preview_row = current_flow_analysis_->sequence_preview_rows[index];
-        QString transport_payload_text {QStringLiteral("-")};
-        if (index < ordered_packets.size()) {
-            if (const auto transport_payload_length = derive_original_transport_payload_length_from_headers(session_, ordered_packets[index]);
-                transport_payload_length.has_value()) {
-                transport_payload_text = QString::number(*transport_payload_length);
-            }
-        }
+    for (const auto& preview_row : current_flow_analysis_->sequence_preview_rows) {
+        const QString transport_payload_text = preview_row.payload_length.has_value()
+            ? QString::number(*preview_row.payload_length)
+            : QStringLiteral("-");
 
         QVariantMap row {};
         row.insert(QStringLiteral("packetNumber"), static_cast<qulonglong>(preview_row.flow_packet_number));

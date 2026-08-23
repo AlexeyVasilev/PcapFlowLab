@@ -79,18 +79,15 @@ different responsibilities.
 ## Active Design RFCs
 
 - [Advanced Flow Filter RFC](features/advanced-flow-filter-rfc.md)
-  Backend filtering foundation, current development text format, and
-  `flows --adv-filter` CLI integration are in place; UI/document workflow
-  remains active design work.
+  Current backend/compiler/text-format and CLI contract for Advanced Flow
+  Filter.
 - [Advanced Flow Filter UI RFC](features/advanced-flow-filter-ui-rfc.md)
-  Agreed future UI/document-state design for Advanced Flow Filter editing and
-  mode switching.
+  Current Qt Advanced Flow Filter editing/document-state/file-workflow
+  reference, with Tauri Advanced Filter parity still deferred.
 - [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
-  Compact per-connection metadata foundation for filtering and related flow
-  queries.
+  Current compact per-connection aggregate metadata and PacketRef foundation.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)
-  Proposed stable-header and section-compatibility baseline for the next major
-  index format.
+  Current stable v15 container/header and per-section compatibility contract.
 
 ## Export
 

@@ -5,6 +5,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "core/services/FlowAnalysisService.h"
 
@@ -377,17 +378,33 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->sequence_preview_rows[0].direction_text == "A->B");
     PFL_EXPECT(analysis->sequence_preview_rows[0].delta_time_us == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].captured_length == request_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[0].payload_length == 0U);
+    PFL_REQUIRE(analysis->sequence_preview_rows[0].payload_length.has_value());
+    PFL_EXPECT(*analysis->sequence_preview_rows[0].payload_length == make_http_request_payload().size());
     PFL_EXPECT(analysis->sequence_preview_rows[1].flow_packet_number == 2U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].direction_text == "B->A");
     PFL_EXPECT(analysis->sequence_preview_rows[1].delta_time_us == 1000150U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].captured_length == response_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[1].payload_length == 0U);
+    PFL_REQUIRE(analysis->sequence_preview_rows[1].payload_length.has_value());
+    PFL_EXPECT(*analysis->sequence_preview_rows[1].payload_length == 20U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].flow_packet_number == 3U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].direction_text == "A->B");
     PFL_EXPECT(analysis->sequence_preview_rows[2].delta_time_us == 1000200U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].captured_length == follow_up_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[2].payload_length == 0U);
+    PFL_REQUIRE(analysis->sequence_preview_rows[2].payload_length.has_value());
+    PFL_EXPECT(*analysis->sequence_preview_rows[2].payload_length == 10U);
+
+    FrontendSessionAdapter frontend_adapter {};
+    PFL_REQUIRE(frontend_adapter.open_capture(capture_path).opened);
+    PFL_EXPECT(frontend_adapter.select_flow(http_flow_index).selected);
+    const auto frontend_analysis = frontend_adapter.get_selected_flow_analysis();
+    PFL_EXPECT(frontend_analysis.analysis_available);
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows.size() == 3U);
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows[0].payload_length.has_value());
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows[1].payload_length.has_value());
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows[2].payload_length.has_value());
+    PFL_EXPECT(*frontend_analysis.sequence_preview_rows[0].payload_length == make_http_request_payload().size());
+    PFL_EXPECT(*frontend_analysis.sequence_preview_rows[1].payload_length == 20U);
+    PFL_EXPECT(*frontend_analysis.sequence_preview_rows[2].payload_length == 10U);
 
     PFL_EXPECT(!session.get_flow_analysis(99U).has_value());
 
@@ -544,6 +561,7 @@ void run_flow_analysis_tests() {
         std::filesystem::temp_directory_path() / "pfl_flow_analysis_max_captured_size_raw_index_parity.pflidx";
     PFL_REQUIRE(raw_truncated_session.save_index(truncated_index_path));
     CaptureSession indexed_truncated_session {};
+    std::filesystem::remove(truncated_capture_path);
     PFL_REQUIRE(indexed_truncated_session.load_index(truncated_index_path));
     const auto indexed_truncated_rows = indexed_truncated_session.list_flows();
     PFL_REQUIRE(indexed_truncated_rows.size() == 1U);
@@ -554,6 +572,9 @@ void run_flow_analysis_tests() {
         indexed_truncated_analysis->max_captured_packet_size_bytes ==
         raw_truncated_analysis->max_captured_packet_size_bytes
     );
+    PFL_REQUIRE(indexed_truncated_analysis->sequence_preview_rows.size() == 2U);
+    PFL_EXPECT(!indexed_truncated_analysis->sequence_preview_rows[0].payload_length.has_value());
+    PFL_EXPECT(!indexed_truncated_analysis->sequence_preview_rows[1].payload_length.has_value());
 
     const auto aggregate_backed_connection = make_protocol_panel_connection(
         FlowProtocolHint::tls,
@@ -579,6 +600,9 @@ void run_flow_analysis_tests() {
     authoritative_aggregate_connection.aggregate_stats.max_captured_packet_length = 1500U;
 
     const auto authoritative_aggregate_analysis = direct_service.analyze(authoritative_aggregate_connection);
+    PFL_REQUIRE(authoritative_aggregate_analysis.sequence_preview_rows.size() == 2U);
+    PFL_EXPECT(!authoritative_aggregate_analysis.sequence_preview_rows[0].payload_length.has_value());
+    PFL_EXPECT(!authoritative_aggregate_analysis.sequence_preview_rows[1].payload_length.has_value());
     PFL_EXPECT(authoritative_aggregate_analysis.captured_bytes == 999U);
     PFL_EXPECT(authoritative_aggregate_analysis.duration_us == 3000200ULL);
     PFL_EXPECT(authoritative_aggregate_analysis.first_packet_timestamp_text == "00:00:02.000100");
