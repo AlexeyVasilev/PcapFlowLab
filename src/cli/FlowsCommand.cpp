@@ -134,18 +134,41 @@ AdvancedFlowFilterFileReadResult read_advanced_flow_filter_file(const std::files
         };
     }
 
-    std::ostringstream buffer {};
-    buffer << stream.rdbuf();
-    if (!stream.good() && !stream.eof()) {
-        return {
-            .ok = false,
-            .error_text = "Failed to read advanced filter file: " + path.string(),
-        };
+    std::string buffer {};
+    buffer.reserve(std::min<std::size_t>(session_detail::kAdvancedFlowFilterMaxFileBytes, 64U * 1024U));
+    std::array<char, 4096U> chunk {};
+    while (true) {
+        const auto remaining_bytes = session_detail::kAdvancedFlowFilterMaxFileBytes - buffer.size();
+        const auto bytes_to_read = std::min(chunk.size(), remaining_bytes + 1U);
+        stream.read(chunk.data(), static_cast<std::streamsize>(bytes_to_read));
+        const auto bytes_read = static_cast<std::size_t>(stream.gcount());
+
+        if (bytes_read > remaining_bytes) {
+            return {
+                .ok = false,
+                .error_text = "Advanced filter file is too large: " + path.string() + " (maximum 1 MiB).",
+            };
+        }
+
+        if (bytes_read > 0U) {
+            buffer.append(chunk.data(), bytes_read);
+        }
+
+        if (stream.eof()) {
+            break;
+        }
+
+        if (stream.fail()) {
+            return {
+                .ok = false,
+                .error_text = "Failed to read advanced filter file: " + path.string(),
+            };
+        }
     }
 
     return {
         .ok = true,
-        .text = buffer.str(),
+        .text = std::move(buffer),
     };
 }
 

@@ -43,6 +43,17 @@ std::vector<std::uint8_t> bytes_payload(std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+std::vector<std::uint8_t> make_ipv4_tcp_first_fragment_with_complete_header(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port
+) {
+    const auto tcp_packet = make_ethernet_ipv4_tcp_packet(src_addr, dst_addr, src_port, dst_port);
+    const auto tcp_payload = std::vector<std::uint8_t>(tcp_packet.begin() + 34, tcp_packet.end());
+    return make_ethernet_ipv4_fragment_packet(src_addr, dst_addr, 6U, 0x2000U, tcp_payload);
+}
+
 std::optional<std::size_t> find_flow_index_by_service_hint(
     const std::vector<FlowRow>& rows,
     const std::string_view service_hint
@@ -647,6 +658,43 @@ void run_query_tests() {
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 15U);
+
+    const auto fragmented_tcp_cache_path = write_temp_pcap(
+        "pfl_query_selected_flow_unknown_payload_cache.pcap",
+        make_classic_pcap({
+            {100U, make_ipv4_tcp_first_fragment_with_complete_header(
+                ipv4(10, 71, 0, 1),
+                ipv4(10, 71, 0, 2),
+                55000,
+                443
+            )}
+        })
+    );
+
+    CaptureSession fragmented_tcp_cache_session {};
+    PFL_EXPECT(fragmented_tcp_cache_session.open_capture(fragmented_tcp_cache_path));
+    const auto fragmented_flow_packets = fragmented_tcp_cache_session.flow_packets(0U);
+    PFL_REQUIRE(fragmented_flow_packets.has_value());
+    PFL_REQUIRE(fragmented_flow_packets->size() == 1U);
+
+    fragmented_tcp_cache_session.prepare_selected_flow_packet_cache(0U, 1U);
+    auto fragmented_cache_info = fragmented_tcp_cache_session.selected_flow_packet_cache_info();
+    PFL_REQUIRE(fragmented_cache_info.has_value());
+    PFL_EXPECT(fragmented_cache_info->flow_index == 0U);
+    PFL_EXPECT(fragmented_cache_info->cached_packet_window_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->cached_packet_contribution_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
+    PFL_EXPECT(!fragmented_cache_info->limit_reached);
+    PFL_EXPECT(!fragmented_cache_info->window_fully_cached);
+
+    PFL_EXPECT(fragmented_tcp_cache_session.suspected_tcp_retransmission_packet_indices(0U, 1U).empty());
+    fragmented_cache_info = fragmented_tcp_cache_session.selected_flow_packet_cache_info();
+    PFL_REQUIRE(fragmented_cache_info.has_value());
+    PFL_EXPECT(fragmented_cache_info->cached_packet_window_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->cached_packet_contribution_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
+    PFL_EXPECT(!fragmented_cache_info->limit_reached);
+    PFL_EXPECT(!fragmented_cache_info->window_fully_cached);
 
     {
         const FlowRow filter_row {

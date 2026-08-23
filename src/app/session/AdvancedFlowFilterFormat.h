@@ -10,6 +10,8 @@
 
 namespace pfl::session_detail {
 
+inline constexpr std::size_t kAdvancedFlowFilterMaxFileBytes = 1024U * 1024U;
+
 enum class AdvancedFlowFilterTextParseStatus : std::uint8_t {
     ok = 0,
     missing_format_version,

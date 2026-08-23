@@ -3622,16 +3622,27 @@ void CaptureSession::prepare_selected_flow_packet_cache(
 
         const auto& packet = window_packet.packet;
         const auto metadata = session_detail::derive_transient_packet_metadata(*this, packet);
-        const auto expected_payload_length = static_cast<std::size_t>(
-            metadata.captured_transport_payload_length.value_or(0U)
-        );
-        auto payload_bytes = expected_payload_length == 0U ? std::vector<std::uint8_t> {} : read_transport_payload_terminal(packet);
-        const bool payload_cached = expected_payload_length == 0U ||
-            (!payload_bytes.empty() && payload_bytes.size() == expected_payload_length);
+        const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
+            ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
+            : std::nullopt;
+        const bool known_zero_payload_length =
+            expected_payload_length.has_value() && *expected_payload_length == 0U;
+        auto payload_bytes = known_zero_payload_length
+            ? std::vector<std::uint8_t> {}
+            : read_transport_payload_terminal(packet);
+        bool payload_cached = false;
+        std::size_t cached_payload_length = 0U;
+        if (known_zero_payload_length) {
+            payload_cached = true;
+        } else if (expected_payload_length.has_value()) {
+            cached_payload_length = *expected_payload_length;
+            payload_cached = !payload_bytes.empty() && payload_bytes.size() == *expected_payload_length;
+        } else if (!payload_bytes.empty()) {
+            payload_cached = true;
+            cached_payload_length = payload_bytes.size();
+        }
         if (!payload_cached) {
-            if (expected_payload_length > 0U) {
-                cache.has_uncached_payload_entries = true;
-            }
+            cache.has_uncached_payload_entries = true;
             payload_bytes.clear();
         }
 
@@ -3653,7 +3664,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .direction = window_packet.direction,
             .cache_offset = cache_offset,
             .cache_length = additional_bytes,
-            .payload_length = static_cast<std::uint32_t>(expected_payload_length),
+            .payload_length = static_cast<std::uint32_t>(cached_payload_length),
             .payload_cached = payload_cached,
         });
 
@@ -3724,16 +3735,27 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         const auto& packet = window_packet.packet;
         const auto direction = window_packet.direction;
         const auto metadata = session_detail::derive_transient_packet_metadata(*this, packet);
-        const auto expected_payload_length = static_cast<std::size_t>(
-            metadata.captured_transport_payload_length.value_or(0U)
-        );
-        auto payload_bytes = expected_payload_length == 0U ? std::vector<std::uint8_t> {} : read_transport_payload_direct(packet);
-        const bool payload_cached = expected_payload_length == 0U ||
-            (!payload_bytes.empty() && payload_bytes.size() == expected_payload_length);
+        const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
+            ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
+            : std::nullopt;
+        const bool known_zero_payload_length =
+            expected_payload_length.has_value() && *expected_payload_length == 0U;
+        auto payload_bytes = known_zero_payload_length
+            ? std::vector<std::uint8_t> {}
+            : read_transport_payload_direct(packet);
+        bool payload_cached = false;
+        std::size_t cached_payload_length = 0U;
+        if (known_zero_payload_length) {
+            payload_cached = true;
+        } else if (expected_payload_length.has_value()) {
+            cached_payload_length = *expected_payload_length;
+            payload_cached = !payload_bytes.empty() && payload_bytes.size() == *expected_payload_length;
+        } else if (!payload_bytes.empty()) {
+            payload_cached = true;
+            cached_payload_length = payload_bytes.size();
+        }
         if (!payload_cached) {
-            if (expected_payload_length > 0U) {
-                cache.has_uncached_payload_entries = true;
-            }
+            cache.has_uncached_payload_entries = true;
             payload_bytes.clear();
         }
 
@@ -3755,7 +3777,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .direction = direction,
             .cache_offset = cache_offset,
             .cache_length = additional_bytes,
-            .payload_length = static_cast<std::uint32_t>(expected_payload_length),
+            .payload_length = static_cast<std::uint32_t>(cached_payload_length),
             .payload_cached = payload_cached,
         });
 
