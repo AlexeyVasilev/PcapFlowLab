@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterQueryResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -811,6 +811,40 @@ fn query_advanced_flows_text(
         .query_advanced_flows_text(&filter_text, candidate_flow_indices.as_deref())
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn parse_advanced_flow_filter_structured_document(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .parse_advanced_flow_filter_structured_document(&filter_text)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn update_advanced_flow_filter_structured_section(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    section_id: String,
+    enabled: bool,
+    include_ids: Vec<String>,
+    exclude_ids: Vec<String>,
+) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.update_advanced_flow_filter_structured_section(
+        &filter_text,
+        &section_id,
+        enabled,
+        &include_ids,
+        &exclude_ids,
+    )
+}
+
 #[tauri::command]
 fn get_flow_packet_count_histogram(
     state: State<'_, Mutex<AdapterState>>,
@@ -1330,6 +1364,8 @@ pub fn run() {
             get_advanced_flow_filter_max_file_bytes,
             read_advanced_flow_filter_file,
             query_advanced_flows_text,
+            parse_advanced_flow_filter_structured_document,
+            update_advanced_flow_filter_structured_section,
             get_flow_packet_count_histogram,
             get_capture_packet_size_statistics,
             get_protocol_hint_statistics,

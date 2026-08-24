@@ -328,6 +328,127 @@ body.is-resizing-vertical {
   width: min(560px, 100%);
 }
 
+.advanced-filter-settings-dialog-card {
+  width: min(980px, 100%);
+  max-height: min(88vh, 980px);
+  overflow: auto;
+}
+
+.advanced-filter-settings-copy {
+  max-width: 76ch;
+}
+
+.advanced-filter-settings-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.advanced-filter-settings-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.advanced-filter-unsupported-note {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.advanced-filter-settings-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.advanced-filter-section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.advanced-filter-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.advanced-filter-section-title {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.advanced-filter-section-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.advanced-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.advanced-filter-group-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.advanced-filter-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.advanced-filter-option-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.advanced-filter-option-row span {
+  min-width: 0;
+}
+
+.advanced-filter-empty-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .advanced-filter-settings-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .advanced-filter-settings-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .advanced-filter-settings-meta {
+    flex-wrap: wrap;
+  }
+}
+
 .settings-tabbar {
   margin-bottom: 12px;
 }

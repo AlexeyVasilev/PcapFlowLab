@@ -10,49 +10,13 @@
 #include <thread>
 #include <vector>
 
+#include "app/frontend/AdvancedFlowFilterStructuredDocument.h"
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/AdvancedFlowFilter.h"
-#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/CaptureSession.h"
 #include "../../../core/open_context.h"
 
 namespace pfl {
-
-enum class FrontendAdvancedFlowQueryStatus : std::uint8_t {
-    ok = 0,
-    invalid_filter_text,
-    invalid_flow_index,
-    invalid_limit,
-    invalid_advanced_filter,
-};
-
-struct FrontendAdvancedFlowTextParseIssue {
-    session_detail::AdvancedFlowFilterTextParseStatus status {
-        session_detail::AdvancedFlowFilterTextParseStatus::ok
-    };
-    std::size_t line {0U};
-    std::optional<std::size_t> column {};
-    std::string key {};
-    std::string token {};
-    std::string message {};
-};
-
-struct FrontendAdvancedFlowQueryResult {
-    FrontendAdvancedFlowQueryStatus status {FrontendAdvancedFlowQueryStatus::ok};
-    std::vector<std::size_t> ordered_flow_indices {};
-    std::size_t result_count_before_limit {0U};
-    std::size_t configured_rule_count {0U};
-    std::size_t active_rule_count {0U};
-    session_detail::AdvancedFlowFilterTextParseStatus parse_status {
-        session_detail::AdvancedFlowFilterTextParseStatus::ok
-    };
-    std::optional<FrontendAdvancedFlowTextParseIssue> parse_issue {};
-    std::optional<std::size_t> invalid_flow_index {};
-    session_detail::AdvancedFlowFilterCompileStatus compile_status {
-        session_detail::AdvancedFlowFilterCompileStatus::ok
-    };
-    std::optional<session_detail::AdvancedFlowFilterCompileIssue> compile_issue {};
-};
 
 class FrontendSessionAdapter {
 public:
@@ -199,6 +163,16 @@ public:
         const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
         std::optional<session_detail::FlowQuerySortSpec> sort,
         std::optional<std::size_t> limit
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterStructuredDocumentResult parse_advanced_flow_filter_structured_document(
+        std::string_view filter_text
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterStructuredDocumentResult update_advanced_flow_filter_structured_section(
+        std::string_view filter_text,
+        std::string_view section_id,
+        bool enabled,
+        const std::vector<std::string>& include_ids,
+        const std::vector<std::string>& exclude_ids
     ) const;
     [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;

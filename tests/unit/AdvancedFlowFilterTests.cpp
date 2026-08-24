@@ -493,6 +493,59 @@ void expect_round_trip_stable(const AdvancedFlowFilterSpec& spec) {
     PFL_EXPECT(reparsed.document == document);
 }
 
+void run_port_bitmap_tests() {
+    ScopedTestContext context {"advanced_flow_filter/port_bitmap"};
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        PFL_EXPECT(bitmap.active == false);
+        PFL_EXPECT(bitmap.contains(0U) == false);
+        PFL_EXPECT(bitmap.contains(443U) == false);
+        PFL_EXPECT(bitmap.contains(65535U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(443U, 443U);
+        PFL_EXPECT(bitmap.active == true);
+        PFL_EXPECT(bitmap.contains(442U) == false);
+        PFL_EXPECT(bitmap.contains(443U) == true);
+        PFL_EXPECT(bitmap.contains(444U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(8000U, 9000U);
+        PFL_EXPECT(bitmap.contains(7999U) == false);
+        PFL_EXPECT(bitmap.contains(8000U) == true);
+        PFL_EXPECT(bitmap.contains(8500U) == true);
+        PFL_EXPECT(bitmap.contains(9000U) == true);
+        PFL_EXPECT(bitmap.contains(9001U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(53U, 53U);
+        bitmap.set_range(443U, 445U);
+        PFL_EXPECT(bitmap.contains(52U) == false);
+        PFL_EXPECT(bitmap.contains(53U) == true);
+        PFL_EXPECT(bitmap.contains(442U) == false);
+        PFL_EXPECT(bitmap.contains(443U) == true);
+        PFL_EXPECT(bitmap.contains(444U) == true);
+        PFL_EXPECT(bitmap.contains(445U) == true);
+        PFL_EXPECT(bitmap.contains(446U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(0U, 65535U);
+        PFL_EXPECT(bitmap.contains(0U) == true);
+        PFL_EXPECT(bitmap.contains(1U) == true);
+        PFL_EXPECT(bitmap.contains(32768U) == true);
+        PFL_EXPECT(bitmap.contains(65535U) == true);
+    }
+}
+
 void run_protocol_and_candidate_scope_tests() {
     ScopedTestContext context {"advanced_flow_filter/protocol_and_scope"};
     auto fixture = build_fixture();
@@ -2620,9 +2673,247 @@ void run_frontend_text_query_tests() {
     }
 }
 
+void run_frontend_structured_document_tests() {
+    ScopedTestContext context {"advanced_flow_filter/frontend_structured_document"};
+
+    const auto capture_path = write_temp_capture_file(
+        "pfl_advanced_flow_filter_structured_document.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 95, 0, 1), ipv4(10, 95, 0, 2), 51001, 80)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 95, 0, 3), ipv4(10, 95, 0, 4), 53000, 53)},
+            {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                54000,
+                443
+            )},
+        })
+    );
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+
+    const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
+    const auto empty = adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+    PFL_EXPECT(empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+    PFL_REQUIRE(empty.document.has_value());
+    PFL_EXPECT(empty.document->canonical_text == "format_version = 2\n");
+    PFL_EXPECT(empty.option_catalog.address_family.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.flow_protocol.size() == 9U);
+    PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 17U);
+    PFL_EXPECT(empty.option_catalog.tls_version.size() == 3U);
+    PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
+    PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
+    PFL_EXPECT(empty.configured_rule_count == 0U);
+    PFL_EXPECT(empty.active_rule_count == 0U);
+
+    {
+        const auto finite = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n"
+            "directionality.exclude = bidirectional\n"
+        );
+        PFL_EXPECT(finite.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(finite.document.has_value());
+        PFL_EXPECT(finite.document->flow_protocol.enabled == true);
+        PFL_EXPECT(finite.document->flow_protocol.include == std::vector<std::string>({"udp"}));
+        PFL_EXPECT(finite.document->directionality.enabled == true);
+        PFL_EXPECT(finite.document->directionality.exclude == std::vector<std::string>({"bidirectional"}));
+        PFL_EXPECT(finite.configured_rule_count == 2U);
+        PFL_EXPECT(finite.active_rule_count == 2U);
+    }
+
+    const auto expect_update_matches_direct = [&](const auto& updated) {
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        const auto reparsed = require_parse_success(updated.document->canonical_text);
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(reparsed.document);
+        const auto direct = adapter.query_advanced_flows(effective, std::nullopt, std::nullopt, std::nullopt);
+        const auto from_text =
+            adapter.query_advanced_flows_text(updated.document->canonical_text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(updated.configured_rule_count == from_text.configured_rule_count);
+        PFL_EXPECT(updated.active_rule_count == from_text.active_rule_count);
+        PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+        expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
+        return reparsed.document;
+    };
+
+    {
+        const auto no_op = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "address_family",
+            empty.document->address_family.enabled,
+            empty.document->address_family.include,
+            empty.document->address_family.exclude
+        );
+        PFL_EXPECT(no_op.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(no_op.document.has_value());
+        PFL_EXPECT(no_op.document->canonical_text == empty.document->canonical_text);
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "address_family",
+            true,
+            {"ipv4"},
+            {"ipv6"}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.address_family.include == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv4
+        }));
+        PFL_EXPECT((reparsed.configured_spec.address_family.exclude == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv6
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "flow_protocol",
+            true,
+            {"udp"},
+            {"tcp"}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.flow_protocol.include == std::vector<ProtocolId> {
+            ProtocolId::udp
+        }));
+        PFL_EXPECT((reparsed.configured_spec.flow_protocol.exclude == std::vector<ProtocolId> {
+            ProtocolId::tcp
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "detected_protocol",
+            true,
+            {"unknown"},
+            {}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.detected_protocol.include == std::vector<FlowProtocolHint> {
+            FlowProtocolHint::unknown
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "tls_version",
+            true,
+            {"unknown"},
+            {}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.tls_version.include == std::vector<TlsVersionHint> {
+            TlsVersionHint::unknown
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "quic_version",
+            true,
+            {"unknown"},
+            {}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.quic_version.include == std::vector<QuicVersionHint> {
+            QuicVersionHint::unknown
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "directionality",
+            true,
+            {"unidirectional"},
+            {"bidirectional"}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.directionality.include == std::vector<AdvancedFlowFilterDirectionality> {
+            AdvancedFlowFilterDirectionality::unidirectional
+        }));
+        PFL_EXPECT((reparsed.configured_spec.directionality.exclude == std::vector<AdvancedFlowFilterDirectionality> {
+            AdvancedFlowFilterDirectionality::bidirectional
+        }));
+    }
+
+    {
+        const auto disabled = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "flow_protocol",
+            false,
+            {"udp"},
+            {}
+        );
+        PFL_EXPECT(disabled.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(disabled.document.has_value());
+        PFL_EXPECT(disabled.document->flow_protocol.enabled == false);
+        PFL_EXPECT(disabled.document->flow_protocol.include == std::vector<std::string>({"udp"}));
+        PFL_EXPECT(disabled.configured_rule_count == 1U);
+        PFL_EXPECT(disabled.active_rule_count == 0U);
+        const auto from_text =
+            adapter.query_advanced_flows_text(disabled.document->canonical_text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.configured_rule_count == 1U);
+        PFL_EXPECT(from_text.active_rule_count == 0U);
+        expect_indices_equal(from_text.ordered_flow_indices, baseline.ordered_flow_indices);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "port.either.include = 443\n"
+            "service.state.include = known\n";
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            text,
+            "address_family",
+            true,
+            {"ipv4"},
+            {}
+        );
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->has_unsupported_configured_sections);
+        const auto reparsed = require_parse_success(updated.document->canonical_text);
+        PFL_REQUIRE(reparsed.document.configured_spec.ports.include.size() == 1U);
+        PFL_REQUIRE(reparsed.document.configured_spec.service.include.size() == 1U);
+        PFL_EXPECT(reparsed.document.configured_spec.service.include.front().kind == AdvancedFlowFilterServicePredicateKind::known);
+        PFL_EXPECT((reparsed.document.configured_spec.address_family.include == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv4
+        }));
+        PFL_EXPECT(updated.document->canonical_text.find("port.either.include = 443") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("service.state.include = known") != std::string::npos);
+    }
+
+    {
+        const auto invalid = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "flow_protocol",
+            true,
+            {"tcpish"},
+            {}
+        );
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "flow_protocol");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->value_id == "tcpish");
+    }
+}
+
 }  // namespace
 
 void run_advanced_flow_filter_tests() {
+    run_port_bitmap_tests();
     run_protocol_and_candidate_scope_tests();
     run_protocol_path_tests();
     run_port_and_aggregate_tests();
@@ -2634,6 +2925,7 @@ void run_advanced_flow_filter_tests() {
     run_text_format_tests();
     run_metadata_only_evaluation_tests();
     run_frontend_text_query_tests();
+    run_frontend_structured_document_tests();
 }
 
 }  // namespace pfl::tests

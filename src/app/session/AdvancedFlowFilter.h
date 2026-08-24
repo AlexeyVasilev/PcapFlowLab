@@ -264,11 +264,15 @@ struct AdvancedFlowFilterCompileIssue {
     std::optional<std::size_t> predicate_index {};
 };
 
+inline constexpr std::size_t kAdvancedFlowFilterPortBitmapWordCount = 65536U / 64U;
+
 struct AdvancedFlowFilterPortBitmap {
-    std::array<std::uint64_t, 1024> words {};
+    // Keep compiled port membership heap-backed so compiled filter temporaries
+    // do not embed six 8 KiB bitmaps directly on frontend thread stacks.
+    std::vector<std::uint64_t> words {};
     bool active {false};
 
-    void set_range(std::uint16_t first, std::uint16_t last) noexcept;
+    void set_range(std::uint16_t first, std::uint16_t last);
     [[nodiscard]] bool contains(std::uint16_t port) const noexcept;
 };
 

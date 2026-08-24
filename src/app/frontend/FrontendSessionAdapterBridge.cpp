@@ -339,6 +339,142 @@ std::string advanced_flow_query_result_json(const pfl::FrontendAdvancedFlowQuery
     return out.str();
 }
 
+std::string structured_document_status_json(
+    const pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus status
+) {
+    switch (status) {
+    case pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::ok:
+        return json_string("ok");
+    case pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update:
+        return json_string("invalid_document_update");
+    case pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document:
+        return json_string("unrepresentable_document");
+    case pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_advanced_filter:
+        return json_string("invalid_advanced_filter");
+    case pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::query_failure:
+        return json_string("query_failure");
+    }
+    return json_string("query_failure");
+}
+
+std::string finite_option_json(const pfl::FrontendAdvancedFlowFilterFiniteOptionDto& option) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(option.stable_id) << ','
+        << "\"label\":" << json_string(option.label)
+        << '}';
+    return out.str();
+}
+
+std::string finite_option_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterFiniteOptionDto>& options) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < options.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << finite_option_json(options[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string string_array_json(const std::vector<std::string>& values) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << json_string(values[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_section_json(const pfl::FrontendAdvancedFlowFilterFiniteSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include\":" << string_array_json(section.include) << ','
+        << "\"exclude\":" << string_array_json(section.exclude)
+        << '}';
+    return out.str();
+}
+
+std::string structured_option_catalog_json(
+    const pfl::FrontendAdvancedFlowFilterStructuredOptionCatalogDto& catalog
+) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"address_family\":" << finite_option_array_json(catalog.address_family) << ','
+        << "\"flow_protocol\":" << finite_option_array_json(catalog.flow_protocol) << ','
+        << "\"detected_protocol\":" << finite_option_array_json(catalog.detected_protocol) << ','
+        << "\"tls_version\":" << finite_option_array_json(catalog.tls_version) << ','
+        << "\"quic_version\":" << finite_option_array_json(catalog.quic_version) << ','
+        << "\"directionality\":" << finite_option_array_json(catalog.directionality)
+        << '}';
+    return out.str();
+}
+
+std::string structured_document_json(
+    const std::optional<pfl::FrontendAdvancedFlowFilterStructuredDocumentDto>& document
+) {
+    if (!document.has_value()) {
+        return "null";
+    }
+
+    std::ostringstream out {};
+    out << '{'
+        << "\"canonical_text\":" << json_string(document->canonical_text) << ','
+        << "\"address_family\":" << structured_section_json(document->address_family) << ','
+        << "\"flow_protocol\":" << structured_section_json(document->flow_protocol) << ','
+        << "\"detected_protocol\":" << structured_section_json(document->detected_protocol) << ','
+        << "\"tls_version\":" << structured_section_json(document->tls_version) << ','
+        << "\"quic_version\":" << structured_section_json(document->quic_version) << ','
+        << "\"directionality\":" << structured_section_json(document->directionality) << ','
+        << "\"has_unsupported_configured_sections\":" << bool_json(document->has_unsupported_configured_sections)
+        << '}';
+    return out.str();
+}
+
+std::string structured_update_issue_json(
+    const std::optional<pfl::FrontendAdvancedFlowFilterStructuredUpdateIssue>& issue
+) {
+    if (!issue.has_value()) {
+        return "null";
+    }
+
+    std::ostringstream out {};
+    out << '{'
+        << "\"section_id\":" << json_string(issue->section_id) << ','
+        << "\"group\":" << json_string(issue->group) << ','
+        << "\"value_id\":" << json_string(issue->value_id) << ','
+        << "\"message\":" << json_string(issue->message)
+        << '}';
+    return out.str();
+}
+
+std::string structured_document_result_json(
+    const pfl::FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"status\":" << structured_document_status_json(result.status) << ','
+        << "\"document\":" << structured_document_json(result.document) << ','
+        << "\"option_catalog\":" << structured_option_catalog_json(result.option_catalog) << ','
+        << "\"configured_rule_count\":" << result.configured_rule_count << ','
+        << "\"active_rule_count\":" << result.active_rule_count << ','
+        << "\"parse_status\":" << parse_status_json(result.parse_status) << ','
+        << "\"parse_issue\":" << parse_issue_json(result.parse_issue) << ','
+        << "\"compile_status\":" << compile_status_json(result.compile_status) << ','
+        << "\"compile_issue\":" << compile_issue_json(result.compile_issue) << ','
+        << "\"update_issue\":" << structured_update_issue_json(result.update_issue) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& row) {
     std::ostringstream out {};
     out << '{'
@@ -1887,6 +2023,70 @@ char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
             candidate_indices,
             std::nullopt,
             std::nullopt
+        )
+    ));
+}
+
+char* pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_document_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8
+) {
+    if (handle == nullptr || filter_text_utf8 == nullptr) {
+        pfl::FrontendAdvancedFlowFilterStructuredDocumentResult result {};
+        result.status = pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_advanced_filter;
+        result.parse_status = pfl::session_detail::AdvancedFlowFilterTextParseStatus::invalid_value;
+        result.error_text = "Invalid advanced filter request.";
+        return make_c_string(structured_document_result_json(result));
+    }
+
+    const auto result =
+        handle->adapter.parse_advanced_flow_filter_structured_document(std::string_view {filter_text_utf8});
+    return make_c_string(structured_document_result_json(result));
+}
+
+char* pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* section_id_utf8,
+    const std::uint8_t enabled,
+    const char* const* include_ids_utf8,
+    const std::size_t include_id_count,
+    const char* const* exclude_ids_utf8,
+    const std::size_t exclude_id_count
+) {
+    if (handle == nullptr || filter_text_utf8 == nullptr || section_id_utf8 == nullptr) {
+        pfl::FrontendAdvancedFlowFilterStructuredDocumentResult result {};
+        result.status = pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update;
+        result.error_text = "Invalid structured advanced filter update request.";
+        return make_c_string(structured_document_result_json(result));
+    }
+
+    if ((include_id_count > 0U && include_ids_utf8 == nullptr) || (exclude_id_count > 0U && exclude_ids_utf8 == nullptr)) {
+        pfl::FrontendAdvancedFlowFilterStructuredDocumentResult result {};
+        result.status = pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update;
+        result.error_text = "Invalid structured advanced filter update request.";
+        return make_c_string(structured_document_result_json(result));
+    }
+
+    std::vector<std::string> include_ids {};
+    include_ids.reserve(include_id_count);
+    for (std::size_t index = 0; index < include_id_count; ++index) {
+        include_ids.push_back(include_ids_utf8[index] != nullptr ? std::string {include_ids_utf8[index]} : std::string {});
+    }
+
+    std::vector<std::string> exclude_ids {};
+    exclude_ids.reserve(exclude_id_count);
+    for (std::size_t index = 0; index < exclude_id_count; ++index) {
+        exclude_ids.push_back(exclude_ids_utf8[index] != nullptr ? std::string {exclude_ids_utf8[index]} : std::string {});
+    }
+
+    return make_c_string(structured_document_result_json(
+        handle->adapter.update_advanced_flow_filter_structured_section(
+            std::string_view {filter_text_utf8},
+            std::string_view {section_id_utf8},
+            enabled != 0U,
+            include_ids,
+            exclude_ids
         )
     ));
 }

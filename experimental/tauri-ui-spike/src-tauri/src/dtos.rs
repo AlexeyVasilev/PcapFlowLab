@@ -177,6 +177,64 @@ pub struct AdvancedFlowFilterFileReadResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterFiniteOptionDto {
+    pub stable_id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterFiniteSectionDto {
+    pub enabled: bool,
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
+    pub address_family: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub flow_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub detected_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub tls_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub quic_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredDocumentDto {
+    pub canonical_text: String,
+    pub address_family: AdvancedFlowFilterFiniteSectionDto,
+    pub flow_protocol: AdvancedFlowFilterFiniteSectionDto,
+    pub detected_protocol: AdvancedFlowFilterFiniteSectionDto,
+    pub tls_version: AdvancedFlowFilterFiniteSectionDto,
+    pub quic_version: AdvancedFlowFilterFiniteSectionDto,
+    pub directionality: AdvancedFlowFilterFiniteSectionDto,
+    pub has_unsupported_configured_sections: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredUpdateIssueDto {
+    pub section_id: String,
+    pub group: String,
+    pub value_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredDocumentResultDto {
+    pub status: String,
+    pub document: Option<AdvancedFlowFilterStructuredDocumentDto>,
+    pub option_catalog: AdvancedFlowFilterStructuredOptionCatalogDto,
+    pub configured_rule_count: usize,
+    pub active_rule_count: usize,
+    pub parse_status: String,
+    pub parse_issue: Option<AdvancedFlowFilterParseIssueDto>,
+    pub compile_status: String,
+    pub compile_issue: Option<AdvancedFlowFilterCompileIssueDto>,
+    pub update_issue: Option<AdvancedFlowFilterStructuredUpdateIssueDto>,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,

@@ -45,7 +45,14 @@ Implemented slice:
   - filtering
   - explicit `Simple` / `Advanced` filter modes
   - backend-authoritative `.filter` v2 evaluation in Advanced mode through the shared C++ parser/compiler/evaluator
-  - file-driven `Open filter...` workflow for applying existing Advanced Filter documents
+  - structured Advanced Filter `Settings` workflow for the first finite sections:
+    - Address Family
+    - Flow Protocol
+    - Detected Protocol
+    - TLS Version
+    - QUIC Version
+    - Observed directions
+  - `Open filter...` now lives inside Advanced Filter Settings and replaces only the editor draft until `Apply`
   - sorting
   - separate checked-flow selection state for batch-oriented workflows
   - Wireshark filter display and copy
@@ -148,7 +155,11 @@ Implemented slice:
 - The Flows tab supports case-insensitive frontend filtering over already loaded flow rows.
 - The Flows tab now keeps separate retained `Simple` and `Advanced` filter state and lets the user switch modes without destroying the inactive mode's filter.
 - Advanced mode applies only backend-returned canonical matching flow indices from a loaded `.filter` document; JavaScript does not evaluate Advanced Filter predicates itself.
-- `Open filter...` reads `.filter` files through a bounded Rust path, then applies them transactionally only after shared C++ parse/compile/evaluate succeeds.
+- `Settings` now opens a structured Advanced Filter editor draft backed by the shared C++ document/parser/formatter path.
+- `Open filter...` inside Advanced Filter Settings reads `.filter` files through a bounded Rust path and replaces only the editor draft until `Apply`.
+- `Apply` validates, reformats, evaluates, and installs the canonical Advanced Filter document only after shared C++ parse/compile/evaluate succeeds.
+- `Cancel` discards the editor draft and leaves the applied Advanced Filter unchanged.
+- The first Tauri structured editor preserves unsupported configured sections through the shared C++ document even though they are not yet editable in the Tauri UI.
 - Statistics drill-down explicitly switches back to `Simple` mode before applying its text filter.
 - The Flows table supports frontend-local sorting over already loaded flow DTOs.
 - The Flows table also keeps a separate checked-flow selection state for future batch workflows without changing the active selected flow.
@@ -238,13 +249,15 @@ Implemented slice:
   - selected-flow Analysis sequence CSV export
 - Checked-flow selection exists in the Flows table and now powers `Flow -> Export Selected Flows`.
 - `Flow -> Export Unselected Flows` now exports the inverse of checked-flow selection.
-- The first Tauri Advanced Filter slice is intentionally file-driven only:
+- The first Tauri Advanced Filter structured editor now exists for finite sections only:
   - mode switching and retained state exist
-  - `Open filter...` exists
   - backend-authoritative Advanced filtering exists
-  - structured Advanced Filter Settings editor parity with Qt is still deferred
+  - `Settings` and `Open filter...` draft workflow exist
+  - unsupported configured sections are preserved but still not editable in Tauri
 - Broader export parity is still incomplete in Tauri.
 - Advanced Smart Export parity is still deferred; current-filter Smart Export remains Simple-mode-only.
+- Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer structured editing is still deferred in Tauri.
+- Save / Save As for file-backed Advanced Filter documents is still deferred in Tauri.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
 - Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.

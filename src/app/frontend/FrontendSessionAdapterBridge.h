@@ -54,6 +54,20 @@ char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
     const std::size_t* candidate_flow_indices,
     std::size_t candidate_flow_index_count
 );
+char* pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_document_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8
+);
+char* pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* section_id_utf8,
+    std::uint8_t enabled,
+    const char* const* include_ids_utf8,
+    std::size_t include_id_count,
+    const char* const* exclude_ids_utf8,
+    std::size_t exclude_id_count
+);
 std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes();
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     PflFrontendSessionAdapterHandle* handle,

@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AdvancedFlowFilterQueryResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -78,6 +78,20 @@ extern "C" {
         filter_text_utf8: *const c_char,
         candidate_flow_indices: *const usize,
         candidate_flow_index_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_document_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+        section_id_utf8: *const c_char,
+        enabled: c_uchar,
+        include_ids_utf8: *const *const c_char,
+        include_id_count: usize,
+        exclude_ids_utf8: *const *const c_char,
+        exclude_id_count: usize,
     ) -> *mut c_char;
     fn pfl_frontend_advanced_flow_filter_max_file_bytes() -> usize;
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
@@ -383,6 +397,67 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<AdvancedFlowFilterQueryResultDto>(json)
+    }
+
+    pub fn parse_advanced_flow_filter_structured_document(
+        &self,
+        filter_text: &str,
+    ) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_document_json(
+                self.handle,
+                filter_text.as_ptr(),
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
+    }
+
+    pub fn update_advanced_flow_filter_structured_section(
+        &self,
+        filter_text: &str,
+        section_id: &str,
+        enabled: bool,
+        include_ids: &[String],
+        exclude_ids: &[String],
+    ) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        let section_id = CString::new(section_id)
+            .map_err(|_| "Section ID contains an embedded NUL byte.".to_string())?;
+
+        let include_cstrings = include_ids
+            .iter()
+            .map(|value| CString::new(value.as_str()).map_err(|_| "Include stable ID contains an embedded NUL byte.".to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let include_ptrs = include_cstrings
+            .iter()
+            .map(|value| value.as_ptr())
+            .collect::<Vec<_>>();
+
+        let exclude_cstrings = exclude_ids
+            .iter()
+            .map(|value| CString::new(value.as_str()).map_err(|_| "Exclude stable ID contains an embedded NUL byte.".to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let exclude_ptrs = exclude_cstrings
+            .iter()
+            .map(|value| value.as_ptr())
+            .collect::<Vec<_>>();
+
+        let json = unsafe {
+            pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
+                self.handle,
+                filter_text.as_ptr(),
+                section_id.as_ptr(),
+                if enabled { 1 } else { 0 },
+                include_ptrs.as_ptr(),
+                include_ptrs.len(),
+                exclude_ptrs.as_ptr(),
+                exclude_ptrs.len(),
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
     }
 
     pub fn advanced_flow_filter_max_file_bytes() -> usize {
