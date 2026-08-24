@@ -685,7 +685,22 @@ void run_query_tests() {
     PFL_EXPECT(fragmented_cache_info->cached_packet_contribution_count == 1U);
     PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
     PFL_EXPECT(!fragmented_cache_info->limit_reached);
-    PFL_EXPECT(!fragmented_cache_info->window_fully_cached);
+    PFL_EXPECT(fragmented_cache_info->window_fully_cached);
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload(
+        0U,
+        (*fragmented_flow_packets)[0]
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_prefix(
+        0U,
+        (*fragmented_flow_packets)[0],
+        8U
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_slice(
+        0U,
+        (*fragmented_flow_packets)[0],
+        0U,
+        8U
+    ).empty());
 
     PFL_EXPECT(fragmented_tcp_cache_session.suspected_tcp_retransmission_packet_indices(0U, 1U).empty());
     fragmented_cache_info = fragmented_tcp_cache_session.selected_flow_packet_cache_info();
@@ -694,7 +709,22 @@ void run_query_tests() {
     PFL_EXPECT(fragmented_cache_info->cached_packet_contribution_count == 1U);
     PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
     PFL_EXPECT(!fragmented_cache_info->limit_reached);
-    PFL_EXPECT(!fragmented_cache_info->window_fully_cached);
+    PFL_EXPECT(fragmented_cache_info->window_fully_cached);
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload(
+        0U,
+        (*fragmented_flow_packets)[0]
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_prefix(
+        0U,
+        (*fragmented_flow_packets)[0],
+        8U
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_slice(
+        0U,
+        (*fragmented_flow_packets)[0],
+        0U,
+        8U
+    ).empty());
 
     {
         const FlowRow filter_row {

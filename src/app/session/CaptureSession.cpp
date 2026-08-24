@@ -219,6 +219,71 @@ std::string dns_stream_label(const DnsDetails& details) {
     return details.is_response ? "DNS Response" : "DNS Query";
 }
 
+struct SelectedFlowPayloadCachingPlan {
+    bool suppress_payload {false};
+    bool payload_cached {false};
+    std::size_t cached_payload_length {0U};
+    bool requires_payload_read {false};
+};
+
+SelectedFlowPayloadCachingPlan plan_selected_flow_payload_caching(
+    const session_detail::TransientPacketDerivedMetadata& metadata
+) {
+    const bool fragmented = metadata.is_ip_fragmented.value_or(false);
+    const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
+        ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
+        : std::nullopt;
+
+    if (fragmented) {
+        return SelectedFlowPayloadCachingPlan {
+            .suppress_payload = true,
+            .payload_cached = true,
+            .cached_payload_length = 0U,
+            .requires_payload_read = false,
+        };
+    }
+
+    if (expected_payload_length.has_value() && *expected_payload_length == 0U) {
+        return SelectedFlowPayloadCachingPlan {
+            .suppress_payload = false,
+            .payload_cached = true,
+            .cached_payload_length = 0U,
+            .requires_payload_read = false,
+        };
+    }
+
+    return SelectedFlowPayloadCachingPlan {
+        .suppress_payload = false,
+        .payload_cached = false,
+        .cached_payload_length = expected_payload_length.value_or(0U),
+        .requires_payload_read = true,
+    };
+}
+
+void finalize_selected_flow_payload_caching_plan(
+    SelectedFlowPayloadCachingPlan& plan,
+    const session_detail::TransientPacketDerivedMetadata& metadata,
+    const std::vector<std::uint8_t>& payload_bytes
+) {
+    if (plan.suppress_payload || !plan.requires_payload_read) {
+        return;
+    }
+
+    const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
+        ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
+        : std::nullopt;
+    if (expected_payload_length.has_value()) {
+        plan.cached_payload_length = *expected_payload_length;
+        plan.payload_cached = !payload_bytes.empty() && payload_bytes.size() == *expected_payload_length;
+        return;
+    }
+
+    if (!payload_bytes.empty()) {
+        plan.payload_cached = true;
+        plan.cached_payload_length = payload_bytes.size();
+    }
+}
+
 bool is_dns_stream_hint(const FlowProtocolHint hint) noexcept {
     return hint == FlowProtocolHint::dns || hint == FlowProtocolHint::mdns;
 }
@@ -3693,26 +3758,12 @@ void CaptureSession::prepare_selected_flow_packet_cache(
 
         const auto& packet = window_packet.packet;
         const auto metadata = window_packet.metadata.value_or(session_detail::TransientPacketDerivedMetadata {});
-        const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
-            ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
-            : std::nullopt;
-        const bool known_zero_payload_length =
-            expected_payload_length.has_value() && *expected_payload_length == 0U;
-        auto payload_bytes = known_zero_payload_length
-            ? std::vector<std::uint8_t> {}
-            : read_terminal_payload(packet);
-        bool payload_cached = false;
-        std::size_t cached_payload_length = 0U;
-        if (known_zero_payload_length) {
-            payload_cached = true;
-        } else if (expected_payload_length.has_value()) {
-            cached_payload_length = *expected_payload_length;
-            payload_cached = !payload_bytes.empty() && payload_bytes.size() == *expected_payload_length;
-        } else if (!payload_bytes.empty()) {
-            payload_cached = true;
-            cached_payload_length = payload_bytes.size();
-        }
-        if (!payload_cached) {
+        auto payload_plan = plan_selected_flow_payload_caching(metadata);
+        auto payload_bytes = payload_plan.requires_payload_read
+            ? read_terminal_payload(packet)
+            : std::vector<std::uint8_t> {};
+        finalize_selected_flow_payload_caching_plan(payload_plan, metadata, payload_bytes);
+        if (!payload_plan.payload_cached) {
             cache.has_uncached_payload_entries = true;
             payload_bytes.clear();
         }
@@ -3735,8 +3786,8 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .direction = window_packet.direction,
             .cache_offset = cache_offset,
             .cache_length = additional_bytes,
-            .payload_length = static_cast<std::uint32_t>(cached_payload_length),
-            .payload_cached = payload_cached,
+            .payload_length = static_cast<std::uint32_t>(payload_plan.cached_payload_length),
+            .payload_cached = payload_plan.payload_cached,
             .metadata = metadata,
         });
 
@@ -3834,26 +3885,12 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         const auto metadata = index < prefix_metadata.size()
             ? prefix_metadata[index]
             : session_detail::TransientPacketDerivedMetadata {};
-        const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
-            ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
-            : std::nullopt;
-        const bool known_zero_payload_length =
-            expected_payload_length.has_value() && *expected_payload_length == 0U;
-        auto payload_bytes = known_zero_payload_length
-            ? std::vector<std::uint8_t> {}
-            : read_direct_payload(packet);
-        bool payload_cached = false;
-        std::size_t cached_payload_length = 0U;
-        if (known_zero_payload_length) {
-            payload_cached = true;
-        } else if (expected_payload_length.has_value()) {
-            cached_payload_length = *expected_payload_length;
-            payload_cached = !payload_bytes.empty() && payload_bytes.size() == *expected_payload_length;
-        } else if (!payload_bytes.empty()) {
-            payload_cached = true;
-            cached_payload_length = payload_bytes.size();
-        }
-        if (!payload_cached) {
+        auto payload_plan = plan_selected_flow_payload_caching(metadata);
+        auto payload_bytes = payload_plan.requires_payload_read
+            ? read_direct_payload(packet)
+            : std::vector<std::uint8_t> {};
+        finalize_selected_flow_payload_caching_plan(payload_plan, metadata, payload_bytes);
+        if (!payload_plan.payload_cached) {
             cache.has_uncached_payload_entries = true;
             payload_bytes.clear();
         }
@@ -3876,8 +3913,8 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .direction = direction,
             .cache_offset = cache_offset,
             .cache_length = additional_bytes,
-            .payload_length = static_cast<std::uint32_t>(cached_payload_length),
-            .payload_cached = payload_cached,
+            .payload_length = static_cast<std::uint32_t>(payload_plan.cached_payload_length),
+            .payload_cached = payload_plan.payload_cached,
             .metadata = metadata,
         });
 
@@ -4049,6 +4086,10 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload(
     const PacketRef& packet
 ) const {
     if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet.packet_index); entry != nullptr) {
+        if (entry->metadata.is_ip_fragmented.value_or(false)) {
+            return {};
+        }
+
         if (entry->payload_cached) {
             const auto begin = selected_flow_packet_cache_->bytes.begin() + static_cast<std::ptrdiff_t>(entry->cache_offset);
             const auto end = begin + static_cast<std::ptrdiff_t>(entry->cache_length);
@@ -4080,6 +4121,10 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_s
     }
 
     if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet.packet_index); entry != nullptr) {
+        if (entry->metadata.is_ip_fragmented.value_or(false)) {
+            return {};
+        }
+
         if (entry->payload_cached) {
             if (payload_offset >= entry->cache_length) {
                 return {};

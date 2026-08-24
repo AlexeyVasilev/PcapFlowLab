@@ -204,6 +204,13 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(cached_metadata->tcp_flags == 0x12U);
         PFL_EXPECT(cached_metadata->is_ip_fragmented == true);
         PFL_EXPECT(!session.selected_flow_cached_packet_metadata(0U, packet_ref->packet_index + 1U).has_value());
+        const auto fragmented_cache_info = session.selected_flow_packet_cache_info();
+        PFL_REQUIRE(fragmented_cache_info.has_value());
+        PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
+        PFL_EXPECT(fragmented_cache_info->window_fully_cached);
+        PFL_EXPECT(session.read_selected_flow_transport_payload(0U, *packet_ref).empty());
+        PFL_EXPECT(session.read_selected_flow_transport_payload_prefix(0U, *packet_ref, 8U).empty());
+        PFL_EXPECT(session.read_selected_flow_transport_payload_slice(0U, *packet_ref, 0U, 8U).empty());
 
         auto rows = session.list_flow_packets(0U);
         PFL_REQUIRE(rows.size() == 1U);
