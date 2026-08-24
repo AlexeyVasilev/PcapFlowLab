@@ -18,6 +18,7 @@ struct FlowsCommandOptions {
     std::optional<std::filesystem::path> settings_path {};
     std::optional<std::vector<CliFlowNumberRange>> selected_flow_number_ranges {};
     std::string text_filter {};
+    std::optional<std::filesystem::path> advanced_filter_path {};
     std::optional<session_detail::FlowQuerySortSpec> sort {};
     std::optional<std::size_t> limit {};
     std::optional<std::filesystem::path> out_flows_list_path {};

@@ -7,6 +7,7 @@
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/Flow.h"
 #include "core/domain/FlowHints.h"
+#include "core/domain/IngestedPacket.h"
 
 namespace pfl {
 
@@ -15,6 +16,18 @@ inline constexpr std::uint8_t kMaxUnresolvedHintPayloadAttemptsPerConnection = 1
 struct ConnectionHintSearchState {
     std::uint8_t unresolved_payload_attempt_count {0};
     bool unresolved_payload_attempt_budget_exhausted {false};
+};
+
+struct ConnectionAggregateStats {
+    std::uint64_t first_timestamp_us {0};
+    std::uint64_t last_timestamp_us {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t truncated_packet_count {0};
+    std::uint64_t tcp_syn_count {0};
+    std::uint64_t tcp_fin_count {0};
+    std::uint64_t tcp_rst_count {0};
+    std::uint32_t max_original_packet_length {0};
+    std::uint32_t max_captured_packet_length {0};
 };
 
 struct ConnectionV4 {
@@ -34,13 +47,14 @@ struct ConnectionV4 {
     std::string service_hint {};
     QuicVersionHint quic_version {QuicVersionHint::unknown};
     TlsVersionHint tls_version {TlsVersionHint::unknown};
+    ConnectionAggregateStats aggregate_stats {};
     ConnectionHintSearchState hint_search_state {};
 
-    void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet);
+    void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet, const PacketImportMetadata& metadata = {});
     void apply_hints(const FlowHintUpdate& hints);
     [[nodiscard]] bool hint_detection_settled() const noexcept;
-    [[nodiscard]] bool should_attempt_hint_detection(const PacketRef& packet, ProtocolId protocol) const noexcept;
-    void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
+    [[nodiscard]] bool should_attempt_hint_detection(const PacketImportMetadata& metadata, ProtocolId protocol) const noexcept;
+    void note_hint_detection_attempt(const PacketImportMetadata& metadata, ProtocolId protocol) noexcept;
 };
 
 struct ConnectionV6 {
@@ -60,13 +74,14 @@ struct ConnectionV6 {
     std::string service_hint {};
     QuicVersionHint quic_version {QuicVersionHint::unknown};
     TlsVersionHint tls_version {TlsVersionHint::unknown};
+    ConnectionAggregateStats aggregate_stats {};
     ConnectionHintSearchState hint_search_state {};
 
-    void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet);
+    void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet, const PacketImportMetadata& metadata = {});
     void apply_hints(const FlowHintUpdate& hints);
     [[nodiscard]] bool hint_detection_settled() const noexcept;
-    [[nodiscard]] bool should_attempt_hint_detection(const PacketRef& packet, ProtocolId protocol) const noexcept;
-    void note_hint_detection_attempt(const PacketRef& packet, ProtocolId protocol) noexcept;
+    [[nodiscard]] bool should_attempt_hint_detection(const PacketImportMetadata& metadata, ProtocolId protocol) const noexcept;
+    void note_hint_detection_attempt(const PacketImportMetadata& metadata, ProtocolId protocol) noexcept;
 };
 
 [[nodiscard]] std::optional<FlowKeyV4> first_observed_flow_key(const ConnectionV4& connection) noexcept;

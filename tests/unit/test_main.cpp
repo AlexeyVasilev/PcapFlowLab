@@ -55,6 +55,8 @@ void run_cli_flow_info_tests();
 void run_cli_packet_info_tests();
 void run_cli_summary_tests();
 void run_byte_export_tests();
+void run_advanced_flow_filter_tests();
+void run_advanced_flow_filter_document_state_tests();
 void run_selected_packet_byte_presentation_tests();
 void run_selected_stream_item_data_presentation_tests();
 void run_packet_payload_tests();
@@ -78,7 +80,6 @@ void run_export_tests();
 void run_pcapng_tests();
 void run_index_tests();
 void run_index_format_tests();
-void run_chunked_import_tests();
 void run_protocol_coverage_tests();
 void run_supported_protocol_catalog_tests();
 void run_malformed_packet_handling_tests();
@@ -211,6 +212,8 @@ int main() {
         {"cli_packet_info", pfl::tests::run_cli_packet_info_tests},
         {"cli_summary", pfl::tests::run_cli_summary_tests},
         {"byte_export", pfl::tests::run_byte_export_tests},
+        {"advanced_flow_filter", pfl::tests::run_advanced_flow_filter_tests},
+        {"advanced_flow_filter_document_state", pfl::tests::run_advanced_flow_filter_document_state_tests},
         {"selected_packet_byte_presentation", pfl::tests::run_selected_packet_byte_presentation_tests},
         {"selected_stream_item_data_presentation", pfl::tests::run_selected_stream_item_data_presentation_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},
@@ -234,7 +237,6 @@ int main() {
         {"pcapng", pfl::tests::run_pcapng_tests},
         {"index", pfl::tests::run_index_tests},
         {"index_format", pfl::tests::run_index_format_tests},
-        {"chunked_import", pfl::tests::run_chunked_import_tests},
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
         {"supported_protocol_catalog", pfl::tests::run_supported_protocol_catalog_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},

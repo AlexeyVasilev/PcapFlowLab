@@ -26,7 +26,7 @@ Current behavior:
 - Analysis targets exactly one selected canonical flow at a time.
 - Results are computed on demand for the selected flow.
 - Results are not precomputed during capture open/import.
-- Results are not persisted into the analysis index, checkpoints, or other
+- Results are not persisted into the analysis index or other
   durable capture state.
 - Clearing or changing the selected flow discards the previous Analysis result.
 

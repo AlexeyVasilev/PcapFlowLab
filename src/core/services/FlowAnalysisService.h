@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,7 @@ struct FlowAnalysisSequencePreviewRow {
     std::uint64_t delta_time_us {0};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
-    std::uint32_t payload_length {0};
+    std::optional<std::uint32_t> payload_length {};
     std::string timestamp_text {};
 };
 
@@ -102,6 +103,7 @@ struct FlowAnalysisResult {
     std::vector<FlowAnalysisInterArrivalHistogramRow> inter_arrival_histogram_rows {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> packet_size_histogram_rows {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};
+    std::vector<PacketRef> sequence_preview_packets {};
 };
 
 class FlowAnalysisService {

@@ -411,10 +411,10 @@ pub struct PacketDto {
     pub timestamp_text: String,
     pub captured_length: u32,
     pub original_length: u32,
-    pub payload_length: u32,
-    pub is_ip_fragmented: bool,
+    pub payload_length: Option<u32>,
+    pub is_ip_fragmented: Option<bool>,
     pub suspected_tcp_retransmission: bool,
-    pub tcp_flags_text: String,
+    pub tcp_flags_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -602,7 +602,7 @@ pub struct AnalysisSequencePreviewRowDto {
     pub timestamp_text: String,
     pub captured_length: u32,
     pub original_length: u32,
-    pub payload_length: u32,
+    pub payload_length: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

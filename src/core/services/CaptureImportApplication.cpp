@@ -91,15 +91,15 @@ template <typename Connection, typename FlowKey>
     RawPcapPacket& packet,
     Connection& connection,
     const FlowKey& flow_key,
-    PacketRef& packet_ref,
+    const PacketImportMetadata& import_metadata,
     const FlowHintService& hint_service,
     const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds,
     const PacketBytesMaterializer materializer
 ) {
     auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-    if (!packet_ref.is_ip_fragmented &&
-        connection.should_attempt_hint_detection(packet_ref, flow_key.protocol) &&
-        requires_full_packet_for_hint_detection(packet_ref, flow_key.protocol)) {
+    if (!import_metadata.is_ip_fragmented &&
+        connection.should_attempt_hint_detection(import_metadata, flow_key.protocol) &&
+        requires_full_packet_for_hint_detection(import_metadata, flow_key.protocol)) {
         if (packet.bytes.size() < packet.captured_length && !materializer.ensure_full_packet_bytes()) {
             return false;
         }
@@ -111,14 +111,14 @@ template <typename Connection, typename FlowKey>
             flow_key,
             terminal_transport_payload_bounds
         ));
-        connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
+        connection.note_hint_detection_attempt(import_metadata, flow_key.protocol);
         return true;
     }
 
     apply_import_hints_if_needed(
         packet,
         packet_bytes,
-        packet_ref,
+        import_metadata,
         connection,
         flow_key,
         hint_service,
@@ -157,12 +157,12 @@ ProtocolPathId intern_protocol_path_id_for_flow_identity(
 PacketRef packet_ref_from_raw_packet(const RawPcapPacket& packet) {
     return PacketRef {
         .packet_index = packet.packet_index,
+        .ts_sec = packet.ts_sec,
+        .ts_usec = packet.ts_usec,
         .byte_offset = packet.data_offset,
         .data_link_type = packet.data_link_type,
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .ts_sec = packet.ts_sec,
-        .ts_usec = packet.ts_usec,
     };
 }
 
@@ -540,8 +540,9 @@ bool ingest_fallback_arp_packet(
     return true;
 }
 
-bool requires_full_packet_for_hint_detection(const PacketRef& packet_ref, const ProtocolId protocol) noexcept {
-    return (protocol == ProtocolId::tcp || protocol == ProtocolId::udp) && packet_ref.payload_length > 0U;
+bool requires_full_packet_for_hint_detection(const PacketImportMetadata& packet_ref, const ProtocolId protocol) noexcept {
+    return (protocol == ProtocolId::tcp || protocol == ProtocolId::udp) &&
+        packet_ref.transport_payload_length.value_or(0U) > 0U;
 }
 
 std::optional<std::uint32_t> derive_captured_terminal_transport_payload_length(
@@ -607,11 +608,7 @@ bool apply_decoded_packet_import(
     PacketIngestor ingestor {state};
 
     if (decoded.ipv4.has_value()) {
-        auto packet_ref = packet_ref_from_raw_packet(packet);
-        packet_ref.payload_length = decoded.ipv4->packet_ref.payload_length;
-        packet_ref.tcp_flags = decoded.ipv4->packet_ref.tcp_flags;
-        packet_ref.is_ip_fragmented = decoded.ipv4->packet_ref.is_ip_fragmented;
-        decoded.ipv4->packet_ref = packet_ref;
+        decoded.ipv4->packet_ref = packet_ref_from_raw_packet(packet);
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv4);
@@ -619,7 +616,7 @@ bool apply_decoded_packet_import(
             packet,
             connection,
             decoded.ipv4->flow_key,
-            decoded.ipv4->packet_ref,
+            decoded.ipv4->import_metadata,
             hint_service,
             decoded.terminal_transport_payload_bounds,
             materializer
@@ -627,11 +624,7 @@ bool apply_decoded_packet_import(
     }
 
     if (decoded.ipv6.has_value()) {
-        auto packet_ref = packet_ref_from_raw_packet(packet);
-        packet_ref.payload_length = decoded.ipv6->packet_ref.payload_length;
-        packet_ref.tcp_flags = decoded.ipv6->packet_ref.tcp_flags;
-        packet_ref.is_ip_fragmented = decoded.ipv6->packet_ref.is_ip_fragmented;
-        decoded.ipv6->packet_ref = packet_ref;
+        decoded.ipv6->packet_ref = packet_ref_from_raw_packet(packet);
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder, hint_service.settings());
         auto& connection = ingestor.ingest(*decoded.ipv6);
@@ -639,7 +632,7 @@ bool apply_decoded_packet_import(
             packet,
             connection,
             decoded.ipv6->flow_key,
-            decoded.ipv6->packet_ref,
+            decoded.ipv6->import_metadata,
             hint_service,
             decoded.terminal_transport_payload_bounds,
             materializer
@@ -665,10 +658,10 @@ bool apply_unified_import_packet_result(
                 );
                 payload_length.has_value()) {
                 if (decoded.ipv4.has_value()) {
-                    decoded.ipv4->packet_ref.payload_length = *payload_length;
+                    decoded.ipv4->import_metadata.transport_payload_length = *payload_length;
                 }
                 if (decoded.ipv6.has_value()) {
-                    decoded.ipv6->packet_ref.payload_length = *payload_length;
+                    decoded.ipv6->import_metadata.transport_payload_length = *payload_length;
                 }
             }
         }

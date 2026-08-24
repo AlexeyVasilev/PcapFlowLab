@@ -37,12 +37,12 @@ std::optional<PacketDetails> decode_fixture_packet_details(const RawPcapPacket& 
     PacketDetailsService details_service {};
     return details_service.decode(packet.bytes, PacketRef {
         .packet_index = packet.packet_index,
+        .ts_sec = packet.ts_sec,
+        .ts_usec = packet.ts_usec,
         .byte_offset = packet.data_offset,
         .data_link_type = packet.data_link_type,
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .ts_sec = packet.ts_sec,
-        .ts_usec = packet.ts_usec,
     });
 }
 
@@ -186,12 +186,12 @@ void run_arp_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, PacketRef {
             .packet_index = packet.packet_index,
+            .ts_sec = packet.ts_sec,
+            .ts_usec = packet.ts_usec,
             .byte_offset = packet.data_offset,
             .data_link_type = packet.data_link_type,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .ts_sec = packet.ts_sec,
-            .ts_usec = packet.ts_usec,
         });
         const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
             return layer.id == "arp";

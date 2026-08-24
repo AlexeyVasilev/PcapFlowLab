@@ -72,6 +72,12 @@ bool matches_allowed_flow_index_filter(const FlowListModel::Item& item, const st
     return std::binary_search(allowedFlowIndices.begin(), allowedFlowIndices.end(), item.flow_index);
 }
 
+std::vector<int> normalize_flow_indices(std::vector<int> flowIndices) {
+    std::sort(flowIndices.begin(), flowIndices.end());
+    flowIndices.erase(std::unique(flowIndices.begin(), flowIndices.end()), flowIndices.end());
+    return flowIndices;
+}
+
 bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right, const FlowListModel::SortKey key) {
     switch (key) {
     case FlowListModel::SortKey::index:
@@ -346,6 +352,8 @@ void FlowListModel::resetViewState() {
     filter_text_.clear();
     allowed_flow_indices_.clear();
     has_allowed_flow_index_filter_ = false;
+    advanced_filter_flow_indices_.clear();
+    has_advanced_flow_index_filter_ = false;
     sort_key_ = SortKey::index;
     sort_ascending_ = true;
     rebuildVisibleItems();
@@ -375,8 +383,7 @@ void FlowListModel::setFilterText(const QString& text) {
 }
 
 void FlowListModel::setAllowedFlowIndices(std::vector<int> flowIndices) {
-    std::sort(flowIndices.begin(), flowIndices.end());
-    flowIndices.erase(std::unique(flowIndices.begin(), flowIndices.end()), flowIndices.end());
+    flowIndices = normalize_flow_indices(std::move(flowIndices));
 
     if (has_allowed_flow_index_filter_ && allowed_flow_indices_ == flowIndices) {
         return;
@@ -394,6 +401,28 @@ void FlowListModel::clearAllowedFlowIndices() {
 
     allowed_flow_indices_.clear();
     has_allowed_flow_index_filter_ = false;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::setAdvancedFilterFlowIndices(std::vector<int> flowIndices) {
+    flowIndices = normalize_flow_indices(std::move(flowIndices));
+
+    if (has_advanced_flow_index_filter_ && advanced_filter_flow_indices_ == flowIndices) {
+        return;
+    }
+
+    advanced_filter_flow_indices_ = std::move(flowIndices);
+    has_advanced_flow_index_filter_ = true;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::clearAdvancedFilterFlowIndices() {
+    if (!has_advanced_flow_index_filter_ && advanced_filter_flow_indices_.empty()) {
+        return;
+    }
+
+    advanced_filter_flow_indices_.clear();
+    has_advanced_flow_index_filter_ = false;
     rebuildVisibleItems();
 }
 
@@ -423,6 +452,10 @@ bool FlowListModel::hasAllowedFlowIndexFilter() const noexcept {
     return has_allowed_flow_index_filter_;
 }
 
+bool FlowListModel::hasAdvancedFlowIndexFilter() const noexcept {
+    return has_advanced_flow_index_filter_;
+}
+
 FlowListModel::SortKey FlowListModel::sortKey() const noexcept {
     return sort_key_;
 }
@@ -446,7 +479,7 @@ int FlowListModel::visibleFlowCount() const noexcept {
 }
 
 bool FlowListModel::hasActiveFlowFilter() const noexcept {
-    return !filter_text_.isEmpty() || has_allowed_flow_index_filter_;
+    return !filter_text_.isEmpty() || has_allowed_flow_index_filter_ || has_advanced_flow_index_filter_;
 }
 
 QString FlowListModel::filteredFlowCountText() const {
@@ -559,7 +592,8 @@ void FlowListModel::rebuildVisibleItems() {
     for (std::size_t itemIndex = 0; itemIndex < all_items_.size(); ++itemIndex) {
         const auto& item = all_items_[itemIndex];
         if ((filter_text_.isEmpty() || contains_text(item, filter_text_)) &&
-            (!has_allowed_flow_index_filter_ || matches_allowed_flow_index_filter(item, allowed_flow_indices_))) {
+            (!has_allowed_flow_index_filter_ || matches_allowed_flow_index_filter(item, allowed_flow_indices_)) &&
+            (!has_advanced_flow_index_filter_ || matches_allowed_flow_index_filter(item, advanced_filter_flow_indices_))) {
             visible_item_indices_.push_back(itemIndex);
         }
     }

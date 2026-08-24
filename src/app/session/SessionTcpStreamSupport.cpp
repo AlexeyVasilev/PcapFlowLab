@@ -153,10 +153,6 @@ std::optional<DecodedTcpPayloadPacket> decode_tcp_payload_packet(
     const PacketRef& packet,
     PacketDetailsService& details_service
 ) {
-    if (packet.payload_length == 0U) {
-        return std::nullopt;
-    }
-
     const auto packet_bytes = session.read_packet_data(packet);
     if (packet_bytes.empty()) {
         return std::nullopt;
@@ -168,7 +164,7 @@ std::optional<DecodedTcpPayloadPacket> decode_tcp_payload_packet(
     }
 
     auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, packet);
-    if (payload_bytes.size() != packet.payload_length || payload_bytes.empty()) {
+    if (payload_bytes.empty()) {
         return std::nullopt;
     }
 
@@ -327,7 +323,7 @@ std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
             direction_id,
             static_cast<std::uint32_t>(decoded->sequence_number),
             decoded->acknowledgement_number,
-            packet.payload_length,
+            static_cast<std::uint32_t>(decoded->payload_bytes.size()),
             payload_hash
         );
 

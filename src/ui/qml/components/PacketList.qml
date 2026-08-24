@@ -109,7 +109,7 @@ Frame {
     }
 
     function capturedBackgroundColor(isIpFragmented, isSelected) {
-        if (isSelected || !isIpFragmented) {
+        if (isSelected || isIpFragmented !== true) {
             return "transparent"
         }
 
@@ -121,7 +121,7 @@ Frame {
             return "#0f172a"
         }
 
-        return isIpFragmented ? "#8a6a12" : "#0f172a"
+        return isIpFragmented === true ? "#8a6a12" : "#0f172a"
     }
 
     function flagTone(flagsText, payloadLength) {
@@ -146,6 +146,14 @@ Frame {
         }
 
         return "default"
+    }
+
+    function payloadText(payloadLength) {
+        return payloadLength === undefined || payloadLength === null ? "-" : payloadLength
+    }
+
+    function flagsTextValue(flagsText) {
+        return flagsText === undefined || flagsText === null ? "" : flagsText
     }
 
     function flagBackgroundColor(flagsText, payloadLength, isSelected) {
@@ -311,10 +319,10 @@ Frame {
                     required property string timestamp
                     required property int capturedLength
                     required property int originalLength
-                    required property int payloadLength
-                    required property bool isIpFragmented
+                    required property var payloadLength
+                    required property var isIpFragmented
                     required property bool suspectedTcpRetransmission
-                    required property string tcpFlagsText
+                    required property var tcpFlagsText
                     required property string reasonText
 
                     readonly property bool selected: index === packetListView.currentIndex
@@ -382,7 +390,7 @@ Frame {
                         }
 
                         Text {
-                            text: root.unrecognizedMode ? originalLength : payloadLength
+                            text: root.unrecognizedMode ? originalLength : root.payloadText(payloadLength)
                             Layout.preferredWidth: root.payloadColumnWidth
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
@@ -395,7 +403,7 @@ Frame {
                             visible: root.showTrailingColumn
                             color: root.unrecognizedMode
                                 ? "transparent"
-                                : root.flagBackgroundColor(tcpFlagsText, payloadLength, selected)
+                                : root.flagBackgroundColor(root.flagsTextValue(tcpFlagsText), payloadLength, selected)
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
@@ -405,16 +413,17 @@ Frame {
                                 anchors.leftMargin: 8
                                 anchors.right: parent.right
                                 anchors.rightMargin: 8
-                                text: root.unrecognizedMode ? reasonText : tcpFlagsText
+                                text: root.unrecognizedMode ? reasonText : root.flagsTextValue(tcpFlagsText)
                                 font.family: "Consolas"
                                 color: root.unrecognizedMode
                                     ? "#0f172a"
-                                    : root.flagTextColor(tcpFlagsText, payloadLength, selected)
+                                    : root.flagTextColor(root.flagsTextValue(tcpFlagsText), payloadLength, selected)
                                 elide: Text.ElideRight
                             }
 
-                            ToolTip.visible: flagsHoverArea.containsMouse && (root.unrecognizedMode ? reasonText.length > 0 : tcpFlagsText.length > 0)
-                            ToolTip.text: root.unrecognizedMode ? reasonText : tcpFlagsText
+                            ToolTip.visible: flagsHoverArea.containsMouse &&
+                                (root.unrecognizedMode ? reasonText.length > 0 : root.flagsTextValue(tcpFlagsText).length > 0)
+                            ToolTip.text: root.unrecognizedMode ? reasonText : root.flagsTextValue(tcpFlagsText)
 
                             MouseArea {
                                 id: flagsHoverArea

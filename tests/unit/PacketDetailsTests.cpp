@@ -345,7 +345,8 @@ SelectedPacketTransportPayloadLengths resolve_selected_packet_transport_payload_
     const PacketRef& packet
 ) {
     return SelectedPacketTransportPayloadLengths {
-        .captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length},
+        .captured_transport_payload_length =
+            session_detail::derive_captured_transport_payload_length_from_headers(session, packet),
         .original_transport_payload_length =
             session_detail::derive_original_transport_payload_length_from_headers(session, packet),
     };
@@ -3159,8 +3160,8 @@ void run_packet_details_tests() {
             flow_context.flow_index,
             flow_context.flow_packet_index,
             flow_context.loaded_packet_window_count,
-            std::optional<std::uint32_t> {packet.payload_length},
-            std::optional<std::uint32_t> {packet.payload_length}
+            session_detail::derive_captured_transport_payload_length_from_headers(session, packet),
+            session_detail::derive_original_transport_payload_length_from_headers(session, packet)
         );
         PFL_REQUIRE(packet_summary_preparation.packet_data.has_value());
         PFL_EXPECT(packet_summary_preparation.packet_data->disposition ==

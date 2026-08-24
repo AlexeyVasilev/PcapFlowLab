@@ -1,7 +1,10 @@
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "TestSupport.h"
@@ -10,8 +13,6 @@
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
-#include "core/index/ImportCheckpointReader.h"
-#include "core/index/ImportCheckpointWriter.h"
 #include "core/index/Serialization.h"
 #include "core/services/CaptureImporter.h"
 
@@ -21,6 +22,8 @@ namespace {
 
 struct SectionInfo {
     std::uint32_t id {0};
+    std::uint16_t schema_version {0};
+    std::uint16_t flags {0};
     std::size_t offset {0};
     std::size_t total_size {0};
 };
@@ -30,6 +33,11 @@ std::uint32_t read_le32_at(const std::vector<std::uint8_t>& bytes, const std::si
            (static_cast<std::uint32_t>(bytes[offset + 1]) << 8U) |
            (static_cast<std::uint32_t>(bytes[offset + 2]) << 16U) |
            (static_cast<std::uint32_t>(bytes[offset + 3]) << 24U);
+}
+
+std::uint16_t read_le16_at(const std::vector<std::uint8_t>& bytes, const std::size_t offset) {
+    return static_cast<std::uint16_t>(bytes[offset]) |
+           static_cast<std::uint16_t>(static_cast<std::uint16_t>(bytes[offset + 1]) << 8U);
 }
 
 std::uint64_t read_le64_at(const std::vector<std::uint8_t>& bytes, const std::size_t offset) {
@@ -54,6 +62,13 @@ void write_le64_at(std::vector<std::uint8_t>& bytes, const std::size_t offset, c
     bytes[offset + 7] = static_cast<std::uint8_t>((value >> 56U) & 0xFFU);
 }
 
+void write_le32_at(std::vector<std::uint8_t>& bytes, const std::size_t offset, const std::uint32_t value) {
+    bytes[offset] = static_cast<std::uint8_t>(value & 0xFFU);
+    bytes[offset + 1] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+    bytes[offset + 2] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+    bytes[offset + 3] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+}
+
 void write_le16_at(std::vector<std::uint8_t>& bytes, const std::size_t offset, const std::uint16_t value) {
     bytes[offset] = static_cast<std::uint8_t>(value & 0xFFU);
     bytes[offset + 1] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
@@ -65,18 +80,80 @@ std::vector<std::uint8_t> read_file_bytes(const std::filesystem::path& path) {
     return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
+std::vector<std::uint8_t> stream_bytes(const std::ostringstream& stream) {
+    const auto serialized = stream.str();
+    return std::vector<std::uint8_t>(serialized.begin(), serialized.end());
+}
+
+CaptureSourceInfo stable_header_source_info() {
+    return CaptureSourceInfo {
+        .capture_path = std::filesystem::path("unused-by-v15-helper"),
+        .format = CaptureSourceFormat::pcapng,
+        .file_size = 987654321ULL,
+        .last_write_time = -1234567890123LL,
+        .content_fingerprint = 0x0123456789ABCDEFULL,
+    };
+}
+
+std::string stable_header_unicode_generic_utf8() {
+    return "/tmp/\xD1\x82\xD0\xB5\xD1\x81\xD1\x82/\xE4\xBE\x8B/pcap_flow_lab_showcase.pcap";
+}
+
+std::filesystem::path stable_header_unicode_path() {
+    return detail::filesystem_path_from_generic_utf8(stable_header_unicode_generic_utf8());
+}
+
+detail::CaptureIndexStableHeader make_stable_header() {
+    const auto source_info = stable_header_source_info();
+    return detail::CaptureIndexStableHeader {
+        .magic = kStableCaptureIndexMagic,
+        .container_format_version = kCaptureIndexStableContainerFormatVersion,
+        .header_flags = 0U,
+        .header_size = 0U,
+        .index_revision = kCaptureIndexStableIndexRevision,
+        .writer_application_version = "0.3.0-test",
+        .source_format = source_info.format,
+        .source_file_size = source_info.file_size,
+        .source_last_write_time = source_info.last_write_time,
+        .source_content_fingerprint = source_info.content_fingerprint,
+        .source_capture_path_utf8 = detail::filesystem_path_to_generic_utf8(stable_header_unicode_path()),
+    };
+}
+
+std::vector<std::uint8_t> encode_stable_header(
+    const detail::CaptureIndexStableHeader& header,
+    const std::vector<std::uint8_t>& extension_bytes = {}
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    const auto extension = std::span<const std::uint8_t>(extension_bytes.data(), extension_bytes.size());
+    PFL_REQUIRE(detail::write_capture_index_stable_header(stream, header, extension));
+    return stream_bytes(stream);
+}
+
+std::size_t stable_header_size(const std::vector<std::uint8_t>& bytes) {
+    PFL_EXPECT(bytes.size() >= detail::kCaptureIndexStableHeaderKnownPrefixSize);
+    return static_cast<std::size_t>(read_le32_at(bytes, 12U));
+}
+
 std::vector<SectionInfo> parse_sections(const std::vector<std::uint8_t>& bytes) {
-    constexpr std::size_t kHeaderSize = 12;
     std::vector<SectionInfo> sections {};
-    std::size_t offset = kHeaderSize;
+    std::size_t offset = stable_header_size(bytes);
 
     while (offset < bytes.size()) {
-        PFL_EXPECT(offset + 12U <= bytes.size());
+        PFL_EXPECT(offset + detail::kCaptureIndexStableSectionHeaderEncodedSize <= bytes.size());
         const auto id = read_le32_at(bytes, offset);
-        const auto payload_size = read_le64_at(bytes, offset + 4U);
-        PFL_EXPECT(payload_size <= static_cast<std::uint64_t>(bytes.size() - offset - 12U));
-        const auto total_size = static_cast<std::size_t>(12U + payload_size);
-        sections.push_back(SectionInfo {.id = id, .offset = offset, .total_size = total_size});
+        const auto schema_version = read_le16_at(bytes, offset + 4U);
+        const auto flags = read_le16_at(bytes, offset + 6U);
+        const auto payload_size = read_le64_at(bytes, offset + 8U);
+        PFL_EXPECT(payload_size <= static_cast<std::uint64_t>(bytes.size() - offset - detail::kCaptureIndexStableSectionHeaderEncodedSize));
+        const auto total_size = static_cast<std::size_t>(detail::kCaptureIndexStableSectionHeaderEncodedSize + payload_size);
+        sections.push_back(SectionInfo {
+            .id = id,
+            .schema_version = schema_version,
+            .flags = flags,
+            .offset = offset,
+            .total_size = total_size,
+        });
         offset += total_size;
     }
 
@@ -93,7 +170,7 @@ std::size_t count_sections(const std::vector<std::uint8_t>& bytes, const std::ui
 std::vector<std::uint8_t> remove_section(const std::vector<std::uint8_t>& bytes, const std::uint32_t section_id) {
     const auto sections = parse_sections(bytes);
     std::vector<std::uint8_t> mutated {};
-    mutated.insert(mutated.end(), bytes.begin(), bytes.begin() + 12);
+    mutated.insert(mutated.end(), bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(stable_header_size(bytes)));
 
     bool removed {false};
     for (const auto& section : sections) {
@@ -138,7 +215,7 @@ std::vector<std::uint8_t> corrupt_first_section_size(const std::vector<std::uint
     auto mutated = bytes;
     const auto sections = parse_sections(bytes);
     PFL_EXPECT(!sections.empty());
-    const auto size_offset = sections.front().offset + 4U;
+    const auto size_offset = sections.front().offset + 8U;
     write_le64_at(mutated, size_offset, read_le64_at(mutated, size_offset) + 1U);
     return mutated;
 }
@@ -168,6 +245,25 @@ std::vector<std::uint8_t> make_ipv6_tcp_segment_for_index_test(
     return bytes;
 }
 
+std::uint16_t expected_section_schema_version(const std::uint32_t section_id) {
+    switch (static_cast<detail::CaptureIndexSectionId>(section_id)) {
+    case detail::CaptureIndexSectionId::summary:
+        return detail::kCaptureIndexStableSummarySectionSchemaVersion;
+    case detail::CaptureIndexSectionId::protocol_paths:
+        return detail::kCaptureIndexStableProtocolPathsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::ipv4_connections:
+        return detail::kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::ipv6_connections:
+        return detail::kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::unrecognized_packets:
+        return detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::packet_locator:
+        return detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion;
+    default:
+        return 0U;
+    }
+}
+
 void expect_matching_packets(const std::vector<PacketRef>& left, const std::vector<PacketRef>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
@@ -178,9 +274,6 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].original_length == right[index].original_length);
         PFL_EXPECT(left[index].ts_sec == right[index].ts_sec);
         PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
-        PFL_EXPECT(left[index].payload_length == right[index].payload_length);
-        PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
-        PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
     }
 }
 
@@ -216,8 +309,21 @@ void expect_matching_connections(const ConnectionV4& left, const ConnectionV4& r
     PFL_EXPECT(left.has_flow_b == right.has_flow_b);
     PFL_EXPECT(left.packet_count == right.packet_count);
     PFL_EXPECT(left.total_bytes == right.total_bytes);
+    PFL_EXPECT(left.has_fragmented_packets == right.has_fragmented_packets);
+    PFL_EXPECT(left.fragmented_packet_count == right.fragmented_packet_count);
     PFL_EXPECT(left.protocol_hint == right.protocol_hint);
     PFL_EXPECT(left.service_hint == right.service_hint);
+    PFL_EXPECT(left.quic_version == right.quic_version);
+    PFL_EXPECT(left.tls_version == right.tls_version);
+    PFL_EXPECT(left.aggregate_stats.first_timestamp_us == right.aggregate_stats.first_timestamp_us);
+    PFL_EXPECT(left.aggregate_stats.last_timestamp_us == right.aggregate_stats.last_timestamp_us);
+    PFL_EXPECT(left.aggregate_stats.captured_bytes == right.aggregate_stats.captured_bytes);
+    PFL_EXPECT(left.aggregate_stats.truncated_packet_count == right.aggregate_stats.truncated_packet_count);
+    PFL_EXPECT(left.aggregate_stats.tcp_syn_count == right.aggregate_stats.tcp_syn_count);
+    PFL_EXPECT(left.aggregate_stats.tcp_fin_count == right.aggregate_stats.tcp_fin_count);
+    PFL_EXPECT(left.aggregate_stats.tcp_rst_count == right.aggregate_stats.tcp_rst_count);
+    PFL_EXPECT(left.aggregate_stats.max_original_packet_length == right.aggregate_stats.max_original_packet_length);
+    PFL_EXPECT(left.aggregate_stats.max_captured_packet_length == right.aggregate_stats.max_captured_packet_length);
     if (left.has_flow_a || right.has_flow_a) {
         expect_matching_flows(left.flow_a, right.flow_a);
     }
@@ -232,8 +338,21 @@ void expect_matching_connections(const ConnectionV6& left, const ConnectionV6& r
     PFL_EXPECT(left.has_flow_b == right.has_flow_b);
     PFL_EXPECT(left.packet_count == right.packet_count);
     PFL_EXPECT(left.total_bytes == right.total_bytes);
+    PFL_EXPECT(left.has_fragmented_packets == right.has_fragmented_packets);
+    PFL_EXPECT(left.fragmented_packet_count == right.fragmented_packet_count);
     PFL_EXPECT(left.protocol_hint == right.protocol_hint);
     PFL_EXPECT(left.service_hint == right.service_hint);
+    PFL_EXPECT(left.quic_version == right.quic_version);
+    PFL_EXPECT(left.tls_version == right.tls_version);
+    PFL_EXPECT(left.aggregate_stats.first_timestamp_us == right.aggregate_stats.first_timestamp_us);
+    PFL_EXPECT(left.aggregate_stats.last_timestamp_us == right.aggregate_stats.last_timestamp_us);
+    PFL_EXPECT(left.aggregate_stats.captured_bytes == right.aggregate_stats.captured_bytes);
+    PFL_EXPECT(left.aggregate_stats.truncated_packet_count == right.aggregate_stats.truncated_packet_count);
+    PFL_EXPECT(left.aggregate_stats.tcp_syn_count == right.aggregate_stats.tcp_syn_count);
+    PFL_EXPECT(left.aggregate_stats.tcp_fin_count == right.aggregate_stats.tcp_fin_count);
+    PFL_EXPECT(left.aggregate_stats.tcp_rst_count == right.aggregate_stats.tcp_rst_count);
+    PFL_EXPECT(left.aggregate_stats.max_original_packet_length == right.aggregate_stats.max_original_packet_length);
+    PFL_EXPECT(left.aggregate_stats.max_captured_packet_length == right.aggregate_stats.max_captured_packet_length);
     if (left.has_flow_a || right.has_flow_a) {
         expect_matching_flows(left.flow_a, right.flow_a);
     }
@@ -277,6 +396,189 @@ void expect_matching_states(const CaptureState& left, const CaptureState& right)
 }  // namespace
 
 void run_index_format_tests() {
+    {
+        const auto unicode_path = stable_header_unicode_path();
+        const auto unicode_utf8 = detail::filesystem_path_to_generic_utf8(unicode_path);
+        PFL_EXPECT(unicode_utf8 == stable_header_unicode_generic_utf8());
+        PFL_EXPECT(
+            detail::filesystem_path_to_generic_utf8(
+                detail::filesystem_path_from_generic_utf8(unicode_utf8)
+            ) == unicode_utf8
+        );
+
+        const auto ascii_path = std::filesystem::path("/tmp/ascii/pcap_flow_lab_showcase.pcap");
+        const auto ascii_utf8 = detail::filesystem_path_to_generic_utf8(ascii_path);
+        PFL_EXPECT(ascii_utf8 == "/tmp/ascii/pcap_flow_lab_showcase.pcap");
+        PFL_EXPECT(
+            detail::filesystem_path_to_generic_utf8(
+                detail::filesystem_path_from_generic_utf8(ascii_utf8)
+            ) == ascii_utf8
+        );
+    }
+
+    {
+        const auto header = make_stable_header();
+        const detail::CaptureIndexStableSectionHeader first_section {
+            .section_id = 0x00000002U,
+            .section_schema_version = 1U,
+            .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+            .payload_size = 3U,
+        };
+        std::ostringstream write_stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(write_stream, header));
+        PFL_REQUIRE(detail::write_capture_index_stable_section_header(write_stream, first_section));
+        PFL_REQUIRE(detail::write_bytes(write_stream, std::array<std::uint8_t, 3> {0x10U, 0x20U, 0x30U}));
+        const auto encoded_header = stream_bytes(write_stream);
+
+        PFL_EXPECT(read_le64_at(encoded_header, 0U) == kStableCaptureIndexMagic);
+        PFL_EXPECT(encoded_header.size() >= detail::kCaptureIndexStableHeaderKnownPrefixSize);
+        PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
+        PFL_EXPECT(read_le16_at(encoded_header, 10U) == 0U);
+        const auto declared_header_size = read_le32_at(encoded_header, 12U);
+        PFL_EXPECT(declared_header_size < encoded_header.size());
+        PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
+
+        const auto encoded_size = detail::encoded_capture_index_stable_header_size(header);
+        PFL_REQUIRE(encoded_size.has_value());
+        PFL_EXPECT(*encoded_size == declared_header_size);
+
+        detail::CaptureIndexStableHeader decoded_header {};
+        std::istringstream read_stream(
+            std::string(encoded_header.begin(), encoded_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
+        PFL_EXPECT(decoded_header.magic == kStableCaptureIndexMagic);
+        PFL_EXPECT(decoded_header.container_format_version == kCaptureIndexStableContainerFormatVersion);
+        PFL_EXPECT(decoded_header.header_flags == 0U);
+        PFL_EXPECT(decoded_header.header_size == declared_header_size);
+        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableIndexRevision);
+        PFL_EXPECT(decoded_header.writer_application_version == header.writer_application_version);
+        PFL_EXPECT(decoded_header.source_format == header.source_format);
+        PFL_EXPECT(decoded_header.source_file_size == header.source_file_size);
+        PFL_EXPECT(decoded_header.source_last_write_time == header.source_last_write_time);
+        PFL_EXPECT(decoded_header.source_content_fingerprint == header.source_content_fingerprint);
+        PFL_EXPECT(decoded_header.source_capture_path_utf8 == header.source_capture_path_utf8);
+
+        detail::CaptureIndexStableSectionHeader decoded_section {};
+        PFL_REQUIRE(detail::read_capture_index_stable_section_header(read_stream, decoded_section));
+        PFL_EXPECT(decoded_section.section_id == first_section.section_id);
+        PFL_EXPECT(decoded_section.section_schema_version == first_section.section_schema_version);
+        PFL_EXPECT(decoded_section.section_flags == first_section.section_flags);
+        PFL_EXPECT(decoded_section.payload_size == first_section.payload_size);
+    }
+
+    {
+        const auto header = make_stable_header();
+        const std::vector<std::uint8_t> extension_bytes {0xAAU, 0x55U, 0x10U, 0x20U, 0x30U};
+        const detail::CaptureIndexStableSectionHeader first_section {
+            .section_id = 0x00000007U,
+            .section_schema_version = 3U,
+            .section_flags = 0U,
+            .payload_size = 0x0102030405060708ULL,
+        };
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        const auto extension = std::span<const std::uint8_t>(extension_bytes.data(), extension_bytes.size());
+        PFL_REQUIRE(detail::write_capture_index_stable_header(stream, header, extension));
+        PFL_REQUIRE(detail::write_capture_index_stable_section_header(stream, first_section));
+        const auto encoded_header = stream_bytes(stream);
+        PFL_EXPECT(read_le32_at(encoded_header, 12U) + detail::kCaptureIndexStableSectionHeaderEncodedSize == encoded_header.size());
+
+        detail::CaptureIndexStableHeader decoded_header {};
+        std::istringstream read_stream(
+            std::string(encoded_header.begin(), encoded_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
+        PFL_EXPECT(decoded_header.header_size + detail::kCaptureIndexStableSectionHeaderEncodedSize == encoded_header.size());
+        PFL_EXPECT(decoded_header.source_capture_path_utf8 == header.source_capture_path_utf8);
+
+        detail::CaptureIndexStableSectionHeader decoded_section {};
+        PFL_REQUIRE(detail::read_capture_index_stable_section_header(read_stream, decoded_section));
+        PFL_EXPECT(decoded_section.section_id == first_section.section_id);
+        PFL_EXPECT(decoded_section.section_schema_version == first_section.section_schema_version);
+        PFL_EXPECT(decoded_section.section_flags == first_section.section_flags);
+        PFL_EXPECT(decoded_section.payload_size == first_section.payload_size);
+    }
+
+    {
+        const auto header = make_stable_header();
+        auto encoded_header = encode_stable_header(header);
+
+        write_le16_at(encoded_header, 8U, 1U);
+        PFL_EXPECT(read_le16_at(encoded_header, 8U) == 1U);
+
+        write_le32_at(encoded_header, 16U, 15U);
+        PFL_EXPECT(read_le32_at(encoded_header, 16U) == 15U);
+
+        auto malformed_small_header = encoded_header;
+        write_le32_at(malformed_small_header, 12U, detail::kCaptureIndexStableHeaderKnownPrefixSize - 1U);
+
+        detail::CaptureIndexStableHeader decoded_header {};
+        std::istringstream malformed_stream(
+            std::string(malformed_small_header.begin(), malformed_small_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_EXPECT(!detail::read_capture_index_stable_header(malformed_stream, decoded_header));
+
+        auto truncated_header = encoded_header;
+        truncated_header.pop_back();
+        std::istringstream truncated_stream(
+            std::string(truncated_header.begin(), truncated_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_EXPECT(!detail::read_capture_index_stable_header(truncated_stream, decoded_header));
+
+        auto truncated_writer_string_header = encoded_header;
+        const auto writer_string_offset = 20U;
+        const auto writer_string_length = read_le32_at(truncated_writer_string_header, writer_string_offset);
+        PFL_REQUIRE(writer_string_length > 0U);
+        truncated_writer_string_header.resize(truncated_writer_string_header.size() - 1U);
+        std::istringstream truncated_writer_string_stream(
+            std::string(truncated_writer_string_header.begin(), truncated_writer_string_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_EXPECT(!detail::read_capture_index_stable_header(truncated_writer_string_stream, decoded_header));
+    }
+
+    {
+        detail::CaptureIndexStableSectionHeader section_header {
+            .section_id = 0x01020304U,
+            .section_schema_version = 7U,
+            .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+            .payload_size = 0x0102030405060708ULL,
+        };
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_section_header(stream, section_header));
+        const auto encoded_header = stream_bytes(stream);
+
+        PFL_EXPECT(detail::kCaptureIndexStableSectionHeaderEncodedSize == 16U);
+        PFL_EXPECT(encoded_header.size() == detail::kCaptureIndexStableSectionHeaderEncodedSize);
+        PFL_EXPECT(read_le32_at(encoded_header, 0U) == section_header.section_id);
+        PFL_EXPECT(read_le16_at(encoded_header, 4U) == section_header.section_schema_version);
+        PFL_EXPECT(read_le16_at(encoded_header, 6U) == detail::kCaptureIndexStableSectionFlagRequired);
+        PFL_EXPECT(read_le64_at(encoded_header, 8U) == section_header.payload_size);
+
+        detail::CaptureIndexStableSectionHeader decoded_header {};
+        std::istringstream read_stream(
+            std::string(encoded_header.begin(), encoded_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_REQUIRE(detail::read_capture_index_stable_section_header(read_stream, decoded_header));
+        PFL_EXPECT(decoded_header.section_id == section_header.section_id);
+        PFL_EXPECT(decoded_header.section_schema_version == section_header.section_schema_version);
+        PFL_EXPECT(decoded_header.section_flags == section_header.section_flags);
+        PFL_EXPECT(decoded_header.payload_size == section_header.payload_size);
+
+        auto truncated_section_header = encoded_header;
+        truncated_section_header.pop_back();
+        std::istringstream truncated_stream(
+            std::string(truncated_section_header.begin(), truncated_section_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_EXPECT(!detail::read_capture_index_stable_section_header(truncated_stream, decoded_header));
+    }
+
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 10, 1), ipv4(192, 168, 10, 2), 41000, 443);
     const auto reverse_packet = make_ethernet_ipv4_udp_packet(ipv4(192, 168, 10, 2), ipv4(192, 168, 10, 1), 53, 53000);
     const auto source_path = write_temp_pcap(
@@ -310,9 +612,7 @@ void run_index_format_tests() {
     PFL_REQUIRE(ah_path_id != kInvalidProtocolPathId);
 
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_sectioned_index.idx";
-    const auto checkpoint_path = std::filesystem::temp_directory_path() / "pfl_sectioned_checkpoint.ckp";
     std::filesystem::remove(index_path);
-    std::filesystem::remove(checkpoint_path);
 
     CaptureIndexWriter index_writer {};
     PFL_EXPECT(index_writer.write(index_path, state, source_path));
@@ -334,6 +634,103 @@ void run_index_format_tests() {
     PFL_EXPECT(format_protocol_path(*loaded_gre_key_path) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
     PFL_EXPECT(format_protocol_path(*loaded_esp_path) == "EthernetII -> IPv4 -> ESP(spi=0x01020304)");
     PFL_EXPECT(format_protocol_path(*loaded_ah_path) == "EthernetII -> IPv4 -> AH(spi=0x01020304) -> TCP");
+
+    CaptureIndexInspection inspection {};
+    PFL_EXPECT(index_reader.inspect(index_path, inspection));
+    PFL_EXPECT(inspection.format_family == CaptureIndexFormatFamily::stable);
+    PFL_EXPECT(inspection.magic == kStableCaptureIndexMagic);
+    PFL_EXPECT(inspection.stable_container_format_version == kCaptureIndexStableContainerFormatVersion);
+    PFL_EXPECT(inspection.stable_index_revision == kCaptureIndexVersion);
+    PFL_EXPECT(inspection.source_info.capture_path == source_path);
+    PFL_EXPECT(!inspection.sections.empty());
+    for (const auto& section : inspection.sections) {
+        PFL_EXPECT(section.section_schema_version == expected_section_schema_version(section.section_id));
+        PFL_EXPECT((section.section_flags & detail::kCaptureIndexStableSectionFlagRequired) != 0U);
+    }
+
+    auto future_revision_bytes = read_file_bytes(index_path);
+    write_le32_at(future_revision_bytes, 16U, kCaptureIndexVersion + 1U);
+    const auto future_revision_index_path = write_temp_binary_file(
+        "pfl_index_future_stable_revision.idx",
+        future_revision_bytes
+    );
+    PFL_EXPECT(index_reader.read(future_revision_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    PFL_EXPECT(loaded_capture_path == source_path);
+    expect_matching_states(state, loaded_state);
+
+    const auto unicode_source_path =
+        std::filesystem::temp_directory_path() /
+        detail::filesystem_path_from_generic_utf8(
+            "pfl_index_utf8/\xD1\x82\xD0\xB5\xD1\x81\xD1\x82/\xE4\xBE\x8B/pcap_flow_lab_showcase.pcap"
+        );
+    std::filesystem::create_directories(unicode_source_path.parent_path());
+    std::filesystem::copy_file(source_path, unicode_source_path, std::filesystem::copy_options::overwrite_existing);
+
+    const auto unicode_index_path = std::filesystem::temp_directory_path() / "pfl_sectioned_index_utf8.idx";
+    std::filesystem::remove(unicode_index_path);
+    PFL_EXPECT(index_writer.write(unicode_index_path, state, unicode_source_path));
+
+    auto unicode_index_bytes = read_file_bytes(unicode_index_path);
+    detail::CaptureIndexStableHeader unicode_header {};
+    std::istringstream unicode_header_stream(
+        std::string(unicode_index_bytes.begin(), unicode_index_bytes.end()),
+        std::ios::binary | std::ios::in
+    );
+    PFL_REQUIRE(detail::read_capture_index_stable_header(unicode_header_stream, unicode_header));
+    PFL_EXPECT(
+        unicode_header.source_capture_path_utf8 ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+
+    CaptureState unicode_loaded_state {};
+    std::filesystem::path unicode_loaded_capture_path {};
+    CaptureSourceInfo unicode_loaded_source_info {};
+    PFL_EXPECT(index_reader.read(
+        unicode_index_path,
+        unicode_loaded_state,
+        unicode_loaded_capture_path,
+        &unicode_loaded_source_info
+    ));
+    PFL_EXPECT(
+        detail::filesystem_path_to_generic_utf8(unicode_loaded_capture_path) ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+    PFL_EXPECT(
+        detail::filesystem_path_to_generic_utf8(unicode_loaded_source_info.capture_path) ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+
+    CaptureIndexInspection unicode_inspection {};
+    PFL_EXPECT(index_reader.inspect(unicode_index_path, unicode_inspection));
+    PFL_EXPECT(
+        detail::filesystem_path_to_generic_utf8(unicode_inspection.source_info.capture_path) ==
+        detail::filesystem_path_to_generic_utf8(unicode_source_path)
+    );
+
+    {
+        auto legacy_packet_ref_schema_bytes = read_file_bytes(index_path);
+        const auto sections = parse_sections(legacy_packet_ref_schema_bytes);
+        const auto ipv4_section = std::find_if(sections.begin(), sections.end(), [](const SectionInfo& section) {
+            return section.id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections);
+        });
+        PFL_REQUIRE(ipv4_section != sections.end());
+        write_le16_at(legacy_packet_ref_schema_bytes, ipv4_section->offset + 4U, 1U);
+
+        const auto legacy_packet_ref_schema_path = write_temp_binary_file(
+            "pfl_index_legacy_packet_ref_schema.idx",
+            legacy_packet_ref_schema_bytes
+        );
+        PFL_EXPECT(!index_reader.read(
+            legacy_packet_ref_schema_path,
+            loaded_state,
+            loaded_capture_path,
+            &loaded_source_info
+        ));
+        PFL_EXPECT(
+            index_reader.last_error().reason ==
+            "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture"
+        );
+    }
 
     {
         const auto chunked_ipv4_source_path = write_temp_pcap(
@@ -510,13 +907,20 @@ void run_index_format_tests() {
 
     const auto index_bytes = read_file_bytes(index_path);
     auto legacy_version_bytes = index_bytes;
-    write_le16_at(legacy_version_bytes, 8U, static_cast<std::uint16_t>(kCaptureIndexVersion - 1U));
+    write_le64_at(legacy_version_bytes, 0U, kLegacyCaptureIndexMagic);
+    write_le16_at(legacy_version_bytes, 8U, kLegacyCaptureIndexVersion);
+    write_le16_at(legacy_version_bytes, 10U, 0U);
     const auto legacy_version_index_path = write_temp_binary_file(
         "pfl_index_legacy_version.idx",
         legacy_version_bytes
     );
     PFL_EXPECT(!index_reader.read(legacy_version_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
-    PFL_EXPECT(index_reader.last_error().reason == "unsupported index version; rebuild the index from the source capture");
+    PFL_EXPECT(index_reader.last_error().reason == "legacy index version 14 is no longer loadable; rebuild the index from the source capture");
+    CaptureIndexInspection legacy_inspection {};
+    PFL_EXPECT(index_reader.inspect(legacy_version_index_path, legacy_inspection));
+    PFL_EXPECT(legacy_inspection.format_family == CaptureIndexFormatFamily::legacy);
+    PFL_EXPECT(legacy_inspection.magic == kLegacyCaptureIndexMagic);
+    PFL_EXPECT(legacy_inspection.legacy_version == kLegacyCaptureIndexVersion);
 
     {
         auto invalid_locator_state = state;
@@ -561,28 +965,6 @@ void run_index_format_tests() {
         ));
         PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
     }
-
-    ImportCheckpoint checkpoint {};
-    PFL_EXPECT(read_capture_source_info(source_path, checkpoint.source_info));
-    checkpoint.packets_processed = 2;
-    checkpoint.next_input_offset = 128;
-    checkpoint.completed = true;
-    checkpoint.state = loaded_state;
-
-    ImportCheckpointWriter checkpoint_writer {};
-    PFL_EXPECT(checkpoint_writer.write(checkpoint_path, checkpoint));
-
-    ImportCheckpointReader checkpoint_reader {};
-    ImportCheckpoint loaded_checkpoint {};
-    PFL_EXPECT(checkpoint_reader.read(checkpoint_path, loaded_checkpoint));
-    PFL_EXPECT(loaded_checkpoint.source_info.capture_path == checkpoint.source_info.capture_path);
-    PFL_EXPECT(loaded_checkpoint.source_info.format == checkpoint.source_info.format);
-    PFL_EXPECT(loaded_checkpoint.source_info.file_size == checkpoint.source_info.file_size);
-    PFL_EXPECT(loaded_checkpoint.source_info.last_write_time == checkpoint.source_info.last_write_time);
-    PFL_EXPECT(loaded_checkpoint.packets_processed == checkpoint.packets_processed);
-    PFL_EXPECT(loaded_checkpoint.next_input_offset == checkpoint.next_input_offset);
-    PFL_EXPECT(loaded_checkpoint.completed == checkpoint.completed);
-    expect_matching_states(loaded_checkpoint.state, checkpoint.state);
 
     const auto malformed_index_path = write_temp_binary_file(
         "pfl_index_section_size_invalid.idx",
@@ -639,42 +1021,6 @@ void run_index_format_tests() {
     );
     PFL_EXPECT(!index_reader.read(trailing_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
 
-    const auto checkpoint_bytes = read_file_bytes(checkpoint_path);
-    const auto malformed_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_section_size_invalid.ckp",
-        corrupt_first_section_size(checkpoint_bytes)
-    );
-    PFL_EXPECT(!checkpoint_reader.read(malformed_checkpoint_path, loaded_checkpoint));
-
-    const auto missing_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_missing_progress.ckp",
-        remove_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::progress))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(missing_checkpoint_path, loaded_checkpoint));
-
-    const auto missing_protocol_paths_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_missing_protocol_paths.ckp",
-        remove_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::protocol_paths))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(missing_protocol_paths_checkpoint_path, loaded_checkpoint));
-
-    const auto duplicate_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_duplicate_progress.ckp",
-        duplicate_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::progress))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(duplicate_checkpoint_path, loaded_checkpoint));
-
-    const auto duplicate_protocol_paths_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_duplicate_protocol_paths.ckp",
-        duplicate_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::protocol_paths))
-    );
-    PFL_EXPECT(!checkpoint_reader.read(duplicate_protocol_paths_checkpoint_path, loaded_checkpoint));
-
-    const auto trailing_checkpoint_path = write_temp_binary_file(
-        "pfl_checkpoint_trailing_garbage.ckp",
-        append_trailing_garbage(checkpoint_bytes)
-    );
-    PFL_EXPECT(!checkpoint_reader.read(trailing_checkpoint_path, loaded_checkpoint));
 }
 
 }  // namespace pfl::tests

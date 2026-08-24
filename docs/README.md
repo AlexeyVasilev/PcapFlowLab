@@ -76,6 +76,19 @@ different responsibilities.
 - [Selected-Flow Packet Cache Reference](selected-flow-packet-cache-rfc.md)
   Current cache-boundary and cache-budget reference despite the filename.
 
+## Active Design RFCs
+
+- [Advanced Flow Filter RFC](features/advanced-flow-filter-rfc.md)
+  Current backend/compiler/text-format and CLI contract for Advanced Flow
+  Filter.
+- [Advanced Flow Filter UI RFC](features/advanced-flow-filter-ui-rfc.md)
+  Current Qt Advanced Flow Filter editing/document-state/file-workflow
+  reference, with Tauri Advanced Filter parity still deferred.
+- [Flow Aggregate Metadata RFC](features/flow-aggregate-metadata-rfc.md)
+  Current compact per-connection aggregate metadata and PacketRef foundation.
+- [Index v15 Container RFC](features/index-v15-container-rfc.md)
+  Current stable v15 container/header and per-section compatibility contract.
+
 ## Export
 
 - [Smart Export](features/smart-export-v1.md)

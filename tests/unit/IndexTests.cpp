@@ -54,9 +54,6 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].original_length == right[index].original_length);
         PFL_EXPECT(left[index].ts_sec == right[index].ts_sec);
         PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
-        PFL_EXPECT(left[index].payload_length == right[index].payload_length);
-        PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
-        PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
     }
 }
 
@@ -314,9 +311,10 @@ void run_index_tests() {
         one_direction_connection.key = make_connection_key(one_direction_flow);
         one_direction_connection.add_packet(one_direction_flow, PacketRef {
             .packet_index = 0U,
+            .ts_sec = 0U,
+            .ts_usec = 100U,
             .captured_length = static_cast<std::uint32_t>(forward_packet.size()),
             .original_length = static_cast<std::uint32_t>(forward_packet.size()),
-            .ts_usec = 100U,
         });
         std::stringstream one_direction_stream(std::ios::in | std::ios::out | std::ios::binary);
         PFL_REQUIRE(detail::write_connection(one_direction_stream, one_direction_connection));
@@ -332,9 +330,10 @@ void run_index_tests() {
         bidirectional_connection.key = make_connection_key(one_direction_flow);
         bidirectional_connection.add_packet(one_direction_flow, PacketRef {
             .packet_index = 0U,
+            .ts_sec = 0U,
+            .ts_usec = 100U,
             .captured_length = static_cast<std::uint32_t>(forward_packet.size()),
             .original_length = static_cast<std::uint32_t>(forward_packet.size()),
-            .ts_usec = 100U,
         });
         bidirectional_connection.add_packet(FlowKeyV4 {
             .src_addr = one_direction_flow.dst_addr,
@@ -344,9 +343,10 @@ void run_index_tests() {
             .protocol = one_direction_flow.protocol,
         }, PacketRef {
             .packet_index = 1U,
+            .ts_sec = 0U,
+            .ts_usec = 200U,
             .captured_length = static_cast<std::uint32_t>(reverse_packet.size()),
             .original_length = static_cast<std::uint32_t>(reverse_packet.size()),
-            .ts_usec = 200U,
         });
         std::stringstream bidirectional_stream(std::ios::in | std::ios::out | std::ios::binary);
         PFL_REQUIRE(detail::write_connection(bidirectional_stream, bidirectional_connection));
@@ -357,7 +357,7 @@ void run_index_tests() {
         PFL_EXPECT(decoded_bidirectional.has_flow_b);
         PFL_EXPECT(first_observed_endpoint_a(decoded_bidirectional)->addr == one_direction_flow.src_addr);
         PFL_EXPECT(first_observed_endpoint_b(decoded_bidirectional)->addr == one_direction_flow.dst_addr);
-        PFL_EXPECT(kCaptureIndexVersion == 14U);
+        PFL_EXPECT(kCaptureIndexVersion == 15U);
     }
     {
         OpenContext ctx {};

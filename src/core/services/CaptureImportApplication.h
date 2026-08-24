@@ -72,7 +72,7 @@ void append_capture_packet_locator_entry(
 );
 
 [[nodiscard]] bool requires_full_packet_for_hint_detection(
-    const PacketRef& packet_ref,
+    const PacketImportMetadata& import_metadata,
     ProtocolId protocol
 ) noexcept;
 
@@ -84,12 +84,13 @@ void append_capture_packet_locator_entry(
 template <typename Connection, typename FlowKey>
 void apply_import_hints_if_needed(const RawPcapPacket& packet,
                                   std::span<const std::uint8_t> packet_bytes,
-                                  const PacketRef& packet_ref,
+                                  const PacketImportMetadata& import_metadata,
                                   Connection& connection,
                                   const FlowKey& flow_key,
                                   const FlowHintService& hint_service,
                                   const std::optional<TerminalTransportPayloadBounds>& terminal_transport_payload_bounds = std::nullopt) {
-    if (packet_ref.is_ip_fragmented || !connection.should_attempt_hint_detection(packet_ref, flow_key.protocol)) {
+    if (import_metadata.is_ip_fragmented ||
+        !connection.should_attempt_hint_detection(import_metadata, flow_key.protocol)) {
         return;
     }
 
@@ -99,7 +100,7 @@ void apply_import_hints_if_needed(const RawPcapPacket& packet,
         flow_key,
         terminal_transport_payload_bounds
     ));
-    connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
+    connection.note_hint_detection_attempt(import_metadata, flow_key.protocol);
 }
 
 [[nodiscard]] UnifiedImportPacketResult run_unified_import_packet(

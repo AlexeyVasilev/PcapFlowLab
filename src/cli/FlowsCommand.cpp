@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <array>
+#include <fstream>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "core/index/CaptureIndex.h"
@@ -20,6 +22,12 @@ constexpr std::size_t kDefaultFlowsPreviewLimit = 25U;
 struct TableColumn {
     std::string header {};
     bool right_align {false};
+};
+
+struct AdvancedFlowFilterFileReadResult {
+    bool ok {false};
+    std::string text {};
+    std::string error_text {};
 };
 
 std::string trim_ascii(const std::string_view text) {
@@ -110,9 +118,96 @@ std::string render_flows_examples() {
     out << "Examples\n";
     out << "  pcap-flow-lab flows capture.pcap\n";
     out << "  pcap-flow-lab flows capture.idx --filter TLS --sort bytes:desc\n";
+    out << "  pcap-flow-lab flows capture.pcap --adv-filter filters/tls.filter\n";
     out << "  pcap-flow-lab flows capture.pcap --flow-number 42\n";
     out << "  pcap-flow-lab flows capture.pcap --flow-numbers 1-10,24,31-35\n";
     out << "  pcap-flow-lab flows capture.idx --out-flows-list flows.csv\n";
+    return out.str();
+}
+
+AdvancedFlowFilterFileReadResult read_advanced_flow_filter_file(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream.is_open()) {
+        return {
+            .ok = false,
+            .error_text = "Failed to read advanced filter file: " + path.string(),
+        };
+    }
+
+    std::string buffer {};
+    buffer.reserve(std::min<std::size_t>(session_detail::kAdvancedFlowFilterMaxFileBytes, 64U * 1024U));
+    std::array<char, 4096U> chunk {};
+    while (true) {
+        const auto remaining_bytes = session_detail::kAdvancedFlowFilterMaxFileBytes - buffer.size();
+        const auto bytes_to_read = std::min(chunk.size(), remaining_bytes + 1U);
+        stream.read(chunk.data(), static_cast<std::streamsize>(bytes_to_read));
+        const auto bytes_read = static_cast<std::size_t>(stream.gcount());
+
+        if (bytes_read > remaining_bytes) {
+            return {
+                .ok = false,
+                .error_text = "Advanced filter file is too large: " + path.string() + " (maximum 1 MiB).",
+            };
+        }
+
+        if (bytes_read > 0U) {
+            buffer.append(chunk.data(), bytes_read);
+        }
+
+        if (stream.eof()) {
+            break;
+        }
+
+        if (stream.fail()) {
+            return {
+                .ok = false,
+                .error_text = "Failed to read advanced filter file: " + path.string(),
+            };
+        }
+    }
+
+    return {
+        .ok = true,
+        .text = std::move(buffer),
+    };
+}
+
+std::string render_advanced_flow_filter_parse_error(
+    const std::filesystem::path& path,
+    const session_detail::AdvancedFlowFilterTextParseResult& parse_result
+) {
+    std::ostringstream out {};
+    out << "Invalid advanced flow filter file: " << path.string();
+    if (parse_result.issue.has_value()) {
+        out << " (line " << parse_result.issue->line;
+        if (parse_result.issue->column.has_value()) {
+            out << ", column " << *parse_result.issue->column;
+        }
+        out << ')';
+        if (!parse_result.issue->message.empty()) {
+            out << ": " << parse_result.issue->message;
+        }
+    }
+    out << '.';
+    return out.str();
+}
+
+std::string render_advanced_flow_filter_compile_error(
+    const std::filesystem::path& path,
+    const FrontendAdvancedFlowQueryResult& query_result
+) {
+    std::ostringstream out {};
+    out << "Advanced flow filter is not valid for this capture or index: " << path.string();
+    if (query_result.compile_issue.has_value()) {
+        if (!query_result.compile_issue->category.empty()) {
+            out << " (" << query_result.compile_issue->category;
+            if (query_result.compile_issue->predicate_index.has_value()) {
+                out << " #" << (*query_result.compile_issue->predicate_index + 1U);
+            }
+            out << ')';
+        }
+    }
+    out << '.';
     return out.str();
 }
 
@@ -227,6 +322,16 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
             };
         }
     }
+    if (options.advanced_filter_path.has_value()) {
+        std::error_code error {};
+        if (!std::filesystem::exists(*options.advanced_filter_path, error) || error) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Advanced filter file does not exist: " + options.advanced_filter_path->string() + '\n',
+            };
+        }
+    }
 
     std::array<CliOutputTarget, 1> outputs {{
         CliOutputTarget {
@@ -235,10 +340,19 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         },
     }};
     const auto output_count = options.out_flows_list_path.has_value() ? std::size_t {1U} : std::size_t {0U};
+    std::vector<std::filesystem::path> protected_input_paths {};
+    protected_input_paths.reserve(2U);
+    if (options.settings_path.has_value()) {
+        protected_input_paths.push_back(*options.settings_path);
+    }
+    if (options.advanced_filter_path.has_value()) {
+        protected_input_paths.push_back(*options.advanced_filter_path);
+    }
     const auto preflight = preflight_output_targets(
         options.input_path,
         std::span<const CliOutputTarget>(outputs.data(), output_count),
-        options.force
+        options.force,
+        std::span<const std::filesystem::path>(protected_input_paths.data(), protected_input_paths.size())
     );
     if (!preflight.ok) {
         return {
@@ -259,6 +373,29 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
             };
         }
         effective_settings = parse_result.settings;
+    }
+
+    std::optional<session_detail::AdvancedFlowFilterDocument> parsed_advanced_filter_document {};
+    if (options.advanced_filter_path.has_value()) {
+        const auto filter_file = read_advanced_flow_filter_file(*options.advanced_filter_path);
+        if (!filter_file.ok) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = filter_file.error_text + '\n',
+            };
+        }
+
+        const auto parse_result = session_detail::parse_advanced_flow_filter_text(filter_file.text);
+        if (parse_result.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = render_advanced_flow_filter_parse_error(*options.advanced_filter_path, parse_result) + '\n',
+            };
+        }
+
+        parsed_advanced_filter_document = parse_result.document;
     }
 
     FrontendSessionAdapter adapter {};
@@ -293,7 +430,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         stderr_text += '\n';
     }
 
-    session_detail::FlowQuery query {};
+    std::optional<std::vector<std::size_t>> selected_flow_indices {};
     if (options.selected_flow_number_ranges.has_value()) {
         const auto flow_count_result = adapter.query_flows(session_detail::FlowQuery {});
         if (flow_count_result.status != session_detail::FlowQueryStatus::ok) {
@@ -321,43 +458,93 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
                 .stderr_text = "Requested flow number is outside the available canonical flow range: " + canonical_number + '\n',
             };
         }
-        query.selected_flow_indices = std::move(resolved.flow_indices);
+        selected_flow_indices = std::move(resolved.flow_indices);
     }
-    query.text_filter = options.text_filter;
-    query.sort = options.sort;
-    query.limit = options.limit;
 
-    const auto query_result = adapter.query_flows(query);
-    if (query_result.status == session_detail::FlowQueryStatus::invalid_limit) {
-        return {
-            .exit_code = 1,
-            .stdout_text = {},
-            .stderr_text = "Invalid --limit value.\n",
-        };
+    std::optional<session_detail::AdvancedFlowFilterSpec> effective_advanced_filter_spec {};
+    if (parsed_advanced_filter_document.has_value()) {
+        effective_advanced_filter_spec =
+            session_detail::make_effective_advanced_flow_filter_spec(*parsed_advanced_filter_document);
     }
-    if (query_result.status == session_detail::FlowQueryStatus::invalid_flow_index) {
-        const auto canonical_number = query_result.invalid_flow_index.has_value()
-            ? session_detail::format_statistics_count_value(*query_result.invalid_flow_index + 1U)
-            : std::string {"unknown"};
-        return {
-            .exit_code = 1,
-            .stdout_text = {},
-            .stderr_text = "Requested flow number is outside the available canonical flow range: " + canonical_number + '\n',
-        };
+
+    std::vector<std::size_t> ordered_flow_indices {};
+    std::size_t result_count_before_limit = 0U;
+    if (effective_advanced_filter_spec.has_value()) {
+        const auto query_result = adapter.query_advanced_flows(
+            *effective_advanced_filter_spec,
+            selected_flow_indices,
+            options.sort,
+            options.limit
+        );
+        if (query_result.status == FrontendAdvancedFlowQueryStatus::invalid_limit) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Invalid --limit value.\n",
+            };
+        }
+        if (query_result.status == FrontendAdvancedFlowQueryStatus::invalid_flow_index) {
+            const auto canonical_number = query_result.invalid_flow_index.has_value()
+                ? session_detail::format_statistics_count_value(*query_result.invalid_flow_index + 1U)
+                : std::string {"unknown"};
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Requested flow number is outside the available canonical flow range: " + canonical_number + '\n',
+            };
+        }
+        if (query_result.status == FrontendAdvancedFlowQueryStatus::invalid_advanced_filter) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = render_advanced_flow_filter_compile_error(*options.advanced_filter_path, query_result) + '\n',
+            };
+        }
+
+        ordered_flow_indices = std::move(query_result.ordered_flow_indices);
+        result_count_before_limit = query_result.result_count_before_limit;
+    } else {
+        session_detail::FlowQuery query {};
+        query.selected_flow_indices = std::move(selected_flow_indices);
+        query.text_filter = options.text_filter;
+        query.sort = options.sort;
+        query.limit = options.limit;
+
+        const auto query_result = adapter.query_flows(query);
+        if (query_result.status == session_detail::FlowQueryStatus::invalid_limit) {
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Invalid --limit value.\n",
+            };
+        }
+        if (query_result.status == session_detail::FlowQueryStatus::invalid_flow_index) {
+            const auto canonical_number = query_result.invalid_flow_index.has_value()
+                ? session_detail::format_statistics_count_value(*query_result.invalid_flow_index + 1U)
+                : std::string {"unknown"};
+            return {
+                .exit_code = 1,
+                .stdout_text = {},
+                .stderr_text = "Requested flow number is outside the available canonical flow range: " + canonical_number + '\n',
+            };
+        }
+
+        ordered_flow_indices = query_result.ordered_flow_indices;
+        result_count_before_limit = query_result.result_count_before_limit;
     }
 
     const bool explicit_limit_supplied = options.limit.has_value();
     const auto rendered_count = explicit_limit_supplied
-        ? query_result.ordered_flow_indices.size()
-        : std::min(query_result.ordered_flow_indices.size(), kDefaultFlowsPreviewLimit);
+        ? ordered_flow_indices.size()
+        : std::min(ordered_flow_indices.size(), kDefaultFlowsPreviewLimit);
     const auto rendered_rows = std::span<const std::size_t>(
-        query_result.ordered_flow_indices.data(),
+        ordered_flow_indices.data(),
         rendered_count
     );
 
     std::ostringstream stdout_builder {};
     stdout_builder << "Flows\n\n";
-    if (query_result.ordered_flow_indices.empty()) {
+    if (ordered_flow_indices.empty()) {
         stdout_builder << "No matching flows.\n";
     } else {
         const auto table = render_flows_table(adapter, rendered_rows);
@@ -370,16 +557,15 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
         }
         stdout_builder << table;
 
-        const auto count_before_limit = query_result.result_count_before_limit;
         const bool default_preview_truncated =
-            !explicit_limit_supplied && count_before_limit > kDefaultFlowsPreviewLimit;
+            !explicit_limit_supplied && result_count_before_limit > kDefaultFlowsPreviewLimit;
 
         if (explicit_limit_supplied || default_preview_truncated) {
             stdout_builder << '\n'
                 << "Showing "
                 << session_detail::format_statistics_count_value(rendered_count)
                 << " of "
-                << session_detail::format_statistics_count_value(count_before_limit)
+                << session_detail::format_statistics_count_value(result_count_before_limit)
                 << " flows.\n";
         }
 
@@ -392,7 +578,7 @@ FlowsCommandExecutionResult execute_flows_command_with_environment(
     if (options.out_flows_list_path.has_value()) {
         const auto export_result = adapter.export_flows_info_csv(
             *options.out_flows_list_path,
-            query_result.ordered_flow_indices
+            ordered_flow_indices
         );
         if (!export_result.exported) {
             stderr_text += export_result.error_text.empty()
@@ -436,6 +622,7 @@ std::string render_flows_command_help() {
     out << "  --flow-number <N>\n";
     out << "  --flow-numbers <ranges>\n";
     out << "  --filter <text>\n";
+    out << "  --adv-filter <path>\n";
     out << "  --sort <number|protocol|service|endpoint-a|endpoint-b|packets|bytes>:<asc|desc>\n";
     out << "  --limit <N>\n\n";
     out << "Output\n";
@@ -447,6 +634,7 @@ std::string render_flows_command_help() {
     out << "  -h, --help\n\n";
     out << "Notes\n";
     out << "  Flow numbers are one-based canonical identities.\n";
+    out << "  --filter and --adv-filter are mutually exclusive.\n";
     out << "  stdout shows a default preview of 25 rows when --limit is not supplied.\n";
     out << "  Example range: 1-10,24,31-35\n\n";
     out << render_flows_examples();
@@ -461,6 +649,7 @@ FlowsCommandParseResult parse_flows_command_arguments(const std::span<const std:
     bool flow_number_seen = false;
     bool flow_numbers_seen = false;
     bool filter_seen = false;
+    bool advanced_filter_seen = false;
     bool sort_seen = false;
     bool limit_seen = false;
     bool out_flows_list_seen = false;
@@ -546,11 +735,29 @@ FlowsCommandParseResult parse_flows_command_arguments(const std::span<const std:
             if (filter_seen) {
                 return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --filter is invalid."};
             }
+            if (advanced_filter_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--filter and --adv-filter are mutually exclusive."};
+            }
             if (index + 1U >= args.size()) {
                 return {.ok = false, .options = std::nullopt, .error_text = "--filter requires a text query."};
             }
             filter_seen = true;
             options.text_filter = std::string {args[++index]};
+            continue;
+        }
+
+        if (token == "--adv-filter") {
+            if (advanced_filter_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "Duplicate --adv-filter is invalid."};
+            }
+            if (filter_seen) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--filter and --adv-filter are mutually exclusive."};
+            }
+            if (index + 1U >= args.size()) {
+                return {.ok = false, .options = std::nullopt, .error_text = "--adv-filter requires a path."};
+            }
+            advanced_filter_seen = true;
+            options.advanced_filter_path = std::filesystem::path {std::string {args[++index]}};
             continue;
         }
 

@@ -10,10 +10,12 @@
 #include <vector>
 #include <array>
 
+#include "app/session/AdvancedFlowFilter.h"
 #include "app/session/ByteExport.h"
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionQuicPresentation.h"
@@ -231,6 +233,12 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
     [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
+    [[nodiscard]] session_detail::AdvancedFlowQueryResult query_advanced_flows(
+        const session_detail::AdvancedFlowFilterSpec& filter_spec,
+        const std::optional<std::vector<std::size_t>>& candidate_flow_indices = std::nullopt,
+        std::optional<session_detail::FlowQuerySortSpec> sort = std::nullopt,
+        std::optional<std::size_t> limit = std::nullopt
+    ) const;
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
     [[nodiscard]] std::optional<session_detail::SelectedPacketBytePresentation> derive_selected_packet_byte_presentation(
         const PacketRef& packet
@@ -319,6 +327,10 @@ public:
     void prepare_selected_flow_packet_cache(std::size_t flow_index, std::size_t max_packets_to_scan) const;
     void clear_selected_flow_packet_cache() noexcept;
     [[nodiscard]] std::optional<SelectedFlowPacketCacheInfo> selected_flow_packet_cache_info() const noexcept;
+    [[nodiscard]] std::optional<session_detail::TransientPacketDerivedMetadata> selected_flow_cached_packet_metadata(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const noexcept;
     [[nodiscard]] std::optional<SelectedFlowStreamContextInfo> selected_flow_stream_context_info() const noexcept;
     [[nodiscard]] bool selected_flow_packet_cache_limit_reached() const noexcept;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_cached_packet_number(
@@ -439,6 +451,7 @@ private:
         std::size_t cache_length {0};
         std::uint32_t payload_length {0};
         bool payload_cached {false};
+        session_detail::TransientPacketDerivedMetadata metadata {};
     };
 
     struct SelectedFlowPacketCache {
@@ -456,6 +469,7 @@ private:
         PacketRef packet {};
         Direction direction {Direction::a_to_b};
         std::uint64_t flow_local_packet_number {0};
+        std::optional<session_detail::TransientPacketDerivedMetadata> metadata {};
     };
 
     struct SelectedFlowTcpPrefixContext {
@@ -530,6 +544,11 @@ private:
         std::size_t flow_index,
         std::size_t max_packets_to_scan
     ) const;
+    [[nodiscard]] std::vector<session_detail::TransientPacketDerivedMetadata> derive_transient_packet_metadata_batch(
+        std::size_t flow_index,
+        std::span<const PacketRef> packets
+    ) const;
+    void enrich_flow_analysis_sequence_preview(std::size_t flow_index, FlowAnalysisResult& result) const;
     [[nodiscard]] const std::vector<std::uint8_t>* find_selected_flow_full_packet_cache_bytes(std::uint64_t packet_index) const noexcept;
     [[nodiscard]] const SelectedFlowPacketCacheEntry* find_selected_flow_packet_cache_entry(
         std::size_t flow_index,

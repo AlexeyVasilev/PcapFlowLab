@@ -36,13 +36,13 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
     case OriginalLengthRole:
         return item.original_length;
     case PayloadLengthRole:
-        return item.payload_length;
+        return item.payload_length.has_value() ? QVariant::fromValue(*item.payload_length) : QVariant {};
     case IsIpFragmentedRole:
-        return item.is_ip_fragmented;
+        return item.is_ip_fragmented.has_value() ? QVariant::fromValue(*item.is_ip_fragmented) : QVariant {};
     case SuspectedTcpRetransmissionRole:
         return item.suspected_tcp_retransmission;
     case TcpFlagsTextRole:
-        return item.tcp_flags_text;
+        return item.tcp_flags_text.has_value() ? QVariant::fromValue(*item.tcp_flags_text) : QVariant {};
     case ReasonTextRole:
         return item.reason_text;
     default:
@@ -98,10 +98,14 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
             .timestamp = QString::fromStdString(row.timestamp_text),
             .captured_length = row.captured_length,
             .original_length = row.original_length,
-            .payload_length = row.payload_length,
-            .is_ip_fragmented = row.is_ip_fragmented,
+            .payload_length = row.derived_payload_length
+                ? std::optional<uint> {static_cast<uint>(*row.derived_payload_length)}
+                : std::nullopt,
+            .is_ip_fragmented = row.derived_is_ip_fragmented,
             .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
-            .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
+            .tcp_flags_text = row.derived_tcp_flags_text
+                ? std::optional<QString> {QString::fromStdString(*row.derived_tcp_flags_text)}
+                : std::nullopt,
             .reason_text = {},
         });
     }
@@ -124,10 +128,10 @@ void PacketListModel::refresh(const std::vector<UnrecognizedPacketRow>& rows) {
             .timestamp = QString::fromStdString(row.timestamp_text),
             .captured_length = row.captured_length,
             .original_length = row.original_length,
-            .payload_length = 0U,
-            .is_ip_fragmented = false,
+            .payload_length = std::nullopt,
+            .is_ip_fragmented = std::nullopt,
             .suspected_tcp_retransmission = false,
-            .tcp_flags_text = {},
+            .tcp_flags_text = std::nullopt,
             .reason_text = QString::fromStdString(row.reason_text),
         });
     }
@@ -155,10 +159,14 @@ void PacketListModel::append(const std::vector<PacketRow>& rows) {
             .timestamp = QString::fromStdString(row.timestamp_text),
             .captured_length = row.captured_length,
             .original_length = row.original_length,
-            .payload_length = row.payload_length,
-            .is_ip_fragmented = row.is_ip_fragmented,
+            .payload_length = row.derived_payload_length
+                ? std::optional<uint> {static_cast<uint>(*row.derived_payload_length)}
+                : std::nullopt,
+            .is_ip_fragmented = row.derived_is_ip_fragmented,
             .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
-            .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
+            .tcp_flags_text = row.derived_tcp_flags_text
+                ? std::optional<QString> {QString::fromStdString(*row.derived_tcp_flags_text)}
+                : std::nullopt,
             .reason_text = {},
         });
     }
@@ -186,10 +194,10 @@ void PacketListModel::append(const std::vector<UnrecognizedPacketRow>& rows) {
             .timestamp = QString::fromStdString(row.timestamp_text),
             .captured_length = row.captured_length,
             .original_length = row.original_length,
-            .payload_length = 0U,
-            .is_ip_fragmented = false,
+            .payload_length = std::nullopt,
+            .is_ip_fragmented = std::nullopt,
             .suspected_tcp_retransmission = false,
-            .tcp_flags_text = {},
+            .tcp_flags_text = std::nullopt,
             .reason_text = QString::fromStdString(row.reason_text),
         });
     }

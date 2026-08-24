@@ -43,6 +43,17 @@ std::vector<std::uint8_t> bytes_payload(std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+std::vector<std::uint8_t> make_ipv4_tcp_first_fragment_with_complete_header(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port
+) {
+    const auto tcp_packet = make_ethernet_ipv4_tcp_packet(src_addr, dst_addr, src_port, dst_port);
+    const auto tcp_payload = std::vector<std::uint8_t>(tcp_packet.begin() + 34, tcp_packet.end());
+    return make_ethernet_ipv4_fragment_packet(src_addr, dst_addr, 6U, 0x2000U, tcp_payload);
+}
+
 std::optional<std::size_t> find_flow_index_by_service_hint(
     const std::vector<FlowRow>& rows,
     const std::string_view service_hint
@@ -89,10 +100,10 @@ CaptureSession build_shared_flow_query_session() {
             tcp_heavy_flow,
             PacketRef {
                 .packet_index = packet_offset,
-                .captured_length = 66U,
-                .original_length = 66U,
                 .ts_sec = 1U,
                 .ts_usec = static_cast<std::uint32_t>(100U + packet_offset),
+                .captured_length = 66U,
+                .original_length = 66U,
             }
         );
     }
@@ -114,20 +125,20 @@ CaptureSession build_shared_flow_query_session() {
         http_flow,
         PacketRef {
             .packet_index = 10U,
-            .captured_length = 100U,
-            .original_length = 100U,
             .ts_sec = 2U,
             .ts_usec = 100U,
+            .captured_length = 100U,
+            .original_length = 100U,
         }
     );
     http_connection.add_packet(
         http_flow,
         PacketRef {
             .packet_index = 11U,
-            .captured_length = 100U,
-            .original_length = 100U,
             .ts_sec = 2U,
             .ts_usec = 200U,
+            .captured_length = 100U,
+            .original_length = 100U,
         }
     );
     state.ipv4_connections.get_or_create(http_connection.key) = http_connection;
@@ -148,10 +159,10 @@ CaptureSession build_shared_flow_query_session() {
         dns_flow,
         PacketRef {
             .packet_index = 12U,
-            .captured_length = 90U,
-            .original_length = 90U,
             .ts_sec = 3U,
             .ts_usec = 100U,
+            .captured_length = 90U,
+            .original_length = 90U,
         }
     );
     state.ipv4_connections.get_or_create(dns_connection.key) = dns_connection;
@@ -170,10 +181,10 @@ CaptureSession build_shared_flow_query_session() {
         ipv6_udp_flow,
         PacketRef {
             .packet_index = 13U,
-            .captured_length = 70U,
-            .original_length = 70U,
             .ts_sec = 4U,
             .ts_usec = 100U,
+            .captured_length = 70U,
+            .original_length = 70U,
         }
     );
     state.ipv6_connections.get_or_create(ipv6_udp_connection.key) = ipv6_udp_connection;
@@ -648,6 +659,73 @@ void run_query_tests() {
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 15U);
 
+    const auto fragmented_tcp_cache_path = write_temp_pcap(
+        "pfl_query_selected_flow_unknown_payload_cache.pcap",
+        make_classic_pcap({
+            {100U, make_ipv4_tcp_first_fragment_with_complete_header(
+                ipv4(10, 71, 0, 1),
+                ipv4(10, 71, 0, 2),
+                55000,
+                443
+            )}
+        })
+    );
+
+    CaptureSession fragmented_tcp_cache_session {};
+    PFL_EXPECT(fragmented_tcp_cache_session.open_capture(fragmented_tcp_cache_path));
+    const auto fragmented_flow_packets = fragmented_tcp_cache_session.flow_packets(0U);
+    PFL_REQUIRE(fragmented_flow_packets.has_value());
+    PFL_REQUIRE(fragmented_flow_packets->size() == 1U);
+
+    fragmented_tcp_cache_session.prepare_selected_flow_packet_cache(0U, 1U);
+    auto fragmented_cache_info = fragmented_tcp_cache_session.selected_flow_packet_cache_info();
+    PFL_REQUIRE(fragmented_cache_info.has_value());
+    PFL_EXPECT(fragmented_cache_info->flow_index == 0U);
+    PFL_EXPECT(fragmented_cache_info->cached_packet_window_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->cached_packet_contribution_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
+    PFL_EXPECT(!fragmented_cache_info->limit_reached);
+    PFL_EXPECT(fragmented_cache_info->window_fully_cached);
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload(
+        0U,
+        (*fragmented_flow_packets)[0]
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_prefix(
+        0U,
+        (*fragmented_flow_packets)[0],
+        8U
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_slice(
+        0U,
+        (*fragmented_flow_packets)[0],
+        0U,
+        8U
+    ).empty());
+
+    PFL_EXPECT(fragmented_tcp_cache_session.suspected_tcp_retransmission_packet_indices(0U, 1U).empty());
+    fragmented_cache_info = fragmented_tcp_cache_session.selected_flow_packet_cache_info();
+    PFL_REQUIRE(fragmented_cache_info.has_value());
+    PFL_EXPECT(fragmented_cache_info->cached_packet_window_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->cached_packet_contribution_count == 1U);
+    PFL_EXPECT(fragmented_cache_info->total_cached_bytes == 0U);
+    PFL_EXPECT(!fragmented_cache_info->limit_reached);
+    PFL_EXPECT(fragmented_cache_info->window_fully_cached);
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload(
+        0U,
+        (*fragmented_flow_packets)[0]
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_prefix(
+        0U,
+        (*fragmented_flow_packets)[0],
+        8U
+    ).empty());
+    PFL_EXPECT(fragmented_tcp_cache_session.read_selected_flow_transport_payload_slice(
+        0U,
+        (*fragmented_flow_packets)[0],
+        0U,
+        8U
+    ).empty());
+
     {
         const FlowRow filter_row {
             .index = 17U,
@@ -877,10 +955,10 @@ void run_query_tests() {
                 flow,
                 PacketRef {
                     .packet_index = host_octet,
-                    .captured_length = 64U,
-                    .original_length = 64U,
                     .ts_sec = 5U,
                     .ts_usec = host_octet,
+                    .captured_length = 64U,
+                    .original_length = 64U,
                 }
             );
             state.ipv4_connections.get_or_create(connection.key) = connection;

@@ -84,9 +84,6 @@ add_library(
     src/core/index/Serialization.cpp
     src/core/index/CaptureIndexWriter.cpp
     src/core/index/CaptureIndexReader.cpp
-    src/core/index/ImportCheckpoint.cpp
-    src/core/index/ImportCheckpointWriter.cpp
-    src/core/index/ImportCheckpointReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
@@ -95,7 +92,6 @@ add_library(
     src/core/services/CaptureImportApplication.cpp
     src/core/services/DissectionImportAdapter.cpp
     src/core/services/CaptureImporter.cpp
-    src/core/services/ChunkedCaptureImporter.cpp
     src/core/services/FlowExportService.cpp
     src/core/services/FlowAnalysisService.cpp
     src/core/services/PacketDetailsService.cpp
@@ -115,6 +111,9 @@ add_library(
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/frontend/FrontendSettingsJson.cpp
     src/app/session/ByteExport.cpp
+    src/app/session/AdvancedFlowFilter.cpp
+    src/app/session/AdvancedFlowFilterDocumentState.cpp
+    src/app/session/AdvancedFlowFilterFormat.cpp
     src/app/session/CaptureSession.cpp
     src/app/session/ProtocolPathPresentation.cpp
     src/app/session/ProtocolPathTextExport.cpp
@@ -217,6 +216,10 @@ if(PFL_BUILD_UI)
             src/ui/app/main.cpp
             src/ui/app/MainController.cpp
             src/ui/app/MainController.h
+            src/ui/app/AdvancedFlowFilterEditorModel.cpp
+            src/ui/app/AdvancedFlowFilterEditorModel.h
+            src/ui/app/AdvancedFlowFilterProtocolPathSelectorModel.cpp
+            src/ui/app/AdvancedFlowFilterProtocolPathSelectorModel.h
             src/ui/app/FlowListModel.cpp
             src/ui/app/FlowListModel.h
             src/ui/app/ProtocolPathStatsModel.cpp
@@ -248,6 +251,11 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/FlowAnalysisPane.qml
                 src/ui/qml/components/SettingsPane.qml
                 src/ui/qml/components/AppScrollBar.qml
+                src/ui/qml/components/AdvancedFlowFilterSemanticGroup.qml
+                src/ui/qml/components/AdvancedFlowFilterRowRemoveButton.qml
+                src/ui/qml/components/AdvancedFlowFilterSection.qml
+                src/ui/qml/components/AdvancedFlowFilterSettingsDialog.qml
+                src/ui/qml/components/AdvancedFlowFilterProtocolPathSelectorDialog.qml
                 src/ui/qml/components/SupportedProtocolsDialog.qml
                 src/ui/qml/components/SmartExportDialog.qml
         )
@@ -319,6 +327,8 @@ if(PFL_BUILD_UI)
                 pcap_flow_lab_ui_tests
                 tests/ui/MainControllerUiTests.cpp
                 src/ui/app/MainController.cpp
+                src/ui/app/AdvancedFlowFilterEditorModel.cpp
+                src/ui/app/AdvancedFlowFilterProtocolPathSelectorModel.cpp
                 src/ui/app/FlowListModel.cpp
                 src/ui/app/ProtocolPathStatsModel.cpp
                 src/ui/app/TopSummaryListModel.cpp
@@ -425,6 +435,8 @@ if(BUILD_TESTING)
         tests/unit/CliFlowInfoTests.cpp
         tests/unit/CliSummaryTests.cpp
         tests/unit/ByteExportTests.cpp
+        tests/unit/AdvancedFlowFilterTests.cpp
+        tests/unit/AdvancedFlowFilterDocumentStateTests.cpp
         tests/unit/SelectedPacketBytePresentationTests.cpp
         tests/unit/SelectedStreamItemDataPresentationTests.cpp
         tests/unit/PacketPayloadTests.cpp
@@ -462,7 +474,6 @@ if(BUILD_TESTING)
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
         tests/unit/IndexFormatTests.cpp
-        tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/SupportedProtocolCatalogTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp

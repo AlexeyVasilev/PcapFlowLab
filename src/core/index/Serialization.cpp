@@ -234,6 +234,57 @@ bool read_packet_refs(std::istream& stream, std::vector<PacketRef>& packets) {
     return true;
 }
 
+bool skip_exact_bytes(std::istream& stream, std::uint32_t byte_count) {
+    if (byte_count == 0U) {
+        return true;
+    }
+
+    auto discard = std::array<char, 512> {};
+    std::uint32_t remaining = byte_count;
+    while (remaining > 0U) {
+        const auto chunk_size = std::min<std::uint32_t>(remaining, static_cast<std::uint32_t>(discard.size()));
+        stream.read(discard.data(), static_cast<std::streamsize>(chunk_size));
+        if (stream.gcount() != static_cast<std::streamsize>(chunk_size)) {
+            return false;
+        }
+        remaining -= chunk_size;
+    }
+
+    return true;
+}
+
+bool read_bounded_string(std::istream& stream,
+                         std::string& value,
+                         const std::uint32_t max_length,
+                         std::uint32_t& bytes_consumed,
+                         const std::uint32_t header_size_limit) {
+    std::uint32_t length {0};
+    if (!read_u32(stream, length)) {
+        return false;
+    }
+
+    if (length > max_length ||
+        bytes_consumed > header_size_limit ||
+        4U > header_size_limit - bytes_consumed ||
+        length > (header_size_limit - bytes_consumed - 4U)) {
+        return false;
+    }
+
+    bytes_consumed += 4U;
+    value.assign(length, '\0');
+    if (length == 0U) {
+        return true;
+    }
+
+    auto bytes = std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(value.data()), value.size());
+    if (!read_bytes(stream, bytes)) {
+        return false;
+    }
+
+    bytes_consumed += length;
+    return true;
+}
+
 }  // namespace
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes) {
@@ -380,6 +431,134 @@ bool read_string(std::istream& stream, std::string& value) {
     return read_bytes(stream, bytes);
 }
 
+std::optional<std::uint32_t> encoded_capture_index_stable_header_size(
+    const CaptureIndexStableHeader& header,
+    const std::uint32_t extension_size
+) noexcept {
+    const auto writer_size = header.writer_application_version.size();
+    const auto source_path_size = header.source_capture_path_utf8.size();
+    if (writer_size > static_cast<std::size_t>(kMaxCaptureIndexStableHeaderStringBytes) ||
+        source_path_size > static_cast<std::size_t>(kMaxCaptureIndexStableHeaderStringBytes) ||
+        writer_size > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) ||
+        source_path_size > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::nullopt;
+    }
+
+    const auto total_size = static_cast<std::uint64_t>(kCaptureIndexStableHeaderKnownPrefixSize) +
+                            static_cast<std::uint64_t>(writer_size) +
+                            static_cast<std::uint64_t>(source_path_size) +
+                            static_cast<std::uint64_t>(extension_size);
+    if (total_size > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint32_t>(total_size);
+}
+
+bool write_capture_index_stable_header(std::ostream& stream,
+                                       const CaptureIndexStableHeader& header,
+                                       const std::span<const std::uint8_t> extension_bytes) {
+    const auto encoded_size = encoded_capture_index_stable_header_size(
+        header,
+        static_cast<std::uint32_t>(extension_bytes.size())
+    );
+    if (!encoded_size.has_value()) {
+        return false;
+    }
+
+    return write_u64(stream, header.magic) &&
+           write_u16(stream, header.container_format_version) &&
+           write_u16(stream, header.header_flags) &&
+           write_u32(stream, *encoded_size) &&
+           write_u32(stream, header.index_revision) &&
+           write_string(stream, header.writer_application_version) &&
+           write_u8(stream, static_cast<std::uint8_t>(header.source_format)) &&
+           write_u64(stream, header.source_file_size) &&
+           write_i64(stream, header.source_last_write_time) &&
+           write_u64(stream, header.source_content_fingerprint) &&
+           write_string(stream, header.source_capture_path_utf8) &&
+           write_bytes(stream, extension_bytes);
+}
+
+bool read_capture_index_stable_header(std::istream& stream, CaptureIndexStableHeader& header) {
+    std::uint8_t raw_source_format {0};
+    std::uint32_t bytes_consumed = 0U;
+
+    if (!read_u64(stream, header.magic) ||
+        !read_u16(stream, header.container_format_version) ||
+        !read_u16(stream, header.header_flags) ||
+        !read_u32(stream, header.header_size) ||
+        !read_u32(stream, header.index_revision)) {
+        return false;
+    }
+
+    bytes_consumed = 8U + 2U + 2U + 4U + 4U;
+    if (header.header_size < kCaptureIndexStableHeaderKnownPrefixSize) {
+        return false;
+    }
+
+    if (!read_bounded_string(
+            stream,
+            header.writer_application_version,
+            kMaxCaptureIndexStableHeaderStringBytes,
+            bytes_consumed,
+            header.header_size) ||
+        !read_u8(stream, raw_source_format) ||
+        !read_u64(stream, header.source_file_size) ||
+        !read_i64(stream, header.source_last_write_time) ||
+        !read_u64(stream, header.source_content_fingerprint)) {
+        return false;
+    }
+
+    bytes_consumed += 1U + 8U + 8U + 8U;
+    if (bytes_consumed > header.header_size ||
+        !read_bounded_string(
+            stream,
+            header.source_capture_path_utf8,
+            kMaxCaptureIndexStableHeaderStringBytes,
+            bytes_consumed,
+            header.header_size)) {
+        return false;
+    }
+
+    header.source_format = static_cast<CaptureSourceFormat>(raw_source_format);
+    return skip_exact_bytes(stream, header.header_size - bytes_consumed);
+}
+
+std::string filesystem_path_to_generic_utf8(const std::filesystem::path& path) {
+    const auto utf8 = path.generic_u8string();
+    return std::string(
+        reinterpret_cast<const char*>(utf8.data()),
+        utf8.size()
+    );
+}
+
+std::filesystem::path filesystem_path_from_generic_utf8(const std::string_view utf8_path) {
+    std::u8string utf8 {};
+    utf8.reserve(utf8_path.size());
+    for (const char byte : utf8_path) {
+        utf8.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
+    }
+
+    return std::filesystem::path(utf8);
+}
+
+bool write_capture_index_stable_section_header(std::ostream& stream,
+                                               const CaptureIndexStableSectionHeader& header) {
+    return write_u32(stream, header.section_id) &&
+           write_u16(stream, header.section_schema_version) &&
+           write_u16(stream, header.section_flags) &&
+           write_u64(stream, header.payload_size);
+}
+
+bool read_capture_index_stable_section_header(std::istream& stream,
+                                              CaptureIndexStableSectionHeader& header) {
+    return read_u32(stream, header.section_id) &&
+           read_u16(stream, header.section_schema_version) &&
+           read_u16(stream, header.section_flags) &&
+           read_u64(stream, header.payload_size);
+}
+
 bool write_section(std::ostream& stream, const std::uint32_t section_id, std::span<const std::uint8_t> payload) {
     return write_u32(stream, section_id) &&
            write_u64(stream, static_cast<std::uint64_t>(payload.size())) &&
@@ -448,28 +627,19 @@ bool write_packet_ref(std::ostream& stream, const PacketRef& packet) {
            write_u64(stream, packet.byte_offset) &&
            write_u32(stream, packet.data_link_type) &&
            write_u32(stream, packet.captured_length) &&
-           write_u32(stream, packet.original_length) &&
-           write_u32(stream, packet.payload_length) &&
-           write_u8(stream, packet.tcp_flags) &&
-           write_u8(stream, packet.is_ip_fragmented ? 1U : 0U);
+           write_u32(stream, packet.original_length);
 }
 
 bool read_packet_ref(std::istream& stream, PacketRef& packet) {
-    std::uint8_t is_ip_fragmented {0};
     if (!read_u64(stream, packet.packet_index) ||
         !read_u32(stream, packet.ts_sec) ||
         !read_u32(stream, packet.ts_usec) ||
         !read_u64(stream, packet.byte_offset) ||
         !read_u32(stream, packet.data_link_type) ||
         !read_u32(stream, packet.captured_length) ||
-        !read_u32(stream, packet.original_length) ||
-        !read_u32(stream, packet.payload_length) ||
-        !read_u8(stream, packet.tcp_flags) ||
-        !read_u8(stream, is_ip_fragmented)) {
+        !read_u32(stream, packet.original_length)) {
         return false;
     }
-
-    packet.is_ip_fragmented = is_ip_fragmented != 0;
     return true;
 }
 
@@ -559,16 +729,82 @@ bool read_flow(std::istream& stream, FlowV6& flow) {
     return true;
 }
 
+bool write_connection_aggregate_stats(std::ostream& stream, const ConnectionAggregateStats& stats) {
+    return write_u64(stream, stats.first_timestamp_us) &&
+           write_u64(stream, stats.last_timestamp_us) &&
+           write_u64(stream, stats.captured_bytes) &&
+           write_u64(stream, stats.truncated_packet_count) &&
+           write_u64(stream, stats.tcp_syn_count) &&
+           write_u64(stream, stats.tcp_fin_count) &&
+           write_u64(stream, stats.tcp_rst_count) &&
+           write_u32(stream, stats.max_original_packet_length) &&
+           write_u32(stream, stats.max_captured_packet_length);
+}
+
+bool read_connection_aggregate_stats(std::istream& stream, ConnectionAggregateStats& stats) {
+    return read_u64(stream, stats.first_timestamp_us) &&
+           read_u64(stream, stats.last_timestamp_us) &&
+           read_u64(stream, stats.captured_bytes) &&
+           read_u64(stream, stats.truncated_packet_count) &&
+           read_u64(stream, stats.tcp_syn_count) &&
+           read_u64(stream, stats.tcp_fin_count) &&
+           read_u64(stream, stats.tcp_rst_count) &&
+           read_u32(stream, stats.max_original_packet_length) &&
+           read_u32(stream, stats.max_captured_packet_length);
+}
+
+template <typename Connection>
+bool write_connection_prefix(std::ostream& stream, const Connection& connection) {
+    return write_connection_key(stream, connection.key) &&
+           write_u8(stream, connection.has_flow_a ? 1U : 0U) &&
+           write_u8(stream, connection.has_flow_b ? 1U : 0U) &&
+           write_u64(stream, connection.packet_count) &&
+           write_u64(stream, connection.total_bytes) &&
+           write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) &&
+           write_u64(stream, connection.fragmented_packet_count) &&
+           write_flow_protocol_hint(stream, connection.protocol_hint) &&
+           write_string(stream, connection.service_hint) &&
+           write_u8(stream, static_cast<std::uint8_t>(connection.quic_version)) &&
+           write_u8(stream, static_cast<std::uint8_t>(connection.tls_version)) &&
+           write_connection_aggregate_stats(stream, connection.aggregate_stats);
+}
+
+template <typename Connection>
+bool read_connection_prefix(std::istream& stream, Connection& connection) {
+    std::uint8_t has_flow_a {0};
+    std::uint8_t has_flow_b {0};
+    std::uint8_t has_fragmented_packets {0};
+    std::uint8_t quic_version {0};
+    std::uint8_t tls_version {0};
+
+    if (!read_connection_key(stream, connection.key) ||
+        !read_u8(stream, has_flow_a) ||
+        !read_u8(stream, has_flow_b) ||
+        !read_u64(stream, connection.packet_count) ||
+        !read_u64(stream, connection.total_bytes) ||
+        !read_u8(stream, has_fragmented_packets) ||
+        !read_u64(stream, connection.fragmented_packet_count) ||
+        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
+        !read_string(stream, connection.service_hint) ||
+        !read_u8(stream, quic_version) ||
+        !read_u8(stream, tls_version) ||
+        !read_connection_aggregate_stats(stream, connection.aggregate_stats)) {
+        return false;
+    }
+
+    connection.has_flow_a = has_flow_a != 0U;
+    connection.has_flow_b = has_flow_b != 0U;
+    connection.has_fragmented_packets = has_fragmented_packets != 0U;
+    connection.quic_version = static_cast<QuicVersionHint>(quic_version);
+    connection.tls_version = static_cast<TlsVersionHint>(tls_version);
+    connection.flow_a = {};
+    connection.flow_b = {};
+    connection.hint_search_state = {};
+    return true;
+}
+
 bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
-    if (!write_connection_key(stream, connection.key) ||
-        !write_u8(stream, connection.has_flow_a ? 1U : 0U) ||
-        !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
-        !write_u64(stream, connection.packet_count) ||
-        !write_u64(stream, connection.total_bytes) ||
-        !write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) ||
-        !write_u64(stream, connection.fragmented_packet_count) ||
-        !write_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !write_string(stream, connection.service_hint)) {
+    if (!write_connection_prefix(stream, connection)) {
         return false;
     }
 
@@ -584,15 +820,7 @@ bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
 }
 
 bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
-    if (!write_connection_key(stream, connection.key) ||
-        !write_u8(stream, connection.has_flow_a ? 1U : 0U) ||
-        !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
-        !write_u64(stream, connection.packet_count) ||
-        !write_u64(stream, connection.total_bytes) ||
-        !write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) ||
-        !write_u64(stream, connection.fragmented_packet_count) ||
-        !write_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !write_string(stream, connection.service_hint)) {
+    if (!write_connection_prefix(stream, connection)) {
         return false;
     }
 
@@ -608,27 +836,9 @@ bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
 }
 
 bool read_connection(std::istream& stream, ConnectionV4& connection) {
-    std::uint8_t has_flow_a {0};
-    std::uint8_t has_flow_b {0};
-    std::uint8_t has_fragmented_packets {0};
-
-    if (!read_connection_key(stream, connection.key) ||
-        !read_u8(stream, has_flow_a) ||
-        !read_u8(stream, has_flow_b) ||
-        !read_u64(stream, connection.packet_count) ||
-        !read_u64(stream, connection.total_bytes) ||
-        !read_u8(stream, has_fragmented_packets) ||
-        !read_u64(stream, connection.fragmented_packet_count) ||
-        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !read_string(stream, connection.service_hint)) {
+    if (!read_connection_prefix(stream, connection)) {
         return false;
     }
-
-    connection.has_flow_a = has_flow_a != 0;
-    connection.has_flow_b = has_flow_b != 0;
-    connection.has_fragmented_packets = has_fragmented_packets != 0;
-    connection.flow_a = {};
-    connection.flow_b = {};
 
     if (!connection.has_flow_a) {
         return false;
@@ -646,27 +856,9 @@ bool read_connection(std::istream& stream, ConnectionV4& connection) {
 }
 
 bool read_connection(std::istream& stream, ConnectionV6& connection) {
-    std::uint8_t has_flow_a {0};
-    std::uint8_t has_flow_b {0};
-    std::uint8_t has_fragmented_packets {0};
-
-    if (!read_connection_key(stream, connection.key) ||
-        !read_u8(stream, has_flow_a) ||
-        !read_u8(stream, has_flow_b) ||
-        !read_u64(stream, connection.packet_count) ||
-        !read_u64(stream, connection.total_bytes) ||
-        !read_u8(stream, has_fragmented_packets) ||
-        !read_u64(stream, connection.fragmented_packet_count) ||
-        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
-        !read_string(stream, connection.service_hint)) {
+    if (!read_connection_prefix(stream, connection)) {
         return false;
     }
-
-    connection.has_flow_a = has_flow_a != 0;
-    connection.has_flow_b = has_flow_b != 0;
-    connection.has_fragmented_packets = has_fragmented_packets != 0;
-    connection.flow_a = {};
-    connection.flow_b = {};
 
     if (!connection.has_flow_a) {
         return false;
@@ -739,15 +931,7 @@ bool write_connection_table(
     }
 
     for (const auto* connection : connections) {
-        if (!write_connection_key(stream, connection->key) ||
-            !write_u8(stream, connection->has_flow_a ? 1U : 0U) ||
-            !write_u8(stream, connection->has_flow_b ? 1U : 0U) ||
-            !write_u64(stream, connection->packet_count) ||
-            !write_u64(stream, connection->total_bytes) ||
-            !write_u8(stream, connection->has_fragmented_packets ? 1U : 0U) ||
-            !write_u64(stream, connection->fragmented_packet_count) ||
-            !write_flow_protocol_hint(stream, connection->protocol_hint) ||
-            !write_string(stream, connection->service_hint)) {
+        if (!write_connection_prefix(stream, *connection)) {
             return false;
         }
 
@@ -786,15 +970,7 @@ bool write_connection_table(
     }
 
     for (const auto* connection : connections) {
-        if (!write_connection_key(stream, connection->key) ||
-            !write_u8(stream, connection->has_flow_a ? 1U : 0U) ||
-            !write_u8(stream, connection->has_flow_b ? 1U : 0U) ||
-            !write_u64(stream, connection->packet_count) ||
-            !write_u64(stream, connection->total_bytes) ||
-            !write_u8(stream, connection->has_fragmented_packets ? 1U : 0U) ||
-            !write_u64(stream, connection->fragmented_packet_count) ||
-            !write_flow_protocol_hint(stream, connection->protocol_hint) ||
-            !write_string(stream, connection->service_hint)) {
+        if (!write_connection_prefix(stream, *connection)) {
             return false;
         }
 

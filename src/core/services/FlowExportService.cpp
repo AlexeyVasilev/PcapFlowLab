@@ -167,12 +167,12 @@ bool export_marked_packets_with_reader(
 
         const PacketRef packet_ref {
             .packet_index = raw_packet->packet_index,
+            .ts_sec = raw_packet->ts_sec,
+            .ts_usec = raw_packet->ts_usec,
             .byte_offset = raw_packet->data_offset,
             .data_link_type = raw_packet->data_link_type,
             .captured_length = raw_packet->captured_length,
             .original_length = raw_packet->original_length,
-            .ts_sec = raw_packet->ts_sec,
-            .ts_usec = raw_packet->ts_usec,
         };
 
         if (!writer.write_packet(packet_ref, raw_packet->bytes)) {

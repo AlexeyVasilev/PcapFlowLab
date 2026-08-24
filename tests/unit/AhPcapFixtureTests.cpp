@@ -647,7 +647,6 @@ void expect_ah_effective_packet_payload_lengths_follow_terminal_transport() {
 
         const auto packet = session.find_packet(0U);
         PFL_REQUIRE(packet.has_value());
-        PFL_EXPECT(packet->payload_length == test_case.expected_payload_length);
 
         const auto captured_payload_length =
             session_detail::derive_captured_transport_payload_length_from_headers(session, *packet);
@@ -707,9 +706,13 @@ void expect_ah_selected_packet_summary_payload_lengths() {
         PFL_REQUIRE(original_payload_length.has_value());
         PFL_EXPECT(*original_payload_length == test_case.expected_payload_length);
 
+        const auto captured_payload_length =
+            session_detail::derive_captured_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(captured_payload_length.has_value());
+
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
-            .transport_payload_length = std::optional<std::uint32_t> {packet->payload_length},
+            .transport_payload_length = captured_payload_length,
             .original_transport_payload_length = original_payload_length,
         });
 
@@ -776,6 +779,10 @@ void expect_ah_tunnel_mode_selected_packet_effective_payload_lengths() {
         PFL_REQUIRE(original_payload_length.has_value());
         PFL_EXPECT(*original_payload_length == test_case.expected_payload_length);
 
+        const auto captured_payload_length =
+            session_detail::derive_captured_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(captured_payload_length.has_value());
+
         PFL_EXPECT(details->has_tcp == false);
         PFL_EXPECT(details->has_udp == false);
         PFL_EXPECT(details->ah.inner_packet->has_tcp == test_case.expect_tcp);
@@ -783,7 +790,7 @@ void expect_ah_tunnel_mode_selected_packet_effective_payload_lengths() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
-            .transport_payload_length = std::optional<std::uint32_t> {packet->payload_length},
+            .transport_payload_length = captured_payload_length,
             .original_transport_payload_length = original_payload_length,
         });
         const auto* inner_transport_layer = find_top_level_layer(summary_layers, test_case.transport_layer_id);
@@ -950,7 +957,6 @@ void expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths() {
 
         const auto packet = session.find_packet(0U);
         PFL_REQUIRE(packet.has_value());
-        PFL_EXPECT(packet->payload_length == 4U);
 
         const auto details = session.read_packet_details(*packet);
         PFL_REQUIRE(details.has_value());

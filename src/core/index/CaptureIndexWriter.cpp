@@ -22,8 +22,16 @@ namespace pfl {
 
 namespace {
 
-constexpr std::uint64_t kFixedIndexSectionCountExcludingConnections = 5U;
+constexpr std::uint64_t kFixedIndexSectionCountExcludingConnections = 4U;
 constexpr std::uint64_t kMinimumConnectionSectionPayloadBytes = 8U;
+
+[[nodiscard]] std::string writer_application_version() {
+#ifdef PFL_APP_VERSION
+    return PFL_APP_VERSION;
+#else
+    return {};
+#endif
+}
 
 [[nodiscard]] std::uint64_t stream_offset(std::ofstream& stream) {
     const auto current = stream.tellp();
@@ -251,6 +259,18 @@ template <typename Connection>
     return serialized_u8_size();
 }
 
+[[nodiscard]] constexpr std::uint64_t serialized_quic_version_size() noexcept {
+    return serialized_u8_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_tls_version_size() noexcept {
+    return serialized_u8_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_connection_aggregate_stats_size() noexcept {
+    return (7U * serialized_u64_size()) + (2U * serialized_u32_size());
+}
+
 [[nodiscard]] constexpr std::uint64_t serialized_endpoint_key_size(const EndpointKeyV4&) noexcept {
     return serialized_u32_size() + serialized_u16_size();
 }
@@ -306,10 +326,7 @@ template <typename Connection>
            serialized_u64_size() +
            serialized_u32_size() +
            serialized_u32_size() +
-           serialized_u32_size() +
-           serialized_u32_size() +
-           serialized_u8_size() +
-           serialized_u8_size();
+           serialized_u32_size();
 }
 
 template <typename Flow>
@@ -337,6 +354,9 @@ template <typename Connection>
         serialized_u8_size() +
         serialized_u64_size() +
         serialized_protocol_hint_size() +
+        serialized_quic_version_size() +
+        serialized_tls_version_size() +
+        serialized_connection_aggregate_stats_size() +
         *service_hint_size;
 
     if (connection.has_flow_a) {
@@ -481,6 +501,7 @@ template <typename Writer>
 bool write_marshaled_section(
     std::ofstream& stream,
     const detail::CaptureIndexSectionId section_id,
+    const std::uint16_t section_schema_version,
     const CaptureIndexWriteOptions& options,
     ThrottledProgressReporter& progress_reporter,
     const std::string& label,
@@ -544,8 +565,12 @@ bool write_marshaled_section(
         return false;
     }
 
-    if (!detail::write_u32(stream, static_cast<std::uint32_t>(section_id)) ||
-        !detail::write_u64(stream, payload_size)) {
+    if (!detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
+            .section_id = static_cast<std::uint32_t>(section_id),
+            .section_schema_version = section_schema_version,
+            .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+            .payload_size = payload_size,
+        })) {
         set_error_text(out_error_text, "Failed to write " + label + " header.");
         return false;
     }
@@ -590,6 +615,7 @@ template <typename ConnectionPtr>
 bool write_chunked_connection_sections(
     std::ofstream& stream,
     const detail::CaptureIndexSectionId section_id,
+    const std::uint16_t section_schema_version,
     const std::string& label,
     const ConnectionChunkPlan<ConnectionPtr>& plan,
     const CaptureIndexWriteOptions& options,
@@ -633,8 +659,12 @@ bool write_chunked_connection_sections(
             return false;
         }
 
-        if (!detail::write_u32(stream, static_cast<std::uint32_t>(section_id)) ||
-            !detail::write_u64(stream, chunk.payload_size) ||
+        if (!detail::write_capture_index_stable_section_header(stream, detail::CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(section_id),
+                .section_schema_version = section_schema_version,
+                .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+                .payload_size = chunk.payload_size,
+            }) ||
             !detail::write_u64(stream, static_cast<std::uint64_t>(chunk.connection_count))) {
             set_error_text(out_error_text, "Failed to write " + chunk_label + " header.");
             return false;
@@ -770,9 +800,19 @@ bool CaptureIndexWriter::write(
         return false;
     }
 
-    if (!detail::write_u64(stream, kCaptureIndexMagic) ||
-        !detail::write_u16(stream, kCaptureIndexVersion) ||
-        !detail::write_u16(stream, 0U)) {
+    if (!detail::write_capture_index_stable_header(stream, detail::CaptureIndexStableHeader {
+            .magic = kStableCaptureIndexMagic,
+            .container_format_version = kCaptureIndexStableContainerFormatVersion,
+            .header_flags = 0U,
+            .header_size = 0U,
+            .index_revision = kCaptureIndexVersion,
+            .writer_application_version = writer_application_version(),
+            .source_format = source_info.format,
+            .source_file_size = source_info.file_size,
+            .source_last_write_time = source_info.last_write_time,
+            .source_content_fingerprint = source_info.content_fingerprint,
+            .source_capture_path_utf8 = detail::filesystem_path_to_generic_utf8(source_info.capture_path),
+        })) {
         cleanup_temp();
         set_error_text(out_error_text, "Failed to write index header.");
         return false;
@@ -781,25 +821,8 @@ bool CaptureIndexWriter::write(
     std::uint64_t completed_sections {0U};
     if (!write_marshaled_section(
             stream,
-            detail::CaptureIndexSectionId::source_info,
-            options,
-            progress_reporter,
-            "source info section",
-            completed_sections,
-            total_sections,
-            1U,
-            [&](std::ostream& payload, const detail::SerializationProgressCallback&) {
-                return detail::write_capture_source_info(payload, source_info);
-            },
-            out_error_text)) {
-        cleanup_temp();
-        return false;
-    }
-    ++completed_sections;
-
-    if (!write_marshaled_section(
-            stream,
             detail::CaptureIndexSectionId::summary,
+            detail::kCaptureIndexStableSummarySectionSchemaVersion,
             options,
             progress_reporter,
             "summary section",
@@ -818,6 +841,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::protocol_paths,
+            detail::kCaptureIndexStableProtocolPathsSectionSchemaVersion,
             options,
             progress_reporter,
             "protocol path registry section",
@@ -836,6 +860,7 @@ bool CaptureIndexWriter::write(
     if (!write_chunked_connection_sections(
             stream,
             detail::CaptureIndexSectionId::ipv4_connections,
+            detail::kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion,
             "IPv4 connection section",
             *ipv4_chunk_plan,
             options,
@@ -850,6 +875,7 @@ bool CaptureIndexWriter::write(
     if (!write_chunked_connection_sections(
             stream,
             detail::CaptureIndexSectionId::ipv6_connections,
+            detail::kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion,
             "IPv6 connection section",
             *ipv6_chunk_plan,
             options,
@@ -864,6 +890,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::unrecognized_packets,
+            detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion,
             options,
             progress_reporter,
             "unrecognized packet section",
@@ -882,6 +909,7 @@ bool CaptureIndexWriter::write(
     if (!write_marshaled_section(
             stream,
             detail::CaptureIndexSectionId::packet_locator,
+            detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion,
             options,
             progress_reporter,
             "packet locator section",

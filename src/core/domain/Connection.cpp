@@ -8,8 +8,65 @@ namespace {
     return protocol == ProtocolId::tcp || protocol == ProtocolId::udp;
 }
 
-[[nodiscard]] bool is_payload_bearing_transport_packet(const PacketRef& packet, const ProtocolId protocol) noexcept {
-    return is_transport_hint_protocol(protocol) && packet.payload_length > 0U;
+[[nodiscard]] bool is_payload_bearing_transport_packet(
+    const PacketImportMetadata& metadata,
+    const ProtocolId protocol
+) noexcept {
+    return is_transport_hint_protocol(protocol) && metadata.transport_payload_length.value_or(0U) > 0U;
+}
+
+[[nodiscard]] std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
+    return static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL +
+           static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+template <typename Connection>
+void update_aggregate_stats(Connection& connection,
+                            const PacketRef& packet,
+                            const PacketImportMetadata& metadata,
+                            const ProtocolId protocol,
+                            const bool was_empty) noexcept {
+    const auto timestamp_us = packet_timestamp_us(packet);
+    if (was_empty) {
+        connection.aggregate_stats.first_timestamp_us = timestamp_us;
+        connection.aggregate_stats.last_timestamp_us = timestamp_us;
+    } else {
+        if (timestamp_us < connection.aggregate_stats.first_timestamp_us) {
+            connection.aggregate_stats.first_timestamp_us = timestamp_us;
+        }
+        if (timestamp_us > connection.aggregate_stats.last_timestamp_us) {
+            connection.aggregate_stats.last_timestamp_us = timestamp_us;
+        }
+    }
+
+    connection.aggregate_stats.captured_bytes += packet.captured_length;
+
+    if (packet.captured_length < packet.original_length) {
+        ++connection.aggregate_stats.truncated_packet_count;
+    }
+
+    if (packet.original_length > connection.aggregate_stats.max_original_packet_length) {
+        connection.aggregate_stats.max_original_packet_length = packet.original_length;
+    }
+
+    if (packet.captured_length > connection.aggregate_stats.max_captured_packet_length) {
+        connection.aggregate_stats.max_captured_packet_length = packet.captured_length;
+    }
+
+    if (protocol != ProtocolId::tcp) {
+        return;
+    }
+
+    const auto tcp_flags = metadata.tcp_flags.value_or(0U);
+    if ((tcp_flags & 0x02U) != 0U) {
+        ++connection.aggregate_stats.tcp_syn_count;
+    }
+    if ((tcp_flags & 0x01U) != 0U) {
+        ++connection.aggregate_stats.tcp_fin_count;
+    }
+    if ((tcp_flags & 0x04U) != 0U) {
+        ++connection.aggregate_stats.tcp_rst_count;
+    }
 }
 
 void append_packet(FlowV4& flow, const FlowKeyV4& packet_key, const PacketRef& packet) {
@@ -100,7 +157,7 @@ template <typename Connection>
 
 template <typename Connection>
 [[nodiscard]] bool should_attempt_hint_detection_for_connection(const Connection& connection,
-                                                                const PacketRef& packet,
+                                                                const PacketImportMetadata& metadata,
                                                                 const ProtocolId protocol) noexcept {
     if (hint_detection_settled_for_connection(connection)) {
         return false;
@@ -110,7 +167,7 @@ template <typename Connection>
         return true;
     }
 
-    if (!is_payload_bearing_transport_packet(packet, protocol)) {
+    if (!is_payload_bearing_transport_packet(metadata, protocol)) {
         return false;
     }
 
@@ -119,9 +176,9 @@ template <typename Connection>
 
 template <typename Connection>
 void note_hint_detection_attempt_for_connection(Connection& connection,
-                                                const PacketRef& packet,
+                                                const PacketImportMetadata& metadata,
                                                 const ProtocolId protocol) noexcept {
-    if (!is_payload_bearing_transport_packet(packet, protocol)) {
+    if (!is_payload_bearing_transport_packet(metadata, protocol)) {
         return;
     }
 
@@ -142,8 +199,8 @@ void note_hint_detection_attempt_for_connection(Connection& connection,
 }
 
 template <typename Connection>
-void update_fragmentation_stats(Connection& connection, const PacketRef& packet) {
-    if (!packet.is_ip_fragmented) {
+void update_fragmentation_stats(Connection& connection, const PacketImportMetadata& metadata) {
+    if (!metadata.is_ip_fragmented) {
         return;
     }
 
@@ -245,10 +302,12 @@ bool has_valid_first_observed_orientation(const ConnectionV6& connection) noexce
     return has_valid_first_observed_orientation_for_connection(connection);
 }
 
-void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& packet) {
+void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& packet, const PacketImportMetadata& metadata) {
+    const bool was_empty = packet_count == 0U;
     ++packet_count;
     total_bytes += packet.original_length;
-    update_fragmentation_stats(*this, packet);
+    update_aggregate_stats(*this, packet, metadata, packet_key.protocol, was_empty);
+    update_fragmentation_stats(*this, metadata);
 
     if (!has_flow_a) {
         append_packet(flow_a, packet_key, packet);
@@ -283,18 +342,20 @@ bool ConnectionV4::hint_detection_settled() const noexcept {
     return hint_detection_settled_for_connection(*this);
 }
 
-bool ConnectionV4::should_attempt_hint_detection(const PacketRef& packet, const ProtocolId protocol) const noexcept {
-    return should_attempt_hint_detection_for_connection(*this, packet, protocol);
+bool ConnectionV4::should_attempt_hint_detection(const PacketImportMetadata& metadata, const ProtocolId protocol) const noexcept {
+    return should_attempt_hint_detection_for_connection(*this, metadata, protocol);
 }
 
-void ConnectionV4::note_hint_detection_attempt(const PacketRef& packet, const ProtocolId protocol) noexcept {
-    note_hint_detection_attempt_for_connection(*this, packet, protocol);
+void ConnectionV4::note_hint_detection_attempt(const PacketImportMetadata& metadata, const ProtocolId protocol) noexcept {
+    note_hint_detection_attempt_for_connection(*this, metadata, protocol);
 }
 
-void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& packet) {
+void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& packet, const PacketImportMetadata& metadata) {
+    const bool was_empty = packet_count == 0U;
     ++packet_count;
     total_bytes += packet.original_length;
-    update_fragmentation_stats(*this, packet);
+    update_aggregate_stats(*this, packet, metadata, packet_key.protocol, was_empty);
+    update_fragmentation_stats(*this, metadata);
 
     if (!has_flow_a) {
         append_packet(flow_a, packet_key, packet);
@@ -329,12 +390,12 @@ bool ConnectionV6::hint_detection_settled() const noexcept {
     return hint_detection_settled_for_connection(*this);
 }
 
-bool ConnectionV6::should_attempt_hint_detection(const PacketRef& packet, const ProtocolId protocol) const noexcept {
-    return should_attempt_hint_detection_for_connection(*this, packet, protocol);
+bool ConnectionV6::should_attempt_hint_detection(const PacketImportMetadata& metadata, const ProtocolId protocol) const noexcept {
+    return should_attempt_hint_detection_for_connection(*this, metadata, protocol);
 }
 
-void ConnectionV6::note_hint_detection_attempt(const PacketRef& packet, const ProtocolId protocol) noexcept {
-    note_hint_detection_attempt_for_connection(*this, packet, protocol);
+void ConnectionV6::note_hint_detection_attempt(const PacketImportMetadata& metadata, const ProtocolId protocol) noexcept {
+    note_hint_detection_attempt_for_connection(*this, metadata, protocol);
 }
 
 }  // namespace pfl

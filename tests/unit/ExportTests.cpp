@@ -222,20 +222,20 @@ CaptureSession build_flow_info_export_session() {
         alpha_flow,
         PacketRef {
             .packet_index = 0U,
-            .captured_length = 120U,
-            .original_length = 120U,
             .ts_sec = 1U,
             .ts_usec = 100U,
+            .captured_length = 120U,
+            .original_length = 120U,
         }
     );
     alpha_connection.add_packet(
         alpha_flow,
         PacketRef {
             .packet_index = 1U,
-            .captured_length = 120U,
-            .original_length = 120U,
             .ts_sec = 1U,
             .ts_usec = 250U,
+            .captured_length = 120U,
+            .original_length = 120U,
         }
     );
     state.ipv4_connections.get_or_create(alpha_connection.key) = alpha_connection;
@@ -256,10 +256,10 @@ CaptureSession build_flow_info_export_session() {
         beta_flow,
         PacketRef {
             .packet_index = 2U,
-            .captured_length = 90U,
-            .original_length = 90U,
             .ts_sec = 2U,
             .ts_usec = 100U,
+            .captured_length = 90U,
+            .original_length = 90U,
         }
     );
     state.ipv4_connections.get_or_create(beta_connection.key) = beta_connection;
@@ -291,20 +291,20 @@ CaptureSession build_flow_info_export_session_with_control_characters() {
         flow,
         PacketRef {
             .packet_index = 0U,
-            .captured_length = 96U,
-            .original_length = 96U,
             .ts_sec = 5U,
             .ts_usec = 10U,
+            .captured_length = 96U,
+            .original_length = 96U,
         }
     );
     connection.add_packet(
         flow,
         PacketRef {
             .packet_index = 1U,
-            .captured_length = 96U,
-            .original_length = 96U,
             .ts_sec = 5U,
             .ts_usec = 40U,
+            .captured_length = 96U,
+            .original_length = 96U,
         }
     );
     state.ipv4_connections.get_or_create(connection.key) = connection;
@@ -326,17 +326,17 @@ void run_export_tests() {
 
         const PacketRef first_packet {
             .packet_index = 0,
-            .captured_length = static_cast<std::uint32_t>(tcp_packet.size()),
-            .original_length = static_cast<std::uint32_t>(tcp_packet.size()),
             .ts_sec = 10,
             .ts_usec = 20,
+            .captured_length = static_cast<std::uint32_t>(tcp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(tcp_packet.size()),
         };
         const PacketRef second_packet {
             .packet_index = 1,
-            .captured_length = static_cast<std::uint32_t>(udp_packet.size()),
-            .original_length = static_cast<std::uint32_t>(udp_packet.size()),
             .ts_sec = 11,
             .ts_usec = 21,
+            .captured_length = static_cast<std::uint32_t>(udp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(udp_packet.size()),
         };
 
         PFL_EXPECT(writer.write_packet(first_packet, tcp_packet));
@@ -974,10 +974,10 @@ void run_export_tests() {
         valid_connection.key = make_connection_key(valid_flow);
         const PacketRef valid_packet {
             .packet_index = 0U,
-            .captured_length = 64U,
-            .original_length = 64U,
             .ts_sec = 1U,
             .ts_usec = 100U,
+            .captured_length = 64U,
+            .original_length = 64U,
         };
         valid_connection.add_packet(valid_flow, valid_packet);
         state.ipv4_connections.get_or_create(valid_connection.key) = valid_connection;

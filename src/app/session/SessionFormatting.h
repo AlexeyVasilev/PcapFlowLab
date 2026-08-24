@@ -85,6 +85,7 @@ struct PacketSummaryOptions {
     bool source_capture_accessible {true};
     // Internal flow-packet index is zero-based; human-readable formatting adds +1.
     std::optional<std::uint64_t> flow_packet_index {};
+    std::optional<bool> is_ip_fragmented {};
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::span<const std::uint8_t> transport_payload_bytes {};

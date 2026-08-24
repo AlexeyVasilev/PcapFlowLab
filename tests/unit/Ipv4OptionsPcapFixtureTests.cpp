@@ -6,6 +6,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SessionFormatting.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/io/PcapReader.h"
 #include "core/services/PacketDetailsService.h"
 
@@ -318,7 +319,7 @@ void run_ipv4_options_pcap_fixture_tests() {
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_udp);
-        PFL_EXPECT(packet.is_ip_fragmented);
+        PFL_EXPECT(session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented == true);
 
         const auto layers = build_summary_layers(*details, packet, session.read_packet_protocol_details_text(packet));
         const auto* ipv4_layer = find_layer(layers, "ipv4");

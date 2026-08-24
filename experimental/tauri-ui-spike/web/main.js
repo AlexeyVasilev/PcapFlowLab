@@ -764,7 +764,7 @@
       return "Suspected retransmission";
     }
 
-    if (packet?.is_ip_fragmented) {
+    if (packet?.is_ip_fragmented === true) {
       return "Fragmented";
     }
 
@@ -773,6 +773,14 @@
 
   function isPacketCaptureTruncated(packet) {
     return Number(packet?.captured_length || 0) < Number(packet?.original_length || 0);
+  }
+
+  function packetPayloadLengthText(packet) {
+    return packet?.payload_length ?? "-";
+  }
+
+  function packetFlagsText(packet) {
+    return packet?.tcp_flags_text ?? "";
   }
 
   function loadedPacketsHaveMarkers() {
@@ -4487,8 +4495,8 @@
             <td class="packet-direction-cell">${renderPacketDirectionChip(packet.direction_text)}</td>
             <td>${escapeHtml(packet.timestamp_text)}</td>
             <td>${packet.captured_length}</td>
-            <td>${packet.payload_length}</td>
-            ${showFlagsColumn ? `<td class="packet-flags-cell">${renderPacketFlagsChip(packet.tcp_flags_text)}</td>` : ""}
+            <td>${packetPayloadLengthText(packet)}</td>
+            ${showFlagsColumn ? `<td class="packet-flags-cell">${renderPacketFlagsChip(packetFlagsText(packet))}</td>` : ""}
             ${showMarkerColumn ? `<td class="packet-marker-cell">${markerContent}</td>` : ""}
           </tr>
         `;
@@ -4766,7 +4774,7 @@
     ];
 
     const warnings = [];
-    if (selectedPacket?.is_ip_fragmented) {
+    if (selectedPacket?.is_ip_fragmented === true) {
       warnings.push("Packet is IP-fragmented");
     }
     if ((details?.captured_length ?? selectedPacket.captured_length) !== (details?.original_length ?? selectedPacket.original_length)) {
@@ -5700,7 +5708,7 @@
             <td>${escapeHtml(row.delta_time_text || "-")}</td>
             <td>${formatNumber(row.captured_length)}</td>
             <td>${formatNumber(row.original_length)}</td>
-            <td>${formatNumber(row.payload_length)}</td>
+            <td>${row.payload_length == null ? "-" : formatNumber(row.payload_length)}</td>
             <td>${escapeHtml(row.timestamp_text || "-")}</td>
           </tr>
         `)

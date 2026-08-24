@@ -524,9 +524,15 @@ void run_import_validation_tests() {
         PFL_EXPECT(observation.src_addr_v4 == decoded.ipv4->flow_key.src_addr);
         PFL_EXPECT(observation.dst_addr_v4 == decoded.ipv4->flow_key.dst_addr);
         PFL_EXPECT(!observation.has_ports);
-        PFL_EXPECT(observation.has_transport_payload_length == (decoded.ipv4->packet_ref.payload_length > 0U));
-        PFL_EXPECT(observation.captured_transport_payload_length == decoded.ipv4->packet_ref.payload_length);
-        PFL_EXPECT(observation.fragmented == decoded.ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(
+            observation.has_transport_payload_length ==
+            decoded.ipv4->import_metadata.transport_payload_length.has_value()
+        );
+        PFL_EXPECT(
+            observation.captured_transport_payload_length ==
+            decoded.ipv4->import_metadata.transport_payload_length.value_or(0U)
+        );
+        PFL_EXPECT(observation.fragmented == decoded.ipv4->import_metadata.is_ip_fragmented);
         PFL_EXPECT(observation.physical_path == decoded.protocol_path_builder.to_path());
     }
 

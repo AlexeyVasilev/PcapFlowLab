@@ -566,13 +566,21 @@ ApplicationWindow {
         protocolCatalog: mainController.supportedProtocolCatalog
     }
 
+    AdvancedFlowFilterSettingsDialog {
+        id: advancedFlowFilterSettingsDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        controller: mainController
+    }
+
     SmartExportDialog {
         id: smartExportDialog
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         chooseDestinationFolderCallback: function() { return mainController.chooseSmartExportDestinationFolder() }
-        currentFilterAvailable: mainController.flowFilterText.trim().length > 0
+        currentFilterAvailable: mainController.smartExportCurrentFilterAvailable
         hasCurrentFlowSelection: mainController.selectedFlowIndex >= 0
         hasUnrecognizedPackets: mainController.unrecognizedPacketCount > 0
         onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, bufferBudgetPresetText, includeLastPacket, includeEveryKthPacket, everyKText) {
@@ -1177,7 +1185,12 @@ ApplicationWindow {
                 unrecognizedPacketsSelected: mainController.unrecognizedPacketsSelected
                 unrecognizedPacketCount: mainController.unrecognizedPacketCount
                 sourceCaptureAvailable: mainController.hasSourceCapture
+                flowFilterMode: mainController.flowFilterMode
                 filterText: mainController.flowFilterText
+                advancedFilterDisplayName: mainController.advancedFlowFilterDisplayName
+                advancedFilterRuleCountText: mainController.advancedFlowFilterRuleCountText
+                advancedFilterSettingsAvailable: mainController.advancedFlowFilterSettingsAvailable
+                advancedFilterClearAvailable: mainController.advancedFlowFilterClearAvailable
                 protocolPathFilterText: mainController.protocolPathFlowFilterText
                 protocolPathFilterVisible: mainController.hasProtocolPathFlowFilter
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
@@ -1216,6 +1229,18 @@ ApplicationWindow {
                 }
                 onClearTextFilterRequested: function() {
                     mainController.flowFilterText = ""
+                }
+                onUseAdvancedFilterRequested: function() {
+                    mainController.useAdvancedFlowFilter()
+                }
+                onUseSimpleFilterRequested: function() {
+                    mainController.useSimpleFlowFilter()
+                }
+                onAdvancedFilterSettingsRequested: function() {
+                    advancedFlowFilterSettingsDialog.open()
+                }
+                onClearAdvancedFilterRequested: function() {
+                    mainController.clearAdvancedFlowFilter()
                 }
                 onClearProtocolPathFilterRequested: function() {
                     mainController.clearProtocolPathFlowFilter()

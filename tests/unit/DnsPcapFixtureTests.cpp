@@ -109,7 +109,8 @@ SelectedPacketTransportPayloadLengths resolve_selected_packet_transport_payload_
     const PacketRef& packet
 ) {
     return SelectedPacketTransportPayloadLengths {
-        .captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length},
+        .captured_transport_payload_length =
+            session_detail::derive_captured_transport_payload_length_from_headers(session, packet),
         .original_transport_payload_length =
             session_detail::derive_original_transport_payload_length_from_headers(session, packet),
     };

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/QuicInitialParser.h"
 #include "core/services/TlsInspectionParser.h"
@@ -362,18 +363,14 @@ std::optional<std::pair<std::uint64_t, std::uint64_t>> handshake_available_inter
     return std::pair<std::uint64_t, std::uint64_t> {start, *end};
 }
 
-std::optional<std::size_t> derive_original_udp_payload_length(const PacketRef& packet) {
-    if (packet.captured_length < packet.payload_length) {
+std::optional<std::size_t> derive_original_udp_payload_length(
+    const session_detail::TransientPacketDerivedMetadata& metadata
+) {
+    if (!metadata.original_transport_payload_length.has_value()) {
         return std::nullopt;
     }
 
-    const auto transport_payload_offset =
-        static_cast<std::size_t>(packet.captured_length) - static_cast<std::size_t>(packet.payload_length);
-    if (packet.original_length < transport_payload_offset) {
-        return std::nullopt;
-    }
-
-    return static_cast<std::size_t>(packet.original_length) - transport_payload_offset;
+    return static_cast<std::size_t>(*metadata.original_transport_payload_length);
 }
 
 QuicConstrictedContribution make_quic_constricted_contribution(
@@ -1039,7 +1036,7 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
 ) {
     PacketPayloadService payload_service {};
     for (const auto& packet : packets) {
-        if (packet.is_ip_fragmented) {
+        if (session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented.value_or(false)) {
             continue;
         }
 
@@ -1083,7 +1080,7 @@ bool has_confirming_quic_long_header_for_packets_impl(
 ) {
     PacketPayloadService payload_service {};
     for (const auto& packet : packets) {
-        if (packet.is_ip_fragmented) {
+        if (session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented.value_or(false)) {
             continue;
         }
 
@@ -1314,7 +1311,7 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
          position < packets.size() && candidates.size() < kQuicPresentationPacketBudget;
          ++position) {
         const auto& packet = packets[position];
-        if (packet.is_ip_fragmented) {
+        if (session_detail::derive_transient_packet_metadata(session, packet).is_ip_fragmented.value_or(false)) {
             continue;
         }
 
@@ -1688,7 +1685,8 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
     QuicInitialParser initial_parser {};
 
     std::size_t packet_offset = 0U;
-    auto original_payload_length = derive_original_udp_payload_length(packet);
+    const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+    auto original_payload_length = derive_original_udp_payload_length(metadata);
     std::size_t remaining_original_payload_length = original_payload_length.value_or(payload_span.size());
     for (const auto& parsed_packet : datagram_packets) {
         const auto packet_slice_length = std::min(parsed_packet.packet_bytes_consumed, payload_span.size() - packet_offset);

@@ -1,9 +1,11 @@
 #include <filesystem>
 #include <cmath>
+#include <unordered_map>
 #include <vector>
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "core/services/FlowAnalysisService.h"
 
@@ -59,6 +61,7 @@ std::uint64_t histogram_total_count(const std::vector<Row>& rows) {
 bool nearly_equal(const double left, const double right, const double epsilon = 0.001) {
     return std::fabs(left - right) <= epsilon;
 }
+
 const FlowAnalysisRatePoint* rate_point_at(const std::vector<FlowAnalysisRatePoint>& points, const std::uint64_t x_us) {
     for (const auto& point : points) {
         if (point.relative_time_us == x_us) {
@@ -103,6 +106,36 @@ double total_bytes_from_rate_series(const std::vector<FlowAnalysisRatePoint>& po
     return total_bytes;
 }
 
+std::uint64_t analysis_packet_timestamp_us(const PacketRef& packet) noexcept {
+    return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+struct SyntheticAnalysisPacketMetadata {
+    std::uint32_t payload_length {0U};
+    std::uint8_t tcp_flags {0U};
+};
+
+std::unordered_map<std::uint64_t, SyntheticAnalysisPacketMetadata>& synthetic_analysis_packet_metadata_registry() {
+    static std::unordered_map<std::uint64_t, SyntheticAnalysisPacketMetadata> registry {};
+    return registry;
+}
+
+void remember_synthetic_analysis_packet_metadata(
+    const std::uint64_t packet_index,
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags
+) {
+    synthetic_analysis_packet_metadata_registry()[packet_index] = SyntheticAnalysisPacketMetadata {
+        .payload_length = payload_length,
+        .tcp_flags = tcp_flags,
+    };
+}
+
+std::uint8_t synthetic_analysis_packet_tcp_flags(const PacketRef& packet) {
+    const auto it = synthetic_analysis_packet_metadata_registry().find(packet.packet_index);
+    return it != synthetic_analysis_packet_metadata_registry().end() ? it->second.tcp_flags : 0U;
+}
+
 PacketRef make_analysis_packet_ref(
     const std::uint64_t packet_index,
     const std::uint32_t ts_usec,
@@ -110,14 +143,13 @@ PacketRef make_analysis_packet_ref(
     const std::uint32_t payload_length,
     const std::uint8_t tcp_flags = 0U
 ) {
+    remember_synthetic_analysis_packet_metadata(packet_index, payload_length, tcp_flags);
     return PacketRef {
         .packet_index = packet_index,
-        .captured_length = captured_length,
-        .original_length = captured_length,
         .ts_sec = 1U,
         .ts_usec = ts_usec,
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+        .captured_length = captured_length,
+        .original_length = captured_length,
     };
 }
 
@@ -129,14 +161,13 @@ PacketRef make_analysis_packet_ref_with_original_length(
     const std::uint32_t payload_length,
     const std::uint8_t tcp_flags = 0U
 ) {
+    remember_synthetic_analysis_packet_metadata(packet_index, payload_length, tcp_flags);
     return PacketRef {
         .packet_index = packet_index,
-        .captured_length = captured_length,
-        .original_length = original_length,
         .ts_sec = 1U,
         .ts_usec = ts_usec,
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+        .captured_length = captured_length,
+        .original_length = original_length,
     };
 }
 
@@ -147,15 +178,58 @@ PacketRef make_analysis_packet_ref_at(
     const std::uint32_t payload_length,
     const std::uint8_t tcp_flags = 0U
 ) {
+    remember_synthetic_analysis_packet_metadata(packet_index, payload_length, tcp_flags);
     return PacketRef {
         .packet_index = packet_index,
-        .captured_length = captured_length,
-        .original_length = captured_length,
         .ts_sec = static_cast<std::uint32_t>(1U + (timestamp_us / 1000000ULL)),
         .ts_usec = static_cast<std::uint32_t>(timestamp_us % 1000000ULL),
-        .payload_length = payload_length,
-        .tcp_flags = tcp_flags,
+        .captured_length = captured_length,
+        .original_length = captured_length,
     };
+}
+
+void populate_connection_aggregate_stats(ConnectionV4& connection) {
+    auto update_from_packet = [&](const PacketRef& packet) {
+        const auto timestamp_us = analysis_packet_timestamp_us(packet);
+        if (connection.aggregate_stats.first_timestamp_us == 0U
+            || timestamp_us < connection.aggregate_stats.first_timestamp_us) {
+            connection.aggregate_stats.first_timestamp_us = timestamp_us;
+        }
+        if (timestamp_us > connection.aggregate_stats.last_timestamp_us) {
+            connection.aggregate_stats.last_timestamp_us = timestamp_us;
+        }
+
+        connection.aggregate_stats.captured_bytes += packet.captured_length;
+        if (packet.captured_length < packet.original_length) {
+            connection.aggregate_stats.truncated_packet_count += 1U;
+        }
+        connection.aggregate_stats.max_original_packet_length =
+            std::max(connection.aggregate_stats.max_original_packet_length, packet.original_length);
+        connection.aggregate_stats.max_captured_packet_length =
+            std::max(connection.aggregate_stats.max_captured_packet_length, packet.captured_length);
+
+        if (connection.key.protocol != ProtocolId::tcp) {
+            return;
+        }
+
+        const auto tcp_flags = synthetic_analysis_packet_tcp_flags(packet);
+        if ((tcp_flags & 0x02U) != 0U) {
+            connection.aggregate_stats.tcp_syn_count += 1U;
+        }
+        if ((tcp_flags & 0x01U) != 0U) {
+            connection.aggregate_stats.tcp_fin_count += 1U;
+        }
+        if ((tcp_flags & 0x04U) != 0U) {
+            connection.aggregate_stats.tcp_rst_count += 1U;
+        }
+    };
+
+    for (const auto& packet : connection.flow_a.packets) {
+        update_from_packet(packet);
+    }
+    for (const auto& packet : connection.flow_b.packets) {
+        update_from_packet(packet);
+    }
 }
 
 ConnectionV4 make_protocol_panel_connection(
@@ -179,15 +253,16 @@ ConnectionV4 make_protocol_panel_connection(
     connection.flow_b.packet_count = static_cast<std::uint64_t>(connection.flow_b.packets.size());
 
     for (const auto& packet : connection.flow_a.packets) {
-        connection.flow_a.total_bytes += packet.captured_length;
+        connection.flow_a.total_bytes += packet.original_length;
     }
 
     for (const auto& packet : connection.flow_b.packets) {
-        connection.flow_b.total_bytes += packet.captured_length;
+        connection.flow_b.total_bytes += packet.original_length;
     }
 
     connection.packet_count = connection.flow_a.packet_count + connection.flow_b.packet_count;
     connection.total_bytes = connection.flow_a.total_bytes + connection.flow_b.total_bytes;
+    populate_connection_aggregate_stats(connection);
     return connection;
 }
 
@@ -303,17 +378,33 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->sequence_preview_rows[0].direction_text == "A->B");
     PFL_EXPECT(analysis->sequence_preview_rows[0].delta_time_us == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].captured_length == request_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[0].payload_length == make_http_request_payload().size());
+    PFL_REQUIRE(analysis->sequence_preview_rows[0].payload_length.has_value());
+    PFL_EXPECT(*analysis->sequence_preview_rows[0].payload_length == make_http_request_payload().size());
     PFL_EXPECT(analysis->sequence_preview_rows[1].flow_packet_number == 2U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].direction_text == "B->A");
     PFL_EXPECT(analysis->sequence_preview_rows[1].delta_time_us == 1000150U);
     PFL_EXPECT(analysis->sequence_preview_rows[1].captured_length == response_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[1].payload_length == 20U);
+    PFL_REQUIRE(analysis->sequence_preview_rows[1].payload_length.has_value());
+    PFL_EXPECT(*analysis->sequence_preview_rows[1].payload_length == 20U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].flow_packet_number == 3U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].direction_text == "A->B");
     PFL_EXPECT(analysis->sequence_preview_rows[2].delta_time_us == 1000200U);
     PFL_EXPECT(analysis->sequence_preview_rows[2].captured_length == follow_up_packet.size());
-    PFL_EXPECT(analysis->sequence_preview_rows[2].payload_length == 10U);
+    PFL_REQUIRE(analysis->sequence_preview_rows[2].payload_length.has_value());
+    PFL_EXPECT(*analysis->sequence_preview_rows[2].payload_length == 10U);
+
+    FrontendSessionAdapter frontend_adapter {};
+    PFL_REQUIRE(frontend_adapter.open_capture(capture_path).opened);
+    PFL_EXPECT(frontend_adapter.select_flow(http_flow_index).selected);
+    const auto frontend_analysis = frontend_adapter.get_selected_flow_analysis();
+    PFL_EXPECT(frontend_analysis.analysis_available);
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows.size() == 3U);
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows[0].payload_length.has_value());
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows[1].payload_length.has_value());
+    PFL_REQUIRE(frontend_analysis.sequence_preview_rows[2].payload_length.has_value());
+    PFL_EXPECT(*frontend_analysis.sequence_preview_rows[0].payload_length == make_http_request_payload().size());
+    PFL_EXPECT(*frontend_analysis.sequence_preview_rows[1].payload_length == 20U);
+    PFL_EXPECT(*frontend_analysis.sequence_preview_rows[2].payload_length == 10U);
 
     PFL_EXPECT(!session.get_flow_analysis(99U).has_value());
 
@@ -429,10 +520,11 @@ void run_flow_analysis_tests() {
     };
     truncated_connection.flow_a.packet_count = static_cast<std::uint64_t>(truncated_connection.flow_a.packets.size());
     for (const auto& packet : truncated_connection.flow_a.packets) {
-        truncated_connection.flow_a.total_bytes += packet.captured_length;
+        truncated_connection.flow_a.total_bytes += packet.original_length;
     }
     truncated_connection.packet_count = truncated_connection.flow_a.packet_count;
     truncated_connection.total_bytes = truncated_connection.flow_a.total_bytes;
+    populate_connection_aggregate_stats(truncated_connection);
 
     FlowAnalysisService direct_service {};
     const auto truncated_analysis = direct_service.analyze(truncated_connection);
@@ -469,6 +561,7 @@ void run_flow_analysis_tests() {
         std::filesystem::temp_directory_path() / "pfl_flow_analysis_max_captured_size_raw_index_parity.pflidx";
     PFL_REQUIRE(raw_truncated_session.save_index(truncated_index_path));
     CaptureSession indexed_truncated_session {};
+    std::filesystem::remove(truncated_capture_path);
     PFL_REQUIRE(indexed_truncated_session.load_index(truncated_index_path));
     const auto indexed_truncated_rows = indexed_truncated_session.list_flows();
     PFL_REQUIRE(indexed_truncated_rows.size() == 1U);
@@ -479,6 +572,47 @@ void run_flow_analysis_tests() {
         indexed_truncated_analysis->max_captured_packet_size_bytes ==
         raw_truncated_analysis->max_captured_packet_size_bytes
     );
+    PFL_REQUIRE(indexed_truncated_analysis->sequence_preview_rows.size() == 2U);
+    PFL_EXPECT(!indexed_truncated_analysis->sequence_preview_rows[0].payload_length.has_value());
+    PFL_EXPECT(!indexed_truncated_analysis->sequence_preview_rows[1].payload_length.has_value());
+
+    const auto aggregate_backed_connection = make_protocol_panel_connection(
+        FlowProtocolHint::tls,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 80U, 10U, 0x02U),
+        },
+        {
+            make_analysis_packet_ref(1U, 500U, 90U, 12U, 0x10U),
+        },
+        "aggregate.example",
+        QuicVersionHint::unknown,
+        TlsVersionHint::tls13
+    );
+    auto authoritative_aggregate_connection = aggregate_backed_connection;
+    authoritative_aggregate_connection.aggregate_stats.first_timestamp_us = 2000100ULL;
+    authoritative_aggregate_connection.aggregate_stats.last_timestamp_us = 5000300ULL;
+    authoritative_aggregate_connection.aggregate_stats.captured_bytes = 999U;
+    authoritative_aggregate_connection.aggregate_stats.tcp_syn_count = 11U;
+    authoritative_aggregate_connection.aggregate_stats.tcp_fin_count = 7U;
+    authoritative_aggregate_connection.aggregate_stats.tcp_rst_count = 5U;
+    authoritative_aggregate_connection.aggregate_stats.max_original_packet_length = 1600U;
+    authoritative_aggregate_connection.aggregate_stats.max_captured_packet_length = 1500U;
+
+    const auto authoritative_aggregate_analysis = direct_service.analyze(authoritative_aggregate_connection);
+    PFL_REQUIRE(authoritative_aggregate_analysis.sequence_preview_rows.size() == 2U);
+    PFL_EXPECT(!authoritative_aggregate_analysis.sequence_preview_rows[0].payload_length.has_value());
+    PFL_EXPECT(!authoritative_aggregate_analysis.sequence_preview_rows[1].payload_length.has_value());
+    PFL_EXPECT(authoritative_aggregate_analysis.captured_bytes == 999U);
+    PFL_EXPECT(authoritative_aggregate_analysis.duration_us == 3000200ULL);
+    PFL_EXPECT(authoritative_aggregate_analysis.first_packet_timestamp_text == "00:00:02.000100");
+    PFL_EXPECT(authoritative_aggregate_analysis.last_packet_timestamp_text == "00:00:05.000300");
+    PFL_EXPECT(authoritative_aggregate_analysis.max_packet_size_bytes == 1600U);
+    PFL_EXPECT(authoritative_aggregate_analysis.max_captured_packet_size_bytes == 1500U);
+    PFL_EXPECT(authoritative_aggregate_analysis.tcp_syn_packets == 11U);
+    PFL_EXPECT(authoritative_aggregate_analysis.tcp_fin_packets == 7U);
+    PFL_EXPECT(authoritative_aggregate_analysis.tcp_rst_packets == 5U);
+    PFL_EXPECT(packet_histogram_count(authoritative_aggregate_analysis, "64-127") == 2U);
 
     const auto inter_arrival_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 42000, 8080, 12, 0x18

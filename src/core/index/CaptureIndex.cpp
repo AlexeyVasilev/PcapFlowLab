@@ -132,7 +132,7 @@ bool validate_index_magic(const std::filesystem::path& index_path) {
                        (static_cast<std::uint64_t>(bytes[5]) << 40U) |
                        (static_cast<std::uint64_t>(bytes[6]) << 48U) |
                        (static_cast<std::uint64_t>(bytes[7]) << 56U);
-    return magic == kCaptureIndexMagic;
+    return magic == kLegacyCaptureIndexMagic || magic == kStableCaptureIndexMagic;
 }
 
 bool looks_like_index_file(const std::filesystem::path& path) {

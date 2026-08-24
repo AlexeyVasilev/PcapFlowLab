@@ -1,5 +1,6 @@
 ﻿#include "ui/app/MainController.h"
 
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedPacketBytePresentation.h"
@@ -14,17 +15,26 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <span>
+#include <type_traits>
 
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QHostAddress>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QSaveFile>
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
@@ -91,6 +101,219 @@ QString sanitize_export_filename_component(QString text) {
     return text.isEmpty() ? QStringLiteral("bytes") : text;
 }
 
+QString format_rule_count_text(const std::size_t count) {
+    return count == 1U
+        ? QStringLiteral("1 rule")
+        : QStringLiteral("%1 rules").arg(QString::number(count));
+}
+
+bool is_advanced_filter_status_text(const QString& text) {
+    return text.startsWith(QStringLiteral("Advanced filter"));
+}
+
+QString format_advanced_filter_application_error(const session_detail::AdvancedFlowQueryResult& query_result) {
+    QString text = QStringLiteral("Advanced filter could not be applied to the current capture or index.");
+    if (query_result.compile_issue.has_value() && !query_result.compile_issue->category.empty()) {
+        text += QStringLiteral(" Category: %1").arg(QString::fromStdString(query_result.compile_issue->category));
+        if (query_result.compile_issue->predicate_index.has_value()) {
+            text += QStringLiteral(" #%1").arg(QString::number(*query_result.compile_issue->predicate_index + 1U));
+        }
+        text += QLatin1Char('.');
+    }
+    return text;
+}
+
+QString advanced_filter_source_stem_text(const std::filesystem::path& path) {
+    const auto stem = path.stem().wstring();
+    if (!stem.empty()) {
+        return QString::fromStdWString(stem);
+    }
+
+    const auto filename = path.filename().wstring();
+    return filename.empty() ? QStringLiteral("Custom filter") : QString::fromStdWString(filename);
+}
+
+QString format_advanced_filter_text_parse_error(
+    const session_detail::AdvancedFlowFilterTextParseResult& parse_result,
+    const std::filesystem::path& path
+) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    if (!parse_result.issue.has_value()) {
+        return QStringLiteral("Failed to open advanced filter file %1.").arg(file_name);
+    }
+
+    const auto& issue = *parse_result.issue;
+    QString location = QStringLiteral("line %1").arg(QString::number(issue.line));
+    if (issue.column.has_value()) {
+        location += QStringLiteral(", column %1").arg(QString::number(*issue.column));
+    }
+
+    QString message = QString::fromStdString(issue.message);
+    if (message.isEmpty()) {
+        message = QStringLiteral("Invalid advanced filter text.");
+    }
+
+    return QStringLiteral("Failed to open advanced filter file %1 at %2: %3")
+        .arg(file_name, location, message);
+}
+
+QString format_advanced_filter_write_error(const std::filesystem::path& path, const QString& error_text) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    if (error_text.isEmpty()) {
+        return QStringLiteral("Failed to save advanced filter file %1.").arg(file_name);
+    }
+    return QStringLiteral("Failed to save advanced filter file %1: %2").arg(file_name, error_text);
+}
+
+QString format_advanced_filter_read_error(const std::filesystem::path& path, const QString& error_text) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    if (error_text.isEmpty()) {
+        return QStringLiteral("Failed to read advanced filter file %1.").arg(file_name);
+    }
+    return QStringLiteral("Failed to read advanced filter file %1: %2").arg(file_name, error_text);
+}
+
+QString format_advanced_filter_file_too_large_error(const std::filesystem::path& path) {
+    const QString file_name = QString::fromStdWString(path.filename().wstring());
+    return QStringLiteral("Failed to open advanced filter file %1: file is too large (maximum 1 MiB).")
+        .arg(file_name);
+}
+
+struct AdvancedFlowFilterFileReadResult final {
+    enum class Status : std::uint8_t {
+        ok = 0,
+        read_failed,
+        too_large,
+    };
+
+    Status status {Status::ok};
+    QByteArray bytes {};
+};
+
+AdvancedFlowFilterFileReadResult read_advanced_flow_filter_file_bounded(QFile& file) {
+    AdvancedFlowFilterFileReadResult result {};
+    result.bytes.reserve(static_cast<qsizetype>(
+        std::min<std::size_t>(session_detail::kAdvancedFlowFilterMaxFileBytes + 1U, 64U * 1024U)));
+
+    std::array<char, 4096U> chunk {};
+    const auto max_bytes = static_cast<qsizetype>(session_detail::kAdvancedFlowFilterMaxFileBytes);
+
+    while (true) {
+        const auto remaining_bytes = static_cast<qint64>(
+            session_detail::kAdvancedFlowFilterMaxFileBytes + 1U - static_cast<std::size_t>(result.bytes.size()));
+        const auto bytes_to_read = std::min(static_cast<qint64>(chunk.size()), remaining_bytes);
+        const auto bytes_read = file.read(chunk.data(), bytes_to_read);
+        if (bytes_read < 0) {
+            result.status = AdvancedFlowFilterFileReadResult::Status::read_failed;
+            result.bytes.clear();
+            return result;
+        }
+
+        if (bytes_read == 0) {
+            if (file.atEnd()) {
+                break;
+            }
+            result.status = AdvancedFlowFilterFileReadResult::Status::read_failed;
+            result.bytes.clear();
+            return result;
+        }
+
+        result.bytes.append(chunk.data(), static_cast<qsizetype>(bytes_read));
+        if (result.bytes.size() > max_bytes) {
+            result.status = AdvancedFlowFilterFileReadResult::Status::too_large;
+            result.bytes.clear();
+            return result;
+        }
+
+        if (file.atEnd()) {
+            break;
+        }
+    }
+
+    return result;
+}
+
+bool protocol_path_layers_have_identifiers(const std::vector<LayerKey>& layers) noexcept {
+    return std::any_of(layers.begin(), layers.end(), [](const LayerKey& layer) {
+        return layer.identifier.kind != ProtocolLayerIdentifierKind::none;
+    });
+}
+
+bool protocol_path_layer_matches_predicate(
+    const LayerKey& layer,
+    const session_detail::AdvancedFlowFilterProtocolLayerPredicate& predicate
+) noexcept {
+    if (layer.kind != predicate.kind) {
+        return false;
+    }
+    if (!predicate.identifier.has_value()) {
+        return true;
+    }
+    return layer.identifier == *predicate.identifier;
+}
+
+bool protocol_path_contains_layer_matches(
+    const ProtocolPath& path,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    if (predicate.layers.size() != 1U) {
+        return false;
+    }
+
+    const auto& layer_predicate = predicate.layers.front();
+    return std::any_of(path.layers().begin(), path.layers().end(), [&](const LayerKey& layer) {
+        return protocol_path_layer_matches_predicate(layer, layer_predicate);
+    });
+}
+
+std::vector<LayerKey> protocol_path_layers_from_predicate(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    std::vector<LayerKey> converted {};
+    converted.reserve(layers.size());
+    for (const auto& layer : layers) {
+        converted.push_back(LayerKey {
+            .kind = layer.kind,
+            .identifier = layer.identifier.value_or(ProtocolLayerIdentifier {}),
+        });
+    }
+    return converted;
+}
+
+ProtocolPathStatisticsMode protocol_path_selector_mode_for_predicate(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path) {
+        return ProtocolPathStatisticsMode::terminal_paths;
+    }
+
+    return protocol_path_layers_have_identifiers(protocol_path_layers_from_predicate(predicate.layers))
+        ? ProtocolPathStatisticsMode::identity_tree
+        : ProtocolPathStatisticsMode::kind_overview;
+}
+
+std::optional<bool> protocol_path_predicate_applicability(
+    const CaptureSession& session,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    if (!session.has_capture()) {
+        return std::nullopt;
+    }
+
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer) {
+        const auto summary = session.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
+        return std::any_of(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+            return protocol_path_contains_layer_matches(row.path, predicate);
+        });
+    }
+
+    const auto summary = session.protocol_path_summary(protocol_path_selector_mode_for_predicate(predicate));
+    const auto predicate_layers = protocol_path_layers_from_predicate(predicate.layers);
+    return std::any_of(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.path.layers() == predicate_layers;
+    });
+}
+
 struct OpenJobResult {
     bool opened {false};
     bool cancelled {false};
@@ -116,6 +339,7 @@ struct AnalysisSequenceExportRow {
 struct TransportPayloadLengths {
     std::optional<std::uint32_t> real_payload_length {};
     std::optional<std::uint32_t> original_payload_length {};
+    std::optional<bool> is_ip_fragmented {};
 };
 
 FlowListModel::SortKey sort_key_from_column(const int column) {
@@ -498,40 +722,32 @@ std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
     return static_cast<std::uint64_t>(value);
 }
 
-std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
-    std::span<const std::uint8_t> packet_bytes,
-    const PacketRef& packet
-) {
-    return session_detail::derive_original_transport_payload_length_from_headers(packet_bytes, packet);
-}
-
-std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
-    const CaptureSession& session,
-    const PacketRef& packet
-) {
-    return session_detail::derive_original_transport_payload_length_from_headers(session, packet);
-}
-
 TransportPayloadLengths resolve_transport_payload_lengths(
     const PacketDetails& details,
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
+    const auto metadata = session_detail::derive_transient_packet_metadata(packet_bytes, packet);
+
     if (!details.has_tcp && !details.has_udp) {
-        return {};
+        return TransportPayloadLengths {
+            .is_ip_fragmented = metadata.is_ip_fragmented,
+        };
     }
 
-    const auto original_payload_length = derive_original_transport_payload_length_from_headers(packet_bytes, packet);
-    const auto captured_payload_length = std::optional<std::uint32_t> {packet.payload_length};
-
     return TransportPayloadLengths {
-        .real_payload_length = captured_payload_length,
-        .original_payload_length = original_payload_length,
+        .real_payload_length = metadata.captured_transport_payload_length,
+        .original_payload_length = metadata.original_transport_payload_length,
+        .is_ip_fragmented = metadata.is_ip_fragmented,
     };
 }
 
-void apply_original_transport_payload_lengths(CaptureSession& session, std::vector<PacketRow>& rows) {
-    session_detail::apply_original_transport_payload_lengths(session, rows);
+void apply_transient_packet_row_metadata(
+    CaptureSession& session,
+    const std::size_t flow_index,
+    std::vector<PacketRow>& rows
+) {
+    session_detail::populate_transient_packet_row_metadata(session, flow_index, rows);
 }
 
 std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
@@ -557,6 +773,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             return std::nullopt;
         }
 
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
         const auto timestamp_us = packet_timestamp_us(packet);
         const auto delta_us = previous_timestamp_us.has_value() && timestamp_us >= *previous_timestamp_us
             ? timestamp_us - *previous_timestamp_us
@@ -570,8 +787,10 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = derive_original_transport_payload_length_from_headers(session, packet),
-            .tcp_flags_text = packet_row.tcp_flags_text,
+            .transport_payload_length = metadata.original_transport_payload_length,
+            .tcp_flags_text = metadata.tcp_flags.has_value()
+                ? session_detail::format_tcp_flags_text(*metadata.tcp_flags)
+                : packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
 
@@ -884,7 +1103,7 @@ ChecksumValidationResult validate_tcp_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    if (packet.is_ip_fragmented) {
+    if (session_detail::derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, details).value_or(false)) {
         return ChecksumValidationResult {
             .status = ChecksumValidationStatus::unavailable,
             .note = QStringLiteral("TCP checksum not validated for IP-fragmented packet."),
@@ -1017,7 +1236,7 @@ ChecksumValidationResult validate_udp_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    if (packet.is_ip_fragmented) {
+    if (session_detail::derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, details).value_or(false)) {
         return ChecksumValidationResult {
             .status = ChecksumValidationStatus::unavailable,
             .note = QStringLiteral("UDP checksum not validated for IP-fragmented packet."),
@@ -1774,7 +1993,7 @@ QString buildPacketSummary(
     });
 
     QStringList warnings {};
-    if (packet.is_ip_fragmented) {
+    if (payload_lengths.is_ip_fragmented.value_or(false)) {
         warnings.push_back(QStringLiteral("Packet is IP-fragmented"));
     }
     if (details.captured_length != details.original_length) {
@@ -1892,7 +2111,8 @@ QString buildPacketSummary(
 QString buildPacketSummaryFallback(
     const PacketRef& packet,
     const QString& reason_text = {},
-    const PacketChecksumSections& checksum_sections = {}
+    const PacketChecksumSections& checksum_sections = {},
+    const std::optional<bool> is_ip_fragmented = std::nullopt
 ) {
     QStringList lines {};
     const auto packet_number_in_file = packet.packet_index + 1U;
@@ -1905,7 +2125,7 @@ QString buildPacketSummaryFallback(
     });
 
     QStringList warnings {};
-    if (packet.is_ip_fragmented) {
+    if (is_ip_fragmented.value_or(false)) {
         warnings.push_back(QStringLiteral("Packet is IP-fragmented"));
     }
     if (packet.captured_length != packet.original_length) {
@@ -1926,12 +2146,13 @@ QString buildPacketSummaryFallback(
 std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_layers(
     const PacketRef& packet,
     const QString& reason_text = {},
-    const PacketChecksumSections& checksum_sections = {}
+    const PacketChecksumSections& checksum_sections = {},
+    const std::optional<bool> is_ip_fragmented = std::nullopt
 ) {
     std::vector<session_detail::PacketSummaryLayer> layers {};
 
     std::vector<session_detail::PacketSummaryField> warning_fields {};
-    if (packet.is_ip_fragmented) {
+    if (is_ip_fragmented.value_or(false)) {
         warning_fields.push_back({});
         warning_fields.back().value = "Packet is IP-fragmented";
     }
@@ -2012,16 +2233,28 @@ std::vector<session_detail::PacketSummaryLayer> build_packet_summary_fallback_la
 
 MainController::MainController(QObject* parent)
     : QObject(parent)
+    , advanced_flow_filter_editor_model_(advanced_flow_filter_document_state_, this)
+    , advanced_flow_filter_protocol_path_selector_model_(this)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
     flow_model_.setProtocolPathPresentationResolver([this](const ProtocolPathId protocol_path_id) {
         return session_detail::build_protocol_path_presentation(session_.state().protocol_path_registry, protocol_path_id);
+    });
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
+    advanced_flow_filter_editor_model_.setProtocolPathApplicabilityResolver([this](const auto& predicate) {
+        return protocol_path_predicate_applicability(session_, predicate);
     });
 
     QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
         emit selectedFlowCountChanged();
         emit actionAvailabilityChanged();
     });
+    QObject::connect(
+        &advanced_flow_filter_editor_model_,
+        &AdvancedFlowFilterEditorModel::stateChanged,
+        this,
+        &MainController::advancedFlowFilterPresentationChanged
+    );
 }
 
 MainController::~MainController() {
@@ -2409,21 +2642,10 @@ QString MainController::analysisTotalBytesText() const {
 }
 
 qulonglong MainController::analysisCapturedBytes() const noexcept {
-    if (!current_flow_analysis_.has_value() || selected_flow_index_ < 0) {
+    if (!current_flow_analysis_.has_value()) {
         return 0U;
     }
-
-    const auto packets = session_.flow_packets(static_cast<std::size_t>(selected_flow_index_));
-    if (!packets.has_value()) {
-        return 0U;
-    }
-
-    std::uint64_t captured_bytes = 0U;
-    for (const auto& packet : *packets) {
-        captured_bytes += packet.captured_length;
-    }
-
-    return static_cast<qulonglong>(captured_bytes);
+    return static_cast<qulonglong>(current_flow_analysis_->captured_bytes);
 }
 
 QString MainController::analysisCapturedBytesText() const {
@@ -2871,26 +3093,11 @@ QVariantList MainController::analysisSequencePreview() const {
         return rows;
     }
 
-    std::vector<PacketRef> ordered_packets {};
-    if (selected_flow_index_ >= 0) {
-        if (const auto packets = session_.flow_packets(static_cast<std::size_t>(selected_flow_index_)); packets.has_value()) {
-            ordered_packets = *packets;
-            std::stable_sort(ordered_packets.begin(), ordered_packets.end(), [](const PacketRef& left, const PacketRef& right) {
-                return packet_timestamp_us(left) < packet_timestamp_us(right);
-            });
-        }
-    }
-
     rows.reserve(static_cast<qsizetype>(current_flow_analysis_->sequence_preview_rows.size()));
-    for (std::size_t index = 0; index < current_flow_analysis_->sequence_preview_rows.size(); ++index) {
-        const auto& preview_row = current_flow_analysis_->sequence_preview_rows[index];
-        QString transport_payload_text {QStringLiteral("-")};
-        if (index < ordered_packets.size()) {
-            if (const auto transport_payload_length = derive_original_transport_payload_length_from_headers(session_, ordered_packets[index]);
-                transport_payload_length.has_value()) {
-                transport_payload_text = QString::number(*transport_payload_length);
-            }
-        }
+    for (const auto& preview_row : current_flow_analysis_->sequence_preview_rows) {
+        const QString transport_payload_text = preview_row.payload_length.has_value()
+            ? QString::number(*preview_row.payload_length)
+            : QStringLiteral("-");
 
         QVariantMap row {};
         row.insert(QStringLiteral("packetNumber"), static_cast<qulonglong>(preview_row.flow_packet_number));
@@ -3461,8 +3668,100 @@ qulonglong MainController::selectedStreamItemIndex() const noexcept {
     return selected_stream_item_index_;
 }
 
+int MainController::flowFilterMode() const noexcept {
+    return static_cast<int>(flow_filter_mode_);
+}
+
 QString MainController::flowFilterText() const {
-    return flow_model_.filterText();
+    return simple_flow_filter_text_;
+}
+
+bool MainController::smartExportCurrentFilterAvailable() const noexcept {
+    return flow_filter_mode_ == FlowFilterMode::simple && !simple_flow_filter_text_.trimmed().isEmpty();
+}
+
+QString MainController::advancedFlowFilterDisplayName() const {
+    const auto* source_path = advanced_flow_filter_document_state_.source_path();
+    if (source_path == nullptr) {
+        return QStringLiteral("Custom filter");
+    }
+
+    QString display_name = advanced_filter_source_stem_text(*source_path);
+    if (advanced_flow_filter_document_state_.has_unsaved_changes() ||
+        advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges()) {
+        display_name += QStringLiteral(" *");
+    }
+    return display_name;
+}
+
+QString MainController::advancedFlowFilterRuleCountText() const {
+    return format_rule_count_text(advanced_flow_filter_document_state_.active_rule_count());
+}
+
+bool MainController::advancedFlowFilterSettingsAvailable() const noexcept {
+    return true;
+}
+
+bool MainController::advancedFlowFilterClearAvailable() const noexcept {
+    return advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges() ||
+        !is_default_advanced_flow_filter_document(
+            advanced_flow_filter_document_state_.current_user_visible_document());
+}
+
+int MainController::advancedFlowFilterEditorRevision() const noexcept {
+    return advanced_flow_filter_editor_model_.revision();
+}
+
+QString MainController::advancedFlowFilterEditorValidationText() const {
+    return advanced_flow_filter_editor_model_.validationText();
+}
+
+QObject* MainController::advancedFlowFilterEditor() noexcept {
+    return &advanced_flow_filter_editor_model_;
+}
+
+QObject* MainController::advancedFlowFilterProtocolPathSelector() noexcept {
+    return &advanced_flow_filter_protocol_path_selector_model_;
+}
+
+bool MainController::advancedFlowFilterDraftClearAllAvailable() const noexcept {
+    return advanced_flow_filter_editor_model_.draftClearAllAvailable();
+}
+
+bool MainController::advancedFlowFilterSectionEnabled(const int section) const noexcept {
+    return advanced_flow_filter_editor_model_.sectionEnabled(section);
+}
+
+bool MainController::advancedFlowFilterSectionHasExclusions(const int section) const noexcept {
+    return advanced_flow_filter_editor_model_.sectionHasExclusions(section);
+}
+
+QVariantList MainController::advancedFlowFilterIncludeOptions(const int section) const {
+    return advanced_flow_filter_editor_model_.includeOptions(section);
+}
+
+QVariantList MainController::advancedFlowFilterExcludeOptions(const int section) const {
+    return advanced_flow_filter_editor_model_.excludeOptions(section);
+}
+
+QVariantList MainController::advancedFlowFilterPortScopeOptions() const {
+    return advanced_flow_filter_editor_model_.portScopeOptions();
+}
+
+QVariantList MainController::advancedFlowFilterAddressScopeOptions() const {
+    return advanced_flow_filter_editor_model_.addressScopeOptions();
+}
+
+QVariantList MainController::advancedFlowFilterPortRows(const bool exclude) const {
+    return advanced_flow_filter_editor_model_.portRows(exclude);
+}
+
+QVariantList MainController::advancedFlowFilterAddressRows(const bool exclude) const {
+    return advanced_flow_filter_editor_model_.addressRows(exclude);
+}
+
+QVariantList MainController::advancedFlowFilterProtocolPathRows(const bool exclude) const {
+    return advanced_flow_filter_editor_model_.protocolPathRows(exclude);
 }
 
 int MainController::flowSortColumn() const noexcept {
@@ -4051,11 +4350,19 @@ bool MainController::exportSmartFlows(
         break;
     }
     case kSmartExportFlowScopeMatchingCurrentFilter:
-        flow_indices = flow_model_.visibleFlowIndices();
+        if (!smartExportCurrentFilterAvailable()) {
+            setStatusText(QStringLiteral("Current-filter smart export is available only in Simple filter mode with a non-empty filter."), true);
+            return false;
+        }
+        flow_indices = smartExportCurrentFilterFlowIndices(true);
         empty_selection_message = QStringLiteral("No flows match the current filter for smart export.");
         break;
     case kSmartExportFlowScopeNotMatchingCurrentFilter:
-        flow_indices = flow_model_.hiddenFlowIndices();
+        if (!smartExportCurrentFilterAvailable()) {
+            setStatusText(QStringLiteral("Current-filter smart export is available only in Simple filter mode with a non-empty filter."), true);
+            return false;
+        }
+        flow_indices = smartExportCurrentFilterFlowIndices(false);
         empty_selection_message = QStringLiteral("No flows remain outside the current filter for smart export.");
         break;
     case kSmartExportFlowScopeUnrecognizedPackets:
@@ -4407,6 +4714,333 @@ void MainController::copyTextToClipboard(const QString& text) {
     }
 }
 
+void MainController::useAdvancedFlowFilter() {
+    if (flow_filter_mode_ == FlowFilterMode::advanced) {
+        return;
+    }
+
+    flow_filter_mode_ = FlowFilterMode::advanced;
+    applyActiveFlowFilterModeToModel();
+    emit flowFilterModeChanged();
+    emit smartExportCurrentFilterAvailableChanged();
+}
+
+void MainController::useSimpleFlowFilter() {
+    if (flow_filter_mode_ == FlowFilterMode::simple) {
+        return;
+    }
+
+    flow_filter_mode_ = FlowFilterMode::simple;
+    applyActiveFlowFilterModeToModel();
+    emit flowFilterModeChanged();
+    emit smartExportCurrentFilterAvailableChanged();
+}
+
+void MainController::clearAdvancedFlowFilter() {
+    if (!advancedFlowFilterClearAvailable()) {
+        return;
+    }
+
+    const bool editing = advanced_flow_filter_document_state_.is_editing();
+    const bool has_unsynchronized_buffered_changes =
+        advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges();
+    const bool file_backed_dirty =
+        advanced_flow_filter_document_state_.source_path() != nullptr &&
+        (advanced_flow_filter_document_state_.has_unsaved_changes() || has_unsynchronized_buffered_changes);
+    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration() || has_unsynchronized_buffered_changes) {
+        switch (confirmAdvancedFlowFilterClear(file_backed_dirty)) {
+        case AdvancedFlowFilterClearDecision::save_and_clear:
+            if (!saveAdvancedFlowFilterFile()) {
+                if (!editing && !advanced_flow_filter_editor_model_.validationText().isEmpty()) {
+                    setStatusText(advanced_flow_filter_editor_model_.validationText(), true);
+                }
+                return;
+            }
+            break;
+        case AdvancedFlowFilterClearDecision::save_as_and_clear:
+            if (!saveAdvancedFlowFilterFileAs()) {
+                if (!editing && !advanced_flow_filter_editor_model_.validationText().isEmpty()) {
+                    setStatusText(advanced_flow_filter_editor_model_.validationText(), true);
+                }
+                return;
+            }
+            break;
+        case AdvancedFlowFilterClearDecision::discard_and_clear:
+            break;
+        case AdvancedFlowFilterClearDecision::cancel:
+            return;
+        }
+    }
+
+    finalizeAdvancedFlowFilterClearAll();
+}
+
+void MainController::clearAdvancedFlowFilterUnsavedChanges() {
+    if (advanced_flow_filter_document_state_.saved_baseline() == nullptr ||
+        (!advanced_flow_filter_document_state_.can_clear_unsaved_changes() &&
+         !advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges())) {
+        return;
+    }
+
+    if (!advanced_flow_filter_document_state_.revert_to_saved_baseline()) {
+        return;
+    }
+
+    refreshAdvancedFlowFilterEditingPresentation();
+}
+
+void MainController::beginAdvancedFlowFilterEdit() {
+    advanced_flow_filter_document_state_.begin_edit();
+    advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+}
+
+void MainController::cancelAdvancedFlowFilterEdit() {
+    if (!advanced_flow_filter_document_state_.is_editing()) {
+        return;
+    }
+
+    advanced_flow_filter_document_state_.cancel_edit();
+    advanced_flow_filter_editor_model_.clearTransientState();
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+}
+
+bool MainController::applyAdvancedFlowFilterEdit() {
+    QString validation_error {};
+    if (!advanced_flow_filter_editor_model_.synchronizeDraftSections(&validation_error)) {
+        advanced_flow_filter_editor_model_.setValidationText(validation_error);
+        return false;
+    }
+
+    if (!advanced_flow_filter_document_state_.apply_draft()) {
+        return false;
+    }
+
+    advanced_flow_filter_editor_model_.clearTransientState();
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    refreshAdvancedFlowFilter();
+    return true;
+}
+
+void MainController::openAdvancedFlowFilterFile() {
+    const bool has_unsynchronized_buffered_changes =
+        advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges();
+    const bool file_backed_dirty =
+        advanced_flow_filter_document_state_.source_path() != nullptr
+        && (advanced_flow_filter_document_state_.has_unsaved_changes() || has_unsynchronized_buffered_changes);
+    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration() || has_unsynchronized_buffered_changes) {
+        switch (confirmAdvancedFlowFilterOpenUnsaved(file_backed_dirty)) {
+        case AdvancedFlowFilterOpenUnsavedDecision::save_and_open:
+            if (!saveAdvancedFlowFilterFile()) {
+                return;
+            }
+            break;
+        case AdvancedFlowFilterOpenUnsavedDecision::save_as_and_open:
+            if (!saveAdvancedFlowFilterFileAs()) {
+                return;
+            }
+            break;
+        case AdvancedFlowFilterOpenUnsavedDecision::discard_and_open:
+            break;
+        case AdvancedFlowFilterOpenUnsavedDecision::cancel:
+            return;
+        }
+    }
+
+    const QString selected_path = chooseAdvancedFlowFilterOpenFile();
+    if (selected_path.trimmed().isEmpty()) {
+        return;
+    }
+
+    QString error_text {};
+    if (!openAdvancedFlowFilterFileAtPath(std::filesystem::path {selected_path.toStdWString()}, &error_text)) {
+        advanced_flow_filter_editor_model_.setValidationText(error_text);
+    }
+}
+
+bool MainController::saveAdvancedFlowFilterFile() {
+    QString validation_error {};
+    if (!synchronizeAdvancedFlowFilterDraft(&validation_error)) {
+        advanced_flow_filter_editor_model_.setValidationText(validation_error);
+        return false;
+    }
+
+    const auto* source_path = advanced_flow_filter_document_state_.source_path();
+    if (source_path == nullptr) {
+        return saveAdvancedFlowFilterFileAs();
+    }
+
+    QString error_text {};
+    if (!saveAdvancedFlowFilterDraftToPath(*source_path, &error_text)) {
+        advanced_flow_filter_editor_model_.setValidationText(error_text);
+        return false;
+    }
+
+    return true;
+}
+
+bool MainController::saveAdvancedFlowFilterFileAs() {
+    QString validation_error {};
+    if (!synchronizeAdvancedFlowFilterDraft(&validation_error)) {
+        advanced_flow_filter_editor_model_.setValidationText(validation_error);
+        return false;
+    }
+
+    const QString selected_path = chooseAdvancedFlowFilterSaveAsFile(advancedFlowFilterSuggestedFileName());
+    if (selected_path.trimmed().isEmpty()) {
+        return false;
+    }
+
+    QString error_text {};
+    if (!saveAdvancedFlowFilterDraftToPath(std::filesystem::path {selected_path.toStdWString()}, &error_text)) {
+        advanced_flow_filter_editor_model_.setValidationText(error_text);
+        return false;
+    }
+
+    return true;
+}
+
+void MainController::setAdvancedFlowFilterOpenFileChooserForTests(std::function<QString()> chooser) {
+    advanced_flow_filter_open_file_chooser_for_tests_ = std::move(chooser);
+}
+
+void MainController::setAdvancedFlowFilterSaveAsFileChooserForTests(
+    std::function<QString(const QString& suggestedFileName)> chooser
+) {
+    advanced_flow_filter_save_as_file_chooser_for_tests_ = std::move(chooser);
+}
+
+void MainController::setAdvancedFlowFilterUnsavedOpenDecisionForTests(
+    std::function<AdvancedFlowFilterOpenUnsavedDecision(bool fileBackedDirty)> resolver
+) {
+    advanced_flow_filter_unsaved_open_decision_for_tests_ = std::move(resolver);
+}
+
+void MainController::setAdvancedFlowFilterClearDecisionForTests(
+    std::function<AdvancedFlowFilterClearDecision(bool fileBackedDirty)> resolver
+) {
+    advanced_flow_filter_clear_decision_for_tests_ = std::move(resolver);
+}
+
+void MainController::setAdvancedFlowFilterSaveErrorForTests(
+    std::function<std::optional<QString>(const std::filesystem::path& path)> provider
+) {
+    advanced_flow_filter_save_error_for_tests_ = std::move(provider);
+}
+
+void MainController::setAdvancedFlowFilterSectionEnabled(const int section, const bool enabled) {
+    advanced_flow_filter_editor_model_.setSectionEnabled(section, enabled);
+}
+
+void MainController::setAdvancedFlowFilterOptionChecked(
+    const int section,
+    const int value,
+    const bool exclude,
+    const bool checked
+) {
+    advanced_flow_filter_editor_model_.setOptionChecked(section, value, exclude, checked);
+}
+
+void MainController::addAdvancedFlowFilterPortRow(const bool exclude) {
+    advanced_flow_filter_editor_model_.addPortRow(exclude);
+}
+
+void MainController::removeAdvancedFlowFilterPortRow(const bool exclude, const int row) {
+    advanced_flow_filter_editor_model_.removePortRow(exclude, row);
+}
+
+void MainController::setAdvancedFlowFilterPortRowScope(const bool exclude, const int row, const int scope) {
+    advanced_flow_filter_editor_model_.setPortRowScope(exclude, row, scope);
+}
+
+void MainController::setAdvancedFlowFilterPortRowRangeEnabled(const bool exclude, const int row, const bool enabled) {
+    advanced_flow_filter_editor_model_.setPortRowRangeEnabled(exclude, row, enabled);
+}
+
+void MainController::setAdvancedFlowFilterPortRowPrimaryText(const bool exclude, const int row, const QString& text) {
+    advanced_flow_filter_editor_model_.setPortRowPrimaryText(exclude, row, text);
+}
+
+void MainController::setAdvancedFlowFilterPortRowSecondaryText(const bool exclude, const int row, const QString& text) {
+    advanced_flow_filter_editor_model_.setPortRowSecondaryText(exclude, row, text);
+}
+
+void MainController::addAdvancedFlowFilterAddressRow(const bool exclude) {
+    advanced_flow_filter_editor_model_.addAddressRow(exclude);
+}
+
+void MainController::removeAdvancedFlowFilterAddressRow(const bool exclude, const int row) {
+    advanced_flow_filter_editor_model_.removeAddressRow(exclude, row);
+}
+
+void MainController::setAdvancedFlowFilterAddressRowScope(const bool exclude, const int row, const int scope) {
+    advanced_flow_filter_editor_model_.setAddressRowScope(exclude, row, scope);
+}
+
+void MainController::setAdvancedFlowFilterAddressRowSubnetEnabled(const bool exclude, const int row, const bool enabled) {
+    advanced_flow_filter_editor_model_.setAddressRowSubnetEnabled(exclude, row, enabled);
+}
+
+void MainController::setAdvancedFlowFilterAddressRowAddressText(const bool exclude, const int row, const QString& text) {
+    advanced_flow_filter_editor_model_.setAddressRowAddressText(exclude, row, text);
+}
+
+void MainController::setAdvancedFlowFilterAddressRowPrefixText(const bool exclude, const int row, const QString& text) {
+    advanced_flow_filter_editor_model_.setAddressRowPrefixText(exclude, row, text);
+}
+
+void MainController::beginAdvancedFlowFilterProtocolPathSelection(const bool exclude, const int row) {
+    advanced_flow_filter_protocol_path_selector_exclude_ = exclude;
+    advanced_flow_filter_protocol_path_selector_row_ = row;
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
+    const auto current_rows = advanced_flow_filter_editor_model_.protocolPathRows(exclude);
+    if (row >= 0 && row < current_rows.size()) {
+        auto* draft_document = advanced_flow_filter_document_state_.draft_document();
+        if (draft_document != nullptr) {
+            const auto& predicates = exclude
+                ? draft_document->configured_spec.protocol_path.exclude
+                : draft_document->configured_spec.protocol_path.include;
+            int ui_index = -1;
+            for (const auto& predicate : predicates) {
+                if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer) {
+                    continue;
+                }
+                ++ui_index;
+                if (ui_index == row) {
+                    advanced_flow_filter_protocol_path_selector_model_.selectPredicate(predicate);
+                    return;
+                }
+            }
+        }
+    }
+
+    advanced_flow_filter_protocol_path_selector_model_.setMode(kProtocolPathStatisticsModeKindOverview);
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+}
+
+bool MainController::applyAdvancedFlowFilterProtocolPathSelection() {
+    const auto predicate = advanced_flow_filter_protocol_path_selector_model_.selectedPredicate();
+    if (!predicate.has_value()) {
+        return false;
+    }
+
+    advanced_flow_filter_editor_model_.upsertProtocolPathRow(
+        advanced_flow_filter_protocol_path_selector_exclude_,
+        advanced_flow_filter_protocol_path_selector_row_,
+        *predicate,
+        static_cast<ProtocolPathStatisticsMode>(advanced_flow_filter_protocol_path_selector_model_.mode())
+    );
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    return true;
+}
+
+void MainController::removeAdvancedFlowFilterProtocolPathRow(const bool exclude, const int row) {
+    advanced_flow_filter_editor_model_.removeProtocolPathRow(exclude, row);
+}
+
 void MainController::sortFlows(const int column) {
     const auto requestedKey = sort_key_from_column(column);
 
@@ -4424,6 +5058,7 @@ void MainController::sortFlows(const int column) {
 void MainController::drillDownToFlows(const QString& filterText) {
     setCurrentTabIndex(kFlowTabIndex);
     clearFlowSelection();
+    useSimpleFlowFilter();
     setFlowFilterText(filterText.trimmed());
 }
 
@@ -4879,6 +5514,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
         flow_model_.refresh(session_.list_flows());
+        applyActiveFlowFilterModeToModel();
         if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
             protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
         }
@@ -5433,13 +6069,29 @@ void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex
 }
 
 void MainController::setFlowFilterText(const QString& text) {
-    if (flow_model_.filterText() == text) {
+    if (simple_flow_filter_text_ == text) {
         return;
     }
 
-    flow_model_.setFilterText(text);
-    synchronizeFlowSelection();
+    simple_flow_filter_text_ = text;
+    if (flow_filter_mode_ == FlowFilterMode::simple) {
+        flow_model_.setFilterText(simple_flow_filter_text_);
+        synchronizeFlowSelection();
+    }
     emit flowFilterTextChanged();
+    emit smartExportCurrentFilterAvailableChanged();
+}
+
+void MainController::applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document) {
+    advanced_flow_filter_document_state_.accept_custom_document(document);
+    if (advanced_flow_filter_document_state_.is_editing()) {
+        advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+        refreshAdvancedFlowFilterProtocolPathApplicability();
+    } else {
+        advanced_flow_filter_editor_model_.clearTransientState();
+    }
+    refreshAdvancedFlowFilter();
+    emit advancedFlowFilterPresentationChanged();
 }
 
 bool MainController::ensureSourceCaptureAvailable(const QString& unavailableActionText) {
@@ -5680,7 +6332,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     if (!rows.empty()) {
         session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
         prepareSelectedFlowTcpContributionState(offset + rows.size());
-        apply_original_transport_payload_lengths(session_, rows);
+        apply_transient_packet_row_metadata(session_, static_cast<std::size_t>(selected_flow_index_), rows);
     }
 
     for (auto& packet_row : rows) {
@@ -5898,6 +6550,169 @@ void MainController::clearSelectedFlowAnalysis() {
     }
 }
 
+void MainController::applyActiveFlowFilterModeToModel() {
+    if (flow_filter_mode_ == FlowFilterMode::simple) {
+        flow_model_.clearAdvancedFilterFlowIndices();
+        flow_model_.setFilterText(simple_flow_filter_text_);
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        synchronizeFlowSelection();
+        return;
+    }
+
+    flow_model_.setFilterText({});
+    refreshAdvancedFlowFilter();
+}
+
+void MainController::refreshAdvancedFlowFilter() {
+    if (flow_filter_mode_ != FlowFilterMode::advanced || !session_.has_capture()) {
+        flow_model_.clearAdvancedFilterFlowIndices();
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        synchronizeFlowSelection();
+        return;
+    }
+
+    const auto effective_spec = session_detail::make_effective_advanced_flow_filter_spec(
+        advanced_flow_filter_document_state_.applied_document()
+    );
+    if (session_detail::count_advanced_flow_filter_atomic_rules(effective_spec) == 0U) {
+        flow_model_.clearAdvancedFilterFlowIndices();
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        synchronizeFlowSelection();
+        return;
+    }
+
+    std::optional<std::vector<std::size_t>> candidate_flow_indices {};
+    if (has_active_protocol_path_filter_) {
+        candidate_flow_indices.emplace();
+        candidate_flow_indices->reserve(active_protocol_path_filter_flow_indices_.size());
+        for (const auto flow_index : active_protocol_path_filter_flow_indices_) {
+            if (flow_index < 0) {
+                flow_model_.clearAdvancedFilterFlowIndices();
+                setStatusText(QStringLiteral("Advanced filter could not be applied because a candidate flow index is invalid."), true);
+                synchronizeFlowSelection();
+                return;
+            }
+            candidate_flow_indices->push_back(static_cast<std::size_t>(flow_index));
+        }
+    }
+
+    const auto query_result = session_.query_advanced_flows(effective_spec, candidate_flow_indices, std::nullopt, std::nullopt);
+    switch (query_result.status) {
+    case session_detail::AdvancedFlowQueryStatus::ok: {
+        std::vector<int> matching_flow_indices {};
+        matching_flow_indices.reserve(query_result.ordered_flow_indices.size());
+        for (const auto flow_index : query_result.ordered_flow_indices) {
+            if (flow_index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                flow_model_.clearAdvancedFilterFlowIndices();
+                setStatusText(QStringLiteral("Advanced filter produced a flow index that is out of range."), true);
+                synchronizeFlowSelection();
+                return;
+            }
+            matching_flow_indices.push_back(static_cast<int>(flow_index));
+        }
+        flow_model_.setAdvancedFilterFlowIndices(std::move(matching_flow_indices));
+        if (status_is_error_ && is_advanced_filter_status_text(status_text_)) {
+            setStatusText({}, false);
+        }
+        break;
+    }
+    case session_detail::AdvancedFlowQueryStatus::invalid_advanced_filter:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(format_advanced_filter_application_error(query_result), true);
+        break;
+    case session_detail::AdvancedFlowQueryStatus::invalid_flow_index:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(QStringLiteral("Advanced filter could not be applied because a candidate flow index is invalid."), true);
+        break;
+    case session_detail::AdvancedFlowQueryStatus::invalid_limit:
+        flow_model_.clearAdvancedFilterFlowIndices();
+        setStatusText(QStringLiteral("Advanced filter could not be applied because the limit is invalid."), true);
+        break;
+    }
+
+    synchronizeFlowSelection();
+}
+
+void MainController::refreshAdvancedFlowFilterProtocolPathApplicability() {
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
+    advanced_flow_filter_editor_model_.refreshProtocolPathApplicability();
+}
+
+std::vector<int> MainController::smartExportCurrentFilterFlowIndices(const bool matching) const {
+    if (!smartExportCurrentFilterAvailable()) {
+        return {};
+    }
+
+    std::optional<std::vector<std::size_t>> candidate_flow_indices {};
+    if (has_active_protocol_path_filter_) {
+        candidate_flow_indices.emplace();
+        candidate_flow_indices->reserve(active_protocol_path_filter_flow_indices_.size());
+        for (const auto flow_index : active_protocol_path_filter_flow_indices_) {
+            if (flow_index < 0) {
+                return {};
+            }
+            candidate_flow_indices->push_back(static_cast<std::size_t>(flow_index));
+        }
+    }
+
+    const auto flow_query_result = session_.query_flows(session_detail::FlowQuery {
+        .selected_flow_indices = candidate_flow_indices,
+        .text_filter = simple_flow_filter_text_.toStdString(),
+        .sort = std::nullopt,
+        .limit = std::nullopt,
+    });
+    if (flow_query_result.status != session_detail::FlowQueryStatus::ok) {
+        return {};
+    }
+
+    std::vector<int> matching_flow_indices {};
+    matching_flow_indices.reserve(flow_query_result.ordered_flow_indices.size());
+    for (const auto flow_index : flow_query_result.ordered_flow_indices) {
+        if (flow_index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            return {};
+        }
+        matching_flow_indices.push_back(static_cast<int>(flow_index));
+    }
+    if (matching) {
+        return matching_flow_indices;
+    }
+
+    std::vector<int> candidate_indices {};
+    if (has_active_protocol_path_filter_) {
+        candidate_indices = active_protocol_path_filter_flow_indices_;
+    } else {
+        const auto rows = session_.list_flows();
+        candidate_indices.reserve(rows.size());
+        for (const auto& row : rows) {
+            if (row.index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                return {};
+            }
+            candidate_indices.push_back(static_cast<int>(row.index));
+        }
+    }
+
+    std::sort(candidate_indices.begin(), candidate_indices.end());
+    candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+    std::sort(matching_flow_indices.begin(), matching_flow_indices.end());
+
+    std::vector<int> hidden_flow_indices {};
+    hidden_flow_indices.reserve(candidate_indices.size());
+    std::set_difference(
+        candidate_indices.begin(),
+        candidate_indices.end(),
+        matching_flow_indices.begin(),
+        matching_flow_indices.end(),
+        std::back_inserter(hidden_flow_indices)
+    );
+    return hidden_flow_indices;
+}
+
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
@@ -6006,6 +6821,7 @@ void MainController::resetLoadedState() {
     current_input_path_.clear();
     finishOpenProgress();
     session_ = {};
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
     protocol_summary_ = {};
     unrecognized_packet_statistics_ = {};
     whole_capture_packet_count_ = 0U;
@@ -6015,6 +6831,7 @@ void MainController::resetLoadedState() {
     clearProtocolPathFlowFilterState();
     flow_model_.clear();
     flow_model_.resetViewState();
+    applyActiveFlowFilterModeToModel();
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
@@ -6046,11 +6863,13 @@ void MainController::resetLoadedState() {
     current_flow_analysis_.reset();
     setAnalysisSequenceExportState(false, {}, false);
     emit protocolPathFlowFilterChanged();
+    refreshAdvancedFlowFilterProtocolPathApplicability();
 }
 
 void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
+    advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
     protocol_summary_ = session_.protocol_summary();
     unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
     const auto whole_capture_packet_size_statistics = session_.packet_size_statistics();
@@ -6065,6 +6884,7 @@ void MainController::applyLoadedState(const QString& path) {
     flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
+    applyActiveFlowFilterModeToModel();
     setOpenErrorText({});
     setStatusText({});
     if (current_tab_index_ == kStatsTabIndex) {
@@ -6074,6 +6894,7 @@ void MainController::applyLoadedState(const QString& path) {
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
     emit protocolPathFlowFilterChanged();
+    refreshAdvancedFlowFilterProtocolPathApplicability();
 }
 
 void MainController::refreshTopSummaryModels() {
@@ -6600,9 +7421,23 @@ void MainController::reloadSelectedPacketDetails() {
             session_detail::build_packet_summary_layers(*details, *packet, packet_summary_preparation->make_options())
         ));
     } else {
-        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, unrecognized_reason_text, checksum_sections));
+        const auto metadata = session_detail::derive_transient_packet_metadata(
+            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+            *packet
+        );
+        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(
+            *packet,
+            unrecognized_reason_text,
+            checksum_sections,
+            metadata.is_ip_fragmented
+        ));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-            build_packet_summary_fallback_layers(*packet, unrecognized_reason_text, checksum_sections)
+            build_packet_summary_fallback_layers(
+                *packet,
+                unrecognized_reason_text,
+                checksum_sections,
+                metadata.is_ip_fragmented
+            )
         ));
     }
 
@@ -6917,6 +7752,45 @@ void MainController::setStatusText(const QString& text, const bool isError) {
     emit statusTextChanged();
 }
 
+QString MainController::chooseAdvancedFlowFilterOpenFile() const {
+    if (advanced_flow_filter_open_file_chooser_for_tests_) {
+        return advanced_flow_filter_open_file_chooser_for_tests_();
+    }
+
+    const QString directory = last_directory_path_.isEmpty() ? QString {} : last_directory_path_;
+    return QFileDialog::getOpenFileName(
+        nullptr,
+        QStringLiteral("Open Advanced Filter"),
+        directory,
+        QStringLiteral("Advanced Filter Files (*.filter);;All Files (*)")
+    );
+}
+
+QString MainController::chooseAdvancedFlowFilterSaveAsFile(const QString& suggestedFileName) const {
+    if (advanced_flow_filter_save_as_file_chooser_for_tests_) {
+        return advanced_flow_filter_save_as_file_chooser_for_tests_(suggestedFileName);
+    }
+
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(QStringLiteral("Save Advanced Filter As"));
+    dialog.setNameFilter(QStringLiteral("Advanced Filter Files (*.filter);;All Files (*)"));
+    dialog.setDefaultSuffix(QStringLiteral("filter"));
+    if (!suggestedFileName.isEmpty()) {
+        dialog.selectFile(suggestedFileName);
+    }
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
 QString MainController::chooseFile(const bool forIndex) const {
     const QString directory = last_directory_path_.isEmpty() ? QString {} : last_directory_path_;
     const QString title = forIndex ? QStringLiteral("Open Index") : QStringLiteral("Open Capture");
@@ -6959,6 +7833,231 @@ QString MainController::chooseDirectory(const QString& title) const {
         last_directory_path_,
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
     );
+}
+
+MainController::AdvancedFlowFilterOpenUnsavedDecision
+MainController::confirmAdvancedFlowFilterOpenUnsaved(const bool fileBackedDirty) const {
+    if (advanced_flow_filter_unsaved_open_decision_for_tests_) {
+        return advanced_flow_filter_unsaved_open_decision_for_tests_(fileBackedDirty);
+    }
+
+    QMessageBox box {};
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(QStringLiteral("Unsaved Advanced Filter"));
+    box.setText(QStringLiteral("Opening another filter would discard unsaved Advanced Filter changes."));
+    box.setInformativeText(
+        fileBackedDirty
+            ? QStringLiteral("Save the current file-backed filter before opening another filter?")
+            : QStringLiteral("Save the current custom filter before opening another filter?")
+    );
+
+    QAbstractButton* save_button = box.addButton(
+        fileBackedDirty
+            ? QStringLiteral("Save and open")
+            : QStringLiteral("Save As and open"),
+        QMessageBox::AcceptRole
+    );
+    QAbstractButton* discard_button = box.addButton(QStringLiteral("Discard and open"), QMessageBox::DestructiveRole);
+    QAbstractButton* cancel_button = box.addButton(QMessageBox::Cancel);
+
+    box.exec();
+    if (box.clickedButton() == save_button) {
+        return fileBackedDirty
+            ? AdvancedFlowFilterOpenUnsavedDecision::save_and_open
+            : AdvancedFlowFilterOpenUnsavedDecision::save_as_and_open;
+    }
+    if (box.clickedButton() == discard_button) {
+        return AdvancedFlowFilterOpenUnsavedDecision::discard_and_open;
+    }
+    Q_UNUSED(cancel_button);
+    return AdvancedFlowFilterOpenUnsavedDecision::cancel;
+}
+
+MainController::AdvancedFlowFilterClearDecision
+MainController::confirmAdvancedFlowFilterClear(const bool fileBackedDirty) const {
+    if (advanced_flow_filter_clear_decision_for_tests_) {
+        return advanced_flow_filter_clear_decision_for_tests_(fileBackedDirty);
+    }
+
+    QMessageBox box {};
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(QStringLiteral("Clear Advanced Filter"));
+    box.setText(QStringLiteral("Clearing the filter would discard the current Advanced Filter configuration."));
+    box.setInformativeText(
+        fileBackedDirty
+            ? QStringLiteral("This filter has unsaved changes. Save the changes before clearing the filter?")
+            : QStringLiteral("This custom filter has not been saved. Save it before clearing the filter?")
+    );
+
+    QAbstractButton* save_button = box.addButton(
+        fileBackedDirty
+            ? QStringLiteral("Save and clear")
+            : QStringLiteral("Save As and clear"),
+        QMessageBox::AcceptRole
+    );
+    QAbstractButton* discard_button = box.addButton(QStringLiteral("Discard and clear"), QMessageBox::DestructiveRole);
+    QAbstractButton* cancel_button = box.addButton(QMessageBox::Cancel);
+
+    box.exec();
+    if (box.clickedButton() == save_button) {
+        return fileBackedDirty
+            ? AdvancedFlowFilterClearDecision::save_and_clear
+            : AdvancedFlowFilterClearDecision::save_as_and_clear;
+    }
+    if (box.clickedButton() == discard_button) {
+        return AdvancedFlowFilterClearDecision::discard_and_clear;
+    }
+    Q_UNUSED(cancel_button);
+    return AdvancedFlowFilterClearDecision::cancel;
+}
+
+QString MainController::advancedFlowFilterSuggestedFileName() const {
+    if (const auto* source_path = advanced_flow_filter_document_state_.source_path(); source_path != nullptr) {
+        const QString file_name = QString::fromStdWString(source_path->filename().wstring());
+        if (!file_name.trimmed().isEmpty()) {
+            return file_name;
+        }
+    }
+    return QStringLiteral("advanced-filter.filter");
+}
+
+bool MainController::synchronizeAdvancedFlowFilterDraft(QString* errorText) {
+    if (!advanced_flow_filter_document_state_.is_editing()) {
+        advanced_flow_filter_document_state_.begin_edit();
+        advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+        refreshAdvancedFlowFilterProtocolPathApplicability();
+    }
+
+    return advanced_flow_filter_editor_model_.synchronizeDraftSections(errorText);
+}
+
+bool MainController::saveAdvancedFlowFilterDraftToPath(const std::filesystem::path& path, QString* errorText) {
+    const auto* draft_document = advanced_flow_filter_document_state_.draft_document();
+    if (draft_document == nullptr) {
+        if (errorText != nullptr) {
+            *errorText = QStringLiteral("Advanced filter draft is unavailable.");
+        }
+        return false;
+    }
+
+    const auto formatted = session_detail::format_advanced_flow_filter_text(*draft_document);
+    if (formatted.status != session_detail::AdvancedFlowFilterTextFormatStatus::ok) {
+        if (errorText != nullptr) {
+            const QString message = formatted.issue.has_value()
+                ? QString::fromStdString(formatted.issue->message)
+                : QStringLiteral("Advanced filter document could not be formatted.");
+            *errorText = message;
+        }
+        return false;
+    }
+
+    if (advanced_flow_filter_save_error_for_tests_) {
+        if (const auto injected_error = advanced_flow_filter_save_error_for_tests_(path); injected_error.has_value()) {
+            if (errorText != nullptr) {
+                *errorText = *injected_error;
+            }
+            return false;
+        }
+    }
+
+    const QString path_text = QString::fromStdWString(path.wstring());
+    QSaveFile file(path_text);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_write_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    const QByteArray bytes = QByteArray::fromStdString(formatted.text);
+    if (file.write(bytes) != bytes.size()) {
+        file.cancelWriting();
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_write_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    if (!file.commit()) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_write_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    advanced_flow_filter_document_state_.accept_saved_document(*draft_document, path);
+    advanced_flow_filter_editor_model_.setValidationText({});
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+    refreshAdvancedFlowFilter();
+    setLastDirectoryFromPath(path);
+    emit advancedFlowFilterPresentationChanged();
+    return true;
+}
+
+void MainController::finalizeAdvancedFlowFilterClearAll() {
+    advanced_flow_filter_document_state_.clear_all();
+    refreshAdvancedFlowFilterEditingPresentation();
+}
+
+void MainController::refreshAdvancedFlowFilterEditingPresentation() {
+    if (advanced_flow_filter_document_state_.is_editing()) {
+        advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+        refreshAdvancedFlowFilterProtocolPathApplicability();
+    } else {
+        advanced_flow_filter_editor_model_.clearTransientState();
+    }
+    advanced_flow_filter_editor_model_.setValidationText({});
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    refreshAdvancedFlowFilter();
+    emit advancedFlowFilterPresentationChanged();
+}
+
+bool MainController::openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText) {
+    const QString path_text = QString::fromStdWString(path.wstring());
+    QFile file(path_text);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (errorText != nullptr) {
+            *errorText = QStringLiteral("Failed to open advanced filter file %1: %2")
+                .arg(QFileInfo(path_text).fileName(), file.errorString());
+        }
+        return false;
+    }
+
+    const auto read_result = read_advanced_flow_filter_file_bounded(file);
+    if (read_result.status == AdvancedFlowFilterFileReadResult::Status::read_failed) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_read_error(path, file.errorString());
+        }
+        return false;
+    }
+
+    if (read_result.status == AdvancedFlowFilterFileReadResult::Status::too_large) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_file_too_large_error(path);
+        }
+        return false;
+    }
+
+    const QByteArray& bytes = read_result.bytes;
+    const auto parse_result = session_detail::parse_advanced_flow_filter_text(std::string_view(bytes.constData(), static_cast<std::size_t>(bytes.size())));
+    if (parse_result.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+        if (errorText != nullptr) {
+            *errorText = format_advanced_filter_text_parse_error(parse_result, path);
+        }
+        return false;
+    }
+
+    advanced_flow_filter_document_state_.accept_opened_document(parse_result.document, path);
+    advanced_flow_filter_editor_model_.initializeFromCurrentDocument();
+    advanced_flow_filter_editor_model_.setValidationText({});
+    advanced_flow_filter_protocol_path_selector_model_.clearSelection();
+    advanced_flow_filter_protocol_path_selector_row_ = -1;
+    refreshAdvancedFlowFilterProtocolPathApplicability();
+    refreshAdvancedFlowFilter();
+    setLastDirectoryFromPath(path);
+    emit advancedFlowFilterPresentationChanged();
+    return true;
 }
 
 QString MainController::chooseSequenceCsvSaveFile() const {

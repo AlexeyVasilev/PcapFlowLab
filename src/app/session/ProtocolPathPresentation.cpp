@@ -49,6 +49,72 @@ constexpr std::array<ProtocolPathLayerPresentationDescriptor, 27> kProtocolPathD
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::unknown, "?", "Unknown", "unknown", "#F3F4F6", "#6B7280", "#6B7280"},
 }};
 
+constexpr std::array<ProtocolPathContainsLayerDescriptor, 9> kProtocolPathContainsLayerDescriptors {{
+    {ProtocolLayerKind::vlan,
+     ProtocolLayerIdentifierKind::vlan_vid,
+     "VLAN",
+     "Vlan",
+     "VID",
+     ProtocolPathIdentifierInputFormat::decimal,
+     0x0FFFU},
+    {ProtocolLayerKind::mpls,
+     ProtocolLayerIdentifierKind::mpls_label,
+     "MPLS",
+     "Mpls",
+     "Label",
+     ProtocolPathIdentifierInputFormat::decimal,
+     0x0FFFFFU},
+    {ProtocolLayerKind::pbb,
+     ProtocolLayerIdentifierKind::pbb_isid,
+     "PBB",
+     "Pbb",
+     "I-SID",
+     ProtocolPathIdentifierInputFormat::hexadecimal,
+     0xFFFFFFU},
+    {ProtocolLayerKind::vxlan,
+     ProtocolLayerIdentifierKind::vxlan_vni,
+     "VXLAN",
+     "Vxlan",
+     "VNI",
+     ProtocolPathIdentifierInputFormat::decimal,
+     0xFFFFFFU},
+    {ProtocolLayerKind::geneve,
+     ProtocolLayerIdentifierKind::geneve_vni,
+     "Geneve",
+     "Geneve",
+     "VNI",
+     ProtocolPathIdentifierInputFormat::decimal,
+     0xFFFFFFU},
+    {ProtocolLayerKind::gtpu,
+     ProtocolLayerIdentifierKind::gtpu_teid,
+     "GTP-U",
+     "Gtpu",
+     "TEID",
+     ProtocolPathIdentifierInputFormat::hexadecimal,
+     0xFFFFFFFFU},
+    {ProtocolLayerKind::gre,
+     ProtocolLayerIdentifierKind::gre_key,
+     "GRE",
+     "Gre",
+     "Key",
+     ProtocolPathIdentifierInputFormat::hexadecimal,
+     0xFFFFFFFFU},
+    {ProtocolLayerKind::ah,
+     ProtocolLayerIdentifierKind::ah_spi,
+     "AH",
+     "Ah",
+     "SPI",
+     ProtocolPathIdentifierInputFormat::hexadecimal,
+     0xFFFFFFFFU},
+    {ProtocolLayerKind::esp,
+     ProtocolLayerIdentifierKind::esp_spi,
+     "ESP",
+     "Esp",
+     "SPI",
+     ProtocolPathIdentifierInputFormat::hexadecimal,
+     0xFFFFFFFFU},
+}};
+
 const ProtocolPathLayerPresentationDescriptor& descriptor_for_kind(const ProtocolLayerKind kind) {
     for (const auto& descriptor : kProtocolPathDescriptors) {
         if (descriptor.kind == kind) {
@@ -57,6 +123,27 @@ const ProtocolPathLayerPresentationDescriptor& descriptor_for_kind(const Protoco
     }
 
     return kProtocolPathDescriptors.back();
+}
+
+const ProtocolPathContainsLayerDescriptor* contains_layer_descriptor_for_kind(const ProtocolLayerKind kind) noexcept {
+    for (const auto& descriptor : kProtocolPathContainsLayerDescriptors) {
+        if (descriptor.kind == kind) {
+            return &descriptor;
+        }
+    }
+
+    return nullptr;
+}
+
+std::string format_hex_identifier_text(const std::uint64_t value, const int width) {
+    std::ostringstream text {};
+    text << "0x"
+         << std::uppercase
+         << std::hex
+         << std::setw(width)
+         << std::setfill('0')
+         << value;
+    return text.str();
 }
 
 std::optional<std::string> identifier_tooltip_text(const LayerKey& layer) {
@@ -229,6 +316,53 @@ std::string format_protocol_path_layer_display_text(const LayerKey& layer) {
         text += ')';
     }
     return text;
+}
+
+std::string format_protocol_path_compact_display_text(const ProtocolPath& path) {
+    std::ostringstream compact_text {};
+    bool first_layer = true;
+    for (const auto& layer : path.layers()) {
+        if (!first_layer) {
+            compact_text << " | ";
+        }
+        first_layer = false;
+        compact_text << format_protocol_path_layer_display_text(layer);
+    }
+    return compact_text.str();
+}
+
+std::span<const ProtocolPathContainsLayerDescriptor> protocol_path_contains_layer_descriptors() noexcept {
+    return kProtocolPathContainsLayerDescriptors;
+}
+
+const ProtocolPathContainsLayerDescriptor* protocol_path_contains_layer_descriptor(
+    const ProtocolLayerKind kind
+) noexcept {
+    return contains_layer_descriptor_for_kind(kind);
+}
+
+std::string format_protocol_path_identifier_editor_text(
+    const ProtocolLayerIdentifierKind kind,
+    const std::uint64_t value
+) {
+    switch (kind) {
+    case ProtocolLayerIdentifierKind::none:
+        return {};
+    case ProtocolLayerIdentifierKind::vlan_vid:
+    case ProtocolLayerIdentifierKind::mpls_label:
+    case ProtocolLayerIdentifierKind::vxlan_vni:
+    case ProtocolLayerIdentifierKind::geneve_vni:
+        return std::to_string(value);
+    case ProtocolLayerIdentifierKind::pbb_isid:
+        return format_hex_identifier_text(value, 6);
+    case ProtocolLayerIdentifierKind::gtpu_teid:
+    case ProtocolLayerIdentifierKind::gre_key:
+    case ProtocolLayerIdentifierKind::ah_spi:
+    case ProtocolLayerIdentifierKind::esp_spi:
+        return format_hex_identifier_text(value, 8);
+    }
+
+    return {};
 }
 
 ProtocolPathPresentation build_protocol_path_presentation(const ProtocolPath* path) {

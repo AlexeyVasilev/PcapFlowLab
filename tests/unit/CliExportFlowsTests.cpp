@@ -1045,7 +1045,7 @@ void expect_runtime_folder_and_preflight_behavior() {
             "off",
         });
         PFL_EXPECT(result.exit_code == 1);
-        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite the input path"));
+        PFL_EXPECT(contains_text(result.stderr_text, "cannot overwrite an input or configuration path"));
     }
 
     {

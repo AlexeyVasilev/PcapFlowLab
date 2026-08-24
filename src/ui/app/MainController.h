@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -12,9 +13,12 @@
 #include <QVariantList>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "core/services/AnalysisSettings.h"
 #include "../../../core/open_progress.h"
 #include "ui/app/FlowListModel.h"
+#include "ui/app/AdvancedFlowFilterEditorModel.h"
+#include "ui/app/AdvancedFlowFilterProtocolPathSelectorModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
 #include "ui/app/ProtocolPathStatsModel.h"
@@ -29,6 +33,12 @@ class MainController final : public QObject {
     Q_OBJECT
 
 public:
+    enum class FlowFilterMode {
+        simple = 0,
+        advanced,
+    };
+    Q_ENUM(FlowFilterMode)
+
     enum class StatisticsSectionRequestState {
         not_requested = 0,
         loading,
@@ -47,6 +57,20 @@ public:
         top_endpoints_ports,
     };
     Q_ENUM(StatisticsOptionalSection)
+
+    enum class AdvancedFlowFilterOpenUnsavedDecision {
+        save_and_open = 0,
+        save_as_and_open,
+        discard_and_open,
+        cancel,
+    };
+
+    enum class AdvancedFlowFilterClearDecision {
+        save_and_clear = 0,
+        save_as_and_clear,
+        discard_and_clear,
+        cancel,
+    };
 
 private:
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
@@ -305,11 +329,21 @@ private:
     Q_PROPERTY(qulonglong unrecognizedPacketCount READ unrecognizedPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong selectedPacketIndex READ selectedPacketIndex WRITE setSelectedPacketIndex NOTIFY selectedPacketIndexChanged)
     Q_PROPERTY(qulonglong selectedStreamItemIndex READ selectedStreamItemIndex WRITE setSelectedStreamItemIndex NOTIFY selectedStreamItemIndexChanged)
+    Q_PROPERTY(int flowFilterMode READ flowFilterMode NOTIFY flowFilterModeChanged)
     Q_PROPERTY(QString flowFilterText READ flowFilterText WRITE setFlowFilterText NOTIFY flowFilterTextChanged)
+    Q_PROPERTY(bool smartExportCurrentFilterAvailable READ smartExportCurrentFilterAvailable NOTIFY smartExportCurrentFilterAvailableChanged)
+    Q_PROPERTY(QString advancedFlowFilterDisplayName READ advancedFlowFilterDisplayName NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(QString advancedFlowFilterRuleCountText READ advancedFlowFilterRuleCountText NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(bool advancedFlowFilterSettingsAvailable READ advancedFlowFilterSettingsAvailable NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(bool advancedFlowFilterClearAvailable READ advancedFlowFilterClearAvailable NOTIFY advancedFlowFilterPresentationChanged)
+    Q_PROPERTY(QObject* advancedFlowFilterEditor READ advancedFlowFilterEditor CONSTANT)
+    Q_PROPERTY(QObject* advancedFlowFilterProtocolPathSelector READ advancedFlowFilterProtocolPathSelector CONSTANT)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
 public:
+    using AdvancedFlowFilterFiniteSection = AdvancedFlowFilterEditorModel::AdvancedFlowFilterFiniteSection;
+
     explicit MainController(QObject* parent = nullptr);
     ~MainController() override;
 
@@ -569,7 +603,17 @@ public:
     [[nodiscard]] qulonglong unrecognizedPacketCount() const noexcept;
     [[nodiscard]] qulonglong selectedPacketIndex() const noexcept;
     [[nodiscard]] qulonglong selectedStreamItemIndex() const noexcept;
+    [[nodiscard]] int flowFilterMode() const noexcept;
     [[nodiscard]] QString flowFilterText() const;
+    [[nodiscard]] bool smartExportCurrentFilterAvailable() const noexcept;
+    [[nodiscard]] QString advancedFlowFilterDisplayName() const;
+    [[nodiscard]] QString advancedFlowFilterRuleCountText() const;
+    [[nodiscard]] bool advancedFlowFilterSettingsAvailable() const noexcept;
+    [[nodiscard]] bool advancedFlowFilterClearAvailable() const noexcept;
+    [[nodiscard]] int advancedFlowFilterEditorRevision() const noexcept;
+    [[nodiscard]] QString advancedFlowFilterEditorValidationText() const;
+    [[nodiscard]] QObject* advancedFlowFilterEditor() noexcept;
+    [[nodiscard]] QObject* advancedFlowFilterProtocolPathSelector() noexcept;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
 
@@ -615,6 +659,43 @@ public:
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
     Q_INVOKABLE void copyTextToClipboard(const QString& text);
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
+    Q_INVOKABLE void useAdvancedFlowFilter();
+    Q_INVOKABLE void useSimpleFlowFilter();
+    Q_INVOKABLE void clearAdvancedFlowFilter();
+    Q_INVOKABLE void clearAdvancedFlowFilterUnsavedChanges();
+    Q_INVOKABLE void beginAdvancedFlowFilterEdit();
+    Q_INVOKABLE void cancelAdvancedFlowFilterEdit();
+    Q_INVOKABLE bool applyAdvancedFlowFilterEdit();
+    Q_INVOKABLE void openAdvancedFlowFilterFile();
+    Q_INVOKABLE bool saveAdvancedFlowFilterFile();
+    Q_INVOKABLE bool saveAdvancedFlowFilterFileAs();
+    Q_INVOKABLE bool advancedFlowFilterDraftClearAllAvailable() const noexcept;
+    Q_INVOKABLE bool advancedFlowFilterSectionEnabled(int section) const noexcept;
+    Q_INVOKABLE bool advancedFlowFilterSectionHasExclusions(int section) const noexcept;
+    Q_INVOKABLE QVariantList advancedFlowFilterIncludeOptions(int section) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterExcludeOptions(int section) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterPortScopeOptions() const;
+    Q_INVOKABLE QVariantList advancedFlowFilterAddressScopeOptions() const;
+    Q_INVOKABLE QVariantList advancedFlowFilterPortRows(bool exclude) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterAddressRows(bool exclude) const;
+    Q_INVOKABLE QVariantList advancedFlowFilterProtocolPathRows(bool exclude) const;
+    Q_INVOKABLE void setAdvancedFlowFilterSectionEnabled(int section, bool enabled);
+    Q_INVOKABLE void setAdvancedFlowFilterOptionChecked(int section, int value, bool exclude, bool checked);
+    Q_INVOKABLE void addAdvancedFlowFilterPortRow(bool exclude);
+    Q_INVOKABLE void removeAdvancedFlowFilterPortRow(bool exclude, int row);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowScope(bool exclude, int row, int scope);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowRangeEnabled(bool exclude, int row, bool enabled);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowPrimaryText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void setAdvancedFlowFilterPortRowSecondaryText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void addAdvancedFlowFilterAddressRow(bool exclude);
+    Q_INVOKABLE void removeAdvancedFlowFilterAddressRow(bool exclude, int row);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowScope(bool exclude, int row, int scope);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowSubnetEnabled(bool exclude, int row, bool enabled);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowAddressText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void setAdvancedFlowFilterAddressRowPrefixText(bool exclude, int row, const QString& text);
+    Q_INVOKABLE void beginAdvancedFlowFilterProtocolPathSelection(bool exclude, int row);
+    Q_INVOKABLE bool applyAdvancedFlowFilterProtocolPathSelection();
+    Q_INVOKABLE void removeAdvancedFlowFilterProtocolPathRow(bool exclude, int row);
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -645,6 +726,18 @@ public:
     void setSelectedPacketIndex(qulonglong packetIndex);
     void setSelectedStreamItemIndex(qulonglong streamItemIndex);
     void setFlowFilterText(const QString& text);
+    void applyAdvancedFlowFilterDocument(const session_detail::AdvancedFlowFilterDocument& document);
+    void setAdvancedFlowFilterOpenFileChooserForTests(std::function<QString()> chooser);
+    void setAdvancedFlowFilterSaveAsFileChooserForTests(std::function<QString(const QString& suggestedFileName)> chooser);
+    void setAdvancedFlowFilterUnsavedOpenDecisionForTests(
+        std::function<AdvancedFlowFilterOpenUnsavedDecision(bool fileBackedDirty)> resolver
+    );
+    void setAdvancedFlowFilterClearDecisionForTests(
+        std::function<AdvancedFlowFilterClearDecision(bool fileBackedDirty)> resolver
+    );
+    void setAdvancedFlowFilterSaveErrorForTests(
+        std::function<std::optional<QString>(const std::filesystem::path& path)> provider
+    );
 
 signals:
     void stateChanged();
@@ -669,7 +762,10 @@ signals:
     void selectedFlowCountChanged();
     void selectedPacketIndexChanged();
     void selectedStreamItemIndexChanged();
+    void flowFilterModeChanged();
     void flowFilterTextChanged();
+    void smartExportCurrentFilterAvailableChanged();
+    void advancedFlowFilterPresentationChanged();
     void flowSortChanged();
     void openProgressChanged();
     void packetListStateChanged();
@@ -715,6 +811,10 @@ private:
     void refreshSelectedStreamItems(bool resetRows);
     void refreshSelectedFlowAnalysis();
     void clearSelectedFlowAnalysis();
+    void applyActiveFlowFilterModeToModel();
+    void refreshAdvancedFlowFilter();
+    void refreshAdvancedFlowFilterProtocolPathApplicability();
+    std::vector<int> smartExportCurrentFilterFlowIndices(bool matching) const;
     void clearPacketSelection();
     void clearStreamSelection();
     void clearFlowSelection();
@@ -774,6 +874,8 @@ private:
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
+    QString chooseAdvancedFlowFilterOpenFile() const;
+    QString chooseAdvancedFlowFilterSaveAsFile(const QString& suggestedFileName) const;
     QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
     QString chooseProtocolPathTreeSaveFile() const;
@@ -784,7 +886,15 @@ private:
         bool binaryOutput
     ) const;
     QString chooseDirectory(const QString& title) const;
+    AdvancedFlowFilterOpenUnsavedDecision confirmAdvancedFlowFilterOpenUnsaved(bool fileBackedDirty) const;
+    AdvancedFlowFilterClearDecision confirmAdvancedFlowFilterClear(bool fileBackedDirty) const;
+    QString advancedFlowFilterSuggestedFileName() const;
+    bool synchronizeAdvancedFlowFilterDraft(QString* errorText);
+    bool saveAdvancedFlowFilterDraftToPath(const std::filesystem::path& path, QString* errorText = nullptr);
+    bool openAdvancedFlowFilterFileAtPath(const std::filesystem::path& path, QString* errorText = nullptr);
     void setLastDirectoryFromPath(const std::filesystem::path& path);
+    void finalizeAdvancedFlowFilterClearAll();
+    void refreshAdvancedFlowFilterEditingPresentation();
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
@@ -801,6 +911,9 @@ private:
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};
     FlowListModel flow_model_ {};
+    session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
+    AdvancedFlowFilterEditorModel advanced_flow_filter_editor_model_;
+    AdvancedFlowFilterProtocolPathSelectorModel advanced_flow_filter_protocol_path_selector_model_ {};
     ProtocolPathStatsModel protocol_path_stats_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
@@ -834,6 +947,8 @@ private:
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
+    FlowFilterMode flow_filter_mode_ {FlowFilterMode::simple};
+    QString simple_flow_filter_text_ {};
     QString selected_packet_byte_view_stable_id_ {};
     bool status_is_error_ {false};
     bool packet_size_distribution_expanded_ {false};
@@ -847,6 +962,8 @@ private:
     std::uint64_t active_protocol_path_filter_node_id_ {kInvalidProtocolPathStatisticsNodeId};
     QString active_protocol_path_filter_label_ {};
     std::vector<int> active_protocol_path_filter_flow_indices_ {};
+    bool advanced_flow_filter_protocol_path_selector_exclude_ {false};
+    int advanced_flow_filter_protocol_path_selector_row_ {-1};
     bool is_opening_ {false};
     bool is_applying_session_ {false};
     bool packets_loading_ {false};
@@ -879,6 +996,11 @@ private:
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
+    std::function<QString()> advanced_flow_filter_open_file_chooser_for_tests_ {};
+    std::function<QString(const QString&)> advanced_flow_filter_save_as_file_chooser_for_tests_ {};
+    std::function<AdvancedFlowFilterOpenUnsavedDecision(bool)> advanced_flow_filter_unsaved_open_decision_for_tests_ {};
+    std::function<AdvancedFlowFilterClearDecision(bool)> advanced_flow_filter_clear_decision_for_tests_ {};
+    std::function<std::optional<QString>(const std::filesystem::path&)> advanced_flow_filter_save_error_for_tests_ {};
     qulonglong smart_export_progress_packets_ {0};
     qulonglong smart_export_progress_total_packets_ {0};
     QString smart_export_progress_text_ {};

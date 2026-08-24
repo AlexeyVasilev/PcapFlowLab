@@ -627,7 +627,8 @@ std::string build_frontend_packet_summary_text(
     const PacketRef& packet,
     const std::optional<PacketDetails>& details,
     const PacketChecksumSections& checksum_sections,
-    const bool source_capture_accessible
+    const bool source_capture_accessible,
+    const session_detail::TransientPacketDerivedMetadata& metadata = {}
 ) {
     std::vector<std::string> lines {};
     const auto packet_number_in_file = packet.packet_index + 1U;
@@ -640,7 +641,7 @@ std::string build_frontend_packet_summary_text(
     });
 
     std::vector<std::string> warnings {};
-    if (packet.is_ip_fragmented) {
+    if (metadata.is_ip_fragmented.value_or(false)) {
         warnings.push_back("Packet is IP-fragmented");
     }
     if (packet.captured_length != packet.original_length) {
@@ -747,8 +748,18 @@ std::string build_frontend_packet_summary_text(
             "Source Port: " + std::to_string(details->tcp.src_port),
             "Destination Port: " + std::to_string(details->tcp.dst_port),
             "Flags: " + session_detail::format_tcp_flags_text(details->tcp.flags),
-            "Payload Length: " + std::to_string(packet.payload_length),
         };
+        if (metadata.original_transport_payload_length.has_value()) {
+            if (metadata.captured_transport_payload_length.has_value() &&
+                *metadata.captured_transport_payload_length != *metadata.original_transport_payload_length) {
+                tcp_lines.push_back("Real Payload Length: " + std::to_string(*metadata.captured_transport_payload_length));
+                tcp_lines.push_back("Original Payload Length: " + std::to_string(*metadata.original_transport_payload_length));
+            } else {
+                tcp_lines.push_back("Payload Length: " + std::to_string(*metadata.original_transport_payload_length));
+            }
+        } else if (metadata.captured_transport_payload_length.has_value()) {
+            tcp_lines.push_back("Payload Length: " + std::to_string(*metadata.captured_transport_payload_length));
+        }
         append_summary_section(lines, "TCP", tcp_lines);
     }
 
@@ -756,8 +767,18 @@ std::string build_frontend_packet_summary_text(
         auto udp_lines = std::vector<std::string> {
             "Source Port: " + std::to_string(details->udp.src_port),
             "Destination Port: " + std::to_string(details->udp.dst_port),
-            "Payload Length: " + std::to_string(packet.payload_length),
         };
+        if (metadata.original_transport_payload_length.has_value()) {
+            if (metadata.captured_transport_payload_length.has_value() &&
+                *metadata.captured_transport_payload_length != *metadata.original_transport_payload_length) {
+                udp_lines.push_back("Real Payload Length: " + std::to_string(*metadata.captured_transport_payload_length));
+                udp_lines.push_back("Original Payload Length: " + std::to_string(*metadata.original_transport_payload_length));
+            } else {
+                udp_lines.push_back("Payload Length: " + std::to_string(*metadata.original_transport_payload_length));
+            }
+        } else if (metadata.captured_transport_payload_length.has_value()) {
+            udp_lines.push_back("Payload Length: " + std::to_string(*metadata.captured_transport_payload_length));
+        }
         append_summary_section(lines, "UDP", udp_lines);
     }
 
@@ -1157,9 +1178,10 @@ std::optional<session_detail::SelectedPacketBytePresentation> derive_frontend_pa
         return session_detail::build_captured_packet_fallback_presentation(packet);
     }
 
-    const auto original_transport_payload_length =
-        session_detail::derive_original_transport_payload_length_from_headers(session, packet);
-    const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
+    const auto metadata = session_detail::derive_transient_packet_metadata(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet
+    );
     const auto internal_flow_packet_index =
         flow_packet_index.has_value()
             ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
@@ -1171,8 +1193,8 @@ std::optional<session_detail::SelectedPacketBytePresentation> derive_frontend_pa
         flow_index,
         internal_flow_packet_index,
         loaded_packet_window_count,
-        captured_transport_payload_length,
-        original_transport_payload_length
+        metadata.captured_transport_payload_length,
+        metadata.original_transport_payload_length
     );
     return session_detail::build_selected_packet_byte_presentation(
         *details,
@@ -1325,7 +1347,7 @@ ChecksumValidationResult validate_tcp_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    if (packet.is_ip_fragmented) {
+    if (session_detail::derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, details).value_or(false)) {
         return ChecksumValidationResult {
             .status = ChecksumValidationStatus::unavailable,
             .note = "TCP checksum not validated for IP-fragmented packet.",
@@ -1458,7 +1480,7 @@ ChecksumValidationResult validate_udp_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    if (packet.is_ip_fragmented) {
+    if (session_detail::derive_ip_fragmentation_state_from_packet_details(packet_bytes, packet, details).value_or(false)) {
         return ChecksumValidationResult {
             .status = ChecksumValidationStatus::unavailable,
             .note = "UDP checksum not validated for IP-fragmented packet.",
@@ -1935,6 +1957,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             return std::nullopt;
         }
 
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
         const auto timestamp_us = packet_timestamp_us(packet);
         const auto delta_us = previous_timestamp_us.has_value() && timestamp_us >= *previous_timestamp_us
             ? timestamp_us - *previous_timestamp_us
@@ -1948,8 +1971,10 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = session_detail::derive_original_transport_payload_length_from_headers(session, packet),
-            .tcp_flags_text = packet_row.tcp_flags_text,
+            .transport_payload_length = metadata.original_transport_payload_length,
+            .tcp_flags_text = metadata.tcp_flags.has_value()
+                ? session_detail::format_tcp_flags_text(*metadata.tcp_flags)
+                : packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
 
@@ -2945,6 +2970,40 @@ session_detail::FlowQueryResult FrontendSessionAdapter::query_flows(const sessio
     return session_.query_flows(query);
 }
 
+FrontendAdvancedFlowQueryResult FrontendSessionAdapter::query_advanced_flows(
+    const session_detail::AdvancedFlowFilterSpec& filter_spec,
+    const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
+    const std::optional<session_detail::FlowQuerySortSpec> sort,
+    const std::optional<std::size_t> limit
+) const {
+    const auto query_result = session_.query_advanced_flows(filter_spec, candidate_flow_indices, sort, limit);
+    switch (query_result.status) {
+    case session_detail::AdvancedFlowQueryStatus::ok:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::ok,
+            .ordered_flow_indices = query_result.ordered_flow_indices,
+            .result_count_before_limit = query_result.result_count_before_limit,
+        };
+    case session_detail::AdvancedFlowQueryStatus::invalid_flow_index:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::invalid_flow_index,
+            .invalid_flow_index = query_result.invalid_flow_index,
+        };
+    case session_detail::AdvancedFlowQueryStatus::invalid_limit:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::invalid_limit,
+        };
+    case session_detail::AdvancedFlowQueryStatus::invalid_advanced_filter:
+        return FrontendAdvancedFlowQueryResult {
+            .status = FrontendAdvancedFlowQueryStatus::invalid_advanced_filter,
+            .compile_status = query_result.compile_status,
+            .compile_issue = query_result.compile_issue,
+        };
+    }
+
+    return FrontendAdvancedFlowQueryResult {};
+}
+
 std::optional<FlowRow> FrontendSessionAdapter::flow_row(const std::size_t flow_index) const {
     return session_.flow_row(flow_index);
 }
@@ -3086,7 +3145,8 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
 
     auto rows = session_.list_flow_packets(flow_index, offset, limit);
     if (!rows.empty()) {
-        session_detail::apply_original_transport_payload_lengths(session_, rows);
+        session_.prepare_selected_flow_packet_cache(flow_index, offset + rows.size());
+        session_detail::populate_transient_packet_row_metadata(session_, flow_index, rows);
 
         const auto scanned_packet_count = offset + rows.size();
         const auto retransmission_packet_indices = session_.suspected_tcp_retransmission_packet_indices(flow_index, scanned_packet_count);
@@ -4050,9 +4110,9 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         .timestamp_text = session_detail::format_packet_timestamp_full(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .payload_length = packet.payload_length,
-        .is_ip_fragmented = packet.is_ip_fragmented,
-        .tcp_flags_text = session_detail::format_tcp_flags_text(packet.tcp_flags),
+        .payload_length = 0U,
+        .is_ip_fragmented = false,
+        .tcp_flags_text = {},
         .source_availability = current_source_availability(),
     };
 
@@ -4097,6 +4157,10 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
     const std::optional<std::size_t> loaded_packet_window_count,
     const bool include_selected_byte_view
 ) {
+    const auto metadata = session_detail::derive_transient_packet_metadata(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet
+    );
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = flow_index.has_value(),
@@ -4111,9 +4175,12 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
         .timestamp_text = session_detail::format_packet_timestamp_full(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .payload_length = packet.payload_length,
-        .is_ip_fragmented = packet.is_ip_fragmented,
-        .tcp_flags_text = session_detail::format_tcp_flags_text(packet.tcp_flags),
+        .payload_length = metadata.original_transport_payload_length
+            .value_or(metadata.captured_transport_payload_length.value_or(0U)),
+        .is_ip_fragmented = metadata.is_ip_fragmented.value_or(false),
+        .tcp_flags_text = metadata.tcp_flags.has_value()
+            ? session_detail::format_tcp_flags_text(*metadata.tcp_flags)
+            : std::string {},
         .source_availability = current_source_availability(),
     };
 
@@ -4127,9 +4194,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
 
     std::optional<session_detail::SelectedPacketSummaryPreparation> packet_summary_preparation {};
     if (details.has_value()) {
-        const auto original_transport_payload_length =
-            session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
-        const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
         const auto internal_flow_packet_index =
             flow_packet_index.has_value()
                 ? std::optional<std::uint64_t> {*flow_packet_index - 1U}
@@ -4141,8 +4205,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
             flow_index,
             internal_flow_packet_index,
             loaded_packet_window_count,
-            captured_transport_payload_length,
-            original_transport_payload_length,
+            metadata.captured_transport_payload_length,
+            metadata.original_transport_payload_length,
             result.checksum_summary_lines,
             result.checksum_warning_lines
         );
@@ -4209,7 +4273,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details_f
         }
     }
 
-    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
+    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true, metadata);
     if (include_selected_byte_view && !result.selected_byte_view.available && result.unavailable_text.empty()) {
         result.selected_byte_view.unavailable_text = result.byte_view_descriptors.empty()
             ? "No byte views are available for this packet."
@@ -4391,10 +4455,10 @@ FrontendPacketDto FrontendSessionAdapter::to_frontend_packet(const PacketRow& ro
         .timestamp_text = row.timestamp_text,
         .captured_length = row.captured_length,
         .original_length = row.original_length,
-        .payload_length = row.payload_length,
-        .is_ip_fragmented = row.is_ip_fragmented,
+        .payload_length = row.derived_payload_length,
+        .is_ip_fragmented = row.derived_is_ip_fragmented,
         .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
-        .tcp_flags_text = row.tcp_flags_text,
+        .tcp_flags_text = row.derived_tcp_flags_text,
     };
 }
 

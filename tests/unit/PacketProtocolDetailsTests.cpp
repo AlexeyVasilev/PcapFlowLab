@@ -10,6 +10,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
@@ -41,6 +42,12 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
     const auto packet = session.find_packet(packet_index);
     PFL_EXPECT(packet.has_value());
     return *packet;
+}
+
+std::uint32_t require_captured_transport_payload_length(CaptureSession& session, const PacketRef& packet) {
+    const auto payload_length = session_detail::derive_captured_transport_payload_length_from_headers(session, packet);
+    PFL_REQUIRE(payload_length.has_value());
+    return *payload_length;
 }
 
 std::string_view trim_ascii(std::string_view text) {
@@ -582,7 +589,7 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
-        PFL_EXPECT(packet.payload_length == 517U);
+        PFL_EXPECT(require_captured_transport_payload_length(session, packet) == 517U);
         const auto packet_bytes = session.read_packet_data(packet);
         PacketPayloadService payload_service {};
         const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
@@ -659,7 +666,7 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_client_hello_5.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
-        PFL_EXPECT(packet.payload_length == 517U);
+        PFL_EXPECT(require_captured_transport_payload_length(session, packet) == 517U);
         const auto packet_bytes = session.read_packet_data(packet);
         PacketPayloadService payload_service {};
         const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
@@ -739,7 +746,7 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_2_server_hello_4.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
-        PFL_EXPECT(packet.payload_length == 96U);
+        PFL_EXPECT(require_captured_transport_payload_length(session, packet) == 96U);
         const auto packet_bytes = session.read_packet_data(packet);
         PacketPayloadService payload_service {};
         const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
@@ -800,7 +807,7 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_server_hello_6.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
-        PFL_EXPECT(packet.payload_length == 1400U);
+        PFL_EXPECT(require_captured_transport_payload_length(session, packet) == 1400U);
         const auto packet_bytes = session.read_packet_data(packet);
         PacketPayloadService payload_service {};
         const auto payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
@@ -1302,7 +1309,7 @@ void run_packet_protocol_details_tests() {
 
         const auto packet = require_packet(session, 0);
         PFL_EXPECT(packet.captured_length < packet.original_length);
-        PFL_EXPECT(packet.payload_length == 32U);
+        PFL_EXPECT(require_captured_transport_payload_length(session, packet) == 32U);
         PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
     }
 

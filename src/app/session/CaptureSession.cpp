@@ -2,6 +2,7 @@
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionOpenHelpers.h"
@@ -102,9 +103,9 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
         .timestamp_text = format_packet_timestamp(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .payload_length = packet.payload_length,
-        .is_ip_fragmented = packet.is_ip_fragmented,
-        .tcp_flags_text = format_tcp_flags_text(packet.tcp_flags),
+        .payload_length = 0U,
+        .is_ip_fragmented = false,
+        .tcp_flags_text = {},
     };
 }
 
@@ -216,6 +217,71 @@ std::optional<HttpStreamItemSummaryDetails> make_http_stream_summary_from_packet
 
 std::string dns_stream_label(const DnsDetails& details) {
     return details.is_response ? "DNS Response" : "DNS Query";
+}
+
+struct SelectedFlowPayloadCachingPlan {
+    bool suppress_payload {false};
+    bool payload_cached {false};
+    std::size_t cached_payload_length {0U};
+    bool requires_payload_read {false};
+};
+
+SelectedFlowPayloadCachingPlan plan_selected_flow_payload_caching(
+    const session_detail::TransientPacketDerivedMetadata& metadata
+) {
+    const bool fragmented = metadata.is_ip_fragmented.value_or(false);
+    const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
+        ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
+        : std::nullopt;
+
+    if (fragmented) {
+        return SelectedFlowPayloadCachingPlan {
+            .suppress_payload = true,
+            .payload_cached = true,
+            .cached_payload_length = 0U,
+            .requires_payload_read = false,
+        };
+    }
+
+    if (expected_payload_length.has_value() && *expected_payload_length == 0U) {
+        return SelectedFlowPayloadCachingPlan {
+            .suppress_payload = false,
+            .payload_cached = true,
+            .cached_payload_length = 0U,
+            .requires_payload_read = false,
+        };
+    }
+
+    return SelectedFlowPayloadCachingPlan {
+        .suppress_payload = false,
+        .payload_cached = false,
+        .cached_payload_length = expected_payload_length.value_or(0U),
+        .requires_payload_read = true,
+    };
+}
+
+void finalize_selected_flow_payload_caching_plan(
+    SelectedFlowPayloadCachingPlan& plan,
+    const session_detail::TransientPacketDerivedMetadata& metadata,
+    const std::vector<std::uint8_t>& payload_bytes
+) {
+    if (plan.suppress_payload || !plan.requires_payload_read) {
+        return;
+    }
+
+    const auto expected_payload_length = metadata.captured_transport_payload_length.has_value()
+        ? std::optional<std::size_t> {static_cast<std::size_t>(*metadata.captured_transport_payload_length)}
+        : std::nullopt;
+    if (expected_payload_length.has_value()) {
+        plan.cached_payload_length = *expected_payload_length;
+        plan.payload_cached = !payload_bytes.empty() && payload_bytes.size() == *expected_payload_length;
+        return;
+    }
+
+    if (!payload_bytes.empty()) {
+        plan.payload_cached = true;
+        plan.cached_payload_length = payload_bytes.size();
+    }
 }
 
 bool is_dns_stream_hint(const FlowProtocolHint hint) noexcept {
@@ -1107,7 +1173,7 @@ DirectionPrefixProbe collect_direction_transport_prefix_bytes(
     const auto packet_limit = std::min(direction_packets.size(), max_packets_to_probe);
     for (std::size_t index = 0U; index < packet_limit && probe.bytes.size() < max_bytes_to_collect; ++index) {
         const auto& packet = direction_packets[index];
-        if (packet.payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
+        if (session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
             continue;
         }
 
@@ -1212,7 +1278,8 @@ std::optional<session_detail::TlsStreamScannerContribution> make_retained_tls_co
 ) {
     invalid = false;
     const auto& packet = packet_entry.packet;
-    if (packet.payload_length == 0U) {
+    const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+    if (metadata.captured_transport_payload_length.value_or(0U) == 0U) {
         return std::nullopt;
     }
 
@@ -1229,11 +1296,15 @@ std::optional<session_detail::TlsStreamScannerContribution> make_retained_tls_co
         return std::nullopt;
     }
 
+    const auto original_payload_length = metadata.original_transport_payload_length.value_or(
+        static_cast<std::uint32_t>(payload_bytes.size())
+    );
+
     return session_detail::TlsStreamScannerContribution {
         .packet_index = packet.packet_index,
         .flow_packet_index = packet_entry.flow_packet_number,
         .captured_bytes = std::move(payload_bytes),
-        .original_byte_count = packet.payload_length,
+        .original_byte_count = original_payload_length,
         .packet_captured_length = packet.captured_length,
         .packet_original_length = packet.original_length,
     };
@@ -1308,7 +1379,8 @@ bool retained_tls_cursor_has_visible_payload(
     const std::span<const PacketRef> direction_packets
 ) {
     for (const auto& packet : direction_packets) {
-        if (packet.payload_length == 0U) {
+        const auto metadata = session_detail::derive_transient_packet_metadata(session, packet);
+        if (metadata.captured_transport_payload_length.value_or(0U) == 0U) {
             continue;
         }
         if (session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index) ||
@@ -1620,10 +1692,6 @@ void append_connection_stream_items_bounded(
 
         if (flow_protocol == ProtocolId::arp) {
             append_arp_stream_item_for_packet(rows, session, packet, direction_text);
-            continue;
-        }
-
-        if (packet.payload_length == 0U) {
             continue;
         }
 
@@ -2136,40 +2204,6 @@ std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
 }
 
 template <typename PacketContainer>
-bool packet_prefix_has_visible_tcp_payload(
-    const PacketContainer& packets,
-    const std::size_t packet_count
-) {
-    const auto limit = std::min(packet_count, packets.size());
-    for (std::size_t index = 0; index < limit; ++index) {
-        const auto& packet = packets[index];
-        if (packet.payload_length > 0U && !packet.is_ip_fragmented) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-template <typename PacketContainer>
-std::size_t count_packet_prefix_visible_tcp_payload(
-    const PacketContainer& packets,
-    const std::size_t packet_count
-) {
-    const auto limit = std::min(packet_count, packets.size());
-    std::size_t visible_payload_packet_count = 0U;
-    for (std::size_t index = 0; index < limit; ++index) {
-        const auto& packet = packets[index];
-        if (packet.payload_length == 0U || packet.is_ip_fragmented) {
-            continue;
-        }
-        ++visible_payload_packet_count;
-    }
-
-    return visible_payload_packet_count;
-}
-
-template <typename PacketContainer>
 std::vector<PacketRef> collect_packet_prefix_refs(
     const PacketContainer& packets,
     const std::size_t packet_count
@@ -2197,19 +2231,7 @@ std::vector<PacketRef> merge_packet_refs_by_index(
     return merged_packets;
 }
 
-std::size_t count_flow_prefix_visible_tcp_payload(
-    const ListedConnectionRef& connection,
-    const std::size_t prefix_count_a,
-    const std::size_t prefix_count_b
-) {
-    if (connection.family == FlowAddressFamily::ipv4) {
-        return count_packet_prefix_visible_tcp_payload(connection.ipv4->flow_a.packets, prefix_count_a)
-            + count_packet_prefix_visible_tcp_payload(connection.ipv4->flow_b.packets, prefix_count_b);
-    }
-
-    return count_packet_prefix_visible_tcp_payload(connection.ipv6->flow_a.packets, prefix_count_a)
-        + count_packet_prefix_visible_tcp_payload(connection.ipv6->flow_b.packets, prefix_count_b);
-}
+std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept;
 
 std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
     const CaptureSession& session,
@@ -3513,17 +3535,6 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
             flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan);
         context.prefix_count_a = prefix_count_a;
         context.prefix_count_b = prefix_count_b;
-        context.payload_packet_count = count_flow_prefix_visible_tcp_payload(connection, context.prefix_count_a, context.prefix_count_b);
-        if (context.prefix_count_a + context.prefix_count_b == 0U) {
-            selected_flow_tcp_prefix_context_.reset();
-            resolution.result = "empty-prefix";
-            return resolution;
-        }
-        if (context.payload_packet_count == 0U) {
-            selected_flow_tcp_prefix_context_.reset();
-            resolution.result = "no-visible-tcp-payload";
-            return resolution;
-        }
         context.prefix_packets_a = collect_packet_prefix_refs(connection.ipv4->flow_a.packets, context.prefix_count_a);
         context.prefix_packets_b = collect_packet_prefix_refs(connection.ipv4->flow_b.packets, context.prefix_count_b);
         const auto ordered_prefix = collect_selected_flow_packet_prefix(*connection.ipv4, max_packets_to_scan);
@@ -3540,17 +3551,6 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
             flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
         context.prefix_count_a = prefix_count_a;
         context.prefix_count_b = prefix_count_b;
-        context.payload_packet_count = count_flow_prefix_visible_tcp_payload(connection, context.prefix_count_a, context.prefix_count_b);
-        if (context.prefix_count_a + context.prefix_count_b == 0U) {
-            selected_flow_tcp_prefix_context_.reset();
-            resolution.result = "empty-prefix";
-            return resolution;
-        }
-        if (context.payload_packet_count == 0U) {
-            selected_flow_tcp_prefix_context_.reset();
-            resolution.result = "no-visible-tcp-payload";
-            return resolution;
-        }
         context.prefix_packets_a = collect_packet_prefix_refs(connection.ipv6->flow_a.packets, context.prefix_count_a);
         context.prefix_packets_b = collect_packet_prefix_refs(connection.ipv6->flow_b.packets, context.prefix_count_b);
         const auto ordered_prefix = collect_selected_flow_packet_prefix(*connection.ipv6, max_packets_to_scan);
@@ -3564,10 +3564,121 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
         }
     }
 
+    if (context.prefix_count_a + context.prefix_count_b == 0U || context.ordered_prefix_packets.empty()) {
+        selected_flow_tcp_prefix_context_.reset();
+        resolution.result = "empty-prefix";
+        return resolution;
+    }
+
+    std::vector<PacketRef> ordered_prefix_packet_refs {};
+    ordered_prefix_packet_refs.reserve(context.ordered_prefix_packets.size());
+    for (const auto& window_packet : context.ordered_prefix_packets) {
+        ordered_prefix_packet_refs.push_back(window_packet.packet);
+    }
+
+    const auto prefix_metadata = derive_transient_packet_metadata_batch(flow_index, ordered_prefix_packet_refs);
+    for (std::size_t index = 0; index < context.ordered_prefix_packets.size() && index < prefix_metadata.size(); ++index) {
+        context.ordered_prefix_packets[index].metadata = prefix_metadata[index];
+        if (prefix_metadata[index].captured_transport_payload_length.value_or(0U) > 0U &&
+            !prefix_metadata[index].is_ip_fragmented.value_or(false)) {
+            ++context.payload_packet_count;
+        }
+    }
+
+    if (context.payload_packet_count == 0U) {
+        selected_flow_tcp_prefix_context_.reset();
+        resolution.result = "no-visible-tcp-payload";
+        return resolution;
+    }
+
     selected_flow_tcp_prefix_context_ = std::move(context);
     resolution.context = &*selected_flow_tcp_prefix_context_;
     resolution.result = "ok";
     return resolution;
+}
+
+std::vector<session_detail::TransientPacketDerivedMetadata> CaptureSession::derive_transient_packet_metadata_batch(
+    const std::size_t flow_index,
+    const std::span<const PacketRef> packets
+) const {
+    std::vector<session_detail::TransientPacketDerivedMetadata> metadata_by_packet(packets.size());
+    if (!has_source_capture() || packets.empty()) {
+        return metadata_by_packet;
+    }
+
+    prepare_selected_flow_full_packet_cache(flow_index, packets);
+
+    std::vector<std::pair<std::size_t, PacketRef>> missing_packets {};
+    missing_packets.reserve(packets.size());
+    for (std::size_t index = 0; index < packets.size(); ++index) {
+        if (const auto* cached_packet_bytes = find_selected_flow_full_packet_cache_bytes(packets[index].packet_index);
+            cached_packet_bytes != nullptr) {
+            metadata_by_packet[index] = session_detail::derive_transient_packet_metadata(
+                std::span<const std::uint8_t>(cached_packet_bytes->data(), cached_packet_bytes->size()),
+                packets[index]
+            );
+            continue;
+        }
+
+        missing_packets.push_back({index, packets[index]});
+    }
+
+    if (missing_packets.empty()) {
+        return metadata_by_packet;
+    }
+
+    std::sort(missing_packets.begin(), missing_packets.end(), [](const auto& left, const auto& right) {
+        if (left.second.byte_offset != right.second.byte_offset) {
+            return left.second.byte_offset < right.second.byte_offset;
+        }
+        return left.second.packet_index < right.second.packet_index;
+    });
+
+    CaptureFilePacketReader reader {capture_path_};
+    if (!reader.is_open()) {
+        return metadata_by_packet;
+    }
+
+    for (const auto& [index, packet] : missing_packets) {
+        std::vector<std::uint8_t> packet_bytes {};
+        if (!reader.read_packet_data(packet, packet_bytes) || packet_bytes.empty()) {
+            continue;
+        }
+
+        metadata_by_packet[index] = session_detail::derive_transient_packet_metadata(
+            std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+            packet
+        );
+    }
+
+    return metadata_by_packet;
+}
+
+void CaptureSession::enrich_flow_analysis_sequence_preview(
+    const std::size_t flow_index,
+    FlowAnalysisResult& result
+) const {
+    if (!has_source_capture() || result.sequence_preview_rows.empty()) {
+        return;
+    }
+
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return;
+    }
+
+    const auto preview_count = std::min(result.sequence_preview_rows.size(), result.sequence_preview_packets.size());
+    if (preview_count == 0U) {
+        return;
+    }
+
+    const auto preview_metadata = derive_transient_packet_metadata_batch(
+        flow_index,
+        std::span<const PacketRef>(result.sequence_preview_packets.data(), preview_count)
+    );
+    for (std::size_t index = 0; index < preview_count && index < preview_metadata.size(); ++index) {
+        result.sequence_preview_rows[index].payload_length = preview_metadata[index].original_transport_payload_length;
+    }
 }
 
 void CaptureSession::prepare_selected_flow_packet_cache(
@@ -3602,6 +3713,41 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         return;
     }
 
+    PacketPayloadService payload_service {};
+    PacketDecoder decoder {};
+    CaptureFilePacketReader payload_reader {capture_path_};
+    const auto read_terminal_payload = [&](const PacketRef& packet) {
+        const auto extract_payload = [&](const std::span<const std::uint8_t> packet_bytes) {
+            const auto decoded = decoder.decode(make_raw_pcap_packet(
+                packet,
+                std::vector<std::uint8_t>(packet_bytes.begin(), packet_bytes.end())
+            ));
+            if (decoded.terminal_transport_payload_bounds.has_value()) {
+                const auto payload = payload_service.extract_terminal_transport_payload_view(
+                    packet_bytes,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                if (payload.found) {
+                    return std::vector<std::uint8_t>(payload.payload.begin(), payload.payload.end());
+                }
+            }
+
+            return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        };
+
+        if (const auto* cached_packet_bytes = find_selected_flow_full_packet_cache_bytes(packet.packet_index);
+            cached_packet_bytes != nullptr) {
+            return extract_payload(std::span<const std::uint8_t>(cached_packet_bytes->data(), cached_packet_bytes->size()));
+        }
+
+        std::vector<std::uint8_t> packet_bytes {};
+        if (!payload_reader.is_open() || !payload_reader.read_packet_data(packet, packet_bytes) || packet_bytes.empty()) {
+            return std::vector<std::uint8_t> {};
+        }
+
+        return extract_payload(std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
+    };
+
     for (const auto& window_packet : context.ordered_prefix_packets) {
         if (cache.limit_reached) {
             break;
@@ -3611,13 +3757,14 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         }
 
         const auto& packet = window_packet.packet;
-        auto payload_bytes = packet.payload_length == 0U ? std::vector<std::uint8_t> {} : read_transport_payload_terminal(packet);
-        const bool payload_cached = packet.payload_length == 0U ||
-            (!payload_bytes.empty() && payload_bytes.size() == packet.payload_length);
-        if (!payload_cached) {
-            if (packet.payload_length > 0U) {
-                cache.has_uncached_payload_entries = true;
-            }
+        const auto metadata = window_packet.metadata.value_or(session_detail::TransientPacketDerivedMetadata {});
+        auto payload_plan = plan_selected_flow_payload_caching(metadata);
+        auto payload_bytes = payload_plan.requires_payload_read
+            ? read_terminal_payload(packet)
+            : std::vector<std::uint8_t> {};
+        finalize_selected_flow_payload_caching_plan(payload_plan, metadata, payload_bytes);
+        if (!payload_plan.payload_cached) {
+            cache.has_uncached_payload_entries = true;
             payload_bytes.clear();
         }
 
@@ -3639,8 +3786,9 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .direction = window_packet.direction,
             .cache_offset = cache_offset,
             .cache_length = additional_bytes,
-            .payload_length = packet.payload_length,
-            .payload_cached = payload_cached,
+            .payload_length = static_cast<std::uint32_t>(payload_plan.cached_payload_length),
+            .payload_cached = payload_plan.payload_cached,
+            .metadata = metadata,
         });
 
         cache.cached_packet_window_count = static_cast<std::size_t>(window_packet.flow_local_packet_number);
@@ -3699,7 +3847,32 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         return;
     }
 
-    for (const auto& window_packet : prefix_packets) {
+    const auto prefix_metadata = derive_transient_packet_metadata_batch(
+        flow_index,
+        std::span<const PacketRef>(prefix_packet_refs.data(), prefix_packet_refs.size())
+    );
+    PacketPayloadService payload_service {};
+    CaptureFilePacketReader payload_reader {capture_path_};
+    const auto read_direct_payload = [&](const PacketRef& packet) {
+        const auto extract_payload = [&](const std::span<const std::uint8_t> packet_bytes) {
+            return payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        };
+
+        if (const auto* cached_packet_bytes = find_selected_flow_full_packet_cache_bytes(packet.packet_index);
+            cached_packet_bytes != nullptr) {
+            return extract_payload(std::span<const std::uint8_t>(cached_packet_bytes->data(), cached_packet_bytes->size()));
+        }
+
+        std::vector<std::uint8_t> packet_bytes {};
+        if (!payload_reader.is_open() || !payload_reader.read_packet_data(packet, packet_bytes) || packet_bytes.empty()) {
+            return std::vector<std::uint8_t> {};
+        }
+
+        return extract_payload(std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
+    };
+
+    for (std::size_t index = 0; index < prefix_packets.size(); ++index) {
+        const auto& window_packet = prefix_packets[index];
         if (cache.limit_reached) {
             break;
         }
@@ -3709,13 +3882,16 @@ void CaptureSession::prepare_selected_flow_packet_cache(
 
         const auto& packet = window_packet.packet;
         const auto direction = window_packet.direction;
-        auto payload_bytes = packet.payload_length == 0U ? std::vector<std::uint8_t> {} : read_transport_payload_direct(packet);
-        const bool payload_cached = packet.payload_length == 0U ||
-            (!payload_bytes.empty() && payload_bytes.size() == packet.payload_length);
-        if (!payload_cached) {
-            if (packet.payload_length > 0U) {
-                cache.has_uncached_payload_entries = true;
-            }
+        const auto metadata = index < prefix_metadata.size()
+            ? prefix_metadata[index]
+            : session_detail::TransientPacketDerivedMetadata {};
+        auto payload_plan = plan_selected_flow_payload_caching(metadata);
+        auto payload_bytes = payload_plan.requires_payload_read
+            ? read_direct_payload(packet)
+            : std::vector<std::uint8_t> {};
+        finalize_selected_flow_payload_caching_plan(payload_plan, metadata, payload_bytes);
+        if (!payload_plan.payload_cached) {
+            cache.has_uncached_payload_entries = true;
             payload_bytes.clear();
         }
 
@@ -3737,8 +3913,9 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             .direction = direction,
             .cache_offset = cache_offset,
             .cache_length = additional_bytes,
-            .payload_length = packet.payload_length,
-            .payload_cached = payload_cached,
+            .payload_length = static_cast<std::uint32_t>(payload_plan.cached_payload_length),
+            .payload_cached = payload_plan.payload_cached,
+            .metadata = metadata,
         });
 
         cache.cached_packet_window_count = static_cast<std::size_t>(window_packet.flow_local_packet_number);
@@ -3820,6 +3997,18 @@ std::optional<SelectedFlowPacketCacheInfo> CaptureSession::selected_flow_packet_
     };
 }
 
+std::optional<session_detail::TransientPacketDerivedMetadata> CaptureSession::selected_flow_cached_packet_metadata(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const noexcept {
+    const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet_index);
+    if (entry == nullptr) {
+        return std::nullopt;
+    }
+
+    return entry->metadata;
+}
+
 std::optional<SelectedFlowStreamContextInfo> CaptureSession::selected_flow_stream_context_info() const noexcept {
     if (!selected_flow_stream_context_.has_value()) {
         return std::nullopt;
@@ -3897,6 +4086,10 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload(
     const PacketRef& packet
 ) const {
     if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet.packet_index); entry != nullptr) {
+        if (entry->metadata.is_ip_fragmented.value_or(false)) {
+            return {};
+        }
+
         if (entry->payload_cached) {
             const auto begin = selected_flow_packet_cache_->bytes.begin() + static_cast<std::ptrdiff_t>(entry->cache_offset);
             const auto end = begin + static_cast<std::ptrdiff_t>(entry->cache_length);
@@ -3926,11 +4119,12 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_s
     if (max_bytes == 0U) {
         return {};
     }
-    if (payload_offset >= packet.payload_length) {
-        return {};
-    }
 
     if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet.packet_index); entry != nullptr) {
+        if (entry->metadata.is_ip_fragmented.value_or(false)) {
+            return {};
+        }
+
         if (entry->payload_cached) {
             if (payload_offset >= entry->cache_length) {
                 return {};
@@ -3981,6 +4175,67 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
 
 session_detail::FlowQueryResult CaptureSession::query_flows(const session_detail::FlowQuery& query) const {
     return session_detail::query_flow_indices(listed_connections(), analysis_settings_, query);
+}
+
+session_detail::AdvancedFlowQueryResult CaptureSession::query_advanced_flows(
+    const session_detail::AdvancedFlowFilterSpec& filter_spec,
+    const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
+    const std::optional<session_detail::FlowQuerySortSpec> sort,
+    const std::optional<std::size_t> limit
+) const {
+    const auto compile_result = session_detail::compile_advanced_flow_filter(
+        filter_spec,
+        state_.protocol_path_registry,
+        analysis_settings_
+    );
+    if (compile_result.status != session_detail::AdvancedFlowFilterCompileStatus::ok) {
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_advanced_filter,
+            .compile_status = compile_result.status,
+            .compile_issue = compile_result.issue,
+        };
+    }
+
+    const auto& connections = listed_connections();
+    const auto candidate_span = candidate_flow_indices.has_value()
+        ? std::optional<std::span<const std::size_t>> {
+            std::span<const std::size_t>(candidate_flow_indices->data(), candidate_flow_indices->size())
+        }
+        : std::nullopt;
+    const auto filter_result =
+        session_detail::evaluate_advanced_flow_filter(connections, compile_result.filter, candidate_span);
+    if (filter_result.status == session_detail::AdvancedFlowFilterEvaluationStatus::invalid_candidate_index) {
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_flow_index,
+            .invalid_flow_index = filter_result.invalid_candidate_index,
+        };
+    }
+
+    const auto flow_query_result = query_flows(session_detail::FlowQuery {
+        .selected_flow_indices = filter_result.matching_flow_indices,
+        .text_filter = {},
+        .sort = sort,
+        .limit = limit,
+    });
+    switch (flow_query_result.status) {
+    case session_detail::FlowQueryStatus::ok:
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::ok,
+            .ordered_flow_indices = flow_query_result.ordered_flow_indices,
+            .result_count_before_limit = flow_query_result.result_count_before_limit,
+        };
+    case session_detail::FlowQueryStatus::invalid_flow_index:
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_flow_index,
+            .invalid_flow_index = flow_query_result.invalid_flow_index,
+        };
+    case session_detail::FlowQueryStatus::invalid_limit:
+        return session_detail::AdvancedFlowQueryResult {
+            .status = session_detail::AdvancedFlowQueryStatus::invalid_limit,
+        };
+    }
+
+    return session_detail::AdvancedFlowQueryResult {};
 }
 
 std::string CaptureSession::protocol_path_compact_text(const ProtocolPathId protocol_path_id) const {
@@ -4291,18 +4546,24 @@ std::string CaptureSession::read_packet_payload_hex_dump(const PacketRef& packet
 }
 
 std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& packet) const {
-    if (packet.is_ip_fragmented) {
-        return std::string {kFragmentedProtocolDetailsMessage};
-    }
-
     const auto bytes = read_packet_data(packet);
     if (bytes.empty()) {
         return std::string {kUnavailableProtocolDetailsMessage};
     }
 
+    PacketDetailsService details_service {};
+    const auto details = details_service.decode_best_effort(bytes, packet);
+    if (details.has_value() &&
+        session_detail::derive_ip_fragmentation_state_from_packet_details(
+            std::span<const std::uint8_t>(bytes.data(), bytes.size()),
+            packet,
+            *details
+        ).value_or(false)) {
+        return std::string {kFragmentedProtocolDetailsMessage};
+    }
+
     if (packet.captured_length < packet.original_length) {
-        PacketDetailsService details_service {};
-        if (const auto details = details_service.decode_best_effort(bytes, packet); details.has_value()) {
+        if (details.has_value()) {
             if (const auto generic_details = build_basic_protocol_details_text(*details); generic_details.has_value()) {
                 return *generic_details;
             }
@@ -4330,7 +4591,6 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return *http_details;
     }
 
-    PacketDetailsService details_service {};
     if (const auto details = details_service.decode(bytes, packet); details.has_value()) {
         if (const auto generic_details = build_basic_protocol_details_text(*details); generic_details.has_value()) {
             return *generic_details;
@@ -4432,12 +4692,18 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
         const auto packet_limit = std::min(kOnDemandQuicHintPacketBudget, packets.size());
         for (std::size_t index = 0U; index < packet_limit; ++index) {
             const auto& packet = packets[index];
-            if (packet.is_ip_fragmented) {
-                continue;
-            }
-
             const auto packet_bytes = read_packet_data(packet);
             if (packet_bytes.empty()) {
+                continue;
+            }
+            PacketDetailsService details_service {};
+            if (const auto details = details_service.decode_best_effort(packet_bytes, packet);
+                details.has_value() &&
+                session_detail::derive_ip_fragmentation_state_from_packet_details(
+                    std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                    packet,
+                    *details
+                ).value_or(false)) {
                 continue;
             }
 
@@ -4630,6 +4896,7 @@ std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::s
     auto result = connections[flow_index].family == FlowAddressFamily::ipv4
         ? service.analyze(*connections[flow_index].ipv4)
         : service.analyze(*connections[flow_index].ipv6);
+    enrich_flow_analysis_sequence_preview(flow_index, result);
     const auto hint = effective_protocol_hint(connections[flow_index], analysis_settings_);
     result.protocol_hint = hint == FlowProtocolHint::unknown ? std::string {} : std::string(flow_protocol_hint_text(hint));
     return result;

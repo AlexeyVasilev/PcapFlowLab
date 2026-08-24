@@ -468,6 +468,7 @@ OutputPreflightResult preflight_output_paths(const SummaryCommandOptions& option
         options.input_path,
         std::span<const CliOutputTarget>(outputs.data(), output_count),
         options.force,
+        std::span<const std::filesystem::path> {},
         std::string_view {"Summary side outputs must target distinct paths."}
     );
 

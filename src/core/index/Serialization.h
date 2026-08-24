@@ -4,8 +4,10 @@
 #include <filesystem>
 #include <functional>
 #include <iosfwd>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/domain/CaptureState.h"
@@ -23,15 +25,40 @@ enum class CaptureIndexSectionId : std::uint32_t {
     packet_locator = 7,
 };
 
-enum class ImportCheckpointSectionId : std::uint32_t {
-    source_info = 1,
-    progress = 2,
-    summary = 3,
-    protocol_paths = 4,
-    ipv4_connections = 5,
-    ipv6_connections = 6,
-    unrecognized_packets = 7,
-    packet_locator = 8,
+inline constexpr std::uint16_t kCaptureIndexStableSectionFlagRequired = 0x0001U;
+inline constexpr std::uint16_t kCaptureIndexStableSummarySectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableProtocolPathsSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableIpv4ConnectionsSectionSchemaVersion = 2U;
+inline constexpr std::uint16_t kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion = 2U;
+inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion = 2U;
+inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorSectionSchemaVersion = 1U;
+inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
+inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
+    8U + 2U + 2U + 4U + 4U + 4U + 1U + 8U + 8U + 8U + 4U;
+inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U;
+
+// v15+ stable-container wire contract:
+// little-endian integrals, UTF-8 length-prefixed strings, and explicit field
+// encoding independent of host ABI/padding.
+struct CaptureIndexStableHeader {
+    std::uint64_t magic {kStableCaptureIndexMagic};
+    std::uint16_t container_format_version {kCaptureIndexStableContainerFormatVersion};
+    std::uint16_t header_flags {0};
+    std::uint32_t header_size {0};
+    std::uint32_t index_revision {kCaptureIndexStableIndexRevision};
+    std::string writer_application_version {};
+    CaptureSourceFormat source_format {CaptureSourceFormat::unknown};
+    std::uint64_t source_file_size {0};
+    std::int64_t source_last_write_time {0};
+    std::uint64_t source_content_fingerprint {0};
+    std::string source_capture_path_utf8 {};
+};
+
+struct CaptureIndexStableSectionHeader {
+    std::uint32_t section_id {0};
+    std::uint16_t section_schema_version {0};
+    std::uint16_t section_flags {0};
+    std::uint64_t payload_size {0};
 };
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes);
@@ -49,6 +76,27 @@ bool read_u32(std::istream& stream, std::uint32_t& value);
 bool read_u64(std::istream& stream, std::uint64_t& value);
 bool read_i64(std::istream& stream, std::int64_t& value);
 bool read_string(std::istream& stream, std::string& value);
+
+[[nodiscard]] std::optional<std::uint32_t> encoded_capture_index_stable_header_size(
+    const CaptureIndexStableHeader& header,
+    std::uint32_t extension_size = 0U
+) noexcept;
+bool write_capture_index_stable_header(
+    std::ostream& stream,
+    const CaptureIndexStableHeader& header,
+    std::span<const std::uint8_t> extension_bytes = {}
+);
+bool read_capture_index_stable_header(std::istream& stream, CaptureIndexStableHeader& header);
+[[nodiscard]] std::string filesystem_path_to_generic_utf8(const std::filesystem::path& path);
+[[nodiscard]] std::filesystem::path filesystem_path_from_generic_utf8(std::string_view utf8_path);
+bool write_capture_index_stable_section_header(
+    std::ostream& stream,
+    const CaptureIndexStableSectionHeader& header
+);
+bool read_capture_index_stable_section_header(
+    std::istream& stream,
+    CaptureIndexStableSectionHeader& header
+);
 
 bool write_section(std::ostream& stream, std::uint32_t section_id, std::span<const std::uint8_t> payload);
 bool read_section_header(std::istream& stream, std::uint32_t& section_id, std::uint64_t& payload_size);

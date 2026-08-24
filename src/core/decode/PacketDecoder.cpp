@@ -12,17 +12,42 @@ namespace pfl {
 
 namespace {
 
-PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragmented = false) {
+PacketRef make_packet_ref(const RawPcapPacket& packet) {
     return PacketRef {
         .packet_index = packet.packet_index,
+        .ts_sec = packet.ts_sec,
+        .ts_usec = packet.ts_usec,
         .byte_offset = packet.data_offset,
         .data_link_type = packet.data_link_type,
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
-        .ts_sec = packet.ts_sec,
-        .ts_usec = packet.ts_usec,
-        .payload_length = 0,
-        .tcp_flags = 0,
+    };
+}
+
+PacketImportMetadata make_fragmented_packet_import_metadata() {
+    return PacketImportMetadata {
+        .is_ip_fragmented = true,
+    };
+}
+
+PacketImportMetadata make_transport_packet_import_metadata(
+    const std::uint32_t payload_length,
+    const bool is_ip_fragmented = false
+) {
+    return PacketImportMetadata {
+        .transport_payload_length = payload_length,
+        .is_ip_fragmented = is_ip_fragmented,
+    };
+}
+
+PacketImportMetadata make_tcp_packet_import_metadata(
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags,
+    const bool is_ip_fragmented = false
+) {
+    return PacketImportMetadata {
+        .transport_payload_length = payload_length,
+        .tcp_flags = tcp_flags,
         .is_ip_fragmented = is_ip_fragmented,
     };
 }
@@ -215,9 +240,11 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
             .protocol = ProtocolId::tcp,
         };
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
-        packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_tcp_packet_import_metadata(
+            static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length)),
+            bounded_bytes[transport_offset + 13U]
+        );
         static_cast<void>(builder.push(LayerKey::ipv4()));
         static_cast<void>(builder.push(LayerKey::tcp()));
         const auto payload_bounds =
@@ -227,6 +254,7 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -253,8 +281,10 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
             .protocol = ProtocolId::udp,
         };
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_transport_packet_import_metadata(
+            static_cast<std::uint32_t>(udp_payload->payload_length)
+        );
         static_cast<void>(builder.push(LayerKey::ipv4()));
         static_cast<void>(builder.push(LayerKey::udp()));
         const auto payload_bounds = make_terminal_transport_payload_bounds(
@@ -269,6 +299,7 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -289,8 +320,10 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
             .protocol = ProtocolId::sctp,
         };
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_transport_packet_import_metadata(
+            static_cast<std::uint32_t>(sctp->payload_length)
+        );
         static_cast<void>(builder.push(LayerKey::ipv4()));
         static_cast<void>(builder.push(LayerKey::sctp()));
         const auto payload_bounds =
@@ -300,6 +333,7 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -366,9 +400,11 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
         flow_key.protocol = ProtocolId::tcp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
-        packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_tcp_packet_import_metadata(
+            static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length)),
+            bounded_bytes[payload->payload_offset + 13U]
+        );
         static_cast<void>(builder.push(LayerKey::ipv6()));
         static_cast<void>(builder.push(LayerKey::tcp()));
         const auto payload_bounds =
@@ -378,6 +414,7 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -403,8 +440,10 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
         flow_key.protocol = ProtocolId::udp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_transport_packet_import_metadata(
+            static_cast<std::uint32_t>(udp_payload->payload_length)
+        );
         static_cast<void>(builder.push(LayerKey::ipv6()));
         static_cast<void>(builder.push(LayerKey::udp()));
         const auto payload_bounds = make_terminal_transport_payload_bounds(
@@ -419,6 +458,7 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -439,8 +479,10 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         flow_key.dst_port = sctp->dst_port;
         flow_key.protocol = ProtocolId::sctp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_transport_packet_import_metadata(
+            static_cast<std::uint32_t>(sctp->payload_length)
+        );
         static_cast<void>(builder.push(LayerKey::ipv6()));
         static_cast<void>(builder.push(LayerKey::sctp()));
         const auto payload_bounds =
@@ -450,6 +492,7 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -518,11 +561,11 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
         flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
         flow_key.protocol = ProtocolId::tcp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(
-            ipv4_bounds.packet_end - (ah->payload_offset + tcp_header_length)
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_tcp_packet_import_metadata(
+            static_cast<std::uint32_t>(ipv4_bounds.packet_end - (ah->payload_offset + tcp_header_length)),
+            bounded_bytes[ah->payload_offset + 13U]
         );
-        packet_ref.tcp_flags = bounded_bytes[ah->payload_offset + 13U];
         static_cast<void>(builder.push(LayerKey::tcp()));
         const auto payload_bounds =
             make_terminal_transport_payload_bounds(ah->payload_offset + tcp_header_length, ipv4_bounds.nominal_packet_end);
@@ -531,6 +574,7 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -557,8 +601,10 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
         flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
         flow_key.protocol = ProtocolId::udp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_transport_packet_import_metadata(
+            static_cast<std::uint32_t>(udp_payload->payload_length)
+        );
         static_cast<void>(builder.push(LayerKey::udp()));
         const auto payload_bounds = make_terminal_transport_payload_bounds(
             udp_payload->payload_offset,
@@ -569,6 +615,7 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -638,11 +685,11 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
         flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
         flow_key.protocol = ProtocolId::tcp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(
-            packet_end - (ah->payload_offset + tcp_header_length)
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_tcp_packet_import_metadata(
+            static_cast<std::uint32_t>(packet_end - (ah->payload_offset + tcp_header_length)),
+            bounded_bytes[ah->payload_offset + 13U]
         );
-        packet_ref.tcp_flags = bounded_bytes[ah->payload_offset + 13U];
         static_cast<void>(builder.push(LayerKey::tcp()));
         const auto payload_bounds =
             make_terminal_transport_payload_bounds(ah->payload_offset + tcp_header_length, nominal_packet_end);
@@ -651,6 +698,7 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -677,8 +725,10 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
         flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
         flow_key.protocol = ProtocolId::udp;
 
-        auto packet_ref = make_packet_ref(packet);
-        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        const auto packet_ref = make_packet_ref(packet);
+        const auto import_metadata = make_transport_packet_import_metadata(
+            static_cast<std::uint32_t>(udp_payload->payload_length)
+        );
         static_cast<void>(builder.push(LayerKey::udp()));
         const auto payload_bounds = make_terminal_transport_payload_bounds(
             udp_payload->payload_offset,
@@ -689,6 +739,7 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
+                .import_metadata = import_metadata,
             },
             builder,
             payload_bounds
@@ -1201,7 +1252,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             return make_decoded_packet(
                 IngestedPacketV4 {
                     .flow_key = flow_base,
-                    .packet_ref = make_packet_ref(packet, true),
+                    .packet_ref = make_packet_ref(packet),
+                    .import_metadata = make_fragmented_packet_import_metadata(),
                 },
                 ipv4_builder
             );
@@ -1253,9 +1305,11 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U);
             flow_key.protocol = ProtocolId::tcp;
 
-            auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
-            packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
+            const auto packet_ref = make_packet_ref(packet);
+            const auto import_metadata = make_tcp_packet_import_metadata(
+                static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length)),
+                bounded_bytes[transport_offset + 13U]
+            );
             auto builder = ipv4_builder;
             static_cast<void>(builder.push(LayerKey::tcp()));
             const auto payload_bounds = make_terminal_transport_payload_bounds(
@@ -1266,6 +1320,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 builder,
                 payload_bounds
@@ -1333,9 +1388,12 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 }
             }
 
-            auto packet_ref = make_packet_ref(packet);
+            const auto packet_ref = make_packet_ref(packet);
+            PacketImportMetadata import_metadata {};
             if (udp_payload.has_value()) {
-                packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+                import_metadata = make_transport_packet_import_metadata(
+                    static_cast<std::uint32_t>(udp_payload->payload_length)
+                );
             } else {
                 // Allow best-effort tuple extraction only when a higher-level bounded shim
                 // has already constrained the visible packet bytes.
@@ -1343,8 +1401,9 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                     return {};
                 }
                 const auto payload_offset = transport_offset + detail::kUdpHeaderSize;
-                packet_ref.payload_length = static_cast<std::uint32_t>(
-                    packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
+                import_metadata = make_transport_packet_import_metadata(
+                    static_cast<std::uint32_t>(packet_end > payload_offset ? (packet_end - payload_offset) : 0U)
+                );
             }
             const auto payload_bounds = udp_payload.has_value()
                 ? make_terminal_transport_payload_bounds(
@@ -1357,6 +1416,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 udp_builder,
                 payload_bounds
@@ -1378,8 +1438,10 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_port = sctp->dst_port;
             flow_key.protocol = ProtocolId::sctp;
 
-            auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+            const auto packet_ref = make_packet_ref(packet);
+            const auto import_metadata = make_transport_packet_import_metadata(
+                static_cast<std::uint32_t>(sctp->payload_length)
+            );
             auto builder = ipv4_builder;
             static_cast<void>(builder.push(LayerKey::sctp()));
             const auto payload_bounds =
@@ -1388,6 +1450,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 builder,
                 payload_bounds
@@ -1422,14 +1485,17 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             auto flow_key = flow_base;
             flow_key.protocol = ProtocolId::esp;
 
-            auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(esp->payload_length);
+            const auto packet_ref = make_packet_ref(packet);
+            const auto import_metadata = make_transport_packet_import_metadata(
+                static_cast<std::uint32_t>(esp->payload_length)
+            );
             auto builder = ipv4_builder;
             static_cast<void>(builder.push(LayerKey::esp(esp->spi)));
             return make_decoded_packet(
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 builder
             );
@@ -1545,7 +1611,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,
-                    .packet_ref = make_packet_ref(packet, true),
+                    .packet_ref = make_packet_ref(packet),
+                    .import_metadata = make_fragmented_packet_import_metadata(),
                 },
                 ipv6_builder
             );
@@ -1612,9 +1679,11 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
             flow_key.protocol = ProtocolId::tcp;
 
-            auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
-            packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
+            const auto packet_ref = make_packet_ref(packet);
+            const auto import_metadata = make_tcp_packet_import_metadata(
+                static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length)),
+                bounded_bytes[payload->payload_offset + 13U]
+            );
             auto builder = ipv6_builder;
             static_cast<void>(builder.push(LayerKey::tcp()));
             const auto payload_bounds = make_terminal_transport_payload_bounds(
@@ -1625,6 +1694,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 builder,
                 payload_bounds
@@ -1694,16 +1764,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 }
             }
 
-            auto packet_ref = make_packet_ref(packet);
+            const auto packet_ref = make_packet_ref(packet);
+            PacketImportMetadata import_metadata {};
             if (udp_payload.has_value()) {
-                packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+                import_metadata = make_transport_packet_import_metadata(
+                    static_cast<std::uint32_t>(udp_payload->payload_length)
+                );
             } else {
                 if (!network->bounded_packet_end.has_value()) {
                     return {};
                 }
                 const auto payload_offset = payload->payload_offset + detail::kUdpHeaderSize;
-                packet_ref.payload_length = static_cast<std::uint32_t>(
-                    packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
+                import_metadata = make_transport_packet_import_metadata(
+                    static_cast<std::uint32_t>(packet_end > payload_offset ? (packet_end - payload_offset) : 0U)
+                );
             }
             const auto payload_bounds = udp_payload.has_value()
                 ? make_terminal_transport_payload_bounds(
@@ -1716,6 +1790,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 udp_builder,
                 payload_bounds
@@ -1736,8 +1811,10 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_port = sctp->dst_port;
             flow_key.protocol = ProtocolId::sctp;
 
-            auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+            const auto packet_ref = make_packet_ref(packet);
+            const auto import_metadata = make_transport_packet_import_metadata(
+                static_cast<std::uint32_t>(sctp->payload_length)
+            );
             auto builder = ipv6_builder;
             static_cast<void>(builder.push(LayerKey::sctp()));
             const auto payload_bounds = make_terminal_transport_payload_bounds(
@@ -1748,6 +1825,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 builder,
                 payload_bounds
@@ -1766,14 +1844,17 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
             flow_key.protocol = ProtocolId::esp;
 
-            auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(esp->payload_length);
+            const auto packet_ref = make_packet_ref(packet);
+            const auto import_metadata = make_transport_packet_import_metadata(
+                static_cast<std::uint32_t>(esp->payload_length)
+            );
             auto builder = ipv6_builder;
             static_cast<void>(builder.push(LayerKey::esp(esp->spi)));
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
+                    .import_metadata = import_metadata,
                 },
                 builder
             );

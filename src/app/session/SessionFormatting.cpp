@@ -6110,7 +6110,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     layers.reserve(8U);
 
     std::vector<PacketSummaryField> warning_fields {};
-    if (packet.is_ip_fragmented) {
+    if (options.is_ip_fragmented.value_or(false)) {
         warning_fields.push_back(make_summary_field({}, "Packet is IP-fragmented"));
     }
     if (details.captured_length != details.original_length) {
@@ -6704,7 +6704,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (ipv4_field_available(details, 20U)) {
             ipv4_fields.push_back(make_summary_field("Destination Address", format_ipv4_address(details.ipv4.dst_addr)));
         }
-        if (packet.is_ip_fragmented) {
+        if (options.is_ip_fragmented.value_or(false)) {
             ipv4_fields.push_back(make_summary_field("Fragmentation", "Packet is fragmented"));
         }
         if (details.ipv4.header_truncated) {
