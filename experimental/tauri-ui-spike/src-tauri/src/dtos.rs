@@ -134,6 +134,49 @@ pub struct SmartExportResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterParseIssueDto {
+    pub status: String,
+    pub line: usize,
+    pub column: Option<usize>,
+    pub key: String,
+    pub token: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterCompileIssueDto {
+    pub status: String,
+    pub category: String,
+    pub predicate_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterQueryResultDto {
+    pub status: String,
+    pub matching_flow_indices: Vec<usize>,
+    pub result_count_before_limit: usize,
+    pub configured_rule_count: usize,
+    pub active_rule_count: usize,
+    pub parse_status: String,
+    pub parse_issue: Option<AdvancedFlowFilterParseIssueDto>,
+    pub compile_status: String,
+    pub compile_issue: Option<AdvancedFlowFilterCompileIssueDto>,
+    pub invalid_flow_index: Option<usize>,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterFileReadResultDto {
+    pub loaded: bool,
+    pub path: String,
+    pub display_name: String,
+    pub text: String,
+    pub error_kind: String,
+    pub error_text: String,
+    pub max_file_bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,

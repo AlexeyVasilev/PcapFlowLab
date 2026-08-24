@@ -123,9 +123,25 @@
               </div>
               <div class="flows-tools">
                 <div class="flows-toolbar">
-                  <input id="flowFilterInput" class="flow-filter-input" type="text" placeholder="Filter by protocol, hint, service, address, or port" />
-                  <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
+                  <div class="flows-filter-mode-slot">
+                    <div id="simpleFlowFilterToolbar" class="flow-filter-mode-toolbar">
+                      <input id="flowFilterInput" class="flow-filter-input" type="text" placeholder="Filter by protocol, hint, service, address, or port" />
+                      <button id="useAdvancedFlowFilterButton" type="button" class="secondary-button">Use advanced filter</button>
+                      <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
+                    </div>
+                    <div id="advancedFlowFilterToolbar" class="flow-filter-mode-toolbar" hidden>
+                      <button id="openAdvancedFlowFilterButton" type="button" class="secondary-button">Open filter...</button>
+                      <div class="flow-inline-meta flow-filter-summary">
+                        <span class="inline-label">Filter:</span>
+                        <span id="advancedFlowFilterDisplayName" class="flow-filter-summary-text">Custom filter</span>
+                        <span id="advancedFlowFilterRuleCount" class="inline-note">0 rules</span>
+                      </div>
+                      <button id="useSimpleFlowFilterButton" type="button" class="secondary-button">Use simple filter</button>
+                      <button id="clearAdvancedFlowFilterButton" type="button" class="secondary-button">Clear</button>
+                    </div>
+                  </div>
                 </div>
+                <p id="advancedFlowFilterStatusText" class="status-text compact-status-text"></p>
                 <div id="protocolPathFlowFilterRow" class="flow-wireshark-row">
                   <span class="inline-label">Protocol path</span>
                   <pre id="protocolPathFlowFilterText" class="details-pre compact-filter-pre">No protocol path filter.</pre>

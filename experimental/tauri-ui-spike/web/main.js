@@ -55,6 +55,20 @@
     };
   }
 
+  function createAdvancedFlowFilterState() {
+    return {
+      loadedText: "",
+      sourcePath: "",
+      displayName: "Custom filter",
+      configuredRuleCount: 0,
+      activeRuleCount: 0,
+      matchingFlowIndexSet: new Set(),
+      loading: false,
+      statusText: "",
+      statusKind: "neutral",
+    };
+  }
+
   const state = {
     memoryDiagnosticsEnabled: false,
     openMenu: null,
@@ -125,7 +139,9 @@
     overview: null,
     flows: [],
     flowLoadDeferredReasonText: "",
+    flowFilterMode: "simple",
     flowFilterText: "",
+    advancedFlowFilter: createAdvancedFlowFilterState(),
     activeProtocolPathFilter: null,
     flowSortKey: "index",
     flowSortDirection: "asc",
@@ -218,6 +234,71 @@
     flowsBottomLeftSizePx: null,
     analysisLeftSizePx: null,
   };
+
+  function resetAdvancedFlowFilterState() {
+    state.advancedFlowFilter.loadedText = "";
+    state.advancedFlowFilter.sourcePath = "";
+    state.advancedFlowFilter.displayName = "Custom filter";
+    state.advancedFlowFilter.configuredRuleCount = 0;
+    state.advancedFlowFilter.activeRuleCount = 0;
+    state.advancedFlowFilter.matchingFlowIndexSet = new Set();
+    state.advancedFlowFilter.loading = false;
+    state.advancedFlowFilter.statusText = "";
+    state.advancedFlowFilter.statusKind = "neutral";
+  }
+
+  function clearAdvancedFlowFilterStatus() {
+    state.advancedFlowFilter.statusText = "";
+    state.advancedFlowFilter.statusKind = "neutral";
+  }
+
+  function setAdvancedFlowFilterStatus(text, kind = "neutral") {
+    state.advancedFlowFilter.statusText = String(text || "");
+    state.advancedFlowFilter.statusKind = kind;
+  }
+
+  function configuredAdvancedFlowFilterRuleCount() {
+    return Number(state.advancedFlowFilter?.configuredRuleCount || 0);
+  }
+
+  function activeAdvancedFlowFilterRuleCount() {
+    return Number(state.advancedFlowFilter?.activeRuleCount || 0);
+  }
+
+  function advancedFlowFilterHasConfiguredDocument() {
+    return String(state.advancedFlowFilter?.loadedText || "").length > 0;
+  }
+
+  function advancedFlowFilterRulesText() {
+    const configuredRuleCount = configuredAdvancedFlowFilterRuleCount();
+    const activeRuleCount = activeAdvancedFlowFilterRuleCount();
+    const configuredText = configuredRuleCount === 1
+      ? "1 rule"
+      : `${formatNumber(configuredRuleCount)} rules`;
+    if (activeRuleCount !== configuredRuleCount) {
+      return `${configuredText} (${formatNumber(activeRuleCount)} active)`;
+    }
+    return configuredText;
+  }
+
+  function advancedFlowFilteringAvailable() {
+    return state.openState === "opened" && state.flowState !== "deferred";
+  }
+
+  function currentSimpleFlowFilterActive() {
+    return state.flowFilterMode === "simple" && state.flowFilterText.trim().length > 0;
+  }
+
+  function currentAdvancedFlowFilterActive() {
+    return state.flowFilterMode === "advanced" && activeAdvancedFlowFilterRuleCount() > 0;
+  }
+
+  function notifyFlowFilteringChanged(selectedFlowClearedText) {
+    resetFlowVirtualizationState();
+    resetAnalysisFlowVirtualizationState();
+    setWiresharkFilterStatus("", "neutral");
+    ensureSelectedFlowVisible(selectedFlowClearedText);
+  }
 
   const elements = {
     menuButtons: Array.from(document.querySelectorAll("[data-menu-button]")),
@@ -317,7 +398,16 @@
     flowViewTabStreamButton: document.querySelector('[data-flow-view-tab="stream"]'),
     overviewMeta: document.getElementById("overviewMeta"),
     flowMeta: document.getElementById("flowMeta"),
+    simpleFlowFilterToolbar: document.getElementById("simpleFlowFilterToolbar"),
+    advancedFlowFilterToolbar: document.getElementById("advancedFlowFilterToolbar"),
     flowFilterInput: document.getElementById("flowFilterInput"),
+    useAdvancedFlowFilterButton: document.getElementById("useAdvancedFlowFilterButton"),
+    openAdvancedFlowFilterButton: document.getElementById("openAdvancedFlowFilterButton"),
+    advancedFlowFilterDisplayName: document.getElementById("advancedFlowFilterDisplayName"),
+    advancedFlowFilterRuleCount: document.getElementById("advancedFlowFilterRuleCount"),
+    useSimpleFlowFilterButton: document.getElementById("useSimpleFlowFilterButton"),
+    clearAdvancedFlowFilterButton: document.getElementById("clearAdvancedFlowFilterButton"),
+    advancedFlowFilterStatusText: document.getElementById("advancedFlowFilterStatusText"),
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     protocolPathFlowFilterRow: document.getElementById("protocolPathFlowFilterRow"),
     protocolPathFlowFilterText: document.getElementById("protocolPathFlowFilterText"),
@@ -942,7 +1032,7 @@
   }
 
   function hasActiveFlowFilters() {
-    return state.flowFilterText.trim().length > 0 || hasActiveProtocolPathFilter();
+    return currentSimpleFlowFilterActive() || currentAdvancedFlowFilterActive() || hasActiveProtocolPathFilter();
   }
 
   function clearSelectedFlowArtifacts() {
@@ -1728,7 +1818,7 @@
   }
 
   function smartExportFilterTargetEnabled() {
-    return state.flowFilterText.trim().length > 0;
+    return state.flowFilterMode === "simple" && state.flowFilterText.trim().length > 0;
   }
 
   function smartExportUnrecognizedTargetEnabled() {
@@ -1772,10 +1862,16 @@
       case "current":
         return state.selectedFlowIndex != null ? [state.selectedFlowIndex] : [];
       case "matching_filter":
+        if (!smartExportFilterTargetEnabled()) {
+          return [];
+        }
         return getVisibleFlows().map((flow) => flow.flow_index);
       case "selected":
         return Array.from(state.checkedFlowIndices).sort((left, right) => left - right);
       case "not_matching_filter": {
+        if (!smartExportFilterTargetEnabled()) {
+          return [];
+        }
         const matchingFlowIndexSet = new Set(filteredFlows().map((flow) => flow.flow_index));
         return getSortedFlows(state.flows.filter((flow) => !matchingFlowIndexSet.has(flow.flow_index)))
           .map((flow) => flow.flow_index);
@@ -1816,18 +1912,131 @@
     const filterChanged = state.flowFilterText !== nextFilterText;
     state.flowFilterText = nextFilterText;
     if (filterChanged) {
-      resetFlowVirtualizationState();
-      resetAnalysisFlowVirtualizationState();
+      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
     }
-    setWiresharkFilterStatus("", "neutral");
-    ensureSelectedFlowVisible("Selected flow was cleared because it no longer matches the current filter.");
   }
 
   function applyFlowFilterFromStatistics(filterText, sourceLabel) {
     state.activeTab = "flows";
+    state.flowFilterMode = "simple";
     applyFlowFilterState(filterText);
     setStatus(`Filtered flows by ${sourceLabel}.`, "success");
     render();
+  }
+
+  function switchToAdvancedFlowFilterMode() {
+    if (!advancedFlowFilteringAvailable()) {
+      setAdvancedFlowFilterStatus(
+        state.flowState === "deferred"
+          ? "Advanced Filter is unavailable while the Tauri flow list is deferred for this session."
+          : "Advanced Filter is unavailable until a capture or index is opened.",
+        "error"
+      );
+      return;
+    }
+
+    if (state.flowFilterMode !== "advanced") {
+      state.flowFilterMode = "advanced";
+      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+    }
+  }
+
+  function switchToSimpleFlowFilterMode() {
+    clearAdvancedFlowFilterStatus();
+    if (state.flowFilterMode !== "simple") {
+      state.flowFilterMode = "simple";
+      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+    }
+  }
+
+  function clearAdvancedFlowFilter() {
+    if (state.advancedFlowFilter.loading) {
+      return;
+    }
+
+    resetAdvancedFlowFilterState();
+    if (state.flowFilterMode === "advanced") {
+      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+    }
+    setStatus("Cleared advanced filter.", "neutral");
+  }
+
+  async function openAdvancedFlowFilterFromToolbar() {
+    if (state.advancedFlowFilter.loading) {
+      return;
+    }
+
+    if (!advancedFlowFilteringAvailable()) {
+      setAdvancedFlowFilterStatus(
+        state.flowState === "deferred"
+          ? "Advanced Filter is unavailable while the Tauri flow list is deferred for this session."
+          : "Advanced Filter is unavailable until a capture or index is opened.",
+        "error"
+      );
+      render();
+      return;
+    }
+
+    if (typeof invoke !== "function") {
+      setAdvancedFlowFilterStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_open_advanced_filter_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.advancedFlowFilter.loading = true;
+      setAdvancedFlowFilterStatus("Opening advanced filter...", "neutral");
+      render();
+
+      const fileResult = await invoke("read_advanced_flow_filter_file", { path: selectedPath });
+      if (!fileResult?.loaded) {
+        setAdvancedFlowFilterStatus(
+          fileResult?.error_text || "Failed to read the selected advanced filter file.",
+          "error"
+        );
+        return;
+      }
+
+      const queryResult = await invoke("query_advanced_flows_text", {
+        filter_text: fileResult.text,
+        candidate_flow_indices: null,
+      });
+      if (String(queryResult?.status || "") !== "ok") {
+        setAdvancedFlowFilterStatus(
+          queryResult?.error_text || "Failed to apply the selected advanced filter.",
+          "error"
+        );
+        return;
+      }
+
+      state.flowFilterMode = "advanced";
+      state.advancedFlowFilter.loadedText = String(fileResult.text || "");
+      state.advancedFlowFilter.sourcePath = String(fileResult.path || selectedPath);
+      state.advancedFlowFilter.displayName = String(fileResult.display_name || "Custom filter");
+      state.advancedFlowFilter.configuredRuleCount = Number(queryResult?.configured_rule_count || 0);
+      state.advancedFlowFilter.activeRuleCount = Number(queryResult?.active_rule_count || 0);
+      state.advancedFlowFilter.matchingFlowIndexSet = new Set(
+        Array.isArray(queryResult?.matching_flow_indices)
+          ? queryResult.matching_flow_indices.map((index) => Number(index))
+          : []
+      );
+      clearAdvancedFlowFilterStatus();
+      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+      setStatus(
+        `Opened advanced filter "${state.advancedFlowFilter.displayName}".`,
+        "success"
+      );
+    } catch (error) {
+      setAdvancedFlowFilterStatus(`Failed to open the selected advanced filter: ${String(error)}`, "error");
+    } finally {
+      state.advancedFlowFilter.loading = false;
+      render();
+    }
   }
 
   function clearProtocolPathFlowFilter(statusText = "Cleared protocol path filter.") {
@@ -2606,7 +2815,9 @@
   function clearFlows() {
     state.flows = [];
     state.flowLoadDeferredReasonText = "";
+    state.flowFilterMode = "simple";
     state.flowFilterText = "";
+    resetAdvancedFlowFilterState();
     resetFlowVirtualizationState();
     resetAnalysisFlowVirtualizationState();
     state.checkedFlowIndices.clear();
@@ -3108,6 +3319,14 @@
         return false;
       }
 
+      if (state.flowFilterMode === "advanced") {
+        if (activeAdvancedFlowFilterRuleCount() === 0) {
+          return true;
+        }
+
+        return state.advancedFlowFilter.matchingFlowIndexSet.has(Number(flow.flow_index));
+      }
+
       if (filterText.length === 0) {
         return true;
       }
@@ -3124,10 +3343,6 @@
         flow.address_b,
         String(flow.port_a ?? ""),
         String(flow.port_b ?? ""),
-        String(flow.fragmented_packet_count ?? ""),
-        flow.has_fragmented_packets ? "frag fragmented" : "",
-        String(flow.packet_count ?? ""),
-        String(flow.total_bytes ?? ""),
       ]
         .join(" ")
         .toLowerCase();
@@ -4190,12 +4405,49 @@
     const checkedCount = checkedFlowCount();
     const columnCount = flowTableColumnCount();
     const hasProtocolPathFilter = hasActiveProtocolPathFilter();
+    const inAdvancedMode = state.flowFilterMode === "advanced";
     const protocolPathFilterLabel = hasProtocolPathFilter
       ? String(state.activeProtocolPathFilter?.label || "").trim()
       : "";
 
     elements.flowFilterInput.value = state.flowFilterText;
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
+    if (elements.simpleFlowFilterToolbar) {
+      elements.simpleFlowFilterToolbar.hidden = inAdvancedMode;
+    }
+    if (elements.advancedFlowFilterToolbar) {
+      elements.advancedFlowFilterToolbar.hidden = !inAdvancedMode;
+    }
+    if (elements.useAdvancedFlowFilterButton) {
+      elements.useAdvancedFlowFilterButton.disabled = !advancedFlowFilteringAvailable() || state.advancedFlowFilter.loading;
+    }
+    if (elements.openAdvancedFlowFilterButton) {
+      elements.openAdvancedFlowFilterButton.disabled = !advancedFlowFilteringAvailable() || state.advancedFlowFilter.loading;
+    }
+    if (elements.useSimpleFlowFilterButton) {
+      elements.useSimpleFlowFilterButton.disabled = state.advancedFlowFilter.loading;
+    }
+    if (elements.clearAdvancedFlowFilterButton) {
+      elements.clearAdvancedFlowFilterButton.disabled =
+        state.advancedFlowFilter.loading || !advancedFlowFilterHasConfiguredDocument();
+    }
+    if (elements.advancedFlowFilterDisplayName) {
+      const displayName = String(state.advancedFlowFilter.displayName || "Custom filter");
+      elements.advancedFlowFilterDisplayName.textContent = displayName;
+      elements.advancedFlowFilterDisplayName.title = String(state.advancedFlowFilter.sourcePath || "");
+    }
+    if (elements.advancedFlowFilterRuleCount) {
+      elements.advancedFlowFilterRuleCount.textContent = advancedFlowFilterRulesText();
+    }
+    if (elements.advancedFlowFilterStatusText) {
+      elements.advancedFlowFilterStatusText.textContent = state.advancedFlowFilter.statusText;
+      elements.advancedFlowFilterStatusText.className = "status-text compact-status-text";
+      if (state.advancedFlowFilter.statusKind === "error") {
+        elements.advancedFlowFilterStatusText.classList.add("is-error");
+      } else if (state.advancedFlowFilter.statusKind === "success") {
+        elements.advancedFlowFilterStatusText.classList.add("is-success");
+      }
+    }
     if (elements.protocolPathFlowFilterRow) {
       elements.protocolPathFlowFilterRow.style.display = hasProtocolPathFilter ? "grid" : "none";
     }
@@ -7395,6 +7647,17 @@
 
     const flowScope = selectedSmartExportFlowScope();
     const isUnrecognizedScope = flowScope === "unrecognized";
+    if (
+      (flowScope === "matching_filter" || flowScope === "not_matching_filter")
+      && !smartExportFilterTargetEnabled()
+    ) {
+      setSmartExportStatus(
+        "Current-filter smart export is available only in Simple filter mode with a non-empty filter.",
+        "error"
+      );
+      render();
+      return;
+    }
     const flowIndices = isUnrecognizedScope ? [] : getSmartExportFlowIndices(flowScope);
     if (!isUnrecognizedScope && flowIndices.length === 0) {
       const emptySelectionMessage = flowScope === "current"
@@ -7879,6 +8142,17 @@
     applyFlowFilterState(elements.flowFilterInput.value);
     render();
   });
+  elements.useAdvancedFlowFilterButton?.addEventListener("click", () => {
+    switchToAdvancedFlowFilterMode();
+    render();
+  });
+  elements.openAdvancedFlowFilterButton?.addEventListener("click", () => {
+    void openAdvancedFlowFilterFromToolbar();
+  });
+  elements.useSimpleFlowFilterButton?.addEventListener("click", () => {
+    switchToSimpleFlowFilterMode();
+    render();
+  });
   elements.protocolPathStatsModeKindOverview?.addEventListener("click", () => {
     void setProtocolPathStatsMode(0);
   });
@@ -7947,6 +8221,10 @@
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {
     applyFlowFilterState("");
+    render();
+  });
+  elements.clearAdvancedFlowFilterButton?.addEventListener("click", () => {
+    clearAdvancedFlowFilter();
     render();
   });
   elements.clearProtocolPathFlowFilterButton?.addEventListener("click", () => {

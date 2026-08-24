@@ -48,6 +48,13 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     std::uint8_t mode,
     std::uint64_t node_id
 );
+char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const std::size_t* candidate_flow_indices,
+    std::size_t candidate_flow_index_count
+);
+std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes();
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode,

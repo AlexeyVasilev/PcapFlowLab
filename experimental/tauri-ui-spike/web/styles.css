@@ -1127,13 +1127,51 @@ body.is-resizing-vertical {
 
 .flows-toolbar {
   display: flex;
-  align-items: end;
+  align-items: stretch;
   gap: 8px;
   flex-wrap: wrap;
 }
 
+.flows-filter-mode-slot {
+  display: flex;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.flow-filter-mode-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.flow-filter-mode-toolbar[hidden] {
+  display: none !important;
+}
+
 .flow-filter-input {
   flex: 1 1 320px;
+}
+
+.flow-filter-summary {
+  flex: 1 1 240px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.flow-filter-summary-text {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .flow-wireshark-row {

@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterQueryResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -73,6 +73,13 @@ extern "C" {
         mode: c_uchar,
         node_id: u64,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_query_advanced_flows_text_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+        candidate_flow_indices: *const usize,
+        candidate_flow_index_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_advanced_flow_filter_max_file_bytes() -> usize;
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         mode: c_uchar,
@@ -352,6 +359,34 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<Vec<usize>>(json)
+    }
+
+    pub fn query_advanced_flows_text(
+        &self,
+        filter_text: &str,
+        candidate_flow_indices: Option<&[usize]>,
+    ) -> Result<AdvancedFlowFilterQueryResultDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        let candidate_ptr = candidate_flow_indices
+            .map(|indices| indices.as_ptr())
+            .unwrap_or(std::ptr::null());
+        let candidate_count = candidate_flow_indices
+            .map(|indices| indices.len())
+            .unwrap_or(0);
+        let json = unsafe {
+            pfl_frontend_session_adapter_query_advanced_flows_text_json(
+                self.handle,
+                filter_text.as_ptr(),
+                candidate_ptr,
+                candidate_count,
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterQueryResultDto>(json)
+    }
+
+    pub fn advanced_flow_filter_max_file_bytes() -> usize {
+        unsafe { pfl_frontend_advanced_flow_filter_max_file_bytes() }
     }
 
     pub fn update_settings(

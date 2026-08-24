@@ -3004,6 +3004,41 @@ FrontendAdvancedFlowQueryResult FrontendSessionAdapter::query_advanced_flows(
     return FrontendAdvancedFlowQueryResult {};
 }
 
+FrontendAdvancedFlowQueryResult FrontendSessionAdapter::query_advanced_flows_text(
+    const std::string_view filter_text,
+    const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
+    const std::optional<session_detail::FlowQuerySortSpec> sort,
+    const std::optional<std::size_t> limit
+) const {
+    const auto parse_result = session_detail::parse_advanced_flow_filter_text(filter_text);
+    if (parse_result.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+        FrontendAdvancedFlowQueryResult result {};
+        result.status = FrontendAdvancedFlowQueryStatus::invalid_filter_text;
+        result.parse_status = parse_result.status;
+        if (parse_result.issue.has_value()) {
+            result.parse_issue = FrontendAdvancedFlowTextParseIssue {
+                .status = parse_result.issue->status,
+                .line = parse_result.issue->line,
+                .column = parse_result.issue->column,
+                .key = parse_result.issue->key,
+                .token = parse_result.issue->token,
+                .message = parse_result.issue->message,
+            };
+        }
+        return result;
+    }
+
+    const auto configured_rule_count =
+        session_detail::count_configured_advanced_flow_filter_atomic_rules(parse_result.document);
+    const auto active_rule_count =
+        session_detail::count_active_advanced_flow_filter_atomic_rules(parse_result.document);
+    const auto effective_spec = session_detail::make_effective_advanced_flow_filter_spec(parse_result.document);
+    auto result = query_advanced_flows(effective_spec, candidate_flow_indices, sort, limit);
+    result.configured_rule_count = configured_rule_count;
+    result.active_rule_count = active_rule_count;
+    return result;
+}
+
 std::optional<FlowRow> FrontendSessionAdapter::flow_row(const std::size_t flow_index) const {
     return session_.flow_row(flow_index);
 }

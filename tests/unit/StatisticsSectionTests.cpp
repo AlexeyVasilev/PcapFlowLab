@@ -34,6 +34,32 @@ std::string read_text_file(const std::filesystem::path& path) {
     return std::string(std::istreambuf_iterator<char> {stream}, std::istreambuf_iterator<char> {});
 }
 
+std::string utf8_path_string(const std::filesystem::path& path) {
+#if defined(__cpp_char8_t)
+    const auto utf8 = path.u8string();
+    std::string result {};
+    result.reserve(utf8.size());
+    for (const auto ch : utf8) {
+        result.push_back(static_cast<char>(ch));
+    }
+    return result;
+#else
+    return path.u8string();
+#endif
+}
+
+std::filesystem::path write_temp_capture_file(
+    const std::filesystem::path& file_name,
+    const std::vector<std::uint8_t>& bytes
+) {
+    const auto path = std::filesystem::temp_directory_path() / file_name;
+    std::ofstream stream {path, std::ios::binary | std::ios::trunc};
+    PFL_REQUIRE(stream.is_open());
+    stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    PFL_REQUIRE(stream.good());
+    return path;
+}
+
 struct HistogramInputConnections {
     std::vector<ConnectionV4> storage {};
     std::vector<session_detail::ListedConnectionRef> refs {};
@@ -1109,14 +1135,15 @@ void expect_protocol_path_tree_bridge_export_contract() {
     );
     PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
 
-    const auto output_path = std::filesystem::temp_directory_path() / "pfl_protocol_path_tree_bridge.txt";
+    const auto output_path = std::filesystem::temp_directory_path() / L"pfl_protocol_path_tree_bridge_тест.txt";
     std::filesystem::remove(output_path);
+    const auto output_path_utf8 = utf8_path_string(output_path);
     const auto export_json = take_bridge_string(
-        pfl_frontend_session_adapter_export_protocol_path_tree_json(handle, 2U, output_path.string().c_str())
+        pfl_frontend_session_adapter_export_protocol_path_tree_json(handle, 2U, output_path_utf8.c_str())
     );
     PFL_EXPECT(contains_text(export_json, "\"exported\":true"));
-    PFL_EXPECT(contains_text(export_json, output_path.string()));
     PFL_EXPECT(contains_text(export_json, "\"error_text\":\"\""));
+    PFL_EXPECT(std::filesystem::exists(output_path));
 
     const auto text = read_text_file(output_path);
     PFL_EXPECT(contains_text(text, "Protocol Path Tree\n"));
@@ -1126,6 +1153,85 @@ void expect_protocol_path_tree_bridge_export_contract() {
         text,
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
     PFL_EXPECT(text.find('\t') == std::string::npos);
+
+    pfl_frontend_session_adapter_free(handle);
+}
+
+void expect_advanced_flow_filter_text_query_bridge_contract() {
+    auto* handle = pfl_frontend_session_adapter_new();
+    PFL_REQUIRE(handle != nullptr);
+
+    const auto capture_path = write_temp_capture_file(
+        "pfl_bridge_advanced_flow_filter_query.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 95, 0, 1), ipv4(10, 95, 0, 2), 51001, 80)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 95, 0, 3), ipv4(10, 95, 0, 4), 53000, 53)},
+            {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                54000,
+                443
+            )},
+        })
+    );
+    const auto open_json = take_bridge_string(
+        pfl_frontend_session_adapter_open_capture_json(handle, capture_path.string().c_str())
+    );
+    PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
+
+    const auto ok_json = take_bridge_string(
+        pfl_frontend_session_adapter_query_advanced_flows_text_json(
+            handle,
+            "format_version = 2\nflow_protocol.include = udp\n",
+            nullptr,
+            0U
+        )
+    );
+    PFL_EXPECT(contains_text(ok_json, "\"status\":\"ok\""));
+    PFL_EXPECT(contains_text(ok_json, "\"configured_rule_count\":1"));
+    PFL_EXPECT(contains_text(ok_json, "\"active_rule_count\":1"));
+    PFL_EXPECT(contains_text(ok_json, "\"matching_flow_indices\":[1,2]"));
+    PFL_EXPECT(contains_text(ok_json, "\"error_text\":\"\""));
+
+    const std::size_t scoped_candidates[] {2U};
+    const auto scoped_json = take_bridge_string(
+        pfl_frontend_session_adapter_query_advanced_flows_text_json(
+            handle,
+            "format_version = 2\nflow_protocol.include = udp\n",
+            scoped_candidates,
+            1U
+        )
+    );
+    PFL_EXPECT(contains_text(scoped_json, "\"status\":\"ok\""));
+    PFL_EXPECT(contains_text(scoped_json, "\"matching_flow_indices\":[2]"));
+    PFL_EXPECT(contains_text(scoped_json, "\"result_count_before_limit\":1"));
+
+    const auto disabled_json = take_bridge_string(
+        pfl_frontend_session_adapter_query_advanced_flows_text_json(
+            handle,
+            "format_version = 2\nsection.flow_protocol.enabled = false\nflow_protocol.include = udp\n",
+            nullptr,
+            0U
+        )
+    );
+    PFL_EXPECT(contains_text(disabled_json, "\"status\":\"ok\""));
+    PFL_EXPECT(contains_text(disabled_json, "\"configured_rule_count\":1"));
+    PFL_EXPECT(contains_text(disabled_json, "\"active_rule_count\":0"));
+    PFL_EXPECT(contains_text(disabled_json, "\"matching_flow_indices\":[0,1,2]"));
+
+    const auto invalid_json = take_bridge_string(
+        pfl_frontend_session_adapter_query_advanced_flows_text_json(
+            handle,
+            "format_version = 2\nflow_protocol.include = tcpish\n",
+            nullptr,
+            0U
+        )
+    );
+    PFL_EXPECT(contains_text(invalid_json, "\"status\":\"invalid_filter_text\""));
+    PFL_EXPECT(contains_text(invalid_json, "\"parse_status\":\"invalid_enum_token\""));
+    PFL_EXPECT(contains_text(invalid_json, "\"line\":2"));
+    PFL_EXPECT(contains_text(invalid_json, "\"key\":\"flow_protocol.include\""));
+    PFL_EXPECT(contains_text(invalid_json, "\"token\":\"tcpish\""));
 
     pfl_frontend_session_adapter_free(handle);
 }
@@ -1156,6 +1262,7 @@ void run_statistics_section_tests() {
     expect_quic_tls_section_keeps_one_empty_side();
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();
+    expect_advanced_flow_filter_text_query_bridge_contract();
     expect_protocol_path_tree_bridge_export_contract();
 }
 

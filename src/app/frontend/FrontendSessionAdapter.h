@@ -12,6 +12,7 @@
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/AdvancedFlowFilter.h"
+#include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/CaptureSession.h"
 #include "../../../core/open_context.h"
 
@@ -19,15 +20,33 @@ namespace pfl {
 
 enum class FrontendAdvancedFlowQueryStatus : std::uint8_t {
     ok = 0,
+    invalid_filter_text,
     invalid_flow_index,
     invalid_limit,
     invalid_advanced_filter,
+};
+
+struct FrontendAdvancedFlowTextParseIssue {
+    session_detail::AdvancedFlowFilterTextParseStatus status {
+        session_detail::AdvancedFlowFilterTextParseStatus::ok
+    };
+    std::size_t line {0U};
+    std::optional<std::size_t> column {};
+    std::string key {};
+    std::string token {};
+    std::string message {};
 };
 
 struct FrontendAdvancedFlowQueryResult {
     FrontendAdvancedFlowQueryStatus status {FrontendAdvancedFlowQueryStatus::ok};
     std::vector<std::size_t> ordered_flow_indices {};
     std::size_t result_count_before_limit {0U};
+    std::size_t configured_rule_count {0U};
+    std::size_t active_rule_count {0U};
+    session_detail::AdvancedFlowFilterTextParseStatus parse_status {
+        session_detail::AdvancedFlowFilterTextParseStatus::ok
+    };
+    std::optional<FrontendAdvancedFlowTextParseIssue> parse_issue {};
     std::optional<std::size_t> invalid_flow_index {};
     session_detail::AdvancedFlowFilterCompileStatus compile_status {
         session_detail::AdvancedFlowFilterCompileStatus::ok
@@ -171,6 +190,12 @@ public:
     [[nodiscard]] session_detail::FlowQueryResult query_flows(const session_detail::FlowQuery& query) const;
     [[nodiscard]] FrontendAdvancedFlowQueryResult query_advanced_flows(
         const session_detail::AdvancedFlowFilterSpec& filter_spec,
+        const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
+        std::optional<session_detail::FlowQuerySortSpec> sort,
+        std::optional<std::size_t> limit
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowQueryResult query_advanced_flows_text(
+        std::string_view filter_text,
         const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
         std::optional<session_detail::FlowQuerySortSpec> sort,
         std::optional<std::size_t> limit

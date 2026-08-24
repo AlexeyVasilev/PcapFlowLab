@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <span>
 #include <string>
@@ -8,6 +9,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/CaptureSession.h"
@@ -450,6 +452,18 @@ std::string require_format_success(const session_detail::AdvancedFlowFilterDocum
     const auto result = session_detail::format_advanced_flow_filter_text(document);
     PFL_REQUIRE(result.status == AdvancedFlowFilterTextFormatStatus::ok);
     return result.text;
+}
+
+std::filesystem::path write_temp_capture_file(
+    const std::filesystem::path& file_name,
+    const std::vector<std::uint8_t>& bytes
+) {
+    const auto path = std::filesystem::temp_directory_path() / file_name;
+    std::ofstream stream {path, std::ios::binary | std::ios::trunc};
+    PFL_REQUIRE(stream.is_open());
+    stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    PFL_REQUIRE(stream.good());
+    return path;
 }
 
 void expect_parse_status(
@@ -2503,6 +2517,109 @@ void run_metadata_only_evaluation_tests() {
     expect_indices_equal(result.matching_flow_indices, {0U});
 }
 
+void run_frontend_text_query_tests() {
+    ScopedTestContext context {"advanced_flow_filter/frontend_text_query"};
+
+    const auto capture_path = write_temp_capture_file(
+        "pfl_advanced_flow_filter_frontend_query.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 94, 0, 1), ipv4(10, 94, 0, 2), 51001, 80)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 94, 0, 3), ipv4(10, 94, 0, 4), 53000, 53)},
+            {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                54000,
+                443
+            )},
+        })
+    );
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+
+    const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
+    const auto empty = adapter.query_advanced_flows_text("format_version = 2\n", std::nullopt, std::nullopt, std::nullopt);
+    PFL_EXPECT(empty.status == FrontendAdvancedFlowQueryStatus::ok);
+    PFL_EXPECT(empty.parse_status == AdvancedFlowFilterTextParseStatus::ok);
+    PFL_EXPECT(!empty.parse_issue.has_value());
+    PFL_EXPECT(empty.compile_status == AdvancedFlowFilterCompileStatus::ok);
+    PFL_EXPECT(!empty.compile_issue.has_value());
+    PFL_EXPECT(empty.configured_rule_count == 0U);
+    PFL_EXPECT(empty.active_rule_count == 0U);
+    PFL_EXPECT(empty.result_count_before_limit == baseline.result_count_before_limit);
+    expect_indices_equal(empty.ordered_flow_indices, baseline.ordered_flow_indices);
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n";
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
+        const auto direct = adapter.query_advanced_flows(effective, std::nullopt, std::nullopt, std::nullopt);
+        const auto from_text = adapter.query_advanced_flows_text(text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.configured_rule_count == 1U);
+        PFL_EXPECT(from_text.active_rule_count == 1U);
+        PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+        expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.flow_protocol.enabled = false\n"
+            "flow_protocol.include = udp\n";
+        const auto from_text = adapter.query_advanced_flows_text(text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.configured_rule_count == 1U);
+        PFL_EXPECT(from_text.active_rule_count == 0U);
+        expect_indices_equal(from_text.ordered_flow_indices, baseline.ordered_flow_indices);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n";
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
+        const std::vector<std::size_t> candidate_flow_indices {1U, 2U};
+        const auto direct = adapter.query_advanced_flows(effective, candidate_flow_indices, std::nullopt, std::nullopt);
+        const auto from_text = adapter.query_advanced_flows_text(text, candidate_flow_indices, std::nullopt, std::nullopt);
+        PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
+        PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+    }
+
+    {
+        const auto malformed = adapter.query_advanced_flows_text(
+            "format_version = 2\nflow_protocol.include = tcpish\n",
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(malformed.status == FrontendAdvancedFlowQueryStatus::invalid_filter_text);
+        PFL_EXPECT(malformed.parse_status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
+        PFL_REQUIRE(malformed.parse_issue.has_value());
+        PFL_EXPECT(malformed.parse_issue->line == 2U);
+        PFL_EXPECT(malformed.parse_issue->key == "flow_protocol.include");
+        PFL_EXPECT(malformed.parse_issue->token == "tcpish");
+        PFL_EXPECT(!malformed.parse_issue->message.empty());
+    }
+
+    {
+        const auto unsupported = adapter.query_advanced_flows_text(
+            "format_version = 1\n",
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(unsupported.status == FrontendAdvancedFlowQueryStatus::invalid_filter_text);
+        PFL_EXPECT(unsupported.parse_status == AdvancedFlowFilterTextParseStatus::unsupported_format_version);
+        PFL_REQUIRE(unsupported.parse_issue.has_value());
+        PFL_EXPECT(unsupported.parse_issue->line == 1U);
+    }
+}
+
 }  // namespace
 
 void run_advanced_flow_filter_tests() {
@@ -2516,6 +2633,7 @@ void run_advanced_flow_filter_tests() {
     run_index_roundtrip_tests();
     run_text_format_tests();
     run_metadata_only_evaluation_tests();
+    run_frontend_text_query_tests();
 }
 
 }  // namespace pfl::tests

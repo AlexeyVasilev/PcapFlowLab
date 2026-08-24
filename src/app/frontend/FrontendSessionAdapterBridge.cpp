@@ -177,6 +177,168 @@ std::string flow_indices_json(const std::vector<std::size_t>& flow_indices) {
     return out.str();
 }
 
+std::string optional_size_json(const std::optional<std::size_t>& value) {
+    return value.has_value() ? std::to_string(*value) : "null";
+}
+
+std::string advanced_flow_query_status_json(const pfl::FrontendAdvancedFlowQueryStatus status) {
+    switch (status) {
+    case pfl::FrontendAdvancedFlowQueryStatus::ok:
+        return json_string("ok");
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_filter_text:
+        return json_string("invalid_filter_text");
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_flow_index:
+        return json_string("invalid_flow_index");
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_limit:
+        return json_string("invalid_limit");
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_advanced_filter:
+        return json_string("invalid_advanced_filter");
+    }
+
+    return json_string("invalid_advanced_filter");
+}
+
+std::string parse_status_json(const pfl::session_detail::AdvancedFlowFilterTextParseStatus status) {
+    switch (status) {
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::ok:
+        return json_string("ok");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::missing_format_version:
+        return json_string("missing_format_version");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::duplicate_format_version:
+        return json_string("duplicate_format_version");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::unsupported_format_version:
+        return json_string("unsupported_format_version");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::malformed_assignment:
+        return json_string("malformed_assignment");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::unknown_key:
+        return json_string("unknown_key");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::duplicate_scalar_key:
+        return json_string("duplicate_scalar_key");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::invalid_value:
+        return json_string("invalid_value");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::invalid_escape:
+        return json_string("invalid_escape");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::unterminated_string:
+        return json_string("unterminated_string");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::numeric_overflow:
+        return json_string("numeric_overflow");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::invalid_enum_token:
+        return json_string("invalid_enum_token");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::invalid_ip_address:
+        return json_string("invalid_ip_address");
+    case pfl::session_detail::AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax:
+        return json_string("invalid_protocol_path_syntax");
+    }
+
+    return json_string("invalid_value");
+}
+
+std::string compile_status_json(const pfl::session_detail::AdvancedFlowFilterCompileStatus status) {
+    switch (status) {
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::ok:
+        return json_string("ok");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_numeric_range:
+        return json_string("invalid_numeric_range");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_protocol_path_predicate:
+        return json_string("invalid_protocol_path_predicate");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_address_predicate:
+        return json_string("invalid_address_predicate");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_service_predicate:
+        return json_string("invalid_service_predicate");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_directionality_predicate:
+        return json_string("invalid_directionality_predicate");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_address_family_predicate:
+        return json_string("invalid_address_family_predicate");
+    }
+
+    return json_string("invalid_advanced_filter");
+}
+
+std::string parse_issue_json(const std::optional<pfl::FrontendAdvancedFlowTextParseIssue>& issue) {
+    if (!issue.has_value()) {
+        return "null";
+    }
+
+    std::ostringstream out {};
+    out << '{'
+        << "\"status\":" << parse_status_json(issue->status) << ','
+        << "\"line\":" << issue->line << ','
+        << "\"column\":" << optional_size_json(issue->column) << ','
+        << "\"key\":" << json_string(issue->key) << ','
+        << "\"token\":" << json_string(issue->token) << ','
+        << "\"message\":" << json_string(issue->message)
+        << '}';
+    return out.str();
+}
+
+std::string compile_issue_json(const std::optional<pfl::session_detail::AdvancedFlowFilterCompileIssue>& issue) {
+    if (!issue.has_value()) {
+        return "null";
+    }
+
+    std::ostringstream out {};
+    out << '{'
+        << "\"status\":" << compile_status_json(issue->status) << ','
+        << "\"category\":" << json_string(issue->category) << ','
+        << "\"predicate_index\":" << optional_size_json(issue->predicate_index)
+        << '}';
+    return out.str();
+}
+
+std::string advanced_flow_query_error_text(const pfl::FrontendAdvancedFlowQueryResult& result) {
+    switch (result.status) {
+    case pfl::FrontendAdvancedFlowQueryStatus::ok:
+        return {};
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_filter_text:
+        if (result.parse_issue.has_value()) {
+            std::ostringstream out {};
+            out << "Line " << result.parse_issue->line;
+            if (result.parse_issue->column.has_value()) {
+                out << ':' << *result.parse_issue->column;
+            }
+            if (!result.parse_issue->message.empty()) {
+                out << ": " << result.parse_issue->message;
+            } else {
+                out << ": Advanced filter text is invalid.";
+            }
+            return out.str();
+        }
+        return "Advanced filter text is invalid.";
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_flow_index:
+        if (result.invalid_flow_index.has_value()) {
+            return "Candidate flow index is invalid: " + std::to_string(*result.invalid_flow_index) + '.';
+        }
+        return "Candidate flow index is invalid.";
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_limit:
+        return "Advanced filter limit is invalid.";
+    case pfl::FrontendAdvancedFlowQueryStatus::invalid_advanced_filter:
+        if (result.compile_issue.has_value() && !result.compile_issue->category.empty()) {
+            return "Advanced filter is invalid: " + result.compile_issue->category + '.';
+        }
+        return "Advanced filter is invalid.";
+    }
+
+    return "Advanced filter query failed.";
+}
+
+std::string advanced_flow_query_result_json(const pfl::FrontendAdvancedFlowQueryResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"status\":" << advanced_flow_query_status_json(result.status) << ','
+        << "\"matching_flow_indices\":" << flow_indices_json(result.ordered_flow_indices) << ','
+        << "\"result_count_before_limit\":" << result.result_count_before_limit << ','
+        << "\"configured_rule_count\":" << result.configured_rule_count << ','
+        << "\"active_rule_count\":" << result.active_rule_count << ','
+        << "\"parse_status\":" << parse_status_json(result.parse_status) << ','
+        << "\"parse_issue\":" << parse_issue_json(result.parse_issue) << ','
+        << "\"compile_status\":" << compile_status_json(result.compile_status) << ','
+        << "\"compile_issue\":" << compile_issue_json(result.compile_issue) << ','
+        << "\"invalid_flow_index\":" << optional_size_json(result.invalid_flow_index) << ','
+        << "\"error_text\":" << json_string(advanced_flow_query_error_text(result))
+        << '}';
+    return out.str();
+}
+
 std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& row) {
     std::ostringstream out {};
     out << '{'
@@ -1687,6 +1849,52 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     ));
 }
 
+char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const std::size_t* candidate_flow_indices,
+    const std::size_t candidate_flow_index_count
+) {
+    if (handle == nullptr || filter_text_utf8 == nullptr) {
+        return make_c_string(
+            "{\"status\":\"invalid_filter_text\",\"matching_flow_indices\":[],\"result_count_before_limit\":0,"
+            "\"configured_rule_count\":0,\"active_rule_count\":0,\"parse_status\":\"invalid_value\","
+            "\"parse_issue\":null,\"compile_status\":\"ok\",\"compile_issue\":null,\"invalid_flow_index\":null,"
+            "\"error_text\":\"Invalid advanced filter request.\"}"
+        );
+    }
+    if (candidate_flow_index_count > 0U && candidate_flow_indices == nullptr) {
+        return make_c_string(
+            "{\"status\":\"invalid_flow_index\",\"matching_flow_indices\":[],\"result_count_before_limit\":0,"
+            "\"configured_rule_count\":0,\"active_rule_count\":0,\"parse_status\":\"ok\","
+            "\"parse_issue\":null,\"compile_status\":\"ok\",\"compile_issue\":null,\"invalid_flow_index\":null,"
+            "\"error_text\":\"Invalid advanced filter request.\"}"
+        );
+    }
+
+    std::optional<std::vector<std::size_t>> candidate_indices {};
+    if (candidate_flow_indices != nullptr) {
+        candidate_indices = std::vector<std::size_t> {};
+        candidate_indices->reserve(candidate_flow_index_count);
+        for (std::size_t index = 0; index < candidate_flow_index_count; ++index) {
+            candidate_indices->push_back(candidate_flow_indices[index]);
+        }
+    }
+
+    return make_c_string(advanced_flow_query_result_json(
+        handle->adapter.query_advanced_flows_text(
+            std::string_view {filter_text_utf8},
+            candidate_indices,
+            std::nullopt,
+            std::nullopt
+        )
+    ));
+}
+
+std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes() {
+    return pfl::session_detail::kAdvancedFlowFilterMaxFileBytes;
+}
+
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint8_t mode,
@@ -1701,7 +1909,7 @@ char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
         : (mode == 2U
             ? pfl::ProtocolPathStatisticsMode::terminal_paths
             : pfl::ProtocolPathStatisticsMode::kind_overview);
-    const std::filesystem::path path {std::string {path_utf8}};
+    const auto path = path_from_utf8(path_utf8);
     return make_c_string(export_protocol_path_tree_result_json(
         handle->adapter.export_protocol_path_tree(statistics_mode, path)
     ));
