@@ -5157,6 +5157,10 @@ int main(int argc, char* argv[]) {
             auto* editor = controller.advancedFlowFilterEditor();
             return editor != nullptr && editor->property("draftClearAllAvailable").toBool();
         };
+        const auto has_unsynchronized_buffered_changes = [](MainController& controller) {
+            auto* editor = controller.advancedFlowFilterEditor();
+            return editor != nullptr && editor->property("hasUnsynchronizedBufferedChanges").toBool();
+        };
 
         MainController clear_controller {};
         UI_EXPECT(open_capture_and_wait(app, clear_controller, clear_capture_path));
@@ -5305,9 +5309,27 @@ int main(int argc, char* argv[]) {
         file_backed_controller.addAdvancedFlowFilterPortRow(false);
         file_backed_controller.setAdvancedFlowFilterPortRowRangeEnabled(false, 0, true);
         file_backed_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("8000"));
+        UI_EXPECT(draft_clear_unsaved_available(file_backed_controller));
+        UI_EXPECT(draft_clear_all_available(file_backed_controller));
+        UI_EXPECT(has_unsynchronized_buffered_changes(file_backed_controller));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed *"));
+        bool unsynchronized_clear_prompt_invoked = false;
+        file_backed_controller.setAdvancedFlowFilterClearDecisionForTests([&](const bool file_backed_dirty) {
+            unsynchronized_clear_prompt_invoked = true;
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterClearDecision::cancel;
+        });
+        file_backed_controller.clearAdvancedFlowFilter();
+        UI_EXPECT(unsynchronized_clear_prompt_invoked);
+        UI_EXPECT(file_backed_controller.advancedFlowFilterPortRows(false).size() == 1);
+        UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
         file_backed_controller.clearAdvancedFlowFilterUnsavedChanges();
         UI_EXPECT(file_backed_controller.advancedFlowFilterPortRows(false).isEmpty());
         UI_EXPECT(file_backed_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(!draft_clear_unsaved_available(file_backed_controller));
+        UI_EXPECT(draft_clear_all_available(file_backed_controller));
+        UI_EXPECT(!has_unsynchronized_buffered_changes(file_backed_controller));
+        UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("pfl_ui_clear_file_backed"));
         UI_EXPECT(file_backed_flow_model->visibleFlowCount() == 1);
 
         file_backed_controller.beginAdvancedFlowFilterEdit();
@@ -5446,6 +5468,66 @@ int main(int argc, char* argv[]) {
         file_backed_controller.cancelAdvancedFlowFilterEdit();
         UI_EXPECT(file_backed_controller.advancedFlowFilterDisplayName() == QStringLiteral("Custom filter"));
         UI_EXPECT(file_backed_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+
+        MainController unsynchronized_open_controller {};
+        UI_EXPECT(open_capture_and_wait(app, unsynchronized_open_controller, clear_capture_path));
+        auto* unsynchronized_open_flow_model = qobject_cast<FlowListModel*>(unsynchronized_open_controller.flowModel());
+        UI_REQUIRE(unsynchronized_open_flow_model != nullptr);
+        unsynchronized_open_controller.useAdvancedFlowFilter();
+        unsynchronized_open_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(file_backed_path.wstring());
+        });
+        unsynchronized_open_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(unsynchronized_open_controller.advancedFlowFilterDisplayName()
+            == QStringLiteral("pfl_ui_clear_file_backed"));
+        UI_EXPECT(unsynchronized_open_flow_model->visibleFlowCount() == 2);
+        unsynchronized_open_controller.beginAdvancedFlowFilterEdit();
+        unsynchronized_open_controller.addAdvancedFlowFilterPortRow(false);
+        unsynchronized_open_controller.setAdvancedFlowFilterPortRowRangeEnabled(false, 0, true);
+        unsynchronized_open_controller.setAdvancedFlowFilterPortRowPrimaryText(false, 0, QStringLiteral("7000"));
+        UI_EXPECT(draft_clear_unsaved_available(unsynchronized_open_controller));
+        UI_EXPECT(draft_clear_all_available(unsynchronized_open_controller));
+        UI_EXPECT(has_unsynchronized_buffered_changes(unsynchronized_open_controller));
+        UI_EXPECT(unsynchronized_open_controller.advancedFlowFilterDisplayName()
+            == QStringLiteral("pfl_ui_clear_file_backed *"));
+
+        bool unsynchronized_open_prompt_invoked = false;
+        const auto unsynchronized_open_target_path = write_temp_advanced_filter_document(
+            "pfl_ui_unsynchronized_open_target.filter",
+            make_address_family_advanced_document(FlowAddressFamily::ipv6)
+        );
+        unsynchronized_open_controller.setAdvancedFlowFilterUnsavedOpenDecisionForTests([&](const bool file_backed_dirty) {
+            unsynchronized_open_prompt_invoked = true;
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterOpenUnsavedDecision::save_and_open;
+        });
+        unsynchronized_open_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
+            return QString::fromStdWString(unsynchronized_open_target_path.wstring());
+        });
+        unsynchronized_open_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(unsynchronized_open_prompt_invoked);
+        UI_EXPECT(unsynchronized_open_controller.advancedFlowFilterDisplayName()
+            == QStringLiteral("pfl_ui_clear_file_backed *"));
+        UI_EXPECT(unsynchronized_open_controller.advancedFlowFilterEditorValidationText().contains(
+            QStringLiteral("Range rules require both From and To values")));
+        UI_REQUIRE(unsynchronized_open_controller.advancedFlowFilterPortRows(false).size() == 1);
+        UI_EXPECT(advanced_filter_row_at(unsynchronized_open_controller.advancedFlowFilterPortRows(false), 0)
+            .value(QStringLiteral("primaryText")).toString() == QStringLiteral("7000"));
+        UI_EXPECT(advanced_filter_row_at(unsynchronized_open_controller.advancedFlowFilterPortRows(false), 0)
+            .value(QStringLiteral("secondaryText")).toString().isEmpty());
+        UI_EXPECT(unsynchronized_open_flow_model->visibleFlowCount() == 2);
+
+        unsynchronized_open_controller.setAdvancedFlowFilterUnsavedOpenDecisionForTests([&](const bool file_backed_dirty) {
+            UI_EXPECT(file_backed_dirty);
+            return MainController::AdvancedFlowFilterOpenUnsavedDecision::discard_and_open;
+        });
+        unsynchronized_open_controller.openAdvancedFlowFilterFile();
+        UI_EXPECT(unsynchronized_open_controller.advancedFlowFilterDisplayName()
+            == QStringLiteral("pfl_ui_unsynchronized_open_target"));
+        UI_EXPECT(unsynchronized_open_controller.advancedFlowFilterEditorValidationText().isEmpty());
+        UI_EXPECT(!has_unsynchronized_buffered_changes(unsynchronized_open_controller));
+        UI_EXPECT(unsynchronized_open_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_family(unsynchronized_open_flow_model, QStringLiteral("IPv6")) >= 0);
     });
 
     run_ui_section("advanced_flow_filter_settings_editor_include_exclude_and_multi_section", [&]() {

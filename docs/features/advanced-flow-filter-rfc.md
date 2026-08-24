@@ -925,7 +925,8 @@ Deferred from the initial implementation:
 - arbitrary packet-content predicates
 - unrecognized-packet filtering
 - saved filter presets as part of the capture index
-- GUI integration
+- Advanced Filter parity in Smart Export
+- Tauri Advanced Filter UI parity
 
 ## Future Saved Filter Presets
 

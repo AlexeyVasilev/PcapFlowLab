@@ -1150,11 +1150,17 @@ QString AdvancedFlowFilterEditorModel::validationText() const {
 }
 
 bool AdvancedFlowFilterEditorModel::draftClearUnsavedChangesAvailable() const noexcept {
-    return document_state_.can_clear_unsaved_changes();
+    return document_state_.saved_baseline() != nullptr &&
+        (document_state_.can_clear_unsaved_changes() || has_unsynchronized_buffered_changes_);
 }
 
 bool AdvancedFlowFilterEditorModel::draftClearAllAvailable() const noexcept {
-    return !is_default_advanced_flow_filter_document(document_state_.current_user_visible_document());
+    return has_unsynchronized_buffered_changes_ ||
+        !is_default_advanced_flow_filter_document(document_state_.current_user_visible_document());
+}
+
+bool AdvancedFlowFilterEditorModel::hasUnsynchronizedBufferedChanges() const noexcept {
+    return has_unsynchronized_buffered_changes_;
 }
 
 bool AdvancedFlowFilterEditorModel::sectionEnabled(const int section) const noexcept {
@@ -2251,6 +2257,7 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     append_contains_layer_rows(document.configured_spec.protocol_path.exclude, contains_layer_exclude_rows_);
 
     editing_initialized_ = true;
+    setHasUnsynchronizedBufferedChanges(false);
     ++document_reload_revision_;
     emit documentReloadRevisionChanged();
     clearValidationText();
@@ -2274,6 +2281,7 @@ void AdvancedFlowFilterEditorModel::clearTransientState() noexcept {
     contains_layer_include_rows_.clear();
     contains_layer_exclude_rows_.clear();
     editing_initialized_ = false;
+    setHasUnsynchronizedBufferedChanges(false);
     ++document_reload_revision_;
     emit documentReloadRevisionChanged();
     validation_text_.clear();
@@ -2281,6 +2289,12 @@ void AdvancedFlowFilterEditorModel::clearTransientState() noexcept {
 }
 
 bool AdvancedFlowFilterEditorModel::synchronizeDraftSections(QString* errorText) {
+    const bool synchronized = synchronizeDraftSectionsImpl(errorText);
+    setHasUnsynchronizedBufferedChanges(!synchronized);
+    return synchronized;
+}
+
+bool AdvancedFlowFilterEditorModel::synchronizeDraftSectionsImpl(QString* errorText) {
     auto* draft_document = document_state_.draft_document();
     if (draft_document == nullptr) {
         if (errorText != nullptr) {
@@ -2800,6 +2814,15 @@ void AdvancedFlowFilterEditorModel::ensureEditingInitialized() {
     if (document_state_.is_editing() && !editing_initialized_) {
         initializeFromCurrentDocument();
     }
+}
+
+void AdvancedFlowFilterEditorModel::setHasUnsynchronizedBufferedChanges(const bool value) noexcept {
+    if (has_unsynchronized_buffered_changes_ == value) {
+        return;
+    }
+
+    has_unsynchronized_buffered_changes_ = value;
+    emit hasUnsynchronizedBufferedChangesChanged();
 }
 
 void AdvancedFlowFilterEditorModel::clearValidationText() {

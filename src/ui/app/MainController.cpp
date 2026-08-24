@@ -3687,7 +3687,8 @@ QString MainController::advancedFlowFilterDisplayName() const {
     }
 
     QString display_name = advanced_filter_source_stem_text(*source_path);
-    if (advanced_flow_filter_document_state_.has_unsaved_changes()) {
+    if (advanced_flow_filter_document_state_.has_unsaved_changes() ||
+        advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges()) {
         display_name += QStringLiteral(" *");
     }
     return display_name;
@@ -3702,8 +3703,9 @@ bool MainController::advancedFlowFilterSettingsAvailable() const noexcept {
 }
 
 bool MainController::advancedFlowFilterClearAvailable() const noexcept {
-    return !is_default_advanced_flow_filter_document(
-        advanced_flow_filter_document_state_.current_user_visible_document());
+    return advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges() ||
+        !is_default_advanced_flow_filter_document(
+            advanced_flow_filter_document_state_.current_user_visible_document());
 }
 
 int MainController::advancedFlowFilterEditorRevision() const noexcept {
@@ -4740,10 +4742,12 @@ void MainController::clearAdvancedFlowFilter() {
     }
 
     const bool editing = advanced_flow_filter_document_state_.is_editing();
+    const bool has_unsynchronized_buffered_changes =
+        advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges();
     const bool file_backed_dirty =
         advanced_flow_filter_document_state_.source_path() != nullptr &&
-        advanced_flow_filter_document_state_.has_unsaved_changes();
-    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration()) {
+        (advanced_flow_filter_document_state_.has_unsaved_changes() || has_unsynchronized_buffered_changes);
+    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration() || has_unsynchronized_buffered_changes) {
         switch (confirmAdvancedFlowFilterClear(file_backed_dirty)) {
         case AdvancedFlowFilterClearDecision::save_and_clear:
             if (!saveAdvancedFlowFilterFile()) {
@@ -4772,7 +4776,9 @@ void MainController::clearAdvancedFlowFilter() {
 }
 
 void MainController::clearAdvancedFlowFilterUnsavedChanges() {
-    if (!advanced_flow_filter_document_state_.can_clear_unsaved_changes()) {
+    if (advanced_flow_filter_document_state_.saved_baseline() == nullptr ||
+        (!advanced_flow_filter_document_state_.can_clear_unsaved_changes() &&
+         !advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges())) {
         return;
     }
 
@@ -4819,10 +4825,12 @@ bool MainController::applyAdvancedFlowFilterEdit() {
 }
 
 void MainController::openAdvancedFlowFilterFile() {
+    const bool has_unsynchronized_buffered_changes =
+        advanced_flow_filter_editor_model_.hasUnsynchronizedBufferedChanges();
     const bool file_backed_dirty =
         advanced_flow_filter_document_state_.source_path() != nullptr
-        && advanced_flow_filter_document_state_.has_unsaved_changes();
-    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration()) {
+        && (advanced_flow_filter_document_state_.has_unsaved_changes() || has_unsynchronized_buffered_changes);
+    if (advanced_flow_filter_document_state_.would_lose_unsaved_configuration() || has_unsynchronized_buffered_changes) {
         switch (confirmAdvancedFlowFilterOpenUnsaved(file_backed_dirty)) {
         case AdvancedFlowFilterOpenUnsavedDecision::save_and_open:
             if (!saveAdvancedFlowFilterFile()) {
