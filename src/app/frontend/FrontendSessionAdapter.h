@@ -174,6 +174,10 @@ public:
         const std::vector<std::string>& include_ids,
         const std::vector<std::string>& exclude_ids
     ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterStructuredDocumentResult apply_advanced_flow_filter_structured_document(
+        std::string_view filter_text,
+        const FrontendAdvancedFlowFilterStructuredDocumentDto& document
+    ) const;
     [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
 

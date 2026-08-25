@@ -374,6 +374,10 @@ body.is-resizing-vertical {
   background: var(--surface-muted);
 }
 
+.advanced-filter-section-card-wide {
+  grid-column: 1 / -1;
+}
+
 .advanced-filter-section-header {
   display: flex;
   align-items: center;
@@ -428,10 +432,73 @@ body.is-resizing-vertical {
   min-width: 0;
 }
 
+.advanced-filter-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.advanced-filter-draft-row {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.advanced-filter-draft-row-wide {
+  grid-template-columns: minmax(0, 180px) auto minmax(0, 1.3fr) minmax(0, 0.7fr) auto;
+}
+
+.advanced-filter-inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.advanced-filter-add-row-button,
+.advanced-filter-remove-row-button {
+  justify-self: start;
+}
+
 .advanced-filter-empty-copy {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.advanced-filter-inline-confirm {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+#advancedFlowFilterDiscardOpenConfirm[hidden] {
+  display: none !important;
+}
+
+.advanced-filter-inline-confirm-card {
+  width: min(520px, 100%);
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-bg);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+}
+
+.advanced-filter-inline-confirm-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.advanced-filter-inline-confirm-copy {
+  margin-bottom: 12px;
 }
 
 @media (max-width: 960px) {
@@ -446,6 +513,11 @@ body.is-resizing-vertical {
 
   .advanced-filter-settings-meta {
     flex-wrap: wrap;
+  }
+
+  .advanced-filter-draft-row,
+  .advanced-filter-draft-row-wide {
+    grid-template-columns: 1fr;
   }
 }
 

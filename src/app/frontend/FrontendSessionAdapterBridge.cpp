@@ -402,6 +402,74 @@ std::string structured_section_json(const pfl::FrontendAdvancedFlowFilterFiniteS
     return out.str();
 }
 
+std::string structured_port_row_json(const pfl::FrontendAdvancedFlowFilterPortRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"scope_id\":" << json_string(row.scope_id) << ','
+        << "\"range_enabled\":" << bool_json(row.range_enabled) << ','
+        << "\"primary_text\":" << json_string(row.primary_text) << ','
+        << "\"secondary_text\":" << json_string(row.secondary_text)
+        << '}';
+    return out.str();
+}
+
+std::string structured_port_row_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterPortRowDto>& rows) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << structured_port_row_json(rows[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_port_section_json(const pfl::FrontendAdvancedFlowFilterPortSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include\":" << structured_port_row_array_json(section.include) << ','
+        << "\"exclude\":" << structured_port_row_array_json(section.exclude)
+        << '}';
+    return out.str();
+}
+
+std::string structured_ip_row_json(const pfl::FrontendAdvancedFlowFilterIpAddressRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"scope_id\":" << json_string(row.scope_id) << ','
+        << "\"subnet_enabled\":" << bool_json(row.subnet_enabled) << ','
+        << "\"address_text\":" << json_string(row.address_text) << ','
+        << "\"prefix_text\":" << json_string(row.prefix_text)
+        << '}';
+    return out.str();
+}
+
+std::string structured_ip_row_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterIpAddressRowDto>& rows) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << structured_ip_row_json(rows[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_ip_section_json(const pfl::FrontendAdvancedFlowFilterIpAddressSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include\":" << structured_ip_row_array_json(section.include) << ','
+        << "\"exclude\":" << structured_ip_row_array_json(section.exclude)
+        << '}';
+    return out.str();
+}
+
 std::string structured_option_catalog_json(
     const pfl::FrontendAdvancedFlowFilterStructuredOptionCatalogDto& catalog
 ) {
@@ -412,7 +480,8 @@ std::string structured_option_catalog_json(
         << "\"detected_protocol\":" << finite_option_array_json(catalog.detected_protocol) << ','
         << "\"tls_version\":" << finite_option_array_json(catalog.tls_version) << ','
         << "\"quic_version\":" << finite_option_array_json(catalog.quic_version) << ','
-        << "\"directionality\":" << finite_option_array_json(catalog.directionality)
+        << "\"directionality\":" << finite_option_array_json(catalog.directionality) << ','
+        << "\"endpoint_scope\":" << finite_option_array_json(catalog.endpoint_scope)
         << '}';
     return out.str();
 }
@@ -433,6 +502,8 @@ std::string structured_document_json(
         << "\"tls_version\":" << structured_section_json(document->tls_version) << ','
         << "\"quic_version\":" << structured_section_json(document->quic_version) << ','
         << "\"directionality\":" << structured_section_json(document->directionality) << ','
+        << "\"ports\":" << structured_port_section_json(document->ports) << ','
+        << "\"ip_addresses\":" << structured_ip_section_json(document->ip_addresses) << ','
         << "\"has_unsupported_configured_sections\":" << bool_json(document->has_unsupported_configured_sections)
         << '}';
     return out.str();
@@ -450,6 +521,8 @@ std::string structured_update_issue_json(
         << "\"section_id\":" << json_string(issue->section_id) << ','
         << "\"group\":" << json_string(issue->group) << ','
         << "\"value_id\":" << json_string(issue->value_id) << ','
+        << "\"row_index\":" << optional_size_json(issue->row_index) << ','
+        << "\"field_id\":" << json_string(issue->field_id) << ','
         << "\"message\":" << json_string(issue->message)
         << '}';
     return out.str();
@@ -2087,6 +2160,212 @@ char* pfl_frontend_session_adapter_update_advanced_flow_filter_structured_sectio
             enabled != 0U,
             include_ids,
             exclude_ids
+        )
+    ));
+}
+
+char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_document_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const std::uint8_t address_family_enabled,
+    const char* const* address_family_include_ids_utf8,
+    const std::size_t address_family_include_id_count,
+    const char* const* address_family_exclude_ids_utf8,
+    const std::size_t address_family_exclude_id_count,
+    const std::uint8_t flow_protocol_enabled,
+    const char* const* flow_protocol_include_ids_utf8,
+    const std::size_t flow_protocol_include_id_count,
+    const char* const* flow_protocol_exclude_ids_utf8,
+    const std::size_t flow_protocol_exclude_id_count,
+    const std::uint8_t detected_protocol_enabled,
+    const char* const* detected_protocol_include_ids_utf8,
+    const std::size_t detected_protocol_include_id_count,
+    const char* const* detected_protocol_exclude_ids_utf8,
+    const std::size_t detected_protocol_exclude_id_count,
+    const std::uint8_t tls_version_enabled,
+    const char* const* tls_version_include_ids_utf8,
+    const std::size_t tls_version_include_id_count,
+    const char* const* tls_version_exclude_ids_utf8,
+    const std::size_t tls_version_exclude_id_count,
+    const std::uint8_t quic_version_enabled,
+    const char* const* quic_version_include_ids_utf8,
+    const std::size_t quic_version_include_id_count,
+    const char* const* quic_version_exclude_ids_utf8,
+    const std::size_t quic_version_exclude_id_count,
+    const std::uint8_t directionality_enabled,
+    const char* const* directionality_include_ids_utf8,
+    const std::size_t directionality_include_id_count,
+    const char* const* directionality_exclude_ids_utf8,
+    const std::size_t directionality_exclude_id_count,
+    const std::uint8_t ports_enabled,
+    const char* const* ports_include_scope_ids_utf8,
+    const std::uint8_t* ports_include_range_enabled,
+    const char* const* ports_include_primary_text_utf8,
+    const char* const* ports_include_secondary_text_utf8,
+    const std::size_t ports_include_count,
+    const char* const* ports_exclude_scope_ids_utf8,
+    const std::uint8_t* ports_exclude_range_enabled,
+    const char* const* ports_exclude_primary_text_utf8,
+    const char* const* ports_exclude_secondary_text_utf8,
+    const std::size_t ports_exclude_count,
+    const std::uint8_t ip_addresses_enabled,
+    const char* const* ip_include_scope_ids_utf8,
+    const std::uint8_t* ip_include_subnet_enabled,
+    const char* const* ip_include_address_text_utf8,
+    const char* const* ip_include_prefix_text_utf8,
+    const std::size_t ip_include_count,
+    const char* const* ip_exclude_scope_ids_utf8,
+    const std::uint8_t* ip_exclude_subnet_enabled,
+    const char* const* ip_exclude_address_text_utf8,
+    const char* const* ip_exclude_prefix_text_utf8,
+    const std::size_t ip_exclude_count
+) {
+    const auto invalid_request = []() {
+        pfl::FrontendAdvancedFlowFilterStructuredDocumentResult result {};
+        result.status = pfl::FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update;
+        result.error_text = "Invalid structured advanced filter update request.";
+        return make_c_string(structured_document_result_json(result));
+    };
+
+    if (handle == nullptr || filter_text_utf8 == nullptr) {
+        return invalid_request();
+    }
+
+    const auto string_array_invalid = [](const char* const* values, const std::size_t count) {
+        return count > 0U && values == nullptr;
+    };
+    if (string_array_invalid(address_family_include_ids_utf8, address_family_include_id_count) ||
+        string_array_invalid(address_family_exclude_ids_utf8, address_family_exclude_id_count) ||
+        string_array_invalid(flow_protocol_include_ids_utf8, flow_protocol_include_id_count) ||
+        string_array_invalid(flow_protocol_exclude_ids_utf8, flow_protocol_exclude_id_count) ||
+        string_array_invalid(detected_protocol_include_ids_utf8, detected_protocol_include_id_count) ||
+        string_array_invalid(detected_protocol_exclude_ids_utf8, detected_protocol_exclude_id_count) ||
+        string_array_invalid(tls_version_include_ids_utf8, tls_version_include_id_count) ||
+        string_array_invalid(tls_version_exclude_ids_utf8, tls_version_exclude_id_count) ||
+        string_array_invalid(quic_version_include_ids_utf8, quic_version_include_id_count) ||
+        string_array_invalid(quic_version_exclude_ids_utf8, quic_version_exclude_id_count) ||
+        string_array_invalid(directionality_include_ids_utf8, directionality_include_id_count) ||
+        string_array_invalid(directionality_exclude_ids_utf8, directionality_exclude_id_count) ||
+        string_array_invalid(ports_include_scope_ids_utf8, ports_include_count) ||
+        (ports_include_count > 0U && (ports_include_range_enabled == nullptr ||
+                                      ports_include_primary_text_utf8 == nullptr ||
+                                      ports_include_secondary_text_utf8 == nullptr)) ||
+        string_array_invalid(ports_exclude_scope_ids_utf8, ports_exclude_count) ||
+        (ports_exclude_count > 0U && (ports_exclude_range_enabled == nullptr ||
+                                      ports_exclude_primary_text_utf8 == nullptr ||
+                                      ports_exclude_secondary_text_utf8 == nullptr)) ||
+        string_array_invalid(ip_include_scope_ids_utf8, ip_include_count) ||
+        (ip_include_count > 0U && (ip_include_subnet_enabled == nullptr ||
+                                   ip_include_address_text_utf8 == nullptr ||
+                                   ip_include_prefix_text_utf8 == nullptr)) ||
+        string_array_invalid(ip_exclude_scope_ids_utf8, ip_exclude_count) ||
+        (ip_exclude_count > 0U && (ip_exclude_subnet_enabled == nullptr ||
+                                   ip_exclude_address_text_utf8 == nullptr ||
+                                   ip_exclude_prefix_text_utf8 == nullptr))) {
+        return invalid_request();
+    }
+
+    const auto collect_strings = [](const char* const* values, const std::size_t count) {
+        std::vector<std::string> collected {};
+        collected.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            collected.push_back(values[index] != nullptr ? std::string {values[index]} : std::string {});
+        }
+        return collected;
+    };
+
+    const auto collect_port_rows = [](
+                                       const char* const* scope_ids_utf8,
+                                       const std::uint8_t* range_enabled,
+                                       const char* const* primary_text_utf8,
+                                       const char* const* secondary_text_utf8,
+                                       const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterPortRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterPortRowDto {
+                .scope_id = scope_ids_utf8[index] != nullptr ? std::string {scope_ids_utf8[index]} : std::string {},
+                .range_enabled = range_enabled[index] != 0U,
+                .primary_text = primary_text_utf8[index] != nullptr ? std::string {primary_text_utf8[index]} : std::string {},
+                .secondary_text = secondary_text_utf8[index] != nullptr ? std::string {secondary_text_utf8[index]} : std::string {},
+            });
+        }
+        return rows;
+    };
+
+    const auto collect_ip_rows = [](
+                                     const char* const* scope_ids_utf8,
+                                     const std::uint8_t* subnet_enabled,
+                                     const char* const* address_text_utf8,
+                                     const char* const* prefix_text_utf8,
+                                     const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterIpAddressRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterIpAddressRowDto {
+                .scope_id = scope_ids_utf8[index] != nullptr ? std::string {scope_ids_utf8[index]} : std::string {},
+                .subnet_enabled = subnet_enabled[index] != 0U,
+                .address_text = address_text_utf8[index] != nullptr ? std::string {address_text_utf8[index]} : std::string {},
+                .prefix_text = prefix_text_utf8[index] != nullptr ? std::string {prefix_text_utf8[index]} : std::string {},
+            });
+        }
+        return rows;
+    };
+
+    pfl::FrontendAdvancedFlowFilterStructuredDocumentDto draft {};
+    draft.address_family.enabled = address_family_enabled != 0U;
+    draft.address_family.include = collect_strings(address_family_include_ids_utf8, address_family_include_id_count);
+    draft.address_family.exclude = collect_strings(address_family_exclude_ids_utf8, address_family_exclude_id_count);
+    draft.flow_protocol.enabled = flow_protocol_enabled != 0U;
+    draft.flow_protocol.include = collect_strings(flow_protocol_include_ids_utf8, flow_protocol_include_id_count);
+    draft.flow_protocol.exclude = collect_strings(flow_protocol_exclude_ids_utf8, flow_protocol_exclude_id_count);
+    draft.detected_protocol.enabled = detected_protocol_enabled != 0U;
+    draft.detected_protocol.include = collect_strings(detected_protocol_include_ids_utf8, detected_protocol_include_id_count);
+    draft.detected_protocol.exclude = collect_strings(detected_protocol_exclude_ids_utf8, detected_protocol_exclude_id_count);
+    draft.tls_version.enabled = tls_version_enabled != 0U;
+    draft.tls_version.include = collect_strings(tls_version_include_ids_utf8, tls_version_include_id_count);
+    draft.tls_version.exclude = collect_strings(tls_version_exclude_ids_utf8, tls_version_exclude_id_count);
+    draft.quic_version.enabled = quic_version_enabled != 0U;
+    draft.quic_version.include = collect_strings(quic_version_include_ids_utf8, quic_version_include_id_count);
+    draft.quic_version.exclude = collect_strings(quic_version_exclude_ids_utf8, quic_version_exclude_id_count);
+    draft.directionality.enabled = directionality_enabled != 0U;
+    draft.directionality.include = collect_strings(directionality_include_ids_utf8, directionality_include_id_count);
+    draft.directionality.exclude = collect_strings(directionality_exclude_ids_utf8, directionality_exclude_id_count);
+    draft.ports.enabled = ports_enabled != 0U;
+    draft.ports.include = collect_port_rows(
+        ports_include_scope_ids_utf8,
+        ports_include_range_enabled,
+        ports_include_primary_text_utf8,
+        ports_include_secondary_text_utf8,
+        ports_include_count
+    );
+    draft.ports.exclude = collect_port_rows(
+        ports_exclude_scope_ids_utf8,
+        ports_exclude_range_enabled,
+        ports_exclude_primary_text_utf8,
+        ports_exclude_secondary_text_utf8,
+        ports_exclude_count
+    );
+    draft.ip_addresses.enabled = ip_addresses_enabled != 0U;
+    draft.ip_addresses.include = collect_ip_rows(
+        ip_include_scope_ids_utf8,
+        ip_include_subnet_enabled,
+        ip_include_address_text_utf8,
+        ip_include_prefix_text_utf8,
+        ip_include_count
+    );
+    draft.ip_addresses.exclude = collect_ip_rows(
+        ip_exclude_scope_ids_utf8,
+        ip_exclude_subnet_enabled,
+        ip_exclude_address_text_utf8,
+        ip_exclude_prefix_text_utf8,
+        ip_exclude_count
+    );
+
+    return make_c_string(structured_document_result_json(
+        handle->adapter.apply_advanced_flow_filter_structured_document(
+            std::string_view {filter_text_utf8},
+            draft
         )
     ));
 }

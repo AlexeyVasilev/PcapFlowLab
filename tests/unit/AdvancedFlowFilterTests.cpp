@@ -2704,8 +2704,37 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.option_catalog.tls_version.size() == 3U);
     PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
     PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.endpoint_scope.size() == 3U);
     PFL_EXPECT(empty.configured_rule_count == 0U);
     PFL_EXPECT(empty.active_rule_count == 0U);
+    PFL_EXPECT(empty.document->ports.include.empty());
+    PFL_EXPECT(empty.document->ip_addresses.include.empty());
+
+    const auto make_port_row = [](
+                                   std::string scope_id,
+                                   const bool range_enabled,
+                                   std::string primary_text,
+                                   std::string secondary_text) {
+        return FrontendAdvancedFlowFilterPortRowDto {
+            .scope_id = std::move(scope_id),
+            .range_enabled = range_enabled,
+            .primary_text = std::move(primary_text),
+            .secondary_text = std::move(secondary_text),
+        };
+    };
+
+    const auto make_ip_row = [](
+                                 std::string scope_id,
+                                 const bool subnet_enabled,
+                                 std::string address_text,
+                                 std::string prefix_text) {
+        return FrontendAdvancedFlowFilterIpAddressRowDto {
+            .scope_id = std::move(scope_id),
+            .subnet_enabled = subnet_enabled,
+            .address_text = std::move(address_text),
+            .prefix_text = std::move(prefix_text),
+        };
+    };
 
     {
         const auto finite = adapter.parse_advanced_flow_filter_structured_document(
@@ -2721,6 +2750,44 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(finite.document->directionality.exclude == std::vector<std::string>({"bidirectional"}));
         PFL_EXPECT(finite.configured_rule_count == 2U);
         PFL_EXPECT(finite.active_rule_count == 2U);
+    }
+
+    {
+        const auto ports_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "port.either.include = 443\n"
+            "port.a.exclude = 1000-2000\n"
+        );
+        PFL_EXPECT(ports_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(ports_snapshot.document.has_value());
+        PFL_REQUIRE(ports_snapshot.document->ports.include.size() == 1U);
+        PFL_REQUIRE(ports_snapshot.document->ports.exclude.size() == 1U);
+        PFL_EXPECT(ports_snapshot.document->ports.include[0].scope_id == "either");
+        PFL_EXPECT(ports_snapshot.document->ports.include[0].range_enabled == false);
+        PFL_EXPECT(ports_snapshot.document->ports.include[0].primary_text == "443");
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].scope_id == "a");
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].range_enabled == true);
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].primary_text == "1000");
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].secondary_text == "2000");
+    }
+
+    {
+        const auto ip_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "ip.either.include = 192.0.2.10\n"
+            "ip.b.exclude = 2001:db8::/32\n"
+        );
+        PFL_EXPECT(ip_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(ip_snapshot.document.has_value());
+        PFL_REQUIRE(ip_snapshot.document->ip_addresses.include.size() == 1U);
+        PFL_REQUIRE(ip_snapshot.document->ip_addresses.exclude.size() == 1U);
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].scope_id == "either");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].subnet_enabled == false);
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].address_text == "192.0.2.10");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].scope_id == "b");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].subnet_enabled == true);
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].address_text == "2001:db8::");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].prefix_text == "32");
     }
 
     const auto expect_update_matches_direct = [&](const auto& updated) {
@@ -2739,6 +2806,12 @@ void run_frontend_structured_document_tests() {
         expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
         return reparsed.document;
     };
+
+    const auto expect_apply_matches_direct =
+        [&](const std::string_view base_text, const FrontendAdvancedFlowFilterStructuredDocumentDto& draft) {
+            const auto updated = adapter.apply_advanced_flow_filter_structured_document(base_text, draft);
+            return std::pair {updated, expect_update_matches_direct(updated)};
+        };
 
     {
         const auto no_op = adapter.update_advanced_flow_filter_structured_section(
@@ -2847,6 +2920,82 @@ void run_frontend_structured_document_tests() {
     }
 
     {
+        auto draft = *empty.document;
+        draft.ports.enabled = true;
+        draft.ports.include = {
+            make_port_row("either", false, "443", ""),
+            make_port_row("a", true, "53000", "53010"),
+        };
+        draft.ports.exclude = {
+            make_port_row("b", true, "1", "1023"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.ports.include.size() == 2U);
+        PFL_REQUIRE(reparsed.configured_spec.ports.exclude.size() == 1U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[0].range.first == 443U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[0].range.last == 443U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[1].scope == AdvancedFlowFilterPortScope::endpoint_a);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[1].range.first == 53000U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[1].range.last == 53010U);
+        PFL_EXPECT(reparsed.configured_spec.ports.exclude[0].scope == AdvancedFlowFilterPortScope::endpoint_b);
+        PFL_EXPECT(reparsed.configured_spec.ports.exclude[0].range.first == 1U);
+        PFL_EXPECT(reparsed.configured_spec.ports.exclude[0].range.last == 1023U);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ip_addresses.enabled = true;
+        draft.ip_addresses.include = {
+            make_ip_row("either", false, "192.0.2.10", ""),
+            make_ip_row("b", true, "2001:db8::", "32"),
+        };
+        draft.ip_addresses.exclude = {
+            make_ip_row("a", true, "10.0.0.0", "8"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.addresses.ipv4_include.size() == 1U);
+        PFL_REQUIRE(reparsed.configured_spec.addresses.ipv6_include.size() == 1U);
+        PFL_REQUIRE(reparsed.configured_spec.addresses.ipv4_exclude.size() == 1U);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv4_include[0].value == ipv4(192, 0, 2, 10));
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv6_include[0].scope == AdvancedFlowFilterEndpointScope::endpoint_b);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv6_include[0].prefix_length == 32U);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv4_exclude[0].scope == AdvancedFlowFilterEndpointScope::endpoint_a);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv4_exclude[0].prefix_length == 8U);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ports.enabled = true;
+        draft.ports.include = {
+            make_port_row("either", true, "443", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "ports");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "secondary_text");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ip_addresses.enabled = true;
+        draft.ip_addresses.include = {
+            make_ip_row("either", true, "192.0.2.0", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "ip_addresses");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "prefix_text");
+    }
+
+    {
         const auto disabled = adapter.update_advanced_flow_filter_structured_section(
             empty.document->canonical_text,
             "flow_protocol",
@@ -2871,7 +3020,7 @@ void run_frontend_structured_document_tests() {
     {
         const std::string text =
             "format_version = 2\n"
-            "port.either.include = 443\n"
+            "aggregate.packet_count.min = 2\n"
             "service.state.include = known\n";
         const auto updated = adapter.update_advanced_flow_filter_structured_section(
             text,
@@ -2884,14 +3033,62 @@ void run_frontend_structured_document_tests() {
         PFL_REQUIRE(updated.document.has_value());
         PFL_EXPECT(updated.document->has_unsupported_configured_sections);
         const auto reparsed = require_parse_success(updated.document->canonical_text);
-        PFL_REQUIRE(reparsed.document.configured_spec.ports.include.size() == 1U);
+        PFL_REQUIRE(reparsed.document.configured_spec.aggregate.packet_count.has_value());
         PFL_REQUIRE(reparsed.document.configured_spec.service.include.size() == 1U);
         PFL_EXPECT(reparsed.document.configured_spec.service.include.front().kind == AdvancedFlowFilterServicePredicateKind::known);
         PFL_EXPECT((reparsed.document.configured_spec.address_family.include == std::vector<FlowAddressFamily> {
             FlowAddressFamily::ipv4
         }));
-        PFL_EXPECT(updated.document->canonical_text.find("port.either.include = 443") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("aggregate.packet_count.min = 2") != std::string::npos);
         PFL_EXPECT(updated.document->canonical_text.find("service.state.include = known") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.ports.enabled = false\n"
+            "port.either.include = 443\n"
+            "port.b.exclude = 1-1023\n";
+        const auto parsed_with_ports = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_ports.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_ports.document.has_value());
+        auto draft = *parsed_with_ports.document;
+        draft.address_family.include = {"ipv4"};
+        draft.ports.include.clear();
+        draft.ports.exclude.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->ports.enabled == false);
+        PFL_REQUIRE(updated.document->ports.include.size() == 1U);
+        PFL_REQUIRE(updated.document->ports.exclude.size() == 1U);
+        PFL_EXPECT(updated.document->ports.include[0].primary_text == "443");
+        PFL_EXPECT(updated.document->canonical_text.find("port.either.include = 443") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("port.b.exclude = 1-1023") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.ip_addresses.enabled = false\n"
+            "ip.either.include = 10.0.0.0/8\n"
+            "ip.b.exclude = 2001:db8::/32\n";
+        const auto parsed_with_ips = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_ips.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_ips.document.has_value());
+        auto draft = *parsed_with_ips.document;
+        draft.flow_protocol.include = {"udp"};
+        draft.ip_addresses.include.clear();
+        draft.ip_addresses.exclude.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->ip_addresses.enabled == false);
+        PFL_REQUIRE(updated.document->ip_addresses.include.size() == 1U);
+        PFL_REQUIRE(updated.document->ip_addresses.exclude.size() == 1U);
+        PFL_EXPECT(updated.document->ip_addresses.include[0].prefix_text == "8");
+        PFL_EXPECT(updated.document->canonical_text.find("ip.either.include = 10.0.0.0/8") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("ip.b.exclude = 2001:db8::/32") != std::string::npos);
     }
 
     {

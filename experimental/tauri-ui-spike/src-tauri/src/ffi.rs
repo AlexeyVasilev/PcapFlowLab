@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -92,6 +92,62 @@ extern "C" {
         include_id_count: usize,
         exclude_ids_utf8: *const *const c_char,
         exclude_id_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_document_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+        address_family_enabled: c_uchar,
+        address_family_include_ids_utf8: *const *const c_char,
+        address_family_include_id_count: usize,
+        address_family_exclude_ids_utf8: *const *const c_char,
+        address_family_exclude_id_count: usize,
+        flow_protocol_enabled: c_uchar,
+        flow_protocol_include_ids_utf8: *const *const c_char,
+        flow_protocol_include_id_count: usize,
+        flow_protocol_exclude_ids_utf8: *const *const c_char,
+        flow_protocol_exclude_id_count: usize,
+        detected_protocol_enabled: c_uchar,
+        detected_protocol_include_ids_utf8: *const *const c_char,
+        detected_protocol_include_id_count: usize,
+        detected_protocol_exclude_ids_utf8: *const *const c_char,
+        detected_protocol_exclude_id_count: usize,
+        tls_version_enabled: c_uchar,
+        tls_version_include_ids_utf8: *const *const c_char,
+        tls_version_include_id_count: usize,
+        tls_version_exclude_ids_utf8: *const *const c_char,
+        tls_version_exclude_id_count: usize,
+        quic_version_enabled: c_uchar,
+        quic_version_include_ids_utf8: *const *const c_char,
+        quic_version_include_id_count: usize,
+        quic_version_exclude_ids_utf8: *const *const c_char,
+        quic_version_exclude_id_count: usize,
+        directionality_enabled: c_uchar,
+        directionality_include_ids_utf8: *const *const c_char,
+        directionality_include_id_count: usize,
+        directionality_exclude_ids_utf8: *const *const c_char,
+        directionality_exclude_id_count: usize,
+        ports_enabled: c_uchar,
+        ports_include_scope_ids_utf8: *const *const c_char,
+        ports_include_range_enabled: *const c_uchar,
+        ports_include_primary_text_utf8: *const *const c_char,
+        ports_include_secondary_text_utf8: *const *const c_char,
+        ports_include_count: usize,
+        ports_exclude_scope_ids_utf8: *const *const c_char,
+        ports_exclude_range_enabled: *const c_uchar,
+        ports_exclude_primary_text_utf8: *const *const c_char,
+        ports_exclude_secondary_text_utf8: *const *const c_char,
+        ports_exclude_count: usize,
+        ip_addresses_enabled: c_uchar,
+        ip_include_scope_ids_utf8: *const *const c_char,
+        ip_include_subnet_enabled: *const c_uchar,
+        ip_include_address_text_utf8: *const *const c_char,
+        ip_include_prefix_text_utf8: *const *const c_char,
+        ip_include_count: usize,
+        ip_exclude_scope_ids_utf8: *const *const c_char,
+        ip_exclude_subnet_enabled: *const c_uchar,
+        ip_exclude_address_text_utf8: *const *const c_char,
+        ip_exclude_prefix_text_utf8: *const *const c_char,
+        ip_exclude_count: usize,
     ) -> *mut c_char;
     fn pfl_frontend_advanced_flow_filter_max_file_bytes() -> usize;
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
@@ -455,6 +511,183 @@ impl CppFrontendSessionAdapter {
                 include_ptrs.len(),
                 exclude_ptrs.as_ptr(),
                 exclude_ptrs.len(),
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
+    }
+
+    pub fn apply_advanced_flow_filter_structured_document(
+        &self,
+        filter_text: &str,
+        document: &AdvancedFlowFilterStructuredDocumentDto,
+    ) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+
+        let collect_strings = |values: &[String], label: &str| -> Result<(Vec<CString>, Vec<*const c_char>), String> {
+            let cstrings = values
+                .iter()
+                .map(|value| CString::new(value.as_str()).map_err(|_| format!("{label} contains an embedded NUL byte.")))
+                .collect::<Result<Vec<_>, _>>()?;
+            let ptrs = cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            Ok((cstrings, ptrs))
+        };
+
+        let collect_port_rows = |rows: &[crate::dtos::AdvancedFlowFilterPortRowDto]| -> Result<_, String> {
+            let scope_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.scope_id.as_str()).map_err(|_| "Port scope contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let primary_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.primary_text.as_str()).map_err(|_| "Port text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let secondary_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.secondary_text.as_str()).map_err(|_| "Port text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let scope_ptrs = scope_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let primary_ptrs = primary_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let secondary_ptrs = secondary_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let range_flags = rows
+                .iter()
+                .map(|row| if row.range_enabled { 1_u8 } else { 0_u8 })
+                .collect::<Vec<_>>();
+            Ok((scope_cstrings, primary_cstrings, secondary_cstrings, scope_ptrs, primary_ptrs, secondary_ptrs, range_flags))
+        };
+
+        let collect_ip_rows = |rows: &[crate::dtos::AdvancedFlowFilterIpAddressRowDto]| -> Result<_, String> {
+            let scope_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.scope_id.as_str()).map_err(|_| "IP scope contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let address_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.address_text.as_str()).map_err(|_| "IP address text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let prefix_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.prefix_text.as_str()).map_err(|_| "IP prefix text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let scope_ptrs = scope_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let address_ptrs = address_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let prefix_ptrs = prefix_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let subnet_flags = rows
+                .iter()
+                .map(|row| if row.subnet_enabled { 1_u8 } else { 0_u8 })
+                .collect::<Vec<_>>();
+            Ok((scope_cstrings, address_cstrings, prefix_cstrings, scope_ptrs, address_ptrs, prefix_ptrs, subnet_flags))
+        };
+
+        let (address_family_include_cstrings, address_family_include_ptrs) =
+            collect_strings(&document.address_family.include, "Address-family include ID")?;
+        let (address_family_exclude_cstrings, address_family_exclude_ptrs) =
+            collect_strings(&document.address_family.exclude, "Address-family exclude ID")?;
+        let (flow_protocol_include_cstrings, flow_protocol_include_ptrs) =
+            collect_strings(&document.flow_protocol.include, "Flow-protocol include ID")?;
+        let (flow_protocol_exclude_cstrings, flow_protocol_exclude_ptrs) =
+            collect_strings(&document.flow_protocol.exclude, "Flow-protocol exclude ID")?;
+        let (detected_protocol_include_cstrings, detected_protocol_include_ptrs) =
+            collect_strings(&document.detected_protocol.include, "Detected-protocol include ID")?;
+        let (detected_protocol_exclude_cstrings, detected_protocol_exclude_ptrs) =
+            collect_strings(&document.detected_protocol.exclude, "Detected-protocol exclude ID")?;
+        let (tls_version_include_cstrings, tls_version_include_ptrs) =
+            collect_strings(&document.tls_version.include, "TLS-version include ID")?;
+        let (tls_version_exclude_cstrings, tls_version_exclude_ptrs) =
+            collect_strings(&document.tls_version.exclude, "TLS-version exclude ID")?;
+        let (quic_version_include_cstrings, quic_version_include_ptrs) =
+            collect_strings(&document.quic_version.include, "QUIC-version include ID")?;
+        let (quic_version_exclude_cstrings, quic_version_exclude_ptrs) =
+            collect_strings(&document.quic_version.exclude, "QUIC-version exclude ID")?;
+        let (directionality_include_cstrings, directionality_include_ptrs) =
+            collect_strings(&document.directionality.include, "Directionality include ID")?;
+        let (directionality_exclude_cstrings, directionality_exclude_ptrs) =
+            collect_strings(&document.directionality.exclude, "Directionality exclude ID")?;
+
+        let (_ports_include_scope_cstrings, _ports_include_primary_cstrings, _ports_include_secondary_cstrings,
+            ports_include_scope_ptrs, ports_include_primary_ptrs, ports_include_secondary_ptrs, ports_include_range_flags) =
+            collect_port_rows(&document.ports.include)?;
+        let (_ports_exclude_scope_cstrings, _ports_exclude_primary_cstrings, _ports_exclude_secondary_cstrings,
+            ports_exclude_scope_ptrs, ports_exclude_primary_ptrs, ports_exclude_secondary_ptrs, ports_exclude_range_flags) =
+            collect_port_rows(&document.ports.exclude)?;
+        let (_ip_include_scope_cstrings, _ip_include_address_cstrings, _ip_include_prefix_cstrings,
+            ip_include_scope_ptrs, ip_include_address_ptrs, ip_include_prefix_ptrs, ip_include_subnet_flags) =
+            collect_ip_rows(&document.ip_addresses.include)?;
+        let (_ip_exclude_scope_cstrings, _ip_exclude_address_cstrings, _ip_exclude_prefix_cstrings,
+            ip_exclude_scope_ptrs, ip_exclude_address_ptrs, ip_exclude_prefix_ptrs, ip_exclude_subnet_flags) =
+            collect_ip_rows(&document.ip_addresses.exclude)?;
+
+        let _keep_alive = (
+            address_family_include_cstrings,
+            address_family_exclude_cstrings,
+            flow_protocol_include_cstrings,
+            flow_protocol_exclude_cstrings,
+            detected_protocol_include_cstrings,
+            detected_protocol_exclude_cstrings,
+            tls_version_include_cstrings,
+            tls_version_exclude_cstrings,
+            quic_version_include_cstrings,
+            quic_version_exclude_cstrings,
+            directionality_include_cstrings,
+            directionality_exclude_cstrings,
+        );
+
+        let json = unsafe {
+            pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_document_json(
+                self.handle,
+                filter_text.as_ptr(),
+                if document.address_family.enabled { 1 } else { 0 },
+                address_family_include_ptrs.as_ptr(),
+                address_family_include_ptrs.len(),
+                address_family_exclude_ptrs.as_ptr(),
+                address_family_exclude_ptrs.len(),
+                if document.flow_protocol.enabled { 1 } else { 0 },
+                flow_protocol_include_ptrs.as_ptr(),
+                flow_protocol_include_ptrs.len(),
+                flow_protocol_exclude_ptrs.as_ptr(),
+                flow_protocol_exclude_ptrs.len(),
+                if document.detected_protocol.enabled { 1 } else { 0 },
+                detected_protocol_include_ptrs.as_ptr(),
+                detected_protocol_include_ptrs.len(),
+                detected_protocol_exclude_ptrs.as_ptr(),
+                detected_protocol_exclude_ptrs.len(),
+                if document.tls_version.enabled { 1 } else { 0 },
+                tls_version_include_ptrs.as_ptr(),
+                tls_version_include_ptrs.len(),
+                tls_version_exclude_ptrs.as_ptr(),
+                tls_version_exclude_ptrs.len(),
+                if document.quic_version.enabled { 1 } else { 0 },
+                quic_version_include_ptrs.as_ptr(),
+                quic_version_include_ptrs.len(),
+                quic_version_exclude_ptrs.as_ptr(),
+                quic_version_exclude_ptrs.len(),
+                if document.directionality.enabled { 1 } else { 0 },
+                directionality_include_ptrs.as_ptr(),
+                directionality_include_ptrs.len(),
+                directionality_exclude_ptrs.as_ptr(),
+                directionality_exclude_ptrs.len(),
+                if document.ports.enabled { 1 } else { 0 },
+                ports_include_scope_ptrs.as_ptr(),
+                ports_include_range_flags.as_ptr(),
+                ports_include_primary_ptrs.as_ptr(),
+                ports_include_secondary_ptrs.as_ptr(),
+                ports_include_scope_ptrs.len(),
+                ports_exclude_scope_ptrs.as_ptr(),
+                ports_exclude_range_flags.as_ptr(),
+                ports_exclude_primary_ptrs.as_ptr(),
+                ports_exclude_secondary_ptrs.as_ptr(),
+                ports_exclude_scope_ptrs.len(),
+                if document.ip_addresses.enabled { 1 } else { 0 },
+                ip_include_scope_ptrs.as_ptr(),
+                ip_include_subnet_flags.as_ptr(),
+                ip_include_address_ptrs.as_ptr(),
+                ip_include_prefix_ptrs.as_ptr(),
+                ip_include_scope_ptrs.len(),
+                ip_exclude_scope_ptrs.as_ptr(),
+                ip_exclude_subnet_flags.as_ptr(),
+                ip_exclude_address_ptrs.as_ptr(),
+                ip_exclude_prefix_ptrs.as_ptr(),
+                ip_exclude_scope_ptrs.len(),
             )
         };
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)

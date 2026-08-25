@@ -75,6 +75,7 @@
       loading: false,
       applying: false,
       updating: false,
+      workflowState: "idle",
       requestToken: 0,
       document: null,
       optionCatalog: null,
@@ -83,6 +84,10 @@
       sourcePath: "",
       displayName: "Custom filter",
       sourceCanonicalText: "",
+      draftBaselineSnapshot: "",
+      structureRevision: 0,
+      renderedStructureKey: "",
+      pendingOpenCandidate: null,
       statusText: "",
       statusKind: "neutral",
     };
@@ -332,6 +337,11 @@
     return text.length > 0 ? text : defaultAdvancedFlowFilterText();
   }
 
+  function currentAdvancedFlowFilterSettingsBaseText() {
+    const settingsText = String(state.advancedFlowFilterSettings?.sourceCanonicalText || "");
+    return settingsText.length > 0 ? settingsText : currentAdvancedFlowFilterDocumentText();
+  }
+
   function currentAdvancedFlowFilterSettingsBusy() {
     return Boolean(
       state.advancedFlowFilterSettings.loading
@@ -365,9 +375,314 @@
         return document.quic_version || null;
       case "directionality":
         return document.directionality || null;
+      case "ports":
+        return document.ports || null;
+      case "ip_addresses":
+        return document.ip_addresses || null;
       default:
         return null;
     }
+  }
+
+  function advancedFlowFilterSectionTitle(sectionId) {
+    switch (sectionId) {
+      case "address_family":
+        return "Address Family";
+      case "flow_protocol":
+        return "Flow Protocol";
+      case "detected_protocol":
+        return "Detected Protocol";
+      case "tls_version":
+        return "TLS Version";
+      case "quic_version":
+        return "QUIC Version";
+      case "directionality":
+        return "Observed directions";
+      case "ports":
+        return "Ports";
+      case "ip_addresses":
+        return "IP addresses";
+      default:
+        return sectionId;
+    }
+  }
+
+  function advancedFlowFilterFieldLabel(fieldId) {
+    switch (fieldId) {
+      case "scope_id":
+        return "scope";
+      case "primary_text":
+        return "primary value";
+      case "secondary_text":
+        return "secondary value";
+      case "address_text":
+        return "address";
+      case "prefix_text":
+        return "prefix";
+      default:
+        return "";
+    }
+  }
+
+  function advancedFlowFilterStructuredUpdateIssueText(issue) {
+    if (!issue || typeof issue !== "object") {
+      return "Failed to apply the structured Advanced Filter draft.";
+    }
+    const sectionText = advancedFlowFilterSectionTitle(String(issue.section_id || ""));
+    const group = String(issue.group || "");
+    const groupText = group ? `${group} ` : "";
+    const rowIndex = Number.isInteger(issue.row_index) ? Number(issue.row_index) + 1 : null;
+    const rowText = rowIndex !== null ? `row ${rowIndex}` : "";
+    const fieldLabel = advancedFlowFilterFieldLabel(String(issue.field_id || ""));
+    const fieldText = fieldLabel ? ` (${fieldLabel})` : "";
+    const prefix = [sectionText, `${groupText}${rowText}`.trim()].filter((value) => value && value.trim().length > 0).join(" ");
+    const message = String(issue.message || "Failed to apply the structured Advanced Filter draft.");
+    return prefix ? `${prefix}${fieldText}: ${message}` : message;
+  }
+
+  function makeAdvancedFlowFilterPortRow() {
+    return {
+      scope_id: "either",
+      range_enabled: false,
+      primary_text: "",
+      secondary_text: "",
+    };
+  }
+
+  function makeAdvancedFlowFilterIpAddressRow() {
+    return {
+      scope_id: "either",
+      subnet_enabled: false,
+      address_text: "",
+      prefix_text: "",
+    };
+  }
+
+  function cloneAdvancedFlowFilterValue(value) {
+    if (value === null || value === undefined) {
+      return value;
+    }
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizeAdvancedFlowFilterFiniteSection(section) {
+    const include = Array.isArray(section?.include)
+      ? section.include.map((value) => String(value))
+      : [];
+    const exclude = Array.isArray(section?.exclude)
+      ? section.exclude.map((value) => String(value))
+      : [];
+    return {
+      ...(section && typeof section === "object" ? section : {}),
+      enabled: section?.enabled === undefined ? true : Boolean(section.enabled),
+      include,
+      exclude,
+    };
+  }
+
+  function normalizeAdvancedFlowFilterPortRows(rows) {
+    return Array.isArray(rows)
+      ? rows.map((row) => ({
+        ...makeAdvancedFlowFilterPortRow(),
+        ...(row && typeof row === "object" ? row : {}),
+        scope_id: String(row?.scope_id || "either"),
+        range_enabled: Boolean(row?.range_enabled),
+        primary_text: String(row?.primary_text || ""),
+        secondary_text: String(row?.secondary_text || ""),
+      }))
+      : [];
+  }
+
+  function normalizeAdvancedFlowFilterIpAddressRows(rows) {
+    return Array.isArray(rows)
+      ? rows.map((row) => ({
+        ...makeAdvancedFlowFilterIpAddressRow(),
+        ...(row && typeof row === "object" ? row : {}),
+        scope_id: String(row?.scope_id || "either"),
+        subnet_enabled: Boolean(row?.subnet_enabled),
+        address_text: String(row?.address_text || ""),
+        prefix_text: String(row?.prefix_text || ""),
+      }))
+      : [];
+  }
+
+  function normalizeAdvancedFlowFilterEditorDraftDocument(document) {
+    const sourceDocument = (document && typeof document === "object") ? document : {};
+    return {
+      ...sourceDocument,
+      address_family: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.address_family),
+      flow_protocol: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.flow_protocol),
+      detected_protocol: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.detected_protocol),
+      tls_version: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.tls_version),
+      quic_version: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.quic_version),
+      directionality: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.directionality),
+      ports: {
+        ...(sourceDocument.ports && typeof sourceDocument.ports === "object" ? sourceDocument.ports : {}),
+        enabled: sourceDocument.ports?.enabled === undefined ? true : Boolean(sourceDocument.ports.enabled),
+        include: normalizeAdvancedFlowFilterPortRows(sourceDocument.ports?.include),
+        exclude: normalizeAdvancedFlowFilterPortRows(sourceDocument.ports?.exclude),
+      },
+      ip_addresses: {
+        ...(sourceDocument.ip_addresses && typeof sourceDocument.ip_addresses === "object" ? sourceDocument.ip_addresses : {}),
+        enabled: sourceDocument.ip_addresses?.enabled === undefined ? true : Boolean(sourceDocument.ip_addresses.enabled),
+        include: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.include),
+        exclude: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.exclude),
+      },
+    };
+  }
+
+  function advancedFlowFilterFiniteSectionSnapshot(section) {
+    return {
+      enabled: Boolean(section?.enabled),
+      include: Array.isArray(section?.include)
+        ? section.include.map((value) => String(value)).sort()
+        : [],
+      exclude: Array.isArray(section?.exclude)
+        ? section.exclude.map((value) => String(value)).sort()
+        : [],
+    };
+  }
+
+  function advancedFlowFilterPortRowSnapshot(row) {
+    return {
+      scope_id: String(row?.scope_id || "either"),
+      range_enabled: Boolean(row?.range_enabled),
+      primary_text: String(row?.primary_text || ""),
+      secondary_text: String(row?.secondary_text || ""),
+    };
+  }
+
+  function advancedFlowFilterIpAddressRowSnapshot(row) {
+    return {
+      scope_id: String(row?.scope_id || "either"),
+      subnet_enabled: Boolean(row?.subnet_enabled),
+      address_text: String(row?.address_text || ""),
+      prefix_text: String(row?.prefix_text || ""),
+    };
+  }
+
+  function advancedFlowFilterSettingsDraftSnapshot(document) {
+    if (!document) {
+      return "";
+    }
+
+    return JSON.stringify({
+      address_family: advancedFlowFilterFiniteSectionSnapshot(document.address_family),
+      flow_protocol: advancedFlowFilterFiniteSectionSnapshot(document.flow_protocol),
+      detected_protocol: advancedFlowFilterFiniteSectionSnapshot(document.detected_protocol),
+      tls_version: advancedFlowFilterFiniteSectionSnapshot(document.tls_version),
+      quic_version: advancedFlowFilterFiniteSectionSnapshot(document.quic_version),
+      directionality: advancedFlowFilterFiniteSectionSnapshot(document.directionality),
+      ports: {
+        enabled: Boolean(document?.ports?.enabled),
+        include: Array.isArray(document?.ports?.include)
+          ? document.ports.include.map((row) => advancedFlowFilterPortRowSnapshot(row))
+          : [],
+        exclude: Array.isArray(document?.ports?.exclude)
+          ? document.ports.exclude.map((row) => advancedFlowFilterPortRowSnapshot(row))
+          : [],
+      },
+      ip_addresses: {
+        enabled: Boolean(document?.ip_addresses?.enabled),
+        include: Array.isArray(document?.ip_addresses?.include)
+          ? document.ip_addresses.include.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
+          : [],
+        exclude: Array.isArray(document?.ip_addresses?.exclude)
+          ? document.ip_addresses.exclude.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
+          : [],
+      },
+    });
+  }
+
+  function captureAdvancedFlowFilterSettingsDraftBaseline() {
+    state.advancedFlowFilterSettings.draftBaselineSnapshot =
+      advancedFlowFilterSettingsDraftSnapshot(state.advancedFlowFilterSettings.document);
+  }
+
+  function advancedFlowFilterSettingsDraftModified() {
+    const draft = state.advancedFlowFilterSettings.document;
+    if (!draft) {
+      return false;
+    }
+    return advancedFlowFilterSettingsDraftSnapshot(draft) !== String(state.advancedFlowFilterSettings.draftBaselineSnapshot || "");
+  }
+
+  function currentAdvancedFlowFilterSettingsWorkflowState() {
+    return String(state.advancedFlowFilterSettings.workflowState || "idle");
+  }
+
+  function advancedFlowFilterSettingsAwaitingDiscardConfirmation() {
+    return currentAdvancedFlowFilterSettingsWorkflowState() === "awaiting_discard_confirmation";
+  }
+
+  function advancedFlowFilterSettingsInteractionBlocked() {
+    return currentAdvancedFlowFilterSettingsBusy()
+      || advancedFlowFilterSettingsAwaitingDiscardConfirmation();
+  }
+
+  function installAdvancedFlowFilterSettingsDraft(payload) {
+    state.advancedFlowFilterSettings.document = payload.document;
+    state.advancedFlowFilterSettings.optionCatalog = payload.optionCatalog;
+    state.advancedFlowFilterSettings.configuredRuleCount = Number(payload.configuredRuleCount || 0);
+    state.advancedFlowFilterSettings.activeRuleCount = Number(payload.activeRuleCount || 0);
+    state.advancedFlowFilterSettings.sourcePath = String(payload.sourcePath || "");
+    state.advancedFlowFilterSettings.displayName = String(payload.displayName || "Custom filter");
+    state.advancedFlowFilterSettings.sourceCanonicalText = String(payload.sourceCanonicalText || "");
+    captureAdvancedFlowFilterSettingsDraftBaseline();
+    state.advancedFlowFilterSettings.workflowState = "idle";
+    state.advancedFlowFilterSettings.pendingOpenCandidate = null;
+    state.advancedFlowFilterSettings.structureRevision += 1;
+    state.advancedFlowFilterSettings.renderedStructureKey = "";
+  }
+
+  function prepareAdvancedFlowFilterOpenCandidate(result, fileResult, selectedPath) {
+    const clonedDocument = cloneAdvancedFlowFilterValue(result?.document);
+    const clonedOptionCatalog = cloneAdvancedFlowFilterValue(result?.option_catalog);
+    return {
+      document: normalizeAdvancedFlowFilterEditorDraftDocument(clonedDocument),
+      optionCatalog: clonedOptionCatalog || null,
+      configuredRuleCount: Number(result?.configured_rule_count || 0),
+      activeRuleCount: Number(result?.active_rule_count || 0),
+      sourcePath: String(fileResult?.path || selectedPath || ""),
+      displayName: String(fileResult?.display_name || "Custom filter"),
+      sourceCanonicalText: String(result?.document?.canonical_text || ""),
+    };
+  }
+
+  function showAdvancedFlowFilterDiscardOpenConfirm(candidate) {
+    state.advancedFlowFilterSettings.pendingOpenCandidate = candidate;
+    state.advancedFlowFilterSettings.workflowState = "awaiting_discard_confirmation";
+  }
+
+  function dismissAdvancedFlowFilterDiscardOpenConfirm() {
+    state.advancedFlowFilterSettings.pendingOpenCandidate = null;
+    if (advancedFlowFilterSettingsAwaitingDiscardConfirmation()) {
+      state.advancedFlowFilterSettings.workflowState = "idle";
+    }
+  }
+
+  function adoptAdvancedFlowFilterOpenCandidate(candidate) {
+    const preparedCandidate = candidate?.document
+      ? candidate
+      : state.advancedFlowFilterSettings.pendingOpenCandidate;
+    if (!preparedCandidate?.document) {
+      return false;
+    }
+
+    const adoptedCandidate = {
+      document: normalizeAdvancedFlowFilterEditorDraftDocument(
+        cloneAdvancedFlowFilterValue(preparedCandidate.document)
+      ),
+      optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
+      configuredRuleCount: Number(preparedCandidate.configuredRuleCount || 0),
+      activeRuleCount: Number(preparedCandidate.activeRuleCount || 0),
+      sourcePath: String(preparedCandidate.sourcePath || ""),
+      displayName: String(preparedCandidate.displayName || "Custom filter"),
+      sourceCanonicalText: String(preparedCandidate.sourceCanonicalText || ""),
+    };
+    dismissAdvancedFlowFilterDiscardOpenConfirm();
+    installAdvancedFlowFilterSettingsDraft(adoptedCandidate);
+    return true;
   }
 
   function advancedFlowFilterOptionCatalogBySectionId(optionCatalog, sectionId) {
@@ -381,22 +696,31 @@
     return Array.isArray(optionCatalog[definition.optionCatalogKey]) ? optionCatalog[definition.optionCatalogKey] : [];
   }
 
+  function advancedFlowFilterEndpointScopeOptions() {
+    const values = state.advancedFlowFilterSettings.optionCatalog?.endpoint_scope;
+    return Array.isArray(values) ? values : [];
+  }
+
   function adoptAdvancedFlowFilterStructuredResult(result, sourceInfo = {}) {
     if (String(result?.status || "") !== "ok" || !result?.document) {
       throw new Error(String(result?.error_text || "Failed to prepare the structured Advanced Filter document."));
     }
-    state.advancedFlowFilterSettings.document = result.document;
-    state.advancedFlowFilterSettings.optionCatalog = result.option_catalog || null;
-    state.advancedFlowFilterSettings.configuredRuleCount = Number(result.configured_rule_count || 0);
-    state.advancedFlowFilterSettings.activeRuleCount = Number(result.active_rule_count || 0);
-    state.advancedFlowFilterSettings.sourcePath = String(sourceInfo.sourcePath ?? state.advancedFlowFilterSettings.sourcePath ?? "");
-    state.advancedFlowFilterSettings.displayName = String(sourceInfo.displayName ?? state.advancedFlowFilterSettings.displayName ?? "Custom filter");
-    state.advancedFlowFilterSettings.sourceCanonicalText = String(
+    installAdvancedFlowFilterSettingsDraft({
+      document: normalizeAdvancedFlowFilterEditorDraftDocument(
+        cloneAdvancedFlowFilterValue(result.document)
+      ),
+      optionCatalog: cloneAdvancedFlowFilterValue(result.option_catalog) || null,
+      configuredRuleCount: Number(result.configured_rule_count || 0),
+      activeRuleCount: Number(result.active_rule_count || 0),
+      sourcePath: String(sourceInfo.sourcePath ?? state.advancedFlowFilterSettings.sourcePath ?? ""),
+      displayName: String(sourceInfo.displayName ?? state.advancedFlowFilterSettings.displayName ?? "Custom filter"),
+      sourceCanonicalText: String(
       sourceInfo.sourceCanonicalText
       ?? state.advancedFlowFilterSettings.sourceCanonicalText
       ?? result.document.canonical_text
       ?? ""
-    );
+      ),
+    });
   }
 
   function applyAdvancedFlowFilterQueryResult(filterText, queryResult, sourceInfo = {}) {
@@ -448,11 +772,359 @@
     `;
   }
 
-  function renderAdvancedFlowFilterSettingsDialog() {
-    const dialogVisible = Boolean(state.advancedFlowFilterSettings.visible);
-    const dialogBusy = currentAdvancedFlowFilterSettingsBusy();
+  function renderAdvancedFlowFilterPortGroup(groupName, rows, sectionEnabled, dialogBusy) {
+    const groupKey = groupName.toLowerCase();
+    const scopeOptions = advancedFlowFilterEndpointScopeOptions();
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    return `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+        <div class="advanced-filter-row-list">
+          ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
+            <div class="advanced-filter-draft-row">
+              <select
+                data-advanced-filter-row-section-id="ports"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                data-advanced-filter-row-field="scope_id"
+                ${editingDisabled ? "disabled" : ""}
+              >
+                ${scopeOptions.map((option) => `
+                  <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
+                    ${escapeHtml(String(option?.label || option?.stable_id || ""))}
+                  </option>
+                `).join("")}
+              </select>
+              <label class="advanced-filter-inline-toggle">
+                <input
+                  type="checkbox"
+                  data-advanced-filter-row-section-id="ports"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="range_enabled"
+                  ${row?.range_enabled ? "checked" : ""}
+                  ${editingDisabled ? "disabled" : ""}
+                />
+                <span>Range</span>
+              </label>
+              <input
+                type="text"
+                placeholder="${row?.range_enabled ? "From" : "Port"}"
+                value="${escapeHtml(String(row?.primary_text || ""))}"
+                data-advanced-filter-row-section-id="ports"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                data-advanced-filter-row-field="primary_text"
+                ${editingDisabled ? "disabled" : ""}
+              />
+              ${row?.range_enabled ? `
+                <input
+                  type="text"
+                  placeholder="To"
+                  value="${escapeHtml(String(row?.secondary_text || ""))}"
+                  data-advanced-filter-row-section-id="ports"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="secondary_text"
+                  ${editingDisabled ? "disabled" : ""}
+                />
+              ` : ""}
+              <button
+                type="button"
+                class="secondary-button advanced-filter-remove-row-button"
+                data-advanced-filter-remove-row-section-id="ports"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                ${dialogBusy ? "disabled" : ""}
+              >Remove</button>
+            </div>
+          `).join("")}
+        </div>
+        <button
+          type="button"
+          class="secondary-button advanced-filter-add-row-button"
+          data-advanced-filter-add-row-section-id="ports"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          ${editingDisabled ? "disabled" : ""}
+        >Add port rule</button>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterIpGroup(groupName, rows, sectionEnabled, dialogBusy) {
+    const groupKey = groupName.toLowerCase();
+    const scopeOptions = advancedFlowFilterEndpointScopeOptions();
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    return `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+        <div class="advanced-filter-row-list">
+          ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
+            <div class="advanced-filter-draft-row advanced-filter-draft-row-wide">
+              <select
+                data-advanced-filter-row-section-id="ip_addresses"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                data-advanced-filter-row-field="scope_id"
+                ${editingDisabled ? "disabled" : ""}
+              >
+                ${scopeOptions.map((option) => `
+                  <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
+                    ${escapeHtml(String(option?.label || option?.stable_id || ""))}
+                  </option>
+                `).join("")}
+              </select>
+              <label class="advanced-filter-inline-toggle">
+                <input
+                  type="checkbox"
+                  data-advanced-filter-row-section-id="ip_addresses"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="subnet_enabled"
+                  ${row?.subnet_enabled ? "checked" : ""}
+                  ${editingDisabled ? "disabled" : ""}
+                />
+                <span>Subnet</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Address"
+                value="${escapeHtml(String(row?.address_text || ""))}"
+                data-advanced-filter-row-section-id="ip_addresses"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                data-advanced-filter-row-field="address_text"
+                ${editingDisabled ? "disabled" : ""}
+              />
+              ${row?.subnet_enabled ? `
+                <input
+                  type="text"
+                  placeholder="Prefix"
+                  value="${escapeHtml(String(row?.prefix_text || ""))}"
+                  data-advanced-filter-row-section-id="ip_addresses"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="prefix_text"
+                  ${editingDisabled ? "disabled" : ""}
+                />
+              ` : ""}
+              <button
+                type="button"
+                class="secondary-button advanced-filter-remove-row-button"
+                data-advanced-filter-remove-row-section-id="ip_addresses"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                ${dialogBusy ? "disabled" : ""}
+              >Remove</button>
+            </div>
+          `).join("")}
+        </div>
+        <button
+          type="button"
+          class="secondary-button advanced-filter-add-row-button"
+          data-advanced-filter-add-row-section-id="ip_addresses"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          ${editingDisabled ? "disabled" : ""}
+        >Add address rule</button>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterFiniteSectionCard(definition, document, dialogBusy) {
+    const section = advancedFlowFilterSectionById(document, definition.id) || { enabled: true, include: [], exclude: [] };
+    return `
+      <section class="advanced-filter-section-card" data-advanced-filter-structured-section-id="${escapeHtml(definition.id)}">
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">${escapeHtml(definition.title)}</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="${escapeHtml(definition.id)}"
+              ${section.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        ${renderAdvancedFlowFilterSectionGroup(definition.id, "Include", section.include, dialogBusy)}
+        ${renderAdvancedFlowFilterSectionGroup(definition.id, "Exclude", section.exclude, dialogBusy)}
+      </section>
+    `;
+  }
+
+  function renderAdvancedFlowFilterPortsSectionCard(document, dialogBusy) {
+    const portsSection = document?.ports || { enabled: true, include: [], exclude: [] };
+    return `
+      <section
+        class="advanced-filter-section-card advanced-filter-section-card-wide"
+        data-advanced-filter-structured-section-id="ports"
+      >
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">Ports</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="ports"
+              ${portsSection.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        ${renderAdvancedFlowFilterPortGroup("Include", portsSection.include, Boolean(portsSection.enabled), dialogBusy)}
+        ${renderAdvancedFlowFilterPortGroup("Exclude", portsSection.exclude, Boolean(portsSection.enabled), dialogBusy)}
+      </section>
+    `;
+  }
+
+  function renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy) {
+    const ipSection = document?.ip_addresses || { enabled: true, include: [], exclude: [] };
+    return `
+      <section
+        class="advanced-filter-section-card advanced-filter-section-card-wide"
+        data-advanced-filter-structured-section-id="ip_addresses"
+      >
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">IP addresses</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="ip_addresses"
+              ${ipSection.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        ${renderAdvancedFlowFilterIpGroup("Include", ipSection.include, Boolean(ipSection.enabled), dialogBusy)}
+        ${renderAdvancedFlowFilterIpGroup("Exclude", ipSection.exclude, Boolean(ipSection.enabled), dialogBusy)}
+      </section>
+    `;
+  }
+
+  function advancedFlowFilterSettingsSectionMarkup(sectionId, document, dialogBusy) {
+    const definition = advancedFlowFilterSectionDefinitions.find((candidate) => candidate.id === sectionId);
+    if (definition) {
+      return renderAdvancedFlowFilterFiniteSectionCard(definition, document, dialogBusy);
+    }
+    if (sectionId === "ports") {
+      return renderAdvancedFlowFilterPortsSectionCard(document, dialogBusy);
+    }
+    if (sectionId === "ip_addresses") {
+      return renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy);
+    }
+    return "";
+  }
+
+  function syncAdvancedFlowFilterSettingsInteractiveState() {
+    const document = state.advancedFlowFilterSettings.document;
+    const interactionBlocked = advancedFlowFilterSettingsInteractionBlocked();
+    if (!elements.advancedFlowFilterSettingsSections || !document) {
+      return;
+    }
+
+    for (const checkbox of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-enabled-section-id]")) {
+      checkbox.disabled = interactionBlocked;
+    }
+    for (const input of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-section-id]")) {
+      input.disabled = interactionBlocked;
+    }
+    for (const input of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-row-section-id]")) {
+      const sectionId = String(input.dataset.advancedFilterRowSectionId || "");
+      const section = advancedFlowFilterSectionById(document, sectionId);
+      input.disabled = interactionBlocked || !Boolean(section?.enabled);
+    }
+    for (const addButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-add-row-section-id]")) {
+      const sectionId = String(addButton.dataset.advancedFilterAddRowSectionId || "");
+      const section = advancedFlowFilterSectionById(document, sectionId);
+      addButton.disabled = interactionBlocked || !Boolean(section?.enabled);
+    }
+    for (const removeButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-remove-row-section-id]")) {
+      removeButton.disabled = interactionBlocked;
+    }
+  }
+
+  function renderAdvancedFlowFilterSettingsStructure(force = false) {
+    if (!elements.advancedFlowFilterSettingsSections) {
+      return;
+    }
+
     const document = state.advancedFlowFilterSettings.document;
     const loading = state.advancedFlowFilterSettings.loading;
+    const dialogBusy = advancedFlowFilterSettingsInteractionBlocked();
+    const structureKey = !document
+      ? (loading ? "loading" : "empty")
+      : `document:${state.advancedFlowFilterSettings.structureRevision}`;
+
+    if (!force && structureKey === state.advancedFlowFilterSettings.renderedStructureKey) {
+      syncAdvancedFlowFilterSettingsInteractiveState();
+      return;
+    }
+
+    if (loading && !document) {
+      elements.advancedFlowFilterSettingsSections.innerHTML =
+        `<p class="advanced-filter-empty-copy">Preparing structured Advanced Filter settings...</p>`;
+    } else if (!document) {
+      elements.advancedFlowFilterSettingsSections.innerHTML =
+        `<p class="advanced-filter-empty-copy">Open or prepare an Advanced Filter document to edit supported structured sections.</p>`;
+    } else {
+      const finiteSections = advancedFlowFilterSectionDefinitions.map((definition) =>
+        renderAdvancedFlowFilterFiniteSectionCard(definition, document, dialogBusy)
+      );
+      elements.advancedFlowFilterSettingsSections.innerHTML = [
+        ...finiteSections,
+        renderAdvancedFlowFilterPortsSectionCard(document, dialogBusy),
+        renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy),
+      ].join("");
+    }
+
+    state.advancedFlowFilterSettings.renderedStructureKey = structureKey;
+    syncAdvancedFlowFilterSettingsInteractiveState();
+  }
+
+  function rerenderAdvancedFlowFilterSettingsSection(sectionId) {
+    const structuredDocument = state.advancedFlowFilterSettings.document;
+    if (!structuredDocument || state.advancedFlowFilterSettings.loading || !elements.advancedFlowFilterSettingsSections) {
+      renderAdvancedFlowFilterSettingsStructure(true);
+      return;
+    }
+
+    const markup = advancedFlowFilterSettingsSectionMarkup(
+      sectionId,
+      structuredDocument,
+      currentAdvancedFlowFilterSettingsBusy()
+    );
+    if (!markup) {
+      renderAdvancedFlowFilterSettingsStructure(true);
+      return;
+    }
+
+    const currentSection = elements.advancedFlowFilterSettingsSections.querySelector(
+      `[data-advanced-filter-structured-section-id="${sectionId}"]`
+    );
+    if (!(currentSection instanceof HTMLElement)) {
+      renderAdvancedFlowFilterSettingsStructure(true);
+      return;
+    }
+
+    const template = window.document.createElement("template");
+    template.innerHTML = markup.trim();
+    const nextSection = template.content.firstElementChild;
+    if (!(nextSection instanceof HTMLElement)) {
+      renderAdvancedFlowFilterSettingsStructure(true);
+      return;
+    }
+
+    currentSection.replaceWith(nextSection);
+    syncAdvancedFlowFilterSettingsInteractiveState();
+  }
+
+  function renderAdvancedFlowFilterSettingsDialogShell() {
+    const dialogVisible = Boolean(state.advancedFlowFilterSettings.visible);
+    const dialogBusy = advancedFlowFilterSettingsInteractionBlocked();
+    const document = state.advancedFlowFilterSettings.document;
+    const loading = state.advancedFlowFilterSettings.loading;
+    const discardConfirmVisible = advancedFlowFilterSettingsAwaitingDiscardConfirmation();
 
     if (elements.advancedFlowFilterSettingsDialog) {
       elements.advancedFlowFilterSettingsDialog.classList.toggle("is-visible", dialogVisible);
@@ -472,8 +1144,7 @@
       elements.advancedFlowFilterSettingsRuleCount.textContent = advancedFlowFilterSettingsConfiguredSummaryText();
     }
     if (elements.advancedFlowFilterUnsupportedSectionsNote) {
-      const showNote = Boolean(document?.has_unsupported_configured_sections);
-      elements.advancedFlowFilterUnsupportedSectionsNote.hidden = !showNote;
+      elements.advancedFlowFilterUnsupportedSectionsNote.hidden = !Boolean(document?.has_unsupported_configured_sections);
     }
     if (elements.advancedFlowFilterSettingsStatusText) {
       elements.advancedFlowFilterSettingsStatusText.textContent = state.advancedFlowFilterSettings.statusText;
@@ -493,37 +1164,37 @@
         ? "Applying..."
         : "Apply";
     }
-    if (elements.advancedFlowFilterSettingsSections) {
-      if (loading) {
-        elements.advancedFlowFilterSettingsSections.innerHTML = `<p class="advanced-filter-empty-copy">Preparing structured Advanced Filter settings...</p>`;
-      } else if (!document) {
-        elements.advancedFlowFilterSettingsSections.innerHTML = `<p class="advanced-filter-empty-copy">Open or prepare an Advanced Filter document to edit its finite sections.</p>`;
-      } else {
-        elements.advancedFlowFilterSettingsSections.innerHTML = advancedFlowFilterSectionDefinitions
-          .map((definition) => {
-            const section = advancedFlowFilterSectionById(document, definition.id) || { enabled: true, include: [], exclude: [] };
-            return `
-              <section class="advanced-filter-section-card">
-                <div class="advanced-filter-section-header">
-                  <h3 class="advanced-filter-section-title">${escapeHtml(definition.title)}</h3>
-                  <label class="advanced-filter-section-enabled">
-                    <input
-                      type="checkbox"
-                      data-advanced-filter-enabled-section-id="${escapeHtml(definition.id)}"
-                      ${section.enabled ? "checked" : ""}
-                      ${dialogBusy ? " disabled" : ""}
-                    />
-                    <span>Enabled</span>
-                  </label>
-                </div>
-                ${renderAdvancedFlowFilterSectionGroup(definition.id, "Include", section.include, dialogBusy)}
-                ${renderAdvancedFlowFilterSectionGroup(definition.id, "Exclude", section.exclude, dialogBusy)}
-              </section>
-            `;
-          })
-          .join("");
+    if (elements.advancedFlowFilterDiscardOpenConfirm) {
+      elements.advancedFlowFilterDiscardOpenConfirm.hidden = !discardConfirmVisible;
+    }
+    if (elements.advancedFlowFilterDiscardOpenConfirmDiscardButton) {
+      elements.advancedFlowFilterDiscardOpenConfirmDiscardButton.disabled = currentAdvancedFlowFilterSettingsBusy();
+    }
+    if (elements.advancedFlowFilterDiscardOpenConfirmCancelButton) {
+      elements.advancedFlowFilterDiscardOpenConfirmCancelButton.disabled = currentAdvancedFlowFilterSettingsBusy();
+    }
+  }
+
+  function renderAdvancedFlowFilterSettingsDialog() {
+    renderAdvancedFlowFilterSettingsDialogShell();
+    renderAdvancedFlowFilterSettingsStructure();
+  }
+
+  function refreshAdvancedFlowFilterSettingsAfterDraftChange(options = {}) {
+    const rebuildAllSections = Boolean(options.rebuildAllSections);
+    const rebuildSectionIds = Array.isArray(options.rebuildSectionIds)
+      ? options.rebuildSectionIds.filter((sectionId, index, values) => sectionId && values.indexOf(sectionId) === index)
+      : [];
+
+    if (rebuildAllSections) {
+      renderAdvancedFlowFilterSettingsStructure(true);
+    } else {
+      for (const sectionId of rebuildSectionIds) {
+        rerenderAdvancedFlowFilterSettingsSection(String(sectionId));
       }
     }
+    renderAdvancedFlowFilterSettingsDialogShell();
+    syncAdvancedFlowFilterSettingsInteractiveState();
   }
 
   function currentSimpleFlowFilterActive() {
@@ -656,6 +1327,9 @@
     advancedFlowFilterUnsupportedSectionsNote: document.getElementById("advancedFlowFilterUnsupportedSectionsNote"),
     advancedFlowFilterSettingsStatusText: document.getElementById("advancedFlowFilterSettingsStatusText"),
     advancedFlowFilterSettingsSections: document.getElementById("advancedFlowFilterSettingsSections"),
+    advancedFlowFilterDiscardOpenConfirm: document.getElementById("advancedFlowFilterDiscardOpenConfirm"),
+    advancedFlowFilterDiscardOpenConfirmDiscardButton: document.getElementById("advancedFlowFilterDiscardOpenConfirmDiscardButton"),
+    advancedFlowFilterDiscardOpenConfirmCancelButton: document.getElementById("advancedFlowFilterDiscardOpenConfirmCancelButton"),
     advancedFlowFilterSettingsCancelButton: document.getElementById("advancedFlowFilterSettingsCancelButton"),
     advancedFlowFilterSettingsApplyButton: document.getElementById("advancedFlowFilterSettingsApplyButton"),
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
@@ -2259,7 +2933,7 @@
   }
 
   async function openAdvancedFlowFilterFileIntoDraft() {
-    if (!state.advancedFlowFilterSettings.visible || currentAdvancedFlowFilterSettingsBusy()) {
+    if (!state.advancedFlowFilterSettings.visible || advancedFlowFilterSettingsInteractionBlocked()) {
       return;
     }
 
@@ -2268,7 +2942,9 @@
       if (!selectedPath) {
         return;
       }
+      const draftWasModifiedBeforeOpen = advancedFlowFilterSettingsDraftModified();
 
+      state.advancedFlowFilterSettings.workflowState = "preparing_candidate";
       state.advancedFlowFilterSettings.loading = true;
       setAdvancedFlowFilterSettingsStatus("Opening advanced filter...", "neutral");
       render();
@@ -2293,11 +2969,14 @@
         return;
       }
 
-      adoptAdvancedFlowFilterStructuredResult(result, {
-        sourcePath: String(fileResult.path || selectedPath),
-        displayName: String(fileResult.display_name || "Custom filter"),
-        sourceCanonicalText: String(result?.document?.canonical_text || ""),
-      });
+      const candidate = prepareAdvancedFlowFilterOpenCandidate(result, fileResult, selectedPath);
+      if (draftWasModifiedBeforeOpen) {
+        showAdvancedFlowFilterDiscardOpenConfirm(candidate);
+        setAdvancedFlowFilterSettingsStatus("Confirm whether to discard the current Advanced Filter draft.", "neutral");
+        return;
+      }
+
+      adoptAdvancedFlowFilterOpenCandidate(candidate);
       setAdvancedFlowFilterSettingsStatus(
         `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
         "success"
@@ -2306,6 +2985,9 @@
       setAdvancedFlowFilterSettingsStatus(`Failed to open the selected advanced filter: ${String(error)}`, "error");
     } finally {
       state.advancedFlowFilterSettings.loading = false;
+      if (currentAdvancedFlowFilterSettingsWorkflowState() === "preparing_candidate") {
+        state.advancedFlowFilterSettings.workflowState = "idle";
+      }
       render();
     }
   }
@@ -2318,48 +3000,19 @@
     render();
   }
 
-  async function updateAdvancedFlowFilterStructuredSection(sectionId, nextSection) {
+  function mutateAdvancedFlowFilterSettingsDraft(mutator) {
+    return mutateAdvancedFlowFilterSettingsDraftWithOptions(mutator);
+  }
+
+  function mutateAdvancedFlowFilterSettingsDraftWithOptions(mutator, options = {}) {
     const draft = state.advancedFlowFilterSettings.document;
     if (!draft || currentAdvancedFlowFilterSettingsBusy()) {
-      return;
+      return false;
     }
-
-    const requestToken = state.advancedFlowFilterSettings.requestToken + 1;
-    state.advancedFlowFilterSettings.requestToken = requestToken;
-    state.advancedFlowFilterSettings.updating = true;
     clearAdvancedFlowFilterSettingsStatus();
-    render();
-
-    try {
-      const result = await invoke("update_advanced_flow_filter_structured_section", {
-        filter_text: String(draft.canonical_text || defaultAdvancedFlowFilterText()),
-        section_id: sectionId,
-        enabled: Boolean(nextSection?.enabled),
-        include_ids: Array.isArray(nextSection?.include) ? nextSection.include : [],
-        exclude_ids: Array.isArray(nextSection?.exclude) ? nextSection.exclude : [],
-      });
-      if (requestToken !== state.advancedFlowFilterSettings.requestToken) {
-        return;
-      }
-      if (String(result?.status || "") !== "ok") {
-        setAdvancedFlowFilterSettingsStatus(
-          String(result?.error_text || "Failed to update the structured Advanced Filter draft."),
-          "error"
-        );
-        return;
-      }
-      adoptAdvancedFlowFilterStructuredResult(result);
-    } catch (error) {
-      if (requestToken !== state.advancedFlowFilterSettings.requestToken) {
-        return;
-      }
-      setAdvancedFlowFilterSettingsStatus(`Failed to update the Advanced Filter draft: ${String(error)}`, "error");
-    } finally {
-      if (requestToken === state.advancedFlowFilterSettings.requestToken) {
-        state.advancedFlowFilterSettings.updating = false;
-      }
-      render();
-    }
+    mutator(draft);
+    refreshAdvancedFlowFilterSettingsAfterDraftChange(options);
+    return true;
   }
 
   async function applyAdvancedFlowFilterSettingsDraft() {
@@ -2374,8 +3027,27 @@
       clearAdvancedFlowFilterSettingsStatus();
       render();
 
+      const structuredResult = await invoke("apply_advanced_flow_filter_structured_document", {
+        filter_text: currentAdvancedFlowFilterSettingsBaseText(),
+        document: draft,
+      });
+      if (String(structuredResult?.status || "") !== "ok") {
+        setAdvancedFlowFilterSettingsStatus(
+          structuredResult?.update_issue
+            ? advancedFlowFilterStructuredUpdateIssueText(structuredResult.update_issue)
+            : String(structuredResult?.error_text || "Failed to apply the structured Advanced Filter draft."),
+          "error"
+        );
+        return;
+      }
+
+      const canonicalText = String(
+        structuredResult?.document?.canonical_text
+        || draft.canonical_text
+        || defaultAdvancedFlowFilterText()
+      );
       const queryResult = await invoke("query_advanced_flows_text", {
-        filter_text: String(draft.canonical_text || defaultAdvancedFlowFilterText()),
+        filter_text: canonicalText,
         candidate_flow_indices: null,
       });
       if (String(queryResult?.status || "") !== "ok") {
@@ -2388,10 +3060,10 @@
 
       const keepFileIdentity = Boolean(
         state.advancedFlowFilterSettings.sourcePath
-        && String(draft.canonical_text || "") === String(state.advancedFlowFilterSettings.sourceCanonicalText || "")
+        && canonicalText === String(state.advancedFlowFilterSettings.sourceCanonicalText || "")
       );
 
-      applyAdvancedFlowFilterQueryResult(draft.canonical_text, queryResult, {
+      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, {
         sourcePath: keepFileIdentity ? state.advancedFlowFilterSettings.sourcePath : "",
         displayName: keepFileIdentity
           ? state.advancedFlowFilterSettings.displayName
@@ -8488,6 +9160,13 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      if (advancedFlowFilterSettingsAwaitingDiscardConfirmation() && !currentAdvancedFlowFilterSettingsBusy()) {
+        dismissAdvancedFlowFilterDiscardOpenConfirm();
+        setAdvancedFlowFilterSettingsStatus("Kept the current Advanced Filter draft.", "neutral");
+        render();
+        return;
+      }
+
       const hadVisibleUi = state.openMenu != null
         || state.aboutDialogVisible
         || state.settingsDialogVisible
@@ -8537,61 +9216,169 @@
   elements.advancedFlowFilterSettingsOpenButton?.addEventListener("click", () => {
     void openAdvancedFlowFilterFileIntoDraft();
   });
+  elements.advancedFlowFilterDiscardOpenConfirmDiscardButton?.addEventListener("click", () => {
+    const candidate = state.advancedFlowFilterSettings.pendingOpenCandidate;
+    if (!candidate || currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+    adoptAdvancedFlowFilterOpenCandidate(candidate);
+    setAdvancedFlowFilterSettingsStatus(
+      `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
+      "success"
+    );
+    render();
+  });
+  elements.advancedFlowFilterDiscardOpenConfirmCancelButton?.addEventListener("click", () => {
+    if (currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+    dismissAdvancedFlowFilterDiscardOpenConfirm();
+    setAdvancedFlowFilterSettingsStatus("Kept the current Advanced Filter draft.", "neutral");
+    render();
+  });
   elements.advancedFlowFilterSettingsCancelButton?.addEventListener("click", () => {
     closeAdvancedFlowFilterSettingsDialog();
   });
   elements.advancedFlowFilterSettingsApplyButton?.addEventListener("click", () => {
     void applyAdvancedFlowFilterSettingsDraft();
   });
-  elements.advancedFlowFilterSettingsSections?.addEventListener("change", (event) => {
-    if (!(event.target instanceof HTMLInputElement)) {
+  elements.advancedFlowFilterSettingsSections?.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
       return;
     }
 
-    const draft = state.advancedFlowFilterSettings.document;
-    if (!draft) {
+    const addButton = event.target.closest("[data-advanced-filter-add-row-section-id]");
+    if (addButton instanceof HTMLButtonElement) {
+      const sectionId = String(addButton.dataset.advancedFilterAddRowSectionId || "");
+      const group = String(addButton.dataset.advancedFilterGroup || "");
+      mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+        const section = advancedFlowFilterSectionById(draft, sectionId);
+        if (!section || (group !== "include" && group !== "exclude")) {
+          return;
+        }
+        const rows = Array.isArray(section[group]) ? section[group] : [];
+        rows.push(sectionId === "ports" ? makeAdvancedFlowFilterPortRow() : makeAdvancedFlowFilterIpAddressRow());
+        section[group] = rows;
+      }, { rebuildSectionIds: [sectionId] });
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-advanced-filter-remove-row-section-id]");
+    if (removeButton instanceof HTMLButtonElement) {
+      const sectionId = String(removeButton.dataset.advancedFilterRemoveRowSectionId || "");
+      const group = String(removeButton.dataset.advancedFilterGroup || "");
+      const rowIndex = Number(removeButton.dataset.advancedFilterRowIndex);
+      mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+        const section = advancedFlowFilterSectionById(draft, sectionId);
+        if (!section || (group !== "include" && group !== "exclude") || !Number.isInteger(rowIndex)) {
+          return;
+        }
+        const rows = Array.isArray(section[group]) ? section[group] : [];
+        if (rowIndex >= 0 && rowIndex < rows.length) {
+          rows.splice(rowIndex, 1);
+        }
+        section[group] = rows;
+      }, { rebuildSectionIds: [sectionId] });
+    }
+  });
+  elements.advancedFlowFilterSettingsSections?.addEventListener("change", (event) => {
+    if (!(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) {
       return;
     }
 
     const enabledSectionId = String(event.target.dataset.advancedFilterEnabledSectionId || "");
     const optionSectionId = String(event.target.dataset.advancedFilterSectionId || "");
+    const rowSectionId = String(event.target.dataset.advancedFilterRowSectionId || "");
     const sectionId = enabledSectionId || optionSectionId;
-    if (!sectionId) {
-      return;
-    }
-
-    const currentSection = advancedFlowFilterSectionById(draft, sectionId);
-    if (!currentSection) {
-      return;
-    }
-
-    const nextSection = {
-      enabled: Boolean(currentSection.enabled),
-      include: Array.isArray(currentSection.include) ? [...currentSection.include] : [],
-      exclude: Array.isArray(currentSection.exclude) ? [...currentSection.exclude] : [],
-    };
-
     if (enabledSectionId) {
-      nextSection.enabled = event.target.checked;
-    } else {
-      const group = String(event.target.dataset.advancedFilterGroup || "");
-      const valueId = String(event.target.dataset.advancedFilterValueId || "");
-      const list = group === "exclude" ? nextSection.exclude : nextSection.include;
-      const nextSet = new Set(list.map((value) => String(value)));
-      if (event.target.checked) {
-        nextSet.add(valueId);
-      } else {
-        nextSet.delete(valueId);
-      }
-      const nextValues = Array.from(nextSet);
-      if (group === "exclude") {
-        nextSection.exclude = nextValues;
-      } else {
-        nextSection.include = nextValues;
-      }
+      mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+        const currentSection = advancedFlowFilterSectionById(draft, sectionId);
+        if (currentSection) {
+          currentSection.enabled = event.target.checked;
+        }
+      }, { rebuildSectionIds: [sectionId] });
+      return;
     }
 
-    void updateAdvancedFlowFilterStructuredSection(sectionId, nextSection);
+    if (optionSectionId) {
+      mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+        const currentSection = advancedFlowFilterSectionById(draft, sectionId);
+        if (!currentSection) {
+          return;
+        }
+        const group = String(event.target.dataset.advancedFilterGroup || "");
+        const valueId = String(event.target.dataset.advancedFilterValueId || "");
+        const list = group === "exclude"
+          ? (Array.isArray(currentSection.exclude) ? currentSection.exclude : [])
+          : (Array.isArray(currentSection.include) ? currentSection.include : []);
+        const nextSet = new Set(list.map((value) => String(value)));
+        if (event.target instanceof HTMLInputElement && event.target.checked) {
+          nextSet.add(valueId);
+        } else {
+          nextSet.delete(valueId);
+        }
+        if (group === "exclude") {
+          currentSection.exclude = Array.from(nextSet);
+        } else {
+          currentSection.include = Array.from(nextSet);
+        }
+      });
+      return;
+    }
+
+    if (!rowSectionId) {
+      return;
+    }
+
+    const group = String(event.target.dataset.advancedFilterGroup || "");
+    const rowIndex = Number(event.target.dataset.advancedFilterRowIndex);
+    const field = String(event.target.dataset.advancedFilterRowField || "");
+    const rebuildSection = field === "range_enabled" || field === "subnet_enabled";
+    mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+      const section = advancedFlowFilterSectionById(draft, rowSectionId);
+      if (!section || (group !== "include" && group !== "exclude") || !Number.isInteger(rowIndex)) {
+        return;
+      }
+      const rows = Array.isArray(section[group]) ? section[group] : [];
+      const row = rows[rowIndex];
+      if (!row) {
+        return;
+      }
+      if (event.target instanceof HTMLInputElement && event.target.type === "checkbox") {
+        row[field] = event.target.checked;
+      } else {
+        row[field] = event.target.value;
+      }
+    }, rebuildSection ? { rebuildSectionIds: [rowSectionId] } : {});
+  });
+  elements.advancedFlowFilterSettingsSections?.addEventListener("input", (event) => {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const rowSectionId = String(event.target.dataset.advancedFilterRowSectionId || "");
+    const group = String(event.target.dataset.advancedFilterGroup || "");
+    const rowIndex = Number(event.target.dataset.advancedFilterRowIndex);
+    const field = String(event.target.dataset.advancedFilterRowField || "");
+    if (!rowSectionId || !field || event.target.type === "checkbox") {
+      return;
+    }
+
+    const draft = state.advancedFlowFilterSettings.document;
+    if (!draft || currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+    clearAdvancedFlowFilterSettingsStatus();
+    const section = advancedFlowFilterSectionById(draft, rowSectionId);
+    if (!section || (group !== "include" && group !== "exclude") || !Number.isInteger(rowIndex)) {
+      return;
+    }
+    const rows = Array.isArray(section[group]) ? section[group] : [];
+    const row = rows[rowIndex];
+    if (row) {
+      row[field] = event.target.value;
+    }
+    renderAdvancedFlowFilterSettingsDialogShell();
   });
   elements.useSimpleFlowFilterButton?.addEventListener("click", () => {
     switchToSimpleFlowFilterMode();

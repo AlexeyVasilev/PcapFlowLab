@@ -190,6 +190,36 @@ pub struct AdvancedFlowFilterFiniteSectionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterPortRowDto {
+    pub scope_id: String,
+    pub range_enabled: bool,
+    pub primary_text: String,
+    pub secondary_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterPortSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterPortRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterPortRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterIpAddressRowDto {
+    pub scope_id: String,
+    pub subnet_enabled: bool,
+    pub address_text: String,
+    pub prefix_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterIpAddressSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterIpAddressRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterIpAddressRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub address_family: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub flow_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
@@ -197,6 +227,7 @@ pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub tls_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub quic_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub endpoint_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +239,8 @@ pub struct AdvancedFlowFilterStructuredDocumentDto {
     pub tls_version: AdvancedFlowFilterFiniteSectionDto,
     pub quic_version: AdvancedFlowFilterFiniteSectionDto,
     pub directionality: AdvancedFlowFilterFiniteSectionDto,
+    pub ports: AdvancedFlowFilterPortSectionDto,
+    pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
     pub has_unsupported_configured_sections: bool,
 }
 
@@ -216,6 +249,8 @@ pub struct AdvancedFlowFilterStructuredUpdateIssueDto {
     pub section_id: String,
     pub group: String,
     pub value_id: String,
+    pub row_index: Option<usize>,
+    pub field_id: String,
     pub message: String,
 }
 

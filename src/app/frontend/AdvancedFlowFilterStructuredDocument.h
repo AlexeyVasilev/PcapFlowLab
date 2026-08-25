@@ -60,6 +60,8 @@ struct FrontendAdvancedFlowFilterStructuredUpdateIssue {
     std::string section_id {};
     std::string group {};
     std::string value_id {};
+    std::optional<std::size_t> row_index {};
+    std::string field_id {};
     std::string message {};
 };
 
@@ -74,6 +76,32 @@ struct FrontendAdvancedFlowFilterFiniteSectionDto {
     std::vector<std::string> exclude {};
 };
 
+struct FrontendAdvancedFlowFilterPortRowDto {
+    std::string scope_id {};
+    bool range_enabled {false};
+    std::string primary_text {};
+    std::string secondary_text {};
+};
+
+struct FrontendAdvancedFlowFilterPortSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterPortRowDto> include {};
+    std::vector<FrontendAdvancedFlowFilterPortRowDto> exclude {};
+};
+
+struct FrontendAdvancedFlowFilterIpAddressRowDto {
+    std::string scope_id {};
+    bool subnet_enabled {false};
+    std::string address_text {};
+    std::string prefix_text {};
+};
+
+struct FrontendAdvancedFlowFilterIpAddressSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> include {};
+    std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> exclude {};
+};
+
 struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> address_family {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> flow_protocol {};
@@ -81,6 +109,7 @@ struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> tls_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> quic_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> directionality {};
+    std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> endpoint_scope {};
 };
 
 struct FrontendAdvancedFlowFilterStructuredDocumentDto {
@@ -91,6 +120,8 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     FrontendAdvancedFlowFilterFiniteSectionDto tls_version {};
     FrontendAdvancedFlowFilterFiniteSectionDto quic_version {};
     FrontendAdvancedFlowFilterFiniteSectionDto directionality {};
+    FrontendAdvancedFlowFilterPortSectionDto ports {};
+    FrontendAdvancedFlowFilterIpAddressSectionDto ip_addresses {};
     bool has_unsupported_configured_sections {false};
 };
 

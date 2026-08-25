@@ -887,7 +887,7 @@
           <div>
             <h2 id="advancedFlowFilterSettingsDialogTitle">Advanced Filter Settings</h2>
             <p class="dialog-copy advanced-filter-settings-copy">
-              Edit the currently supported finite Advanced Filter sections. Other configured sections remain preserved by the shared C++ document model.
+              Edit the currently supported structured Advanced Filter sections, including finite sections, Ports, and IP addresses. Other configured sections remain preserved by the shared C++ document model.
             </p>
           </div>
         </div>
@@ -912,6 +912,29 @@
           class="advanced-filter-settings-sections"
           aria-live="polite"
         ></div>
+        <div id="advancedFlowFilterDiscardOpenConfirm" class="advanced-filter-inline-confirm" hidden>
+          <div
+            class="advanced-filter-inline-confirm-card"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="advancedFlowFilterDiscardOpenConfirmTitle"
+          >
+            <h3 id="advancedFlowFilterDiscardOpenConfirmTitle" class="advanced-filter-inline-confirm-title">
+              Discard changes and open selected filter?
+            </h3>
+            <p class="dialog-copy advanced-filter-inline-confirm-copy">
+              The current Advanced Filter Settings draft has unsaved changes. Opening the selected filter will replace the current draft.
+            </p>
+            <div class="dialog-actions">
+              <button id="advancedFlowFilterDiscardOpenConfirmDiscardButton" type="button">
+                Discard and open
+              </button>
+              <button id="advancedFlowFilterDiscardOpenConfirmCancelButton" type="button" class="secondary-button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="dialog-actions">
           <button id="advancedFlowFilterSettingsCancelButton" type="button" class="secondary-button">Cancel</button>
           <button id="advancedFlowFilterSettingsApplyButton" type="button">Apply</button>
