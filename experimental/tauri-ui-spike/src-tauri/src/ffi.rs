@@ -148,6 +148,30 @@ extern "C" {
         ip_exclude_address_text_utf8: *const *const c_char,
         ip_exclude_prefix_text_utf8: *const *const c_char,
         ip_exclude_count: usize,
+        traffic_enabled: c_uchar,
+        traffic_primary_metric_ids_utf8: *const *const c_char,
+        traffic_primary_unit_ids_utf8: *const *const c_char,
+        traffic_primary_min_text_utf8: *const *const c_char,
+        traffic_primary_max_text_utf8: *const *const c_char,
+        traffic_primary_count: usize,
+        traffic_additional_metric_ids_utf8: *const *const c_char,
+        traffic_additional_unit_ids_utf8: *const *const c_char,
+        traffic_additional_min_text_utf8: *const *const c_char,
+        traffic_additional_max_text_utf8: *const *const c_char,
+        traffic_additional_count: usize,
+        service_enabled: c_uchar,
+        service_include_recognized: c_uchar,
+        service_include_unrecognized: c_uchar,
+        service_include_operator_ids_utf8: *const *const c_char,
+        service_include_case_sensitive: *const c_uchar,
+        service_include_text_utf8: *const *const c_char,
+        service_include_text_count: usize,
+        service_exclude_recognized: c_uchar,
+        service_exclude_unrecognized: c_uchar,
+        service_exclude_operator_ids_utf8: *const *const c_char,
+        service_exclude_case_sensitive: *const c_uchar,
+        service_exclude_text_utf8: *const *const c_char,
+        service_exclude_text_count: usize,
     ) -> *mut c_char;
     fn pfl_frontend_advanced_flow_filter_max_file_bytes() -> usize;
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
@@ -579,6 +603,48 @@ impl CppFrontendSessionAdapter {
             Ok((scope_cstrings, address_cstrings, prefix_cstrings, scope_ptrs, address_ptrs, prefix_ptrs, subnet_flags))
         };
 
+        let collect_traffic_rows = |rows: &[crate::dtos::AdvancedFlowFilterTrafficRowDto]| -> Result<_, String> {
+            let metric_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.metric_id.as_str()).map_err(|_| "Traffic metric ID contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let unit_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.unit_id.as_str()).map_err(|_| "Traffic unit ID contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let min_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.min_text.as_str()).map_err(|_| "Traffic Min text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let max_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.max_text.as_str()).map_err(|_| "Traffic Max text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let metric_ptrs = metric_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let unit_ptrs = unit_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let min_ptrs = min_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let max_ptrs = max_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            Ok((metric_cstrings, unit_cstrings, min_cstrings, max_cstrings, metric_ptrs, unit_ptrs, min_ptrs, max_ptrs))
+        };
+
+        let collect_service_rows = |rows: &[crate::dtos::AdvancedFlowFilterServiceTextRowDto]| -> Result<_, String> {
+            let operator_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.operator_id.as_str()).map_err(|_| "Service operator ID contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let text_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.text.as_str()).map_err(|_| "Service text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let operator_ptrs = operator_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let text_ptrs = text_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let case_sensitive_flags = rows
+                .iter()
+                .map(|row| if row.case_sensitive { 1_u8 } else { 0_u8 })
+                .collect::<Vec<_>>();
+            Ok((operator_cstrings, text_cstrings, operator_ptrs, text_ptrs, case_sensitive_flags))
+        };
+
         let (address_family_include_cstrings, address_family_include_ptrs) =
             collect_strings(&document.address_family.include, "Address-family include ID")?;
         let (address_family_exclude_cstrings, address_family_exclude_ptrs) =
@@ -616,6 +682,18 @@ impl CppFrontendSessionAdapter {
         let (_ip_exclude_scope_cstrings, _ip_exclude_address_cstrings, _ip_exclude_prefix_cstrings,
             ip_exclude_scope_ptrs, ip_exclude_address_ptrs, ip_exclude_prefix_ptrs, ip_exclude_subnet_flags) =
             collect_ip_rows(&document.ip_addresses.exclude)?;
+        let (_traffic_primary_metric_cstrings, _traffic_primary_unit_cstrings, _traffic_primary_min_cstrings, _traffic_primary_max_cstrings,
+            traffic_primary_metric_ptrs, traffic_primary_unit_ptrs, traffic_primary_min_ptrs, traffic_primary_max_ptrs) =
+            collect_traffic_rows(&document.traffic.primary)?;
+        let (_traffic_additional_metric_cstrings, _traffic_additional_unit_cstrings, _traffic_additional_min_cstrings, _traffic_additional_max_cstrings,
+            traffic_additional_metric_ptrs, traffic_additional_unit_ptrs, traffic_additional_min_ptrs, traffic_additional_max_ptrs) =
+            collect_traffic_rows(&document.traffic.additional)?;
+        let (_service_include_operator_cstrings, _service_include_text_cstrings,
+            service_include_operator_ptrs, service_include_text_ptrs, service_include_case_sensitive_flags) =
+            collect_service_rows(&document.service.include_text)?;
+        let (_service_exclude_operator_cstrings, _service_exclude_text_cstrings,
+            service_exclude_operator_ptrs, service_exclude_text_ptrs, service_exclude_case_sensitive_flags) =
+            collect_service_rows(&document.service.exclude_text)?;
 
         let _keep_alive = (
             address_family_include_cstrings,
@@ -688,6 +766,30 @@ impl CppFrontendSessionAdapter {
                 ip_exclude_address_ptrs.as_ptr(),
                 ip_exclude_prefix_ptrs.as_ptr(),
                 ip_exclude_scope_ptrs.len(),
+                if document.traffic.enabled { 1 } else { 0 },
+                traffic_primary_metric_ptrs.as_ptr(),
+                traffic_primary_unit_ptrs.as_ptr(),
+                traffic_primary_min_ptrs.as_ptr(),
+                traffic_primary_max_ptrs.as_ptr(),
+                traffic_primary_metric_ptrs.len(),
+                traffic_additional_metric_ptrs.as_ptr(),
+                traffic_additional_unit_ptrs.as_ptr(),
+                traffic_additional_min_ptrs.as_ptr(),
+                traffic_additional_max_ptrs.as_ptr(),
+                traffic_additional_metric_ptrs.len(),
+                if document.service.enabled { 1 } else { 0 },
+                if document.service.include_recognized { 1 } else { 0 },
+                if document.service.include_unrecognized { 1 } else { 0 },
+                service_include_operator_ptrs.as_ptr(),
+                service_include_case_sensitive_flags.as_ptr(),
+                service_include_text_ptrs.as_ptr(),
+                service_include_operator_ptrs.len(),
+                if document.service.exclude_recognized { 1 } else { 0 },
+                if document.service.exclude_unrecognized { 1 } else { 0 },
+                service_exclude_operator_ptrs.as_ptr(),
+                service_exclude_case_sensitive_flags.as_ptr(),
+                service_exclude_text_ptrs.as_ptr(),
+                service_exclude_operator_ptrs.len(),
             )
         };
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)

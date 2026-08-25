@@ -45,7 +45,7 @@ Implemented slice:
   - filtering
   - explicit `Simple` / `Advanced` filter modes
   - backend-authoritative `.filter` v2 evaluation in Advanced mode through the shared C++ parser/compiler/evaluator
-  - structured Advanced Filter `Settings` workflow for finite sections plus Ports / IP addresses:
+  - structured Advanced Filter `Settings` workflow for finite sections plus Ports / IP addresses / Traffic / Service:
     - Address Family
     - Flow Protocol
     - Detected Protocol
@@ -54,6 +54,8 @@ Implemented slice:
     - Observed directions
     - Ports
     - IP addresses
+    - Traffic
+    - Service
   - `Open filter...` now lives inside Advanced Filter Settings and replaces only the editor draft until `Apply`
   - sorting
   - separate checked-flow selection state for batch-oriented workflows
@@ -251,14 +253,15 @@ Implemented slice:
   - selected-flow Analysis sequence CSV export
 - Checked-flow selection exists in the Flows table and now powers `Flow -> Export Selected Flows`.
 - `Flow -> Export Unselected Flows` now exports the inverse of checked-flow selection.
-- The first Tauri Advanced Filter structured editor now covers finite sections plus Ports / IP addresses:
+- The first Tauri Advanced Filter structured editor now covers finite sections plus Ports / IP addresses / Traffic / Service:
   - mode switching and retained state exist
   - backend-authoritative Advanced filtering exists
   - `Settings` and `Open filter...` draft workflow exist
   - unsupported configured sections are preserved but still not editable in Tauri
 - Broader export parity is still incomplete in Tauri.
 - Advanced Smart Export parity is still deferred; current-filter Smart Export remains Simple-mode-only.
-- Traffic / Service / Protocol Path / Contains Layer structured editing is still deferred in Tauri.
+- Traffic and Service structured editing now exist in Tauri.
+- Protocol Path / Contains Layer structured editing are still deferred in Tauri.
 - Save / Save As for file-backed Advanced Filter documents is still deferred in Tauri.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.

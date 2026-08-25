@@ -87,6 +87,7 @@
       draftBaselineSnapshot: "",
       structureRevision: 0,
       renderedStructureKey: "",
+      trafficAdditionalExpanded: false,
       pendingOpenCandidate: null,
       statusText: "",
       statusKind: "neutral",
@@ -100,6 +101,26 @@
     { id: "tls_version", title: "TLS Version", optionCatalogKey: "tls_version" },
     { id: "quic_version", title: "QUIC Version", optionCatalogKey: "quic_version" },
     { id: "directionality", title: "Observed directions", optionCatalogKey: "directionality" },
+  ]);
+
+  const advancedFlowFilterTrafficMetricDefinitions = Object.freeze([
+    { id: "packets", title: "Packets", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: false, unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "original_bytes", title: "Original bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", additional: false, unitPresentation: "select" },
+    { id: "captured_bytes", title: "Captured bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", additional: false, unitPresentation: "select" },
+    { id: "duration", title: "Duration", unitOptions: [{ id: "us", label: "us" }, { id: "ms", label: "ms" }, { id: "s", label: "s" }, { id: "min", label: "min" }, { id: "h", label: "h" }], defaultUnitId: "s", additional: false, unitPresentation: "select" },
+    { id: "max_original_packet_size", title: "Max original packet size", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", additional: true, unitPresentation: "select" },
+    { id: "max_captured_packet_size", title: "Max captured packet size", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", additional: true, unitPresentation: "select" },
+    { id: "fragmented_packet_count", title: "Fragmented packet count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "truncated_packet_count", title: "Truncated packet count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "tcp_syn_count", title: "TCP SYN count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "tcp_fin_count", title: "TCP FIN count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "tcp_rst_count", title: "TCP RST count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
+  ]);
+
+  const advancedFlowFilterServiceOperatorOptions = Object.freeze([
+    { id: "contains", label: "Contains" },
+    { id: "equals", label: "Equals" },
+    { id: "starts_with", label: "Starts with" },
   ]);
 
   const state = {
@@ -379,6 +400,10 @@
         return document.ports || null;
       case "ip_addresses":
         return document.ip_addresses || null;
+      case "traffic":
+        return document.traffic || null;
+      case "service":
+        return document.service || null;
       default:
         return null;
     }
@@ -402,6 +427,10 @@
         return "Ports";
       case "ip_addresses":
         return "IP addresses";
+      case "traffic":
+        return "Traffic";
+      case "service":
+        return "Service";
       default:
         return sectionId;
     }
@@ -419,6 +448,16 @@
         return "address";
       case "prefix_text":
         return "prefix";
+      case "unit_id":
+        return "unit";
+      case "min_text":
+        return "min";
+      case "max_text":
+        return "max";
+      case "operator_id":
+        return "operator";
+      case "text":
+        return "text";
       default:
         return "";
     }
@@ -455,6 +494,32 @@
       subnet_enabled: false,
       address_text: "",
       prefix_text: "",
+    };
+  }
+
+  function advancedFlowFilterTrafficMetricDefinitionById(metricId) {
+    return advancedFlowFilterTrafficMetricDefinitions.find((definition) => definition.id === String(metricId || "")) || null;
+  }
+
+  function advancedFlowFilterTrafficUnitOptions(metricId) {
+    return advancedFlowFilterTrafficMetricDefinitionById(metricId)?.unitOptions || [{ id: "count", label: "Count" }];
+  }
+
+  function makeAdvancedFlowFilterTrafficRow(metricId) {
+    const definition = advancedFlowFilterTrafficMetricDefinitionById(metricId) || advancedFlowFilterTrafficMetricDefinitions[0];
+    return {
+      metric_id: definition.id,
+      unit_id: definition.defaultUnitId,
+      min_text: "",
+      max_text: "",
+    };
+  }
+
+  function makeAdvancedFlowFilterServiceTextRow() {
+    return {
+      operator_id: "contains",
+      case_sensitive: false,
+      text: "",
     };
   }
 
@@ -506,6 +571,47 @@
       : [];
   }
 
+  function normalizeAdvancedFlowFilterTrafficRows(rows, additional) {
+    const configuredRows = Array.isArray(rows) ? rows : [];
+    const configuredByMetric = new Map(
+      configuredRows
+        .filter((row) => row && typeof row === "object")
+        .map((row) => [String(row.metric_id || ""), row])
+    );
+    return advancedFlowFilterTrafficMetricDefinitions
+      .filter((definition) => Boolean(definition.additional) === Boolean(additional))
+      .map((definition) => {
+        const configuredRow = configuredByMetric.get(definition.id);
+        const unitOptions = definition.unitOptions;
+        const unitIds = new Set(unitOptions.map((option) => option.id));
+        return {
+          ...makeAdvancedFlowFilterTrafficRow(definition.id),
+          ...(configuredRow && typeof configuredRow === "object" ? configuredRow : {}),
+          metric_id: definition.id,
+          unit_id: unitIds.has(String(configuredRow?.unit_id || ""))
+            ? String(configuredRow?.unit_id || "")
+            : definition.defaultUnitId,
+          min_text: String(configuredRow?.min_text || ""),
+          max_text: String(configuredRow?.max_text || ""),
+        };
+      });
+  }
+
+  function normalizeAdvancedFlowFilterServiceTextRows(rows) {
+    const validOperatorIds = new Set(advancedFlowFilterServiceOperatorOptions.map((option) => option.id));
+    return Array.isArray(rows)
+      ? rows.map((row) => ({
+        ...makeAdvancedFlowFilterServiceTextRow(),
+        ...(row && typeof row === "object" ? row : {}),
+        operator_id: validOperatorIds.has(String(row?.operator_id || ""))
+          ? String(row?.operator_id || "")
+          : "contains",
+        case_sensitive: Boolean(row?.case_sensitive),
+        text: String(row?.text || ""),
+      }))
+      : [];
+  }
+
   function normalizeAdvancedFlowFilterEditorDraftDocument(document) {
     const sourceDocument = (document && typeof document === "object") ? document : {};
     return {
@@ -527,6 +633,22 @@
         enabled: sourceDocument.ip_addresses?.enabled === undefined ? true : Boolean(sourceDocument.ip_addresses.enabled),
         include: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.include),
         exclude: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.exclude),
+      },
+      traffic: {
+        ...(sourceDocument.traffic && typeof sourceDocument.traffic === "object" ? sourceDocument.traffic : {}),
+        enabled: sourceDocument.traffic?.enabled === undefined ? true : Boolean(sourceDocument.traffic.enabled),
+        primary: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.primary, false),
+        additional: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.additional, true),
+      },
+      service: {
+        ...(sourceDocument.service && typeof sourceDocument.service === "object" ? sourceDocument.service : {}),
+        enabled: sourceDocument.service?.enabled === undefined ? true : Boolean(sourceDocument.service.enabled),
+        include_recognized: Boolean(sourceDocument.service?.include_recognized),
+        include_unrecognized: Boolean(sourceDocument.service?.include_unrecognized),
+        include_text: normalizeAdvancedFlowFilterServiceTextRows(sourceDocument.service?.include_text),
+        exclude_recognized: Boolean(sourceDocument.service?.exclude_recognized),
+        exclude_unrecognized: Boolean(sourceDocument.service?.exclude_unrecognized),
+        exclude_text: normalizeAdvancedFlowFilterServiceTextRows(sourceDocument.service?.exclude_text),
       },
     };
   }
@@ -561,6 +683,23 @@
     };
   }
 
+  function advancedFlowFilterTrafficRowSnapshot(row) {
+    return {
+      metric_id: String(row?.metric_id || ""),
+      unit_id: String(row?.unit_id || ""),
+      min_text: String(row?.min_text || ""),
+      max_text: String(row?.max_text || ""),
+    };
+  }
+
+  function advancedFlowFilterServiceTextRowSnapshot(row) {
+    return {
+      operator_id: String(row?.operator_id || "contains"),
+      case_sensitive: Boolean(row?.case_sensitive),
+      text: String(row?.text || ""),
+    };
+  }
+
   function advancedFlowFilterSettingsDraftSnapshot(document) {
     if (!document) {
       return "";
@@ -591,7 +730,34 @@
           ? document.ip_addresses.exclude.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
           : [],
       },
+      traffic: {
+        enabled: Boolean(document?.traffic?.enabled),
+        primary: Array.isArray(document?.traffic?.primary)
+          ? document.traffic.primary.map((row) => advancedFlowFilterTrafficRowSnapshot(row))
+          : [],
+        additional: Array.isArray(document?.traffic?.additional)
+          ? document.traffic.additional.map((row) => advancedFlowFilterTrafficRowSnapshot(row))
+          : [],
+      },
+      service: {
+        enabled: Boolean(document?.service?.enabled),
+        include_recognized: Boolean(document?.service?.include_recognized),
+        include_unrecognized: Boolean(document?.service?.include_unrecognized),
+        include_text: Array.isArray(document?.service?.include_text)
+          ? document.service.include_text.map((row) => advancedFlowFilterServiceTextRowSnapshot(row))
+          : [],
+        exclude_recognized: Boolean(document?.service?.exclude_recognized),
+        exclude_unrecognized: Boolean(document?.service?.exclude_unrecognized),
+        exclude_text: Array.isArray(document?.service?.exclude_text)
+          ? document.service.exclude_text.map((row) => advancedFlowFilterServiceTextRowSnapshot(row))
+          : [],
+      },
     });
+  }
+
+  function advancedFlowFilterTrafficHasConfiguredAdditionalRows(document) {
+    return Array.isArray(document?.traffic?.additional)
+      && document.traffic.additional.some((row) => String(row?.min_text || "").length > 0 || String(row?.max_text || "").length > 0);
   }
 
   function captureAdvancedFlowFilterSettingsDraftBaseline() {
@@ -628,6 +794,8 @@
     state.advancedFlowFilterSettings.sourcePath = String(payload.sourcePath || "");
     state.advancedFlowFilterSettings.displayName = String(payload.displayName || "Custom filter");
     state.advancedFlowFilterSettings.sourceCanonicalText = String(payload.sourceCanonicalText || "");
+    state.advancedFlowFilterSettings.trafficAdditionalExpanded =
+      advancedFlowFilterTrafficHasConfiguredAdditionalRows(payload.document);
     captureAdvancedFlowFilterSettingsDraftBaseline();
     state.advancedFlowFilterSettings.workflowState = "idle";
     state.advancedFlowFilterSettings.pendingOpenCandidate = null;
@@ -1002,6 +1170,252 @@
     `;
   }
 
+  function advancedFlowFilterServiceIncludeTextEditingDisabled(section, dialogBusy) {
+    return dialogBusy
+      || !Boolean(section?.enabled)
+      || (Boolean(section?.include_unrecognized) && !Boolean(section?.include_recognized));
+  }
+
+  function advancedFlowFilterServiceIncludeHelperText(section) {
+    if (!Boolean(section?.include_unrecognized) || Boolean(section?.include_recognized)) {
+      return "";
+    }
+    const hasRetainedText = Array.isArray(section?.include_text)
+      && section.include_text.some((row) => String(row?.text || "").length > 0);
+    return hasRetainedText
+      ? "Text rules apply only to recognized services; retained text rules cannot match while only Unrecognized is selected."
+      : "Text rules apply only to recognized services.";
+  }
+
+  function renderAdvancedFlowFilterTrafficRow(row, groupKey, sectionEnabled, dialogBusy) {
+    const definition = advancedFlowFilterTrafficMetricDefinitionById(row?.metric_id);
+    if (!definition) {
+      return "";
+    }
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    const unitOptions = advancedFlowFilterTrafficUnitOptions(definition.id);
+    const renderStaticUnit = definition.unitPresentation === "static";
+    return `
+      <div class="advanced-filter-draft-row advanced-filter-draft-row-wide">
+        <label class="advanced-filter-row-label">${escapeHtml(definition.title)}</label>
+        <input
+          type="text"
+          placeholder="Min"
+          value="${escapeHtml(String(row?.min_text || ""))}"
+          data-advanced-filter-row-section-id="traffic"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          data-advanced-filter-row-index="${escapeHtml(String(definition.id))}"
+          data-advanced-filter-row-field="min_text"
+          ${editingDisabled ? "disabled" : ""}
+        />
+        <input
+          type="text"
+          placeholder="Max"
+          value="${escapeHtml(String(row?.max_text || ""))}"
+          data-advanced-filter-row-section-id="traffic"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          data-advanced-filter-row-index="${escapeHtml(String(definition.id))}"
+          data-advanced-filter-row-field="max_text"
+          ${editingDisabled ? "disabled" : ""}
+        />
+        ${renderStaticUnit
+          ? `<span class="advanced-filter-static-unit-label">${escapeHtml(definition.staticUnitLabel || "packets")}</span>`
+          : `<select
+              data-advanced-filter-row-section-id="traffic"
+              data-advanced-filter-group="${escapeHtml(groupKey)}"
+              data-advanced-filter-row-index="${escapeHtml(String(definition.id))}"
+              data-advanced-filter-row-field="unit_id"
+              ${editingDisabled || unitOptions.length <= 1 ? "disabled" : ""}
+            >
+              ${unitOptions.map((option) => `
+                <option value="${escapeHtml(option.id)}"${option.id === String(row?.unit_id || definition.defaultUnitId) ? " selected" : ""}>
+                  ${escapeHtml(option.label)}
+                </option>
+              `).join("")}
+            </select>`}
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy) {
+    const trafficSection = document?.traffic || { enabled: true, primary: [], additional: [] };
+    const additionalExpanded = Boolean(state.advancedFlowFilterSettings.trafficAdditionalExpanded);
+    return `
+      <section
+        class="advanced-filter-section-card advanced-filter-section-card-wide"
+        data-advanced-filter-structured-section-id="traffic"
+      >
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">Traffic</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="traffic"
+              ${trafficSection.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        <div class="advanced-filter-group">
+          <div class="advanced-filter-row-list">
+            ${(Array.isArray(trafficSection.primary) ? trafficSection.primary : []).map((row) =>
+              renderAdvancedFlowFilterTrafficRow(row, "primary", Boolean(trafficSection.enabled), dialogBusy)
+            ).join("")}
+          </div>
+        </div>
+        <div class="advanced-filter-group">
+          <button
+            type="button"
+            class="secondary-button advanced-filter-add-row-button"
+            data-advanced-filter-traffic-toggle="true"
+            ${dialogBusy ? "disabled" : ""}
+          >${additionalExpanded ? "Hide additional traffic filters" : "Show additional traffic filters"}</button>
+          ${additionalExpanded ? `
+            <div class="advanced-filter-row-list">
+              ${(Array.isArray(trafficSection.additional) ? trafficSection.additional : []).map((row) =>
+                renderAdvancedFlowFilterTrafficRow(row, "additional", Boolean(trafficSection.enabled), dialogBusy)
+              ).join("")}
+            </div>
+          ` : ""}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderAdvancedFlowFilterServiceTextGroup(groupLabel, groupKey, rows, editingDisabled, dialogBusy) {
+    return `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">${escapeHtml(groupLabel)}</p>
+        <div class="advanced-filter-row-list">
+          ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
+            <div class="advanced-filter-draft-row advanced-filter-draft-row-wide">
+              <select
+                data-advanced-filter-row-section-id="service"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                data-advanced-filter-row-field="operator_id"
+                ${editingDisabled ? "disabled" : ""}
+                ${groupKey === "include_text" ? 'data-advanced-filter-disabled-when-unrecognized-only="true"' : ""}
+              >
+                ${advancedFlowFilterServiceOperatorOptions.map((option) => `
+                  <option value="${escapeHtml(option.id)}"${String(row?.operator_id || "contains") === option.id ? " selected" : ""}>
+                    ${escapeHtml(option.label)}
+                  </option>
+                `).join("")}
+              </select>
+              <label class="advanced-filter-inline-toggle">
+                <input
+                  type="checkbox"
+                  data-advanced-filter-row-section-id="service"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="case_sensitive"
+                  ${row?.case_sensitive ? "checked" : ""}
+                  ${editingDisabled ? "disabled" : ""}
+                  ${groupKey === "include_text" ? 'data-advanced-filter-disabled-when-unrecognized-only="true"' : ""}
+                />
+                <span>Case sensitive</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Service text"
+                value="${escapeHtml(String(row?.text || ""))}"
+                data-advanced-filter-row-section-id="service"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                data-advanced-filter-row-field="text"
+                ${editingDisabled ? "disabled" : ""}
+                ${groupKey === "include_text" ? 'data-advanced-filter-disabled-when-unrecognized-only="true"' : ""}
+              />
+              <button
+                type="button"
+                class="secondary-button advanced-filter-remove-row-button"
+                data-advanced-filter-remove-row-section-id="service"
+                data-advanced-filter-group="${escapeHtml(groupKey)}"
+                data-advanced-filter-row-index="${rowIndex}"
+                ${dialogBusy ? "disabled" : ""}
+              >Remove</button>
+            </div>
+          `).join("")}
+        </div>
+        <button
+          type="button"
+          class="secondary-button advanced-filter-add-row-button"
+          data-advanced-filter-add-row-section-id="service"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          ${editingDisabled ? "disabled" : ""}
+          ${groupKey === "include_text" ? 'data-advanced-filter-disabled-when-unrecognized-only="true"' : ""}
+        >Add service rule</button>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterServiceSectionCard(document, dialogBusy) {
+    const serviceSection = document?.service || {
+      enabled: true,
+      include_recognized: false,
+      include_unrecognized: false,
+      include_text: [],
+      exclude_recognized: false,
+      exclude_unrecognized: false,
+      exclude_text: [],
+    };
+    const includeTextEditingDisabled = advancedFlowFilterServiceIncludeTextEditingDisabled(serviceSection, dialogBusy);
+    const excludeTextEditingDisabled = dialogBusy || !Boolean(serviceSection.enabled);
+    const includeHelperText = advancedFlowFilterServiceIncludeHelperText(serviceSection);
+    return `
+      <section
+        class="advanced-filter-section-card advanced-filter-section-card-wide"
+        data-advanced-filter-structured-section-id="service"
+      >
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">Service</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="service"
+              ${serviceSection.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        <div class="advanced-filter-group">
+          <p class="advanced-filter-group-title">Include</p>
+          <p class="advanced-filter-group-title">State</p>
+          <div class="advanced-filter-option-grid">
+            <label class="advanced-filter-option-row">
+              <input type="checkbox" data-advanced-filter-service-recognition="include_recognized" ${serviceSection.include_recognized ? "checked" : ""} ${dialogBusy || !serviceSection.enabled ? "disabled" : ""} />
+              <span>Known</span>
+            </label>
+            <label class="advanced-filter-option-row">
+              <input type="checkbox" data-advanced-filter-service-recognition="include_unrecognized" ${serviceSection.include_unrecognized ? "checked" : ""} ${dialogBusy || !serviceSection.enabled ? "disabled" : ""} />
+              <span>Unknown</span>
+            </label>
+          </div>
+          ${includeHelperText ? `<p class="advanced-filter-helper-copy">${escapeHtml(includeHelperText)}</p>` : ""}
+        </div>
+        ${renderAdvancedFlowFilterServiceTextGroup("Include text", "include_text", serviceSection.include_text, includeTextEditingDisabled, dialogBusy)}
+        <div class="advanced-filter-group">
+          <p class="advanced-filter-group-title">Exclude</p>
+          <p class="advanced-filter-group-title">State</p>
+          <div class="advanced-filter-option-grid">
+            <label class="advanced-filter-option-row">
+              <input type="checkbox" data-advanced-filter-service-recognition="exclude_recognized" ${serviceSection.exclude_recognized ? "checked" : ""} ${dialogBusy || !serviceSection.enabled ? "disabled" : ""} />
+              <span>Known</span>
+            </label>
+            <label class="advanced-filter-option-row">
+              <input type="checkbox" data-advanced-filter-service-recognition="exclude_unrecognized" ${serviceSection.exclude_unrecognized ? "checked" : ""} ${dialogBusy || !serviceSection.enabled ? "disabled" : ""} />
+              <span>Unknown</span>
+            </label>
+          </div>
+        </div>
+        ${renderAdvancedFlowFilterServiceTextGroup("Exclude text", "exclude_text", serviceSection.exclude_text, excludeTextEditingDisabled, dialogBusy)}
+      </section>
+    `;
+  }
+
   function advancedFlowFilterSettingsSectionMarkup(sectionId, document, dialogBusy) {
     const definition = advancedFlowFilterSectionDefinitions.find((candidate) => candidate.id === sectionId);
     if (definition) {
@@ -1012,6 +1426,12 @@
     }
     if (sectionId === "ip_addresses") {
       return renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy);
+    }
+    if (sectionId === "traffic") {
+      return renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy);
+    }
+    if (sectionId === "service") {
+      return renderAdvancedFlowFilterServiceSectionCard(document, dialogBusy);
     }
     return "";
   }
@@ -1032,15 +1452,26 @@
     for (const input of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-row-section-id]")) {
       const sectionId = String(input.dataset.advancedFilterRowSectionId || "");
       const section = advancedFlowFilterSectionById(document, sectionId);
-      input.disabled = interactionBlocked || !Boolean(section?.enabled);
+      const disableForUnrecognizedOnly =
+        sectionId === "service"
+        && input.dataset.advancedFilterDisabledWhenUnrecognizedOnly === "true"
+        && advancedFlowFilterServiceIncludeTextEditingDisabled(section, false);
+      input.disabled = interactionBlocked || !Boolean(section?.enabled) || disableForUnrecognizedOnly;
     }
     for (const addButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-add-row-section-id]")) {
       const sectionId = String(addButton.dataset.advancedFilterAddRowSectionId || "");
       const section = advancedFlowFilterSectionById(document, sectionId);
-      addButton.disabled = interactionBlocked || !Boolean(section?.enabled);
+      const disableForUnrecognizedOnly =
+        sectionId === "service"
+        && addButton.dataset.advancedFilterDisabledWhenUnrecognizedOnly === "true"
+        && advancedFlowFilterServiceIncludeTextEditingDisabled(section, false);
+      addButton.disabled = interactionBlocked || !Boolean(section?.enabled) || disableForUnrecognizedOnly;
     }
     for (const removeButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-remove-row-section-id]")) {
       removeButton.disabled = interactionBlocked;
+    }
+    for (const toggleButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-traffic-toggle]")) {
+      toggleButton.disabled = interactionBlocked;
     }
   }
 
@@ -1075,6 +1506,8 @@
         ...finiteSections,
         renderAdvancedFlowFilterPortsSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy),
+        renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy),
+        renderAdvancedFlowFilterServiceSectionCard(document, dialogBusy),
       ].join("");
     }
 
@@ -9247,17 +9680,46 @@
       return;
     }
 
+    const trafficToggleButton = event.target.closest("[data-advanced-filter-traffic-toggle]");
+    if (trafficToggleButton instanceof HTMLButtonElement) {
+      if (currentAdvancedFlowFilterSettingsBusy()) {
+        return;
+      }
+      state.advancedFlowFilterSettings.trafficAdditionalExpanded = !Boolean(
+        state.advancedFlowFilterSettings.trafficAdditionalExpanded
+      );
+      refreshAdvancedFlowFilterSettingsAfterDraftChange({ rebuildSectionIds: ["traffic"] });
+      return;
+    }
+
     const addButton = event.target.closest("[data-advanced-filter-add-row-section-id]");
     if (addButton instanceof HTMLButtonElement) {
       const sectionId = String(addButton.dataset.advancedFilterAddRowSectionId || "");
       const group = String(addButton.dataset.advancedFilterGroup || "");
       mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
         const section = advancedFlowFilterSectionById(draft, sectionId);
-        if (!section || (group !== "include" && group !== "exclude")) {
+        if (!section) {
           return;
         }
         const rows = Array.isArray(section[group]) ? section[group] : [];
-        rows.push(sectionId === "ports" ? makeAdvancedFlowFilterPortRow() : makeAdvancedFlowFilterIpAddressRow());
+        if (sectionId === "ports") {
+          if (group !== "include" && group !== "exclude") {
+            return;
+          }
+          rows.push(makeAdvancedFlowFilterPortRow());
+        } else if (sectionId === "ip_addresses") {
+          if (group !== "include" && group !== "exclude") {
+            return;
+          }
+          rows.push(makeAdvancedFlowFilterIpAddressRow());
+        } else if (sectionId === "service") {
+          if (group !== "include_text" && group !== "exclude_text") {
+            return;
+          }
+          rows.push(makeAdvancedFlowFilterServiceTextRow());
+        } else {
+          return;
+        }
         section[group] = rows;
       }, { rebuildSectionIds: [sectionId] });
       return;
@@ -9270,7 +9732,10 @@
       const rowIndex = Number(removeButton.dataset.advancedFilterRowIndex);
       mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
         const section = advancedFlowFilterSectionById(draft, sectionId);
-        if (!section || (group !== "include" && group !== "exclude") || !Number.isInteger(rowIndex)) {
+        const validGroup = sectionId === "service"
+          ? (group === "include_text" || group === "exclude_text")
+          : (group === "include" || group === "exclude");
+        if (!section || !validGroup || !Number.isInteger(rowIndex)) {
           return;
         }
         const rows = Array.isArray(section[group]) ? section[group] : [];
@@ -9289,6 +9754,7 @@
     const enabledSectionId = String(event.target.dataset.advancedFilterEnabledSectionId || "");
     const optionSectionId = String(event.target.dataset.advancedFilterSectionId || "");
     const rowSectionId = String(event.target.dataset.advancedFilterRowSectionId || "");
+    const serviceRecognitionField = String(event.target.dataset.advancedFilterServiceRecognition || "");
     const sectionId = enabledSectionId || optionSectionId;
     if (enabledSectionId) {
       mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
@@ -9326,21 +9792,44 @@
       return;
     }
 
+    if (serviceRecognitionField) {
+      mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+        const serviceSection = advancedFlowFilterSectionById(draft, "service");
+        if (!serviceSection) {
+          return;
+        }
+        serviceSection[serviceRecognitionField] = Boolean(event.target.checked);
+      }, { rebuildSectionIds: ["service"] });
+      return;
+    }
+
     if (!rowSectionId) {
       return;
     }
 
     const group = String(event.target.dataset.advancedFilterGroup || "");
-    const rowIndex = Number(event.target.dataset.advancedFilterRowIndex);
+    const rowKey = String(event.target.dataset.advancedFilterRowIndex || "");
+    const numericRowIndex = Number(rowKey);
     const field = String(event.target.dataset.advancedFilterRowField || "");
     const rebuildSection = field === "range_enabled" || field === "subnet_enabled";
     mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
       const section = advancedFlowFilterSectionById(draft, rowSectionId);
-      if (!section || (group !== "include" && group !== "exclude") || !Number.isInteger(rowIndex)) {
+      if (!section) {
         return;
       }
       const rows = Array.isArray(section[group]) ? section[group] : [];
-      const row = rows[rowIndex];
+      let row = null;
+      if (rowSectionId === "traffic") {
+        row = rows.find((candidate) => String(candidate?.metric_id || "") === rowKey) || null;
+      } else {
+        const validGroup = rowSectionId === "service"
+          ? (group === "include_text" || group === "exclude_text")
+          : (group === "include" || group === "exclude");
+        if (!validGroup || !Number.isInteger(numericRowIndex)) {
+          return;
+        }
+        row = rows[numericRowIndex] || null;
+      }
       if (!row) {
         return;
       }
@@ -9358,7 +9847,8 @@
 
     const rowSectionId = String(event.target.dataset.advancedFilterRowSectionId || "");
     const group = String(event.target.dataset.advancedFilterGroup || "");
-    const rowIndex = Number(event.target.dataset.advancedFilterRowIndex);
+    const rowKey = String(event.target.dataset.advancedFilterRowIndex || "");
+    const numericRowIndex = Number(rowKey);
     const field = String(event.target.dataset.advancedFilterRowField || "");
     if (!rowSectionId || !field || event.target.type === "checkbox") {
       return;
@@ -9370,11 +9860,22 @@
     }
     clearAdvancedFlowFilterSettingsStatus();
     const section = advancedFlowFilterSectionById(draft, rowSectionId);
-    if (!section || (group !== "include" && group !== "exclude") || !Number.isInteger(rowIndex)) {
+    if (!section) {
       return;
     }
     const rows = Array.isArray(section[group]) ? section[group] : [];
-    const row = rows[rowIndex];
+    let row = null;
+    if (rowSectionId === "traffic") {
+      row = rows.find((candidate) => String(candidate?.metric_id || "") === rowKey) || null;
+    } else {
+      const validGroup = rowSectionId === "service"
+        ? (group === "include_text" || group === "exclude_text")
+        : (group === "include" || group === "exclude");
+      if (!validGroup || !Number.isInteger(numericRowIndex)) {
+        return;
+      }
+      row = rows[numericRowIndex] || null;
+    }
     if (row) {
       row[field] = event.target.value;
     }

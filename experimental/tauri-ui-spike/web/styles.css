@@ -449,6 +449,25 @@ body.is-resizing-vertical {
   grid-template-columns: minmax(0, 180px) auto minmax(0, 1.3fr) minmax(0, 0.7fr) auto;
 }
 
+.advanced-filter-row-label {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.advanced-filter-static-unit-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .advanced-filter-inline-toggle {
   display: inline-flex;
   align-items: center;
@@ -466,6 +485,12 @@ body.is-resizing-vertical {
 .advanced-filter-empty-copy {
   margin: 0;
   color: var(--muted);
+  font-size: 12px;
+}
+
+.advanced-filter-helper-copy {
+  margin: 0;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 

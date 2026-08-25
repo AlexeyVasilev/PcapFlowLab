@@ -220,6 +220,39 @@ pub struct AdvancedFlowFilterIpAddressSectionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterTrafficRowDto {
+    pub metric_id: String,
+    pub unit_id: String,
+    pub min_text: String,
+    pub max_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterTrafficSectionDto {
+    pub enabled: bool,
+    pub primary: Vec<AdvancedFlowFilterTrafficRowDto>,
+    pub additional: Vec<AdvancedFlowFilterTrafficRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterServiceTextRowDto {
+    pub operator_id: String,
+    pub case_sensitive: bool,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterServiceSectionDto {
+    pub enabled: bool,
+    pub include_recognized: bool,
+    pub include_unrecognized: bool,
+    pub include_text: Vec<AdvancedFlowFilterServiceTextRowDto>,
+    pub exclude_recognized: bool,
+    pub exclude_unrecognized: bool,
+    pub exclude_text: Vec<AdvancedFlowFilterServiceTextRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub address_family: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub flow_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
@@ -241,6 +274,8 @@ pub struct AdvancedFlowFilterStructuredDocumentDto {
     pub directionality: AdvancedFlowFilterFiniteSectionDto,
     pub ports: AdvancedFlowFilterPortSectionDto,
     pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
+    pub traffic: AdvancedFlowFilterTrafficSectionDto,
+    pub service: AdvancedFlowFilterServiceSectionDto,
     pub has_unsupported_configured_sections: bool,
 }
 

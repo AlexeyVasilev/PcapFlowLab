@@ -122,7 +122,31 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const std::uint8_t* ip_exclude_subnet_enabled,
     const char* const* ip_exclude_address_text_utf8,
     const char* const* ip_exclude_prefix_text_utf8,
-    std::size_t ip_exclude_count
+    std::size_t ip_exclude_count,
+    std::uint8_t traffic_enabled,
+    const char* const* traffic_primary_metric_ids_utf8,
+    const char* const* traffic_primary_unit_ids_utf8,
+    const char* const* traffic_primary_min_text_utf8,
+    const char* const* traffic_primary_max_text_utf8,
+    std::size_t traffic_primary_count,
+    const char* const* traffic_additional_metric_ids_utf8,
+    const char* const* traffic_additional_unit_ids_utf8,
+    const char* const* traffic_additional_min_text_utf8,
+    const char* const* traffic_additional_max_text_utf8,
+    std::size_t traffic_additional_count,
+    std::uint8_t service_enabled,
+    std::uint8_t service_include_recognized,
+    std::uint8_t service_include_unrecognized,
+    const char* const* service_include_operator_ids_utf8,
+    const std::uint8_t* service_include_case_sensitive,
+    const char* const* service_include_text_utf8,
+    std::size_t service_include_text_count,
+    std::uint8_t service_exclude_recognized,
+    std::uint8_t service_exclude_unrecognized,
+    const char* const* service_exclude_operator_ids_utf8,
+    const std::uint8_t* service_exclude_case_sensitive,
+    const char* const* service_exclude_text_utf8,
+    std::size_t service_exclude_text_count
 );
 std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes();
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(

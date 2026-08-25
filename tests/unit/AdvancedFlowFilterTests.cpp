@@ -2709,6 +2709,10 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.active_rule_count == 0U);
     PFL_EXPECT(empty.document->ports.include.empty());
     PFL_EXPECT(empty.document->ip_addresses.include.empty());
+    PFL_EXPECT(empty.document->traffic.primary.size() == 4U);
+    PFL_EXPECT(empty.document->traffic.additional.size() == 7U);
+    PFL_EXPECT(empty.document->service.include_text.empty());
+    PFL_EXPECT(empty.document->service.exclude_text.empty());
 
     const auto make_port_row = [](
                                    std::string scope_id,
@@ -2733,6 +2737,30 @@ void run_frontend_structured_document_tests() {
             .subnet_enabled = subnet_enabled,
             .address_text = std::move(address_text),
             .prefix_text = std::move(prefix_text),
+        };
+    };
+
+    const auto make_traffic_row = [](
+                                      std::string metric_id,
+                                      std::string unit_id,
+                                      std::string min_text,
+                                      std::string max_text) {
+        return FrontendAdvancedFlowFilterTrafficRowDto {
+            .metric_id = std::move(metric_id),
+            .unit_id = std::move(unit_id),
+            .min_text = std::move(min_text),
+            .max_text = std::move(max_text),
+        };
+    };
+
+    const auto make_service_text_row = [](
+                                           std::string operator_id,
+                                           const bool case_sensitive,
+                                           std::string text) {
+        return FrontendAdvancedFlowFilterServiceTextRowDto {
+            .operator_id = std::move(operator_id),
+            .case_sensitive = case_sensitive,
+            .text = std::move(text),
         };
     };
 
@@ -2788,6 +2816,54 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].subnet_enabled == true);
         PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].address_text == "2001:db8::");
         PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].prefix_text == "32");
+    }
+
+    {
+        const auto traffic_service_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "original_bytes.min = 4MiB\n"
+            "captured_bytes.max = 512KiB\n"
+            "duration.min = 2m\n"
+            "max_original_packet_length.max = 2KiB\n"
+            "tcp_syn_count.min = 3\n"
+            "service.state.include = unknown\n"
+            "service.contains.ci.include = \"youtube\"\n"
+            "service.equals.cs.exclude = \"bulk-download.example.test\"\n"
+        );
+        PFL_EXPECT(traffic_service_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(traffic_service_snapshot.document.has_value());
+        const auto original_bytes_row = std::find_if(
+            traffic_service_snapshot.document->traffic.primary.begin(),
+            traffic_service_snapshot.document->traffic.primary.end(),
+            [](const auto& row) { return row.metric_id == "original_bytes"; }
+        );
+        const auto duration_row = std::find_if(
+            traffic_service_snapshot.document->traffic.primary.begin(),
+            traffic_service_snapshot.document->traffic.primary.end(),
+            [](const auto& row) { return row.metric_id == "duration"; }
+        );
+        const auto max_original_packet_size_row = std::find_if(
+            traffic_service_snapshot.document->traffic.additional.begin(),
+            traffic_service_snapshot.document->traffic.additional.end(),
+            [](const auto& row) { return row.metric_id == "max_original_packet_size"; }
+        );
+        PFL_REQUIRE(original_bytes_row != traffic_service_snapshot.document->traffic.primary.end());
+        PFL_REQUIRE(duration_row != traffic_service_snapshot.document->traffic.primary.end());
+        PFL_REQUIRE(max_original_packet_size_row != traffic_service_snapshot.document->traffic.additional.end());
+        PFL_EXPECT(original_bytes_row->unit_id == "MiB");
+        PFL_EXPECT(original_bytes_row->min_text == "4");
+        PFL_EXPECT(duration_row->unit_id == "min");
+        PFL_EXPECT(duration_row->min_text == "2");
+        PFL_EXPECT(max_original_packet_size_row->unit_id == "KiB");
+        PFL_EXPECT(max_original_packet_size_row->max_text == "2");
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_unrecognized == true);
+        PFL_REQUIRE(traffic_service_snapshot.document->service.include_text.size() == 1U);
+        PFL_REQUIRE(traffic_service_snapshot.document->service.exclude_text.size() == 1U);
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].operator_id == "contains");
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].case_sensitive == false);
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].text == "youtube");
+        PFL_EXPECT(traffic_service_snapshot.document->service.exclude_text[0].operator_id == "equals");
+        PFL_EXPECT(traffic_service_snapshot.document->service.exclude_text[0].case_sensitive == true);
     }
 
     const auto expect_update_matches_direct = [&](const auto& updated) {
@@ -2967,6 +3043,66 @@ void run_frontend_structured_document_tests() {
 
     {
         auto draft = *empty.document;
+        draft.traffic.enabled = true;
+        draft.traffic.primary = {
+            make_traffic_row("packets", "count", "9007199254740993", ""),
+            make_traffic_row("original_bytes", "MiB", "4", "8"),
+            make_traffic_row("captured_bytes", "KiB", "", "512"),
+            make_traffic_row("duration", "min", "2", ""),
+        };
+        draft.traffic.additional = {
+            make_traffic_row("max_original_packet_size", "KiB", "", "2"),
+            make_traffic_row("max_captured_packet_size", "B", "1500", ""),
+            make_traffic_row("fragmented_packet_count", "count", "", ""),
+            make_traffic_row("truncated_packet_count", "count", "", ""),
+            make_traffic_row("tcp_syn_count", "count", "3", ""),
+            make_traffic_row("tcp_fin_count", "count", "", "7"),
+            make_traffic_row("tcp_rst_count", "count", "", ""),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.aggregate.packet_count.has_value());
+        PFL_EXPECT(reparsed.configured_spec.aggregate.packet_count->min == std::optional<std::uint64_t> {9007199254740993ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->min == std::optional<std::uint64_t> {4ULL * 1024ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->max == std::optional<std::uint64_t> {8ULL * 1024ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.captured_bytes->max == std::optional<std::uint64_t> {512ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.duration_us->min == std::optional<std::uint64_t> {120000000ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.max_original_packet_length->max == std::optional<std::uint32_t> {2048U});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.max_captured_packet_length->min == std::optional<std::uint32_t> {1500U});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_syn_count->min == std::optional<std::uint64_t> {3ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_fin_count->max == std::optional<std::uint64_t> {7ULL});
+        PFL_EXPECT(applied.first.document->canonical_text.find("packet_count.min = 9007199254740993") != std::string::npos);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.service.enabled = true;
+        draft.service.include_recognized = true;
+        draft.service.include_unrecognized = true;
+        draft.service.include_text = {
+            make_service_text_row("contains", false, "youtube"),
+        };
+        draft.service.exclude_recognized = false;
+        draft.service.exclude_unrecognized = true;
+        draft.service.exclude_text = {
+            make_service_text_row("starts_with", true, "bulk"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.service.include.size() == 3U);
+        PFL_REQUIRE(reparsed.configured_spec.service.exclude.size() == 2U);
+        PFL_EXPECT(reparsed.configured_spec.service.include[0].kind == AdvancedFlowFilterServicePredicateKind::known);
+        PFL_EXPECT(reparsed.configured_spec.service.include[1].kind == AdvancedFlowFilterServicePredicateKind::unknown);
+        PFL_EXPECT(reparsed.configured_spec.service.include[2].kind == AdvancedFlowFilterServicePredicateKind::contains);
+        PFL_EXPECT(reparsed.configured_spec.service.include[2].value == "youtube");
+        PFL_EXPECT(reparsed.configured_spec.service.exclude[0].kind == AdvancedFlowFilterServicePredicateKind::unknown);
+        PFL_EXPECT(reparsed.configured_spec.service.exclude[1].kind == AdvancedFlowFilterServicePredicateKind::starts_with);
+        PFL_EXPECT(reparsed.configured_spec.service.exclude[1].case_sensitivity ==
+            AdvancedFlowFilterStringCaseSensitivity::case_sensitive);
+    }
+
+    {
+        auto draft = *empty.document;
         draft.ports.enabled = true;
         draft.ports.include = {
             make_port_row("either", true, "443", ""),
@@ -3031,7 +3167,7 @@ void run_frontend_structured_document_tests() {
         );
         PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(updated.document.has_value());
-        PFL_EXPECT(updated.document->has_unsupported_configured_sections);
+        PFL_EXPECT(updated.document->has_unsupported_configured_sections == false);
         const auto reparsed = require_parse_success(updated.document->canonical_text);
         PFL_REQUIRE(reparsed.document.configured_spec.aggregate.packet_count.has_value());
         PFL_REQUIRE(reparsed.document.configured_spec.service.include.size() == 1U);
@@ -3092,6 +3228,48 @@ void run_frontend_structured_document_tests() {
     }
 
     {
+        const std::string text =
+            "format_version = 2\n"
+            "section.traffic.enabled = false\n"
+            "original_bytes.min = 4MiB\n"
+            "duration.max = 2m\n";
+        const auto parsed_with_traffic = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_traffic.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_traffic.document.has_value());
+        auto draft = *parsed_with_traffic.document;
+        draft.address_family.include = {"ipv4"};
+        draft.traffic.primary.clear();
+        draft.traffic.additional.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->traffic.enabled == false);
+        PFL_EXPECT(updated.document->canonical_text.find("original_bytes.min = 4MiB") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("duration.max = 2m") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.service.enabled = false\n"
+            "service.state.include = unknown\n"
+            "service.contains.ci.include = \"youtube\"\n";
+        const auto parsed_with_service = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_service.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_service.document.has_value());
+        auto draft = *parsed_with_service.document;
+        draft.flow_protocol.include = {"udp"};
+        draft.service.include_text.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->service.enabled == false);
+        PFL_EXPECT(updated.document->service.include_unrecognized == true);
+        PFL_EXPECT(updated.document->canonical_text.find("service.state.include = unknown") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("service.contains.ci.include = \"youtube\"") != std::string::npos);
+    }
+
+    {
         const auto invalid = adapter.update_advanced_flow_filter_structured_section(
             empty.document->canonical_text,
             "flow_protocol",
@@ -3104,6 +3282,22 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(invalid.update_issue->section_id == "flow_protocol");
         PFL_EXPECT(invalid.update_issue->group == "include");
         PFL_EXPECT(invalid.update_issue->value_id == "tcpish");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.traffic.enabled = true;
+        draft.traffic.primary = {
+            make_traffic_row("packets", "bogus", "1", ""),
+            make_traffic_row("original_bytes", "KiB", "", ""),
+            make_traffic_row("captured_bytes", "KiB", "", ""),
+            make_traffic_row("duration", "s", "", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "traffic");
+        PFL_EXPECT(invalid.update_issue->field_id == "unit_id");
     }
 }
 

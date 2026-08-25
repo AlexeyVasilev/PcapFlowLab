@@ -102,6 +102,35 @@ struct FrontendAdvancedFlowFilterIpAddressSectionDto {
     std::vector<FrontendAdvancedFlowFilterIpAddressRowDto> exclude {};
 };
 
+struct FrontendAdvancedFlowFilterTrafficRowDto {
+    std::string metric_id {};
+    std::string unit_id {};
+    std::string min_text {};
+    std::string max_text {};
+};
+
+struct FrontendAdvancedFlowFilterTrafficSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterTrafficRowDto> primary {};
+    std::vector<FrontendAdvancedFlowFilterTrafficRowDto> additional {};
+};
+
+struct FrontendAdvancedFlowFilterServiceTextRowDto {
+    std::string operator_id {};
+    bool case_sensitive {false};
+    std::string text {};
+};
+
+struct FrontendAdvancedFlowFilterServiceSectionDto {
+    bool enabled {true};
+    bool include_recognized {false};
+    bool include_unrecognized {false};
+    std::vector<FrontendAdvancedFlowFilterServiceTextRowDto> include_text {};
+    bool exclude_recognized {false};
+    bool exclude_unrecognized {false};
+    std::vector<FrontendAdvancedFlowFilterServiceTextRowDto> exclude_text {};
+};
+
 struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> address_family {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> flow_protocol {};
@@ -122,6 +151,8 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     FrontendAdvancedFlowFilterFiniteSectionDto directionality {};
     FrontendAdvancedFlowFilterPortSectionDto ports {};
     FrontendAdvancedFlowFilterIpAddressSectionDto ip_addresses {};
+    FrontendAdvancedFlowFilterTrafficSectionDto traffic {};
+    FrontendAdvancedFlowFilterServiceSectionDto service {};
     bool has_unsupported_configured_sections {false};
 };
 

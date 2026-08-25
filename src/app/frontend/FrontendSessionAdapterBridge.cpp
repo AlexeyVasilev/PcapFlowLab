@@ -470,6 +470,69 @@ std::string structured_ip_section_json(const pfl::FrontendAdvancedFlowFilterIpAd
     return out.str();
 }
 
+std::string structured_traffic_row_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterTrafficRowDto>& rows) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        const auto& row = rows[index];
+        out << '{'
+            << "\"metric_id\":" << json_string(row.metric_id) << ','
+            << "\"unit_id\":" << json_string(row.unit_id) << ','
+            << "\"min_text\":" << json_string(row.min_text) << ','
+            << "\"max_text\":" << json_string(row.max_text)
+            << '}';
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_traffic_section_json(const pfl::FrontendAdvancedFlowFilterTrafficSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"primary\":" << structured_traffic_row_array_json(section.primary) << ','
+        << "\"additional\":" << structured_traffic_row_array_json(section.additional)
+        << '}';
+    return out.str();
+}
+
+std::string structured_service_text_row_array_json(
+    const std::vector<pfl::FrontendAdvancedFlowFilterServiceTextRowDto>& rows
+) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        const auto& row = rows[index];
+        out << '{'
+            << "\"operator_id\":" << json_string(row.operator_id) << ','
+            << "\"case_sensitive\":" << bool_json(row.case_sensitive) << ','
+            << "\"text\":" << json_string(row.text)
+            << '}';
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_service_section_json(const pfl::FrontendAdvancedFlowFilterServiceSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include_recognized\":" << bool_json(section.include_recognized) << ','
+        << "\"include_unrecognized\":" << bool_json(section.include_unrecognized) << ','
+        << "\"include_text\":" << structured_service_text_row_array_json(section.include_text) << ','
+        << "\"exclude_recognized\":" << bool_json(section.exclude_recognized) << ','
+        << "\"exclude_unrecognized\":" << bool_json(section.exclude_unrecognized) << ','
+        << "\"exclude_text\":" << structured_service_text_row_array_json(section.exclude_text)
+        << '}';
+    return out.str();
+}
+
 std::string structured_option_catalog_json(
     const pfl::FrontendAdvancedFlowFilterStructuredOptionCatalogDto& catalog
 ) {
@@ -504,6 +567,8 @@ std::string structured_document_json(
         << "\"directionality\":" << structured_section_json(document->directionality) << ','
         << "\"ports\":" << structured_port_section_json(document->ports) << ','
         << "\"ip_addresses\":" << structured_ip_section_json(document->ip_addresses) << ','
+        << "\"traffic\":" << structured_traffic_section_json(document->traffic) << ','
+        << "\"service\":" << structured_service_section_json(document->service) << ','
         << "\"has_unsupported_configured_sections\":" << bool_json(document->has_unsupported_configured_sections)
         << '}';
     return out.str();
@@ -2218,7 +2283,31 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const std::uint8_t* ip_exclude_subnet_enabled,
     const char* const* ip_exclude_address_text_utf8,
     const char* const* ip_exclude_prefix_text_utf8,
-    const std::size_t ip_exclude_count
+    const std::size_t ip_exclude_count,
+    const std::uint8_t traffic_enabled,
+    const char* const* traffic_primary_metric_ids_utf8,
+    const char* const* traffic_primary_unit_ids_utf8,
+    const char* const* traffic_primary_min_text_utf8,
+    const char* const* traffic_primary_max_text_utf8,
+    const std::size_t traffic_primary_count,
+    const char* const* traffic_additional_metric_ids_utf8,
+    const char* const* traffic_additional_unit_ids_utf8,
+    const char* const* traffic_additional_min_text_utf8,
+    const char* const* traffic_additional_max_text_utf8,
+    const std::size_t traffic_additional_count,
+    const std::uint8_t service_enabled,
+    const std::uint8_t service_include_recognized,
+    const std::uint8_t service_include_unrecognized,
+    const char* const* service_include_operator_ids_utf8,
+    const std::uint8_t* service_include_case_sensitive,
+    const char* const* service_include_text_utf8,
+    const std::size_t service_include_text_count,
+    const std::uint8_t service_exclude_recognized,
+    const std::uint8_t service_exclude_unrecognized,
+    const char* const* service_exclude_operator_ids_utf8,
+    const std::uint8_t* service_exclude_case_sensitive,
+    const char* const* service_exclude_text_utf8,
+    const std::size_t service_exclude_text_count
 ) {
     const auto invalid_request = []() {
         pfl::FrontendAdvancedFlowFilterStructuredDocumentResult result {};
@@ -2261,7 +2350,21 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         string_array_invalid(ip_exclude_scope_ids_utf8, ip_exclude_count) ||
         (ip_exclude_count > 0U && (ip_exclude_subnet_enabled == nullptr ||
                                    ip_exclude_address_text_utf8 == nullptr ||
-                                   ip_exclude_prefix_text_utf8 == nullptr))) {
+                                   ip_exclude_prefix_text_utf8 == nullptr)) ||
+        string_array_invalid(traffic_primary_metric_ids_utf8, traffic_primary_count) ||
+        (traffic_primary_count > 0U && (traffic_primary_unit_ids_utf8 == nullptr ||
+                                        traffic_primary_min_text_utf8 == nullptr ||
+                                        traffic_primary_max_text_utf8 == nullptr)) ||
+        string_array_invalid(traffic_additional_metric_ids_utf8, traffic_additional_count) ||
+        (traffic_additional_count > 0U && (traffic_additional_unit_ids_utf8 == nullptr ||
+                                           traffic_additional_min_text_utf8 == nullptr ||
+                                           traffic_additional_max_text_utf8 == nullptr)) ||
+        string_array_invalid(service_include_operator_ids_utf8, service_include_text_count) ||
+        (service_include_text_count > 0U && (service_include_case_sensitive == nullptr ||
+                                             service_include_text_utf8 == nullptr)) ||
+        string_array_invalid(service_exclude_operator_ids_utf8, service_exclude_text_count) ||
+        (service_exclude_text_count > 0U && (service_exclude_case_sensitive == nullptr ||
+                                             service_exclude_text_utf8 == nullptr))) {
         return invalid_request();
     }
 
@@ -2307,6 +2410,42 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
                 .subnet_enabled = subnet_enabled[index] != 0U,
                 .address_text = address_text_utf8[index] != nullptr ? std::string {address_text_utf8[index]} : std::string {},
                 .prefix_text = prefix_text_utf8[index] != nullptr ? std::string {prefix_text_utf8[index]} : std::string {},
+            });
+        }
+        return rows;
+    };
+
+    const auto collect_traffic_rows = [](
+                                          const char* const* metric_ids_utf8,
+                                          const char* const* unit_ids_utf8,
+                                          const char* const* min_text_utf8,
+                                          const char* const* max_text_utf8,
+                                          const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterTrafficRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterTrafficRowDto {
+                .metric_id = metric_ids_utf8[index] != nullptr ? std::string {metric_ids_utf8[index]} : std::string {},
+                .unit_id = unit_ids_utf8[index] != nullptr ? std::string {unit_ids_utf8[index]} : std::string {},
+                .min_text = min_text_utf8[index] != nullptr ? std::string {min_text_utf8[index]} : std::string {},
+                .max_text = max_text_utf8[index] != nullptr ? std::string {max_text_utf8[index]} : std::string {},
+            });
+        }
+        return rows;
+    };
+
+    const auto collect_service_rows = [](
+                                         const char* const* operator_ids_utf8,
+                                         const std::uint8_t* case_sensitive,
+                                         const char* const* text_utf8,
+                                         const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterServiceTextRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterServiceTextRowDto {
+                .operator_id = operator_ids_utf8[index] != nullptr ? std::string {operator_ids_utf8[index]} : std::string {},
+                .case_sensitive = case_sensitive[index] != 0U,
+                .text = text_utf8[index] != nullptr ? std::string {text_utf8[index]} : std::string {},
             });
         }
         return rows;
@@ -2360,6 +2499,38 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         ip_exclude_address_text_utf8,
         ip_exclude_prefix_text_utf8,
         ip_exclude_count
+    );
+    draft.traffic.enabled = traffic_enabled != 0U;
+    draft.traffic.primary = collect_traffic_rows(
+        traffic_primary_metric_ids_utf8,
+        traffic_primary_unit_ids_utf8,
+        traffic_primary_min_text_utf8,
+        traffic_primary_max_text_utf8,
+        traffic_primary_count
+    );
+    draft.traffic.additional = collect_traffic_rows(
+        traffic_additional_metric_ids_utf8,
+        traffic_additional_unit_ids_utf8,
+        traffic_additional_min_text_utf8,
+        traffic_additional_max_text_utf8,
+        traffic_additional_count
+    );
+    draft.service.enabled = service_enabled != 0U;
+    draft.service.include_recognized = service_include_recognized != 0U;
+    draft.service.include_unrecognized = service_include_unrecognized != 0U;
+    draft.service.include_text = collect_service_rows(
+        service_include_operator_ids_utf8,
+        service_include_case_sensitive,
+        service_include_text_utf8,
+        service_include_text_count
+    );
+    draft.service.exclude_recognized = service_exclude_recognized != 0U;
+    draft.service.exclude_unrecognized = service_exclude_unrecognized != 0U;
+    draft.service.exclude_text = collect_service_rows(
+        service_exclude_operator_ids_utf8,
+        service_exclude_case_sensitive,
+        service_exclude_text_utf8,
+        service_exclude_text_count
     );
 
     return make_c_string(structured_document_result_json(
