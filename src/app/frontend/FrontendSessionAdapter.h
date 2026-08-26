@@ -111,6 +111,14 @@ public:
     [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(
         ProtocolPathStatisticsMode mode
     ) const;
+    [[nodiscard]] std::optional<bool> advanced_flow_filter_protocol_path_predicate_applicability(
+        const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+    ) const;
+    [[nodiscard]] std::optional<FrontendAdvancedFlowFilterProtocolPathRowDto>
+    get_advanced_flow_filter_protocol_path_row(
+        ProtocolPathStatisticsMode mode,
+        std::uint64_t node_id
+    ) const;
     [[nodiscard]] std::vector<std::size_t> get_protocol_path_summary_flow_indices(
         ProtocolPathStatisticsMode mode,
         std::uint64_t node_id

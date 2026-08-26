@@ -12,6 +12,8 @@
 
 namespace pfl {
 
+class FrontendSessionAdapter;
+
 enum class FrontendAdvancedFlowQueryStatus : std::uint8_t {
     ok = 0,
     invalid_filter_text,
@@ -131,6 +133,47 @@ struct FrontendAdvancedFlowFilterServiceSectionDto {
     std::vector<FrontendAdvancedFlowFilterServiceTextRowDto> exclude_text {};
 };
 
+struct FrontendAdvancedFlowFilterProtocolPathRowDto {
+    std::string selector_mode_id {};
+    std::string predicate_text {};
+    std::string compact_text {};
+    std::string full_text {};
+    bool applicability_known {false};
+    bool applicable {false};
+    std::string status_text {};
+};
+
+struct FrontendAdvancedFlowFilterProtocolPathSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterProtocolPathRowDto> include {};
+    std::vector<FrontendAdvancedFlowFilterProtocolPathRowDto> exclude {};
+};
+
+struct FrontendAdvancedFlowFilterContainsLayerOptionDto {
+    std::string stable_id {};
+    std::string label {};
+    std::string object_name_suffix {};
+    std::string identifier_label {};
+    std::string preferred_input_format_id {};
+    std::string exact_value_placeholder {};
+};
+
+struct FrontendAdvancedFlowFilterContainsLayerRowDto {
+    std::string layer_stable_id {};
+    std::string identifier_mode_id {};
+    std::string exact_value_text {};
+    std::string compact_text {};
+    bool applicability_known {false};
+    bool applicable {false};
+    std::string status_text {};
+};
+
+struct FrontendAdvancedFlowFilterContainsLayerSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterContainsLayerRowDto> include {};
+    std::vector<FrontendAdvancedFlowFilterContainsLayerRowDto> exclude {};
+};
+
 struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> address_family {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> flow_protocol {};
@@ -139,6 +182,9 @@ struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> quic_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> directionality {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> endpoint_scope {};
+    std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> protocol_path_selector_mode {};
+    std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> contains_layer_identifier_mode {};
+    std::vector<FrontendAdvancedFlowFilterContainsLayerOptionDto> contains_layer_kind {};
 };
 
 struct FrontendAdvancedFlowFilterStructuredDocumentDto {
@@ -153,6 +199,8 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     FrontendAdvancedFlowFilterIpAddressSectionDto ip_addresses {};
     FrontendAdvancedFlowFilterTrafficSectionDto traffic {};
     FrontendAdvancedFlowFilterServiceSectionDto service {};
+    FrontendAdvancedFlowFilterProtocolPathSectionDto protocol_path {};
+    FrontendAdvancedFlowFilterContainsLayerSectionDto contains_layer {};
     bool has_unsupported_configured_sections {false};
 };
 
@@ -175,5 +223,16 @@ struct FrontendAdvancedFlowFilterStructuredDocumentResult {
     std::optional<FrontendAdvancedFlowFilterStructuredUpdateIssue> update_issue {};
     std::string error_text {};
 };
+
+[[nodiscard]] std::optional<std::string> format_advanced_flow_filter_protocol_path_predicate_text(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+);
+
+[[nodiscard]] bool encode_advanced_flow_filter_protocol_path_row(
+    const FrontendSessionAdapter& adapter,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate,
+    FrontendAdvancedFlowFilterProtocolPathRowDto& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+);
 
 }  // namespace pfl

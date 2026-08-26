@@ -69,6 +69,19 @@
     };
   }
 
+  function createAdvancedFlowFilterProtocolPathPickerState() {
+    return {
+      visible: false,
+      loading: false,
+      modeId: "kind",
+      targetGroup: "include",
+      targetRowIndex: -1,
+      selectedNodeId: null,
+      selectedPredicateText: "",
+      errorText: "",
+    };
+  }
+
   function createAdvancedFlowFilterSettingsState() {
     return {
       visible: false,
@@ -88,6 +101,7 @@
       structureRevision: 0,
       renderedStructureKey: "",
       trafficAdditionalExpanded: false,
+      protocolPathPicker: createAdvancedFlowFilterProtocolPathPickerState(),
       pendingOpenCandidate: null,
       statusText: "",
       statusKind: "neutral",
@@ -404,6 +418,10 @@
         return document.traffic || null;
       case "service":
         return document.service || null;
+      case "protocol_path":
+        return document.protocol_path || null;
+      case "contains_layer":
+        return document.contains_layer || null;
       default:
         return null;
     }
@@ -431,6 +449,10 @@
         return "Traffic";
       case "service":
         return "Service";
+      case "protocol_path":
+        return "Protocol Path";
+      case "contains_layer":
+        return "Contains Layer";
       default:
         return sectionId;
     }
@@ -458,6 +480,16 @@
         return "operator";
       case "text":
         return "text";
+      case "selector_mode_id":
+        return "selection mode";
+      case "predicate_text":
+        return "path";
+      case "layer_stable_id":
+        return "layer";
+      case "identifier_mode_id":
+        return "mode";
+      case "exact_value_text":
+        return "value";
       default:
         return "";
     }
@@ -521,6 +553,88 @@
       case_sensitive: false,
       text: "",
     };
+  }
+
+  function advancedFlowFilterProtocolPathSelectorModeOptions() {
+    const values = state.advancedFlowFilterSettings.optionCatalog?.protocol_path_selector_mode;
+    return Array.isArray(values) ? values : [];
+  }
+
+  function advancedFlowFilterContainsLayerKindOptions() {
+    const values = state.advancedFlowFilterSettings.optionCatalog?.contains_layer_kind;
+    return Array.isArray(values) ? values : [];
+  }
+
+  function advancedFlowFilterContainsLayerIdentifierModeOptions() {
+    const values = state.advancedFlowFilterSettings.optionCatalog?.contains_layer_identifier_mode;
+    return Array.isArray(values) ? values : [];
+  }
+
+  function advancedFlowFilterContainsLayerKindById(stableId) {
+    const normalizedId = String(stableId || "");
+    return advancedFlowFilterContainsLayerKindOptions().find((option) =>
+      String(option?.stable_id || "") === normalizedId
+    ) || null;
+  }
+
+  function makeAdvancedFlowFilterProtocolPathRow() {
+    return {
+      selector_mode_id: "kind",
+      predicate_text: "",
+      compact_text: "",
+      full_text: "",
+      applicability_known: false,
+      applicable: false,
+      status_text: "",
+    };
+  }
+
+  function makeAdvancedFlowFilterContainsLayerRow(defaultLayerStableId = "") {
+    return {
+      layer_stable_id: String(defaultLayerStableId || ""),
+      identifier_mode_id: "any",
+      exact_value_text: "",
+      compact_text: "",
+      applicability_known: false,
+      applicable: false,
+      status_text: "",
+    };
+  }
+
+  function normalizeAdvancedFlowFilterProtocolPathRows(rows) {
+    return Array.isArray(rows)
+      ? rows.map((row) => ({
+        ...makeAdvancedFlowFilterProtocolPathRow(),
+        ...(row && typeof row === "object" ? row : {}),
+        selector_mode_id: String(row?.selector_mode_id || "kind"),
+        predicate_text: String(row?.predicate_text || ""),
+        compact_text: String(row?.compact_text || ""),
+        full_text: String(row?.full_text || ""),
+        applicability_known: Boolean(row?.applicability_known),
+        applicable: Boolean(row?.applicable),
+        status_text: String(row?.status_text || ""),
+      }))
+      : [];
+  }
+
+  function normalizeAdvancedFlowFilterContainsLayerRows(rows) {
+    return Array.isArray(rows)
+      ? rows.map((row) => ({
+        ...makeAdvancedFlowFilterContainsLayerRow(),
+        ...(row && typeof row === "object" ? row : {}),
+        layer_stable_id: String(row?.layer_stable_id || ""),
+        identifier_mode_id: String(row?.identifier_mode_id || "any"),
+        exact_value_text: String(row?.exact_value_text || ""),
+        compact_text: String(row?.compact_text || ""),
+        applicability_known: Boolean(row?.applicability_known),
+        applicable: Boolean(row?.applicable),
+        status_text: String(row?.status_text || ""),
+      }))
+      : [];
+  }
+
+  function advancedFlowFilterContainsLayerExactValueVisible(row) {
+    return String(row?.identifier_mode_id || "any") === "exact";
   }
 
   function cloneAdvancedFlowFilterValue(value) {
@@ -650,6 +764,18 @@
         exclude_unrecognized: Boolean(sourceDocument.service?.exclude_unrecognized),
         exclude_text: normalizeAdvancedFlowFilterServiceTextRows(sourceDocument.service?.exclude_text),
       },
+      protocol_path: {
+        ...(sourceDocument.protocol_path && typeof sourceDocument.protocol_path === "object" ? sourceDocument.protocol_path : {}),
+        enabled: sourceDocument.protocol_path?.enabled === undefined ? true : Boolean(sourceDocument.protocol_path.enabled),
+        include: normalizeAdvancedFlowFilterProtocolPathRows(sourceDocument.protocol_path?.include),
+        exclude: normalizeAdvancedFlowFilterProtocolPathRows(sourceDocument.protocol_path?.exclude),
+      },
+      contains_layer: {
+        ...(sourceDocument.contains_layer && typeof sourceDocument.contains_layer === "object" ? sourceDocument.contains_layer : {}),
+        enabled: sourceDocument.contains_layer?.enabled === undefined ? true : Boolean(sourceDocument.contains_layer.enabled),
+        include: normalizeAdvancedFlowFilterContainsLayerRows(sourceDocument.contains_layer?.include),
+        exclude: normalizeAdvancedFlowFilterContainsLayerRows(sourceDocument.contains_layer?.exclude),
+      },
     };
   }
 
@@ -697,6 +823,21 @@
       operator_id: String(row?.operator_id || "contains"),
       case_sensitive: Boolean(row?.case_sensitive),
       text: String(row?.text || ""),
+    };
+  }
+
+  function advancedFlowFilterProtocolPathRowSnapshot(row) {
+    return {
+      selector_mode_id: String(row?.selector_mode_id || "kind"),
+      predicate_text: String(row?.predicate_text || ""),
+    };
+  }
+
+  function advancedFlowFilterContainsLayerRowSnapshot(row) {
+    return {
+      layer_stable_id: String(row?.layer_stable_id || ""),
+      identifier_mode_id: String(row?.identifier_mode_id || "any"),
+      exact_value_text: String(row?.exact_value_text || ""),
     };
   }
 
@@ -752,6 +893,24 @@
           ? document.service.exclude_text.map((row) => advancedFlowFilterServiceTextRowSnapshot(row))
           : [],
       },
+      protocol_path: {
+        enabled: Boolean(document?.protocol_path?.enabled),
+        include: Array.isArray(document?.protocol_path?.include)
+          ? document.protocol_path.include.map((row) => advancedFlowFilterProtocolPathRowSnapshot(row))
+          : [],
+        exclude: Array.isArray(document?.protocol_path?.exclude)
+          ? document.protocol_path.exclude.map((row) => advancedFlowFilterProtocolPathRowSnapshot(row))
+          : [],
+      },
+      contains_layer: {
+        enabled: Boolean(document?.contains_layer?.enabled),
+        include: Array.isArray(document?.contains_layer?.include)
+          ? document.contains_layer.include.map((row) => advancedFlowFilterContainsLayerRowSnapshot(row))
+          : [],
+        exclude: Array.isArray(document?.contains_layer?.exclude)
+          ? document.contains_layer.exclude.map((row) => advancedFlowFilterContainsLayerRowSnapshot(row))
+          : [],
+      },
     });
   }
 
@@ -783,7 +942,9 @@
 
   function advancedFlowFilterSettingsInteractionBlocked() {
     return currentAdvancedFlowFilterSettingsBusy()
-      || advancedFlowFilterSettingsAwaitingDiscardConfirmation();
+      || advancedFlowFilterSettingsAwaitingDiscardConfirmation()
+      || Boolean(state.advancedFlowFilterSettings.protocolPathPicker?.visible)
+      || Boolean(state.advancedFlowFilterSettings.protocolPathPicker?.loading);
   }
 
   function installAdvancedFlowFilterSettingsDraft(payload) {
@@ -1416,6 +1577,212 @@
     `;
   }
 
+  function advancedFlowFilterProtocolPathSelectorModeLabel(modeId) {
+    const normalizedId = String(modeId || "");
+    const option = advancedFlowFilterProtocolPathSelectorModeOptions().find(
+      (candidate) => String(candidate?.stable_id || "") === normalizedId
+    );
+    return String(option?.label || normalizedId || "Kind");
+  }
+
+  function renderAdvancedFlowFilterProtocolPathGroup(groupName, rows, sectionEnabled, dialogBusy) {
+    const groupKey = String(groupName || "").toLowerCase();
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+    return `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+        <div class="advanced-filter-row-list">
+          ${normalizedRows.length === 0 ? `
+            <p class="advanced-filter-empty-copy">No configured paths.</p>
+          ` : normalizedRows.map((row, rowIndex) => {
+            const compactText = String(row?.compact_text || row?.full_text || row?.predicate_text || "").trim();
+            const fullText = String(row?.full_text || row?.predicate_text || compactText).trim();
+            const statusText = String(row?.status_text || "").trim();
+            return `
+              <div class="advanced-filter-row-card">
+                <div class="advanced-filter-protocol-path-row">
+                  <span class="advanced-filter-row-mode-badge">${escapeHtml(advancedFlowFilterProtocolPathSelectorModeLabel(row?.selector_mode_id))}</span>
+                  <span class="advanced-filter-row-main-text" title="${escapeHtml(fullText)}">${escapeHtml(compactText || "Select a protocol path")}</span>
+                  <button
+                    type="button"
+                    class="secondary-button"
+                    data-advanced-filter-protocol-path-edit-group="${escapeHtml(groupKey)}"
+                    data-advanced-filter-protocol-path-edit-row-index="${rowIndex}"
+                    ${dialogBusy ? "disabled" : ""}
+                  >Edit</button>
+                  <button
+                    type="button"
+                    class="secondary-button"
+                    data-advanced-filter-remove-row-section-id="protocol_path"
+                    data-advanced-filter-group="${escapeHtml(groupKey)}"
+                    data-advanced-filter-row-index="${rowIndex}"
+                    ${dialogBusy ? "disabled" : ""}
+                  >Remove</button>
+                </div>
+                ${statusText ? `<p class="advanced-filter-helper-copy">${escapeHtml(statusText)}</p>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+        <button
+          type="button"
+          class="secondary-button advanced-filter-add-row-button"
+          data-advanced-filter-add-row-section-id="protocol_path"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          ${editingDisabled ? "disabled" : ""}
+        >Add path</button>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterProtocolPathSectionCard(document, dialogBusy) {
+    const section = document?.protocol_path || { enabled: true, include: [], exclude: [] };
+    return `
+      <section
+        class="advanced-filter-section-card advanced-filter-section-card-wide"
+        data-advanced-filter-structured-section-id="protocol_path"
+      >
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">Protocol Path</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="protocol_path"
+              ${section.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        ${renderAdvancedFlowFilterProtocolPathGroup("Include", section.include, Boolean(section.enabled), dialogBusy)}
+        ${renderAdvancedFlowFilterProtocolPathGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy)}
+      </section>
+    `;
+  }
+
+  function advancedFlowFilterContainsLayerIdentifierModeLabel(modeId) {
+    const normalizedId = String(modeId || "");
+    const option = advancedFlowFilterContainsLayerIdentifierModeOptions().find(
+      (candidate) => String(candidate?.stable_id || "") === normalizedId
+    );
+    return String(option?.label || normalizedId || "Any");
+  }
+
+  function renderAdvancedFlowFilterContainsLayerGroup(groupName, rows, sectionEnabled, dialogBusy) {
+    const groupKey = String(groupName || "").toLowerCase();
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+    const layerOptions = advancedFlowFilterContainsLayerKindOptions();
+    const identifierModeOptions = advancedFlowFilterContainsLayerIdentifierModeOptions();
+    return `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+        <div class="advanced-filter-row-list">
+          ${normalizedRows.length === 0 ? `
+            <p class="advanced-filter-empty-copy">No configured layer rules.</p>
+          ` : normalizedRows.map((row, rowIndex) => {
+            const descriptor = advancedFlowFilterContainsLayerKindById(row?.layer_stable_id);
+            const exactVisible = advancedFlowFilterContainsLayerExactValueVisible(row);
+            const statusText = String(row?.status_text || "").trim();
+            const placeholder = String(descriptor?.exact_value_placeholder || descriptor?.identifier_label || "Identifier value");
+            const identifierLabel = String(descriptor?.identifier_label || "Identifier");
+            return `
+              <div class="advanced-filter-row-card">
+                <div class="advanced-filter-contains-layer-row">
+                  <label class="advanced-filter-inline-field">
+                    <span>Layer</span>
+                    <select
+                      data-advanced-filter-row-section-id="contains_layer"
+                      data-advanced-filter-group="${escapeHtml(groupKey)}"
+                      data-advanced-filter-row-index="${rowIndex}"
+                      data-advanced-filter-row-field="layer_stable_id"
+                      ${editingDisabled ? "disabled" : ""}
+                    >
+                      ${layerOptions.map((option) => {
+                        const stableId = String(option?.stable_id || "");
+                        return `<option value="${escapeHtml(stableId)}"${stableId === String(row?.layer_stable_id || "") ? " selected" : ""}>${escapeHtml(String(option?.label || stableId))}</option>`;
+                      }).join("")}
+                    </select>
+                  </label>
+                  <label class="advanced-filter-inline-field">
+                    <span>Mode</span>
+                    <select
+                      data-advanced-filter-row-section-id="contains_layer"
+                      data-advanced-filter-group="${escapeHtml(groupKey)}"
+                      data-advanced-filter-row-index="${rowIndex}"
+                      data-advanced-filter-row-field="identifier_mode_id"
+                      ${editingDisabled ? "disabled" : ""}
+                    >
+                      ${identifierModeOptions.map((option) => {
+                        const stableId = String(option?.stable_id || "");
+                        return `<option value="${escapeHtml(stableId)}"${stableId === String(row?.identifier_mode_id || "") ? " selected" : ""}>${escapeHtml(String(option?.label || stableId))}</option>`;
+                      }).join("")}
+                    </select>
+                  </label>
+                  <label class="advanced-filter-inline-field advanced-filter-inline-field-fill${exactVisible ? "" : " is-hidden"}">
+                    <span>${escapeHtml(identifierLabel)}</span>
+                    <input
+                      type="text"
+                      data-advanced-filter-row-section-id="contains_layer"
+                      data-advanced-filter-group="${escapeHtml(groupKey)}"
+                      data-advanced-filter-row-index="${rowIndex}"
+                      data-advanced-filter-row-field="exact_value_text"
+                      value="${escapeHtml(String(row?.exact_value_text || ""))}"
+                      placeholder="${escapeHtml(placeholder)}"
+                      ${editingDisabled || !exactVisible ? "disabled" : ""}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="secondary-button"
+                    data-advanced-filter-remove-row-section-id="contains_layer"
+                    data-advanced-filter-group="${escapeHtml(groupKey)}"
+                    data-advanced-filter-row-index="${rowIndex}"
+                    ${dialogBusy ? "disabled" : ""}
+                  >Remove</button>
+                </div>
+                ${statusText ? `<p class="advanced-filter-helper-copy">${escapeHtml(statusText)}</p>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+        <button
+          type="button"
+          class="secondary-button advanced-filter-add-row-button"
+          data-advanced-filter-add-row-section-id="contains_layer"
+          data-advanced-filter-group="${escapeHtml(groupKey)}"
+          ${editingDisabled ? "disabled" : ""}
+        >Add layer rule</button>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterContainsLayerSectionCard(document, dialogBusy) {
+    const section = document?.contains_layer || { enabled: true, include: [], exclude: [] };
+    return `
+      <section
+        class="advanced-filter-section-card advanced-filter-section-card-wide"
+        data-advanced-filter-structured-section-id="contains_layer"
+      >
+        <div class="advanced-filter-section-header">
+          <h3 class="advanced-filter-section-title">Contains Layer</h3>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="contains_layer"
+              ${section.enabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        ${renderAdvancedFlowFilterContainsLayerGroup("Include", section.include, Boolean(section.enabled), dialogBusy)}
+        ${renderAdvancedFlowFilterContainsLayerGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy)}
+      </section>
+    `;
+  }
+
   function advancedFlowFilterSettingsSectionMarkup(sectionId, document, dialogBusy) {
     const definition = advancedFlowFilterSectionDefinitions.find((candidate) => candidate.id === sectionId);
     if (definition) {
@@ -1432,6 +1799,12 @@
     }
     if (sectionId === "service") {
       return renderAdvancedFlowFilterServiceSectionCard(document, dialogBusy);
+    }
+    if (sectionId === "protocol_path") {
+      return renderAdvancedFlowFilterProtocolPathSectionCard(document, dialogBusy);
+    }
+    if (sectionId === "contains_layer") {
+      return renderAdvancedFlowFilterContainsLayerSectionCard(document, dialogBusy);
     }
     return "";
   }
@@ -1469,6 +1842,9 @@
     }
     for (const removeButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-remove-row-section-id]")) {
       removeButton.disabled = interactionBlocked;
+    }
+    for (const editButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-protocol-path-edit-group]")) {
+      editButton.disabled = interactionBlocked;
     }
     for (const toggleButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-traffic-toggle]")) {
       toggleButton.disabled = interactionBlocked;
@@ -1508,6 +1884,8 @@
         renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterServiceSectionCard(document, dialogBusy),
+        renderAdvancedFlowFilterProtocolPathSectionCard(document, dialogBusy),
+        renderAdvancedFlowFilterContainsLayerSectionCard(document, dialogBusy),
       ].join("");
     }
 
@@ -1628,6 +2006,268 @@
     }
     renderAdvancedFlowFilterSettingsDialogShell();
     syncAdvancedFlowFilterSettingsInteractiveState();
+  }
+
+  function protocolPathStatsModeFromAdvancedFilterSelectorMode(modeId) {
+    switch (String(modeId || "")) {
+      case "identity":
+        return 1;
+      case "terminal":
+        return 2;
+      case "kind":
+      default:
+        return 0;
+    }
+  }
+
+  function advancedFilterSelectorModeFromProtocolPathStatsMode(mode) {
+    switch (Number(mode)) {
+      case 1:
+        return "identity";
+      case 2:
+        return "terminal";
+      case 0:
+      default:
+        return "kind";
+    }
+  }
+
+  function currentAdvancedFlowFilterProtocolPathPicker() {
+    return state.advancedFlowFilterSettings.protocolPathPicker
+      || createAdvancedFlowFilterProtocolPathPickerState();
+  }
+
+  function currentAdvancedFlowFilterProtocolPathPickerRows() {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    return Array.isArray(state.protocolPathStatsByMode.get(protocolPathStatsModeFromAdvancedFilterSelectorMode(picker.modeId)))
+      ? state.protocolPathStatsByMode.get(protocolPathStatsModeFromAdvancedFilterSelectorMode(picker.modeId))
+      : [];
+  }
+
+  function protocolPathStatisticsModeByteFromId(modeId) {
+    if (modeId === "identity") {
+      return 1;
+    }
+    if (modeId === "terminal") {
+      return 2;
+    }
+    return 0;
+  }
+
+  function syncAdvancedFlowFilterProtocolPathPickerSelectionFromPredicate() {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    const predicateText = String(picker.selectedPredicateText || "").trim();
+    if (picker.selectedNodeId != null || predicateText.length === 0) {
+      return;
+    }
+
+    const matchingRow = currentAdvancedFlowFilterProtocolPathPickerRows().find(
+      (row) => String(row?.advanced_filter_predicate_text || "") === predicateText
+    );
+    if (matchingRow) {
+      picker.selectedNodeId = Number(matchingRow.node_id);
+    }
+  }
+
+  function renderAdvancedFlowFilterProtocolPathPickerRow(row) {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    const depth = Number(row?.depth ?? 0);
+    const nodeId = Number(row?.node_id ?? 0);
+    const layerText = String(row?.layer_text || "").trim();
+    const fullText = String(row?.path_text || "").trim();
+    const displayText = layerText.length > 0 ? layerText : fullText;
+    const selected = Number(picker.selectedNodeId) === nodeId;
+
+    return `
+      <tr
+        class="protocol-path-stats-row${selected ? " is-selected" : ""}"
+        data-advanced-filter-protocol-path-picker-node-id="${nodeId}"
+        title="${escapeHtml(fullText)}"
+      >
+        <td>
+          <div class="protocol-path-cell" style="padding-left:${Math.max(0, depth) * 18}px;">
+            <span class="protocol-path-expander-spacer" aria-hidden="true"></span>
+            <span class="protocol-path-label">${escapeHtml(displayText)}</span>
+          </div>
+        </td>
+        <td>${escapeHtml(String(row?.flow_count_text || formatNumber(row?.flow_count)))}</td>
+        <td>${escapeHtml(String(row?.packet_count_text || formatNumber(row?.packet_count)))}</td>
+        <td>${escapeHtml(String(row?.original_byte_count_text || formatNumber(row?.original_byte_count)))}</td>
+      </tr>
+    `;
+  }
+
+  function renderAdvancedFlowFilterProtocolPathPickerViewportWindow() {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    if (!picker.visible || !elements.advancedFlowFilterProtocolPathPickerBody) {
+      return;
+    }
+    const rows = currentAdvancedFlowFilterProtocolPathPickerRows();
+    if (rows.length === 0) {
+      return;
+    }
+
+    renderVirtualizedTableBody({
+      tableBody: elements.advancedFlowFilterProtocolPathPickerBody,
+      rows,
+      rowHeight: getProtocolPathStatsVirtualRowHeight(),
+      viewportElement: elements.advancedFlowFilterProtocolPathPickerViewport,
+      overscanRows: protocolPathStatsVirtualOverscanRows,
+      colspan: 4,
+      renderRow: renderAdvancedFlowFilterProtocolPathPickerRow,
+    });
+  }
+
+  function renderAdvancedFlowFilterProtocolPathPicker() {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    if (elements.advancedFlowFilterProtocolPathPickerDialog) {
+      elements.advancedFlowFilterProtocolPathPickerDialog.classList.toggle("is-visible", Boolean(picker.visible));
+      elements.advancedFlowFilterProtocolPathPickerDialog.setAttribute("aria-hidden", picker.visible ? "false" : "true");
+    }
+
+    elements.advancedFlowFilterProtocolPathPickerModeKind?.classList.toggle("is-active", picker.modeId === "kind");
+    elements.advancedFlowFilterProtocolPathPickerModeIdentity?.classList.toggle("is-active", picker.modeId === "identity");
+    elements.advancedFlowFilterProtocolPathPickerModeTerminal?.classList.toggle("is-active", picker.modeId === "terminal");
+    elements.advancedFlowFilterProtocolPathPickerModeKind?.setAttribute("aria-pressed", picker.modeId === "kind" ? "true" : "false");
+    elements.advancedFlowFilterProtocolPathPickerModeIdentity?.setAttribute("aria-pressed", picker.modeId === "identity" ? "true" : "false");
+    elements.advancedFlowFilterProtocolPathPickerModeTerminal?.setAttribute("aria-pressed", picker.modeId === "terminal" ? "true" : "false");
+
+    if (elements.advancedFlowFilterProtocolPathPickerPrimaryHeader) {
+      elements.advancedFlowFilterProtocolPathPickerPrimaryHeader.textContent =
+        picker.modeId === "terminal" ? "Path" : "Layer";
+    }
+    if (elements.advancedFlowFilterProtocolPathPickerStatusText) {
+      elements.advancedFlowFilterProtocolPathPickerStatusText.textContent =
+        picker.loading
+          ? "Loading protocol-path choices..."
+          : String(picker.errorText || "");
+      elements.advancedFlowFilterProtocolPathPickerStatusText.className = "status-text";
+      if (!picker.loading && String(picker.errorText || "").length > 0) {
+        elements.advancedFlowFilterProtocolPathPickerStatusText.classList.add("is-error");
+      }
+    }
+
+    const rows = currentAdvancedFlowFilterProtocolPathPickerRows();
+    syncAdvancedFlowFilterProtocolPathPickerSelectionFromPredicate();
+    if (!elements.advancedFlowFilterProtocolPathPickerBody) {
+      return;
+    }
+
+    if (picker.loading) {
+      elements.advancedFlowFilterProtocolPathPickerBody.innerHTML = renderStatsStateRow(4, "Loading protocol-path choices...");
+    } else if (String(picker.errorText || "").length > 0) {
+      elements.advancedFlowFilterProtocolPathPickerBody.innerHTML = renderStatsStateRow(4, picker.errorText, "error");
+    } else if (rows.length === 0) {
+      elements.advancedFlowFilterProtocolPathPickerBody.innerHTML = renderStatsStateRow(4, "No protocol-path choices are available for the current capture.");
+    } else {
+      renderAdvancedFlowFilterProtocolPathPickerViewportWindow();
+    }
+
+    if (elements.advancedFlowFilterProtocolPathPickerCancelButton) {
+      elements.advancedFlowFilterProtocolPathPickerCancelButton.disabled = picker.loading;
+    }
+    if (elements.advancedFlowFilterProtocolPathPickerSelectButton) {
+      elements.advancedFlowFilterProtocolPathPickerSelectButton.disabled =
+        picker.loading || picker.selectedNodeId == null;
+    }
+  }
+
+  async function loadAdvancedFlowFilterProtocolPathPickerMode(modeId) {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    picker.modeId = String(modeId || "kind");
+    picker.loading = true;
+    picker.errorText = "";
+    picker.selectedNodeId = null;
+    renderAdvancedFlowFilterProtocolPathPicker();
+
+    try {
+      await ensureProtocolPathStatsLoaded(protocolPathStatsModeFromAdvancedFilterSelectorMode(picker.modeId));
+      syncAdvancedFlowFilterProtocolPathPickerSelectionFromPredicate();
+    } catch (error) {
+      picker.errorText = `Failed to load protocol-path choices: ${String(error)}`;
+    } finally {
+      picker.loading = false;
+      renderAdvancedFlowFilterProtocolPathPicker();
+    }
+  }
+
+  async function openAdvancedFlowFilterProtocolPathPicker(group, rowIndex) {
+    if (!state.advancedFlowFilterSettings.visible || currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+
+    const section = advancedFlowFilterSectionById(state.advancedFlowFilterSettings.document, "protocol_path");
+    const rows = Array.isArray(section?.[group]) ? section[group] : [];
+    const existingRow = Number.isInteger(rowIndex) && rowIndex >= 0 && rowIndex < rows.length
+      ? rows[rowIndex]
+      : null;
+
+    state.advancedFlowFilterSettings.protocolPathPicker = {
+      visible: true,
+      loading: false,
+      modeId: String(existingRow?.selector_mode_id || "kind"),
+      targetGroup: group === "exclude" ? "exclude" : "include",
+      targetRowIndex: Number.isInteger(rowIndex) ? rowIndex : -1,
+      selectedNodeId: null,
+      selectedPredicateText: String(existingRow?.predicate_text || ""),
+      errorText: "",
+    };
+    render();
+    await loadAdvancedFlowFilterProtocolPathPickerMode(state.advancedFlowFilterSettings.protocolPathPicker.modeId);
+  }
+
+  function closeAdvancedFlowFilterProtocolPathPicker() {
+    state.advancedFlowFilterSettings.protocolPathPicker = createAdvancedFlowFilterProtocolPathPickerState();
+    render();
+  }
+
+  async function applyAdvancedFlowFilterProtocolPathPickerSelection() {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    const selectedRow = currentAdvancedFlowFilterProtocolPathPickerRows().find(
+      (row) => Number(row?.node_id) === Number(picker.selectedNodeId)
+    );
+    if (typeof invoke !== "function") {
+      return;
+    }
+
+    const nodeId = Number(selectedRow?.node_id);
+    if (!selectedRow || !Number.isFinite(nodeId) || nodeId <= 0) {
+      picker.errorText = "Select a valid Protocol Path row before applying it.";
+      render();
+      return;
+    }
+
+    picker.loading = true;
+    picker.errorText = "";
+    render();
+
+    try {
+      const nextRow = await invoke("get_advanced_flow_filter_protocol_path_row", {
+        mode: protocolPathStatisticsModeByteFromId(String(picker.modeId || "kind")),
+        node_id: nodeId,
+      });
+
+      mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
+        const section = advancedFlowFilterSectionById(draft, "protocol_path");
+        if (!section) {
+          return;
+        }
+        const targetGroup = picker.targetGroup === "exclude" ? "exclude" : "include";
+        const rows = Array.isArray(section[targetGroup]) ? section[targetGroup] : [];
+        if (Number.isInteger(picker.targetRowIndex) && picker.targetRowIndex >= 0 && picker.targetRowIndex < rows.length) {
+          rows[picker.targetRowIndex] = nextRow;
+        } else {
+          rows.push(nextRow);
+        }
+        section[targetGroup] = rows;
+      }, { rebuildSectionIds: ["protocol_path"] });
+
+      closeAdvancedFlowFilterProtocolPathPicker();
+    } catch (error) {
+      picker.loading = false;
+      picker.errorText = `Failed to build the selected Protocol Path rule: ${String(error)}`;
+      render();
+    }
   }
 
   function currentSimpleFlowFilterActive() {
@@ -1765,6 +2405,16 @@
     advancedFlowFilterDiscardOpenConfirmCancelButton: document.getElementById("advancedFlowFilterDiscardOpenConfirmCancelButton"),
     advancedFlowFilterSettingsCancelButton: document.getElementById("advancedFlowFilterSettingsCancelButton"),
     advancedFlowFilterSettingsApplyButton: document.getElementById("advancedFlowFilterSettingsApplyButton"),
+    advancedFlowFilterProtocolPathPickerDialog: document.getElementById("advancedFlowFilterProtocolPathPickerDialog"),
+    advancedFlowFilterProtocolPathPickerModeKind: document.getElementById("advancedFlowFilterProtocolPathPickerModeKind"),
+    advancedFlowFilterProtocolPathPickerModeIdentity: document.getElementById("advancedFlowFilterProtocolPathPickerModeIdentity"),
+    advancedFlowFilterProtocolPathPickerModeTerminal: document.getElementById("advancedFlowFilterProtocolPathPickerModeTerminal"),
+    advancedFlowFilterProtocolPathPickerStatusText: document.getElementById("advancedFlowFilterProtocolPathPickerStatusText"),
+    advancedFlowFilterProtocolPathPickerViewport: document.getElementById("advancedFlowFilterProtocolPathPickerViewport"),
+    advancedFlowFilterProtocolPathPickerBody: document.getElementById("advancedFlowFilterProtocolPathPickerBody"),
+    advancedFlowFilterProtocolPathPickerPrimaryHeader: document.getElementById("advancedFlowFilterProtocolPathPickerPrimaryHeader"),
+    advancedFlowFilterProtocolPathPickerCancelButton: document.getElementById("advancedFlowFilterProtocolPathPickerCancelButton"),
+    advancedFlowFilterProtocolPathPickerSelectButton: document.getElementById("advancedFlowFilterProtocolPathPickerSelectButton"),
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     protocolPathFlowFilterRow: document.getElementById("protocolPathFlowFilterRow"),
     protocolPathFlowFilterText: document.getElementById("protocolPathFlowFilterText"),
@@ -7458,6 +8108,7 @@
       ["menu", renderMenuState],
       ["settings dialog", renderSettingsDialog],
       ["advanced filter settings dialog", renderAdvancedFlowFilterSettingsDialog],
+      ["advanced filter protocol path picker", renderAdvancedFlowFilterProtocolPathPicker],
       ["protocol path legend dialog", renderProtocolPathLegendDialog],
       ["supported protocols dialog", renderSupportedProtocolsDialog],
       ["byte export dialog", renderByteExportDialog],
@@ -9593,6 +10244,11 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      if (state.advancedFlowFilterSettings.protocolPathPicker?.visible) {
+        closeAdvancedFlowFilterProtocolPathPicker();
+        return;
+      }
+
       if (advancedFlowFilterSettingsAwaitingDiscardConfirmation() && !currentAdvancedFlowFilterSettingsBusy()) {
         dismissAdvancedFlowFilterDiscardOpenConfirm();
         setAdvancedFlowFilterSettingsStatus("Kept the current Advanced Filter draft.", "neutral");
@@ -9675,6 +10331,54 @@
   elements.advancedFlowFilterSettingsApplyButton?.addEventListener("click", () => {
     void applyAdvancedFlowFilterSettingsDraft();
   });
+  elements.advancedFlowFilterProtocolPathPickerModeKind?.addEventListener("click", () => {
+    void loadAdvancedFlowFilterProtocolPathPickerMode("kind");
+  });
+  elements.advancedFlowFilterProtocolPathPickerModeIdentity?.addEventListener("click", () => {
+    void loadAdvancedFlowFilterProtocolPathPickerMode("identity");
+  });
+  elements.advancedFlowFilterProtocolPathPickerModeTerminal?.addEventListener("click", () => {
+    void loadAdvancedFlowFilterProtocolPathPickerMode("terminal");
+  });
+  elements.advancedFlowFilterProtocolPathPickerCancelButton?.addEventListener("click", () => {
+    closeAdvancedFlowFilterProtocolPathPicker();
+  });
+  elements.advancedFlowFilterProtocolPathPickerSelectButton?.addEventListener("click", () => {
+    void applyAdvancedFlowFilterProtocolPathPickerSelection();
+  });
+  elements.advancedFlowFilterProtocolPathPickerBody?.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const row = event.target.closest("[data-advanced-filter-protocol-path-picker-node-id]");
+    if (!row) {
+      return;
+    }
+    const nodeId = Number(row.dataset.advancedFilterProtocolPathPickerNodeId);
+    if (!Number.isFinite(nodeId) || nodeId <= 0) {
+      return;
+    }
+    state.advancedFlowFilterSettings.protocolPathPicker.selectedNodeId = nodeId;
+    renderAdvancedFlowFilterProtocolPathPicker();
+  });
+  elements.advancedFlowFilterProtocolPathPickerBody?.addEventListener("dblclick", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const row = event.target.closest("[data-advanced-filter-protocol-path-picker-node-id]");
+    if (!row) {
+      return;
+    }
+    const nodeId = Number(row.dataset.advancedFilterProtocolPathPickerNodeId);
+    if (!Number.isFinite(nodeId) || nodeId <= 0) {
+      return;
+    }
+    state.advancedFlowFilterSettings.protocolPathPicker.selectedNodeId = nodeId;
+    void applyAdvancedFlowFilterProtocolPathPickerSelection();
+  });
+  elements.advancedFlowFilterProtocolPathPickerViewport?.addEventListener("scroll", () => {
+    renderAdvancedFlowFilterProtocolPathPickerViewportWindow();
+  });
   elements.advancedFlowFilterSettingsSections?.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) {
       return;
@@ -9696,6 +10400,10 @@
     if (addButton instanceof HTMLButtonElement) {
       const sectionId = String(addButton.dataset.advancedFilterAddRowSectionId || "");
       const group = String(addButton.dataset.advancedFilterGroup || "");
+      if (sectionId === "protocol_path" && (group === "include" || group === "exclude")) {
+        void openAdvancedFlowFilterProtocolPathPicker(group, -1);
+        return;
+      }
       mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
         const section = advancedFlowFilterSectionById(draft, sectionId);
         if (!section) {
@@ -9717,11 +10425,27 @@
             return;
           }
           rows.push(makeAdvancedFlowFilterServiceTextRow());
+        } else if (sectionId === "contains_layer") {
+          if (group !== "include" && group !== "exclude") {
+            return;
+          }
+          const firstKind = advancedFlowFilterContainsLayerKindOptions()[0];
+          rows.push(makeAdvancedFlowFilterContainsLayerRow(String(firstKind?.stable_id || "")));
         } else {
           return;
         }
         section[group] = rows;
       }, { rebuildSectionIds: [sectionId] });
+      return;
+    }
+
+    const protocolPathEditButton = event.target.closest("[data-advanced-filter-protocol-path-edit-group]");
+    if (protocolPathEditButton instanceof HTMLButtonElement) {
+      const group = String(protocolPathEditButton.dataset.advancedFilterProtocolPathEditGroup || "");
+      const rowIndex = Number(protocolPathEditButton.dataset.advancedFilterProtocolPathEditRowIndex);
+      if ((group === "include" || group === "exclude") && Number.isInteger(rowIndex)) {
+        void openAdvancedFlowFilterProtocolPathPicker(group, rowIndex);
+      }
       return;
     }
 
@@ -9811,7 +10535,10 @@
     const rowKey = String(event.target.dataset.advancedFilterRowIndex || "");
     const numericRowIndex = Number(rowKey);
     const field = String(event.target.dataset.advancedFilterRowField || "");
-    const rebuildSection = field === "range_enabled" || field === "subnet_enabled";
+    const rebuildSection =
+      field === "range_enabled"
+      || field === "subnet_enabled"
+      || (rowSectionId === "contains_layer" && (field === "layer_stable_id" || field === "identifier_mode_id"));
     mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
       const section = advancedFlowFilterSectionById(draft, rowSectionId);
       if (!section) {

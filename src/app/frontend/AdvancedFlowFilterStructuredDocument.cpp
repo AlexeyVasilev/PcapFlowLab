@@ -1,4 +1,5 @@
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 
 #include <algorithm>
@@ -86,6 +87,23 @@ constexpr std::array<EnumDescriptor<session_detail::AdvancedFlowFilterEndpointSc
         {session_detail::AdvancedFlowFilterEndpointScope::endpoint_b, "b", "Endpoint B"},
     }};
 
+constexpr std::array<EnumDescriptor<ProtocolPathStatisticsMode>, 3> kProtocolPathSelectorModeDescriptors {{
+    {ProtocolPathStatisticsMode::kind_overview, "kind", "Kind overview"},
+    {ProtocolPathStatisticsMode::identity_tree, "identity", "Identity tree"},
+    {ProtocolPathStatisticsMode::terminal_paths, "terminal", "Terminal paths"},
+}};
+
+enum class StructuredContainsLayerIdentifierMode : std::uint8_t {
+    any = 0,
+    exact,
+};
+
+constexpr std::array<EnumDescriptor<StructuredContainsLayerIdentifierMode>, 2>
+    kContainsLayerIdentifierModeDescriptors {{
+        {StructuredContainsLayerIdentifierMode::any, "any", "Any"},
+        {StructuredContainsLayerIdentifierMode::exact, "exact", "Exact"},
+    }};
+
 enum class StructuredTrafficValueKind : std::uint8_t {
     count_u64 = 0,
     byte_u64,
@@ -148,6 +166,20 @@ constexpr std::array<EnumDescriptor<session_detail::AdvancedFlowFilterServicePre
     }};
 
 std::string structured_status_error_text(const FrontendAdvancedFlowFilterStructuredDocumentResult& result);
+
+std::string_view trim_ascii_copy(const std::string_view value) noexcept {
+    std::size_t begin = 0U;
+    while (begin < value.size() && static_cast<unsigned char>(value[begin]) <= 0x20U) {
+        ++begin;
+    }
+
+    std::size_t end = value.size();
+    while (end > begin && static_cast<unsigned char>(value[end - 1U]) <= 0x20U) {
+        --end;
+    }
+
+    return value.substr(begin, end - begin);
+}
 
 template <typename Enum, std::size_t Size>
 const EnumDescriptor<Enum>* descriptor_for_value(
@@ -225,6 +257,133 @@ const EnumDescriptor<session_detail::AdvancedFlowFilterServicePredicateKind>* se
     return descriptor_for_value(kServiceOperatorDescriptors, kind);
 }
 
+std::string_view contains_layer_kind_stable_id(const ProtocolLayerKind kind) noexcept {
+    switch (kind) {
+    case ProtocolLayerKind::vlan:
+        return "vlan";
+    case ProtocolLayerKind::mpls:
+        return "mpls";
+    case ProtocolLayerKind::pbb:
+        return "pbb";
+    case ProtocolLayerKind::vxlan:
+        return "vxlan";
+    case ProtocolLayerKind::geneve:
+        return "geneve";
+    case ProtocolLayerKind::gtpu:
+        return "gtpu";
+    case ProtocolLayerKind::gre:
+        return "gre";
+    case ProtocolLayerKind::ah:
+        return "ah";
+    case ProtocolLayerKind::esp:
+        return "esp";
+    default:
+        return {};
+    }
+}
+
+std::optional<ProtocolLayerKind> contains_layer_kind_from_stable_id(const std::string_view stable_id) {
+    for (const auto& descriptor : session_detail::protocol_path_contains_layer_descriptors()) {
+        if (stable_id == contains_layer_kind_stable_id(descriptor.kind)) {
+            return descriptor.kind;
+        }
+    }
+    return std::nullopt;
+}
+
+std::string_view input_format_stable_id(const session_detail::ProtocolPathIdentifierInputFormat format) noexcept {
+    switch (format) {
+    case session_detail::ProtocolPathIdentifierInputFormat::decimal:
+        return "decimal";
+    case session_detail::ProtocolPathIdentifierInputFormat::hexadecimal:
+        return "hexadecimal";
+    }
+    return {};
+}
+
+ProtocolPath protocol_path_from_predicate_layers(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    std::vector<LayerKey> converted {};
+    converted.reserve(layers.size());
+    for (const auto& layer : layers) {
+        converted.push_back(LayerKey {
+            .kind = layer.kind,
+            .identifier = layer.identifier.value_or(ProtocolLayerIdentifier {}),
+        });
+    }
+    return ProtocolPath {std::move(converted)};
+}
+
+std::string protocol_path_predicate_text(const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate) {
+    const auto path = protocol_path_from_predicate_layers(predicate.layers);
+    return session_detail::build_protocol_path_presentation(&path).full_text;
+}
+
+std::string protocol_path_compact_text(const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate) {
+    return session_detail::format_protocol_path_compact_display_text(protocol_path_from_predicate_layers(predicate.layers));
+}
+
+std::string contains_layer_exact_placeholder_text(const session_detail::ProtocolPathContainsLayerDescriptor& descriptor) {
+    switch (descriptor.preferred_input_format) {
+    case session_detail::ProtocolPathIdentifierInputFormat::decimal:
+        return descriptor.max_value > 9999U ? "200" : "413";
+    case session_detail::ProtocolPathIdentifierInputFormat::hexadecimal:
+        return descriptor.max_value <= 0xFFFFFFU ? "0x123456" : "0x12345678";
+    }
+    return {};
+}
+
+std::string contains_layer_compact_text(
+    const session_detail::ProtocolPathContainsLayerDescriptor& descriptor,
+    const StructuredContainsLayerIdentifierMode mode,
+    const std::string_view exact_value_text
+) {
+    if (mode == StructuredContainsLayerIdentifierMode::any) {
+        return std::string(descriptor.layer_label) + " / Any";
+    }
+
+    const auto trimmed = trim_ascii_copy(exact_value_text);
+    if (trimmed.empty()) {
+        return std::string(descriptor.layer_label) + " / " + descriptor.identifier_label;
+    }
+
+    std::ostringstream out {};
+    out << descriptor.layer_label << " / " << descriptor.identifier_label << ' ' << trimmed;
+    return out.str();
+}
+
+bool protocol_path_predicate_is_ui_managed(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    return predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path ||
+        predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix;
+}
+
+bool contains_layer_predicate_is_ui_managed(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    return predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer;
+}
+
+const EnumDescriptor<ProtocolPathStatisticsMode>* protocol_path_selector_mode_descriptor_for_predicate(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path) {
+        return descriptor_for_value(kProtocolPathSelectorModeDescriptors, ProtocolPathStatisticsMode::terminal_paths);
+    }
+
+    const bool has_identifier = std::any_of(
+        predicate.layers.begin(),
+        predicate.layers.end(),
+        [](const auto& layer) { return layer.identifier.has_value(); }
+    );
+    return descriptor_for_value(
+        kProtocolPathSelectorModeDescriptors,
+        has_identifier ? ProtocolPathStatisticsMode::identity_tree : ProtocolPathStatisticsMode::kind_overview
+    );
+}
+
 FrontendAdvancedFlowFilterStructuredUpdateIssue make_update_issue(
     const std::string_view section_id,
     const std::string_view group,
@@ -279,6 +438,18 @@ FrontendAdvancedFlowFilterStructuredOptionCatalogDto build_option_catalog() {
     append_catalog(kQuicVersionDescriptors, catalog.quic_version);
     append_catalog(kDirectionalityDescriptors, catalog.directionality);
     append_catalog(kPortScopeDescriptors, catalog.endpoint_scope);
+    append_catalog(kProtocolPathSelectorModeDescriptors, catalog.protocol_path_selector_mode);
+    append_catalog(kContainsLayerIdentifierModeDescriptors, catalog.contains_layer_identifier_mode);
+    for (const auto& descriptor : session_detail::protocol_path_contains_layer_descriptors()) {
+        catalog.contains_layer_kind.push_back(FrontendAdvancedFlowFilterContainsLayerOptionDto {
+            .stable_id = std::string(contains_layer_kind_stable_id(descriptor.kind)),
+            .label = descriptor.layer_label,
+            .object_name_suffix = descriptor.object_name_suffix,
+            .identifier_label = descriptor.identifier_label,
+            .preferred_input_format_id = std::string(input_format_stable_id(descriptor.preferred_input_format)),
+            .exact_value_placeholder = contains_layer_exact_placeholder_text(descriptor),
+        });
+    }
     return catalog;
 }
 
@@ -372,6 +543,8 @@ bool encode_finite_values(
                 .section_id = std::string(section_id),
                 .group = std::string(group),
                 .value_id = {},
+                .row_index = std::nullopt,
+                .field_id = {},
                 .message = "The current Advanced Filter document contains a finite value that the Tauri structured editor cannot represent.",
             };
             result.error_text = structured_status_error_text(result);
@@ -383,6 +556,8 @@ bool encode_finite_values(
                 .section_id = std::string(section_id),
                 .group = std::string(group),
                 .value_id = descriptor->stable_id,
+                .row_index = std::nullopt,
+                .field_id = {},
                 .message = "Repeated finite-section predicates cannot be represented by the Tauri structured editor.",
             };
             result.error_text = structured_status_error_text(result);
@@ -414,6 +589,8 @@ bool decode_finite_values(
                 .section_id = std::string(section_id),
                 .group = std::string(group),
                 .value_id = stable_id,
+                .row_index = std::nullopt,
+                .field_id = {},
                 .message = "The structured Advanced Filter update contains an unknown finite stable ID.",
             };
             result.error_text = structured_status_error_text(result);
@@ -425,6 +602,8 @@ bool decode_finite_values(
                 .section_id = std::string(section_id),
                 .group = std::string(group),
                 .value_id = stable_id,
+                .row_index = std::nullopt,
+                .field_id = {},
                 .message = "The structured Advanced Filter update repeats a finite stable ID.",
             };
             result.error_text = structured_status_error_text(result);
@@ -735,12 +914,123 @@ bool encode_service_section(
         encode_service_text_rows(exclude_text_predicates, section.exclude_text, result);
 }
 
+std::optional<session_detail::AdvancedFlowFilterProtocolPathPredicate> parse_protocol_path_predicate_text(
+    const std::string_view key,
+    const std::string_view predicate_text
+) {
+    std::ostringstream text {};
+    text << "format_version = 2\n" << key << " = " << predicate_text << '\n';
+    const auto parsed = session_detail::parse_advanced_flow_filter_text(text.str());
+    if (parsed.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+        return std::nullopt;
+    }
+
+    const auto& include = parsed.document.configured_spec.protocol_path.include;
+    if (!include.empty()) {
+        return include.front();
+    }
+    const auto& exclude = parsed.document.configured_spec.protocol_path.exclude;
+    if (!exclude.empty()) {
+        return exclude.front();
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> contains_layer_predicate_applicability(
+    const FrontendSessionAdapter& adapter,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    return adapter.advanced_flow_filter_protocol_path_predicate_applicability(predicate);
+}
+
+bool encode_protocol_path_rows(
+    const FrontendSessionAdapter& adapter,
+    const std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate>& predicates,
+    const std::string_view group,
+    std::vector<FrontendAdvancedFlowFilterProtocolPathRowDto>& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    static_cast<void>(group);
+    out.clear();
+    for (const auto& predicate : predicates) {
+        if (!protocol_path_predicate_is_ui_managed(predicate)) {
+            continue;
+        }
+
+        const auto* selector_mode = protocol_path_selector_mode_descriptor_for_predicate(predicate);
+        if (selector_mode == nullptr) {
+            result.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
+            result.error_text = "The current Advanced Filter document contains a Protocol Path predicate that the Tauri structured editor cannot represent.";
+            return false;
+        }
+
+        FrontendAdvancedFlowFilterProtocolPathRowDto row {};
+        if (!encode_advanced_flow_filter_protocol_path_row(adapter, predicate, row, result)) {
+            return false;
+        }
+        out.push_back(std::move(row));
+    }
+    return true;
+}
+
+bool encode_contains_layer_rows(
+    const FrontendSessionAdapter& adapter,
+    const std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate>& predicates,
+    const std::string_view group,
+    std::vector<FrontendAdvancedFlowFilterContainsLayerRowDto>& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    static_cast<void>(group);
+    out.clear();
+    for (const auto& predicate : predicates) {
+        if (!contains_layer_predicate_is_ui_managed(predicate) || predicate.layers.size() != 1U) {
+            continue;
+        }
+
+        const auto& layer = predicate.layers.front();
+        const auto* descriptor = session_detail::protocol_path_contains_layer_descriptor(layer.kind);
+        if (descriptor == nullptr) {
+            result.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
+            result.error_text = "The current Advanced Filter document contains a Contains Layer rule that the Tauri structured editor cannot represent.";
+            return false;
+        }
+
+        const auto identifier_mode = layer.identifier.has_value()
+            ? StructuredContainsLayerIdentifierMode::exact
+            : StructuredContainsLayerIdentifierMode::any;
+        const auto applicability = contains_layer_predicate_applicability(adapter, predicate);
+        out.push_back(FrontendAdvancedFlowFilterContainsLayerRowDto {
+            .layer_stable_id = std::string(contains_layer_kind_stable_id(descriptor->kind)),
+            .identifier_mode_id = descriptor_for_value(kContainsLayerIdentifierModeDescriptors, identifier_mode)->stable_id,
+            .exact_value_text = layer.identifier.has_value()
+                ? session_detail::format_protocol_path_identifier_editor_text(layer.identifier->kind, layer.identifier->value)
+                : std::string {},
+            .compact_text = contains_layer_compact_text(
+                *descriptor,
+                identifier_mode,
+                layer.identifier.has_value()
+                    ? session_detail::format_protocol_path_identifier_editor_text(
+                          layer.identifier->kind,
+                          layer.identifier->value)
+                    : std::string_view {}
+            ),
+            .applicability_known = applicability.has_value(),
+            .applicable = applicability.value_or(false),
+            .status_text = !applicability.has_value()
+                ? "No current capture."
+                : (applicability.value() ? std::string {} : "Not present in current capture"),
+        });
+    }
+    return true;
+}
+
 bool has_unsupported_configured_sections(const session_detail::AdvancedFlowFilterDocument& document) {
-    const auto& spec = document.configured_spec;
-    return !spec.protocol_path.include.empty() || !spec.protocol_path.exclude.empty();
+    static_cast<void>(document);
+    return false;
 }
 
 std::optional<FrontendAdvancedFlowFilterStructuredDocumentDto> build_structured_document(
+    const FrontendSessionAdapter& adapter,
     const session_detail::AdvancedFlowFilterDocument& document,
     const std::string& canonical_text,
     FrontendAdvancedFlowFilterStructuredDocumentResult& result
@@ -757,6 +1047,8 @@ std::optional<FrontendAdvancedFlowFilterStructuredDocumentDto> build_structured_
     structured.ip_addresses.enabled = document.section_states.ip_addresses;
     structured.traffic.enabled = document.section_states.traffic;
     structured.service.enabled = document.section_states.service;
+    structured.protocol_path.enabled = document.section_states.protocol_path;
+    structured.contains_layer.enabled = document.section_states.contains_layer;
     structured.has_unsupported_configured_sections = has_unsupported_configured_sections(document);
 
     if (!encode_finite_values(
@@ -904,6 +1196,32 @@ std::optional<FrontendAdvancedFlowFilterStructuredDocumentDto> build_structured_
 
     encode_traffic_section(document.configured_spec.aggregate, structured.traffic);
     if (!encode_service_section(document.configured_spec.service, structured.service, result)) {
+        return std::nullopt;
+    }
+    if (!encode_protocol_path_rows(
+            adapter,
+            document.configured_spec.protocol_path.include,
+            "include",
+            structured.protocol_path.include,
+            result) ||
+        !encode_protocol_path_rows(
+            adapter,
+            document.configured_spec.protocol_path.exclude,
+            "exclude",
+            structured.protocol_path.exclude,
+            result) ||
+        !encode_contains_layer_rows(
+            adapter,
+            document.configured_spec.protocol_path.include,
+            "include",
+            structured.contains_layer.include,
+            result) ||
+        !encode_contains_layer_rows(
+            adapter,
+            document.configured_spec.protocol_path.exclude,
+            "exclude",
+            structured.contains_layer.exclude,
+            result)) {
         return std::nullopt;
     }
 
@@ -1212,6 +1530,186 @@ bool decode_service_section(
     return true;
 }
 
+bool decode_protocol_path_rows(
+    const std::vector<FrontendAdvancedFlowFilterProtocolPathRowDto>& rows,
+    const std::string_view group,
+    std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate>& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    out.clear();
+    out.reserve(rows.size());
+
+    for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
+        const auto& row = rows[row_index];
+        if (row.predicate_text.empty()) {
+            set_invalid_update_issue(
+                result,
+                "protocol_path",
+                group,
+                {},
+                row_index,
+                "predicate_text",
+                "Protocol Path rows require a selected path."
+            );
+            return false;
+        }
+
+        const auto* mode_descriptor = descriptor_for_id(kProtocolPathSelectorModeDescriptors, row.selector_mode_id);
+        if (mode_descriptor == nullptr) {
+            set_invalid_update_issue(
+                result,
+                "protocol_path",
+                group,
+                row.selector_mode_id,
+                row_index,
+                "selector_mode_id",
+                "Protocol Path row contains an unknown selector mode."
+            );
+            return false;
+        }
+
+        const auto key = mode_descriptor->value == ProtocolPathStatisticsMode::terminal_paths
+            ? std::string("protocol_path.exact.") + std::string(group)
+            : std::string("protocol_path.prefix.") + std::string(group);
+        auto predicate = parse_protocol_path_predicate_text(key, row.predicate_text);
+        if (!predicate.has_value()) {
+            set_invalid_update_issue(
+                result,
+                "protocol_path",
+                group,
+                {},
+                row_index,
+                "predicate_text",
+                "Protocol Path row is invalid."
+            );
+            return false;
+        }
+
+        if (mode_descriptor->value == ProtocolPathStatisticsMode::kind_overview) {
+            for (auto& layer : predicate->layers) {
+                layer.identifier.reset();
+            }
+        }
+
+        out.push_back(*predicate);
+    }
+
+    return true;
+}
+
+bool decode_contains_layer_rows(
+    const std::vector<FrontendAdvancedFlowFilterContainsLayerRowDto>& rows,
+    const std::string_view group,
+    std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate>& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    out.clear();
+    out.reserve(rows.size());
+
+    for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
+        const auto& row = rows[row_index];
+        const auto kind = contains_layer_kind_from_stable_id(row.layer_stable_id);
+        if (!kind.has_value()) {
+            set_invalid_update_issue(
+                result,
+                "contains_layer",
+                group,
+                row.layer_stable_id,
+                row_index,
+                "layer",
+                "Contains Layer row contains an unknown layer kind."
+            );
+            return false;
+        }
+
+        const auto* descriptor = session_detail::protocol_path_contains_layer_descriptor(*kind);
+        if (descriptor == nullptr) {
+            set_invalid_update_issue(
+                result,
+                "contains_layer",
+                group,
+                row.layer_stable_id,
+                row_index,
+                "layer",
+                "Contains Layer row contains an unsupported layer kind."
+            );
+            return false;
+        }
+
+        const auto* mode_descriptor = descriptor_for_id(kContainsLayerIdentifierModeDescriptors, row.identifier_mode_id);
+        if (mode_descriptor == nullptr) {
+            set_invalid_update_issue(
+                result,
+                "contains_layer",
+                group,
+                row.identifier_mode_id,
+                row_index,
+                "mode",
+                "Contains Layer row contains an unknown identifier mode."
+            );
+            return false;
+        }
+
+        session_detail::AdvancedFlowFilterProtocolLayerPredicate layer {
+            .kind = *kind,
+        };
+
+        if (mode_descriptor->value == StructuredContainsLayerIdentifierMode::exact) {
+            const auto trimmed = trim_ascii_copy(row.exact_value_text);
+            if (trimmed.empty()) {
+                set_invalid_update_issue(
+                    result,
+                    "contains_layer",
+                    group,
+                    row.layer_stable_id,
+                    row_index,
+                    "value",
+                    std::string(descriptor->layer_label) + ' ' + descriptor->identifier_label + " value is required."
+                );
+                return false;
+            }
+
+            const auto parsed = session_detail::parse_advanced_flow_filter_unsigned_integer_text(trimmed);
+            if (!parsed.ok || parsed.overflow) {
+                set_invalid_update_issue(
+                    result,
+                    "contains_layer",
+                    group,
+                    row.layer_stable_id,
+                    row_index,
+                    "value",
+                    "Contains Layer exact identifiers must be valid non-negative integers."
+                );
+                return false;
+            }
+            if (parsed.value > descriptor->max_value) {
+                set_invalid_update_issue(
+                    result,
+                    "contains_layer",
+                    group,
+                    row.layer_stable_id,
+                    row_index,
+                    "value",
+                    std::string(descriptor->layer_label) + ' ' + descriptor->identifier_label + " is out of range."
+                );
+                return false;
+            }
+
+            layer.identifier = ProtocolLayerIdentifier {
+                .kind = descriptor->identifier_kind,
+                .value = parsed.value,
+            };
+        }
+
+        out.push_back(session_detail::AdvancedFlowFilterProtocolPathPredicate {
+            .match_kind = session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer,
+            .layers = {std::move(layer)},
+        });
+    }
+
+    return true;
+}
+
 std::string_view endpoint_scope_key_suffix(const session_detail::AdvancedFlowFilterEndpointScope scope) {
     const auto* descriptor = descriptor_for_value(kEndpointScopeDescriptors, scope);
     return descriptor != nullptr ? std::string_view {descriptor->stable_id} : std::string_view {};
@@ -1502,6 +2000,7 @@ bool decode_ip_rows(
 }
 
 FrontendAdvancedFlowFilterStructuredDocumentResult parse_document_text(
+    const FrontendSessionAdapter& adapter,
     const std::string_view filter_text
 ) {
     FrontendAdvancedFlowFilterStructuredDocumentResult result {};
@@ -1539,7 +2038,7 @@ FrontendAdvancedFlowFilterStructuredDocumentResult parse_document_text(
         return result;
     }
 
-    result.document = build_structured_document(parse_result.document, format_result.text, result);
+    result.document = build_structured_document(adapter, parse_result.document, format_result.text, result);
     if (!result.document.has_value()) {
         if (result.error_text.empty()) {
             result.error_text = structured_status_error_text(result);
@@ -1555,7 +2054,7 @@ FrontendAdvancedFlowFilterStructuredDocumentResult parse_document_text(
 
 FrontendAdvancedFlowFilterStructuredDocumentResult
 FrontendSessionAdapter::parse_advanced_flow_filter_structured_document(const std::string_view filter_text) const {
-    return parse_document_text(filter_text);
+    return parse_document_text(*this, filter_text);
 }
 
 FrontendAdvancedFlowFilterStructuredDocumentResult
@@ -1566,7 +2065,7 @@ FrontendSessionAdapter::update_advanced_flow_filter_structured_section(
     const std::vector<std::string>& include_ids,
     const std::vector<std::string>& exclude_ids
 ) const {
-    auto parsed = parse_document_text(filter_text);
+    auto parsed = parse_document_text(*this, filter_text);
     if (parsed.status != FrontendAdvancedFlowFilterStructuredDocumentStatus::ok) {
         return parsed;
     }
@@ -1617,7 +2116,7 @@ FrontendSessionAdapter::apply_advanced_flow_filter_structured_document(
     const std::string_view filter_text,
     const FrontendAdvancedFlowFilterStructuredDocumentDto& draft
 ) const {
-    auto parsed = parse_document_text(filter_text);
+    auto parsed = parse_document_text(*this, filter_text);
     if (parsed.status != FrontendAdvancedFlowFilterStructuredDocumentStatus::ok) {
         return parsed;
     }
@@ -1784,6 +2283,102 @@ FrontendSessionAdapter::apply_advanced_flow_filter_structured_document(
         spec.service = std::move(service);
     }
 
+    document.section_states.protocol_path = draft.protocol_path.enabled;
+    document.section_states.contains_layer = draft.contains_layer.enabled;
+    {
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> preserved_include {};
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> preserved_exclude {};
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> existing_protocol_include {};
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> existing_protocol_exclude {};
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> existing_contains_include {};
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> existing_contains_exclude {};
+
+        const auto split_predicates = [](
+                                          const auto& source,
+                                          auto& preserved,
+                                          auto& protocol_rows,
+                                          auto& contains_rows) {
+            for (const auto& predicate : source) {
+                if (protocol_path_predicate_is_ui_managed(predicate)) {
+                    protocol_rows.push_back(predicate);
+                } else if (contains_layer_predicate_is_ui_managed(predicate)) {
+                    contains_rows.push_back(predicate);
+                } else {
+                    preserved.push_back(predicate);
+                }
+            }
+        };
+
+        split_predicates(spec.protocol_path.include, preserved_include, existing_protocol_include, existing_contains_include);
+        split_predicates(spec.protocol_path.exclude, preserved_exclude, existing_protocol_exclude, existing_contains_exclude);
+
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> updated_protocol_include = std::move(preserved_include);
+        std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> updated_protocol_exclude = std::move(preserved_exclude);
+
+        if (draft.protocol_path.enabled) {
+            std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> decoded_include {};
+            std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> decoded_exclude {};
+            if (!decode_protocol_path_rows(draft.protocol_path.include, "include", decoded_include, parsed) ||
+                !decode_protocol_path_rows(draft.protocol_path.exclude, "exclude", decoded_exclude, parsed)) {
+                return parsed;
+            }
+            updated_protocol_include.insert(
+                updated_protocol_include.end(),
+                decoded_include.begin(),
+                decoded_include.end()
+            );
+            updated_protocol_exclude.insert(
+                updated_protocol_exclude.end(),
+                decoded_exclude.begin(),
+                decoded_exclude.end()
+            );
+        } else {
+            updated_protocol_include.insert(
+                updated_protocol_include.end(),
+                existing_protocol_include.begin(),
+                existing_protocol_include.end()
+            );
+            updated_protocol_exclude.insert(
+                updated_protocol_exclude.end(),
+                existing_protocol_exclude.begin(),
+                existing_protocol_exclude.end()
+            );
+        }
+
+        if (draft.contains_layer.enabled) {
+            std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> decoded_include {};
+            std::vector<session_detail::AdvancedFlowFilterProtocolPathPredicate> decoded_exclude {};
+            if (!decode_contains_layer_rows(draft.contains_layer.include, "include", decoded_include, parsed) ||
+                !decode_contains_layer_rows(draft.contains_layer.exclude, "exclude", decoded_exclude, parsed)) {
+                return parsed;
+            }
+            updated_protocol_include.insert(
+                updated_protocol_include.end(),
+                decoded_include.begin(),
+                decoded_include.end()
+            );
+            updated_protocol_exclude.insert(
+                updated_protocol_exclude.end(),
+                decoded_exclude.begin(),
+                decoded_exclude.end()
+            );
+        } else {
+            updated_protocol_include.insert(
+                updated_protocol_include.end(),
+                existing_contains_include.begin(),
+                existing_contains_include.end()
+            );
+            updated_protocol_exclude.insert(
+                updated_protocol_exclude.end(),
+                existing_contains_exclude.begin(),
+                existing_contains_exclude.end()
+            );
+        }
+
+        spec.protocol_path.include = std::move(updated_protocol_include);
+        spec.protocol_path.exclude = std::move(updated_protocol_exclude);
+    }
+
     const auto format_result = session_detail::format_advanced_flow_filter_text(document);
     if (format_result.status != session_detail::AdvancedFlowFilterTextFormatStatus::ok) {
         parsed.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
@@ -1793,7 +2388,71 @@ FrontendSessionAdapter::apply_advanced_flow_filter_structured_document(
         return parsed;
     }
 
-    return parse_document_text(format_result.text);
+    return parse_document_text(*this, format_result.text);
+}
+
+std::optional<std::string> format_advanced_flow_filter_protocol_path_predicate_text(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    session_detail::AdvancedFlowFilterDocument document {};
+    document.configured_spec.protocol_path.include = {predicate};
+
+    const auto format_result = session_detail::format_advanced_flow_filter_text(document);
+    if (format_result.status != session_detail::AdvancedFlowFilterTextFormatStatus::ok) {
+        return std::nullopt;
+    }
+
+    const auto newline = format_result.text.find('\n');
+    if (newline == std::string::npos || newline + 1U >= format_result.text.size()) {
+        return std::nullopt;
+    }
+
+    auto assignment = std::string_view {format_result.text}.substr(newline + 1U);
+    if (!assignment.empty() && assignment.back() == '\n') {
+        assignment.remove_suffix(1U);
+    }
+
+    const auto equals = assignment.find(" = ");
+    if (equals == std::string_view::npos || equals + 3U > assignment.size()) {
+        return std::nullopt;
+    }
+
+    return std::string {assignment.substr(equals + 3U)};
+}
+
+bool encode_advanced_flow_filter_protocol_path_row(
+    const FrontendSessionAdapter& adapter,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate,
+    FrontendAdvancedFlowFilterProtocolPathRowDto& out,
+    FrontendAdvancedFlowFilterStructuredDocumentResult& result
+) {
+    const auto* selector_mode = protocol_path_selector_mode_descriptor_for_predicate(predicate);
+    if (selector_mode == nullptr) {
+        result.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
+        result.error_text = "The current Advanced Filter document contains a Protocol Path predicate that the Tauri structured editor cannot represent.";
+        return false;
+    }
+
+    const auto predicate_text = format_advanced_flow_filter_protocol_path_predicate_text(predicate);
+    if (!predicate_text.has_value()) {
+        result.status = FrontendAdvancedFlowFilterStructuredDocumentStatus::unrepresentable_document;
+        result.error_text = "The current Advanced Filter document contains a Protocol Path predicate that the Tauri structured editor cannot represent.";
+        return false;
+    }
+
+    const auto applicability = adapter.advanced_flow_filter_protocol_path_predicate_applicability(predicate);
+    out = FrontendAdvancedFlowFilterProtocolPathRowDto {
+        .selector_mode_id = selector_mode->stable_id,
+        .predicate_text = *predicate_text,
+        .compact_text = protocol_path_compact_text(predicate),
+        .full_text = protocol_path_predicate_text(predicate),
+        .applicability_known = applicability.has_value(),
+        .applicable = applicability.value_or(false),
+        .status_text = !applicability.has_value()
+            ? "No current capture."
+            : (applicability.value() ? std::string {} : "Not present in current capture"),
+    };
+    return true;
 }
 
 }  // namespace pfl

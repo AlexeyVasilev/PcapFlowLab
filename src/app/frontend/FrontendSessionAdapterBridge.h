@@ -48,6 +48,11 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     std::uint8_t mode,
     std::uint64_t node_id
 );
+char* pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode,
+    std::uint64_t node_id
+);
 char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* filter_text_utf8,
@@ -146,7 +151,23 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const char* const* service_exclude_operator_ids_utf8,
     const std::uint8_t* service_exclude_case_sensitive,
     const char* const* service_exclude_text_utf8,
-    std::size_t service_exclude_text_count
+    std::size_t service_exclude_text_count,
+    std::uint8_t protocol_path_enabled,
+    const char* const* protocol_path_include_selector_mode_ids_utf8,
+    const char* const* protocol_path_include_predicate_text_utf8,
+    std::size_t protocol_path_include_count,
+    const char* const* protocol_path_exclude_selector_mode_ids_utf8,
+    const char* const* protocol_path_exclude_predicate_text_utf8,
+    std::size_t protocol_path_exclude_count,
+    std::uint8_t contains_layer_enabled,
+    const char* const* contains_layer_include_layer_stable_ids_utf8,
+    const char* const* contains_layer_include_identifier_mode_ids_utf8,
+    const char* const* contains_layer_include_exact_value_text_utf8,
+    std::size_t contains_layer_include_count,
+    const char* const* contains_layer_exclude_layer_stable_ids_utf8,
+    const char* const* contains_layer_exclude_identifier_mode_ids_utf8,
+    const char* const* contains_layer_exclude_exact_value_text_utf8,
+    std::size_t contains_layer_exclude_count
 );
 std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes();
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(

@@ -533,6 +533,114 @@ std::string structured_service_section_json(const pfl::FrontendAdvancedFlowFilte
     return out.str();
 }
 
+std::string structured_protocol_path_row_json(const pfl::FrontendAdvancedFlowFilterProtocolPathRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"selector_mode_id\":" << json_string(row.selector_mode_id) << ','
+        << "\"predicate_text\":" << json_string(row.predicate_text) << ','
+        << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"full_text\":" << json_string(row.full_text) << ','
+        << "\"applicability_known\":" << bool_json(row.applicability_known) << ','
+        << "\"applicable\":" << bool_json(row.applicable) << ','
+        << "\"status_text\":" << json_string(row.status_text)
+        << '}';
+    return out.str();
+}
+
+std::string structured_protocol_path_row_array_json(
+    const std::vector<pfl::FrontendAdvancedFlowFilterProtocolPathRowDto>& rows
+) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << structured_protocol_path_row_json(rows[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_protocol_path_section_json(const pfl::FrontendAdvancedFlowFilterProtocolPathSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include\":" << structured_protocol_path_row_array_json(section.include) << ','
+        << "\"exclude\":" << structured_protocol_path_row_array_json(section.exclude)
+        << '}';
+    return out.str();
+}
+
+std::string structured_contains_layer_option_json(const pfl::FrontendAdvancedFlowFilterContainsLayerOptionDto& option) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(option.stable_id) << ','
+        << "\"label\":" << json_string(option.label) << ','
+        << "\"object_name_suffix\":" << json_string(option.object_name_suffix) << ','
+        << "\"identifier_label\":" << json_string(option.identifier_label) << ','
+        << "\"preferred_input_format_id\":" << json_string(option.preferred_input_format_id) << ','
+        << "\"exact_value_placeholder\":" << json_string(option.exact_value_placeholder)
+        << '}';
+    return out.str();
+}
+
+std::string structured_contains_layer_option_array_json(
+    const std::vector<pfl::FrontendAdvancedFlowFilterContainsLayerOptionDto>& options
+) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < options.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << structured_contains_layer_option_json(options[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_contains_layer_row_json(const pfl::FrontendAdvancedFlowFilterContainsLayerRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"layer_stable_id\":" << json_string(row.layer_stable_id) << ','
+        << "\"identifier_mode_id\":" << json_string(row.identifier_mode_id) << ','
+        << "\"exact_value_text\":" << json_string(row.exact_value_text) << ','
+        << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"applicability_known\":" << bool_json(row.applicability_known) << ','
+        << "\"applicable\":" << bool_json(row.applicable) << ','
+        << "\"status_text\":" << json_string(row.status_text)
+        << '}';
+    return out.str();
+}
+
+std::string structured_contains_layer_row_array_json(
+    const std::vector<pfl::FrontendAdvancedFlowFilterContainsLayerRowDto>& rows
+) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << structured_contains_layer_row_json(rows[index]);
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_contains_layer_section_json(
+    const pfl::FrontendAdvancedFlowFilterContainsLayerSectionDto& section
+) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"include\":" << structured_contains_layer_row_array_json(section.include) << ','
+        << "\"exclude\":" << structured_contains_layer_row_array_json(section.exclude)
+        << '}';
+    return out.str();
+}
+
 std::string structured_option_catalog_json(
     const pfl::FrontendAdvancedFlowFilterStructuredOptionCatalogDto& catalog
 ) {
@@ -544,7 +652,11 @@ std::string structured_option_catalog_json(
         << "\"tls_version\":" << finite_option_array_json(catalog.tls_version) << ','
         << "\"quic_version\":" << finite_option_array_json(catalog.quic_version) << ','
         << "\"directionality\":" << finite_option_array_json(catalog.directionality) << ','
-        << "\"endpoint_scope\":" << finite_option_array_json(catalog.endpoint_scope)
+        << "\"endpoint_scope\":" << finite_option_array_json(catalog.endpoint_scope) << ','
+        << "\"protocol_path_selector_mode\":" << finite_option_array_json(catalog.protocol_path_selector_mode) << ','
+        << "\"contains_layer_identifier_mode\":"
+        << finite_option_array_json(catalog.contains_layer_identifier_mode) << ','
+        << "\"contains_layer_kind\":" << structured_contains_layer_option_array_json(catalog.contains_layer_kind)
         << '}';
     return out.str();
 }
@@ -569,6 +681,8 @@ std::string structured_document_json(
         << "\"ip_addresses\":" << structured_ip_section_json(document->ip_addresses) << ','
         << "\"traffic\":" << structured_traffic_section_json(document->traffic) << ','
         << "\"service\":" << structured_service_section_json(document->service) << ','
+        << "\"protocol_path\":" << structured_protocol_path_section_json(document->protocol_path) << ','
+        << "\"contains_layer\":" << structured_contains_layer_section_json(document->contains_layer) << ','
         << "\"has_unsupported_configured_sections\":" << bool_json(document->has_unsupported_configured_sections)
         << '}';
     return out.str();
@@ -622,6 +736,7 @@ std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& ro
         << "\"layer_text\":" << json_string(row.layer_text) << ','
         << "\"path_text\":" << json_string(row.path_text) << ','
         << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"advanced_filter_predicate_text\":" << json_string(row.advanced_filter_predicate_text) << ','
         << "\"badges\":[";
 
     for (std::size_t index = 0; index < row.badges.size(); ++index) {
@@ -2123,6 +2238,24 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     ));
 }
 
+char* pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode,
+    const std::uint64_t node_id
+) {
+    if (handle == nullptr) {
+        return make_c_string(structured_protocol_path_row_json({}));
+    }
+
+    const auto statistics_mode = mode == 1U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree
+        : (mode == 2U
+            ? pfl::ProtocolPathStatisticsMode::terminal_paths
+            : pfl::ProtocolPathStatisticsMode::kind_overview);
+    const auto row = handle->adapter.get_advanced_flow_filter_protocol_path_row(statistics_mode, node_id);
+    return make_c_string(structured_protocol_path_row_json(row.value_or(pfl::FrontendAdvancedFlowFilterProtocolPathRowDto {})));
+}
+
 char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* filter_text_utf8,
@@ -2307,7 +2440,23 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const char* const* service_exclude_operator_ids_utf8,
     const std::uint8_t* service_exclude_case_sensitive,
     const char* const* service_exclude_text_utf8,
-    const std::size_t service_exclude_text_count
+    const std::size_t service_exclude_text_count,
+    const std::uint8_t protocol_path_enabled,
+    const char* const* protocol_path_include_selector_mode_ids_utf8,
+    const char* const* protocol_path_include_predicate_text_utf8,
+    const std::size_t protocol_path_include_count,
+    const char* const* protocol_path_exclude_selector_mode_ids_utf8,
+    const char* const* protocol_path_exclude_predicate_text_utf8,
+    const std::size_t protocol_path_exclude_count,
+    const std::uint8_t contains_layer_enabled,
+    const char* const* contains_layer_include_layer_stable_ids_utf8,
+    const char* const* contains_layer_include_identifier_mode_ids_utf8,
+    const char* const* contains_layer_include_exact_value_text_utf8,
+    const std::size_t contains_layer_include_count,
+    const char* const* contains_layer_exclude_layer_stable_ids_utf8,
+    const char* const* contains_layer_exclude_identifier_mode_ids_utf8,
+    const char* const* contains_layer_exclude_exact_value_text_utf8,
+    const std::size_t contains_layer_exclude_count
 ) {
     const auto invalid_request = []() {
         pfl::FrontendAdvancedFlowFilterStructuredDocumentResult result {};
@@ -2364,7 +2513,23 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
                                              service_include_text_utf8 == nullptr)) ||
         string_array_invalid(service_exclude_operator_ids_utf8, service_exclude_text_count) ||
         (service_exclude_text_count > 0U && (service_exclude_case_sensitive == nullptr ||
-                                             service_exclude_text_utf8 == nullptr))) {
+                                             service_exclude_text_utf8 == nullptr)) ||
+        string_array_invalid(protocol_path_include_selector_mode_ids_utf8, protocol_path_include_count) ||
+        string_array_invalid(protocol_path_include_predicate_text_utf8, protocol_path_include_count) ||
+        string_array_invalid(protocol_path_exclude_selector_mode_ids_utf8, protocol_path_exclude_count) ||
+        string_array_invalid(protocol_path_exclude_predicate_text_utf8, protocol_path_exclude_count) ||
+        string_array_invalid(contains_layer_include_layer_stable_ids_utf8, contains_layer_include_count) ||
+        (contains_layer_include_count > 0U &&
+         (contains_layer_include_identifier_mode_ids_utf8 == nullptr ||
+          contains_layer_include_exact_value_text_utf8 == nullptr ||
+          string_array_invalid(contains_layer_include_identifier_mode_ids_utf8, contains_layer_include_count) ||
+          string_array_invalid(contains_layer_include_exact_value_text_utf8, contains_layer_include_count))) ||
+        string_array_invalid(contains_layer_exclude_layer_stable_ids_utf8, contains_layer_exclude_count) ||
+        (contains_layer_exclude_count > 0U &&
+         (contains_layer_exclude_identifier_mode_ids_utf8 == nullptr ||
+          contains_layer_exclude_exact_value_text_utf8 == nullptr ||
+          string_array_invalid(contains_layer_exclude_identifier_mode_ids_utf8, contains_layer_exclude_count) ||
+          string_array_invalid(contains_layer_exclude_exact_value_text_utf8, contains_layer_exclude_count)))) {
         return invalid_request();
     }
 
@@ -2451,6 +2616,48 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         return rows;
     };
 
+    const auto collect_protocol_path_rows = [](
+                                                 const char* const* selector_mode_ids_utf8,
+                                                 const char* const* predicate_text_utf8,
+                                                 const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterProtocolPathRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterProtocolPathRowDto {
+                .selector_mode_id = selector_mode_ids_utf8[index] != nullptr
+                    ? std::string {selector_mode_ids_utf8[index]}
+                    : std::string {},
+                .predicate_text = predicate_text_utf8[index] != nullptr
+                    ? std::string {predicate_text_utf8[index]}
+                    : std::string {},
+            });
+        }
+        return rows;
+    };
+
+    const auto collect_contains_layer_rows = [](
+                                                   const char* const* layer_stable_ids_utf8,
+                                                   const char* const* identifier_mode_ids_utf8,
+                                                   const char* const* exact_value_text_utf8,
+                                                   const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterContainsLayerRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterContainsLayerRowDto {
+                .layer_stable_id = layer_stable_ids_utf8[index] != nullptr
+                    ? std::string {layer_stable_ids_utf8[index]}
+                    : std::string {},
+                .identifier_mode_id = identifier_mode_ids_utf8[index] != nullptr
+                    ? std::string {identifier_mode_ids_utf8[index]}
+                    : std::string {},
+                .exact_value_text = exact_value_text_utf8[index] != nullptr
+                    ? std::string {exact_value_text_utf8[index]}
+                    : std::string {},
+            });
+        }
+        return rows;
+    };
+
     pfl::FrontendAdvancedFlowFilterStructuredDocumentDto draft {};
     draft.address_family.enabled = address_family_enabled != 0U;
     draft.address_family.include = collect_strings(address_family_include_ids_utf8, address_family_include_id_count);
@@ -2531,6 +2738,30 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         service_exclude_case_sensitive,
         service_exclude_text_utf8,
         service_exclude_text_count
+    );
+    draft.protocol_path.enabled = protocol_path_enabled != 0U;
+    draft.protocol_path.include = collect_protocol_path_rows(
+        protocol_path_include_selector_mode_ids_utf8,
+        protocol_path_include_predicate_text_utf8,
+        protocol_path_include_count
+    );
+    draft.protocol_path.exclude = collect_protocol_path_rows(
+        protocol_path_exclude_selector_mode_ids_utf8,
+        protocol_path_exclude_predicate_text_utf8,
+        protocol_path_exclude_count
+    );
+    draft.contains_layer.enabled = contains_layer_enabled != 0U;
+    draft.contains_layer.include = collect_contains_layer_rows(
+        contains_layer_include_layer_stable_ids_utf8,
+        contains_layer_include_identifier_mode_ids_utf8,
+        contains_layer_include_exact_value_text_utf8,
+        contains_layer_include_count
+    );
+    draft.contains_layer.exclude = collect_contains_layer_rows(
+        contains_layer_exclude_layer_stable_ids_utf8,
+        contains_layer_exclude_identifier_mode_ids_utf8,
+        contains_layer_exclude_exact_value_text_utf8,
+        contains_layer_exclude_count
     );
 
     return make_c_string(structured_document_result_json(

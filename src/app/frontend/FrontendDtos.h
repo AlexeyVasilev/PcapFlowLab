@@ -296,6 +296,7 @@ struct FrontendProtocolPathStatsDto {
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
+    std::string advanced_filter_predicate_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
     bool has_children {false};
     bool is_terminal {false};

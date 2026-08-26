@@ -2705,6 +2705,20 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
     PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
     PFL_EXPECT(empty.option_catalog.endpoint_scope.size() == 3U);
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode.size() == 3U);
+    PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind.size() == 9U);
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode[0].stable_id == "kind");
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode[1].stable_id == "identity");
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode[2].stable_id == "terminal");
+    PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode[0].stable_id == "any");
+    PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode[1].stable_id == "exact");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[0].stable_id == "vlan");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[0].preferred_input_format_id == "decimal");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[2].stable_id == "pbb");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[2].preferred_input_format_id == "hexadecimal");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[5].stable_id == "gtpu");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[5].preferred_input_format_id == "hexadecimal");
     PFL_EXPECT(empty.configured_rule_count == 0U);
     PFL_EXPECT(empty.active_rule_count == 0U);
     PFL_EXPECT(empty.document->ports.include.empty());
@@ -2761,6 +2775,26 @@ void run_frontend_structured_document_tests() {
             .operator_id = std::move(operator_id),
             .case_sensitive = case_sensitive,
             .text = std::move(text),
+        };
+    };
+
+    const auto make_protocol_path_row = [](
+                                            std::string selector_mode_id,
+                                            std::string predicate_text) {
+        return FrontendAdvancedFlowFilterProtocolPathRowDto {
+            .selector_mode_id = std::move(selector_mode_id),
+            .predicate_text = std::move(predicate_text),
+        };
+    };
+
+    const auto make_contains_layer_row = [](
+                                             std::string layer_stable_id,
+                                             std::string identifier_mode_id,
+                                             std::string exact_value_text) {
+        return FrontendAdvancedFlowFilterContainsLayerRowDto {
+            .layer_stable_id = std::move(layer_stable_id),
+            .identifier_mode_id = std::move(identifier_mode_id),
+            .exact_value_text = std::move(exact_value_text),
         };
     };
 
@@ -2864,6 +2898,119 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].text == "youtube");
         PFL_EXPECT(traffic_service_snapshot.document->service.exclude_text[0].operator_id == "equals");
         PFL_EXPECT(traffic_service_snapshot.document->service.exclude_text[0].case_sensitive == true);
+    }
+
+    {
+        const auto protocol_path_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
+            "protocol_path.exact.exclude = EthernetII > IPv4 > TCP\n"
+            "protocol_path.contains.include = GTP-U(teid=0x12345678)\n"
+            "protocol_path.contains.exclude = VLAN(vid=100)\n"
+        );
+        PFL_EXPECT(protocol_path_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(protocol_path_snapshot.document.has_value());
+        PFL_REQUIRE(protocol_path_snapshot.document->protocol_path.include.size() == 1U);
+        PFL_REQUIRE(protocol_path_snapshot.document->protocol_path.exclude.size() == 1U);
+        PFL_REQUIRE(protocol_path_snapshot.document->contains_layer.include.size() == 1U);
+        PFL_REQUIRE(protocol_path_snapshot.document->contains_layer.exclude.size() == 1U);
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.include[0].selector_mode_id == "identity");
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.include[0].predicate_text ==
+            "EthernetII > IPv4 > UDP > Geneve(vni=100)");
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.exclude[0].selector_mode_id == "terminal");
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.exclude[0].predicate_text ==
+            "EthernetII > IPv4 > TCP");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.include[0].layer_stable_id == "gtpu");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.include[0].identifier_mode_id == "exact");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.include[0].exact_value_text == "0x12345678");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.exclude[0].layer_stable_id == "vlan");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.exclude[0].identifier_mode_id == "exact");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.exclude[0].exact_value_text == "100");
+    }
+
+    {
+        const auto absent_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > VLAN(vid=999) > IPv4\n"
+            "protocol_path.contains.include = Geneve(vni=999)\n"
+        );
+        PFL_EXPECT(absent_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(absent_snapshot.document.has_value());
+        PFL_REQUIRE(absent_snapshot.document->protocol_path.include.size() == 1U);
+        PFL_REQUIRE(absent_snapshot.document->contains_layer.include.size() == 1U);
+        PFL_EXPECT(absent_snapshot.document->protocol_path.include[0].status_text == "Not present in current capture");
+        PFL_EXPECT(absent_snapshot.document->contains_layer.include[0].status_text == "Not present in current capture");
+        PFL_EXPECT(absent_snapshot.configured_rule_count == 2U);
+        PFL_EXPECT(absent_snapshot.active_rule_count == 2U);
+    }
+
+    {
+        FrontendSessionAdapter tunnel_adapter {};
+        PFL_REQUIRE(tunnel_adapter.open_capture(
+            fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")
+        ).opened);
+
+        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+        PFL_EXPECT(tunnel_empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(tunnel_empty.document.has_value());
+
+        const auto contains_snapshot = tunnel_adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.contains.include = VXLAN(vni=100)\n"
+            "protocol_path.contains.include = VXLAN(vni=200)\n"
+            "protocol_path.contains.include = VXLAN(vni=300)\n"
+        );
+        PFL_EXPECT(contains_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(contains_snapshot.document.has_value());
+        PFL_REQUIRE(contains_snapshot.document->contains_layer.include.size() == 3U);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[0].applicability_known == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[0].applicable == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[0].status_text.empty());
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[1].applicability_known == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[1].applicable == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[1].status_text.empty());
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[2].applicability_known == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[2].applicable == false);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[2].status_text == "Not present in current capture");
+
+        const auto tunnel_baseline = tunnel_adapter.query_flows(session_detail::FlowQuery {});
+        const auto identity_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree);
+        const auto selected_prefix_row = std::find_if(
+            identity_stats.begin(),
+            identity_stats.end(),
+            [](const auto& row) {
+                return row.advanced_filter_predicate_text ==
+                    "EthernetII > IPv4 > UDP > VXLAN(vni=100)";
+            }
+        );
+        PFL_REQUIRE(selected_prefix_row != identity_stats.end());
+
+        auto draft = *tunnel_empty.document;
+        draft.protocol_path.enabled = true;
+        draft.protocol_path.include = {
+            make_protocol_path_row("identity", selected_prefix_row->advanced_filter_predicate_text),
+        };
+        const auto applied = tunnel_adapter.apply_advanced_flow_filter_structured_document(
+            tunnel_empty.document->canonical_text,
+            draft
+        );
+        PFL_EXPECT(applied.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(applied.document.has_value());
+        PFL_REQUIRE(applied.document->protocol_path.include.size() == 1U);
+        PFL_EXPECT(applied.document->protocol_path.include[0].predicate_text ==
+            selected_prefix_row->advanced_filter_predicate_text);
+        PFL_EXPECT(applied.document->protocol_path.include[0].full_text == selected_prefix_row->path_text);
+        PFL_EXPECT(applied.document->protocol_path.include[0].status_text.empty());
+
+        const auto applied_query = tunnel_adapter.query_advanced_flows_text(
+            applied.document->canonical_text,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(applied_query.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(applied_query.result_count_before_limit > 0U);
+        PFL_EXPECT(applied_query.result_count_before_limit < tunnel_baseline.result_count_before_limit);
     }
 
     const auto expect_update_matches_direct = [&](const auto& updated) {
@@ -3102,6 +3249,154 @@ void run_frontend_structured_document_tests() {
     }
 
     {
+        FrontendSessionAdapter tunnel_adapter {};
+        PFL_REQUIRE(tunnel_adapter.open_capture(
+            fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")
+        ).opened);
+
+        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+        PFL_EXPECT(tunnel_empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(tunnel_empty.document.has_value());
+
+        const auto tunnel_baseline =
+            tunnel_adapter.query_advanced_flows_text("format_version = 2\n", std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(tunnel_baseline.status == FrontendAdvancedFlowQueryStatus::ok);
+
+        const auto kind_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::kind_overview);
+        const auto kind_stats_row = std::find_if(
+            kind_stats.begin(),
+            kind_stats.end(),
+            [](const auto& row) {
+                return row.path_text.find("VXLAN") != std::string::npos;
+            }
+        );
+        const auto identity_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree);
+        const auto identity_stats_row = std::find_if(
+            identity_stats.begin(),
+            identity_stats.end(),
+            [](const auto& row) {
+                return row.advanced_filter_predicate_text == "EthernetII > IPv4 > UDP > VXLAN(vni=100)";
+            }
+        );
+        const auto terminal_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::terminal_paths);
+        const auto terminal_stats_row = std::find_if(
+            terminal_stats.begin(),
+            terminal_stats.end(),
+            [](const auto& row) {
+                return row.advanced_filter_predicate_text ==
+                    "EthernetII > IPv4 > UDP > VXLAN(vni=100) > EthernetII > IPv4 > TCP";
+            }
+        );
+        PFL_REQUIRE(kind_stats_row != kind_stats.end());
+        PFL_REQUIRE(identity_stats_row != identity_stats.end());
+        PFL_REQUIRE(terminal_stats_row != terminal_stats.end());
+
+        const auto kind_row = tunnel_adapter.get_advanced_flow_filter_protocol_path_row(
+            ProtocolPathStatisticsMode::kind_overview,
+            kind_stats_row->node_id
+        );
+        const auto identity_row = tunnel_adapter.get_advanced_flow_filter_protocol_path_row(
+            ProtocolPathStatisticsMode::identity_tree,
+            identity_stats_row->node_id
+        );
+        const auto terminal_row = tunnel_adapter.get_advanced_flow_filter_protocol_path_row(
+            ProtocolPathStatisticsMode::terminal_paths,
+            terminal_stats_row->node_id
+        );
+        PFL_REQUIRE(kind_row.has_value());
+        PFL_REQUIRE(identity_row.has_value());
+        PFL_REQUIRE(terminal_row.has_value());
+        PFL_EXPECT(kind_row->selector_mode_id == "kind");
+        PFL_EXPECT(identity_row->selector_mode_id == "identity");
+        PFL_EXPECT(terminal_row->selector_mode_id == "terminal");
+        PFL_EXPECT(identity_row->predicate_text == "EthernetII > IPv4 > UDP > VXLAN(vni=100)");
+        PFL_EXPECT(terminal_row->predicate_text ==
+            "EthernetII > IPv4 > UDP > VXLAN(vni=100) > EthernetII > IPv4 > TCP");
+
+        const auto identity_snapshot = tunnel_adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > VXLAN(vni=100)\n"
+        );
+        PFL_EXPECT(identity_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(identity_snapshot.document.has_value());
+        PFL_REQUIRE(identity_snapshot.document->protocol_path.include.size() == 1U);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].selector_mode_id == identity_row->selector_mode_id);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].predicate_text == identity_row->predicate_text);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].compact_text == identity_row->compact_text);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].full_text == identity_row->full_text);
+
+        auto draft = *tunnel_empty.document;
+        draft.protocol_path.enabled = true;
+        draft.protocol_path.include = {*kind_row, *identity_row};
+        draft.protocol_path.exclude = {*terminal_row};
+        const auto applied = tunnel_adapter.apply_advanced_flow_filter_structured_document(
+            tunnel_empty.document->canonical_text,
+            draft
+        );
+        PFL_EXPECT(applied.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(applied.document.has_value());
+        PFL_REQUIRE(applied.document->protocol_path.include.size() == 2U);
+        PFL_REQUIRE(applied.document->protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(applied.document->protocol_path.include[0].predicate_text == kind_row->predicate_text);
+        PFL_EXPECT(applied.document->protocol_path.include[1].predicate_text == identity_row->predicate_text);
+        PFL_EXPECT(applied.document->protocol_path.exclude[0].predicate_text == terminal_row->predicate_text);
+
+        const auto reparsed = require_parse_success(applied.document->canonical_text);
+        PFL_REQUIRE(reparsed.document.configured_spec.protocol_path.include.size() == 2U);
+        PFL_REQUIRE(reparsed.document.configured_spec.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(reparsed.document.configured_spec.protocol_path.include[0].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_EXPECT(reparsed.document.configured_spec.protocol_path.include[1].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_EXPECT(reparsed.document.configured_spec.protocol_path.exclude[0].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path);
+        for (const auto& layer : reparsed.document.configured_spec.protocol_path.include[0].layers) {
+            PFL_EXPECT(!layer.identifier.has_value());
+        }
+        PFL_EXPECT(std::any_of(
+            reparsed.document.configured_spec.protocol_path.include[1].layers.begin(),
+            reparsed.document.configured_spec.protocol_path.include[1].layers.end(),
+            [](const auto& layer) { return layer.identifier.has_value(); }
+        ));
+
+        const auto applied_query = tunnel_adapter.query_advanced_flows_text(
+            applied.document->canonical_text,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(applied_query.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(applied_query.result_count_before_limit > 0U);
+        PFL_EXPECT(applied_query.result_count_before_limit < tunnel_baseline.result_count_before_limit);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "any", ""),
+            make_contains_layer_row("gtpu", "exact", "0x12345678"),
+        };
+        draft.contains_layer.exclude = {
+            make_contains_layer_row("geneve", "exact", "100"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.include.size() == 2U);
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[0].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[0].layers[0].kind == ProtocolLayerKind::vlan);
+        PFL_EXPECT(!reparsed.configured_spec.protocol_path.include[0].layers[0].identifier.has_value());
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[1].layers[0].kind == ProtocolLayerKind::gtpu);
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.include[1].layers[0].identifier.has_value());
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[1].layers[0].identifier->value == 0x12345678U);
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.exclude[0].layers[0].kind == ProtocolLayerKind::geneve);
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.exclude[0].layers[0].identifier.has_value());
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.exclude[0].layers[0].identifier->value == 100U);
+    }
+
+    {
         auto draft = *empty.document;
         draft.ports.enabled = true;
         draft.ports.include = {
@@ -3129,6 +3424,79 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(invalid.update_issue->group == "include");
         PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
         PFL_EXPECT(invalid.update_issue->field_id == "prefix_text");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "exact", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "value");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("bogus", "any", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->field_id == "layer");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "bogus", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "mode");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("gtpu", "exact", "not-a-number"),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "value");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "exact", "4096"),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "value");
     }
 
     {
@@ -3267,6 +3635,48 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(updated.document->service.include_unrecognized == true);
         PFL_EXPECT(updated.document->canonical_text.find("service.state.include = unknown") != std::string::npos);
         PFL_EXPECT(updated.document->canonical_text.find("service.contains.ci.include = \"youtube\"") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.protocol_path.enabled = false\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
+            "protocol_path.exact.exclude = EthernetII > IPv4 > TCP\n";
+        const auto parsed_with_protocol_path = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_protocol_path.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_protocol_path.document.has_value());
+        auto draft = *parsed_with_protocol_path.document;
+        draft.address_family.include = {"ipv4"};
+        draft.protocol_path.include.clear();
+        draft.protocol_path.exclude.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->protocol_path.enabled == false);
+        PFL_REQUIRE(updated.document->protocol_path.include.size() == 1U);
+        PFL_REQUIRE(updated.document->protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(updated.document->canonical_text.find("protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("protocol_path.exact.exclude = EthernetII > IPv4 > TCP") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.contains_layer.enabled = false\n"
+            "protocol_path.contains.include = GTP-U(teid=0x12345678)\n";
+        const auto parsed_with_contains = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_contains.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_contains.document.has_value());
+        auto draft = *parsed_with_contains.document;
+        draft.flow_protocol.include = {"udp"};
+        draft.contains_layer.include.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->contains_layer.enabled == false);
+        PFL_REQUIRE(updated.document->contains_layer.include.size() == 1U);
+        PFL_EXPECT(updated.document->canonical_text.find("protocol_path.contains.include = GTP-U(teid=0x12345678)") != std::string::npos);
     }
 
     {

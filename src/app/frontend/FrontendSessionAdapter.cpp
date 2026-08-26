@@ -380,6 +380,28 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
     rows.reserve(summary.rows.size());
 
     for (const auto& row : summary.rows) {
+        session_detail::AdvancedFlowFilterProtocolPathPredicate predicate {
+            .match_kind = ProtocolPathStatisticsMode::terminal_paths == summary.mode
+                ? session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path
+                : session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+        };
+        predicate.layers.reserve(row.path.layers().size());
+        for (const auto& layer : row.path.layers()) {
+            predicate.layers.push_back(session_detail::AdvancedFlowFilterProtocolLayerPredicate {
+                .kind = layer.kind,
+                .identifier = layer.identifier.kind != ProtocolLayerIdentifierKind::none
+                    ? std::optional {layer.identifier}
+                    : std::nullopt,
+            });
+        }
+        if (summary.mode == ProtocolPathStatisticsMode::kind_overview) {
+            for (auto& layer : predicate.layers) {
+                layer.identifier.reset();
+            }
+        }
+
+        const auto predicate_text =
+            format_advanced_flow_filter_protocol_path_predicate_text(predicate).value_or(std::string {});
         rows.push_back(FrontendProtocolPathStatsDto {
             .node_id = row.node_id,
             .parent_node_id = row.parent_node_id,
@@ -387,6 +409,7 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
             .layer_text = row.layer_text,
             .path_text = row.path_text,
             .compact_text = row.compact_text,
+            .advanced_filter_predicate_text = std::move(predicate_text),
             .badges = row.badges,
             .has_children = row.has_children,
             .is_terminal = row.is_terminal,
@@ -403,6 +426,83 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
     }
 
     return rows;
+}
+
+bool protocol_path_layers_have_identifiers(const std::vector<LayerKey>& layers) noexcept {
+    return std::any_of(layers.begin(), layers.end(), [](const LayerKey& layer) {
+        return layer.identifier.kind != ProtocolLayerIdentifierKind::none;
+    });
+}
+
+std::vector<LayerKey> protocol_path_layers_from_predicate(
+    const std::vector<session_detail::AdvancedFlowFilterProtocolLayerPredicate>& layers
+) {
+    std::vector<LayerKey> converted {};
+    converted.reserve(layers.size());
+    for (const auto& layer : layers) {
+        converted.push_back(LayerKey {
+            .kind = layer.kind,
+            .identifier = layer.identifier.value_or(ProtocolLayerIdentifier {}),
+        });
+    }
+    return converted;
+}
+
+ProtocolPathStatisticsMode protocol_path_selector_mode_for_predicate(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) noexcept {
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path) {
+        return ProtocolPathStatisticsMode::terminal_paths;
+    }
+
+    return protocol_path_layers_have_identifiers(protocol_path_layers_from_predicate(predicate.layers))
+        ? ProtocolPathStatisticsMode::identity_tree
+        : ProtocolPathStatisticsMode::kind_overview;
+}
+
+bool protocol_path_contains_layer_matches(
+    const ProtocolPath& path,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    if (predicate.layers.size() != 1U) {
+        return false;
+    }
+
+    const auto& target = predicate.layers.front();
+    for (const auto& layer : path.layers()) {
+        if (layer.kind != target.kind) {
+            continue;
+        }
+        if (!target.identifier.has_value()) {
+            return true;
+        }
+        if (layer.identifier == target.identifier) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<bool> protocol_path_predicate_applicability(
+    const CaptureSession& session,
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) {
+    if (!session.has_capture()) {
+        return std::nullopt;
+    }
+
+    if (predicate.match_kind == session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer) {
+        const auto summary = session.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
+        return std::any_of(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+            return protocol_path_contains_layer_matches(row.path, predicate);
+        });
+    }
+
+    const auto summary = session.protocol_path_summary(protocol_path_selector_mode_for_predicate(predicate));
+    const auto predicate_layers = protocol_path_layers_from_predicate(predicate.layers);
+    return std::any_of(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.path.layers() == predicate_layers;
+    });
 }
 
 std::vector<FrontendProtocolPathPresentationDto> build_protocol_path_presentations(const CaptureSession& session) {
@@ -3101,6 +3201,53 @@ std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_p
     }
 
     return build_protocol_path_statistics(session_.protocol_path_summary(mode));
+}
+
+std::optional<bool> FrontendSessionAdapter::advanced_flow_filter_protocol_path_predicate_applicability(
+    const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+) const {
+    return protocol_path_predicate_applicability(session_, predicate);
+}
+
+std::optional<FrontendAdvancedFlowFilterProtocolPathRowDto>
+FrontendSessionAdapter::get_advanced_flow_filter_protocol_path_row(
+    const ProtocolPathStatisticsMode mode,
+    const std::uint64_t node_id
+) const {
+    if (!session_.has_capture()) {
+        return std::nullopt;
+    }
+
+    const auto summary = session_.protocol_path_summary(mode);
+    const auto row_it = std::find_if(summary.rows.begin(), summary.rows.end(), [node_id](const auto& row) {
+        return row.node_id == node_id;
+    });
+    if (row_it == summary.rows.end()) {
+        return std::nullopt;
+    }
+
+    session_detail::AdvancedFlowFilterProtocolPathPredicate predicate {
+        .match_kind = mode == ProtocolPathStatisticsMode::terminal_paths
+            ? session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path
+            : session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+    };
+    predicate.layers.reserve(row_it->path.layers().size());
+    for (const auto& layer : row_it->path.layers()) {
+        predicate.layers.push_back(session_detail::AdvancedFlowFilterProtocolLayerPredicate {
+            .kind = layer.kind,
+            .identifier = (mode != ProtocolPathStatisticsMode::kind_overview &&
+                layer.identifier.kind != ProtocolLayerIdentifierKind::none)
+                ? std::optional {layer.identifier}
+                : std::nullopt,
+        });
+    }
+
+    FrontendAdvancedFlowFilterStructuredDocumentResult result {};
+    FrontendAdvancedFlowFilterProtocolPathRowDto dto {};
+    if (!encode_advanced_flow_filter_protocol_path_row(*this, predicate, dto, result)) {
+        return std::nullopt;
+    }
+    return dto;
 }
 
 std::vector<std::size_t> FrontendSessionAdapter::get_protocol_path_summary_flow_indices(

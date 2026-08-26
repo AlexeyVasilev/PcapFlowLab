@@ -73,6 +73,11 @@ extern "C" {
         mode: c_uchar,
         node_id: u64,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+        node_id: u64,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_query_advanced_flows_text_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         filter_text_utf8: *const c_char,
@@ -172,6 +177,22 @@ extern "C" {
         service_exclude_case_sensitive: *const c_uchar,
         service_exclude_text_utf8: *const *const c_char,
         service_exclude_text_count: usize,
+        protocol_path_enabled: c_uchar,
+        protocol_path_include_selector_mode_ids_utf8: *const *const c_char,
+        protocol_path_include_predicate_text_utf8: *const *const c_char,
+        protocol_path_include_count: usize,
+        protocol_path_exclude_selector_mode_ids_utf8: *const *const c_char,
+        protocol_path_exclude_predicate_text_utf8: *const *const c_char,
+        protocol_path_exclude_count: usize,
+        contains_layer_enabled: c_uchar,
+        contains_layer_include_layer_stable_ids_utf8: *const *const c_char,
+        contains_layer_include_identifier_mode_ids_utf8: *const *const c_char,
+        contains_layer_include_exact_value_text_utf8: *const *const c_char,
+        contains_layer_include_count: usize,
+        contains_layer_exclude_layer_stable_ids_utf8: *const *const c_char,
+        contains_layer_exclude_identifier_mode_ids_utf8: *const *const c_char,
+        contains_layer_exclude_exact_value_text_utf8: *const *const c_char,
+        contains_layer_exclude_count: usize,
     ) -> *mut c_char;
     fn pfl_frontend_advanced_flow_filter_max_file_bytes() -> usize;
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
@@ -455,6 +476,25 @@ impl CppFrontendSessionAdapter {
         parse_json_owned::<Vec<usize>>(json)
     }
 
+    pub fn get_advanced_flow_filter_protocol_path_row(
+        &self,
+        mode: u8,
+        node_id: u64,
+    ) -> Result<crate::dtos::AdvancedFlowFilterProtocolPathRowDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_json(
+                self.handle,
+                mode,
+                node_id,
+            )
+        };
+        let row = parse_json_owned::<crate::dtos::AdvancedFlowFilterProtocolPathRowDto>(json)?;
+        if row.selector_mode_id.is_empty() || row.predicate_text.is_empty() {
+            return Err("Failed to build the selected Protocol Path filter row.".to_string());
+        }
+        Ok(row)
+    }
+
     pub fn query_advanced_flows_text(
         &self,
         filter_text: &str,
@@ -645,6 +685,39 @@ impl CppFrontendSessionAdapter {
             Ok((operator_cstrings, text_cstrings, operator_ptrs, text_ptrs, case_sensitive_flags))
         };
 
+        let collect_protocol_path_rows = |rows: &[crate::dtos::AdvancedFlowFilterProtocolPathRowDto]| -> Result<_, String> {
+            let selector_mode_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.selector_mode_id.as_str()).map_err(|_| "Protocol Path selector mode contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let predicate_text_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.predicate_text.as_str()).map_err(|_| "Protocol Path predicate text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let selector_mode_ptrs = selector_mode_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let predicate_text_ptrs = predicate_text_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            Ok((selector_mode_cstrings, predicate_text_cstrings, selector_mode_ptrs, predicate_text_ptrs))
+        };
+
+        let collect_contains_layer_rows = |rows: &[crate::dtos::AdvancedFlowFilterContainsLayerRowDto]| -> Result<_, String> {
+            let layer_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.layer_stable_id.as_str()).map_err(|_| "Contains Layer stable ID contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let mode_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.identifier_mode_id.as_str()).map_err(|_| "Contains Layer mode ID contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let exact_value_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.exact_value_text.as_str()).map_err(|_| "Contains Layer exact value contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let layer_ptrs = layer_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let mode_ptrs = mode_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let exact_value_ptrs = exact_value_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            Ok((layer_cstrings, mode_cstrings, exact_value_cstrings, layer_ptrs, mode_ptrs, exact_value_ptrs))
+        };
+
         let (address_family_include_cstrings, address_family_include_ptrs) =
             collect_strings(&document.address_family.include, "Address-family include ID")?;
         let (address_family_exclude_cstrings, address_family_exclude_ptrs) =
@@ -694,6 +767,18 @@ impl CppFrontendSessionAdapter {
         let (_service_exclude_operator_cstrings, _service_exclude_text_cstrings,
             service_exclude_operator_ptrs, service_exclude_text_ptrs, service_exclude_case_sensitive_flags) =
             collect_service_rows(&document.service.exclude_text)?;
+        let (_protocol_path_include_selector_mode_cstrings, _protocol_path_include_predicate_text_cstrings,
+            protocol_path_include_selector_mode_ptrs, protocol_path_include_predicate_text_ptrs) =
+            collect_protocol_path_rows(&document.protocol_path.include)?;
+        let (_protocol_path_exclude_selector_mode_cstrings, _protocol_path_exclude_predicate_text_cstrings,
+            protocol_path_exclude_selector_mode_ptrs, protocol_path_exclude_predicate_text_ptrs) =
+            collect_protocol_path_rows(&document.protocol_path.exclude)?;
+        let (_contains_layer_include_layer_cstrings, _contains_layer_include_mode_cstrings, _contains_layer_include_value_cstrings,
+            contains_layer_include_layer_ptrs, contains_layer_include_mode_ptrs, contains_layer_include_value_ptrs) =
+            collect_contains_layer_rows(&document.contains_layer.include)?;
+        let (_contains_layer_exclude_layer_cstrings, _contains_layer_exclude_mode_cstrings, _contains_layer_exclude_value_cstrings,
+            contains_layer_exclude_layer_ptrs, contains_layer_exclude_mode_ptrs, contains_layer_exclude_value_ptrs) =
+            collect_contains_layer_rows(&document.contains_layer.exclude)?;
 
         let _keep_alive = (
             address_family_include_cstrings,
@@ -790,6 +875,22 @@ impl CppFrontendSessionAdapter {
                 service_exclude_case_sensitive_flags.as_ptr(),
                 service_exclude_text_ptrs.as_ptr(),
                 service_exclude_operator_ptrs.len(),
+                if document.protocol_path.enabled { 1 } else { 0 },
+                protocol_path_include_selector_mode_ptrs.as_ptr(),
+                protocol_path_include_predicate_text_ptrs.as_ptr(),
+                protocol_path_include_selector_mode_ptrs.len(),
+                protocol_path_exclude_selector_mode_ptrs.as_ptr(),
+                protocol_path_exclude_predicate_text_ptrs.as_ptr(),
+                protocol_path_exclude_selector_mode_ptrs.len(),
+                if document.contains_layer.enabled { 1 } else { 0 },
+                contains_layer_include_layer_ptrs.as_ptr(),
+                contains_layer_include_mode_ptrs.as_ptr(),
+                contains_layer_include_value_ptrs.as_ptr(),
+                contains_layer_include_layer_ptrs.len(),
+                contains_layer_exclude_layer_ptrs.as_ptr(),
+                contains_layer_exclude_mode_ptrs.as_ptr(),
+                contains_layer_exclude_value_ptrs.as_ptr(),
+                contains_layer_exclude_layer_ptrs.len(),
             )
         };
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)

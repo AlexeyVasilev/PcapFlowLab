@@ -253,6 +253,52 @@ pub struct AdvancedFlowFilterServiceSectionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterProtocolPathRowDto {
+    pub selector_mode_id: String,
+    pub predicate_text: String,
+    pub compact_text: String,
+    pub full_text: String,
+    pub applicability_known: bool,
+    pub applicable: bool,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterProtocolPathSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterProtocolPathRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterProtocolPathRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterContainsLayerOptionDto {
+    pub stable_id: String,
+    pub label: String,
+    pub object_name_suffix: String,
+    pub identifier_label: String,
+    pub preferred_input_format_id: String,
+    pub exact_value_placeholder: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterContainsLayerRowDto {
+    pub layer_stable_id: String,
+    pub identifier_mode_id: String,
+    pub exact_value_text: String,
+    pub compact_text: String,
+    pub applicability_known: bool,
+    pub applicable: bool,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterContainsLayerSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterContainsLayerRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterContainsLayerRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub address_family: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub flow_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
@@ -261,6 +307,9 @@ pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub quic_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub endpoint_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub protocol_path_selector_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub contains_layer_identifier_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub contains_layer_kind: Vec<AdvancedFlowFilterContainsLayerOptionDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,6 +325,8 @@ pub struct AdvancedFlowFilterStructuredDocumentDto {
     pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
     pub traffic: AdvancedFlowFilterTrafficSectionDto,
     pub service: AdvancedFlowFilterServiceSectionDto,
+    pub protocol_path: AdvancedFlowFilterProtocolPathSectionDto,
+    pub contains_layer: AdvancedFlowFilterContainsLayerSectionDto,
     pub has_unsupported_configured_sections: bool,
 }
 
@@ -474,6 +525,7 @@ pub struct ProtocolPathStatsDto {
     pub layer_text: String,
     pub path_text: String,
     pub compact_text: String,
+    pub advanced_filter_predicate_text: String,
     pub badges: Vec<ProtocolPathBadgeDto>,
     pub has_children: bool,
     pub is_terminal: bool,
