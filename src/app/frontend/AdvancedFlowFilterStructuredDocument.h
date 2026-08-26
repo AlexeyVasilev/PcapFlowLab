@@ -204,6 +204,19 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     bool has_unsupported_configured_sections {false};
 };
 
+struct FrontendAdvancedFlowFilterDocumentWorkflowStateDto {
+    std::string canonical_text {};
+    std::string source_path {};
+    std::string display_name {};
+    bool is_file_backed {false};
+    bool has_unsaved_changes {false};
+    bool has_unsaved_configuration {false};
+    bool can_clear_unsaved_changes {false};
+    bool clear_available {false};
+    std::size_t configured_rule_count {0U};
+    std::size_t active_rule_count {0U};
+};
+
 struct FrontendAdvancedFlowFilterStructuredDocumentResult {
     FrontendAdvancedFlowFilterStructuredDocumentStatus status {
         FrontendAdvancedFlowFilterStructuredDocumentStatus::ok

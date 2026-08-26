@@ -177,6 +177,20 @@ pub struct AdvancedFlowFilterFileReadResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterDocumentWorkflowStateDto {
+    pub canonical_text: String,
+    pub source_path: String,
+    pub display_name: String,
+    pub is_file_backed: bool,
+    pub has_unsaved_changes: bool,
+    pub has_unsaved_configuration: bool,
+    pub can_clear_unsaved_changes: bool,
+    pub clear_available: bool,
+    pub configured_rule_count: usize,
+    pub active_rule_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterFiniteOptionDto {
     pub stable_id: String,
     pub label: String,

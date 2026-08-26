@@ -2145,6 +2145,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(const std::filesystem::p
     cancel_and_join_open_worker();
     clear_selection();
     flow_service_hint_overrides_.clear();
+    advanced_flow_filter_document_state_.clear_all();
     session_ = CaptureSession {};
     const auto analysis_settings = to_analysis_settings(settings_);
 
@@ -2315,6 +2316,7 @@ FrontendOpenPollResultDto FrontendSessionAdapter::poll_open_capture() {
     result.result = async_open_.result;
     if (async_open_.completed_session.has_value() && result.result.opened && !result.result.cancelled) {
         flow_service_hint_overrides_.clear();
+        advanced_flow_filter_document_state_.clear_all();
         session_ = std::move(*async_open_.completed_session);
         async_open_.completed_session.reset();
     }

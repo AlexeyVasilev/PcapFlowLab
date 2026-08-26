@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -381,6 +381,47 @@ fn pick_open_advanced_filter_path(_app: AppHandle) -> Result<Option<String>, Str
             let display_fallback = path.to_string();
             path.into_path()
                 .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn pick_save_advanced_filter_path(
+    _app: AppHandle,
+    suggested_file_name: String,
+) -> Result<Option<String>, String> {
+    let normalized_file_name = if suggested_file_name.trim().is_empty() {
+        "advanced-filter.filter".to_string()
+    } else {
+        suggested_file_name
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Save Advanced Filter".to_string(),
+            format!("--filename={}", current_dir_prefill(&normalized_file_name)),
+            "--file-filter=Advanced filter files | *.filter".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "filter").to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Advanced filter files", &["filter"])
+            .set_file_name(&normalized_file_name)
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "filter").to_string_lossy().into_owned())
                 .unwrap_or(display_fallback)
         }))
     }
@@ -781,6 +822,24 @@ fn read_advanced_flow_filter_file(path: String) -> Result<AdvancedFlowFilterFile
     })
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn write_advanced_flow_filter_file(path: String, canonical_text: String) -> Result<(), String> {
+    let resolved_path = PathBuf::from(&path);
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&resolved_path)
+        .map_err(|error| format!("Failed to write the selected filter file: {error}"))?;
+    file.write_all(canonical_text.as_bytes())
+        .map_err(|error| format!("Failed to write the selected filter file: {error}"))?;
+    file.flush()
+        .map_err(|error| format!("Failed to flush the selected filter file: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("Failed to finalize the selected filter file: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn get_overview(state: State<'_, Mutex<AdapterState>>) -> Result<OverviewDto, String> {
     let state = state
@@ -825,6 +884,16 @@ fn parse_advanced_flow_filter_structured_document(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_advanced_flow_filter_document_workflow_state(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_advanced_flow_filter_document_workflow_state()
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn update_advanced_flow_filter_structured_section(
     state: State<'_, Mutex<AdapterState>>,
     filter_text: String,
@@ -857,6 +926,67 @@ fn apply_advanced_flow_filter_structured_document(
     state
         .adapter
         .apply_advanced_flow_filter_structured_document(&filter_text, &document)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn apply_advanced_flow_filter_document_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .apply_advanced_flow_filter_document_text(&filter_text)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn accept_opened_advanced_flow_filter_document_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    source_path: String,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .accept_opened_advanced_flow_filter_document_text(&filter_text, &source_path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn accept_saved_advanced_flow_filter_document_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    source_path: String,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .accept_saved_advanced_flow_filter_document_text(&filter_text, &source_path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn clear_advanced_flow_filter_unsaved_changes(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.clear_advanced_flow_filter_unsaved_changes()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn clear_advanced_flow_filter_document(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.clear_advanced_flow_filter_document()
 }
 
 #[tauri::command]
@@ -1362,6 +1492,7 @@ pub fn run() {
             pick_open_capture_path,
             pick_open_index_path,
             pick_open_advanced_filter_path,
+            pick_save_advanced_filter_path,
             pick_source_capture_path,
             pick_save_index_path,
             pick_save_flow_export_path,
@@ -1391,10 +1522,17 @@ pub fn run() {
             get_settings,
             get_advanced_flow_filter_max_file_bytes,
             read_advanced_flow_filter_file,
+            write_advanced_flow_filter_file,
             query_advanced_flows_text,
             parse_advanced_flow_filter_structured_document,
+            get_advanced_flow_filter_document_workflow_state,
             update_advanced_flow_filter_structured_section,
             apply_advanced_flow_filter_structured_document,
+            apply_advanced_flow_filter_document_text,
+            accept_opened_advanced_flow_filter_document_text,
+            accept_saved_advanced_flow_filter_document_text,
+            clear_advanced_flow_filter_unsaved_changes,
+            clear_advanced_flow_filter_document,
             get_flow_packet_count_histogram,
             get_capture_packet_size_statistics,
             get_protocol_hint_statistics,

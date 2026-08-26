@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -87,6 +87,9 @@ extern "C" {
     fn pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_document_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         filter_text_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_advanced_flow_filter_document_workflow_state_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -193,6 +196,26 @@ extern "C" {
         contains_layer_exclude_identifier_mode_ids_utf8: *const *const c_char,
         contains_layer_exclude_exact_value_text_utf8: *const *const c_char,
         contains_layer_exclude_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_apply_advanced_flow_filter_document_text_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_accept_opened_advanced_flow_filter_document_text_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+        source_path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_accept_saved_advanced_flow_filter_document_text_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        filter_text_utf8: *const c_char,
+        source_path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_clear_advanced_flow_filter_unsaved_changes_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_clear_advanced_flow_filter_document_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_advanced_flow_filter_max_file_bytes() -> usize;
     fn pfl_frontend_session_adapter_export_protocol_path_tree_json(
@@ -532,6 +555,17 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
+    }
+
+    pub fn get_advanced_flow_filter_document_workflow_state(
+        &self,
+    ) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_advanced_flow_filter_document_workflow_state_json(
+                self.handle,
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterDocumentWorkflowStateDto>(json)
     }
 
     pub fn update_advanced_flow_filter_structured_section(
@@ -894,6 +928,79 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
+    }
+
+    pub fn apply_advanced_flow_filter_document_text(
+        &mut self,
+        filter_text: &str,
+    ) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_apply_advanced_flow_filter_document_text_json(
+                self.handle,
+                filter_text.as_ptr(),
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterDocumentWorkflowStateDto>(json)
+    }
+
+    pub fn accept_opened_advanced_flow_filter_document_text(
+        &mut self,
+        filter_text: &str,
+        source_path: &str,
+    ) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        let source_path = CString::new(source_path)
+            .map_err(|_| "Advanced filter source path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_accept_opened_advanced_flow_filter_document_text_json(
+                self.handle,
+                filter_text.as_ptr(),
+                source_path.as_ptr(),
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterDocumentWorkflowStateDto>(json)
+    }
+
+    pub fn accept_saved_advanced_flow_filter_document_text(
+        &mut self,
+        filter_text: &str,
+        source_path: &str,
+    ) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+        let filter_text = CString::new(filter_text)
+            .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        let source_path = CString::new(source_path)
+            .map_err(|_| "Advanced filter source path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_accept_saved_advanced_flow_filter_document_text_json(
+                self.handle,
+                filter_text.as_ptr(),
+                source_path.as_ptr(),
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterDocumentWorkflowStateDto>(json)
+    }
+
+    pub fn clear_advanced_flow_filter_unsaved_changes(
+        &mut self,
+    ) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_clear_advanced_flow_filter_unsaved_changes_json(
+                self.handle,
+            )
+        };
+        parse_json_owned::<AdvancedFlowFilterDocumentWorkflowStateDto>(json)
+    }
+
+    pub fn clear_advanced_flow_filter_document(
+        &mut self,
+    ) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_clear_advanced_flow_filter_document_json(self.handle)
+        };
+        parse_json_owned::<AdvancedFlowFilterDocumentWorkflowStateDto>(json)
     }
 
     pub fn advanced_flow_filter_max_file_bytes() -> usize {

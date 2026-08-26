@@ -892,11 +892,18 @@
           </div>
         </div>
         <div class="advanced-filter-settings-toolbar">
-          <button id="advancedFlowFilterSettingsOpenButton" type="button" class="secondary-button">Open filter...</button>
-          <div class="advanced-filter-settings-meta">
-            <span class="inline-label">Filter:</span>
-            <span id="advancedFlowFilterSettingsDisplayName" class="flow-filter-summary-text">Custom filter</span>
-            <span id="advancedFlowFilterSettingsRuleCount" class="inline-note">0 configured · 0 active</span>
+          <div class="advanced-filter-settings-toolbar-group">
+            <button id="advancedFlowFilterSettingsOpenButton" type="button" class="secondary-button">Open filter...</button>
+            <button id="advancedFlowFilterSettingsClearUnsavedButton" type="button" class="secondary-button">Clear unsaved changes</button>
+            <div class="advanced-filter-settings-meta">
+              <span class="inline-label">Filter:</span>
+              <span id="advancedFlowFilterSettingsDisplayName" class="flow-filter-summary-text">Custom filter</span>
+              <span id="advancedFlowFilterSettingsRuleCount" class="inline-note">0 configured · 0 active</span>
+            </div>
+          </div>
+          <div class="advanced-filter-settings-toolbar-group advanced-filter-settings-toolbar-group-end">
+            <button id="advancedFlowFilterSettingsSaveButton" type="button" class="secondary-button">Save</button>
+            <button id="advancedFlowFilterSettingsSaveAsButton" type="button" class="secondary-button">Save As...</button>
           </div>
         </div>
         <p
@@ -922,10 +929,13 @@
             <h3 id="advancedFlowFilterDiscardOpenConfirmTitle" class="advanced-filter-inline-confirm-title">
               Discard changes and open selected filter?
             </h3>
-            <p class="dialog-copy advanced-filter-inline-confirm-copy">
+            <p id="advancedFlowFilterDiscardOpenConfirmCopy" class="dialog-copy advanced-filter-inline-confirm-copy">
               The current Advanced Filter Settings draft has unsaved changes. Opening the selected filter will replace the current draft.
             </p>
             <div class="dialog-actions">
+              <button id="advancedFlowFilterDiscardOpenConfirmSaveButton" type="button" class="secondary-button">
+                Save As and open
+              </button>
               <button id="advancedFlowFilterDiscardOpenConfirmDiscardButton" type="button">
                 Discard and open
               </button>
@@ -936,8 +946,32 @@
           </div>
         </div>
         <div class="dialog-actions">
+          <button id="advancedFlowFilterSettingsClearAllButton" type="button" class="secondary-button">Clear all</button>
           <button id="advancedFlowFilterSettingsCancelButton" type="button" class="secondary-button">Cancel</button>
           <button id="advancedFlowFilterSettingsApplyButton" type="button">Apply</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="advancedFlowFilterClearConfirmDialog" class="dialog-backdrop" aria-hidden="true">
+      <section
+        class="dialog-card advanced-filter-clear-confirm-dialog-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="advancedFlowFilterClearConfirmTitle"
+      >
+        <div class="dialog-heading">
+          <div>
+            <h2 id="advancedFlowFilterClearConfirmTitle">Clear Advanced Filter</h2>
+            <p id="advancedFlowFilterClearConfirmCopy" class="dialog-copy">
+              Clearing the filter would discard the current Advanced Filter configuration.
+            </p>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button id="advancedFlowFilterClearConfirmSaveButton" type="button" class="secondary-button">Save As and clear</button>
+          <button id="advancedFlowFilterClearConfirmDiscardButton" type="button">Discard and clear</button>
+          <button id="advancedFlowFilterClearConfirmCancelButton" type="button" class="secondary-button">Cancel</button>
         </div>
       </section>
     </div>

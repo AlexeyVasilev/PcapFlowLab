@@ -2050,6 +2050,66 @@ FrontendAdvancedFlowFilterStructuredDocumentResult parse_document_text(
     return result;
 }
 
+std::string advanced_flow_filter_display_name(
+    const session_detail::AdvancedFlowFilterDocumentState& state
+) {
+    const auto* source_path = state.source_path();
+    if (source_path == nullptr) {
+        return "Custom filter";
+    }
+
+    std::string display_name {};
+    if (source_path->has_stem()) {
+        display_name = source_path->stem().string();
+    }
+    if (display_name.empty()) {
+        display_name = source_path->filename().string();
+    }
+    if (display_name.empty()) {
+        display_name = source_path->string();
+    }
+    if (state.has_unsaved_changes()) {
+        display_name += " *";
+    }
+    return display_name;
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto build_document_workflow_state(
+    const session_detail::AdvancedFlowFilterDocumentState& state
+) {
+    FrontendAdvancedFlowFilterDocumentWorkflowStateDto dto {};
+    dto.is_file_backed = state.is_file_backed();
+    dto.has_unsaved_changes = state.has_unsaved_changes();
+    dto.has_unsaved_configuration = state.has_unsaved_configuration();
+    dto.can_clear_unsaved_changes = state.can_clear_unsaved_changes();
+    dto.clear_available = !session_detail::is_default_advanced_flow_filter_document(
+        state.current_user_visible_document()
+    );
+    dto.configured_rule_count = state.configured_rule_count();
+    dto.active_rule_count = state.active_rule_count();
+    dto.display_name = advanced_flow_filter_display_name(state);
+    if (const auto* source_path = state.source_path(); source_path != nullptr) {
+        dto.source_path = source_path->string();
+    }
+
+    const auto format_result =
+        session_detail::format_advanced_flow_filter_text(state.current_user_visible_document());
+    if (format_result.status == session_detail::AdvancedFlowFilterTextFormatStatus::ok) {
+        dto.canonical_text = format_result.text;
+    }
+    return dto;
+}
+
+std::optional<session_detail::AdvancedFlowFilterDocument> parse_valid_document_text(
+    const std::string_view filter_text
+) {
+    const auto parse_result = session_detail::parse_advanced_flow_filter_text(filter_text);
+    if (parse_result.status != session_detail::AdvancedFlowFilterTextParseStatus::ok) {
+        return std::nullopt;
+    }
+    return parse_result.document;
+}
+
 }  // namespace
 
 FrontendAdvancedFlowFilterStructuredDocumentResult
@@ -2389,6 +2449,68 @@ FrontendSessionAdapter::apply_advanced_flow_filter_structured_document(
     }
 
     return parse_document_text(*this, format_result.text);
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+FrontendSessionAdapter::get_advanced_flow_filter_document_workflow_state() const {
+    return build_document_workflow_state(advanced_flow_filter_document_state_);
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+FrontendSessionAdapter::apply_advanced_flow_filter_document_text(const std::string_view filter_text) {
+    const auto document = parse_valid_document_text(filter_text);
+    if (!document.has_value()) {
+        return build_document_workflow_state(advanced_flow_filter_document_state_);
+    }
+
+    advanced_flow_filter_document_state_.begin_edit();
+    if (auto* draft_document = advanced_flow_filter_document_state_.draft_document(); draft_document != nullptr) {
+        *draft_document = *document;
+        const bool applied = advanced_flow_filter_document_state_.apply_draft();
+        static_cast<void>(applied);
+    }
+    return build_document_workflow_state(advanced_flow_filter_document_state_);
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+FrontendSessionAdapter::accept_opened_advanced_flow_filter_document_text(
+    const std::string_view filter_text,
+    const std::filesystem::path& source_path
+) {
+    const auto document = parse_valid_document_text(filter_text);
+    if (!document.has_value()) {
+        return build_document_workflow_state(advanced_flow_filter_document_state_);
+    }
+
+    advanced_flow_filter_document_state_.accept_opened_document(*document, source_path);
+    return build_document_workflow_state(advanced_flow_filter_document_state_);
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+FrontendSessionAdapter::accept_saved_advanced_flow_filter_document_text(
+    const std::string_view filter_text,
+    const std::filesystem::path& source_path
+) {
+    const auto document = parse_valid_document_text(filter_text);
+    if (!document.has_value()) {
+        return build_document_workflow_state(advanced_flow_filter_document_state_);
+    }
+
+    advanced_flow_filter_document_state_.accept_saved_document(*document, source_path);
+    return build_document_workflow_state(advanced_flow_filter_document_state_);
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+FrontendSessionAdapter::clear_advanced_flow_filter_unsaved_changes() {
+    const bool reverted = advanced_flow_filter_document_state_.revert_to_saved_baseline();
+    static_cast<void>(reverted);
+    return build_document_workflow_state(advanced_flow_filter_document_state_);
+}
+
+FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+FrontendSessionAdapter::clear_advanced_flow_filter_document() {
+    advanced_flow_filter_document_state_.clear_all();
+    return build_document_workflow_state(advanced_flow_filter_document_state_);
 }
 
 std::optional<std::string> format_advanced_flow_filter_protocol_path_predicate_text(

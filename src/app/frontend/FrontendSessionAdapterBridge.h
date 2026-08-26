@@ -63,6 +63,9 @@ char* pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_documen
     PflFrontendSessionAdapterHandle* handle,
     const char* filter_text_utf8
 );
+char* pfl_frontend_session_adapter_get_advanced_flow_filter_document_workflow_state_json(
+    PflFrontendSessionAdapterHandle* handle
+);
 char* pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* filter_text_utf8,
@@ -168,6 +171,26 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const char* const* contains_layer_exclude_identifier_mode_ids_utf8,
     const char* const* contains_layer_exclude_exact_value_text_utf8,
     std::size_t contains_layer_exclude_count
+);
+char* pfl_frontend_session_adapter_apply_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8
+);
+char* pfl_frontend_session_adapter_accept_opened_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* source_path_utf8
+);
+char* pfl_frontend_session_adapter_accept_saved_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* source_path_utf8
+);
+char* pfl_frontend_session_adapter_clear_advanced_flow_filter_unsaved_changes_json(
+    PflFrontendSessionAdapterHandle* handle
+);
+char* pfl_frontend_session_adapter_clear_advanced_flow_filter_document_json(
+    PflFrontendSessionAdapterHandle* handle
 );
 std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes();
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(

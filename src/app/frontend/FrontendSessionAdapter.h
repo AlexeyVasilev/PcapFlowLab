@@ -13,6 +13,7 @@
 #include "app/frontend/AdvancedFlowFilterStructuredDocument.h"
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/AdvancedFlowFilter.h"
+#include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "app/session/CaptureSession.h"
 #include "../../../core/open_context.h"
 
@@ -186,6 +187,21 @@ public:
         std::string_view filter_text,
         const FrontendAdvancedFlowFilterStructuredDocumentDto& document
     ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+    get_advanced_flow_filter_document_workflow_state() const;
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto apply_advanced_flow_filter_document_text(
+        std::string_view filter_text
+    );
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto accept_opened_advanced_flow_filter_document_text(
+        std::string_view filter_text,
+        const std::filesystem::path& source_path
+    );
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto accept_saved_advanced_flow_filter_document_text(
+        std::string_view filter_text,
+        const std::filesystem::path& source_path
+    );
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto clear_advanced_flow_filter_unsaved_changes();
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto clear_advanced_flow_filter_document();
     [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
 
@@ -258,6 +274,7 @@ private:
     void cancel_and_join_open_worker();
 
     CaptureSession session_ {};
+    session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
     std::optional<std::size_t> selected_flow_index_ {};
     std::map<std::size_t, std::string> flow_service_hint_overrides_ {};
     FrontendSettingsDto settings_ {};

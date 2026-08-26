@@ -60,6 +60,7 @@
       loadedText: "",
       sourcePath: "",
       displayName: "Custom filter",
+      workflow: createAdvancedFlowFilterDocumentWorkflowState(),
       configuredRuleCount: 0,
       activeRuleCount: 0,
       matchingFlowIndexSet: new Set(),
@@ -92,6 +93,7 @@
       requestToken: 0,
       document: null,
       optionCatalog: null,
+      workflow: createAdvancedFlowFilterDocumentWorkflowState(),
       configuredRuleCount: 0,
       activeRuleCount: 0,
       sourcePath: "",
@@ -102,9 +104,24 @@
       renderedStructureKey: "",
       trafficAdditionalExpanded: false,
       protocolPathPicker: createAdvancedFlowFilterProtocolPathPickerState(),
-      pendingOpenCandidate: null,
+      pendingDestructiveAction: null,
       statusText: "",
       statusKind: "neutral",
+    };
+  }
+
+  function createAdvancedFlowFilterDocumentWorkflowState() {
+    return {
+      canonical_text: "",
+      source_path: "",
+      display_name: "Custom filter",
+      is_file_backed: false,
+      has_unsaved_changes: false,
+      has_unsaved_configuration: false,
+      can_clear_unsaved_changes: false,
+      clear_available: false,
+      configured_rule_count: 0,
+      active_rule_count: 0,
     };
   }
 
@@ -308,6 +325,7 @@
     state.advancedFlowFilter.loadedText = "";
     state.advancedFlowFilter.sourcePath = "";
     state.advancedFlowFilter.displayName = "Custom filter";
+    state.advancedFlowFilter.workflow = createAdvancedFlowFilterDocumentWorkflowState();
     state.advancedFlowFilter.configuredRuleCount = 0;
     state.advancedFlowFilter.activeRuleCount = 0;
     state.advancedFlowFilter.matchingFlowIndexSet = new Set();
@@ -348,8 +366,25 @@
     return Number(state.advancedFlowFilter?.activeRuleCount || 0);
   }
 
+  function normalizeAdvancedFlowFilterWorkflowState(payload) {
+    const workflow = payload && typeof payload === "object" ? payload : {};
+    return {
+      canonical_text: String(workflow.canonical_text || ""),
+      source_path: String(workflow.source_path || ""),
+      display_name: String(workflow.display_name || "Custom filter"),
+      is_file_backed: Boolean(workflow.is_file_backed),
+      has_unsaved_changes: Boolean(workflow.has_unsaved_changes),
+      has_unsaved_configuration: Boolean(workflow.has_unsaved_configuration),
+      can_clear_unsaved_changes: Boolean(workflow.can_clear_unsaved_changes),
+      clear_available: Boolean(workflow.clear_available),
+      configured_rule_count: Number(workflow.configured_rule_count || 0),
+      active_rule_count: Number(workflow.active_rule_count || 0),
+    };
+  }
+
   function advancedFlowFilterHasConfiguredDocument() {
-    return String(state.advancedFlowFilter?.loadedText || "").length > 0;
+    const workflow = state.advancedFlowFilter?.workflow;
+    return Boolean(workflow?.is_file_backed || workflow?.clear_available);
   }
 
   function advancedFlowFilterRulesText() {
@@ -391,6 +426,27 @@
     const configuredText = configured === 1 ? "1 configured" : `${formatNumber(configured)} configured`;
     const activeText = active === 1 ? "1 active" : `${formatNumber(active)} active`;
     return `${configuredText} · ${activeText}`;
+  }
+
+  function applyAdvancedFlowFilterMainWorkflowState(workflowPayload, filterText = "") {
+    const workflow = normalizeAdvancedFlowFilterWorkflowState(workflowPayload);
+    state.advancedFlowFilter.workflow = workflow;
+    state.advancedFlowFilter.loadedText = String(filterText || workflow.canonical_text || "");
+    state.advancedFlowFilter.sourcePath = workflow.source_path;
+    state.advancedFlowFilter.displayName = workflow.display_name || "Custom filter";
+    state.advancedFlowFilter.configuredRuleCount = workflow.configured_rule_count;
+    state.advancedFlowFilter.activeRuleCount = workflow.active_rule_count;
+  }
+
+  function applyAdvancedFlowFilterSettingsWorkflowState(workflowPayload) {
+    const workflow = normalizeAdvancedFlowFilterWorkflowState(workflowPayload);
+    state.advancedFlowFilterSettings.workflow = workflow;
+    state.advancedFlowFilterSettings.sourcePath = workflow.source_path;
+    state.advancedFlowFilterSettings.displayName = workflow.display_name || "Custom filter";
+    state.advancedFlowFilterSettings.sourceCanonicalText = workflow.canonical_text || "";
+    state.advancedFlowFilterSettings.configuredRuleCount = workflow.configured_rule_count;
+    state.advancedFlowFilterSettings.activeRuleCount = workflow.active_rule_count;
+    return workflow;
   }
 
   function advancedFlowFilterSectionById(document, sectionId) {
@@ -936,13 +992,131 @@
     return String(state.advancedFlowFilterSettings.workflowState || "idle");
   }
 
-  function advancedFlowFilterSettingsAwaitingDiscardConfirmation() {
-    return currentAdvancedFlowFilterSettingsWorkflowState() === "awaiting_discard_confirmation";
+  function currentAdvancedFlowFilterPendingDestructiveAction() {
+    const action = state.advancedFlowFilterSettings.pendingDestructiveAction;
+    return action && typeof action === "object" ? action : null;
+  }
+
+  function advancedFlowFilterAwaitingDestructiveConfirmation() {
+    return currentAdvancedFlowFilterSettingsWorkflowState() === "awaiting_destructive_confirmation";
+  }
+
+  function advancedFlowFilterSettingsAwaitingOpenConfirmation() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    return advancedFlowFilterAwaitingDestructiveConfirmation()
+      && action?.origin === "settings"
+      && action?.kind === "open";
+  }
+
+  function advancedFlowFilterSettingsAwaitingClearConfirmation() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    return advancedFlowFilterAwaitingDestructiveConfirmation()
+      && action?.origin === "settings"
+      && action?.kind === "clear";
+  }
+
+  function advancedFlowFilterToolbarAwaitingClearConfirmation() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    return advancedFlowFilterAwaitingDestructiveConfirmation()
+      && action?.origin === "toolbar"
+      && action?.kind === "clear";
+  }
+
+  function advancedFlowFilterSettingsCanSaveToExistingPath() {
+    return Boolean(
+      state.advancedFlowFilterSettings.document
+      && state.advancedFlowFilterSettings.workflow?.is_file_backed
+      && state.advancedFlowFilterSettings.sourcePath
+    );
+  }
+
+  function advancedFlowFilterSettingsCanSaveAs() {
+    return Boolean(state.advancedFlowFilterSettings.document);
+  }
+
+  function advancedFlowFilterSettingsCanClearUnsavedChanges() {
+    if (!state.advancedFlowFilterSettings.document || !state.advancedFlowFilterSettings.workflow?.is_file_backed) {
+      return false;
+    }
+    return Boolean(
+      state.advancedFlowFilterSettings.workflow?.can_clear_unsaved_changes
+      || advancedFlowFilterSettingsDraftModified()
+    );
+  }
+
+  function advancedFlowFilterSettingsWouldLoseUnsavedConfiguration() {
+    return Boolean(
+      state.advancedFlowFilterSettings.workflow?.has_unsaved_configuration
+      || advancedFlowFilterSettingsDraftModified()
+    );
+  }
+
+  function advancedFlowFilterSettingsWouldLoseConfigurationOnClear() {
+    const workflow = state.advancedFlowFilterSettings.workflow;
+    const draftModified = advancedFlowFilterSettingsDraftModified();
+    if (workflow?.is_file_backed) {
+      return Boolean(workflow?.has_unsaved_changes || draftModified);
+    }
+    return Boolean(workflow?.has_unsaved_configuration || draftModified);
+  }
+
+  function advancedFlowFilterPendingSaveAction() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    return action?.saveAction === "save" ? "save" : "save_as";
+  }
+
+  function advancedFlowFilterPendingSaveLabel() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    const verb = action?.kind === "clear" ? "clear" : "open";
+    return advancedFlowFilterPendingSaveAction() === "save"
+      ? `Save and ${verb}`
+      : `Save As and ${verb}`;
+  }
+
+  function advancedFlowFilterPendingDiscardLabel() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    return action?.kind === "clear" ? "Discard and clear" : "Discard and open";
+  }
+
+  function advancedFlowFilterPendingConfirmTitle() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (action?.kind === "clear") {
+      return advancedFlowFilterPendingSaveAction() === "save"
+        ? "Save current filter before clearing?"
+        : "Save current custom filter before clearing?";
+    }
+    return advancedFlowFilterPendingSaveAction() === "save"
+      ? "Save current filter before opening selected filter?"
+      : "Save current custom filter before opening selected filter?";
+  }
+
+  function advancedFlowFilterPendingConfirmCopy() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (action?.kind === "clear") {
+      return advancedFlowFilterPendingSaveAction() === "save"
+        ? "The current file-backed Advanced Filter has unsaved changes. Save it before clearing the filter?"
+        : "The current custom Advanced Filter would be cleared. Save it to a file before clearing the filter?";
+    }
+    return advancedFlowFilterPendingSaveAction() === "save"
+      ? "The current file-backed Advanced Filter has unsaved changes. Save it before opening the selected filter?"
+      : "The current custom Advanced Filter would be replaced. Save it to a file before opening the selected filter?";
+  }
+
+  function advancedFlowFilterPendingCancelStatusText() {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (action?.origin === "toolbar") {
+      return "Kept the current Advanced Filter.";
+    }
+    if (action?.kind === "clear") {
+      return "Kept the current Advanced Filter draft.";
+    }
+    return "Kept the current Advanced Filter draft.";
   }
 
   function advancedFlowFilterSettingsInteractionBlocked() {
     return currentAdvancedFlowFilterSettingsBusy()
-      || advancedFlowFilterSettingsAwaitingDiscardConfirmation()
+      || advancedFlowFilterSettingsAwaitingOpenConfirmation()
+      || advancedFlowFilterSettingsAwaitingClearConfirmation()
       || Boolean(state.advancedFlowFilterSettings.protocolPathPicker?.visible)
       || Boolean(state.advancedFlowFilterSettings.protocolPathPicker?.loading);
   }
@@ -950,16 +1124,12 @@
   function installAdvancedFlowFilterSettingsDraft(payload) {
     state.advancedFlowFilterSettings.document = payload.document;
     state.advancedFlowFilterSettings.optionCatalog = payload.optionCatalog;
-    state.advancedFlowFilterSettings.configuredRuleCount = Number(payload.configuredRuleCount || 0);
-    state.advancedFlowFilterSettings.activeRuleCount = Number(payload.activeRuleCount || 0);
-    state.advancedFlowFilterSettings.sourcePath = String(payload.sourcePath || "");
-    state.advancedFlowFilterSettings.displayName = String(payload.displayName || "Custom filter");
-    state.advancedFlowFilterSettings.sourceCanonicalText = String(payload.sourceCanonicalText || "");
+    applyAdvancedFlowFilterSettingsWorkflowState(payload.workflow);
     state.advancedFlowFilterSettings.trafficAdditionalExpanded =
       advancedFlowFilterTrafficHasConfiguredAdditionalRows(payload.document);
     captureAdvancedFlowFilterSettingsDraftBaseline();
     state.advancedFlowFilterSettings.workflowState = "idle";
-    state.advancedFlowFilterSettings.pendingOpenCandidate = null;
+    state.advancedFlowFilterSettings.pendingDestructiveAction = null;
     state.advancedFlowFilterSettings.structureRevision += 1;
     state.advancedFlowFilterSettings.renderedStructureKey = "";
   }
@@ -970,48 +1140,34 @@
     return {
       document: normalizeAdvancedFlowFilterEditorDraftDocument(clonedDocument),
       optionCatalog: clonedOptionCatalog || null,
-      configuredRuleCount: Number(result?.configured_rule_count || 0),
-      activeRuleCount: Number(result?.active_rule_count || 0),
+      workflow: normalizeAdvancedFlowFilterWorkflowState({
+        canonical_text: String(result?.document?.canonical_text || ""),
+        source_path: String(fileResult?.path || selectedPath || ""),
+        display_name: String(fileResult?.display_name || "Custom filter"),
+        is_file_backed: true,
+        has_unsaved_changes: false,
+        has_unsaved_configuration: false,
+        can_clear_unsaved_changes: false,
+        clear_available: Boolean(Number(result?.configured_rule_count || 0) > 0),
+        configured_rule_count: Number(result?.configured_rule_count || 0),
+        active_rule_count: Number(result?.active_rule_count || 0),
+      }),
       sourcePath: String(fileResult?.path || selectedPath || ""),
       displayName: String(fileResult?.display_name || "Custom filter"),
       sourceCanonicalText: String(result?.document?.canonical_text || ""),
     };
   }
 
-  function showAdvancedFlowFilterDiscardOpenConfirm(candidate) {
-    state.advancedFlowFilterSettings.pendingOpenCandidate = candidate;
-    state.advancedFlowFilterSettings.workflowState = "awaiting_discard_confirmation";
+  function showAdvancedFlowFilterPendingDestructiveAction(action) {
+    state.advancedFlowFilterSettings.pendingDestructiveAction = action;
+    state.advancedFlowFilterSettings.workflowState = "awaiting_destructive_confirmation";
   }
 
-  function dismissAdvancedFlowFilterDiscardOpenConfirm() {
-    state.advancedFlowFilterSettings.pendingOpenCandidate = null;
-    if (advancedFlowFilterSettingsAwaitingDiscardConfirmation()) {
+  function dismissAdvancedFlowFilterPendingDestructiveAction() {
+    state.advancedFlowFilterSettings.pendingDestructiveAction = null;
+    if (advancedFlowFilterAwaitingDestructiveConfirmation()) {
       state.advancedFlowFilterSettings.workflowState = "idle";
     }
-  }
-
-  function adoptAdvancedFlowFilterOpenCandidate(candidate) {
-    const preparedCandidate = candidate?.document
-      ? candidate
-      : state.advancedFlowFilterSettings.pendingOpenCandidate;
-    if (!preparedCandidate?.document) {
-      return false;
-    }
-
-    const adoptedCandidate = {
-      document: normalizeAdvancedFlowFilterEditorDraftDocument(
-        cloneAdvancedFlowFilterValue(preparedCandidate.document)
-      ),
-      optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
-      configuredRuleCount: Number(preparedCandidate.configuredRuleCount || 0),
-      activeRuleCount: Number(preparedCandidate.activeRuleCount || 0),
-      sourcePath: String(preparedCandidate.sourcePath || ""),
-      displayName: String(preparedCandidate.displayName || "Custom filter"),
-      sourceCanonicalText: String(preparedCandidate.sourceCanonicalText || ""),
-    };
-    dismissAdvancedFlowFilterDiscardOpenConfirm();
-    installAdvancedFlowFilterSettingsDraft(adoptedCandidate);
-    return true;
   }
 
   function advancedFlowFilterOptionCatalogBySectionId(optionCatalog, sectionId) {
@@ -1030,35 +1186,50 @@
     return Array.isArray(values) ? values : [];
   }
 
-  function adoptAdvancedFlowFilterStructuredResult(result, sourceInfo = {}) {
+  function adoptAdvancedFlowFilterStructuredResult(result, workflowPayload = null) {
     if (String(result?.status || "") !== "ok" || !result?.document) {
       throw new Error(String(result?.error_text || "Failed to prepare the structured Advanced Filter document."));
     }
+    const workflow = normalizeAdvancedFlowFilterWorkflowState(
+      workflowPayload || {
+        canonical_text: String(result?.document?.canonical_text || ""),
+        source_path: "",
+        display_name: "Custom filter",
+        is_file_backed: false,
+        has_unsaved_changes: false,
+        has_unsaved_configuration: false,
+        can_clear_unsaved_changes: false,
+        clear_available: Boolean(Number(result?.configured_rule_count || 0) > 0),
+        configured_rule_count: Number(result?.configured_rule_count || 0),
+        active_rule_count: Number(result?.active_rule_count || 0),
+      }
+    );
     installAdvancedFlowFilterSettingsDraft({
       document: normalizeAdvancedFlowFilterEditorDraftDocument(
         cloneAdvancedFlowFilterValue(result.document)
       ),
       optionCatalog: cloneAdvancedFlowFilterValue(result.option_catalog) || null,
-      configuredRuleCount: Number(result.configured_rule_count || 0),
-      activeRuleCount: Number(result.active_rule_count || 0),
-      sourcePath: String(sourceInfo.sourcePath ?? state.advancedFlowFilterSettings.sourcePath ?? ""),
-      displayName: String(sourceInfo.displayName ?? state.advancedFlowFilterSettings.displayName ?? "Custom filter"),
-      sourceCanonicalText: String(
-      sourceInfo.sourceCanonicalText
-      ?? state.advancedFlowFilterSettings.sourceCanonicalText
-      ?? result.document.canonical_text
-      ?? ""
-      ),
+      workflow,
     });
   }
 
-  function applyAdvancedFlowFilterQueryResult(filterText, queryResult, sourceInfo = {}) {
+  function applyAdvancedFlowFilterQueryResult(filterText, queryResult, workflowPayload = null) {
     state.flowFilterMode = "advanced";
-    state.advancedFlowFilter.loadedText = String(filterText || "");
-    state.advancedFlowFilter.sourcePath = String(sourceInfo.sourcePath || "");
-    state.advancedFlowFilter.displayName = String(sourceInfo.displayName || "Custom filter");
-    state.advancedFlowFilter.configuredRuleCount = Number(queryResult?.configured_rule_count || 0);
-    state.advancedFlowFilter.activeRuleCount = Number(queryResult?.active_rule_count || 0);
+    applyAdvancedFlowFilterMainWorkflowState(
+      workflowPayload || {
+        canonical_text: String(filterText || ""),
+        source_path: "",
+        display_name: "Custom filter",
+        is_file_backed: false,
+        has_unsaved_changes: false,
+        has_unsaved_configuration: Boolean(Number(queryResult?.configured_rule_count || 0) > 0),
+        can_clear_unsaved_changes: false,
+        clear_available: Boolean(Number(queryResult?.configured_rule_count || 0) > 0),
+        configured_rule_count: Number(queryResult?.configured_rule_count || 0),
+        active_rule_count: Number(queryResult?.active_rule_count || 0),
+      },
+      filterText
+    );
     state.advancedFlowFilter.matchingFlowIndexSet = new Set(
       Array.isArray(queryResult?.matching_flow_indices)
         ? queryResult.matching_flow_indices.map((index) => Number(index))
@@ -1935,7 +2106,8 @@
     const dialogBusy = advancedFlowFilterSettingsInteractionBlocked();
     const document = state.advancedFlowFilterSettings.document;
     const loading = state.advancedFlowFilterSettings.loading;
-    const discardConfirmVisible = advancedFlowFilterSettingsAwaitingDiscardConfirmation();
+    const discardConfirmVisible = advancedFlowFilterSettingsAwaitingOpenConfirmation()
+      || advancedFlowFilterSettingsAwaitingClearConfirmation();
 
     if (elements.advancedFlowFilterSettingsDialog) {
       elements.advancedFlowFilterSettingsDialog.classList.toggle("is-visible", dialogVisible);
@@ -1943,7 +2115,30 @@
     }
     if (elements.advancedFlowFilterSettingsOpenButton) {
       elements.advancedFlowFilterSettingsOpenButton.disabled = dialogBusy;
-      elements.advancedFlowFilterSettingsOpenButton.textContent = loading ? "Opening..." : "Open filter...";
+      elements.advancedFlowFilterSettingsOpenButton.textContent =
+        currentAdvancedFlowFilterSettingsWorkflowState() === "preparing_candidate"
+          || currentAdvancedFlowFilterSettingsWorkflowState() === "committing_open_candidate"
+          ? "Opening..."
+          : "Open filter...";
+    }
+    if (elements.advancedFlowFilterSettingsClearUnsavedButton) {
+      elements.advancedFlowFilterSettingsClearUnsavedButton.disabled =
+        dialogBusy || !advancedFlowFilterSettingsCanClearUnsavedChanges();
+    }
+    if (elements.advancedFlowFilterSettingsSaveButton) {
+      elements.advancedFlowFilterSettingsSaveButton.disabled =
+        dialogBusy || !advancedFlowFilterSettingsCanSaveToExistingPath();
+      elements.advancedFlowFilterSettingsSaveButton.textContent =
+        currentAdvancedFlowFilterSettingsWorkflowState() === "saving" ? "Saving..." : "Save";
+    }
+    if (elements.advancedFlowFilterSettingsSaveAsButton) {
+      elements.advancedFlowFilterSettingsSaveAsButton.disabled =
+        dialogBusy || !advancedFlowFilterSettingsCanSaveAs();
+      elements.advancedFlowFilterSettingsSaveAsButton.textContent =
+        currentAdvancedFlowFilterSettingsWorkflowState() === "saving_as" ? "Saving..." : "Save As...";
+    }
+    if (elements.advancedFlowFilterSettingsClearAllButton) {
+      elements.advancedFlowFilterSettingsClearAllButton.disabled = dialogBusy || !document;
     }
     if (elements.advancedFlowFilterSettingsDisplayName) {
       elements.advancedFlowFilterSettingsDisplayName.textContent = String(
@@ -1978,11 +2173,50 @@
     if (elements.advancedFlowFilterDiscardOpenConfirm) {
       elements.advancedFlowFilterDiscardOpenConfirm.hidden = !discardConfirmVisible;
     }
+    if (elements.advancedFlowFilterDiscardOpenConfirmTitle) {
+      elements.advancedFlowFilterDiscardOpenConfirmTitle.textContent = advancedFlowFilterPendingConfirmTitle();
+    }
+    if (elements.advancedFlowFilterDiscardOpenConfirmCopy) {
+      elements.advancedFlowFilterDiscardOpenConfirmCopy.textContent = advancedFlowFilterPendingConfirmCopy();
+    }
+    if (elements.advancedFlowFilterDiscardOpenConfirmSaveButton) {
+      elements.advancedFlowFilterDiscardOpenConfirmSaveButton.disabled = currentAdvancedFlowFilterSettingsBusy();
+      elements.advancedFlowFilterDiscardOpenConfirmSaveButton.textContent = advancedFlowFilterPendingSaveLabel();
+    }
     if (elements.advancedFlowFilterDiscardOpenConfirmDiscardButton) {
       elements.advancedFlowFilterDiscardOpenConfirmDiscardButton.disabled = currentAdvancedFlowFilterSettingsBusy();
+      elements.advancedFlowFilterDiscardOpenConfirmDiscardButton.textContent = advancedFlowFilterPendingDiscardLabel();
     }
     if (elements.advancedFlowFilterDiscardOpenConfirmCancelButton) {
       elements.advancedFlowFilterDiscardOpenConfirmCancelButton.disabled = currentAdvancedFlowFilterSettingsBusy();
+    }
+  }
+
+  function renderAdvancedFlowFilterClearConfirmDialog() {
+    const pendingAction = currentAdvancedFlowFilterPendingDestructiveAction();
+    const visible = advancedFlowFilterToolbarAwaitingClearConfirmation();
+    const busy = state.advancedFlowFilter.loading;
+
+    if (elements.advancedFlowFilterClearConfirmDialog) {
+      elements.advancedFlowFilterClearConfirmDialog.classList.toggle("is-visible", visible);
+      elements.advancedFlowFilterClearConfirmDialog.setAttribute("aria-hidden", visible ? "false" : "true");
+    }
+    if (elements.advancedFlowFilterClearConfirmTitle) {
+      elements.advancedFlowFilterClearConfirmTitle.textContent = advancedFlowFilterPendingConfirmTitle();
+    }
+    if (elements.advancedFlowFilterClearConfirmCopy) {
+      elements.advancedFlowFilterClearConfirmCopy.textContent = advancedFlowFilterPendingConfirmCopy();
+    }
+    if (elements.advancedFlowFilterClearConfirmSaveButton) {
+      elements.advancedFlowFilterClearConfirmSaveButton.disabled = busy || !pendingAction;
+      elements.advancedFlowFilterClearConfirmSaveButton.textContent = advancedFlowFilterPendingSaveLabel();
+    }
+    if (elements.advancedFlowFilterClearConfirmDiscardButton) {
+      elements.advancedFlowFilterClearConfirmDiscardButton.disabled = busy || !pendingAction;
+      elements.advancedFlowFilterClearConfirmDiscardButton.textContent = advancedFlowFilterPendingDiscardLabel();
+    }
+    if (elements.advancedFlowFilterClearConfirmCancelButton) {
+      elements.advancedFlowFilterClearConfirmCancelButton.disabled = busy || !pendingAction;
     }
   }
 
@@ -2395,16 +2629,29 @@
     advancedFlowFilterStatusText: document.getElementById("advancedFlowFilterStatusText"),
     advancedFlowFilterSettingsDialog: document.getElementById("advancedFlowFilterSettingsDialog"),
     advancedFlowFilterSettingsOpenButton: document.getElementById("advancedFlowFilterSettingsOpenButton"),
+    advancedFlowFilterSettingsClearUnsavedButton: document.getElementById("advancedFlowFilterSettingsClearUnsavedButton"),
+    advancedFlowFilterSettingsSaveButton: document.getElementById("advancedFlowFilterSettingsSaveButton"),
+    advancedFlowFilterSettingsSaveAsButton: document.getElementById("advancedFlowFilterSettingsSaveAsButton"),
+    advancedFlowFilterSettingsClearAllButton: document.getElementById("advancedFlowFilterSettingsClearAllButton"),
     advancedFlowFilterSettingsDisplayName: document.getElementById("advancedFlowFilterSettingsDisplayName"),
     advancedFlowFilterSettingsRuleCount: document.getElementById("advancedFlowFilterSettingsRuleCount"),
     advancedFlowFilterUnsupportedSectionsNote: document.getElementById("advancedFlowFilterUnsupportedSectionsNote"),
     advancedFlowFilterSettingsStatusText: document.getElementById("advancedFlowFilterSettingsStatusText"),
     advancedFlowFilterSettingsSections: document.getElementById("advancedFlowFilterSettingsSections"),
     advancedFlowFilterDiscardOpenConfirm: document.getElementById("advancedFlowFilterDiscardOpenConfirm"),
+    advancedFlowFilterDiscardOpenConfirmTitle: document.getElementById("advancedFlowFilterDiscardOpenConfirmTitle"),
+    advancedFlowFilterDiscardOpenConfirmCopy: document.getElementById("advancedFlowFilterDiscardOpenConfirmCopy"),
+    advancedFlowFilterDiscardOpenConfirmSaveButton: document.getElementById("advancedFlowFilterDiscardOpenConfirmSaveButton"),
     advancedFlowFilterDiscardOpenConfirmDiscardButton: document.getElementById("advancedFlowFilterDiscardOpenConfirmDiscardButton"),
     advancedFlowFilterDiscardOpenConfirmCancelButton: document.getElementById("advancedFlowFilterDiscardOpenConfirmCancelButton"),
     advancedFlowFilterSettingsCancelButton: document.getElementById("advancedFlowFilterSettingsCancelButton"),
     advancedFlowFilterSettingsApplyButton: document.getElementById("advancedFlowFilterSettingsApplyButton"),
+    advancedFlowFilterClearConfirmDialog: document.getElementById("advancedFlowFilterClearConfirmDialog"),
+    advancedFlowFilterClearConfirmTitle: document.getElementById("advancedFlowFilterClearConfirmTitle"),
+    advancedFlowFilterClearConfirmCopy: document.getElementById("advancedFlowFilterClearConfirmCopy"),
+    advancedFlowFilterClearConfirmSaveButton: document.getElementById("advancedFlowFilterClearConfirmSaveButton"),
+    advancedFlowFilterClearConfirmDiscardButton: document.getElementById("advancedFlowFilterClearConfirmDiscardButton"),
+    advancedFlowFilterClearConfirmCancelButton: document.getElementById("advancedFlowFilterClearConfirmCancelButton"),
     advancedFlowFilterProtocolPathPickerDialog: document.getElementById("advancedFlowFilterProtocolPathPickerDialog"),
     advancedFlowFilterProtocolPathPickerModeKind: document.getElementById("advancedFlowFilterProtocolPathPickerModeKind"),
     advancedFlowFilterProtocolPathPickerModeIdentity: document.getElementById("advancedFlowFilterProtocolPathPickerModeIdentity"),
@@ -3956,16 +4203,55 @@
     }
   }
 
-  function clearAdvancedFlowFilter() {
-    if (state.advancedFlowFilter.loading) {
+  async function clearAdvancedFlowFilter() {
+    if (state.advancedFlowFilter.loading || advancedFlowFilterToolbarAwaitingClearConfirmation()) {
       return;
     }
 
-    resetAdvancedFlowFilterState();
-    if (state.flowFilterMode === "advanced") {
-      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+    if (typeof invoke !== "function") {
+      setAdvancedFlowFilterStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
     }
-    setStatus("Cleared advanced filter.", "neutral");
+
+    const workflow = state.advancedFlowFilter.workflow;
+    const requiresConfirmation = workflow?.is_file_backed
+      ? Boolean(workflow?.has_unsaved_changes)
+      : Boolean(workflow?.has_unsaved_configuration);
+    if (requiresConfirmation) {
+      clearAdvancedFlowFilterStatus();
+      showAdvancedFlowFilterPendingDestructiveAction({
+        kind: "clear",
+        origin: "toolbar",
+        saveAction: workflow?.is_file_backed ? "save" : "save_as",
+      });
+      render();
+      return;
+    }
+
+    await finalizeAdvancedFlowFilterClear({ keepDialogOpen: false });
+  }
+
+  async function clearAdvancedFlowFilterSettingsDocument() {
+    if (!state.advancedFlowFilterSettings.visible
+        || !state.advancedFlowFilterSettings.document
+        || advancedFlowFilterSettingsInteractionBlocked()) {
+      return;
+    }
+
+    const workflow = state.advancedFlowFilterSettings.workflow;
+    if (advancedFlowFilterSettingsWouldLoseConfigurationOnClear()) {
+      clearAdvancedFlowFilterSettingsStatus();
+      showAdvancedFlowFilterPendingDestructiveAction({
+        kind: "clear",
+        origin: "settings",
+        saveAction: workflow?.is_file_backed ? "save" : "save_as",
+      });
+      render();
+      return;
+    }
+
+    await finalizeAdvancedFlowFilterClear({ keepDialogOpen: true });
   }
 
   async function openAdvancedFlowFilterSettingsDialog() {
@@ -3997,14 +4283,11 @@
       setAdvancedFlowFilterSettingsStatus("Preparing advanced filter settings...", "neutral");
       render();
 
+      const workflow = await invoke("get_advanced_flow_filter_document_workflow_state");
       const result = await invoke("parse_advanced_flow_filter_structured_document", {
-        filter_text: currentAdvancedFlowFilterDocumentText(),
+        filter_text: String(workflow?.canonical_text || defaultAdvancedFlowFilterText()),
       });
-      adoptAdvancedFlowFilterStructuredResult(result, {
-        sourcePath: state.advancedFlowFilter.sourcePath,
-        displayName: state.advancedFlowFilter.displayName || "Custom filter",
-        sourceCanonicalText: String(state.advancedFlowFilter.loadedText || ""),
-      });
+      adoptAdvancedFlowFilterStructuredResult(result, workflow);
       clearAdvancedFlowFilterSettingsStatus();
     } catch (error) {
       resetAdvancedFlowFilterSettingsState();
@@ -4025,7 +4308,6 @@
       if (!selectedPath) {
         return;
       }
-      const draftWasModifiedBeforeOpen = advancedFlowFilterSettingsDraftModified();
 
       state.advancedFlowFilterSettings.workflowState = "preparing_candidate";
       state.advancedFlowFilterSettings.loading = true;
@@ -4053,22 +4335,350 @@
       }
 
       const candidate = prepareAdvancedFlowFilterOpenCandidate(result, fileResult, selectedPath);
-      if (draftWasModifiedBeforeOpen) {
-        showAdvancedFlowFilterDiscardOpenConfirm(candidate);
+      if (advancedFlowFilterSettingsWouldLoseUnsavedConfiguration()) {
+        showAdvancedFlowFilterPendingDestructiveAction({
+          kind: "open",
+          origin: "settings",
+          saveAction: state.advancedFlowFilterSettings.workflow?.is_file_backed ? "save" : "save_as",
+          candidate,
+        });
         setAdvancedFlowFilterSettingsStatus("Confirm whether to discard the current Advanced Filter draft.", "neutral");
         return;
       }
 
-      adoptAdvancedFlowFilterOpenCandidate(candidate);
-      setAdvancedFlowFilterSettingsStatus(
-        `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
-        "success"
-      );
+      await commitAdvancedFlowFilterOpenCandidate(candidate);
     } catch (error) {
       setAdvancedFlowFilterSettingsStatus(`Failed to open the selected advanced filter: ${String(error)}`, "error");
     } finally {
       state.advancedFlowFilterSettings.loading = false;
       if (currentAdvancedFlowFilterSettingsWorkflowState() === "preparing_candidate") {
+        state.advancedFlowFilterSettings.workflowState = "idle";
+      }
+      render();
+    }
+  }
+
+  function advancedFlowFilterSuggestedSaveFileName(sourcePathValue = "", displayNameValue = "Custom filter") {
+    const sourcePath = String(sourcePathValue || "").trim();
+    if (sourcePath.length > 0) {
+      const normalizedPath = sourcePath.replaceAll("\\", "/");
+      const pathParts = normalizedPath.split("/").filter((part) => part.length > 0);
+      const lastPart = pathParts.length > 0 ? pathParts[pathParts.length - 1] : normalizedPath;
+      return lastPart.toLowerCase().endsWith(".filter") ? lastPart : `${lastPart}.filter`;
+    }
+
+    const displayName = String(displayNameValue || "Custom filter")
+      .replace(/\s+\*$/, "")
+      .trim();
+    const baseName = displayName.length > 0 ? displayName : "advanced-filter";
+    return baseName.toLowerCase().endsWith(".filter") ? baseName : `${baseName}.filter`;
+  }
+
+  async function persistAdvancedFlowFilterCanonicalText(options = {}) {
+    const canonicalText = String(options.canonicalText || defaultAdvancedFlowFilterText());
+    const saveAs = Boolean(options.saveAs);
+    let outputPath = saveAs ? "" : String(options.sourcePath || "");
+    if (!outputPath) {
+      outputPath = await invoke("pick_save_advanced_filter_path", {
+        suggested_file_name: String(options.suggestedFileName || "advanced-filter.filter"),
+      });
+      if (!outputPath) {
+        return { cancelled: true };
+      }
+    }
+
+    await invoke("write_advanced_flow_filter_file", {
+      path: outputPath,
+      canonical_text: canonicalText,
+    });
+
+    const workflow = await invoke("accept_saved_advanced_flow_filter_document_text", {
+      filter_text: canonicalText,
+      source_path: outputPath,
+    });
+
+    return {
+      cancelled: false,
+      outputPath,
+      workflow,
+    };
+  }
+
+  async function commitAdvancedFlowFilterOpenCandidate(candidate = null) {
+    const pendingAction = currentAdvancedFlowFilterPendingDestructiveAction();
+    const preparedCandidate = candidate?.document
+      ? candidate
+      : pendingAction?.kind === "open"
+        ? pendingAction.candidate
+        : null;
+    if (!preparedCandidate?.document) {
+      return false;
+    }
+
+    try {
+      state.advancedFlowFilterSettings.workflowState = "committing_open_candidate";
+      state.advancedFlowFilterSettings.loading = true;
+      setAdvancedFlowFilterSettingsStatus("Opening advanced filter...", "neutral");
+      render();
+
+      const canonicalText = String(
+        preparedCandidate.workflow?.canonical_text
+        || preparedCandidate.sourceCanonicalText
+        || defaultAdvancedFlowFilterText()
+      );
+      const queryResult = await invoke("query_advanced_flows_text", {
+        filter_text: canonicalText,
+        candidate_flow_indices: null,
+      });
+      if (String(queryResult?.status || "") !== "ok") {
+        setAdvancedFlowFilterSettingsStatus(
+          String(queryResult?.error_text || "Failed to open the selected Advanced Filter document."),
+          "error"
+        );
+        return false;
+      }
+
+      const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
+        filter_text: canonicalText,
+        source_path: String(preparedCandidate.sourcePath || ""),
+      });
+
+      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+      dismissAdvancedFlowFilterPendingDestructiveAction();
+      installAdvancedFlowFilterSettingsDraft({
+        document: normalizeAdvancedFlowFilterEditorDraftDocument(
+          cloneAdvancedFlowFilterValue(preparedCandidate.document)
+        ),
+        optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
+        workflow,
+      });
+      setAdvancedFlowFilterSettingsStatus(
+        `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
+        "success"
+      );
+      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+      return true;
+    } catch (error) {
+      setAdvancedFlowFilterSettingsStatus(`Failed to open the selected advanced filter: ${String(error)}`, "error");
+      return false;
+    } finally {
+      state.advancedFlowFilterSettings.loading = false;
+      if (currentAdvancedFlowFilterSettingsWorkflowState() === "committing_open_candidate") {
+        state.advancedFlowFilterSettings.workflowState = "idle";
+      }
+      render();
+    }
+  }
+
+  async function saveAdvancedFlowFilterSettingsDraft(options = {}) {
+    const draft = state.advancedFlowFilterSettings.document;
+    if (!draft || currentAdvancedFlowFilterSettingsBusy()) {
+      return null;
+    }
+
+    const saveAs = Boolean(options.saveAs);
+    const keepDialogOpen = options.keepDialogOpen !== false;
+    const successStatusText = String(options.successStatusText || "");
+
+    try {
+      state.advancedFlowFilterSettings.workflowState = saveAs ? "saving_as" : "saving";
+      state.advancedFlowFilterSettings.loading = true;
+      clearAdvancedFlowFilterStatus();
+      clearAdvancedFlowFilterSettingsStatus();
+      render();
+
+      const structuredResult = await invoke("apply_advanced_flow_filter_structured_document", {
+        filter_text: currentAdvancedFlowFilterSettingsBaseText(),
+        document: draft,
+      });
+      if (String(structuredResult?.status || "") !== "ok") {
+        setAdvancedFlowFilterSettingsStatus(
+          structuredResult?.update_issue
+            ? advancedFlowFilterStructuredUpdateIssueText(structuredResult.update_issue)
+            : String(structuredResult?.error_text || "Failed to save the Advanced Filter draft."),
+          "error"
+        );
+        return null;
+      }
+
+      const canonicalText = String(
+        structuredResult?.document?.canonical_text
+        || draft.canonical_text
+        || defaultAdvancedFlowFilterText()
+      );
+      const queryResult = await invoke("query_advanced_flows_text", {
+        filter_text: canonicalText,
+        candidate_flow_indices: null,
+      });
+      if (String(queryResult?.status || "") !== "ok") {
+        setAdvancedFlowFilterSettingsStatus(
+          String(queryResult?.error_text || "Failed to save the Advanced Filter draft."),
+          "error"
+        );
+        return null;
+      }
+
+      const persistResult = await persistAdvancedFlowFilterCanonicalText({
+        canonicalText,
+        saveAs,
+        sourcePath: state.advancedFlowFilterSettings.sourcePath,
+        suggestedFileName: advancedFlowFilterSuggestedSaveFileName(
+          state.advancedFlowFilterSettings.sourcePath,
+          state.advancedFlowFilterSettings.displayName
+        ),
+      });
+      if (!persistResult || persistResult.cancelled) {
+        setAdvancedFlowFilterSettingsStatus("Save cancelled.", "neutral");
+        return null;
+      }
+
+      const workflow = persistResult.workflow;
+      const outputPath = String(persistResult.outputPath || "");
+
+      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+      if (keepDialogOpen) {
+        adoptAdvancedFlowFilterStructuredResult(structuredResult, workflow);
+      } else {
+        resetAdvancedFlowFilterSettingsState();
+      }
+
+      if (successStatusText.length > 0) {
+        setAdvancedFlowFilterSettingsStatus(successStatusText, "success");
+      }
+
+      return {
+        canonicalText,
+        outputPath,
+        queryResult,
+        structuredResult,
+        workflow,
+      };
+    } catch (error) {
+      setAdvancedFlowFilterSettingsStatus(`Failed to save the Advanced Filter draft: ${String(error)}`, "error");
+      return null;
+    } finally {
+      state.advancedFlowFilterSettings.loading = false;
+      if (currentAdvancedFlowFilterSettingsWorkflowState() === "saving"
+          || currentAdvancedFlowFilterSettingsWorkflowState() === "saving_as") {
+        state.advancedFlowFilterSettings.workflowState = "idle";
+      }
+      render();
+    }
+  }
+
+  async function persistCurrentAdvancedFlowFilterBeforeClear(saveAction) {
+    const saveAs = saveAction === "save_as";
+    try {
+      state.advancedFlowFilter.loading = true;
+      clearAdvancedFlowFilterStatus();
+      render();
+
+      const persistResult = await persistAdvancedFlowFilterCanonicalText({
+        canonicalText: currentAdvancedFlowFilterDocumentText(),
+        saveAs,
+        sourcePath: state.advancedFlowFilter.sourcePath,
+        suggestedFileName: advancedFlowFilterSuggestedSaveFileName(
+          state.advancedFlowFilter.sourcePath,
+          state.advancedFlowFilter.displayName
+        ),
+      });
+      if (!persistResult || persistResult.cancelled) {
+        setAdvancedFlowFilterStatus("Save cancelled.", "neutral");
+        return false;
+      }
+
+      applyAdvancedFlowFilterMainWorkflowState(persistResult.workflow, persistResult.workflow?.canonical_text || "");
+      return true;
+    } catch (error) {
+      setAdvancedFlowFilterStatus(`Failed to save the Advanced Filter: ${String(error)}`, "error");
+      return false;
+    } finally {
+      state.advancedFlowFilter.loading = false;
+      render();
+    }
+  }
+
+  async function finalizeAdvancedFlowFilterClear(options = {}) {
+    const keepDialogOpen = Boolean(options.keepDialogOpen);
+
+    try {
+      if (keepDialogOpen) {
+        state.advancedFlowFilterSettings.workflowState = "clearing_document";
+        state.advancedFlowFilterSettings.loading = true;
+        clearAdvancedFlowFilterStatus();
+        clearAdvancedFlowFilterSettingsStatus();
+      } else {
+        state.advancedFlowFilter.loading = true;
+        clearAdvancedFlowFilterStatus();
+      }
+      render();
+
+      const workflow = await invoke("clear_advanced_flow_filter_document");
+      applyAdvancedFlowFilterMainWorkflowState(workflow, "");
+      state.advancedFlowFilter.matchingFlowIndexSet = new Set();
+
+      if (state.flowFilterMode === "advanced") {
+        notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+      }
+
+      dismissAdvancedFlowFilterPendingDestructiveAction();
+
+      if (keepDialogOpen) {
+        const result = await invoke("parse_advanced_flow_filter_structured_document", {
+          filter_text: String(workflow?.canonical_text || defaultAdvancedFlowFilterText()),
+        });
+        adoptAdvancedFlowFilterStructuredResult(result, workflow);
+        setAdvancedFlowFilterSettingsStatus("Cleared the advanced filter.", "success");
+      } else {
+        setStatus("Cleared advanced filter.", "neutral");
+      }
+
+      return true;
+    } catch (error) {
+      if (keepDialogOpen) {
+        setAdvancedFlowFilterSettingsStatus(`Failed to clear the Advanced Filter: ${String(error)}`, "error");
+      } else {
+        setAdvancedFlowFilterStatus(`Failed to clear the advanced filter: ${String(error)}`, "error");
+      }
+      return false;
+    } finally {
+      if (keepDialogOpen) {
+        state.advancedFlowFilterSettings.loading = false;
+        if (currentAdvancedFlowFilterSettingsWorkflowState() === "clearing_document") {
+          state.advancedFlowFilterSettings.workflowState = "idle";
+        }
+      } else {
+        state.advancedFlowFilter.loading = false;
+      }
+      render();
+    }
+  }
+
+  async function clearAdvancedFlowFilterSettingsUnsavedChanges() {
+    if (!advancedFlowFilterSettingsCanClearUnsavedChanges() || currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+
+    try {
+      state.advancedFlowFilterSettings.workflowState = "clearing_unsaved";
+      state.advancedFlowFilterSettings.loading = true;
+      clearAdvancedFlowFilterSettingsStatus();
+      render();
+
+      const workflow = await invoke("clear_advanced_flow_filter_unsaved_changes");
+      const result = await invoke("parse_advanced_flow_filter_structured_document", {
+        filter_text: String(workflow?.canonical_text || defaultAdvancedFlowFilterText()),
+      });
+      adoptAdvancedFlowFilterStructuredResult(result, workflow);
+      setAdvancedFlowFilterSettingsStatus("Restored the saved Advanced Filter document state.", "success");
+    } catch (error) {
+      setAdvancedFlowFilterSettingsStatus(
+        `Failed to restore the saved Advanced Filter document state: ${String(error)}`,
+        "error"
+      );
+    } finally {
+      state.advancedFlowFilterSettings.loading = false;
+      if (currentAdvancedFlowFilterSettingsWorkflowState() === "clearing_unsaved") {
         state.advancedFlowFilterSettings.workflowState = "idle";
       }
       render();
@@ -4141,17 +4751,10 @@
         return;
       }
 
-      const keepFileIdentity = Boolean(
-        state.advancedFlowFilterSettings.sourcePath
-        && canonicalText === String(state.advancedFlowFilterSettings.sourceCanonicalText || "")
-      );
-
-      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, {
-        sourcePath: keepFileIdentity ? state.advancedFlowFilterSettings.sourcePath : "",
-        displayName: keepFileIdentity
-          ? state.advancedFlowFilterSettings.displayName
-          : "Custom filter",
+      const workflow = await invoke("apply_advanced_flow_filter_document_text", {
+        filter_text: canonicalText,
       });
+      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
 
       resetAdvancedFlowFilterSettingsState();
       notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
@@ -6557,14 +7160,18 @@
       elements.openAdvancedFlowFilterSettingsButton.disabled =
         !advancedFlowFilteringAvailable()
         || state.advancedFlowFilter.loading
+        || advancedFlowFilterToolbarAwaitingClearConfirmation()
         || currentAdvancedFlowFilterSettingsBusy();
     }
     if (elements.useSimpleFlowFilterButton) {
-      elements.useSimpleFlowFilterButton.disabled = state.advancedFlowFilter.loading;
+      elements.useSimpleFlowFilterButton.disabled =
+        state.advancedFlowFilter.loading || advancedFlowFilterToolbarAwaitingClearConfirmation();
     }
     if (elements.clearAdvancedFlowFilterButton) {
       elements.clearAdvancedFlowFilterButton.disabled =
-        state.advancedFlowFilter.loading || !advancedFlowFilterHasConfiguredDocument();
+        state.advancedFlowFilter.loading
+        || advancedFlowFilterToolbarAwaitingClearConfirmation()
+        || !advancedFlowFilterHasConfiguredDocument();
     }
     if (elements.advancedFlowFilterDisplayName) {
       const displayName = String(state.advancedFlowFilter.displayName || "Custom filter");
@@ -8108,6 +8715,7 @@
       ["menu", renderMenuState],
       ["settings dialog", renderSettingsDialog],
       ["advanced filter settings dialog", renderAdvancedFlowFilterSettingsDialog],
+      ["advanced filter clear confirmation", renderAdvancedFlowFilterClearConfirmDialog],
       ["advanced filter protocol path picker", renderAdvancedFlowFilterProtocolPathPicker],
       ["protocol path legend dialog", renderProtocolPathLegendDialog],
       ["supported protocols dialog", renderSupportedProtocolsDialog],
@@ -10249,9 +10857,25 @@
         return;
       }
 
-      if (advancedFlowFilterSettingsAwaitingDiscardConfirmation() && !currentAdvancedFlowFilterSettingsBusy()) {
-        dismissAdvancedFlowFilterDiscardOpenConfirm();
-        setAdvancedFlowFilterSettingsStatus("Kept the current Advanced Filter draft.", "neutral");
+      if (advancedFlowFilterSettingsAwaitingOpenConfirmation()
+          || advancedFlowFilterSettingsAwaitingClearConfirmation()) {
+        if (currentAdvancedFlowFilterSettingsBusy()) {
+          return;
+        }
+        const cancelStatusText = advancedFlowFilterPendingCancelStatusText();
+        dismissAdvancedFlowFilterPendingDestructiveAction();
+        setAdvancedFlowFilterSettingsStatus(cancelStatusText, "neutral");
+        render();
+        return;
+      }
+
+      if (advancedFlowFilterToolbarAwaitingClearConfirmation()) {
+        if (state.advancedFlowFilter.loading) {
+          return;
+        }
+        const cancelStatusText = advancedFlowFilterPendingCancelStatusText();
+        dismissAdvancedFlowFilterPendingDestructiveAction();
+        setAdvancedFlowFilterStatus(cancelStatusText, "neutral");
         render();
         return;
       }
@@ -10305,24 +10929,102 @@
   elements.advancedFlowFilterSettingsOpenButton?.addEventListener("click", () => {
     void openAdvancedFlowFilterFileIntoDraft();
   });
-  elements.advancedFlowFilterDiscardOpenConfirmDiscardButton?.addEventListener("click", () => {
-    const candidate = state.advancedFlowFilterSettings.pendingOpenCandidate;
-    if (!candidate || currentAdvancedFlowFilterSettingsBusy()) {
+  elements.advancedFlowFilterSettingsClearUnsavedButton?.addEventListener("click", () => {
+    void clearAdvancedFlowFilterSettingsUnsavedChanges();
+  });
+  elements.advancedFlowFilterSettingsSaveButton?.addEventListener("click", () => {
+    void saveAdvancedFlowFilterSettingsDraft({
+      saveAs: false,
+      keepDialogOpen: true,
+      successStatusText: "Saved advanced filter.",
+    });
+  });
+  elements.advancedFlowFilterSettingsSaveAsButton?.addEventListener("click", () => {
+    void saveAdvancedFlowFilterSettingsDraft({
+      saveAs: true,
+      keepDialogOpen: true,
+      successStatusText: "Saved advanced filter.",
+    });
+  });
+  elements.advancedFlowFilterSettingsClearAllButton?.addEventListener("click", () => {
+    void clearAdvancedFlowFilterSettingsDocument();
+  });
+  elements.advancedFlowFilterDiscardOpenConfirmSaveButton?.addEventListener("click", async () => {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (!action || action.origin !== "settings" || currentAdvancedFlowFilterSettingsBusy()) {
       return;
     }
-    adoptAdvancedFlowFilterOpenCandidate(candidate);
-    setAdvancedFlowFilterSettingsStatus(
-      `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
-      "success"
-    );
-    render();
+
+    const saved = await saveAdvancedFlowFilterSettingsDraft({
+      saveAs: advancedFlowFilterPendingSaveAction() === "save_as",
+      keepDialogOpen: true,
+    });
+    if (!saved) {
+      if (currentAdvancedFlowFilterPendingDestructiveAction()?.origin === "settings") {
+        state.advancedFlowFilterSettings.workflowState = "awaiting_destructive_confirmation";
+        render();
+      }
+      return;
+    }
+
+    if (action.kind === "open") {
+      await commitAdvancedFlowFilterOpenCandidate(action.candidate);
+      return;
+    }
+
+    await finalizeAdvancedFlowFilterClear({ keepDialogOpen: true });
+  });
+  elements.advancedFlowFilterDiscardOpenConfirmDiscardButton?.addEventListener("click", () => {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (!action || action.origin !== "settings" || currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+    if (action.kind === "open") {
+      void commitAdvancedFlowFilterOpenCandidate(action.candidate);
+      return;
+    }
+    void finalizeAdvancedFlowFilterClear({ keepDialogOpen: true });
   });
   elements.advancedFlowFilterDiscardOpenConfirmCancelButton?.addEventListener("click", () => {
     if (currentAdvancedFlowFilterSettingsBusy()) {
       return;
     }
-    dismissAdvancedFlowFilterDiscardOpenConfirm();
-    setAdvancedFlowFilterSettingsStatus("Kept the current Advanced Filter draft.", "neutral");
+    const cancelStatusText = advancedFlowFilterPendingCancelStatusText();
+    dismissAdvancedFlowFilterPendingDestructiveAction();
+    setAdvancedFlowFilterSettingsStatus(cancelStatusText, "neutral");
+    render();
+  });
+  elements.advancedFlowFilterClearConfirmSaveButton?.addEventListener("click", async () => {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (!action || action.origin !== "toolbar" || state.advancedFlowFilter.loading) {
+      return;
+    }
+
+    const saved = await persistCurrentAdvancedFlowFilterBeforeClear(advancedFlowFilterPendingSaveAction());
+    if (!saved) {
+      if (currentAdvancedFlowFilterPendingDestructiveAction()?.origin === "toolbar") {
+        state.advancedFlowFilterSettings.workflowState = "awaiting_destructive_confirmation";
+        render();
+      }
+      return;
+    }
+
+    await finalizeAdvancedFlowFilterClear({ keepDialogOpen: false });
+  });
+  elements.advancedFlowFilterClearConfirmDiscardButton?.addEventListener("click", () => {
+    const action = currentAdvancedFlowFilterPendingDestructiveAction();
+    if (!action || action.origin !== "toolbar" || state.advancedFlowFilter.loading) {
+      return;
+    }
+    void finalizeAdvancedFlowFilterClear({ keepDialogOpen: false });
+  });
+  elements.advancedFlowFilterClearConfirmCancelButton?.addEventListener("click", () => {
+    if (state.advancedFlowFilter.loading) {
+      return;
+    }
+    const cancelStatusText = advancedFlowFilterPendingCancelStatusText();
+    dismissAdvancedFlowFilterPendingDestructiveAction();
+    setAdvancedFlowFilterStatus(cancelStatusText, "neutral");
     render();
   });
   elements.advancedFlowFilterSettingsCancelButton?.addEventListener("click", () => {
@@ -10683,8 +11385,7 @@
     render();
   });
   elements.clearAdvancedFlowFilterButton?.addEventListener("click", () => {
-    clearAdvancedFlowFilter();
-    render();
+    void clearAdvancedFlowFilter();
   });
   elements.clearProtocolPathFlowFilterButton?.addEventListener("click", () => {
     clearProtocolPathFlowFilter();

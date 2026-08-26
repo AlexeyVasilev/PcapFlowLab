@@ -58,7 +58,8 @@ Implemented slice:
     - Service
     - Protocol Path
     - Contains Layer
-  - `Open filter...` now lives inside Advanced Filter Settings and replaces only the editor draft until `Apply`
+    - `Open filter...` now lives inside Advanced Filter Settings and now uses the authoritative file-backed document workflow, including loss-aware replacement, `Save`, `Save As...`, and `Clear unsaved changes`
+    - destructive Advanced Filter `Clear` parity now covers both `Settings -> Clear all` and the main Advanced-mode toolbar `Clear`, including loss-aware `Save` / `Save As` / `Discard` / `Cancel` behavior
   - sorting
   - separate checked-flow selection state for batch-oriented workflows
   - Wireshark filter display and copy
@@ -162,7 +163,10 @@ Implemented slice:
 - The Flows tab now keeps separate retained `Simple` and `Advanced` filter state and lets the user switch modes without destroying the inactive mode's filter.
 - Advanced mode applies only backend-returned canonical matching flow indices from a loaded `.filter` document; JavaScript does not evaluate Advanced Filter predicates itself.
 - `Settings` now opens a structured Advanced Filter editor draft backed by the shared C++ document/parser/formatter path.
-- `Open filter...` inside Advanced Filter Settings reads `.filter` files through a bounded Rust path and replaces only the editor draft until `Apply`.
+- `Open filter...` inside Advanced Filter Settings reads `.filter` files through a bounded Rust path, evaluates the selected document before adoption, and replaces the current Advanced Filter only after the shared open transaction succeeds.
+- `Save` updates the current file-backed Advanced Filter in place without discarding file identity.
+- `Save As...` writes the current Advanced Filter to a selected `.filter` path and then adopts that saved file as the authoritative document source.
+- `Clear unsaved changes` restores the saved file-backed baseline while preserving the current file identity.
 - `Apply` validates, reformats, evaluates, and installs the canonical Advanced Filter document only after shared C++ parse/compile/evaluate succeeds.
 - `Cancel` discards the editor draft and leaves the applied Advanced Filter unchanged.
 - The current Tauri structured editor now covers all currently agreed predicate sections through the shared C++ document model.
@@ -258,14 +262,14 @@ Implemented slice:
 - The current Tauri Advanced Filter structured editor now covers all currently agreed predicate sections:
   - mode switching and retained state exist
   - backend-authoritative Advanced filtering exists
-  - `Settings` and `Open filter...` draft workflow exist
-  - Save / Save As / Revert full parity remains deferred
+  - `Settings`, `Open filter...`, `Save`, `Save As...`, and file-backed `Clear unsaved changes` now follow the shared document workflow
   - final Settings layout and polish remain deferred
   - Advanced Smart Export parity remains deferred
 - Broader export parity is still incomplete in Tauri.
 - Advanced Smart Export parity is still deferred; current-filter Smart Export remains Simple-mode-only.
 - Traffic and Service structured editing now exist in Tauri.
-- Save / Save As for file-backed Advanced Filter documents is still deferred in Tauri.
+- File-backed and destructive-clear Advanced Filter document workflow now matches the shared document-state model, including `Settings -> Clear all` and toolbar `Clear`.
+- Remaining Advanced Filter Tauri parity work is now primarily final Settings layout/presentation polish, Advanced Smart Export parity, and any concrete defects found during manual testing.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
 - Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.

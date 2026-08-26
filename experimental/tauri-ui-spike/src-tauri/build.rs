@@ -197,6 +197,7 @@ fn main() {
         "src/app/session/ByteExport.cpp",
         "src/app/session/AdvancedFlowFilter.cpp",
         "src/app/session/AdvancedFlowFilterFormat.cpp",
+        "src/app/session/AdvancedFlowFilterDocumentState.cpp",
         "src/app/session/CaptureSession.cpp",
         "src/app/session/ProtocolPathPresentation.cpp",
         "src/app/session/ProtocolPathTextExport.cpp",

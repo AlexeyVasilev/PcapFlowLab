@@ -3709,6 +3709,149 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(invalid.update_issue->section_id == "traffic");
         PFL_EXPECT(invalid.update_issue->field_id == "unit_id");
     }
+
+    {
+        const auto default_workflow = adapter.get_advanced_flow_filter_document_workflow_state();
+        PFL_EXPECT(default_workflow.is_file_backed == false);
+        PFL_EXPECT(default_workflow.display_name == "Custom filter");
+        PFL_EXPECT(default_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(default_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(default_workflow.clear_available == false);
+        PFL_EXPECT(default_workflow.canonical_text == "format_version = 2\n");
+
+        const auto custom_workflow = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "flow_protocol.include = tcp\n"
+        );
+        PFL_EXPECT(custom_workflow.is_file_backed == false);
+        PFL_EXPECT(custom_workflow.display_name == "Custom filter");
+        PFL_EXPECT(custom_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(custom_workflow.has_unsaved_configuration == true);
+        PFL_EXPECT(custom_workflow.clear_available == true);
+        PFL_EXPECT(custom_workflow.canonical_text.find("flow_protocol.include = TCP") != std::string::npos);
+
+        const auto saved_workflow = adapter.accept_saved_advanced_flow_filter_document_text(
+            custom_workflow.canonical_text,
+            std::filesystem::path {"filters/current.filter"}
+        );
+        PFL_EXPECT(saved_workflow.is_file_backed == true);
+        PFL_EXPECT(saved_workflow.display_name == "current");
+        PFL_EXPECT(saved_workflow.source_path.find("current.filter") != std::string::npos);
+        PFL_EXPECT(saved_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(saved_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(saved_workflow.can_clear_unsaved_changes == false);
+
+        const auto dirty_workflow = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n"
+        );
+        PFL_EXPECT(dirty_workflow.is_file_backed == true);
+        PFL_EXPECT(dirty_workflow.display_name == "current *");
+        PFL_EXPECT(dirty_workflow.has_unsaved_changes == true);
+        PFL_EXPECT(dirty_workflow.has_unsaved_configuration == true);
+        PFL_EXPECT(dirty_workflow.can_clear_unsaved_changes == true);
+        PFL_EXPECT(dirty_workflow.canonical_text.find("flow_protocol.include = UDP") != std::string::npos);
+
+        const auto reverted_workflow = adapter.clear_advanced_flow_filter_unsaved_changes();
+        PFL_EXPECT(reverted_workflow.is_file_backed == true);
+        PFL_EXPECT(reverted_workflow.display_name == "current");
+        PFL_EXPECT(reverted_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(reverted_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(reverted_workflow.can_clear_unsaved_changes == false);
+        PFL_EXPECT(reverted_workflow.canonical_text == saved_workflow.canonical_text);
+
+        const auto clean_file_backed_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(clean_file_backed_cleared.is_file_backed == false);
+        PFL_EXPECT(clean_file_backed_cleared.display_name == "Custom filter");
+        PFL_EXPECT(clean_file_backed_cleared.source_path.empty());
+        PFL_EXPECT(clean_file_backed_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(clean_file_backed_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(clean_file_backed_cleared.clear_available == false);
+        PFL_EXPECT(clean_file_backed_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(clean_file_backed_cleared.active_rule_count == 0U);
+        PFL_EXPECT(clean_file_backed_cleared.canonical_text == "format_version = 2\n");
+
+        const auto saved_default_workflow = adapter.accept_saved_advanced_flow_filter_document_text(
+            "format_version = 2\n",
+            std::filesystem::path {"filters/default.filter"}
+        );
+        PFL_EXPECT(saved_default_workflow.is_file_backed == true);
+        PFL_EXPECT(saved_default_workflow.display_name == "default");
+        PFL_EXPECT(saved_default_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(saved_default_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(saved_default_workflow.clear_available == false);
+        PFL_EXPECT(saved_default_workflow.canonical_text == "format_version = 2\n");
+
+        const auto saved_default_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(saved_default_cleared.is_file_backed == false);
+        PFL_EXPECT(saved_default_cleared.display_name == "Custom filter");
+        PFL_EXPECT(saved_default_cleared.source_path.empty());
+        PFL_EXPECT(saved_default_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(saved_default_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(saved_default_cleared.clear_available == false);
+        PFL_EXPECT(saved_default_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(saved_default_cleared.active_rule_count == 0U);
+        PFL_EXPECT(saved_default_cleared.canonical_text == "format_version = 2\n");
+
+        const auto enabled_state_only_workflow = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "section.ports.enabled = false\n"
+        );
+        PFL_EXPECT(enabled_state_only_workflow.is_file_backed == false);
+        PFL_EXPECT(enabled_state_only_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(enabled_state_only_workflow.has_unsaved_configuration == true);
+        PFL_EXPECT(enabled_state_only_workflow.clear_available == true);
+        PFL_EXPECT(enabled_state_only_workflow.configured_rule_count == 0U);
+        PFL_EXPECT(enabled_state_only_workflow.active_rule_count == 0U);
+
+        const auto enabled_state_only_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(enabled_state_only_cleared.is_file_backed == false);
+        PFL_EXPECT(enabled_state_only_cleared.display_name == "Custom filter");
+        PFL_EXPECT(enabled_state_only_cleared.source_path.empty());
+        PFL_EXPECT(enabled_state_only_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(enabled_state_only_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(enabled_state_only_cleared.clear_available == false);
+        PFL_EXPECT(enabled_state_only_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(enabled_state_only_cleared.active_rule_count == 0U);
+        PFL_EXPECT(enabled_state_only_cleared.canonical_text == "format_version = 2\n");
+
+        const auto saved_again = adapter.accept_saved_advanced_flow_filter_document_text(
+            custom_workflow.canonical_text,
+            std::filesystem::path {"filters/current.filter"}
+        );
+        PFL_EXPECT(saved_again.is_file_backed == true);
+        PFL_EXPECT(saved_again.has_unsaved_changes == false);
+
+        const auto dirty_again = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n"
+        );
+        PFL_EXPECT(dirty_again.is_file_backed == true);
+        PFL_EXPECT(dirty_again.has_unsaved_changes == true);
+        PFL_EXPECT(dirty_again.has_unsaved_configuration == true);
+
+        const auto dirty_file_backed_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(dirty_file_backed_cleared.is_file_backed == false);
+        PFL_EXPECT(dirty_file_backed_cleared.display_name == "Custom filter");
+        PFL_EXPECT(dirty_file_backed_cleared.source_path.empty());
+        PFL_EXPECT(dirty_file_backed_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(dirty_file_backed_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(dirty_file_backed_cleared.clear_available == false);
+        PFL_EXPECT(dirty_file_backed_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(dirty_file_backed_cleared.active_rule_count == 0U);
+        PFL_EXPECT(dirty_file_backed_cleared.canonical_text == "format_version = 2\n");
+
+        const auto default_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(default_cleared.is_file_backed == false);
+        PFL_EXPECT(default_cleared.display_name == "Custom filter");
+        PFL_EXPECT(default_cleared.source_path.empty());
+        PFL_EXPECT(default_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(default_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(default_cleared.clear_available == false);
+        PFL_EXPECT(default_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(default_cleared.active_rule_count == 0U);
+        PFL_EXPECT(default_cleared.canonical_text == "format_version = 2\n");
+    }
 }
 
 }  // namespace

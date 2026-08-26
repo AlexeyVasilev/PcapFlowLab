@@ -688,6 +688,25 @@ std::string structured_document_json(
     return out.str();
 }
 
+std::string advanced_flow_filter_document_workflow_state_json(
+    const pfl::FrontendAdvancedFlowFilterDocumentWorkflowStateDto& state
+) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"canonical_text\":" << json_string(state.canonical_text) << ','
+        << "\"source_path\":" << json_string(state.source_path) << ','
+        << "\"display_name\":" << json_string(state.display_name) << ','
+        << "\"is_file_backed\":" << bool_json(state.is_file_backed) << ','
+        << "\"has_unsaved_changes\":" << bool_json(state.has_unsaved_changes) << ','
+        << "\"has_unsaved_configuration\":" << bool_json(state.has_unsaved_configuration) << ','
+        << "\"can_clear_unsaved_changes\":" << bool_json(state.can_clear_unsaved_changes) << ','
+        << "\"clear_available\":" << bool_json(state.clear_available) << ','
+        << "\"configured_rule_count\":" << state.configured_rule_count << ','
+        << "\"active_rule_count\":" << state.active_rule_count
+        << '}';
+    return out.str();
+}
+
 std::string structured_update_issue_json(
     const std::optional<pfl::FrontendAdvancedFlowFilterStructuredUpdateIssue>& issue
 ) {
@@ -2315,6 +2334,18 @@ char* pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_documen
     return make_c_string(structured_document_result_json(result));
 }
 
+char* pfl_frontend_session_adapter_get_advanced_flow_filter_document_workflow_state_json(
+    PflFrontendSessionAdapterHandle* handle
+) {
+    if (handle == nullptr) {
+        return make_c_string(advanced_flow_filter_document_workflow_state_json({}));
+    }
+
+    return make_c_string(advanced_flow_filter_document_workflow_state_json(
+        handle->adapter.get_advanced_flow_filter_document_workflow_state()
+    ));
+}
+
 char* pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* filter_text_utf8,
@@ -2769,6 +2800,77 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
             std::string_view {filter_text_utf8},
             draft
         )
+    ));
+}
+
+char* pfl_frontend_session_adapter_apply_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8
+) {
+    if (handle == nullptr || filter_text_utf8 == nullptr) {
+        return make_c_string(advanced_flow_filter_document_workflow_state_json({}));
+    }
+
+    return make_c_string(advanced_flow_filter_document_workflow_state_json(
+        handle->adapter.apply_advanced_flow_filter_document_text(std::string_view {filter_text_utf8})
+    ));
+}
+
+char* pfl_frontend_session_adapter_accept_opened_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* source_path_utf8
+) {
+    if (handle == nullptr || filter_text_utf8 == nullptr || source_path_utf8 == nullptr) {
+        return make_c_string(advanced_flow_filter_document_workflow_state_json({}));
+    }
+
+    return make_c_string(advanced_flow_filter_document_workflow_state_json(
+        handle->adapter.accept_opened_advanced_flow_filter_document_text(
+            std::string_view {filter_text_utf8},
+            path_from_utf8(source_path_utf8)
+        )
+    ));
+}
+
+char* pfl_frontend_session_adapter_accept_saved_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* source_path_utf8
+) {
+    if (handle == nullptr || filter_text_utf8 == nullptr || source_path_utf8 == nullptr) {
+        return make_c_string(advanced_flow_filter_document_workflow_state_json({}));
+    }
+
+    return make_c_string(advanced_flow_filter_document_workflow_state_json(
+        handle->adapter.accept_saved_advanced_flow_filter_document_text(
+            std::string_view {filter_text_utf8},
+            path_from_utf8(source_path_utf8)
+        )
+    ));
+}
+
+char* pfl_frontend_session_adapter_clear_advanced_flow_filter_unsaved_changes_json(
+    PflFrontendSessionAdapterHandle* handle
+) {
+    if (handle == nullptr) {
+        return make_c_string(advanced_flow_filter_document_workflow_state_json({}));
+    }
+
+    return make_c_string(advanced_flow_filter_document_workflow_state_json(
+        handle->adapter.clear_advanced_flow_filter_unsaved_changes()
+    ));
+}
+
+char* pfl_frontend_session_adapter_clear_advanced_flow_filter_document_json(
+    PflFrontendSessionAdapterHandle* handle
+) {
+    if (handle == nullptr) {
+        return make_c_string(advanced_flow_filter_document_workflow_state_json({}));
+    }
+
+    return make_c_string(advanced_flow_filter_document_workflow_state_json(
+        handle->adapter.clear_advanced_flow_filter_document()
     ));
 }
 
