@@ -4472,7 +4472,13 @@
   }
 
   function smartExportFilterTargetEnabled() {
-    return state.flowFilterMode === "simple" && state.flowFilterText.trim().length > 0;
+    if (state.flowFilterMode === "simple") {
+      return state.flowFilterText.trim().length > 0;
+    }
+    if (state.flowFilterMode === "advanced") {
+      return activeAdvancedFlowFilterRuleCount() > 0;
+    }
+    return false;
   }
 
   function smartExportUnrecognizedTargetEnabled() {
@@ -4511,6 +4517,29 @@
     return value;
   }
 
+  function getSmartExportCandidateFlowIndices() {
+    if (hasActiveProtocolPathFilter()) {
+      return Array.from(state.activeProtocolPathFilter.flowIndexSet)
+        .filter((value) => Number.isInteger(value) && value >= 0)
+        .sort((left, right) => left - right);
+    }
+    return getAllFlowIndices();
+  }
+
+  function getSmartExportMatchingCurrentFilterFlowIndices() {
+    if (!smartExportFilterTargetEnabled()) {
+      return [];
+    }
+
+    const candidateFlowIndices = getSmartExportCandidateFlowIndices();
+    if (state.flowFilterMode === "advanced") {
+      return candidateFlowIndices.filter((flowIndex) => state.advancedFlowFilter.matchingFlowIndexSet.has(flowIndex));
+    }
+
+    const matchingFlowIndexSet = new Set(filteredFlows().map((flow) => Number(flow.flow_index)));
+    return candidateFlowIndices.filter((flowIndex) => matchingFlowIndexSet.has(flowIndex));
+  }
+
   function getSmartExportFlowIndices(scope) {
     switch (scope) {
       case "current":
@@ -4519,16 +4548,16 @@
         if (!smartExportFilterTargetEnabled()) {
           return [];
         }
-        return getVisibleFlows().map((flow) => flow.flow_index);
+        return getSmartExportMatchingCurrentFilterFlowIndices();
       case "selected":
         return Array.from(state.checkedFlowIndices).sort((left, right) => left - right);
       case "not_matching_filter": {
         if (!smartExportFilterTargetEnabled()) {
           return [];
         }
-        const matchingFlowIndexSet = new Set(filteredFlows().map((flow) => flow.flow_index));
-        return getSortedFlows(state.flows.filter((flow) => !matchingFlowIndexSet.has(flow.flow_index)))
-          .map((flow) => flow.flow_index);
+        const candidateFlowIndices = getSmartExportCandidateFlowIndices();
+        const matchingFlowIndexSet = new Set(getSmartExportMatchingCurrentFilterFlowIndices());
+        return candidateFlowIndices.filter((flowIndex) => !matchingFlowIndexSet.has(flowIndex));
       }
       case "unselected":
         return getUncheckedFlowIndices();
@@ -10812,7 +10841,7 @@
       && !smartExportFilterTargetEnabled()
     ) {
       setSmartExportStatus(
-        "Current-filter smart export is available only in Simple filter mode with a non-empty filter.",
+        "Current-filter smart export requires an active flow filter.",
         "error"
       );
       render();
