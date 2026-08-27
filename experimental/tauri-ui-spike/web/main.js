@@ -83,6 +83,13 @@
     };
   }
 
+  function createAdvancedFlowFilterSectionUiState() {
+    return {
+      expandedById: Object.create(null),
+      exclusionsExpandedById: Object.create(null),
+    };
+  }
+
   function createAdvancedFlowFilterSettingsState() {
     return {
       visible: false,
@@ -102,6 +109,7 @@
       draftBaselineSnapshot: "",
       structureRevision: 0,
       renderedStructureKey: "",
+      sectionUi: createAdvancedFlowFilterSectionUiState(),
       trafficAdditionalExpanded: false,
       protocolPathPicker: createAdvancedFlowFilterProtocolPathPickerState(),
       pendingDestructiveAction: null,
@@ -132,6 +140,16 @@
     { id: "tls_version", title: "TLS Version", optionCatalogKey: "tls_version" },
     { id: "quic_version", title: "QUIC Version", optionCatalogKey: "quic_version" },
     { id: "directionality", title: "Observed directions", optionCatalogKey: "directionality" },
+  ]);
+
+  const advancedFlowFilterAllSectionIds = Object.freeze([
+    ...advancedFlowFilterSectionDefinitions.map((definition) => definition.id),
+    "ports",
+    "ip_addresses",
+    "traffic",
+    "service",
+    "protocol_path",
+    "contains_layer",
   ]);
 
   const advancedFlowFilterTrafficMetricDefinitions = Object.freeze([
@@ -549,6 +567,171 @@
       default:
         return "";
     }
+  }
+
+  function advancedFlowFilterHasMeaningfulText(value) {
+    return String(value || "").trim().length > 0;
+  }
+
+  function advancedFlowFilterCountLabel(ruleCount) {
+    return ruleCount === 1 ? "1 rule" : `${formatNumber(ruleCount)} rules`;
+  }
+
+  function advancedFlowFilterPortRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.primary_text)
+      || advancedFlowFilterHasMeaningfulText(row?.secondary_text)
+      || Boolean(row?.range_enabled)
+      || String(row?.scope_id || "either") !== "either";
+  }
+
+  function advancedFlowFilterIpRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.address_text)
+      || advancedFlowFilterHasMeaningfulText(row?.prefix_text)
+      || Boolean(row?.subnet_enabled)
+      || String(row?.scope_id || "either") !== "either";
+  }
+
+  function advancedFlowFilterTrafficRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.min_text)
+      || advancedFlowFilterHasMeaningfulText(row?.max_text);
+  }
+
+  function advancedFlowFilterServiceTextRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.text);
+  }
+
+  function advancedFlowFilterProtocolPathRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.predicate_text)
+      || advancedFlowFilterHasMeaningfulText(row?.full_text)
+      || advancedFlowFilterHasMeaningfulText(row?.compact_text);
+  }
+
+  function advancedFlowFilterContainsLayerRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.layer_stable_id);
+  }
+
+  function advancedFlowFilterSectionConfiguredRuleCount(sectionId, section) {
+    if (!section) {
+      return 0;
+    }
+    switch (sectionId) {
+      case "address_family":
+      case "flow_protocol":
+      case "detected_protocol":
+      case "tls_version":
+      case "quic_version":
+      case "directionality":
+        return (Array.isArray(section.include) ? section.include.length : 0)
+          + (Array.isArray(section.exclude) ? section.exclude.length : 0);
+      case "ports":
+        return [
+          ...(Array.isArray(section.include) ? section.include : []).filter(advancedFlowFilterPortRowConfigured),
+          ...(Array.isArray(section.exclude) ? section.exclude : []).filter(advancedFlowFilterPortRowConfigured),
+        ].length;
+      case "ip_addresses":
+        return [
+          ...(Array.isArray(section.include) ? section.include : []).filter(advancedFlowFilterIpRowConfigured),
+          ...(Array.isArray(section.exclude) ? section.exclude : []).filter(advancedFlowFilterIpRowConfigured),
+        ].length;
+      case "traffic":
+        return [
+          ...(Array.isArray(section.primary) ? section.primary : []).filter(advancedFlowFilterTrafficRowConfigured),
+          ...(Array.isArray(section.additional) ? section.additional : []).filter(advancedFlowFilterTrafficRowConfigured),
+        ].length;
+      case "service":
+        return Number(Boolean(section.include_recognized))
+          + Number(Boolean(section.include_unrecognized))
+          + Number(Boolean(section.exclude_recognized))
+          + Number(Boolean(section.exclude_unrecognized))
+          + (Array.isArray(section.include_text) ? section.include_text.filter(advancedFlowFilterServiceTextRowConfigured).length : 0)
+          + (Array.isArray(section.exclude_text) ? section.exclude_text.filter(advancedFlowFilterServiceTextRowConfigured).length : 0);
+      case "protocol_path":
+        return [
+          ...(Array.isArray(section.include) ? section.include : []).filter(advancedFlowFilterProtocolPathRowConfigured),
+          ...(Array.isArray(section.exclude) ? section.exclude : []).filter(advancedFlowFilterProtocolPathRowConfigured),
+        ].length;
+      case "contains_layer":
+        return [
+          ...(Array.isArray(section.include) ? section.include : []).filter(advancedFlowFilterContainsLayerRowConfigured),
+          ...(Array.isArray(section.exclude) ? section.exclude : []).filter(advancedFlowFilterContainsLayerRowConfigured),
+        ].length;
+      default:
+        return 0;
+    }
+  }
+
+  function advancedFlowFilterSectionHasExclusions(sectionId, section) {
+    if (!section) {
+      return false;
+    }
+    switch (sectionId) {
+      case "service":
+        return Boolean(section.exclude_recognized)
+          || Boolean(section.exclude_unrecognized)
+          || (Array.isArray(section.exclude_text) && section.exclude_text.some(advancedFlowFilterServiceTextRowConfigured));
+      case "traffic":
+        return false;
+      default:
+        return Array.isArray(section.exclude) && section.exclude.some(() => true);
+    }
+  }
+
+  function advancedFlowFilterSectionHasConfiguredContent(sectionId, section) {
+    if (!section) {
+      return false;
+    }
+    return !Boolean(section.enabled) || advancedFlowFilterSectionConfiguredRuleCount(sectionId, section) > 0;
+  }
+
+  function createAdvancedFlowFilterInitialSectionUiState(document) {
+    const nextState = createAdvancedFlowFilterSectionUiState();
+    for (const sectionId of advancedFlowFilterAllSectionIds) {
+      const section = advancedFlowFilterSectionById(document, sectionId);
+      nextState.expandedById[sectionId] = advancedFlowFilterSectionHasConfiguredContent(sectionId, section);
+      nextState.exclusionsExpandedById[sectionId] = advancedFlowFilterSectionHasExclusions(sectionId, section);
+    }
+    return nextState;
+  }
+
+  function currentAdvancedFlowFilterSectionUi() {
+    const sectionUi = state.advancedFlowFilterSettings.sectionUi;
+    return sectionUi && typeof sectionUi === "object" ? sectionUi : createAdvancedFlowFilterSectionUiState();
+  }
+
+  function advancedFlowFilterSectionExpanded(sectionId) {
+    return Boolean(currentAdvancedFlowFilterSectionUi().expandedById[String(sectionId || "")]);
+  }
+
+  function setAdvancedFlowFilterSectionExpanded(sectionId, expanded) {
+    state.advancedFlowFilterSettings.sectionUi.expandedById[String(sectionId || "")] = Boolean(expanded);
+  }
+
+  function advancedFlowFilterSectionExclusionsExpanded(sectionId) {
+    return Boolean(currentAdvancedFlowFilterSectionUi().exclusionsExpandedById[String(sectionId || "")]);
+  }
+
+  function setAdvancedFlowFilterSectionExclusionsExpanded(sectionId, expanded) {
+    state.advancedFlowFilterSettings.sectionUi.exclusionsExpandedById[String(sectionId || "")] = Boolean(expanded);
+  }
+
+  function advancedFlowFilterSectionSummaryText(document, sectionId) {
+    const section = advancedFlowFilterSectionById(document, sectionId);
+    if (!section) {
+      return "";
+    }
+    const configuredRuleCount = advancedFlowFilterSectionConfiguredRuleCount(sectionId, section);
+    const disabled = !Boolean(section.enabled);
+    const ruleText = configuredRuleCount > 0 ? advancedFlowFilterCountLabel(configuredRuleCount) : "";
+    if (ruleText && disabled) {
+      return `${ruleText} · Disabled`;
+    }
+    if (ruleText) {
+      return ruleText;
+    }
+    if (disabled) {
+      return "Disabled";
+    }
+    return "";
   }
 
   function advancedFlowFilterStructuredUpdateIssueText(issue) {
@@ -1125,6 +1308,7 @@
     state.advancedFlowFilterSettings.document = payload.document;
     state.advancedFlowFilterSettings.optionCatalog = payload.optionCatalog;
     applyAdvancedFlowFilterSettingsWorkflowState(payload.workflow);
+    state.advancedFlowFilterSettings.sectionUi = createAdvancedFlowFilterInitialSectionUiState(payload.document);
     state.advancedFlowFilterSettings.trafficAdditionalExpanded =
       advancedFlowFilterTrafficHasConfiguredAdditionalRows(payload.document);
     captureAdvancedFlowFilterSettingsDraftBaseline();
@@ -1272,6 +1456,77 @@
     `;
   }
 
+  function renderAdvancedFlowFilterSectionCard(sectionId, title, summaryText, sectionEnabled, dialogBusy, bodyMarkup, options = {}) {
+    const expanded = advancedFlowFilterSectionExpanded(sectionId);
+    const wide = Boolean(options.wide);
+    return `
+      <section
+        class="advanced-filter-section-card${wide ? " advanced-filter-section-card-wide" : ""}"
+        data-advanced-filter-structured-section-id="${escapeHtml(sectionId)}"
+      >
+        <div class="advanced-filter-section-header">
+          <div class="advanced-filter-section-heading">
+            <button
+              type="button"
+              class="advanced-filter-section-collapse-button"
+              data-advanced-filter-toggle-section-id="${escapeHtml(sectionId)}"
+              aria-expanded="${expanded ? "true" : "false"}"
+              ${dialogBusy ? "disabled" : ""}
+            >${expanded ? "▾" : "▸"}</button>
+            <div class="advanced-filter-section-title-block">
+              <div class="advanced-filter-section-title-row">
+                <h3 class="advanced-filter-section-title">${escapeHtml(title)}</h3>
+                ${summaryText ? `<span class="advanced-filter-section-summary">${escapeHtml(summaryText)}</span>` : ""}
+              </div>
+            </div>
+          </div>
+          <label class="advanced-filter-section-enabled">
+            <input
+              type="checkbox"
+              data-advanced-filter-enabled-section-id="${escapeHtml(sectionId)}"
+              ${sectionEnabled ? "checked" : ""}
+              ${dialogBusy ? " disabled" : ""}
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        <div class="advanced-filter-section-content"${expanded ? "" : " hidden"}>
+          ${bodyMarkup}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy) {
+    return `
+      <div class="advanced-filter-subgroup-toggle-row">
+        <button
+          type="button"
+          class="secondary-button advanced-filter-subgroup-toggle"
+          data-advanced-filter-toggle-exclusions-section-id="${escapeHtml(sectionId)}"
+          ${dialogBusy ? "disabled" : ""}
+        >Exclusions</button>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterExclusionsGroup(sectionId, bodyMarkup, dialogBusy) {
+    return `
+      <div class="advanced-filter-subgroup">
+        <div class="advanced-filter-subgroup-header">
+          <p class="advanced-filter-group-title">Exclude</p>
+          <button
+            type="button"
+            class="secondary-button advanced-filter-subgroup-toggle"
+            data-advanced-filter-hide-exclusions-section-id="${escapeHtml(sectionId)}"
+            ${dialogBusy ? "disabled" : ""}
+          >Hide</button>
+        </div>
+        ${bodyMarkup}
+      </div>
+    `;
+  }
+
   function renderAdvancedFlowFilterPortGroup(groupName, rows, sectionEnabled, dialogBusy) {
     const groupKey = groupName.toLowerCase();
     const scopeOptions = advancedFlowFilterEndpointScopeOptions();
@@ -1281,62 +1536,63 @@
         <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
         <div class="advanced-filter-row-list">
           ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
-            <div class="advanced-filter-draft-row">
-              <select
-                data-advanced-filter-row-section-id="ports"
-                data-advanced-filter-group="${escapeHtml(groupKey)}"
-                data-advanced-filter-row-index="${rowIndex}"
-                data-advanced-filter-row-field="scope_id"
-                ${editingDisabled ? "disabled" : ""}
-              >
-                ${scopeOptions.map((option) => `
-                  <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
-                    ${escapeHtml(String(option?.label || option?.stable_id || ""))}
-                  </option>
-                `).join("")}
-              </select>
-              <label class="advanced-filter-inline-toggle">
-                <input
-                  type="checkbox"
+            <div class="advanced-filter-row-card">
+              <div class="advanced-filter-inline-fields-row">
+                <select
                   data-advanced-filter-row-section-id="ports"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
-                  data-advanced-filter-row-field="range_enabled"
-                  ${row?.range_enabled ? "checked" : ""}
+                  data-advanced-filter-row-field="scope_id"
                   ${editingDisabled ? "disabled" : ""}
-                />
-                <span>Range</span>
-              </label>
-              <input
-                type="text"
-                placeholder="${row?.range_enabled ? "From" : "Port"}"
-                value="${escapeHtml(String(row?.primary_text || ""))}"
-                data-advanced-filter-row-section-id="ports"
-                data-advanced-filter-group="${escapeHtml(groupKey)}"
-                data-advanced-filter-row-index="${rowIndex}"
-                data-advanced-filter-row-field="primary_text"
-                ${editingDisabled ? "disabled" : ""}
-              />
-              ${row?.range_enabled ? `
+                >
+                  ${scopeOptions.map((option) => `
+                    <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
+                      ${escapeHtml(String(option?.label || option?.stable_id || ""))}
+                    </option>
+                  `).join("")}
+                </select>
+                <label class="advanced-filter-inline-toggle">
+                  <input
+                    type="checkbox"
+                    data-advanced-filter-row-section-id="ports"
+                    data-advanced-filter-group="${escapeHtml(groupKey)}"
+                    data-advanced-filter-row-index="${rowIndex}"
+                    data-advanced-filter-row-field="range_enabled"
+                    ${row?.range_enabled ? "checked" : ""}
+                    ${editingDisabled ? "disabled" : ""}
+                  />
+                  <span>Range</span>
+                </label>
                 <input
                   type="text"
+                  placeholder="${row?.range_enabled ? "From" : "Port"}"
+                  value="${escapeHtml(String(row?.primary_text || ""))}"
+                  data-advanced-filter-row-section-id="ports"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="primary_text"
+                  ${editingDisabled ? "disabled" : ""}
+                />
+                <input
+                  type="text"
+                  class="${row?.range_enabled ? "" : "advanced-filter-inline-hidden"}"
                   placeholder="To"
                   value="${escapeHtml(String(row?.secondary_text || ""))}"
                   data-advanced-filter-row-section-id="ports"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
                   data-advanced-filter-row-field="secondary_text"
-                  ${editingDisabled ? "disabled" : ""}
+                  ${editingDisabled || !row?.range_enabled ? "disabled" : ""}
                 />
-              ` : ""}
-              <button
-                type="button"
-                class="secondary-button advanced-filter-remove-row-button"
-                data-advanced-filter-remove-row-section-id="ports"
-                data-advanced-filter-group="${escapeHtml(groupKey)}"
-                data-advanced-filter-row-index="${rowIndex}"
-                ${dialogBusy ? "disabled" : ""}
-              >Remove</button>
+                <button
+                  type="button"
+                  class="secondary-button advanced-filter-remove-row-button"
+                  data-advanced-filter-remove-row-section-id="ports"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  ${dialogBusy ? "disabled" : ""}
+                >Remove</button>
+              </div>
             </div>
           `).join("")}
         </div>
@@ -1360,62 +1616,63 @@
         <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
         <div class="advanced-filter-row-list">
           ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
-            <div class="advanced-filter-draft-row advanced-filter-draft-row-wide">
-              <select
-                data-advanced-filter-row-section-id="ip_addresses"
-                data-advanced-filter-group="${escapeHtml(groupKey)}"
-                data-advanced-filter-row-index="${rowIndex}"
-                data-advanced-filter-row-field="scope_id"
-                ${editingDisabled ? "disabled" : ""}
-              >
-                ${scopeOptions.map((option) => `
-                  <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
-                    ${escapeHtml(String(option?.label || option?.stable_id || ""))}
-                  </option>
-                `).join("")}
-              </select>
-              <label class="advanced-filter-inline-toggle">
-                <input
-                  type="checkbox"
+            <div class="advanced-filter-row-card">
+              <div class="advanced-filter-inline-fields-row is-wide">
+                <select
                   data-advanced-filter-row-section-id="ip_addresses"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
-                  data-advanced-filter-row-field="subnet_enabled"
-                  ${row?.subnet_enabled ? "checked" : ""}
+                  data-advanced-filter-row-field="scope_id"
                   ${editingDisabled ? "disabled" : ""}
-                />
-                <span>Subnet</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Address"
-                value="${escapeHtml(String(row?.address_text || ""))}"
-                data-advanced-filter-row-section-id="ip_addresses"
-                data-advanced-filter-group="${escapeHtml(groupKey)}"
-                data-advanced-filter-row-index="${rowIndex}"
-                data-advanced-filter-row-field="address_text"
-                ${editingDisabled ? "disabled" : ""}
-              />
-              ${row?.subnet_enabled ? `
+                >
+                  ${scopeOptions.map((option) => `
+                    <option value="${escapeHtml(String(option?.stable_id || ""))}"${String(option?.stable_id || "") === String(row?.scope_id || "either") ? " selected" : ""}>
+                      ${escapeHtml(String(option?.label || option?.stable_id || ""))}
+                    </option>
+                  `).join("")}
+                </select>
+                <label class="advanced-filter-inline-toggle">
+                  <input
+                    type="checkbox"
+                    data-advanced-filter-row-section-id="ip_addresses"
+                    data-advanced-filter-group="${escapeHtml(groupKey)}"
+                    data-advanced-filter-row-index="${rowIndex}"
+                    data-advanced-filter-row-field="subnet_enabled"
+                    ${row?.subnet_enabled ? "checked" : ""}
+                    ${editingDisabled ? "disabled" : ""}
+                  />
+                  <span>Subnet</span>
+                </label>
                 <input
                   type="text"
+                  placeholder="Address"
+                  value="${escapeHtml(String(row?.address_text || ""))}"
+                  data-advanced-filter-row-section-id="ip_addresses"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  data-advanced-filter-row-field="address_text"
+                  ${editingDisabled ? "disabled" : ""}
+                />
+                <input
+                  type="text"
+                  class="${row?.subnet_enabled ? "" : "advanced-filter-inline-hidden"}"
                   placeholder="Prefix"
                   value="${escapeHtml(String(row?.prefix_text || ""))}"
                   data-advanced-filter-row-section-id="ip_addresses"
                   data-advanced-filter-group="${escapeHtml(groupKey)}"
                   data-advanced-filter-row-index="${rowIndex}"
                   data-advanced-filter-row-field="prefix_text"
-                  ${editingDisabled ? "disabled" : ""}
+                  ${editingDisabled || !row?.subnet_enabled ? "disabled" : ""}
                 />
-              ` : ""}
-              <button
-                type="button"
-                class="secondary-button advanced-filter-remove-row-button"
-                data-advanced-filter-remove-row-section-id="ip_addresses"
-                data-advanced-filter-group="${escapeHtml(groupKey)}"
-                data-advanced-filter-row-index="${rowIndex}"
-                ${dialogBusy ? "disabled" : ""}
-              >Remove</button>
+                <button
+                  type="button"
+                  class="secondary-button advanced-filter-remove-row-button"
+                  data-advanced-filter-remove-row-section-id="ip_addresses"
+                  data-advanced-filter-group="${escapeHtml(groupKey)}"
+                  data-advanced-filter-row-index="${rowIndex}"
+                  ${dialogBusy ? "disabled" : ""}
+                >Remove</button>
+              </div>
             </div>
           `).join("")}
         </div>
@@ -1432,74 +1689,76 @@
 
   function renderAdvancedFlowFilterFiniteSectionCard(definition, document, dialogBusy) {
     const section = advancedFlowFilterSectionById(document, definition.id) || { enabled: true, include: [], exclude: [] };
-    return `
-      <section class="advanced-filter-section-card" data-advanced-filter-structured-section-id="${escapeHtml(definition.id)}">
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">${escapeHtml(definition.title)}</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="${escapeHtml(definition.id)}"
-              ${section.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        ${renderAdvancedFlowFilterSectionGroup(definition.id, "Include", section.include, dialogBusy)}
-        ${renderAdvancedFlowFilterSectionGroup(definition.id, "Exclude", section.exclude, dialogBusy)}
-      </section>
-    `;
+    const sectionId = definition.id;
+    const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
+    const bodyMarkup = [
+      renderAdvancedFlowFilterSectionGroup(sectionId, "Include", section.include, dialogBusy || !Boolean(section.enabled)),
+      exclusionsExpanded
+        ? renderAdvancedFlowFilterExclusionsGroup(
+            sectionId,
+            renderAdvancedFlowFilterSectionGroup(sectionId, "Exclude", section.exclude, dialogBusy || !Boolean(section.enabled)),
+            dialogBusy
+          )
+        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+    ].join("");
+    return renderAdvancedFlowFilterSectionCard(
+      sectionId,
+      definition.title,
+      advancedFlowFilterSectionSummaryText(document, sectionId),
+      Boolean(section.enabled),
+      dialogBusy,
+      bodyMarkup
+    );
   }
 
   function renderAdvancedFlowFilterPortsSectionCard(document, dialogBusy) {
     const portsSection = document?.ports || { enabled: true, include: [], exclude: [] };
-    return `
-      <section
-        class="advanced-filter-section-card advanced-filter-section-card-wide"
-        data-advanced-filter-structured-section-id="ports"
-      >
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">Ports</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="ports"
-              ${portsSection.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        ${renderAdvancedFlowFilterPortGroup("Include", portsSection.include, Boolean(portsSection.enabled), dialogBusy)}
-        ${renderAdvancedFlowFilterPortGroup("Exclude", portsSection.exclude, Boolean(portsSection.enabled), dialogBusy)}
-      </section>
-    `;
+    const sectionId = "ports";
+    const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
+    const bodyMarkup = [
+      renderAdvancedFlowFilterPortGroup("Include", portsSection.include, Boolean(portsSection.enabled), dialogBusy),
+      exclusionsExpanded
+        ? renderAdvancedFlowFilterExclusionsGroup(
+            sectionId,
+            renderAdvancedFlowFilterPortGroup("Exclude", portsSection.exclude, Boolean(portsSection.enabled), dialogBusy),
+            dialogBusy
+          )
+        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+    ].join("");
+    return renderAdvancedFlowFilterSectionCard(
+      sectionId,
+      "Ports",
+      advancedFlowFilterSectionSummaryText(document, sectionId),
+      Boolean(portsSection.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
   }
 
   function renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy) {
     const ipSection = document?.ip_addresses || { enabled: true, include: [], exclude: [] };
-    return `
-      <section
-        class="advanced-filter-section-card advanced-filter-section-card-wide"
-        data-advanced-filter-structured-section-id="ip_addresses"
-      >
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">IP addresses</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="ip_addresses"
-              ${ipSection.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        ${renderAdvancedFlowFilterIpGroup("Include", ipSection.include, Boolean(ipSection.enabled), dialogBusy)}
-        ${renderAdvancedFlowFilterIpGroup("Exclude", ipSection.exclude, Boolean(ipSection.enabled), dialogBusy)}
-      </section>
-    `;
+    const sectionId = "ip_addresses";
+    const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
+    const bodyMarkup = [
+      renderAdvancedFlowFilterIpGroup("Include", ipSection.include, Boolean(ipSection.enabled), dialogBusy),
+      exclusionsExpanded
+        ? renderAdvancedFlowFilterExclusionsGroup(
+            sectionId,
+            renderAdvancedFlowFilterIpGroup("Exclude", ipSection.exclude, Boolean(ipSection.enabled), dialogBusy),
+            dialogBusy
+          )
+        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+    ].join("");
+    return renderAdvancedFlowFilterSectionCard(
+      sectionId,
+      "IP addresses",
+      advancedFlowFilterSectionSummaryText(document, sectionId),
+      Boolean(ipSection.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
   }
 
   function advancedFlowFilterServiceIncludeTextEditingDisabled(section, dialogBusy) {
@@ -1528,7 +1787,7 @@
     const unitOptions = advancedFlowFilterTrafficUnitOptions(definition.id);
     const renderStaticUnit = definition.unitPresentation === "static";
     return `
-      <div class="advanced-filter-draft-row advanced-filter-draft-row-wide">
+      <div class="advanced-filter-inline-fields-row is-traffic">
         <label class="advanced-filter-row-label">${escapeHtml(definition.title)}</label>
         <input
           type="text"
@@ -1572,47 +1831,58 @@
   function renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy) {
     const trafficSection = document?.traffic || { enabled: true, primary: [], additional: [] };
     const additionalExpanded = Boolean(state.advancedFlowFilterSettings.trafficAdditionalExpanded);
-    return `
-      <section
-        class="advanced-filter-section-card advanced-filter-section-card-wide"
-        data-advanced-filter-structured-section-id="traffic"
-      >
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">Traffic</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="traffic"
-              ${trafficSection.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        <div class="advanced-filter-group">
+    const bodyMarkup = `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">Include</p>
+        <div class="advanced-filter-row-card">
+          <div class="advanced-filter-inline-fields-row is-traffic">
+            <span class="advanced-filter-row-label">Value</span>
+            <span class="advanced-filter-group-title">Minimum</span>
+            <span class="advanced-filter-group-title">Maximum</span>
+            <span class="advanced-filter-group-title">Unit</span>
+          </div>
           <div class="advanced-filter-row-list">
             ${(Array.isArray(trafficSection.primary) ? trafficSection.primary : []).map((row) =>
               renderAdvancedFlowFilterTrafficRow(row, "primary", Boolean(trafficSection.enabled), dialogBusy)
             ).join("")}
           </div>
         </div>
-        <div class="advanced-filter-group">
+      </div>
+      <div class="advanced-filter-group">
+        <div class="advanced-filter-subgroup-toggle-row">
           <button
             type="button"
-            class="secondary-button advanced-filter-add-row-button"
+            class="secondary-button advanced-filter-subgroup-toggle"
             data-advanced-filter-traffic-toggle="true"
             ${dialogBusy ? "disabled" : ""}
           >${additionalExpanded ? "Hide additional traffic filters" : "Show additional traffic filters"}</button>
-          ${additionalExpanded ? `
+        </div>
+        ${additionalExpanded ? `
+          <div class="advanced-filter-row-card">
+            <div class="advanced-filter-inline-fields-row is-traffic">
+              <span class="advanced-filter-row-label">Value</span>
+              <span class="advanced-filter-group-title">Minimum</span>
+              <span class="advanced-filter-group-title">Maximum</span>
+              <span class="advanced-filter-group-title">Unit</span>
+            </div>
             <div class="advanced-filter-row-list">
               ${(Array.isArray(trafficSection.additional) ? trafficSection.additional : []).map((row) =>
                 renderAdvancedFlowFilterTrafficRow(row, "additional", Boolean(trafficSection.enabled), dialogBusy)
               ).join("")}
             </div>
-          ` : ""}
-        </div>
-      </section>
+          </div>
+        ` : ""}
+      </div>
     `;
+    return renderAdvancedFlowFilterSectionCard(
+      "traffic",
+      "Traffic",
+      advancedFlowFilterSectionSummaryText(document, "traffic"),
+      Boolean(trafficSection.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
   }
 
   function renderAdvancedFlowFilterServiceTextGroup(groupLabel, groupKey, rows, editingDisabled, dialogBusy) {
@@ -1621,7 +1891,8 @@
         <p class="advanced-filter-group-title">${escapeHtml(groupLabel)}</p>
         <div class="advanced-filter-row-list">
           ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
-            <div class="advanced-filter-draft-row advanced-filter-draft-row-wide">
+            <div class="advanced-filter-row-card">
+              <div class="advanced-filter-inline-fields-row is-service">
               <select
                 data-advanced-filter-row-section-id="service"
                 data-advanced-filter-group="${escapeHtml(groupKey)}"
@@ -1668,6 +1939,7 @@
                 data-advanced-filter-row-index="${rowIndex}"
                 ${dialogBusy ? "disabled" : ""}
               >Remove</button>
+              </div>
             </div>
           `).join("")}
         </div>
@@ -1693,28 +1965,15 @@
       exclude_unrecognized: false,
       exclude_text: [],
     };
+    const sectionId = "service";
+    const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
     const includeTextEditingDisabled = advancedFlowFilterServiceIncludeTextEditingDisabled(serviceSection, dialogBusy);
     const excludeTextEditingDisabled = dialogBusy || !Boolean(serviceSection.enabled);
     const includeHelperText = advancedFlowFilterServiceIncludeHelperText(serviceSection);
-    return `
-      <section
-        class="advanced-filter-section-card advanced-filter-section-card-wide"
-        data-advanced-filter-structured-section-id="service"
-      >
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">Service</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="service"
-              ${serviceSection.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        <div class="advanced-filter-group">
-          <p class="advanced-filter-group-title">Include</p>
+    const includeMarkup = `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">Include</p>
+        <div class="advanced-filter-row-card">
           <p class="advanced-filter-group-title">State</p>
           <div class="advanced-filter-option-grid">
             <label class="advanced-filter-option-row">
@@ -1728,9 +1987,13 @@
           </div>
           ${includeHelperText ? `<p class="advanced-filter-helper-copy">${escapeHtml(includeHelperText)}</p>` : ""}
         </div>
-        ${renderAdvancedFlowFilterServiceTextGroup("Include text", "include_text", serviceSection.include_text, includeTextEditingDisabled, dialogBusy)}
-        <div class="advanced-filter-group">
-          <p class="advanced-filter-group-title">Exclude</p>
+      </div>
+      ${renderAdvancedFlowFilterServiceTextGroup("Text rules", "include_text", serviceSection.include_text, includeTextEditingDisabled, dialogBusy)}
+    `;
+    const excludeMarkup = `
+      <div class="advanced-filter-group">
+        <p class="advanced-filter-group-title">Exclude</p>
+        <div class="advanced-filter-row-card">
           <p class="advanced-filter-group-title">State</p>
           <div class="advanced-filter-option-grid">
             <label class="advanced-filter-option-row">
@@ -1743,9 +2006,24 @@
             </label>
           </div>
         </div>
-        ${renderAdvancedFlowFilterServiceTextGroup("Exclude text", "exclude_text", serviceSection.exclude_text, excludeTextEditingDisabled, dialogBusy)}
-      </section>
+      </div>
+      ${renderAdvancedFlowFilterServiceTextGroup("Text rules", "exclude_text", serviceSection.exclude_text, excludeTextEditingDisabled, dialogBusy)}
     `;
+    const bodyMarkup = [
+      includeMarkup,
+      exclusionsExpanded
+        ? renderAdvancedFlowFilterExclusionsGroup(sectionId, excludeMarkup, dialogBusy)
+        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+    ].join("");
+    return renderAdvancedFlowFilterSectionCard(
+      sectionId,
+      "Service",
+      advancedFlowFilterSectionSummaryText(document, sectionId),
+      Boolean(serviceSection.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
   }
 
   function advancedFlowFilterProtocolPathSelectorModeLabel(modeId) {
@@ -1809,27 +2087,27 @@
 
   function renderAdvancedFlowFilterProtocolPathSectionCard(document, dialogBusy) {
     const section = document?.protocol_path || { enabled: true, include: [], exclude: [] };
-    return `
-      <section
-        class="advanced-filter-section-card advanced-filter-section-card-wide"
-        data-advanced-filter-structured-section-id="protocol_path"
-      >
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">Protocol Path</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="protocol_path"
-              ${section.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        ${renderAdvancedFlowFilterProtocolPathGroup("Include", section.include, Boolean(section.enabled), dialogBusy)}
-        ${renderAdvancedFlowFilterProtocolPathGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy)}
-      </section>
-    `;
+    const sectionId = "protocol_path";
+    const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
+    const bodyMarkup = [
+      renderAdvancedFlowFilterProtocolPathGroup("Include", section.include, Boolean(section.enabled), dialogBusy),
+      exclusionsExpanded
+        ? renderAdvancedFlowFilterExclusionsGroup(
+            sectionId,
+            renderAdvancedFlowFilterProtocolPathGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy),
+            dialogBusy
+          )
+        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+    ].join("");
+    return renderAdvancedFlowFilterSectionCard(
+      sectionId,
+      "Protocol Path",
+      advancedFlowFilterSectionSummaryText(document, sectionId),
+      Boolean(section.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
   }
 
   function advancedFlowFilterContainsLayerIdentifierModeLabel(modeId) {
@@ -1931,27 +2209,27 @@
 
   function renderAdvancedFlowFilterContainsLayerSectionCard(document, dialogBusy) {
     const section = document?.contains_layer || { enabled: true, include: [], exclude: [] };
-    return `
-      <section
-        class="advanced-filter-section-card advanced-filter-section-card-wide"
-        data-advanced-filter-structured-section-id="contains_layer"
-      >
-        <div class="advanced-filter-section-header">
-          <h3 class="advanced-filter-section-title">Contains Layer</h3>
-          <label class="advanced-filter-section-enabled">
-            <input
-              type="checkbox"
-              data-advanced-filter-enabled-section-id="contains_layer"
-              ${section.enabled ? "checked" : ""}
-              ${dialogBusy ? " disabled" : ""}
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        ${renderAdvancedFlowFilterContainsLayerGroup("Include", section.include, Boolean(section.enabled), dialogBusy)}
-        ${renderAdvancedFlowFilterContainsLayerGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy)}
-      </section>
-    `;
+    const sectionId = "contains_layer";
+    const exclusionsExpanded = advancedFlowFilterSectionExclusionsExpanded(sectionId);
+    const bodyMarkup = [
+      renderAdvancedFlowFilterContainsLayerGroup("Include", section.include, Boolean(section.enabled), dialogBusy),
+      exclusionsExpanded
+        ? renderAdvancedFlowFilterExclusionsGroup(
+            sectionId,
+            renderAdvancedFlowFilterContainsLayerGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy),
+            dialogBusy
+          )
+        : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
+    ].join("");
+    return renderAdvancedFlowFilterSectionCard(
+      sectionId,
+      "Contains Layer",
+      advancedFlowFilterSectionSummaryText(document, sectionId),
+      Boolean(section.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
   }
 
   function advancedFlowFilterSettingsSectionMarkup(sectionId, document, dialogBusy) {
@@ -2020,6 +2298,11 @@
     for (const toggleButton of elements.advancedFlowFilterSettingsSections.querySelectorAll("[data-advanced-filter-traffic-toggle]")) {
       toggleButton.disabled = interactionBlocked;
     }
+    for (const toggleButton of elements.advancedFlowFilterSettingsSections.querySelectorAll(
+      "[data-advanced-filter-toggle-section-id], [data-advanced-filter-toggle-exclusions-section-id], [data-advanced-filter-hide-exclusions-section-id]"
+    )) {
+      toggleButton.disabled = interactionBlocked;
+    }
   }
 
   function renderAdvancedFlowFilterSettingsStructure(force = false) {
@@ -2074,7 +2357,7 @@
     const markup = advancedFlowFilterSettingsSectionMarkup(
       sectionId,
       structuredDocument,
-      currentAdvancedFlowFilterSettingsBusy()
+      advancedFlowFilterSettingsInteractionBlocked()
     );
     if (!markup) {
       renderAdvancedFlowFilterSettingsStructure(true);
@@ -11083,6 +11366,51 @@
   });
   elements.advancedFlowFilterSettingsSections?.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const sectionToggleButton = event.target.closest("[data-advanced-filter-toggle-section-id]");
+    if (sectionToggleButton instanceof HTMLButtonElement) {
+      if (advancedFlowFilterSettingsInteractionBlocked()) {
+        return;
+      }
+      const sectionId = String(sectionToggleButton.dataset.advancedFilterToggleSectionId || "");
+      if (!sectionId) {
+        return;
+      }
+      setAdvancedFlowFilterSectionExpanded(sectionId, !advancedFlowFilterSectionExpanded(sectionId));
+      rerenderAdvancedFlowFilterSettingsSection(sectionId);
+      renderAdvancedFlowFilterSettingsDialogShell();
+      return;
+    }
+
+    const exclusionsToggleButton = event.target.closest("[data-advanced-filter-toggle-exclusions-section-id]");
+    if (exclusionsToggleButton instanceof HTMLButtonElement) {
+      if (advancedFlowFilterSettingsInteractionBlocked()) {
+        return;
+      }
+      const sectionId = String(exclusionsToggleButton.dataset.advancedFilterToggleExclusionsSectionId || "");
+      if (!sectionId) {
+        return;
+      }
+      setAdvancedFlowFilterSectionExclusionsExpanded(sectionId, true);
+      rerenderAdvancedFlowFilterSettingsSection(sectionId);
+      renderAdvancedFlowFilterSettingsDialogShell();
+      return;
+    }
+
+    const exclusionsHideButton = event.target.closest("[data-advanced-filter-hide-exclusions-section-id]");
+    if (exclusionsHideButton instanceof HTMLButtonElement) {
+      if (advancedFlowFilterSettingsInteractionBlocked()) {
+        return;
+      }
+      const sectionId = String(exclusionsHideButton.dataset.advancedFilterHideExclusionsSectionId || "");
+      if (!sectionId) {
+        return;
+      }
+      setAdvancedFlowFilterSectionExclusionsExpanded(sectionId, false);
+      rerenderAdvancedFlowFilterSettingsSection(sectionId);
+      renderAdvancedFlowFilterSettingsDialogShell();
       return;
     }
 

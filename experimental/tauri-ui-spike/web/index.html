@@ -883,72 +883,80 @@
         aria-modal="true"
         aria-labelledby="advancedFlowFilterSettingsDialogTitle"
       >
-        <div class="dialog-heading">
-          <div>
-            <h2 id="advancedFlowFilterSettingsDialogTitle">Advanced Filter Settings</h2>
-            <p class="dialog-copy advanced-filter-settings-copy">
-              Edit the currently supported structured Advanced Filter sections, including finite sections, Ports, IP addresses, Traffic, Service, Protocol Path, and Contains Layer.
+        <div class="advanced-filter-settings-dialog-shell">
+          <div class="advanced-filter-settings-dialog-top">
+            <div class="dialog-heading advanced-filter-settings-heading">
+              <div>
+                <h2 id="advancedFlowFilterSettingsDialogTitle">Advanced Filter Settings</h2>
+                <p class="dialog-copy advanced-filter-settings-copy">
+                  Edit the currently supported structured Advanced Filter sections, including finite sections, Ports, IP addresses, Traffic, Service, Protocol Path, and Contains Layer.
+                </p>
+              </div>
+            </div>
+            <div class="advanced-filter-settings-toolbar">
+              <div class="advanced-filter-settings-toolbar-group">
+                <button id="advancedFlowFilterSettingsOpenButton" type="button" class="secondary-button">Open filter...</button>
+                <button id="advancedFlowFilterSettingsClearUnsavedButton" type="button" class="secondary-button">Clear unsaved changes</button>
+              </div>
+              <div class="advanced-filter-settings-toolbar-meta">
+                <div class="advanced-filter-settings-meta">
+                  <span class="inline-label">Filter:</span>
+                  <span id="advancedFlowFilterSettingsDisplayName" class="flow-filter-summary-text">Custom filter</span>
+                </div>
+                <span id="advancedFlowFilterSettingsRuleCount" class="inline-note">0 configured · 0 active</span>
+              </div>
+              <div class="advanced-filter-settings-toolbar-group advanced-filter-settings-toolbar-group-end">
+                <button id="advancedFlowFilterSettingsSaveButton" type="button" class="secondary-button">Save</button>
+                <button id="advancedFlowFilterSettingsSaveAsButton" type="button" class="secondary-button">Save As...</button>
+              </div>
+            </div>
+            <p
+              id="advancedFlowFilterUnsupportedSectionsNote"
+              class="dialog-copy advanced-filter-unsupported-note"
+              hidden
+            >
+              This filter also contains rules from sections not yet editable in the Tauri UI.
             </p>
+            <p id="advancedFlowFilterSettingsStatusText" class="status-text advanced-filter-settings-status-text"></p>
           </div>
-        </div>
-        <div class="advanced-filter-settings-toolbar">
-          <div class="advanced-filter-settings-toolbar-group">
-            <button id="advancedFlowFilterSettingsOpenButton" type="button" class="secondary-button">Open filter...</button>
-            <button id="advancedFlowFilterSettingsClearUnsavedButton" type="button" class="secondary-button">Clear unsaved changes</button>
-            <div class="advanced-filter-settings-meta">
-              <span class="inline-label">Filter:</span>
-              <span id="advancedFlowFilterSettingsDisplayName" class="flow-filter-summary-text">Custom filter</span>
-              <span id="advancedFlowFilterSettingsRuleCount" class="inline-note">0 configured · 0 active</span>
+          <div class="advanced-filter-settings-dialog-body">
+            <div
+              id="advancedFlowFilterSettingsSections"
+              class="advanced-filter-settings-sections"
+              aria-live="polite"
+            ></div>
+            <div id="advancedFlowFilterDiscardOpenConfirm" class="advanced-filter-inline-confirm" hidden>
+              <div
+                class="advanced-filter-inline-confirm-card"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="advancedFlowFilterDiscardOpenConfirmTitle"
+              >
+                <h3 id="advancedFlowFilterDiscardOpenConfirmTitle" class="advanced-filter-inline-confirm-title">
+                  Discard changes and open selected filter?
+                </h3>
+                <p id="advancedFlowFilterDiscardOpenConfirmCopy" class="dialog-copy advanced-filter-inline-confirm-copy">
+                  The current Advanced Filter Settings draft has unsaved changes. Opening the selected filter will replace the current draft.
+                </p>
+                <div class="dialog-actions">
+                  <button id="advancedFlowFilterDiscardOpenConfirmSaveButton" type="button" class="secondary-button">
+                    Save As and open
+                  </button>
+                  <button id="advancedFlowFilterDiscardOpenConfirmDiscardButton" type="button">
+                    Discard and open
+                  </button>
+                  <button id="advancedFlowFilterDiscardOpenConfirmCancelButton" type="button" class="secondary-button">
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="advanced-filter-settings-toolbar-group advanced-filter-settings-toolbar-group-end">
-            <button id="advancedFlowFilterSettingsSaveButton" type="button" class="secondary-button">Save</button>
-            <button id="advancedFlowFilterSettingsSaveAsButton" type="button" class="secondary-button">Save As...</button>
+          <div class="dialog-actions advanced-filter-settings-footer">
+            <button id="advancedFlowFilterSettingsClearAllButton" type="button" class="secondary-button">Clear all</button>
+            <button id="advancedFlowFilterSettingsCancelButton" type="button" class="secondary-button">Cancel</button>
+            <button id="advancedFlowFilterSettingsApplyButton" type="button">Apply</button>
           </div>
-        </div>
-        <p
-          id="advancedFlowFilterUnsupportedSectionsNote"
-          class="dialog-copy advanced-filter-unsupported-note"
-          hidden
-        >
-          This filter also contains rules from sections not yet editable in the Tauri UI.
-        </p>
-        <p id="advancedFlowFilterSettingsStatusText" class="status-text"></p>
-        <div
-          id="advancedFlowFilterSettingsSections"
-          class="advanced-filter-settings-sections"
-          aria-live="polite"
-        ></div>
-        <div id="advancedFlowFilterDiscardOpenConfirm" class="advanced-filter-inline-confirm" hidden>
-          <div
-            class="advanced-filter-inline-confirm-card"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="advancedFlowFilterDiscardOpenConfirmTitle"
-          >
-            <h3 id="advancedFlowFilterDiscardOpenConfirmTitle" class="advanced-filter-inline-confirm-title">
-              Discard changes and open selected filter?
-            </h3>
-            <p id="advancedFlowFilterDiscardOpenConfirmCopy" class="dialog-copy advanced-filter-inline-confirm-copy">
-              The current Advanced Filter Settings draft has unsaved changes. Opening the selected filter will replace the current draft.
-            </p>
-            <div class="dialog-actions">
-              <button id="advancedFlowFilterDiscardOpenConfirmSaveButton" type="button" class="secondary-button">
-                Save As and open
-              </button>
-              <button id="advancedFlowFilterDiscardOpenConfirmDiscardButton" type="button">
-                Discard and open
-              </button>
-              <button id="advancedFlowFilterDiscardOpenConfirmCancelButton" type="button" class="secondary-button">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="dialog-actions">
-          <button id="advancedFlowFilterSettingsClearAllButton" type="button" class="secondary-button">Clear all</button>
-          <button id="advancedFlowFilterSettingsCancelButton" type="button" class="secondary-button">Cancel</button>
-          <button id="advancedFlowFilterSettingsApplyButton" type="button">Apply</button>
         </div>
       </section>
     </div>
@@ -983,36 +991,40 @@
         aria-modal="true"
         aria-labelledby="advancedFlowFilterProtocolPathPickerDialogTitle"
       >
-        <div class="dialog-heading">
-          <div>
-            <h2 id="advancedFlowFilterProtocolPathPickerDialogTitle">Select Protocol Path</h2>
-            <p class="dialog-copy">
-              Choose a structural path from the existing Protocol Path statistics view. Selection is local to Advanced Filter Settings and does not change Statistics flow restriction.
-            </p>
+        <div class="advanced-filter-protocol-path-picker-shell">
+          <div class="advanced-filter-protocol-path-picker-top">
+            <div class="dialog-heading">
+              <div>
+                <h2 id="advancedFlowFilterProtocolPathPickerDialogTitle">Select Protocol Path</h2>
+                <p class="dialog-copy">
+                  Choose a structural path from the existing Protocol Path statistics view. Selection is local to Advanced Filter Settings and does not change Statistics flow restriction.
+                </p>
+              </div>
+            </div>
+            <div class="advanced-filter-protocol-path-picker-mode-row" role="group" aria-label="Protocol path selection mode">
+              <button id="advancedFlowFilterProtocolPathPickerModeKind" type="button" class="secondary-button">Kind overview</button>
+              <button id="advancedFlowFilterProtocolPathPickerModeIdentity" type="button" class="secondary-button">Identity tree</button>
+              <button id="advancedFlowFilterProtocolPathPickerModeTerminal" type="button" class="secondary-button">Terminal paths</button>
+            </div>
+            <p id="advancedFlowFilterProtocolPathPickerStatusText" class="status-text advanced-filter-protocol-path-picker-status"></p>
           </div>
-        </div>
-        <div class="advanced-filter-protocol-path-picker-mode-row" role="group" aria-label="Protocol path selection mode">
-          <button id="advancedFlowFilterProtocolPathPickerModeKind" type="button" class="secondary-button">Kind overview</button>
-          <button id="advancedFlowFilterProtocolPathPickerModeIdentity" type="button" class="secondary-button">Identity tree</button>
-          <button id="advancedFlowFilterProtocolPathPickerModeTerminal" type="button" class="secondary-button">Terminal paths</button>
-        </div>
-        <p id="advancedFlowFilterProtocolPathPickerStatusText" class="status-text"></p>
-        <div id="advancedFlowFilterProtocolPathPickerViewport" class="protocol-path-stats-viewport advanced-filter-protocol-path-picker-viewport">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th id="advancedFlowFilterProtocolPathPickerPrimaryHeader">Layer</th>
-                <th>Flows</th>
-                <th>Packets</th>
-                <th>Original Bytes</th>
-              </tr>
-            </thead>
-            <tbody id="advancedFlowFilterProtocolPathPickerBody"></tbody>
-          </table>
-        </div>
-        <div class="dialog-actions">
-          <button id="advancedFlowFilterProtocolPathPickerCancelButton" type="button" class="secondary-button">Cancel</button>
-          <button id="advancedFlowFilterProtocolPathPickerSelectButton" type="button">Select</button>
+          <div id="advancedFlowFilterProtocolPathPickerViewport" class="protocol-path-stats-viewport advanced-filter-protocol-path-picker-viewport">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th id="advancedFlowFilterProtocolPathPickerPrimaryHeader">Layer</th>
+                  <th>Flows</th>
+                  <th>Packets</th>
+                  <th>Original Bytes</th>
+                </tr>
+              </thead>
+              <tbody id="advancedFlowFilterProtocolPathPickerBody"></tbody>
+            </table>
+          </div>
+          <div class="dialog-actions advanced-filter-protocol-path-picker-footer">
+            <button id="advancedFlowFilterProtocolPathPickerCancelButton" type="button" class="secondary-button">Cancel</button>
+            <button id="advancedFlowFilterProtocolPathPickerSelectButton" type="button">Select</button>
+          </div>
         </div>
       </section>
     </div>

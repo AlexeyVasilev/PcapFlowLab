@@ -263,13 +263,13 @@ Implemented slice:
   - mode switching and retained state exist
   - backend-authoritative Advanced filtering exists
   - `Settings`, `Open filter...`, `Save`, `Save As...`, and file-backed `Clear unsaved changes` now follow the shared document workflow
-  - final Settings layout and polish remain deferred
+  - Tauri Advanced Filter Settings now uses a compact one-column collapsible layout aligned with the Qt workflow
   - Advanced Smart Export parity remains deferred
 - Broader export parity is still incomplete in Tauri.
 - Advanced Smart Export parity is still deferred; current-filter Smart Export remains Simple-mode-only.
 - Traffic and Service structured editing now exist in Tauri.
 - File-backed and destructive-clear Advanced Filter document workflow now matches the shared document-state model, including `Settings -> Clear all` and toolbar `Clear`.
-- Remaining Advanced Filter Tauri parity work is now primarily final Settings layout/presentation polish, Advanced Smart Export parity, and any concrete defects found during manual testing.
+- Remaining Advanced Filter Tauri parity work is now primarily Advanced Smart Export parity and any concrete defects found during manual testing.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
 - Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.
