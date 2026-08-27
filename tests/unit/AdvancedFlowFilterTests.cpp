@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <span>
 #include <string>
@@ -8,6 +9,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/CaptureSession.h"
@@ -452,6 +454,18 @@ std::string require_format_success(const session_detail::AdvancedFlowFilterDocum
     return result.text;
 }
 
+std::filesystem::path write_temp_capture_file(
+    const std::filesystem::path& file_name,
+    const std::vector<std::uint8_t>& bytes
+) {
+    const auto path = std::filesystem::temp_directory_path() / file_name;
+    std::ofstream stream {path, std::ios::binary | std::ios::trunc};
+    PFL_REQUIRE(stream.is_open());
+    stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    PFL_REQUIRE(stream.good());
+    return path;
+}
+
 void expect_parse_status(
     const std::string_view text,
     const AdvancedFlowFilterTextParseStatus expected_status
@@ -477,6 +491,59 @@ void expect_round_trip_stable(const AdvancedFlowFilterSpec& spec) {
     const auto second_text = require_format_success(reparsed.document);
     PFL_EXPECT(first_text == second_text);
     PFL_EXPECT(reparsed.document == document);
+}
+
+void run_port_bitmap_tests() {
+    ScopedTestContext context {"advanced_flow_filter/port_bitmap"};
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        PFL_EXPECT(bitmap.active == false);
+        PFL_EXPECT(bitmap.contains(0U) == false);
+        PFL_EXPECT(bitmap.contains(443U) == false);
+        PFL_EXPECT(bitmap.contains(65535U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(443U, 443U);
+        PFL_EXPECT(bitmap.active == true);
+        PFL_EXPECT(bitmap.contains(442U) == false);
+        PFL_EXPECT(bitmap.contains(443U) == true);
+        PFL_EXPECT(bitmap.contains(444U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(8000U, 9000U);
+        PFL_EXPECT(bitmap.contains(7999U) == false);
+        PFL_EXPECT(bitmap.contains(8000U) == true);
+        PFL_EXPECT(bitmap.contains(8500U) == true);
+        PFL_EXPECT(bitmap.contains(9000U) == true);
+        PFL_EXPECT(bitmap.contains(9001U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(53U, 53U);
+        bitmap.set_range(443U, 445U);
+        PFL_EXPECT(bitmap.contains(52U) == false);
+        PFL_EXPECT(bitmap.contains(53U) == true);
+        PFL_EXPECT(bitmap.contains(442U) == false);
+        PFL_EXPECT(bitmap.contains(443U) == true);
+        PFL_EXPECT(bitmap.contains(444U) == true);
+        PFL_EXPECT(bitmap.contains(445U) == true);
+        PFL_EXPECT(bitmap.contains(446U) == false);
+    }
+
+    {
+        session_detail::AdvancedFlowFilterPortBitmap bitmap {};
+        bitmap.set_range(0U, 65535U);
+        PFL_EXPECT(bitmap.contains(0U) == true);
+        PFL_EXPECT(bitmap.contains(1U) == true);
+        PFL_EXPECT(bitmap.contains(32768U) == true);
+        PFL_EXPECT(bitmap.contains(65535U) == true);
+    }
 }
 
 void run_protocol_and_candidate_scope_tests() {
@@ -2503,9 +2570,1294 @@ void run_metadata_only_evaluation_tests() {
     expect_indices_equal(result.matching_flow_indices, {0U});
 }
 
+void run_frontend_text_query_tests() {
+    ScopedTestContext context {"advanced_flow_filter/frontend_text_query"};
+
+    const auto capture_path = write_temp_capture_file(
+        "pfl_advanced_flow_filter_frontend_query.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 94, 0, 1), ipv4(10, 94, 0, 2), 51001, 80)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 94, 0, 3), ipv4(10, 94, 0, 4), 53000, 53)},
+            {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x94, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                54000,
+                443
+            )},
+        })
+    );
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+
+    const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
+    const auto empty = adapter.query_advanced_flows_text("format_version = 2\n", std::nullopt, std::nullopt, std::nullopt);
+    PFL_EXPECT(empty.status == FrontendAdvancedFlowQueryStatus::ok);
+    PFL_EXPECT(empty.parse_status == AdvancedFlowFilterTextParseStatus::ok);
+    PFL_EXPECT(!empty.parse_issue.has_value());
+    PFL_EXPECT(empty.compile_status == AdvancedFlowFilterCompileStatus::ok);
+    PFL_EXPECT(!empty.compile_issue.has_value());
+    PFL_EXPECT(empty.configured_rule_count == 0U);
+    PFL_EXPECT(empty.active_rule_count == 0U);
+    PFL_EXPECT(empty.result_count_before_limit == baseline.result_count_before_limit);
+    expect_indices_equal(empty.ordered_flow_indices, baseline.ordered_flow_indices);
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n";
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
+        const auto direct = adapter.query_advanced_flows(effective, std::nullopt, std::nullopt, std::nullopt);
+        const auto from_text = adapter.query_advanced_flows_text(text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.configured_rule_count == 1U);
+        PFL_EXPECT(from_text.active_rule_count == 1U);
+        PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+        expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.flow_protocol.enabled = false\n"
+            "flow_protocol.include = udp\n";
+        const auto from_text = adapter.query_advanced_flows_text(text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.configured_rule_count == 1U);
+        PFL_EXPECT(from_text.active_rule_count == 0U);
+        expect_indices_equal(from_text.ordered_flow_indices, baseline.ordered_flow_indices);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n";
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
+        const std::vector<std::size_t> candidate_flow_indices {1U, 2U};
+        const auto direct = adapter.query_advanced_flows(effective, candidate_flow_indices, std::nullopt, std::nullopt);
+        const auto from_text = adapter.query_advanced_flows_text(text, candidate_flow_indices, std::nullopt, std::nullopt);
+        PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
+        PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+    }
+
+    {
+        const auto malformed = adapter.query_advanced_flows_text(
+            "format_version = 2\nflow_protocol.include = tcpish\n",
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(malformed.status == FrontendAdvancedFlowQueryStatus::invalid_filter_text);
+        PFL_EXPECT(malformed.parse_status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
+        PFL_REQUIRE(malformed.parse_issue.has_value());
+        PFL_EXPECT(malformed.parse_issue->line == 2U);
+        PFL_EXPECT(malformed.parse_issue->key == "flow_protocol.include");
+        PFL_EXPECT(malformed.parse_issue->token == "tcpish");
+        PFL_EXPECT(!malformed.parse_issue->message.empty());
+    }
+
+    {
+        const auto unsupported = adapter.query_advanced_flows_text(
+            "format_version = 1\n",
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(unsupported.status == FrontendAdvancedFlowQueryStatus::invalid_filter_text);
+        PFL_EXPECT(unsupported.parse_status == AdvancedFlowFilterTextParseStatus::unsupported_format_version);
+        PFL_REQUIRE(unsupported.parse_issue.has_value());
+        PFL_EXPECT(unsupported.parse_issue->line == 1U);
+    }
+}
+
+void run_frontend_structured_document_tests() {
+    ScopedTestContext context {"advanced_flow_filter/frontend_structured_document"};
+
+    const auto capture_path = write_temp_capture_file(
+        "pfl_advanced_flow_filter_structured_document.pcap",
+        make_classic_pcap({
+            {100U, make_ethernet_ipv4_tcp_packet(ipv4(10, 95, 0, 1), ipv4(10, 95, 0, 2), 51001, 80)},
+            {200U, make_ethernet_ipv4_udp_packet(ipv4(10, 95, 0, 3), ipv4(10, 95, 0, 4), 53000, 53)},
+            {300U, make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+                54000,
+                443
+            )},
+        })
+    );
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+
+    const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
+    const auto empty = adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+    PFL_EXPECT(empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+    PFL_REQUIRE(empty.document.has_value());
+    PFL_EXPECT(empty.document->canonical_text == "format_version = 2\n");
+    PFL_EXPECT(empty.option_catalog.address_family.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.flow_protocol.size() == 9U);
+    PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 17U);
+    PFL_EXPECT(empty.option_catalog.tls_version.size() == 3U);
+    PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
+    PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.endpoint_scope.size() == 3U);
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode.size() == 3U);
+    PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind.size() == 9U);
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode[0].stable_id == "kind");
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode[1].stable_id == "identity");
+    PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode[2].stable_id == "terminal");
+    PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode[0].stable_id == "any");
+    PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode[1].stable_id == "exact");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[0].stable_id == "vlan");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[0].preferred_input_format_id == "decimal");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[2].stable_id == "pbb");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[2].preferred_input_format_id == "hexadecimal");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[5].stable_id == "gtpu");
+    PFL_EXPECT(empty.option_catalog.contains_layer_kind[5].preferred_input_format_id == "hexadecimal");
+    PFL_EXPECT(empty.configured_rule_count == 0U);
+    PFL_EXPECT(empty.active_rule_count == 0U);
+    PFL_EXPECT(empty.document->ports.include.empty());
+    PFL_EXPECT(empty.document->ip_addresses.include.empty());
+    PFL_EXPECT(empty.document->traffic.primary.size() == 4U);
+    PFL_EXPECT(empty.document->traffic.additional.size() == 7U);
+    PFL_EXPECT(empty.document->service.include_text.empty());
+    PFL_EXPECT(empty.document->service.exclude_text.empty());
+
+    const auto make_port_row = [](
+                                   std::string scope_id,
+                                   const bool range_enabled,
+                                   std::string primary_text,
+                                   std::string secondary_text) {
+        return FrontendAdvancedFlowFilterPortRowDto {
+            .scope_id = std::move(scope_id),
+            .range_enabled = range_enabled,
+            .primary_text = std::move(primary_text),
+            .secondary_text = std::move(secondary_text),
+        };
+    };
+
+    const auto make_ip_row = [](
+                                 std::string scope_id,
+                                 const bool subnet_enabled,
+                                 std::string address_text,
+                                 std::string prefix_text) {
+        return FrontendAdvancedFlowFilterIpAddressRowDto {
+            .scope_id = std::move(scope_id),
+            .subnet_enabled = subnet_enabled,
+            .address_text = std::move(address_text),
+            .prefix_text = std::move(prefix_text),
+        };
+    };
+
+    const auto make_traffic_row = [](
+                                      std::string metric_id,
+                                      std::string unit_id,
+                                      std::string min_text,
+                                      std::string max_text) {
+        return FrontendAdvancedFlowFilterTrafficRowDto {
+            .metric_id = std::move(metric_id),
+            .unit_id = std::move(unit_id),
+            .min_text = std::move(min_text),
+            .max_text = std::move(max_text),
+        };
+    };
+
+    const auto make_service_text_row = [](
+                                           std::string operator_id,
+                                           const bool case_sensitive,
+                                           std::string text) {
+        return FrontendAdvancedFlowFilterServiceTextRowDto {
+            .operator_id = std::move(operator_id),
+            .case_sensitive = case_sensitive,
+            .text = std::move(text),
+        };
+    };
+
+    const auto make_protocol_path_row = [](
+                                            std::string selector_mode_id,
+                                            std::string predicate_text) {
+        return FrontendAdvancedFlowFilterProtocolPathRowDto {
+            .selector_mode_id = std::move(selector_mode_id),
+            .predicate_text = std::move(predicate_text),
+        };
+    };
+
+    const auto make_contains_layer_row = [](
+                                             std::string layer_stable_id,
+                                             std::string identifier_mode_id,
+                                             std::string exact_value_text) {
+        return FrontendAdvancedFlowFilterContainsLayerRowDto {
+            .layer_stable_id = std::move(layer_stable_id),
+            .identifier_mode_id = std::move(identifier_mode_id),
+            .exact_value_text = std::move(exact_value_text),
+        };
+    };
+
+    {
+        const auto finite = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n"
+            "directionality.exclude = bidirectional\n"
+        );
+        PFL_EXPECT(finite.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(finite.document.has_value());
+        PFL_EXPECT(finite.document->flow_protocol.enabled == true);
+        PFL_EXPECT(finite.document->flow_protocol.include == std::vector<std::string>({"udp"}));
+        PFL_EXPECT(finite.document->directionality.enabled == true);
+        PFL_EXPECT(finite.document->directionality.exclude == std::vector<std::string>({"bidirectional"}));
+        PFL_EXPECT(finite.configured_rule_count == 2U);
+        PFL_EXPECT(finite.active_rule_count == 2U);
+    }
+
+    {
+        const auto ports_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "port.either.include = 443\n"
+            "port.a.exclude = 1000-2000\n"
+        );
+        PFL_EXPECT(ports_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(ports_snapshot.document.has_value());
+        PFL_REQUIRE(ports_snapshot.document->ports.include.size() == 1U);
+        PFL_REQUIRE(ports_snapshot.document->ports.exclude.size() == 1U);
+        PFL_EXPECT(ports_snapshot.document->ports.include[0].scope_id == "either");
+        PFL_EXPECT(ports_snapshot.document->ports.include[0].range_enabled == false);
+        PFL_EXPECT(ports_snapshot.document->ports.include[0].primary_text == "443");
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].scope_id == "a");
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].range_enabled == true);
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].primary_text == "1000");
+        PFL_EXPECT(ports_snapshot.document->ports.exclude[0].secondary_text == "2000");
+    }
+
+    {
+        const auto ip_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "ip.either.include = 192.0.2.10\n"
+            "ip.b.exclude = 2001:db8::/32\n"
+        );
+        PFL_EXPECT(ip_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(ip_snapshot.document.has_value());
+        PFL_REQUIRE(ip_snapshot.document->ip_addresses.include.size() == 1U);
+        PFL_REQUIRE(ip_snapshot.document->ip_addresses.exclude.size() == 1U);
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].scope_id == "either");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].subnet_enabled == false);
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.include[0].address_text == "192.0.2.10");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].scope_id == "b");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].subnet_enabled == true);
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].address_text == "2001:db8::");
+        PFL_EXPECT(ip_snapshot.document->ip_addresses.exclude[0].prefix_text == "32");
+    }
+
+    {
+        const auto traffic_service_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "original_bytes.min = 4MiB\n"
+            "captured_bytes.max = 512KiB\n"
+            "duration.min = 2m\n"
+            "max_original_packet_length.max = 2KiB\n"
+            "tcp_syn_count.min = 3\n"
+            "service.state.include = unknown\n"
+            "service.contains.ci.include = \"youtube\"\n"
+            "service.equals.cs.exclude = \"bulk-download.example.test\"\n"
+        );
+        PFL_EXPECT(traffic_service_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(traffic_service_snapshot.document.has_value());
+        const auto original_bytes_row = std::find_if(
+            traffic_service_snapshot.document->traffic.primary.begin(),
+            traffic_service_snapshot.document->traffic.primary.end(),
+            [](const auto& row) { return row.metric_id == "original_bytes"; }
+        );
+        const auto duration_row = std::find_if(
+            traffic_service_snapshot.document->traffic.primary.begin(),
+            traffic_service_snapshot.document->traffic.primary.end(),
+            [](const auto& row) { return row.metric_id == "duration"; }
+        );
+        const auto max_original_packet_size_row = std::find_if(
+            traffic_service_snapshot.document->traffic.additional.begin(),
+            traffic_service_snapshot.document->traffic.additional.end(),
+            [](const auto& row) { return row.metric_id == "max_original_packet_size"; }
+        );
+        PFL_REQUIRE(original_bytes_row != traffic_service_snapshot.document->traffic.primary.end());
+        PFL_REQUIRE(duration_row != traffic_service_snapshot.document->traffic.primary.end());
+        PFL_REQUIRE(max_original_packet_size_row != traffic_service_snapshot.document->traffic.additional.end());
+        PFL_EXPECT(original_bytes_row->unit_id == "MiB");
+        PFL_EXPECT(original_bytes_row->min_text == "4");
+        PFL_EXPECT(duration_row->unit_id == "min");
+        PFL_EXPECT(duration_row->min_text == "2");
+        PFL_EXPECT(max_original_packet_size_row->unit_id == "KiB");
+        PFL_EXPECT(max_original_packet_size_row->max_text == "2");
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_unrecognized == true);
+        PFL_REQUIRE(traffic_service_snapshot.document->service.include_text.size() == 1U);
+        PFL_REQUIRE(traffic_service_snapshot.document->service.exclude_text.size() == 1U);
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].operator_id == "contains");
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].case_sensitive == false);
+        PFL_EXPECT(traffic_service_snapshot.document->service.include_text[0].text == "youtube");
+        PFL_EXPECT(traffic_service_snapshot.document->service.exclude_text[0].operator_id == "equals");
+        PFL_EXPECT(traffic_service_snapshot.document->service.exclude_text[0].case_sensitive == true);
+    }
+
+    {
+        const auto protocol_path_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
+            "protocol_path.exact.exclude = EthernetII > IPv4 > TCP\n"
+            "protocol_path.contains.include = GTP-U(teid=0x12345678)\n"
+            "protocol_path.contains.exclude = VLAN(vid=100)\n"
+        );
+        PFL_EXPECT(protocol_path_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(protocol_path_snapshot.document.has_value());
+        PFL_REQUIRE(protocol_path_snapshot.document->protocol_path.include.size() == 1U);
+        PFL_REQUIRE(protocol_path_snapshot.document->protocol_path.exclude.size() == 1U);
+        PFL_REQUIRE(protocol_path_snapshot.document->contains_layer.include.size() == 1U);
+        PFL_REQUIRE(protocol_path_snapshot.document->contains_layer.exclude.size() == 1U);
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.include[0].selector_mode_id == "identity");
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.include[0].predicate_text ==
+            "EthernetII > IPv4 > UDP > Geneve(vni=100)");
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.exclude[0].selector_mode_id == "terminal");
+        PFL_EXPECT(protocol_path_snapshot.document->protocol_path.exclude[0].predicate_text ==
+            "EthernetII > IPv4 > TCP");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.include[0].layer_stable_id == "gtpu");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.include[0].identifier_mode_id == "exact");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.include[0].exact_value_text == "0x12345678");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.exclude[0].layer_stable_id == "vlan");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.exclude[0].identifier_mode_id == "exact");
+        PFL_EXPECT(protocol_path_snapshot.document->contains_layer.exclude[0].exact_value_text == "100");
+    }
+
+    {
+        const auto absent_snapshot = adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > VLAN(vid=999) > IPv4\n"
+            "protocol_path.contains.include = Geneve(vni=999)\n"
+        );
+        PFL_EXPECT(absent_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(absent_snapshot.document.has_value());
+        PFL_REQUIRE(absent_snapshot.document->protocol_path.include.size() == 1U);
+        PFL_REQUIRE(absent_snapshot.document->contains_layer.include.size() == 1U);
+        PFL_EXPECT(absent_snapshot.document->protocol_path.include[0].status_text == "Not present in current capture");
+        PFL_EXPECT(absent_snapshot.document->contains_layer.include[0].status_text == "Not present in current capture");
+        PFL_EXPECT(absent_snapshot.configured_rule_count == 2U);
+        PFL_EXPECT(absent_snapshot.active_rule_count == 2U);
+    }
+
+    {
+        FrontendSessionAdapter tunnel_adapter {};
+        PFL_REQUIRE(tunnel_adapter.open_capture(
+            fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")
+        ).opened);
+
+        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+        PFL_EXPECT(tunnel_empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(tunnel_empty.document.has_value());
+
+        const auto contains_snapshot = tunnel_adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.contains.include = VXLAN(vni=100)\n"
+            "protocol_path.contains.include = VXLAN(vni=200)\n"
+            "protocol_path.contains.include = VXLAN(vni=300)\n"
+        );
+        PFL_EXPECT(contains_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(contains_snapshot.document.has_value());
+        PFL_REQUIRE(contains_snapshot.document->contains_layer.include.size() == 3U);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[0].applicability_known == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[0].applicable == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[0].status_text.empty());
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[1].applicability_known == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[1].applicable == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[1].status_text.empty());
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[2].applicability_known == true);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[2].applicable == false);
+        PFL_EXPECT(contains_snapshot.document->contains_layer.include[2].status_text == "Not present in current capture");
+
+        const auto tunnel_baseline = tunnel_adapter.query_flows(session_detail::FlowQuery {});
+        const auto identity_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree);
+        const auto selected_prefix_row = std::find_if(
+            identity_stats.begin(),
+            identity_stats.end(),
+            [](const auto& row) {
+                return row.advanced_filter_predicate_text ==
+                    "EthernetII > IPv4 > UDP > VXLAN(vni=100)";
+            }
+        );
+        PFL_REQUIRE(selected_prefix_row != identity_stats.end());
+
+        auto draft = *tunnel_empty.document;
+        draft.protocol_path.enabled = true;
+        draft.protocol_path.include = {
+            make_protocol_path_row("identity", selected_prefix_row->advanced_filter_predicate_text),
+        };
+        const auto applied = tunnel_adapter.apply_advanced_flow_filter_structured_document(
+            tunnel_empty.document->canonical_text,
+            draft
+        );
+        PFL_EXPECT(applied.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(applied.document.has_value());
+        PFL_REQUIRE(applied.document->protocol_path.include.size() == 1U);
+        PFL_EXPECT(applied.document->protocol_path.include[0].predicate_text ==
+            selected_prefix_row->advanced_filter_predicate_text);
+        PFL_EXPECT(applied.document->protocol_path.include[0].full_text == selected_prefix_row->path_text);
+        PFL_EXPECT(applied.document->protocol_path.include[0].status_text.empty());
+
+        const auto applied_query = tunnel_adapter.query_advanced_flows_text(
+            applied.document->canonical_text,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(applied_query.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(applied_query.result_count_before_limit > 0U);
+        PFL_EXPECT(applied_query.result_count_before_limit < tunnel_baseline.result_count_before_limit);
+    }
+
+    const auto expect_update_matches_direct = [&](const auto& updated) {
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        const auto reparsed = require_parse_success(updated.document->canonical_text);
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(reparsed.document);
+        const auto direct = adapter.query_advanced_flows(effective, std::nullopt, std::nullopt, std::nullopt);
+        const auto from_text =
+            adapter.query_advanced_flows_text(updated.document->canonical_text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(updated.configured_rule_count == from_text.configured_rule_count);
+        PFL_EXPECT(updated.active_rule_count == from_text.active_rule_count);
+        PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+        expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
+        return reparsed.document;
+    };
+
+    const auto expect_apply_matches_direct =
+        [&](const std::string_view base_text, const FrontendAdvancedFlowFilterStructuredDocumentDto& draft) {
+            const auto updated = adapter.apply_advanced_flow_filter_structured_document(base_text, draft);
+            return std::pair {updated, expect_update_matches_direct(updated)};
+        };
+
+    {
+        const auto no_op = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "address_family",
+            empty.document->address_family.enabled,
+            empty.document->address_family.include,
+            empty.document->address_family.exclude
+        );
+        PFL_EXPECT(no_op.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(no_op.document.has_value());
+        PFL_EXPECT(no_op.document->canonical_text == empty.document->canonical_text);
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "address_family",
+            true,
+            {"ipv4"},
+            {"ipv6"}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.address_family.include == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv4
+        }));
+        PFL_EXPECT((reparsed.configured_spec.address_family.exclude == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv6
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "flow_protocol",
+            true,
+            {"udp"},
+            {"tcp"}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.flow_protocol.include == std::vector<ProtocolId> {
+            ProtocolId::udp
+        }));
+        PFL_EXPECT((reparsed.configured_spec.flow_protocol.exclude == std::vector<ProtocolId> {
+            ProtocolId::tcp
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "detected_protocol",
+            true,
+            {"unknown"},
+            {}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.detected_protocol.include == std::vector<FlowProtocolHint> {
+            FlowProtocolHint::unknown
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "tls_version",
+            true,
+            {"unknown"},
+            {}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.tls_version.include == std::vector<TlsVersionHint> {
+            TlsVersionHint::unknown
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "quic_version",
+            true,
+            {"unknown"},
+            {}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.quic_version.include == std::vector<QuicVersionHint> {
+            QuicVersionHint::unknown
+        }));
+    }
+
+    {
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "directionality",
+            true,
+            {"unidirectional"},
+            {"bidirectional"}
+        );
+        const auto reparsed = expect_update_matches_direct(updated);
+        PFL_EXPECT((reparsed.configured_spec.directionality.include == std::vector<AdvancedFlowFilterDirectionality> {
+            AdvancedFlowFilterDirectionality::unidirectional
+        }));
+        PFL_EXPECT((reparsed.configured_spec.directionality.exclude == std::vector<AdvancedFlowFilterDirectionality> {
+            AdvancedFlowFilterDirectionality::bidirectional
+        }));
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ports.enabled = true;
+        draft.ports.include = {
+            make_port_row("either", false, "443", ""),
+            make_port_row("a", true, "53000", "53010"),
+        };
+        draft.ports.exclude = {
+            make_port_row("b", true, "1", "1023"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.ports.include.size() == 2U);
+        PFL_REQUIRE(reparsed.configured_spec.ports.exclude.size() == 1U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[0].range.first == 443U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[0].range.last == 443U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[1].scope == AdvancedFlowFilterPortScope::endpoint_a);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[1].range.first == 53000U);
+        PFL_EXPECT(reparsed.configured_spec.ports.include[1].range.last == 53010U);
+        PFL_EXPECT(reparsed.configured_spec.ports.exclude[0].scope == AdvancedFlowFilterPortScope::endpoint_b);
+        PFL_EXPECT(reparsed.configured_spec.ports.exclude[0].range.first == 1U);
+        PFL_EXPECT(reparsed.configured_spec.ports.exclude[0].range.last == 1023U);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ip_addresses.enabled = true;
+        draft.ip_addresses.include = {
+            make_ip_row("either", false, "192.0.2.10", ""),
+            make_ip_row("b", true, "2001:db8::", "32"),
+        };
+        draft.ip_addresses.exclude = {
+            make_ip_row("a", true, "10.0.0.0", "8"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.addresses.ipv4_include.size() == 1U);
+        PFL_REQUIRE(reparsed.configured_spec.addresses.ipv6_include.size() == 1U);
+        PFL_REQUIRE(reparsed.configured_spec.addresses.ipv4_exclude.size() == 1U);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv4_include[0].value == ipv4(192, 0, 2, 10));
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv6_include[0].scope == AdvancedFlowFilterEndpointScope::endpoint_b);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv6_include[0].prefix_length == 32U);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv4_exclude[0].scope == AdvancedFlowFilterEndpointScope::endpoint_a);
+        PFL_EXPECT(reparsed.configured_spec.addresses.ipv4_exclude[0].prefix_length == 8U);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.traffic.enabled = true;
+        draft.traffic.primary = {
+            make_traffic_row("packets", "count", "9007199254740993", ""),
+            make_traffic_row("original_bytes", "MiB", "4", "8"),
+            make_traffic_row("captured_bytes", "KiB", "", "512"),
+            make_traffic_row("duration", "min", "2", ""),
+        };
+        draft.traffic.additional = {
+            make_traffic_row("max_original_packet_size", "KiB", "", "2"),
+            make_traffic_row("max_captured_packet_size", "B", "1500", ""),
+            make_traffic_row("fragmented_packet_count", "count", "", ""),
+            make_traffic_row("truncated_packet_count", "count", "", ""),
+            make_traffic_row("tcp_syn_count", "count", "3", ""),
+            make_traffic_row("tcp_fin_count", "count", "", "7"),
+            make_traffic_row("tcp_rst_count", "count", "", ""),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.aggregate.packet_count.has_value());
+        PFL_EXPECT(reparsed.configured_spec.aggregate.packet_count->min == std::optional<std::uint64_t> {9007199254740993ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->min == std::optional<std::uint64_t> {4ULL * 1024ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->max == std::optional<std::uint64_t> {8ULL * 1024ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.captured_bytes->max == std::optional<std::uint64_t> {512ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.duration_us->min == std::optional<std::uint64_t> {120000000ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.max_original_packet_length->max == std::optional<std::uint32_t> {2048U});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.max_captured_packet_length->min == std::optional<std::uint32_t> {1500U});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_syn_count->min == std::optional<std::uint64_t> {3ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_fin_count->max == std::optional<std::uint64_t> {7ULL});
+        PFL_EXPECT(applied.first.document->canonical_text.find("packet_count.min = 9007199254740993") != std::string::npos);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.service.enabled = true;
+        draft.service.include_recognized = true;
+        draft.service.include_unrecognized = true;
+        draft.service.include_text = {
+            make_service_text_row("contains", false, "youtube"),
+        };
+        draft.service.exclude_recognized = false;
+        draft.service.exclude_unrecognized = true;
+        draft.service.exclude_text = {
+            make_service_text_row("starts_with", true, "bulk"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.service.include.size() == 3U);
+        PFL_REQUIRE(reparsed.configured_spec.service.exclude.size() == 2U);
+        PFL_EXPECT(reparsed.configured_spec.service.include[0].kind == AdvancedFlowFilterServicePredicateKind::known);
+        PFL_EXPECT(reparsed.configured_spec.service.include[1].kind == AdvancedFlowFilterServicePredicateKind::unknown);
+        PFL_EXPECT(reparsed.configured_spec.service.include[2].kind == AdvancedFlowFilterServicePredicateKind::contains);
+        PFL_EXPECT(reparsed.configured_spec.service.include[2].value == "youtube");
+        PFL_EXPECT(reparsed.configured_spec.service.exclude[0].kind == AdvancedFlowFilterServicePredicateKind::unknown);
+        PFL_EXPECT(reparsed.configured_spec.service.exclude[1].kind == AdvancedFlowFilterServicePredicateKind::starts_with);
+        PFL_EXPECT(reparsed.configured_spec.service.exclude[1].case_sensitivity ==
+            AdvancedFlowFilterStringCaseSensitivity::case_sensitive);
+    }
+
+    {
+        FrontendSessionAdapter tunnel_adapter {};
+        PFL_REQUIRE(tunnel_adapter.open_capture(
+            fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")
+        ).opened);
+
+        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+        PFL_EXPECT(tunnel_empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(tunnel_empty.document.has_value());
+
+        const auto tunnel_baseline =
+            tunnel_adapter.query_advanced_flows_text("format_version = 2\n", std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(tunnel_baseline.status == FrontendAdvancedFlowQueryStatus::ok);
+
+        const auto kind_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::kind_overview);
+        const auto kind_stats_row = std::find_if(
+            kind_stats.begin(),
+            kind_stats.end(),
+            [](const auto& row) {
+                return row.path_text.find("VXLAN") != std::string::npos;
+            }
+        );
+        const auto identity_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree);
+        const auto identity_stats_row = std::find_if(
+            identity_stats.begin(),
+            identity_stats.end(),
+            [](const auto& row) {
+                return row.advanced_filter_predicate_text == "EthernetII > IPv4 > UDP > VXLAN(vni=100)";
+            }
+        );
+        const auto terminal_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::terminal_paths);
+        const auto terminal_stats_row = std::find_if(
+            terminal_stats.begin(),
+            terminal_stats.end(),
+            [](const auto& row) {
+                return row.advanced_filter_predicate_text ==
+                    "EthernetII > IPv4 > UDP > VXLAN(vni=100) > EthernetII > IPv4 > TCP";
+            }
+        );
+        PFL_REQUIRE(kind_stats_row != kind_stats.end());
+        PFL_REQUIRE(identity_stats_row != identity_stats.end());
+        PFL_REQUIRE(terminal_stats_row != terminal_stats.end());
+
+        const auto kind_row = tunnel_adapter.get_advanced_flow_filter_protocol_path_row(
+            ProtocolPathStatisticsMode::kind_overview,
+            kind_stats_row->node_id
+        );
+        const auto identity_row = tunnel_adapter.get_advanced_flow_filter_protocol_path_row(
+            ProtocolPathStatisticsMode::identity_tree,
+            identity_stats_row->node_id
+        );
+        const auto terminal_row = tunnel_adapter.get_advanced_flow_filter_protocol_path_row(
+            ProtocolPathStatisticsMode::terminal_paths,
+            terminal_stats_row->node_id
+        );
+        PFL_REQUIRE(kind_row.has_value());
+        PFL_REQUIRE(identity_row.has_value());
+        PFL_REQUIRE(terminal_row.has_value());
+        PFL_EXPECT(kind_row->selector_mode_id == "kind");
+        PFL_EXPECT(identity_row->selector_mode_id == "identity");
+        PFL_EXPECT(terminal_row->selector_mode_id == "terminal");
+        PFL_EXPECT(identity_row->predicate_text == "EthernetII > IPv4 > UDP > VXLAN(vni=100)");
+        PFL_EXPECT(terminal_row->predicate_text ==
+            "EthernetII > IPv4 > UDP > VXLAN(vni=100) > EthernetII > IPv4 > TCP");
+
+        const auto identity_snapshot = tunnel_adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 2\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > VXLAN(vni=100)\n"
+        );
+        PFL_EXPECT(identity_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(identity_snapshot.document.has_value());
+        PFL_REQUIRE(identity_snapshot.document->protocol_path.include.size() == 1U);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].selector_mode_id == identity_row->selector_mode_id);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].predicate_text == identity_row->predicate_text);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].compact_text == identity_row->compact_text);
+        PFL_EXPECT(identity_snapshot.document->protocol_path.include[0].full_text == identity_row->full_text);
+
+        auto draft = *tunnel_empty.document;
+        draft.protocol_path.enabled = true;
+        draft.protocol_path.include = {*kind_row, *identity_row};
+        draft.protocol_path.exclude = {*terminal_row};
+        const auto applied = tunnel_adapter.apply_advanced_flow_filter_structured_document(
+            tunnel_empty.document->canonical_text,
+            draft
+        );
+        PFL_EXPECT(applied.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(applied.document.has_value());
+        PFL_REQUIRE(applied.document->protocol_path.include.size() == 2U);
+        PFL_REQUIRE(applied.document->protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(applied.document->protocol_path.include[0].predicate_text == kind_row->predicate_text);
+        PFL_EXPECT(applied.document->protocol_path.include[1].predicate_text == identity_row->predicate_text);
+        PFL_EXPECT(applied.document->protocol_path.exclude[0].predicate_text == terminal_row->predicate_text);
+
+        const auto reparsed = require_parse_success(applied.document->canonical_text);
+        PFL_REQUIRE(reparsed.document.configured_spec.protocol_path.include.size() == 2U);
+        PFL_REQUIRE(reparsed.document.configured_spec.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(reparsed.document.configured_spec.protocol_path.include[0].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_EXPECT(reparsed.document.configured_spec.protocol_path.include[1].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix);
+        PFL_EXPECT(reparsed.document.configured_spec.protocol_path.exclude[0].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path);
+        for (const auto& layer : reparsed.document.configured_spec.protocol_path.include[0].layers) {
+            PFL_EXPECT(!layer.identifier.has_value());
+        }
+        PFL_EXPECT(std::any_of(
+            reparsed.document.configured_spec.protocol_path.include[1].layers.begin(),
+            reparsed.document.configured_spec.protocol_path.include[1].layers.end(),
+            [](const auto& layer) { return layer.identifier.has_value(); }
+        ));
+
+        const auto applied_query = tunnel_adapter.query_advanced_flows_text(
+            applied.document->canonical_text,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt
+        );
+        PFL_EXPECT(applied_query.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(applied_query.result_count_before_limit > 0U);
+        PFL_EXPECT(applied_query.result_count_before_limit < tunnel_baseline.result_count_before_limit);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "any", ""),
+            make_contains_layer_row("gtpu", "exact", "0x12345678"),
+        };
+        draft.contains_layer.exclude = {
+            make_contains_layer_row("geneve", "exact", "100"),
+        };
+        const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
+        const auto& reparsed = applied.second;
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.include.size() == 2U);
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[0].match_kind ==
+            session_detail::AdvancedFlowFilterProtocolPathMatchKind::contains_layer);
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[0].layers[0].kind == ProtocolLayerKind::vlan);
+        PFL_EXPECT(!reparsed.configured_spec.protocol_path.include[0].layers[0].identifier.has_value());
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[1].layers[0].kind == ProtocolLayerKind::gtpu);
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.include[1].layers[0].identifier.has_value());
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.include[1].layers[0].identifier->value == 0x12345678U);
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.exclude[0].layers[0].kind == ProtocolLayerKind::geneve);
+        PFL_REQUIRE(reparsed.configured_spec.protocol_path.exclude[0].layers[0].identifier.has_value());
+        PFL_EXPECT(reparsed.configured_spec.protocol_path.exclude[0].layers[0].identifier->value == 100U);
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ports.enabled = true;
+        draft.ports.include = {
+            make_port_row("either", true, "443", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "ports");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "secondary_text");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.ip_addresses.enabled = true;
+        draft.ip_addresses.include = {
+            make_ip_row("either", true, "192.0.2.0", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "ip_addresses");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "prefix_text");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "exact", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "value");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("bogus", "any", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->field_id == "layer");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "bogus", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "mode");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("gtpu", "exact", "not-a-number"),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "value");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.contains_layer.enabled = true;
+        draft.contains_layer.include = {
+            make_contains_layer_row("vlan", "exact", "4096"),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "contains_layer");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "value");
+    }
+
+    {
+        const auto disabled = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "flow_protocol",
+            false,
+            {"udp"},
+            {}
+        );
+        PFL_EXPECT(disabled.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(disabled.document.has_value());
+        PFL_EXPECT(disabled.document->flow_protocol.enabled == false);
+        PFL_EXPECT(disabled.document->flow_protocol.include == std::vector<std::string>({"udp"}));
+        PFL_EXPECT(disabled.configured_rule_count == 1U);
+        PFL_EXPECT(disabled.active_rule_count == 0U);
+        const auto from_text =
+            adapter.query_advanced_flows_text(disabled.document->canonical_text, std::nullopt, std::nullopt, std::nullopt);
+        PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(from_text.configured_rule_count == 1U);
+        PFL_EXPECT(from_text.active_rule_count == 0U);
+        expect_indices_equal(from_text.ordered_flow_indices, baseline.ordered_flow_indices);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "aggregate.packet_count.min = 2\n"
+            "service.state.include = known\n";
+        const auto updated = adapter.update_advanced_flow_filter_structured_section(
+            text,
+            "address_family",
+            true,
+            {"ipv4"},
+            {}
+        );
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->has_unsupported_configured_sections == false);
+        const auto reparsed = require_parse_success(updated.document->canonical_text);
+        PFL_REQUIRE(reparsed.document.configured_spec.aggregate.packet_count.has_value());
+        PFL_REQUIRE(reparsed.document.configured_spec.service.include.size() == 1U);
+        PFL_EXPECT(reparsed.document.configured_spec.service.include.front().kind == AdvancedFlowFilterServicePredicateKind::known);
+        PFL_EXPECT((reparsed.document.configured_spec.address_family.include == std::vector<FlowAddressFamily> {
+            FlowAddressFamily::ipv4
+        }));
+        PFL_EXPECT(updated.document->canonical_text.find("aggregate.packet_count.min = 2") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("service.state.include = known") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.ports.enabled = false\n"
+            "port.either.include = 443\n"
+            "port.b.exclude = 1-1023\n";
+        const auto parsed_with_ports = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_ports.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_ports.document.has_value());
+        auto draft = *parsed_with_ports.document;
+        draft.address_family.include = {"ipv4"};
+        draft.ports.include.clear();
+        draft.ports.exclude.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->ports.enabled == false);
+        PFL_REQUIRE(updated.document->ports.include.size() == 1U);
+        PFL_REQUIRE(updated.document->ports.exclude.size() == 1U);
+        PFL_EXPECT(updated.document->ports.include[0].primary_text == "443");
+        PFL_EXPECT(updated.document->canonical_text.find("port.either.include = 443") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("port.b.exclude = 1-1023") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.ip_addresses.enabled = false\n"
+            "ip.either.include = 10.0.0.0/8\n"
+            "ip.b.exclude = 2001:db8::/32\n";
+        const auto parsed_with_ips = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_ips.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_ips.document.has_value());
+        auto draft = *parsed_with_ips.document;
+        draft.flow_protocol.include = {"udp"};
+        draft.ip_addresses.include.clear();
+        draft.ip_addresses.exclude.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->ip_addresses.enabled == false);
+        PFL_REQUIRE(updated.document->ip_addresses.include.size() == 1U);
+        PFL_REQUIRE(updated.document->ip_addresses.exclude.size() == 1U);
+        PFL_EXPECT(updated.document->ip_addresses.include[0].prefix_text == "8");
+        PFL_EXPECT(updated.document->canonical_text.find("ip.either.include = 10.0.0.0/8") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("ip.b.exclude = 2001:db8::/32") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.traffic.enabled = false\n"
+            "original_bytes.min = 4MiB\n"
+            "duration.max = 2m\n";
+        const auto parsed_with_traffic = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_traffic.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_traffic.document.has_value());
+        auto draft = *parsed_with_traffic.document;
+        draft.address_family.include = {"ipv4"};
+        draft.traffic.primary.clear();
+        draft.traffic.additional.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->traffic.enabled == false);
+        PFL_EXPECT(updated.document->canonical_text.find("original_bytes.min = 4MiB") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("duration.max = 2m") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.service.enabled = false\n"
+            "service.state.include = unknown\n"
+            "service.contains.ci.include = \"youtube\"\n";
+        const auto parsed_with_service = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_service.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_service.document.has_value());
+        auto draft = *parsed_with_service.document;
+        draft.flow_protocol.include = {"udp"};
+        draft.service.include_text.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->service.enabled == false);
+        PFL_EXPECT(updated.document->service.include_unrecognized == true);
+        PFL_EXPECT(updated.document->canonical_text.find("service.state.include = unknown") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("service.contains.ci.include = \"youtube\"") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.protocol_path.enabled = false\n"
+            "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
+            "protocol_path.exact.exclude = EthernetII > IPv4 > TCP\n";
+        const auto parsed_with_protocol_path = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_protocol_path.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_protocol_path.document.has_value());
+        auto draft = *parsed_with_protocol_path.document;
+        draft.address_family.include = {"ipv4"};
+        draft.protocol_path.include.clear();
+        draft.protocol_path.exclude.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->protocol_path.enabled == false);
+        PFL_REQUIRE(updated.document->protocol_path.include.size() == 1U);
+        PFL_REQUIRE(updated.document->protocol_path.exclude.size() == 1U);
+        PFL_EXPECT(updated.document->canonical_text.find("protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("protocol_path.exact.exclude = EthernetII > IPv4 > TCP") != std::string::npos);
+    }
+
+    {
+        const std::string text =
+            "format_version = 2\n"
+            "section.contains_layer.enabled = false\n"
+            "protocol_path.contains.include = GTP-U(teid=0x12345678)\n";
+        const auto parsed_with_contains = adapter.parse_advanced_flow_filter_structured_document(text);
+        PFL_EXPECT(parsed_with_contains.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed_with_contains.document.has_value());
+        auto draft = *parsed_with_contains.document;
+        draft.flow_protocol.include = {"udp"};
+        draft.contains_layer.include.clear();
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        PFL_EXPECT(updated.document->contains_layer.enabled == false);
+        PFL_REQUIRE(updated.document->contains_layer.include.size() == 1U);
+        PFL_EXPECT(updated.document->canonical_text.find("protocol_path.contains.include = GTP-U(teid=0x12345678)") != std::string::npos);
+    }
+
+    {
+        const auto invalid = adapter.update_advanced_flow_filter_structured_section(
+            empty.document->canonical_text,
+            "flow_protocol",
+            true,
+            {"tcpish"},
+            {}
+        );
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "flow_protocol");
+        PFL_EXPECT(invalid.update_issue->group == "include");
+        PFL_EXPECT(invalid.update_issue->value_id == "tcpish");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.traffic.enabled = true;
+        draft.traffic.primary = {
+            make_traffic_row("packets", "bogus", "1", ""),
+            make_traffic_row("original_bytes", "KiB", "", ""),
+            make_traffic_row("captured_bytes", "KiB", "", ""),
+            make_traffic_row("duration", "s", "", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "traffic");
+        PFL_EXPECT(invalid.update_issue->field_id == "unit_id");
+    }
+
+    {
+        const auto default_workflow = adapter.get_advanced_flow_filter_document_workflow_state();
+        PFL_EXPECT(default_workflow.is_file_backed == false);
+        PFL_EXPECT(default_workflow.display_name == "Custom filter");
+        PFL_EXPECT(default_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(default_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(default_workflow.clear_available == false);
+        PFL_EXPECT(default_workflow.canonical_text == "format_version = 2\n");
+
+        const auto custom_workflow = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "flow_protocol.include = tcp\n"
+        );
+        PFL_EXPECT(custom_workflow.is_file_backed == false);
+        PFL_EXPECT(custom_workflow.display_name == "Custom filter");
+        PFL_EXPECT(custom_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(custom_workflow.has_unsaved_configuration == true);
+        PFL_EXPECT(custom_workflow.clear_available == true);
+        PFL_EXPECT(custom_workflow.canonical_text.find("flow_protocol.include = TCP") != std::string::npos);
+
+        const auto saved_workflow = adapter.accept_saved_advanced_flow_filter_document_text(
+            custom_workflow.canonical_text,
+            std::filesystem::path {"filters/current.filter"}
+        );
+        PFL_EXPECT(saved_workflow.is_file_backed == true);
+        PFL_EXPECT(saved_workflow.display_name == "current");
+        PFL_EXPECT(saved_workflow.source_path.find("current.filter") != std::string::npos);
+        PFL_EXPECT(saved_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(saved_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(saved_workflow.can_clear_unsaved_changes == false);
+
+        const auto dirty_workflow = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n"
+        );
+        PFL_EXPECT(dirty_workflow.is_file_backed == true);
+        PFL_EXPECT(dirty_workflow.display_name == "current *");
+        PFL_EXPECT(dirty_workflow.has_unsaved_changes == true);
+        PFL_EXPECT(dirty_workflow.has_unsaved_configuration == true);
+        PFL_EXPECT(dirty_workflow.can_clear_unsaved_changes == true);
+        PFL_EXPECT(dirty_workflow.canonical_text.find("flow_protocol.include = UDP") != std::string::npos);
+
+        const auto reverted_workflow = adapter.clear_advanced_flow_filter_unsaved_changes();
+        PFL_EXPECT(reverted_workflow.is_file_backed == true);
+        PFL_EXPECT(reverted_workflow.display_name == "current");
+        PFL_EXPECT(reverted_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(reverted_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(reverted_workflow.can_clear_unsaved_changes == false);
+        PFL_EXPECT(reverted_workflow.canonical_text == saved_workflow.canonical_text);
+
+        const auto clean_file_backed_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(clean_file_backed_cleared.is_file_backed == false);
+        PFL_EXPECT(clean_file_backed_cleared.display_name == "Custom filter");
+        PFL_EXPECT(clean_file_backed_cleared.source_path.empty());
+        PFL_EXPECT(clean_file_backed_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(clean_file_backed_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(clean_file_backed_cleared.clear_available == false);
+        PFL_EXPECT(clean_file_backed_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(clean_file_backed_cleared.active_rule_count == 0U);
+        PFL_EXPECT(clean_file_backed_cleared.canonical_text == "format_version = 2\n");
+
+        const auto saved_default_workflow = adapter.accept_saved_advanced_flow_filter_document_text(
+            "format_version = 2\n",
+            std::filesystem::path {"filters/default.filter"}
+        );
+        PFL_EXPECT(saved_default_workflow.is_file_backed == true);
+        PFL_EXPECT(saved_default_workflow.display_name == "default");
+        PFL_EXPECT(saved_default_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(saved_default_workflow.has_unsaved_configuration == false);
+        PFL_EXPECT(saved_default_workflow.clear_available == false);
+        PFL_EXPECT(saved_default_workflow.canonical_text == "format_version = 2\n");
+
+        const auto saved_default_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(saved_default_cleared.is_file_backed == false);
+        PFL_EXPECT(saved_default_cleared.display_name == "Custom filter");
+        PFL_EXPECT(saved_default_cleared.source_path.empty());
+        PFL_EXPECT(saved_default_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(saved_default_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(saved_default_cleared.clear_available == false);
+        PFL_EXPECT(saved_default_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(saved_default_cleared.active_rule_count == 0U);
+        PFL_EXPECT(saved_default_cleared.canonical_text == "format_version = 2\n");
+
+        const auto enabled_state_only_workflow = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "section.ports.enabled = false\n"
+        );
+        PFL_EXPECT(enabled_state_only_workflow.is_file_backed == false);
+        PFL_EXPECT(enabled_state_only_workflow.has_unsaved_changes == false);
+        PFL_EXPECT(enabled_state_only_workflow.has_unsaved_configuration == true);
+        PFL_EXPECT(enabled_state_only_workflow.clear_available == true);
+        PFL_EXPECT(enabled_state_only_workflow.configured_rule_count == 0U);
+        PFL_EXPECT(enabled_state_only_workflow.active_rule_count == 0U);
+
+        const auto enabled_state_only_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(enabled_state_only_cleared.is_file_backed == false);
+        PFL_EXPECT(enabled_state_only_cleared.display_name == "Custom filter");
+        PFL_EXPECT(enabled_state_only_cleared.source_path.empty());
+        PFL_EXPECT(enabled_state_only_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(enabled_state_only_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(enabled_state_only_cleared.clear_available == false);
+        PFL_EXPECT(enabled_state_only_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(enabled_state_only_cleared.active_rule_count == 0U);
+        PFL_EXPECT(enabled_state_only_cleared.canonical_text == "format_version = 2\n");
+
+        const auto saved_again = adapter.accept_saved_advanced_flow_filter_document_text(
+            custom_workflow.canonical_text,
+            std::filesystem::path {"filters/current.filter"}
+        );
+        PFL_EXPECT(saved_again.is_file_backed == true);
+        PFL_EXPECT(saved_again.has_unsaved_changes == false);
+
+        const auto dirty_again = adapter.apply_advanced_flow_filter_document_text(
+            "format_version = 2\n"
+            "flow_protocol.include = udp\n"
+        );
+        PFL_EXPECT(dirty_again.is_file_backed == true);
+        PFL_EXPECT(dirty_again.has_unsaved_changes == true);
+        PFL_EXPECT(dirty_again.has_unsaved_configuration == true);
+
+        const auto dirty_file_backed_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(dirty_file_backed_cleared.is_file_backed == false);
+        PFL_EXPECT(dirty_file_backed_cleared.display_name == "Custom filter");
+        PFL_EXPECT(dirty_file_backed_cleared.source_path.empty());
+        PFL_EXPECT(dirty_file_backed_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(dirty_file_backed_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(dirty_file_backed_cleared.clear_available == false);
+        PFL_EXPECT(dirty_file_backed_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(dirty_file_backed_cleared.active_rule_count == 0U);
+        PFL_EXPECT(dirty_file_backed_cleared.canonical_text == "format_version = 2\n");
+
+        const auto default_cleared = adapter.clear_advanced_flow_filter_document();
+        PFL_EXPECT(default_cleared.is_file_backed == false);
+        PFL_EXPECT(default_cleared.display_name == "Custom filter");
+        PFL_EXPECT(default_cleared.source_path.empty());
+        PFL_EXPECT(default_cleared.has_unsaved_changes == false);
+        PFL_EXPECT(default_cleared.has_unsaved_configuration == false);
+        PFL_EXPECT(default_cleared.clear_available == false);
+        PFL_EXPECT(default_cleared.configured_rule_count == 0U);
+        PFL_EXPECT(default_cleared.active_rule_count == 0U);
+        PFL_EXPECT(default_cleared.canonical_text == "format_version = 2\n");
+    }
+}
+
 }  // namespace
 
 void run_advanced_flow_filter_tests() {
+    run_port_bitmap_tests();
     run_protocol_and_candidate_scope_tests();
     run_protocol_path_tests();
     run_port_and_aggregate_tests();
@@ -2516,6 +3868,8 @@ void run_advanced_flow_filter_tests() {
     run_index_roundtrip_tests();
     run_text_format_tests();
     run_metadata_only_evaluation_tests();
+    run_frontend_text_query_tests();
+    run_frontend_structured_document_tests();
 }
 
 }  // namespace pfl::tests

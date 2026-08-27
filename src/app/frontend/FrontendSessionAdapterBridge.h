@@ -48,6 +48,151 @@ char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     std::uint8_t mode,
     std::uint64_t node_id
 );
+char* pfl_frontend_session_adapter_get_advanced_flow_filter_protocol_path_row_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode,
+    std::uint64_t node_id
+);
+char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const std::size_t* candidate_flow_indices,
+    std::size_t candidate_flow_index_count
+);
+char* pfl_frontend_session_adapter_parse_advanced_flow_filter_structured_document_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8
+);
+char* pfl_frontend_session_adapter_get_advanced_flow_filter_document_workflow_state_json(
+    PflFrontendSessionAdapterHandle* handle
+);
+char* pfl_frontend_session_adapter_update_advanced_flow_filter_structured_section_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* section_id_utf8,
+    std::uint8_t enabled,
+    const char* const* include_ids_utf8,
+    std::size_t include_id_count,
+    const char* const* exclude_ids_utf8,
+    std::size_t exclude_id_count
+);
+char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_document_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    std::uint8_t address_family_enabled,
+    const char* const* address_family_include_ids_utf8,
+    std::size_t address_family_include_id_count,
+    const char* const* address_family_exclude_ids_utf8,
+    std::size_t address_family_exclude_id_count,
+    std::uint8_t flow_protocol_enabled,
+    const char* const* flow_protocol_include_ids_utf8,
+    std::size_t flow_protocol_include_id_count,
+    const char* const* flow_protocol_exclude_ids_utf8,
+    std::size_t flow_protocol_exclude_id_count,
+    std::uint8_t detected_protocol_enabled,
+    const char* const* detected_protocol_include_ids_utf8,
+    std::size_t detected_protocol_include_id_count,
+    const char* const* detected_protocol_exclude_ids_utf8,
+    std::size_t detected_protocol_exclude_id_count,
+    std::uint8_t tls_version_enabled,
+    const char* const* tls_version_include_ids_utf8,
+    std::size_t tls_version_include_id_count,
+    const char* const* tls_version_exclude_ids_utf8,
+    std::size_t tls_version_exclude_id_count,
+    std::uint8_t quic_version_enabled,
+    const char* const* quic_version_include_ids_utf8,
+    std::size_t quic_version_include_id_count,
+    const char* const* quic_version_exclude_ids_utf8,
+    std::size_t quic_version_exclude_id_count,
+    std::uint8_t directionality_enabled,
+    const char* const* directionality_include_ids_utf8,
+    std::size_t directionality_include_id_count,
+    const char* const* directionality_exclude_ids_utf8,
+    std::size_t directionality_exclude_id_count,
+    std::uint8_t ports_enabled,
+    const char* const* ports_include_scope_ids_utf8,
+    const std::uint8_t* ports_include_range_enabled,
+    const char* const* ports_include_primary_text_utf8,
+    const char* const* ports_include_secondary_text_utf8,
+    std::size_t ports_include_count,
+    const char* const* ports_exclude_scope_ids_utf8,
+    const std::uint8_t* ports_exclude_range_enabled,
+    const char* const* ports_exclude_primary_text_utf8,
+    const char* const* ports_exclude_secondary_text_utf8,
+    std::size_t ports_exclude_count,
+    std::uint8_t ip_addresses_enabled,
+    const char* const* ip_include_scope_ids_utf8,
+    const std::uint8_t* ip_include_subnet_enabled,
+    const char* const* ip_include_address_text_utf8,
+    const char* const* ip_include_prefix_text_utf8,
+    std::size_t ip_include_count,
+    const char* const* ip_exclude_scope_ids_utf8,
+    const std::uint8_t* ip_exclude_subnet_enabled,
+    const char* const* ip_exclude_address_text_utf8,
+    const char* const* ip_exclude_prefix_text_utf8,
+    std::size_t ip_exclude_count,
+    std::uint8_t traffic_enabled,
+    const char* const* traffic_primary_metric_ids_utf8,
+    const char* const* traffic_primary_unit_ids_utf8,
+    const char* const* traffic_primary_min_text_utf8,
+    const char* const* traffic_primary_max_text_utf8,
+    std::size_t traffic_primary_count,
+    const char* const* traffic_additional_metric_ids_utf8,
+    const char* const* traffic_additional_unit_ids_utf8,
+    const char* const* traffic_additional_min_text_utf8,
+    const char* const* traffic_additional_max_text_utf8,
+    std::size_t traffic_additional_count,
+    std::uint8_t service_enabled,
+    std::uint8_t service_include_recognized,
+    std::uint8_t service_include_unrecognized,
+    const char* const* service_include_operator_ids_utf8,
+    const std::uint8_t* service_include_case_sensitive,
+    const char* const* service_include_text_utf8,
+    std::size_t service_include_text_count,
+    std::uint8_t service_exclude_recognized,
+    std::uint8_t service_exclude_unrecognized,
+    const char* const* service_exclude_operator_ids_utf8,
+    const std::uint8_t* service_exclude_case_sensitive,
+    const char* const* service_exclude_text_utf8,
+    std::size_t service_exclude_text_count,
+    std::uint8_t protocol_path_enabled,
+    const char* const* protocol_path_include_selector_mode_ids_utf8,
+    const char* const* protocol_path_include_predicate_text_utf8,
+    std::size_t protocol_path_include_count,
+    const char* const* protocol_path_exclude_selector_mode_ids_utf8,
+    const char* const* protocol_path_exclude_predicate_text_utf8,
+    std::size_t protocol_path_exclude_count,
+    std::uint8_t contains_layer_enabled,
+    const char* const* contains_layer_include_layer_stable_ids_utf8,
+    const char* const* contains_layer_include_identifier_mode_ids_utf8,
+    const char* const* contains_layer_include_exact_value_text_utf8,
+    std::size_t contains_layer_include_count,
+    const char* const* contains_layer_exclude_layer_stable_ids_utf8,
+    const char* const* contains_layer_exclude_identifier_mode_ids_utf8,
+    const char* const* contains_layer_exclude_exact_value_text_utf8,
+    std::size_t contains_layer_exclude_count
+);
+char* pfl_frontend_session_adapter_apply_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8
+);
+char* pfl_frontend_session_adapter_accept_opened_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* source_path_utf8
+);
+char* pfl_frontend_session_adapter_accept_saved_advanced_flow_filter_document_text_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* filter_text_utf8,
+    const char* source_path_utf8
+);
+char* pfl_frontend_session_adapter_clear_advanced_flow_filter_unsaved_changes_json(
+    PflFrontendSessionAdapterHandle* handle
+);
+char* pfl_frontend_session_adapter_clear_advanced_flow_filter_document_json(
+    PflFrontendSessionAdapterHandle* handle
+);
+std::size_t pfl_frontend_advanced_flow_filter_max_file_bytes();
 char* pfl_frontend_session_adapter_export_protocol_path_tree_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode,

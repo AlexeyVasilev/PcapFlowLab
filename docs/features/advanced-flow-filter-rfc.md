@@ -1,14 +1,16 @@
 # Advanced Flow Filter RFC
 
-Status: staged RFC with backend compile/evaluate foundation, current
-development text parse/format support, current metadata-backed address and
-protocol-version predicates, and initial `flows --adv-filter` CLI integration.
+Status: implemented backend/compiler/evaluator foundation with current
+`.filter` v2 parse/format support, metadata-backed predicate coverage, current
+`flows --adv-filter` CLI integration, current Qt Advanced Filter UI/workflow,
+and incremental Tauri parity work in progress.
 
-This document defines the product and backend-filter model for the Advanced
+This document defines the product and semantic filter model for the Advanced
 Flow Filter in Pcap Flow Lab.
 
-The current backend stage introduces a separate structured filtering subsystem
-without changing legacy text-filter behavior, UI, or index serialization.
+The current implementation keeps a separate structured filtering subsystem
+without changing legacy text-filter behavior, index serialization, or the
+existing frontend-neutral semantic path.
 
 Related RFCs:
 
@@ -28,8 +30,8 @@ Advanced Flow Filter scope.
 
 ## Current Backend Stage
 
-The implemented backend stage is intentionally separate from the lightweight
-legacy `FlowQuery` / `--filter` text-filter path.
+The implemented semantic foundation remains intentionally separate from the
+lightweight legacy `FlowQuery` / `--filter` text-filter path.
 
 The architecture is:
 
@@ -60,8 +62,8 @@ legacy `FlowQuery`: the CLI parses the `.filter` file into an
 canonical flow metadata, and only then reuses the ordinary `flows`
 sort/limit/export path on the resulting canonical flow indices.
 
-The current backend stage now also defines a current development text contract
-for Advanced Flow Filter documents:
+The current implementation now also defines the current development text
+contract for Advanced Flow Filter documents:
 
 ```text
 AdvancedFlowFilterDocument

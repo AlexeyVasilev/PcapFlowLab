@@ -1,16 +1,16 @@
 mod dtos;
 mod ffi;
 
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::fs::OpenOptions;
-use std::io::Write;
 #[cfg(target_os = "linux")]
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AdvancedFlowFilterDocumentWorkflowStateDto, AdvancedFlowFilterFileReadResultDto, AdvancedFlowFilterProtocolPathRowDto, AdvancedFlowFilterQueryResultDto, AdvancedFlowFilterStructuredDocumentDto, AdvancedFlowFilterStructuredDocumentResultDto, AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ByteExportFormatDto, ByteExportResultDto, CapturePacketSizeStatisticsDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportProtocolPathTreeResultDto, ExportSelectedFlowsResultDto, FlowDto, FlowPacketCountHistogramDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketByteViewContentDto, PacketDetailsDto, ProtocolHintStatisticsDto, QuicTlsStatisticsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, SupportedProtocolCatalogDto, TopEndpointPortStatisticsDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -25,6 +25,24 @@ const MEMORY_LOG_FILE_NAME: &str = "tauri_memory_log.csv";
 
 struct AdapterState {
     adapter: CppFrontendSessionAdapter,
+}
+
+fn advanced_filter_display_name(path: &std::path::Path) -> String {
+    if let Some(stem) = path.file_stem() {
+        let text = stem.to_string_lossy().trim().to_string();
+        if !text.is_empty() {
+            return text;
+        }
+    }
+
+    if let Some(name) = path.file_name() {
+        let text = name.to_string_lossy().trim().to_string();
+        if !text.is_empty() {
+            return text;
+        }
+    }
+
+    path.to_string_lossy().into_owned()
 }
 
 fn memory_diagnostics_enabled_flag() -> bool {
@@ -334,6 +352,76 @@ fn pick_open_index_path(_app: AppHandle) -> Result<Option<String>, String> {
             let display_fallback = path.to_string();
             path.into_path()
                 .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
+#[tauri::command]
+fn pick_open_advanced_filter_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--title=Open Advanced Filter".to_string(),
+            "--file-filter=Advanced filter files | *.filter".to_string(),
+            "--file-filter=All files | *".to_string(),
+        ]);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Advanced filter files", &["filter"])
+            .blocking_pick_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn pick_save_advanced_filter_path(
+    _app: AppHandle,
+    suggested_file_name: String,
+) -> Result<Option<String>, String> {
+    let normalized_file_name = if suggested_file_name.trim().is_empty() {
+        "advanced-filter.filter".to_string()
+    } else {
+        suggested_file_name
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Save Advanced Filter".to_string(),
+            format!("--filename={}", current_dir_prefill(&normalized_file_name)),
+            "--file-filter=Advanced filter files | *.filter".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "filter").to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Advanced filter files", &["filter"])
+            .set_file_name(&normalized_file_name)
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "filter").to_string_lossy().into_owned())
                 .unwrap_or(display_fallback)
         }))
     }
@@ -654,6 +742,105 @@ fn current_dir_prefill(file_name: &str) -> String {
     base_dir.join(file_name).to_string_lossy().into_owned()
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn get_advanced_flow_filter_max_file_bytes() -> usize {
+    CppFrontendSessionAdapter::advanced_flow_filter_max_file_bytes()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn read_advanced_flow_filter_file(path: String) -> Result<AdvancedFlowFilterFileReadResultDto, String> {
+    let max_file_bytes = CppFrontendSessionAdapter::advanced_flow_filter_max_file_bytes();
+    let resolved_path = PathBuf::from(&path);
+    let display_name = advanced_filter_display_name(&resolved_path);
+
+    let file = match File::open(&resolved_path) {
+        Ok(file) => file,
+        Err(error) => {
+            return Ok(AdvancedFlowFilterFileReadResultDto {
+                loaded: false,
+                path,
+                display_name,
+                text: String::new(),
+                error_kind: "read_failed".to_string(),
+                error_text: format!("Failed to read the selected filter file: {error}"),
+                max_file_bytes,
+            });
+        }
+    };
+
+    let mut bytes = Vec::new();
+    let mut limited_file = file.take((max_file_bytes.saturating_add(1)) as u64);
+    if let Err(error) = limited_file.read_to_end(&mut bytes) {
+        return Ok(AdvancedFlowFilterFileReadResultDto {
+            loaded: false,
+            path,
+            display_name,
+            text: String::new(),
+            error_kind: "read_failed".to_string(),
+            error_text: format!("Failed to read the selected filter file: {error}"),
+            max_file_bytes,
+        });
+    }
+
+    if bytes.len() > max_file_bytes {
+        return Ok(AdvancedFlowFilterFileReadResultDto {
+            loaded: false,
+            path,
+            display_name,
+            text: String::new(),
+            error_kind: "oversized".to_string(),
+            error_text: format!(
+                "Advanced filter files larger than {} bytes are not supported.",
+                max_file_bytes
+            ),
+            max_file_bytes,
+        });
+    }
+
+    let text = match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(_) => {
+            return Ok(AdvancedFlowFilterFileReadResultDto {
+                loaded: false,
+                path,
+                display_name,
+                text: String::new(),
+                error_kind: "invalid_utf8".to_string(),
+                error_text: "The selected filter file is not valid UTF-8 text.".to_string(),
+                max_file_bytes,
+            });
+        }
+    };
+
+    Ok(AdvancedFlowFilterFileReadResultDto {
+        loaded: true,
+        path,
+        display_name,
+        text,
+        error_kind: "ok".to_string(),
+        error_text: String::new(),
+        max_file_bytes,
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn write_advanced_flow_filter_file(path: String, canonical_text: String) -> Result<(), String> {
+    let resolved_path = PathBuf::from(&path);
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&resolved_path)
+        .map_err(|error| format!("Failed to write the selected filter file: {error}"))?;
+    file.write_all(canonical_text.as_bytes())
+        .map_err(|error| format!("Failed to write the selected filter file: {error}"))?;
+    file.flush()
+        .map_err(|error| format!("Failed to flush the selected filter file: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("Failed to finalize the selected filter file: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn get_overview(state: State<'_, Mutex<AdapterState>>) -> Result<OverviewDto, String> {
     let state = state
@@ -668,6 +855,139 @@ fn get_settings(state: State<'_, Mutex<AdapterState>>) -> Result<SettingsDto, St
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
     state.adapter.get_settings()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn query_advanced_flows_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    candidate_flow_indices: Option<Vec<usize>>,
+) -> Result<AdvancedFlowFilterQueryResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .query_advanced_flows_text(&filter_text, candidate_flow_indices.as_deref())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn parse_advanced_flow_filter_structured_document(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .parse_advanced_flow_filter_structured_document(&filter_text)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_advanced_flow_filter_document_workflow_state(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_advanced_flow_filter_document_workflow_state()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn update_advanced_flow_filter_structured_section(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    section_id: String,
+    enabled: bool,
+    include_ids: Vec<String>,
+    exclude_ids: Vec<String>,
+) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.update_advanced_flow_filter_structured_section(
+        &filter_text,
+        &section_id,
+        enabled,
+        &include_ids,
+        &exclude_ids,
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn apply_advanced_flow_filter_structured_document(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    document: AdvancedFlowFilterStructuredDocumentDto,
+) -> Result<AdvancedFlowFilterStructuredDocumentResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .apply_advanced_flow_filter_structured_document(&filter_text, &document)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn apply_advanced_flow_filter_document_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .apply_advanced_flow_filter_document_text(&filter_text)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn accept_opened_advanced_flow_filter_document_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    source_path: String,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .accept_opened_advanced_flow_filter_document_text(&filter_text, &source_path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn accept_saved_advanced_flow_filter_document_text(
+    state: State<'_, Mutex<AdapterState>>,
+    filter_text: String,
+    source_path: String,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .accept_saved_advanced_flow_filter_document_text(&filter_text, &source_path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn clear_advanced_flow_filter_unsaved_changes(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.clear_advanced_flow_filter_unsaved_changes()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn clear_advanced_flow_filter_document(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<AdvancedFlowFilterDocumentWorkflowStateDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.clear_advanced_flow_filter_document()
 }
 
 #[tauri::command]
@@ -764,6 +1084,20 @@ fn get_protocol_path_summary_flow_indices(
     state
         .adapter
         .get_protocol_path_summary_flow_indices(mode, node_id)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_advanced_flow_filter_protocol_path_row(
+    state: State<'_, Mutex<AdapterState>>,
+    mode: u8,
+    node_id: u64,
+) -> Result<AdvancedFlowFilterProtocolPathRowDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .get_advanced_flow_filter_protocol_path_row(mode, node_id)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -1158,6 +1492,8 @@ pub fn run() {
             pick_open_path,
             pick_open_capture_path,
             pick_open_index_path,
+            pick_open_advanced_filter_path,
+            pick_save_advanced_filter_path,
             pick_source_capture_path,
             pick_save_index_path,
             pick_save_flow_export_path,
@@ -1185,6 +1521,19 @@ pub fn run() {
             exit_app,
             get_overview,
             get_settings,
+            get_advanced_flow_filter_max_file_bytes,
+            read_advanced_flow_filter_file,
+            write_advanced_flow_filter_file,
+            query_advanced_flows_text,
+            parse_advanced_flow_filter_structured_document,
+            get_advanced_flow_filter_document_workflow_state,
+            update_advanced_flow_filter_structured_section,
+            apply_advanced_flow_filter_structured_document,
+            apply_advanced_flow_filter_document_text,
+            accept_opened_advanced_flow_filter_document_text,
+            accept_saved_advanced_flow_filter_document_text,
+            clear_advanced_flow_filter_unsaved_changes,
+            clear_advanced_flow_filter_document,
             get_flow_packet_count_histogram,
             get_capture_packet_size_statistics,
             get_protocol_hint_statistics,
@@ -1194,6 +1543,7 @@ pub fn run() {
             get_supported_protocol_catalog,
             get_protocol_path_statistics,
             get_protocol_path_summary_flow_indices,
+            get_advanced_flow_filter_protocol_path_row,
             update_settings,
             get_flows,
             select_flow,

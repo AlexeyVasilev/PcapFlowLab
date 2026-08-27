@@ -774,6 +774,15 @@ bool matches_service_criteria(
     return true;
 }
 
+std::vector<std::uint64_t>& ensure_port_bitmap_storage(AdvancedFlowFilterPortBitmap& bitmap) {
+    if (bitmap.words.empty()) {
+        bitmap.words.resize(kAdvancedFlowFilterPortBitmapWordCount, 0U);
+    } else if (bitmap.words.size() != kAdvancedFlowFilterPortBitmapWordCount) {
+        bitmap.words.resize(kAdvancedFlowFilterPortBitmapWordCount, 0U);
+    }
+    return bitmap.words;
+}
+
 AdvancedFlowFilterCompileResult make_compile_error(
     const AdvancedFlowFilterCompileStatus status,
     std::string category,
@@ -1351,15 +1360,16 @@ std::size_t count_aggregate_atomic_rules(const AdvancedFlowFilterAggregateCriter
 
 }  // namespace
 
-void AdvancedFlowFilterPortBitmap::set_range(const std::uint16_t first, const std::uint16_t last) noexcept {
-    active = true;
+void AdvancedFlowFilterPortBitmap::set_range(const std::uint16_t first, const std::uint16_t last) {
+    auto& storage = ensure_port_bitmap_storage(*this);
     for (std::uint32_t port = first; port <= last; ++port) {
-        words[port / 64U] |= (1ULL << (port % 64U));
+        storage[port / 64U] |= (1ULL << (port % 64U));
     }
+    active = true;
 }
 
 bool AdvancedFlowFilterPortBitmap::contains(const std::uint16_t port) const noexcept {
-    if (!active) {
+    if (!active || words.size() != kAdvancedFlowFilterPortBitmapWordCount) {
         return false;
     }
     return (words[port / 64U] & (1ULL << (port % 64U))) != 0U;

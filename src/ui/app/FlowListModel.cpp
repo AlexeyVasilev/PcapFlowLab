@@ -53,7 +53,6 @@ QVariantList to_protocol_path_badge_list(const std::vector<ProtocolPathBadgeRow>
 }
 
 bool contains_text(const FlowListModel::Item& item, const QString& filter) {
-    const bool matches_fragment_text = item.has_fragmented_packets && filter.contains(QStringLiteral("frag"), Qt::CaseInsensitive);
     return item.family.contains(filter, Qt::CaseInsensitive)
         || item.protocol.contains(filter, Qt::CaseInsensitive)
         || item.protocol_hint.contains(filter, Qt::CaseInsensitive)
@@ -63,9 +62,7 @@ bool contains_text(const FlowListModel::Item& item, const QString& filter) {
         || item.endpoint_a.contains(filter, Qt::CaseInsensitive)
         || item.endpoint_b.contains(filter, Qt::CaseInsensitive)
         || QString::number(item.port_a).contains(filter, Qt::CaseInsensitive)
-        || QString::number(item.port_b).contains(filter, Qt::CaseInsensitive)
-        || QString::number(item.fragmented_packets).contains(filter, Qt::CaseInsensitive)
-        || matches_fragment_text;
+        || QString::number(item.port_b).contains(filter, Qt::CaseInsensitive);
 }
 
 bool matches_allowed_flow_index_filter(const FlowListModel::Item& item, const std::vector<int>& allowedFlowIndices) {

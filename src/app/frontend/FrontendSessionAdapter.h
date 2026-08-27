@@ -10,30 +10,14 @@
 #include <thread>
 #include <vector>
 
+#include "app/frontend/AdvancedFlowFilterStructuredDocument.h"
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/AdvancedFlowFilter.h"
+#include "app/session/AdvancedFlowFilterDocumentState.h"
 #include "app/session/CaptureSession.h"
 #include "../../../core/open_context.h"
 
 namespace pfl {
-
-enum class FrontendAdvancedFlowQueryStatus : std::uint8_t {
-    ok = 0,
-    invalid_flow_index,
-    invalid_limit,
-    invalid_advanced_filter,
-};
-
-struct FrontendAdvancedFlowQueryResult {
-    FrontendAdvancedFlowQueryStatus status {FrontendAdvancedFlowQueryStatus::ok};
-    std::vector<std::size_t> ordered_flow_indices {};
-    std::size_t result_count_before_limit {0U};
-    std::optional<std::size_t> invalid_flow_index {};
-    session_detail::AdvancedFlowFilterCompileStatus compile_status {
-        session_detail::AdvancedFlowFilterCompileStatus::ok
-    };
-    std::optional<session_detail::AdvancedFlowFilterCompileIssue> compile_issue {};
-};
 
 class FrontendSessionAdapter {
 public:
@@ -128,6 +112,14 @@ public:
     [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(
         ProtocolPathStatisticsMode mode
     ) const;
+    [[nodiscard]] std::optional<bool> advanced_flow_filter_protocol_path_predicate_applicability(
+        const session_detail::AdvancedFlowFilterProtocolPathPredicate& predicate
+    ) const;
+    [[nodiscard]] std::optional<FrontendAdvancedFlowFilterProtocolPathRowDto>
+    get_advanced_flow_filter_protocol_path_row(
+        ProtocolPathStatisticsMode mode,
+        std::uint64_t node_id
+    ) const;
     [[nodiscard]] std::vector<std::size_t> get_protocol_path_summary_flow_indices(
         ProtocolPathStatisticsMode mode,
         std::uint64_t node_id
@@ -175,6 +167,41 @@ public:
         std::optional<session_detail::FlowQuerySortSpec> sort,
         std::optional<std::size_t> limit
     ) const;
+    [[nodiscard]] FrontendAdvancedFlowQueryResult query_advanced_flows_text(
+        std::string_view filter_text,
+        const std::optional<std::vector<std::size_t>>& candidate_flow_indices,
+        std::optional<session_detail::FlowQuerySortSpec> sort,
+        std::optional<std::size_t> limit
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterStructuredDocumentResult parse_advanced_flow_filter_structured_document(
+        std::string_view filter_text
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterStructuredDocumentResult update_advanced_flow_filter_structured_section(
+        std::string_view filter_text,
+        std::string_view section_id,
+        bool enabled,
+        const std::vector<std::string>& include_ids,
+        const std::vector<std::string>& exclude_ids
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterStructuredDocumentResult apply_advanced_flow_filter_structured_document(
+        std::string_view filter_text,
+        const FrontendAdvancedFlowFilterStructuredDocumentDto& document
+    ) const;
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto
+    get_advanced_flow_filter_document_workflow_state() const;
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto apply_advanced_flow_filter_document_text(
+        std::string_view filter_text
+    );
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto accept_opened_advanced_flow_filter_document_text(
+        std::string_view filter_text,
+        const std::filesystem::path& source_path
+    );
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto accept_saved_advanced_flow_filter_document_text(
+        std::string_view filter_text,
+        const std::filesystem::path& source_path
+    );
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto clear_advanced_flow_filter_unsaved_changes();
+    [[nodiscard]] FrontendAdvancedFlowFilterDocumentWorkflowStateDto clear_advanced_flow_filter_document();
     [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
     [[nodiscard]] std::string protocol_path_compact_text(ProtocolPathId protocol_path_id) const;
 
@@ -247,6 +274,7 @@ private:
     void cancel_and_join_open_worker();
 
     CaptureSession session_ {};
+    session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
     std::optional<std::size_t> selected_flow_index_ {};
     std::map<std::size_t, std::string> flow_service_hint_overrides_ {};
     FrontendSettingsDto settings_ {};

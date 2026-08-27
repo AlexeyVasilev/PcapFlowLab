@@ -134,6 +134,242 @@ pub struct SmartExportResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterParseIssueDto {
+    pub status: String,
+    pub line: usize,
+    pub column: Option<usize>,
+    pub key: String,
+    pub token: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterCompileIssueDto {
+    pub status: String,
+    pub category: String,
+    pub predicate_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterQueryResultDto {
+    pub status: String,
+    pub matching_flow_indices: Vec<usize>,
+    pub result_count_before_limit: usize,
+    pub configured_rule_count: usize,
+    pub active_rule_count: usize,
+    pub parse_status: String,
+    pub parse_issue: Option<AdvancedFlowFilterParseIssueDto>,
+    pub compile_status: String,
+    pub compile_issue: Option<AdvancedFlowFilterCompileIssueDto>,
+    pub invalid_flow_index: Option<usize>,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterFileReadResultDto {
+    pub loaded: bool,
+    pub path: String,
+    pub display_name: String,
+    pub text: String,
+    pub error_kind: String,
+    pub error_text: String,
+    pub max_file_bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterDocumentWorkflowStateDto {
+    pub canonical_text: String,
+    pub source_path: String,
+    pub display_name: String,
+    pub is_file_backed: bool,
+    pub has_unsaved_changes: bool,
+    pub has_unsaved_configuration: bool,
+    pub can_clear_unsaved_changes: bool,
+    pub clear_available: bool,
+    pub configured_rule_count: usize,
+    pub active_rule_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterFiniteOptionDto {
+    pub stable_id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterFiniteSectionDto {
+    pub enabled: bool,
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterPortRowDto {
+    pub scope_id: String,
+    pub range_enabled: bool,
+    pub primary_text: String,
+    pub secondary_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterPortSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterPortRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterPortRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterIpAddressRowDto {
+    pub scope_id: String,
+    pub subnet_enabled: bool,
+    pub address_text: String,
+    pub prefix_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterIpAddressSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterIpAddressRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterIpAddressRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterTrafficRowDto {
+    pub metric_id: String,
+    pub unit_id: String,
+    pub min_text: String,
+    pub max_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterTrafficSectionDto {
+    pub enabled: bool,
+    pub primary: Vec<AdvancedFlowFilterTrafficRowDto>,
+    pub additional: Vec<AdvancedFlowFilterTrafficRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterServiceTextRowDto {
+    pub operator_id: String,
+    pub case_sensitive: bool,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterServiceSectionDto {
+    pub enabled: bool,
+    pub include_recognized: bool,
+    pub include_unrecognized: bool,
+    pub include_text: Vec<AdvancedFlowFilterServiceTextRowDto>,
+    pub exclude_recognized: bool,
+    pub exclude_unrecognized: bool,
+    pub exclude_text: Vec<AdvancedFlowFilterServiceTextRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterProtocolPathRowDto {
+    pub selector_mode_id: String,
+    pub predicate_text: String,
+    pub compact_text: String,
+    pub full_text: String,
+    pub applicability_known: bool,
+    pub applicable: bool,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterProtocolPathSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterProtocolPathRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterProtocolPathRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterContainsLayerOptionDto {
+    pub stable_id: String,
+    pub label: String,
+    pub object_name_suffix: String,
+    pub identifier_label: String,
+    pub preferred_input_format_id: String,
+    pub exact_value_placeholder: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterContainsLayerRowDto {
+    pub layer_stable_id: String,
+    pub identifier_mode_id: String,
+    pub exact_value_text: String,
+    pub compact_text: String,
+    pub applicability_known: bool,
+    pub applicable: bool,
+    pub status_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterContainsLayerSectionDto {
+    pub enabled: bool,
+    pub include: Vec<AdvancedFlowFilterContainsLayerRowDto>,
+    pub exclude: Vec<AdvancedFlowFilterContainsLayerRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
+    pub address_family: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub flow_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub detected_protocol: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub tls_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub quic_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub endpoint_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub protocol_path_selector_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub contains_layer_identifier_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub contains_layer_kind: Vec<AdvancedFlowFilterContainsLayerOptionDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredDocumentDto {
+    pub canonical_text: String,
+    pub address_family: AdvancedFlowFilterFiniteSectionDto,
+    pub flow_protocol: AdvancedFlowFilterFiniteSectionDto,
+    pub detected_protocol: AdvancedFlowFilterFiniteSectionDto,
+    pub tls_version: AdvancedFlowFilterFiniteSectionDto,
+    pub quic_version: AdvancedFlowFilterFiniteSectionDto,
+    pub directionality: AdvancedFlowFilterFiniteSectionDto,
+    pub ports: AdvancedFlowFilterPortSectionDto,
+    pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
+    pub traffic: AdvancedFlowFilterTrafficSectionDto,
+    pub service: AdvancedFlowFilterServiceSectionDto,
+    pub protocol_path: AdvancedFlowFilterProtocolPathSectionDto,
+    pub contains_layer: AdvancedFlowFilterContainsLayerSectionDto,
+    pub has_unsupported_configured_sections: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredUpdateIssueDto {
+    pub section_id: String,
+    pub group: String,
+    pub value_id: String,
+    pub row_index: Option<usize>,
+    pub field_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterStructuredDocumentResultDto {
+    pub status: String,
+    pub document: Option<AdvancedFlowFilterStructuredDocumentDto>,
+    pub option_catalog: AdvancedFlowFilterStructuredOptionCatalogDto,
+    pub configured_rule_count: usize,
+    pub active_rule_count: usize,
+    pub parse_status: String,
+    pub parse_issue: Option<AdvancedFlowFilterParseIssueDto>,
+    pub compile_status: String,
+    pub compile_issue: Option<AdvancedFlowFilterCompileIssueDto>,
+    pub update_issue: Option<AdvancedFlowFilterStructuredUpdateIssueDto>,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,
@@ -303,6 +539,7 @@ pub struct ProtocolPathStatsDto {
     pub layer_text: String,
     pub path_text: String,
     pub compact_text: String,
+    pub advanced_filter_predicate_text: String,
     pub badges: Vec<ProtocolPathBadgeDto>,
     pub has_children: bool,
     pub is_terminal: bool,
