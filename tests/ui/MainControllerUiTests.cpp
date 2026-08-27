@@ -8794,7 +8794,7 @@ int main(int argc, char* argv[]) {
             QStringLiteral("")
         ));
         UI_EXPECT(cancel_export_controller.statusText() ==
-            QStringLiteral("Current-filter smart export requires an active flow filter."));
+            QStringLiteral("Current-filter smart export requires a non-empty Simple Filter or an Advanced Filter with at least one active rule."));
     }
 
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json");

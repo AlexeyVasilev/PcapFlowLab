@@ -4392,7 +4392,7 @@ bool MainController::exportSmartFlows(
     }
     case kSmartExportFlowScopeMatchingCurrentFilter:
         if (!smartExportCurrentFilterAvailable()) {
-            setStatusText(QStringLiteral("Current-filter smart export requires an active flow filter."), true);
+            setStatusText(QStringLiteral("Current-filter smart export requires a non-empty Simple Filter or an Advanced Filter with at least one active rule."), true);
             return false;
         }
         flow_indices = smartExportCurrentFilterFlowIndices(true);
@@ -4400,7 +4400,7 @@ bool MainController::exportSmartFlows(
         break;
     case kSmartExportFlowScopeNotMatchingCurrentFilter:
         if (!smartExportCurrentFilterAvailable()) {
-            setStatusText(QStringLiteral("Current-filter smart export requires an active flow filter."), true);
+            setStatusText(QStringLiteral("Current-filter smart export requires a non-empty Simple Filter or an Advanced Filter with at least one active rule."), true);
             return false;
         }
         flow_indices = smartExportCurrentFilterFlowIndices(false);

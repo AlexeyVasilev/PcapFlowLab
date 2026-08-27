@@ -10841,7 +10841,7 @@
       && !smartExportFilterTargetEnabled()
     ) {
       setSmartExportStatus(
-        "Current-filter smart export requires an active flow filter.",
+        "Current-filter smart export requires a non-empty Simple Filter or an Advanced Filter with at least one active rule.",
         "error"
       );
       render();
