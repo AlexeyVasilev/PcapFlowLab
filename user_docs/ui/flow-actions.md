@@ -149,9 +149,19 @@ The dialog can target:
 
 Important details:
 
-- `Matching current filter` follows the current visible flow inventory after
-  the active flow filters are applied.
-- `Not matching current filter` uses the complementary hidden flow set.
+- `Matching current filter` uses the currently active primary flow filter,
+  which can be either `Simple Filter` or `Advanced Filter`.
+- Only one primary filter mode is active at a time, so Smart Export does not
+  combine Simple and Advanced filtering together.
+- If `Statistics -> Protocol Path` has already narrowed the visible flow
+  inventory, both `Matching current filter` and `Not matching current filter`
+  stay inside that same restricted flow set.
+- `Not matching current filter` uses the complementary hidden flow set inside
+  the current flow inventory; it does not escape an active Protocol Path
+  restriction.
+- current-filter targets are available only when the active primary filter is
+  meaningful: a non-empty Simple filter text or an Advanced filter with one or
+  more active rules.
 - `Unrecognized packets` is a separate packet export mode, not a normal-flow
   export mode.
 

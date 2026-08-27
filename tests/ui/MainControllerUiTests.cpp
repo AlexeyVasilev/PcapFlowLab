@@ -8773,9 +8773,13 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!cancel_export_controller.smartExportInProgress());
 
         cancel_export_controller.useSimpleFlowFilter();
+        UI_EXPECT(!cancel_export_controller.smartExportCurrentFilterAvailable());
         cancel_export_controller.setFlowFilterText(QStringLiteral("203.0.113.50"));
         UI_EXPECT(cancel_export_controller.smartExportCurrentFilterAvailable());
         cancel_export_controller.useAdvancedFlowFilter();
+        cancel_export_controller.applyAdvancedFlowFilterDocument(make_flow_protocol_advanced_document(ProtocolId::udp));
+        UI_EXPECT(cancel_export_controller.smartExportCurrentFilterAvailable());
+        cancel_export_controller.applyAdvancedFlowFilterDocument(make_disabled_flow_protocol_advanced_document(ProtocolId::udp));
         UI_EXPECT(!cancel_export_controller.smartExportCurrentFilterAvailable());
         UI_EXPECT(!cancel_export_controller.browseSmartExportFlows(
             1,
@@ -8790,7 +8794,7 @@ int main(int argc, char* argv[]) {
             QStringLiteral("")
         ));
         UI_EXPECT(cancel_export_controller.statusText() ==
-            QStringLiteral("Current-filter smart export is available only in Simple filter mode with a non-empty filter."));
+            QStringLiteral("Current-filter smart export requires a non-empty Simple Filter or an Advanced Filter with at least one active rule."));
     }
 
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json");

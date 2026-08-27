@@ -151,7 +151,12 @@ Implemented slice:
   - separate-file-per-flow export to a chosen folder
   - the existing Smart Export retention rules
   - `Unrecognized packets` as one packet-set target; separate-file-per-flow is unavailable for that target
-- `Matching current filter` / `Not matching current filter` currently apply only in `Simple` mode with a non-empty simple text filter; Advanced-mode filter results are not yet wired into Smart Export.
+- `Matching current filter` / `Not matching current filter` now support both `Simple` and `Advanced` primary filters.
+- Advanced-mode current-filter Smart Export uses the backend-authoritative applied Advanced Filter result; the Tauri shell does not re-evaluate Advanced predicates in JavaScript.
+- If `Statistics -> Protocol Path` has already restricted the canonical flow inventory, both current-filter Smart Export targets operate inside that same candidate universe.
+- `Matching current filter` uses the active primary-filter result inside that candidate universe, and `Not matching current filter` uses its complement inside the same candidate universe.
+- current-filter Smart Export is enabled only when the active primary filter is meaningful: non-empty `Simple` text or an `Advanced` filter with more than 0 active rules.
+- This parity change does not alter the existing `>250,000` eager-flow/deferred-flow limitation; very large sessions may still skip eager normal-flow loading in the Tauri shell, and Qt remains the recommended frontend there.
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
 - The top-level tab order now matches Qt: `Flows / Analysis / Statistics`.
 - When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
@@ -267,12 +272,11 @@ Implemented slice:
   - `Settings`, `Open filter...`, `Save`, `Save As...`, and file-backed `Clear unsaved changes` now follow the shared document workflow
   - Tauri Advanced Filter Settings now uses a compact one-column collapsible layout aligned with the Qt workflow, including the final Qt-oriented Include/Exclude presentation
   - the Settings document workflow is available without an open capture; Protocol Path selection remains capture-dependent
-  - Advanced Smart Export parity remains deferred
+  - current-filter Smart Export now supports both `Simple` and `Advanced` primary filters and keeps the same Protocol Path candidate restriction semantics as Qt
 - Broader export parity is still incomplete in Tauri.
-- Advanced Smart Export parity is still deferred; current-filter Smart Export remains Simple-mode-only.
 - Traffic and Service structured editing now exist in Tauri.
 - File-backed and destructive-clear Advanced Filter document workflow now matches the shared document-state model, including `Settings -> Clear all` and toolbar `Clear`.
-- Remaining Advanced Filter Tauri parity work is now primarily Advanced Smart Export parity and any concrete defects found during manual testing.
+- Remaining Advanced Filter Tauri parity work is now primarily concrete defects found during manual testing plus later polish.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
 - Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.

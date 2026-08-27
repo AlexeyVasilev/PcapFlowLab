@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive finite-option and repeated-row presentation, the complete agreed Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer surface, transactional Open/Save/Save As/Clear workflows, and the accepted dense desktop-oriented Qt presentation with semantic Include/Exclude grouping and shared Select/double-click Protocol Path acceptance wiring. Smart Export parity with Advanced mode and Tauri parity remain future work.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive finite-option and repeated-row presentation, the complete agreed Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer surface, transactional Open/Save/Save As/Clear workflows, the accepted dense desktop-oriented Qt presentation with semantic Include/Exclude grouping and shared Select/double-click Protocol Path acceptance wiring, and current-filter Smart Export parity for applied Advanced Filter results. The Tauri frontend now implements the same current Advanced Filter workflow slice, including current-filter Smart Export parity, while broader future work and later polish remain deferred.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior, current Qt
@@ -24,12 +24,11 @@ Agreed here:
 - Advanced Filter settings window concept
 - agreed editor interaction patterns for current and near-term predicate families
 - validation and rule-count presentation
+- current-filter Smart Export interaction with applied Advanced Filter results
 - future-facing follow-up direction where work remains deferred
 
 Still deferred here:
 
-- Tauri parity details
-- Smart Export parity with Advanced mode
 - dedicated capture-level count-summary architecture
 - broader future predicate/editor work such as arbitrary Boolean-expression
   trees and wider time/rate extensions described by the backend RFC
@@ -81,6 +80,36 @@ Rules:
   filter state.
 - Returning from Simple mode to Advanced mode restores the previous applied
   Advanced Filter state.
+
+## Smart Export Relationship
+
+Current-filter Smart Export now works with whichever primary filter mode is
+active in the desktop frontend:
+
+- `Simple Filter`
+- `Advanced Filter`
+
+The implemented semantic model is:
+
+- `Matching current filter` exports the canonical matching flow set for the
+  active primary filter.
+- `Not matching current filter` exports the complement of that matching set
+  inside the same candidate universe.
+- if `Statistics -> Protocol Path` is active, it restricts that candidate
+  universe before the primary filter result is considered.
+- `Statistics -> Protocol Path` is not itself the primary current filter and
+  does not enable current-filter Smart Export by itself.
+- current-filter Smart Export is available only when the active primary filter
+  is meaningful:
+  - Simple mode: non-empty filter text
+  - Advanced mode: more than 0 active rules
+- disabled Advanced Filter sections do not make current-filter Smart Export
+  available.
+
+Smart Export does not embed an Advanced Filter editor of its own. It consumes
+already-resolved canonical flow indices from the active frontend/controller
+state, and its packet-retention/output semantics remain independent from the
+filter-selection semantics.
 
 ## Advanced Filter Display Name
 
@@ -1876,8 +1905,6 @@ The following points remain intentionally open for future implementation
 discussion:
 
 - capture-level count-summary architecture
-- Smart Export integration with Advanced-mode visibility/filter semantics
-- Tauri parity
 - broader future predicate/editor work such as arbitrary Boolean-expression
   trees and wider time/rate extensions described by the backend RFC
 - further cosmetic refinements, including exact spacing, exact dialog wording,

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <iterator>
 #include <string>
 #include <variant>
 #include <vector>
@@ -65,6 +67,31 @@ std::optional<std::size_t> find_flow_index_by_service_hint(
     }
 
     return std::nullopt;
+}
+
+std::vector<std::size_t> sorted_unique_indices(std::vector<std::size_t> indices) {
+    std::sort(indices.begin(), indices.end());
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+    return indices;
+}
+
+std::vector<std::size_t> complement_indices(
+    std::vector<std::size_t> candidate_indices,
+    std::vector<std::size_t> matching_indices
+) {
+    candidate_indices = sorted_unique_indices(std::move(candidate_indices));
+    matching_indices = sorted_unique_indices(std::move(matching_indices));
+
+    std::vector<std::size_t> complement {};
+    complement.reserve(candidate_indices.size());
+    std::set_difference(
+        candidate_indices.begin(),
+        candidate_indices.end(),
+        matching_indices.begin(),
+        matching_indices.end(),
+        std::back_inserter(complement)
+    );
+    return complement;
 }
 
 CaptureSession build_shared_flow_query_session() {
@@ -824,6 +851,30 @@ void run_query_tests() {
         PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
         PFL_EXPECT(result.ordered_flow_indices.empty());
         PFL_EXPECT(result.result_count_before_limit == 0U);
+
+        query.selected_flow_indices.reset();
+        query.text_filter = "udp";
+        query.sort.reset();
+        query.limit.reset();
+        result = query_session.query_flows(query);
+        const auto simple_matching_indices =
+            sorted_unique_indices(std::vector<std::size_t> {*dns_index, *ipv6_index});
+        const auto full_candidate_indices =
+            sorted_unique_indices(std::vector<std::size_t> {*tcp_heavy_index, *http_index, *dns_index, *ipv6_index});
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices == simple_matching_indices);
+        PFL_EXPECT(complement_indices(full_candidate_indices, result.ordered_flow_indices) ==
+            sorted_unique_indices(std::vector<std::size_t> {*tcp_heavy_index, *http_index}));
+
+        query.selected_flow_indices = std::vector<std::size_t> {*http_index, *dns_index};
+        result = query_session.query_flows(query);
+        const auto scoped_candidate_indices =
+            sorted_unique_indices(std::vector<std::size_t> {*http_index, *dns_index});
+        PFL_EXPECT(result.status == session_detail::FlowQueryStatus::ok);
+        PFL_EXPECT(result.ordered_flow_indices ==
+            sorted_unique_indices(std::vector<std::size_t> {*dns_index}));
+        PFL_EXPECT(complement_indices(scoped_candidate_indices, result.ordered_flow_indices) ==
+            sorted_unique_indices(std::vector<std::size_t> {*http_index}));
 
         query.text_filter.clear();
         query.sort = session_detail::FlowQuerySortSpec {

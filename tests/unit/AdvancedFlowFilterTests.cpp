@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
@@ -20,6 +22,27 @@ namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path("tests/data") / relative_path;
+}
+
+std::vector<std::size_t> complement_indices(
+    std::vector<std::size_t> candidate_indices,
+    std::vector<std::size_t> matching_indices
+) {
+    std::sort(candidate_indices.begin(), candidate_indices.end());
+    candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+    std::sort(matching_indices.begin(), matching_indices.end());
+    matching_indices.erase(std::unique(matching_indices.begin(), matching_indices.end()), matching_indices.end());
+
+    std::vector<std::size_t> complement {};
+    complement.reserve(candidate_indices.size());
+    std::set_difference(
+        candidate_indices.begin(),
+        candidate_indices.end(),
+        matching_indices.begin(),
+        matching_indices.end(),
+        std::back_inserter(complement)
+    );
+    return complement;
 }
 
 using session_detail::AdvancedFlowFilterCompileStatus;
@@ -2614,6 +2637,8 @@ void run_frontend_text_query_tests() {
         PFL_EXPECT(from_text.configured_rule_count == 1U);
         PFL_EXPECT(from_text.active_rule_count == 1U);
         PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
+        expect_indices_equal(from_text.ordered_flow_indices, {1U, 2U});
+        expect_indices_equal(complement_indices(baseline.ordered_flow_indices, from_text.ordered_flow_indices), {0U});
         expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
     }
 
@@ -2634,11 +2659,13 @@ void run_frontend_text_query_tests() {
             "format_version = 2\n"
             "flow_protocol.include = udp\n";
         const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
-        const std::vector<std::size_t> candidate_flow_indices {1U, 2U};
+        const std::vector<std::size_t> candidate_flow_indices {0U, 1U};
         const auto direct = adapter.query_advanced_flows(effective, candidate_flow_indices, std::nullopt, std::nullopt);
         const auto from_text = adapter.query_advanced_flows_text(text, candidate_flow_indices, std::nullopt, std::nullopt);
         PFL_EXPECT(direct.status == FrontendAdvancedFlowQueryStatus::ok);
         PFL_EXPECT(from_text.status == FrontendAdvancedFlowQueryStatus::ok);
+        expect_indices_equal(from_text.ordered_flow_indices, {1U});
+        expect_indices_equal(complement_indices(candidate_flow_indices, from_text.ordered_flow_indices), {0U});
         expect_indices_equal(from_text.ordered_flow_indices, direct.ordered_flow_indices);
         PFL_EXPECT(from_text.result_count_before_limit == direct.result_count_before_limit);
     }
