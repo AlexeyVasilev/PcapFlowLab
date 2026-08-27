@@ -48,6 +48,19 @@ std::string utf8_path_string(const std::filesystem::path& path) {
 #endif
 }
 
+std::filesystem::path path_from_explicit_utf8(std::string_view utf8) {
+#if defined(__cpp_char8_t)
+    std::u8string utf8_native {};
+    utf8_native.reserve(utf8.size());
+    for (const char ch : utf8) {
+        utf8_native.push_back(static_cast<char8_t>(static_cast<unsigned char>(ch)));
+    }
+    return std::filesystem::path {utf8_native};
+#else
+    return std::filesystem::u8path(utf8.begin(), utf8.end());
+#endif
+}
+
 std::filesystem::path write_temp_capture_file(
     const std::filesystem::path& file_name,
     const std::vector<std::uint8_t>& bytes
@@ -1135,7 +1148,8 @@ void expect_protocol_path_tree_bridge_export_contract() {
     );
     PFL_EXPECT(contains_text(open_json, "\"opened\":true"));
 
-    const auto output_path = std::filesystem::temp_directory_path() / L"pfl_protocol_path_tree_bridge_тест.txt";
+    const auto output_path = std::filesystem::temp_directory_path()
+        / path_from_explicit_utf8("pfl_protocol_path_tree_bridge_тест.txt");
     std::filesystem::remove(output_path);
     const auto output_path_utf8 = utf8_path_string(output_path);
     const auto export_json = take_bridge_string(

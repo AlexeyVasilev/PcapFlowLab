@@ -777,44 +777,48 @@ impl CppFrontendSessionAdapter {
         let (directionality_exclude_cstrings, directionality_exclude_ptrs) =
             collect_strings(&document.directionality.exclude, "Directionality exclude ID")?;
 
-        let (_ports_include_scope_cstrings, _ports_include_primary_cstrings, _ports_include_secondary_cstrings,
+        let filter_text_ptr = filter_text.as_ptr();
+
+        let (ports_include_scope_cstrings, ports_include_primary_cstrings, ports_include_secondary_cstrings,
             ports_include_scope_ptrs, ports_include_primary_ptrs, ports_include_secondary_ptrs, ports_include_range_flags) =
             collect_port_rows(&document.ports.include)?;
-        let (_ports_exclude_scope_cstrings, _ports_exclude_primary_cstrings, _ports_exclude_secondary_cstrings,
+        let (ports_exclude_scope_cstrings, ports_exclude_primary_cstrings, ports_exclude_secondary_cstrings,
             ports_exclude_scope_ptrs, ports_exclude_primary_ptrs, ports_exclude_secondary_ptrs, ports_exclude_range_flags) =
             collect_port_rows(&document.ports.exclude)?;
-        let (_ip_include_scope_cstrings, _ip_include_address_cstrings, _ip_include_prefix_cstrings,
+        let (ip_include_scope_cstrings, ip_include_address_cstrings, ip_include_prefix_cstrings,
             ip_include_scope_ptrs, ip_include_address_ptrs, ip_include_prefix_ptrs, ip_include_subnet_flags) =
             collect_ip_rows(&document.ip_addresses.include)?;
-        let (_ip_exclude_scope_cstrings, _ip_exclude_address_cstrings, _ip_exclude_prefix_cstrings,
+        let (ip_exclude_scope_cstrings, ip_exclude_address_cstrings, ip_exclude_prefix_cstrings,
             ip_exclude_scope_ptrs, ip_exclude_address_ptrs, ip_exclude_prefix_ptrs, ip_exclude_subnet_flags) =
             collect_ip_rows(&document.ip_addresses.exclude)?;
-        let (_traffic_primary_metric_cstrings, _traffic_primary_unit_cstrings, _traffic_primary_min_cstrings, _traffic_primary_max_cstrings,
+        let (traffic_primary_metric_cstrings, traffic_primary_unit_cstrings, traffic_primary_min_cstrings, traffic_primary_max_cstrings,
             traffic_primary_metric_ptrs, traffic_primary_unit_ptrs, traffic_primary_min_ptrs, traffic_primary_max_ptrs) =
             collect_traffic_rows(&document.traffic.primary)?;
-        let (_traffic_additional_metric_cstrings, _traffic_additional_unit_cstrings, _traffic_additional_min_cstrings, _traffic_additional_max_cstrings,
+        let (traffic_additional_metric_cstrings, traffic_additional_unit_cstrings, traffic_additional_min_cstrings, traffic_additional_max_cstrings,
             traffic_additional_metric_ptrs, traffic_additional_unit_ptrs, traffic_additional_min_ptrs, traffic_additional_max_ptrs) =
             collect_traffic_rows(&document.traffic.additional)?;
-        let (_service_include_operator_cstrings, _service_include_text_cstrings,
+        let (service_include_operator_cstrings, service_include_text_cstrings,
             service_include_operator_ptrs, service_include_text_ptrs, service_include_case_sensitive_flags) =
             collect_service_rows(&document.service.include_text)?;
-        let (_service_exclude_operator_cstrings, _service_exclude_text_cstrings,
+        let (service_exclude_operator_cstrings, service_exclude_text_cstrings,
             service_exclude_operator_ptrs, service_exclude_text_ptrs, service_exclude_case_sensitive_flags) =
             collect_service_rows(&document.service.exclude_text)?;
-        let (_protocol_path_include_selector_mode_cstrings, _protocol_path_include_predicate_text_cstrings,
+        let (protocol_path_include_selector_mode_cstrings, protocol_path_include_predicate_text_cstrings,
             protocol_path_include_selector_mode_ptrs, protocol_path_include_predicate_text_ptrs) =
             collect_protocol_path_rows(&document.protocol_path.include)?;
-        let (_protocol_path_exclude_selector_mode_cstrings, _protocol_path_exclude_predicate_text_cstrings,
+        let (protocol_path_exclude_selector_mode_cstrings, protocol_path_exclude_predicate_text_cstrings,
             protocol_path_exclude_selector_mode_ptrs, protocol_path_exclude_predicate_text_ptrs) =
             collect_protocol_path_rows(&document.protocol_path.exclude)?;
-        let (_contains_layer_include_layer_cstrings, _contains_layer_include_mode_cstrings, _contains_layer_include_value_cstrings,
+        let (contains_layer_include_layer_cstrings, contains_layer_include_mode_cstrings, contains_layer_include_value_cstrings,
             contains_layer_include_layer_ptrs, contains_layer_include_mode_ptrs, contains_layer_include_value_ptrs) =
             collect_contains_layer_rows(&document.contains_layer.include)?;
-        let (_contains_layer_exclude_layer_cstrings, _contains_layer_exclude_mode_cstrings, _contains_layer_exclude_value_cstrings,
+        let (contains_layer_exclude_layer_cstrings, contains_layer_exclude_mode_cstrings, contains_layer_exclude_value_cstrings,
             contains_layer_exclude_layer_ptrs, contains_layer_exclude_mode_ptrs, contains_layer_exclude_value_ptrs) =
             collect_contains_layer_rows(&document.contains_layer.exclude)?;
 
-        let _keep_alive = (
+        // Keep all CString owners alive while the synchronous C ABI call borrows their buffers.
+        let keep_alive = (
+            filter_text,
             address_family_include_cstrings,
             address_family_exclude_cstrings,
             flow_protocol_include_cstrings,
@@ -827,12 +831,46 @@ impl CppFrontendSessionAdapter {
             quic_version_exclude_cstrings,
             directionality_include_cstrings,
             directionality_exclude_cstrings,
+            ports_include_scope_cstrings,
+            ports_include_primary_cstrings,
+            ports_include_secondary_cstrings,
+            ports_exclude_scope_cstrings,
+            ports_exclude_primary_cstrings,
+            ports_exclude_secondary_cstrings,
+            ip_include_scope_cstrings,
+            ip_include_address_cstrings,
+            ip_include_prefix_cstrings,
+            ip_exclude_scope_cstrings,
+            ip_exclude_address_cstrings,
+            ip_exclude_prefix_cstrings,
+            traffic_primary_metric_cstrings,
+            traffic_primary_unit_cstrings,
+            traffic_primary_min_cstrings,
+            traffic_primary_max_cstrings,
+            traffic_additional_metric_cstrings,
+            traffic_additional_unit_cstrings,
+            traffic_additional_min_cstrings,
+            traffic_additional_max_cstrings,
+            service_include_operator_cstrings,
+            service_include_text_cstrings,
+            service_exclude_operator_cstrings,
+            service_exclude_text_cstrings,
+            protocol_path_include_selector_mode_cstrings,
+            protocol_path_include_predicate_text_cstrings,
+            protocol_path_exclude_selector_mode_cstrings,
+            protocol_path_exclude_predicate_text_cstrings,
+            contains_layer_include_layer_cstrings,
+            contains_layer_include_mode_cstrings,
+            contains_layer_include_value_cstrings,
+            contains_layer_exclude_layer_cstrings,
+            contains_layer_exclude_mode_cstrings,
+            contains_layer_exclude_value_cstrings,
         );
 
         let json = unsafe {
             pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_document_json(
                 self.handle,
-                filter_text.as_ptr(),
+                filter_text_ptr,
                 if document.address_family.enabled { 1 } else { 0 },
                 address_family_include_ptrs.as_ptr(),
                 address_family_include_ptrs.len(),
@@ -927,6 +965,7 @@ impl CppFrontendSessionAdapter {
                 contains_layer_exclude_layer_ptrs.len(),
             )
         };
+        drop(keep_alive);
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
     }
 
