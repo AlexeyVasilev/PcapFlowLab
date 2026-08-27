@@ -412,8 +412,12 @@
       : `${formatNumber(configuredRuleCount)} rules`;
   }
 
-  function advancedFlowFilteringAvailable() {
+  function advancedFlowFilterEvaluationAvailable() {
     return state.openState === "opened" && state.flowState !== "deferred";
+  }
+
+  function advancedFlowFilterHasCurrentCapture() {
+    return state.openState === "opened";
   }
 
   function defaultAdvancedFlowFilterText() {
@@ -1421,20 +1425,48 @@
     );
   }
 
-  function renderAdvancedFlowFilterSectionGroup(sectionId, groupName, selectedIds, disabled) {
-    const options = advancedFlowFilterOptionCatalogBySectionId(
+  function applyAdvancedFlowFilterWorkflowWithoutEvaluation(filterText, workflowPayload = null) {
+    state.flowFilterMode = "advanced";
+    applyAdvancedFlowFilterMainWorkflowState(
+      workflowPayload || {
+        canonical_text: String(filterText || ""),
+        source_path: "",
+        display_name: "Custom filter",
+        is_file_backed: false,
+        has_unsaved_changes: false,
+        has_unsaved_configuration: Boolean(String(filterText || "").trim().length > 0),
+        can_clear_unsaved_changes: false,
+        clear_available: Boolean(String(filterText || "").trim().length > 0),
+        configured_rule_count: 0,
+        active_rule_count: 0,
+      },
+      filterText
+    );
+    state.advancedFlowFilter.matchingFlowIndexSet = new Set();
+  }
+
+  function advancedFlowFilterToneClass(groupName) {
+    return String(groupName || "").toLowerCase() === "exclude"
+      ? "advanced-filter-exclude-group"
+      : "advanced-filter-include-group";
+  }
+
+  function renderAdvancedFlowFilterSectionGroup(sectionId, groupName, selectedIds, disabled, config = {}) {
+    const catalogOptions = advancedFlowFilterOptionCatalogBySectionId(
       state.advancedFlowFilterSettings.optionCatalog,
       sectionId
     );
-    if (!options.length) {
+    if (!catalogOptions.length) {
       return `<p class="advanced-filter-empty-copy">No supported options.</p>`;
     }
     const selectedSet = new Set(Array.isArray(selectedIds) ? selectedIds.map((value) => String(value)) : []);
+    const showGroupTitle = config.showGroupTitle !== false;
+    const toneClass = String(config.toneClass || advancedFlowFilterToneClass(groupName));
     return `
-      <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+      <div class="advanced-filter-group ${escapeHtml(toneClass)}">
+        ${showGroupTitle ? `<p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>` : ""}
         <div class="advanced-filter-option-grid">
-          ${options.map((option) => {
+          ${catalogOptions.map((option) => {
             const stableId = String(option?.stable_id || "");
             const checked = selectedSet.has(stableId) ? " checked" : "";
             const optionDisabled = disabled ? " disabled" : "";
@@ -1512,7 +1544,7 @@
 
   function renderAdvancedFlowFilterExclusionsGroup(sectionId, bodyMarkup, dialogBusy) {
     return `
-      <div class="advanced-filter-subgroup">
+      <div class="advanced-filter-subgroup advanced-filter-exclude-group">
         <div class="advanced-filter-subgroup-header">
           <p class="advanced-filter-group-title">Exclude</p>
           <button
@@ -1527,13 +1559,15 @@
     `;
   }
 
-  function renderAdvancedFlowFilterPortGroup(groupName, rows, sectionEnabled, dialogBusy) {
+  function renderAdvancedFlowFilterPortGroup(groupName, rows, sectionEnabled, dialogBusy, config = {}) {
     const groupKey = groupName.toLowerCase();
     const scopeOptions = advancedFlowFilterEndpointScopeOptions();
     const editingDisabled = dialogBusy || !sectionEnabled;
+    const showGroupTitle = config.showGroupTitle !== false;
+    const toneClass = String(config.toneClass || advancedFlowFilterToneClass(groupName));
     return `
-      <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+      <div class="advanced-filter-group ${escapeHtml(toneClass)}">
+        ${showGroupTitle ? `<p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>` : ""}
         <div class="advanced-filter-row-list">
           ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
             <div class="advanced-filter-row-card">
@@ -1607,13 +1641,15 @@
     `;
   }
 
-  function renderAdvancedFlowFilterIpGroup(groupName, rows, sectionEnabled, dialogBusy) {
+  function renderAdvancedFlowFilterIpGroup(groupName, rows, sectionEnabled, dialogBusy, config = {}) {
     const groupKey = groupName.toLowerCase();
     const scopeOptions = advancedFlowFilterEndpointScopeOptions();
     const editingDisabled = dialogBusy || !sectionEnabled;
+    const showGroupTitle = config.showGroupTitle !== false;
+    const toneClass = String(config.toneClass || advancedFlowFilterToneClass(groupName));
     return `
-      <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+      <div class="advanced-filter-group ${escapeHtml(toneClass)}">
+        ${showGroupTitle ? `<p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>` : ""}
         <div class="advanced-filter-row-list">
           ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
             <div class="advanced-filter-row-card">
@@ -1696,7 +1732,13 @@
       exclusionsExpanded
         ? renderAdvancedFlowFilterExclusionsGroup(
             sectionId,
-            renderAdvancedFlowFilterSectionGroup(sectionId, "Exclude", section.exclude, dialogBusy || !Boolean(section.enabled)),
+            renderAdvancedFlowFilterSectionGroup(
+              sectionId,
+              "Exclude",
+              section.exclude,
+              dialogBusy || !Boolean(section.enabled),
+              { showGroupTitle: false }
+            ),
             dialogBusy
           )
         : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
@@ -1720,7 +1762,13 @@
       exclusionsExpanded
         ? renderAdvancedFlowFilterExclusionsGroup(
             sectionId,
-            renderAdvancedFlowFilterPortGroup("Exclude", portsSection.exclude, Boolean(portsSection.enabled), dialogBusy),
+            renderAdvancedFlowFilterPortGroup(
+              "Exclude",
+              portsSection.exclude,
+              Boolean(portsSection.enabled),
+              dialogBusy,
+              { showGroupTitle: false }
+            ),
             dialogBusy
           )
         : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
@@ -1745,7 +1793,13 @@
       exclusionsExpanded
         ? renderAdvancedFlowFilterExclusionsGroup(
             sectionId,
-            renderAdvancedFlowFilterIpGroup("Exclude", ipSection.exclude, Boolean(ipSection.enabled), dialogBusy),
+            renderAdvancedFlowFilterIpGroup(
+              "Exclude",
+              ipSection.exclude,
+              Boolean(ipSection.enabled),
+              dialogBusy,
+              { showGroupTitle: false }
+            ),
             dialogBusy
           )
         : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
@@ -1832,7 +1886,7 @@
     const trafficSection = document?.traffic || { enabled: true, primary: [], additional: [] };
     const additionalExpanded = Boolean(state.advancedFlowFilterSettings.trafficAdditionalExpanded);
     const bodyMarkup = `
-      <div class="advanced-filter-group">
+      <div class="advanced-filter-group advanced-filter-include-group">
         <p class="advanced-filter-group-title">Include</p>
         <div class="advanced-filter-row-card">
           <div class="advanced-filter-inline-fields-row is-traffic">
@@ -1885,10 +1939,15 @@
     );
   }
 
-  function renderAdvancedFlowFilterServiceTextGroup(groupLabel, groupKey, rows, editingDisabled, dialogBusy) {
+  function renderAdvancedFlowFilterServiceTextGroup(groupLabel, groupKey, rows, editingDisabled, dialogBusy, config = {}) {
+    const showGroupTitle = config.showGroupTitle !== false;
+    const toneClass = String(
+      config.toneClass
+      || (String(groupKey || "").startsWith("exclude") ? "advanced-filter-exclude-group" : "advanced-filter-include-group")
+    );
     return `
-      <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">${escapeHtml(groupLabel)}</p>
+      <div class="advanced-filter-group ${escapeHtml(toneClass)}">
+        ${showGroupTitle ? `<p class="advanced-filter-group-title">${escapeHtml(groupLabel)}</p>` : ""}
         <div class="advanced-filter-row-list">
           ${(Array.isArray(rows) ? rows : []).map((row, rowIndex) => `
             <div class="advanced-filter-row-card">
@@ -1971,7 +2030,7 @@
     const excludeTextEditingDisabled = dialogBusy || !Boolean(serviceSection.enabled);
     const includeHelperText = advancedFlowFilterServiceIncludeHelperText(serviceSection);
     const includeMarkup = `
-      <div class="advanced-filter-group">
+      <div class="advanced-filter-group advanced-filter-include-group">
         <p class="advanced-filter-group-title">Include</p>
         <div class="advanced-filter-row-card">
           <p class="advanced-filter-group-title">State</p>
@@ -1992,7 +2051,6 @@
     `;
     const excludeMarkup = `
       <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">Exclude</p>
         <div class="advanced-filter-row-card">
           <p class="advanced-filter-group-title">State</p>
           <div class="advanced-filter-option-grid">
@@ -2034,13 +2092,19 @@
     return String(option?.label || normalizedId || "Kind");
   }
 
-  function renderAdvancedFlowFilterProtocolPathGroup(groupName, rows, sectionEnabled, dialogBusy) {
+  function renderAdvancedFlowFilterProtocolPathGroup(groupName, rows, sectionEnabled, dialogBusy, config = {}) {
     const groupKey = String(groupName || "").toLowerCase();
     const editingDisabled = dialogBusy || !sectionEnabled;
+    const selectorDisabled = editingDisabled || !advancedFlowFilterHasCurrentCapture();
+    const selectorTitle = advancedFlowFilterHasCurrentCapture()
+      ? ""
+      : ' title="Open a capture to select a Protocol Path."';
     const normalizedRows = Array.isArray(rows) ? rows : [];
+    const showGroupTitle = config.showGroupTitle !== false;
+    const toneClass = String(config.toneClass || advancedFlowFilterToneClass(groupName));
     return `
-      <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+      <div class="advanced-filter-group ${escapeHtml(toneClass)}">
+        ${showGroupTitle ? `<p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>` : ""}
         <div class="advanced-filter-row-list">
           ${normalizedRows.length === 0 ? `
             <p class="advanced-filter-empty-copy">No configured paths.</p>
@@ -2058,7 +2122,7 @@
                     class="secondary-button"
                     data-advanced-filter-protocol-path-edit-group="${escapeHtml(groupKey)}"
                     data-advanced-filter-protocol-path-edit-row-index="${rowIndex}"
-                    ${dialogBusy ? "disabled" : ""}
+                    ${selectorDisabled ? "disabled" : ""}${selectorTitle}
                   >Edit</button>
                   <button
                     type="button"
@@ -2079,7 +2143,7 @@
           class="secondary-button advanced-filter-add-row-button"
           data-advanced-filter-add-row-section-id="protocol_path"
           data-advanced-filter-group="${escapeHtml(groupKey)}"
-          ${editingDisabled ? "disabled" : ""}
+          ${selectorDisabled ? "disabled" : ""}${selectorTitle}
         >Add path</button>
       </div>
     `;
@@ -2094,7 +2158,13 @@
       exclusionsExpanded
         ? renderAdvancedFlowFilterExclusionsGroup(
             sectionId,
-            renderAdvancedFlowFilterProtocolPathGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy),
+            renderAdvancedFlowFilterProtocolPathGroup(
+              "Exclude",
+              section.exclude,
+              Boolean(section.enabled),
+              dialogBusy,
+              { showGroupTitle: false }
+            ),
             dialogBusy
           )
         : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
@@ -2118,15 +2188,17 @@
     return String(option?.label || normalizedId || "Any");
   }
 
-  function renderAdvancedFlowFilterContainsLayerGroup(groupName, rows, sectionEnabled, dialogBusy) {
+  function renderAdvancedFlowFilterContainsLayerGroup(groupName, rows, sectionEnabled, dialogBusy, config = {}) {
     const groupKey = String(groupName || "").toLowerCase();
     const editingDisabled = dialogBusy || !sectionEnabled;
     const normalizedRows = Array.isArray(rows) ? rows : [];
     const layerOptions = advancedFlowFilterContainsLayerKindOptions();
     const identifierModeOptions = advancedFlowFilterContainsLayerIdentifierModeOptions();
+    const showGroupTitle = config.showGroupTitle !== false;
+    const toneClass = String(config.toneClass || advancedFlowFilterToneClass(groupName));
     return `
-      <div class="advanced-filter-group">
-        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+      <div class="advanced-filter-group ${escapeHtml(toneClass)}">
+        ${showGroupTitle ? `<p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>` : ""}
         <div class="advanced-filter-row-list">
           ${normalizedRows.length === 0 ? `
             <p class="advanced-filter-empty-copy">No configured layer rules.</p>
@@ -2216,7 +2288,13 @@
       exclusionsExpanded
         ? renderAdvancedFlowFilterExclusionsGroup(
             sectionId,
-            renderAdvancedFlowFilterContainsLayerGroup("Exclude", section.exclude, Boolean(section.enabled), dialogBusy),
+            renderAdvancedFlowFilterContainsLayerGroup(
+              "Exclude",
+              section.exclude,
+              Boolean(section.enabled),
+              dialogBusy,
+              { showGroupTitle: false }
+            ),
             dialogBusy
           )
         : renderAdvancedFlowFilterExclusionsToggle(sectionId, dialogBusy),
@@ -2635,6 +2713,28 @@
     });
   }
 
+  function updateAdvancedFlowFilterProtocolPathPickerSelectionPresentation() {
+    const picker = currentAdvancedFlowFilterProtocolPathPicker();
+    if (elements.advancedFlowFilterProtocolPathPickerBody) {
+      const rows = elements.advancedFlowFilterProtocolPathPickerBody.querySelectorAll(
+        "[data-advanced-filter-protocol-path-picker-node-id]"
+      );
+      for (const row of rows) {
+        if (!(row instanceof HTMLElement)) {
+          continue;
+        }
+        const nodeId = Number(row.dataset.advancedFilterProtocolPathPickerNodeId);
+        const selected = Number.isFinite(nodeId) && nodeId > 0 && Number(picker.selectedNodeId) === nodeId;
+        row.classList.toggle("is-selected", selected);
+        row.setAttribute("aria-selected", selected ? "true" : "false");
+      }
+    }
+    if (elements.advancedFlowFilterProtocolPathPickerSelectButton) {
+      elements.advancedFlowFilterProtocolPathPickerSelectButton.disabled =
+        picker.loading || picker.selectedNodeId == null;
+    }
+  }
+
   function renderAdvancedFlowFilterProtocolPathPicker() {
     const picker = currentAdvancedFlowFilterProtocolPathPicker();
     if (elements.advancedFlowFilterProtocolPathPickerDialog) {
@@ -2687,6 +2787,7 @@
       elements.advancedFlowFilterProtocolPathPickerSelectButton.disabled =
         picker.loading || picker.selectedNodeId == null;
     }
+    updateAdvancedFlowFilterProtocolPathPickerSelectionPresentation();
   }
 
   async function loadAdvancedFlowFilterProtocolPathPickerMode(modeId) {
@@ -2710,6 +2811,11 @@
 
   async function openAdvancedFlowFilterProtocolPathPicker(group, rowIndex) {
     if (!state.advancedFlowFilterSettings.visible || currentAdvancedFlowFilterSettingsBusy()) {
+      return;
+    }
+    if (!advancedFlowFilterHasCurrentCapture()) {
+      setAdvancedFlowFilterSettingsStatus("Open a capture to select a Protocol Path.", "neutral");
+      render();
       return;
     }
 
@@ -2738,22 +2844,29 @@
     render();
   }
 
-  async function applyAdvancedFlowFilterProtocolPathPickerSelection() {
+  async function acceptAdvancedFlowFilterProtocolPathSelection(nodeIdOverride = null) {
     const picker = currentAdvancedFlowFilterProtocolPathPicker();
-    const selectedRow = currentAdvancedFlowFilterProtocolPathPickerRows().find(
-      (row) => Number(row?.node_id) === Number(picker.selectedNodeId)
-    );
+    if (picker.loading) {
+      return;
+    }
     if (typeof invoke !== "function") {
       return;
     }
 
-    const nodeId = Number(selectedRow?.node_id);
+    const overrideNodeId = Number(nodeIdOverride);
+    const nodeId = Number.isFinite(overrideNodeId) && overrideNodeId > 0
+      ? overrideNodeId
+      : Number(picker.selectedNodeId);
+    const selectedRow = currentAdvancedFlowFilterProtocolPathPickerRows().find(
+      (row) => Number(row?.node_id) === nodeId
+    );
     if (!selectedRow || !Number.isFinite(nodeId) || nodeId <= 0) {
       picker.errorText = "Select a valid Protocol Path row before applying it.";
       render();
       return;
     }
 
+    picker.selectedNodeId = nodeId;
     picker.loading = true;
     picker.errorText = "";
     render();
@@ -2785,6 +2898,10 @@
       picker.errorText = `Failed to build the selected Protocol Path rule: ${String(error)}`;
       render();
     }
+  }
+
+  async function applyAdvancedFlowFilterProtocolPathPickerSelection() {
+    return acceptAdvancedFlowFilterProtocolPathSelection();
   }
 
   function currentSimpleFlowFilterActive() {
@@ -4462,11 +4579,9 @@
   }
 
   function switchToAdvancedFlowFilterMode() {
-    if (!advancedFlowFilteringAvailable()) {
+    if (state.flowState === "deferred") {
       setAdvancedFlowFilterStatus(
-        state.flowState === "deferred"
-          ? "Advanced Filter is unavailable while the Tauri flow list is deferred for this session."
-          : "Advanced Filter is unavailable until a capture or index is opened.",
+        "Advanced Filter is unavailable while the Tauri flow list is deferred for this session.",
         "error"
       );
       return;
@@ -4474,7 +4589,9 @@
 
     if (state.flowFilterMode !== "advanced") {
       state.flowFilterMode = "advanced";
-      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+      if (advancedFlowFilterEvaluationAvailable()) {
+        notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+      }
     }
   }
 
@@ -4539,17 +4656,6 @@
 
   async function openAdvancedFlowFilterSettingsDialog() {
     if (state.advancedFlowFilter.loading || currentAdvancedFlowFilterSettingsBusy()) {
-      return;
-    }
-
-    if (!advancedFlowFilteringAvailable()) {
-      setAdvancedFlowFilterStatus(
-        state.flowState === "deferred"
-          ? "Advanced Filter is unavailable while the Tauri flow list is deferred for this session."
-          : "Advanced Filter is unavailable until a capture or index is opened.",
-        "error"
-      );
-      render();
       return;
     }
 
@@ -4709,37 +4815,51 @@
         || preparedCandidate.sourceCanonicalText
         || defaultAdvancedFlowFilterText()
       );
-      const queryResult = await invoke("query_advanced_flows_text", {
-        filter_text: canonicalText,
-        candidate_flow_indices: null,
-      });
-      if (String(queryResult?.status || "") !== "ok") {
-        setAdvancedFlowFilterSettingsStatus(
-          String(queryResult?.error_text || "Failed to open the selected Advanced Filter document."),
-          "error"
-        );
-        return false;
+      if (advancedFlowFilterEvaluationAvailable()) {
+        const queryResult = await invoke("query_advanced_flows_text", {
+          filter_text: canonicalText,
+          candidate_flow_indices: null,
+        });
+        if (String(queryResult?.status || "") !== "ok") {
+          setAdvancedFlowFilterSettingsStatus(
+            String(queryResult?.error_text || "Failed to open the selected Advanced Filter document."),
+            "error"
+          );
+          return false;
+        }
+        const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
+          filter_text: canonicalText,
+          source_path: String(preparedCandidate.sourcePath || ""),
+        });
+        applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+        notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+        dismissAdvancedFlowFilterPendingDestructiveAction();
+        installAdvancedFlowFilterSettingsDraft({
+          document: normalizeAdvancedFlowFilterEditorDraftDocument(
+            cloneAdvancedFlowFilterValue(preparedCandidate.document)
+          ),
+          optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
+          workflow,
+        });
+      } else {
+        const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
+          filter_text: canonicalText,
+          source_path: String(preparedCandidate.sourcePath || ""),
+        });
+        applyAdvancedFlowFilterWorkflowWithoutEvaluation(canonicalText, workflow);
+        dismissAdvancedFlowFilterPendingDestructiveAction();
+        installAdvancedFlowFilterSettingsDraft({
+          document: normalizeAdvancedFlowFilterEditorDraftDocument(
+            cloneAdvancedFlowFilterValue(preparedCandidate.document)
+          ),
+          optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
+          workflow,
+        });
       }
-
-      const workflow = await invoke("accept_opened_advanced_flow_filter_document_text", {
-        filter_text: canonicalText,
-        source_path: String(preparedCandidate.sourcePath || ""),
-      });
-
-      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
-      dismissAdvancedFlowFilterPendingDestructiveAction();
-      installAdvancedFlowFilterSettingsDraft({
-        document: normalizeAdvancedFlowFilterEditorDraftDocument(
-          cloneAdvancedFlowFilterValue(preparedCandidate.document)
-        ),
-        optionCatalog: cloneAdvancedFlowFilterValue(preparedCandidate.optionCatalog) || null,
-        workflow,
-      });
       setAdvancedFlowFilterSettingsStatus(
         `Loaded advanced filter "${state.advancedFlowFilterSettings.displayName}".`,
         "success"
       );
-      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
       return true;
     } catch (error) {
       setAdvancedFlowFilterSettingsStatus(`Failed to open the selected advanced filter: ${String(error)}`, "error");
@@ -4789,18 +4909,20 @@
         || draft.canonical_text
         || defaultAdvancedFlowFilterText()
       );
-      const queryResult = await invoke("query_advanced_flows_text", {
-        filter_text: canonicalText,
-        candidate_flow_indices: null,
-      });
-      if (String(queryResult?.status || "") !== "ok") {
-        setAdvancedFlowFilterSettingsStatus(
-          String(queryResult?.error_text || "Failed to save the Advanced Filter draft."),
-          "error"
-        );
-        return null;
+      let queryResult = null;
+      if (advancedFlowFilterEvaluationAvailable()) {
+        queryResult = await invoke("query_advanced_flows_text", {
+          filter_text: canonicalText,
+          candidate_flow_indices: null,
+        });
+        if (String(queryResult?.status || "") !== "ok") {
+          setAdvancedFlowFilterSettingsStatus(
+            String(queryResult?.error_text || "Failed to save the Advanced Filter draft."),
+            "error"
+          );
+          return null;
+        }
       }
-
       const persistResult = await persistAdvancedFlowFilterCanonicalText({
         canonicalText,
         saveAs,
@@ -4818,7 +4940,11 @@
       const workflow = persistResult.workflow;
       const outputPath = String(persistResult.outputPath || "");
 
-      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+      if (queryResult) {
+        applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+      } else {
+        applyAdvancedFlowFilterWorkflowWithoutEvaluation(canonicalText, workflow);
+      }
       if (keepDialogOpen) {
         adoptAdvancedFlowFilterStructuredResult(structuredResult, workflow);
       } else {
@@ -5022,25 +5148,32 @@
         || draft.canonical_text
         || defaultAdvancedFlowFilterText()
       );
-      const queryResult = await invoke("query_advanced_flows_text", {
-        filter_text: canonicalText,
-        candidate_flow_indices: null,
-      });
-      if (String(queryResult?.status || "") !== "ok") {
-        setAdvancedFlowFilterSettingsStatus(
-          String(queryResult?.error_text || "Failed to apply the Advanced Filter draft."),
-          "error"
-        );
-        return;
+      let queryResult = null;
+      if (advancedFlowFilterEvaluationAvailable()) {
+        queryResult = await invoke("query_advanced_flows_text", {
+          filter_text: canonicalText,
+          candidate_flow_indices: null,
+        });
+        if (String(queryResult?.status || "") !== "ok") {
+          setAdvancedFlowFilterSettingsStatus(
+            String(queryResult?.error_text || "Failed to apply the Advanced Filter draft."),
+            "error"
+          );
+          return;
+        }
       }
-
       const workflow = await invoke("apply_advanced_flow_filter_document_text", {
         filter_text: canonicalText,
       });
-      applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+
+      if (queryResult) {
+        applyAdvancedFlowFilterQueryResult(canonicalText, queryResult, workflow);
+        notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
+      } else {
+        applyAdvancedFlowFilterWorkflowWithoutEvaluation(canonicalText, workflow);
+      }
 
       resetAdvancedFlowFilterSettingsState();
-      notifyFlowFilteringChanged("Selected flow was cleared because it no longer matches the current filter.");
       setStatus("Applied advanced filter settings.", "success");
     } catch (error) {
       setAdvancedFlowFilterSettingsStatus(`Failed to apply Advanced Filter settings: ${String(error)}`, "error");
@@ -7437,12 +7570,11 @@
       elements.advancedFlowFilterToolbar.hidden = !inAdvancedMode;
     }
     if (elements.useAdvancedFlowFilterButton) {
-      elements.useAdvancedFlowFilterButton.disabled = !advancedFlowFilteringAvailable() || state.advancedFlowFilter.loading;
+      elements.useAdvancedFlowFilterButton.disabled = state.flowState === "deferred" || state.advancedFlowFilter.loading;
     }
     if (elements.openAdvancedFlowFilterSettingsButton) {
       elements.openAdvancedFlowFilterSettingsButton.disabled =
-        !advancedFlowFilteringAvailable()
-        || state.advancedFlowFilter.loading
+        state.advancedFlowFilter.loading
         || advancedFlowFilterToolbarAwaitingClearConfirmation()
         || currentAdvancedFlowFilterSettingsBusy();
     }
@@ -11344,7 +11476,7 @@
       return;
     }
     state.advancedFlowFilterSettings.protocolPathPicker.selectedNodeId = nodeId;
-    renderAdvancedFlowFilterProtocolPathPicker();
+    updateAdvancedFlowFilterProtocolPathPickerSelectionPresentation();
   });
   elements.advancedFlowFilterProtocolPathPickerBody?.addEventListener("dblclick", (event) => {
     if (!(event.target instanceof Element)) {
@@ -11358,8 +11490,9 @@
     if (!Number.isFinite(nodeId) || nodeId <= 0) {
       return;
     }
+    event.preventDefault();
     state.advancedFlowFilterSettings.protocolPathPicker.selectedNodeId = nodeId;
-    void applyAdvancedFlowFilterProtocolPathPickerSelection();
+    void acceptAdvancedFlowFilterProtocolPathSelection(nodeId);
   });
   elements.advancedFlowFilterProtocolPathPickerViewport?.addEventListener("scroll", () => {
     renderAdvancedFlowFilterProtocolPathPickerViewportWindow();

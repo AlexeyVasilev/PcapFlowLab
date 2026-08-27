@@ -163,13 +163,15 @@ Implemented slice:
 - The Flows tab now keeps separate retained `Simple` and `Advanced` filter state and lets the user switch modes without destroying the inactive mode's filter.
 - Advanced mode applies only backend-returned canonical matching flow indices from a loaded `.filter` document; JavaScript does not evaluate Advanced Filter predicates itself.
 - `Settings` now opens a structured Advanced Filter editor draft backed by the shared C++ document/parser/formatter path.
-- `Open filter...` inside Advanced Filter Settings reads `.filter` files through a bounded Rust path, evaluates the selected document before adoption, and replaces the current Advanced Filter only after the shared open transaction succeeds.
+- `Open filter...` inside Advanced Filter Settings reads `.filter` files through a bounded Rust path, validates the selected document before adoption, and evaluates it against the current session when capture-backed flow filtering is available.
 - `Save` updates the current file-backed Advanced Filter in place without discarding file identity.
 - `Save As...` writes the current Advanced Filter to a selected `.filter` path and then adopts that saved file as the authoritative document source.
 - `Clear unsaved changes` restores the saved file-backed baseline while preserving the current file identity.
-- `Apply` validates, reformats, evaluates, and installs the canonical Advanced Filter document only after shared C++ parse/compile/evaluate succeeds.
+- `Apply` validates and reformats the canonical Advanced Filter document, then evaluates it against the current session when capture-backed flow filtering is available before installing it as the active document.
+- Advanced Filter Settings document editing/file workflow is available even before a capture or index is opened; only capture-dependent selection helpers remain gated.
 - `Cancel` discards the editor draft and leaves the applied Advanced Filter unchanged.
 - The current Tauri structured editor now covers all currently agreed predicate sections through the shared C++ document model.
+- Protocol Path selection remains capture-dependent; existing Protocol Path rows stay visible/editable/removable without a current capture, but `Add path` / `Edit` require an open capture.
 - Statistics drill-down explicitly switches back to `Simple` mode before applying its text filter.
 - The Flows table supports frontend-local sorting over already loaded flow DTOs.
 - The Flows table also keeps a separate checked-flow selection state for future batch workflows without changing the active selected flow.
@@ -263,7 +265,8 @@ Implemented slice:
   - mode switching and retained state exist
   - backend-authoritative Advanced filtering exists
   - `Settings`, `Open filter...`, `Save`, `Save As...`, and file-backed `Clear unsaved changes` now follow the shared document workflow
-  - Tauri Advanced Filter Settings now uses a compact one-column collapsible layout aligned with the Qt workflow
+  - Tauri Advanced Filter Settings now uses a compact one-column collapsible layout aligned with the Qt workflow, including the final Qt-oriented Include/Exclude presentation
+  - the Settings document workflow is available without an open capture; Protocol Path selection remains capture-dependent
   - Advanced Smart Export parity remains deferred
 - Broader export parity is still incomplete in Tauri.
 - Advanced Smart Export parity is still deferred; current-filter Smart Export remains Simple-mode-only.
