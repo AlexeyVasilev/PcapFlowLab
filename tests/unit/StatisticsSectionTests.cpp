@@ -1220,6 +1220,20 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     PFL_EXPECT(contains_text(scoped_json, "\"matching_flow_indices\":[2]"));
     PFL_EXPECT(contains_text(scoped_json, "\"result_count_before_limit\":1"));
 
+    const std::size_t empty_scope_sentinel = 999U;
+    const auto explicit_empty_scope_json = take_bridge_string(
+        pfl_frontend_session_adapter_query_advanced_flows_text_json(
+            handle,
+            "format_version = 2\nflow_protocol.include = udp\n",
+            &empty_scope_sentinel,
+            0U
+        )
+    );
+    PFL_EXPECT(contains_text(explicit_empty_scope_json, "\"status\":\"ok\""));
+    PFL_EXPECT(contains_text(explicit_empty_scope_json, "\"matching_flow_indices\":[]"));
+    PFL_EXPECT(contains_text(explicit_empty_scope_json, "\"result_count_before_limit\":0"));
+    PFL_EXPECT(contains_text(explicit_empty_scope_json, "\"error_text\":\"\""));
+
     const auto disabled_json = take_bridge_string(
         pfl_frontend_session_adapter_query_advanced_flows_text_json(
             handle,

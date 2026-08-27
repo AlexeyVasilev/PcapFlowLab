@@ -2298,6 +2298,7 @@ char* pfl_frontend_session_adapter_query_advanced_flows_text_json(
         );
     }
 
+    // nullptr + zero count means no scope; non-null + zero count means an explicitly empty scope.
     std::optional<std::vector<std::size_t>> candidate_indices {};
     if (candidate_flow_indices != nullptr) {
         candidate_indices = std::vector<std::size_t> {};

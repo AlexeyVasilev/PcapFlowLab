@@ -525,6 +525,7 @@ impl CppFrontendSessionAdapter {
     ) -> Result<AdvancedFlowFilterQueryResultDto, String> {
         let filter_text = CString::new(filter_text)
             .map_err(|_| "Advanced filter text contains an embedded NUL byte.".to_string())?;
+        // None maps to nullptr/0, while Some(&[]) preserves an explicitly empty candidate scope.
         let candidate_ptr = candidate_flow_indices
             .map(|indices| indices.as_ptr())
             .unwrap_or(std::ptr::null());
