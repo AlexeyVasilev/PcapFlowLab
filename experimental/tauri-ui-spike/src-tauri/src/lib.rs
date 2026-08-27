@@ -769,7 +769,8 @@ fn read_advanced_flow_filter_file(path: String) -> Result<AdvancedFlowFilterFile
     };
 
     let mut bytes = Vec::new();
-    if let Err(error) = file.take((max_file_bytes.saturating_add(1)) as u64).read_to_end(&mut bytes) {
+    let mut limited_file = file.take((max_file_bytes.saturating_add(1)) as u64);
+    if let Err(error) = limited_file.read_to_end(&mut bytes) {
         return Ok(AdvancedFlowFilterFileReadResultDto {
             loaded: false,
             path,
