@@ -242,6 +242,20 @@ pub struct AdvancedFlowFilterTrafficRowDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterTimeRowDto {
+    pub metric_id: String,
+    pub from_text: String,
+    pub to_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedFlowFilterTimeSectionDto {
+    pub enabled: bool,
+    pub ranges: Vec<AdvancedFlowFilterTimeRowDto>,
+    pub duration: AdvancedFlowFilterTrafficRowDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterTrafficSectionDto {
     pub enabled: bool,
     pub primary: Vec<AdvancedFlowFilterTrafficRowDto>,
@@ -337,6 +351,7 @@ pub struct AdvancedFlowFilterStructuredDocumentDto {
     pub directionality: AdvancedFlowFilterFiniteSectionDto,
     pub ports: AdvancedFlowFilterPortSectionDto,
     pub ip_addresses: AdvancedFlowFilterIpAddressSectionDto,
+    pub time: AdvancedFlowFilterTimeSectionDto,
     pub traffic: AdvancedFlowFilterTrafficSectionDto,
     pub service: AdvancedFlowFilterServiceSectionDto,
     pub protocol_path: AdvancedFlowFilterProtocolPathSectionDto,

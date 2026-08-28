@@ -111,6 +111,18 @@ struct FrontendAdvancedFlowFilterTrafficRowDto {
     std::string max_text {};
 };
 
+struct FrontendAdvancedFlowFilterTimeRowDto {
+    std::string metric_id {};
+    std::string from_text {};
+    std::string to_text {};
+};
+
+struct FrontendAdvancedFlowFilterTimeSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterTimeRowDto> ranges {};
+    FrontendAdvancedFlowFilterTrafficRowDto duration {};
+};
+
 struct FrontendAdvancedFlowFilterTrafficSectionDto {
     bool enabled {true};
     std::vector<FrontendAdvancedFlowFilterTrafficRowDto> primary {};
@@ -197,6 +209,7 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     FrontendAdvancedFlowFilterFiniteSectionDto directionality {};
     FrontendAdvancedFlowFilterPortSectionDto ports {};
     FrontendAdvancedFlowFilterIpAddressSectionDto ip_addresses {};
+    FrontendAdvancedFlowFilterTimeSectionDto time {};
     FrontendAdvancedFlowFilterTrafficSectionDto traffic {};
     FrontendAdvancedFlowFilterServiceSectionDto service {};
     FrontendAdvancedFlowFilterProtocolPathSectionDto protocol_path {};

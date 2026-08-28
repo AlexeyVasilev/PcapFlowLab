@@ -525,14 +525,10 @@ bool matches_aggregate_criteria(
     const ListedConnectionRef& connection
 ) noexcept {
     const auto& stats = aggregate_stats(connection);
-    const auto duration_us = stats.last_timestamp_us >= stats.first_timestamp_us
-        ? (stats.last_timestamp_us - stats.first_timestamp_us)
-        : 0U;
 
     return matches_range(criteria.ranges.packet_count, packet_count(connection)) &&
         matches_range(criteria.ranges.original_bytes, total_bytes(connection)) &&
         matches_range(criteria.ranges.captured_bytes, stats.captured_bytes) &&
-        matches_range(criteria.ranges.duration_us, duration_us) &&
         matches_range(criteria.ranges.fragmented_packet_count, fragmented_packet_count_value(connection)) &&
         matches_range(criteria.ranges.truncated_packet_count, stats.truncated_packet_count) &&
         matches_range(criteria.ranges.tcp_syn_count, stats.tcp_syn_count) &&
@@ -540,6 +536,38 @@ bool matches_aggregate_criteria(
         matches_range(criteria.ranges.tcp_rst_count, stats.tcp_rst_count) &&
         matches_range(criteria.ranges.max_original_packet_length, stats.max_original_packet_length) &&
         matches_range(criteria.ranges.max_captured_packet_length, stats.max_captured_packet_length);
+}
+
+bool matches_time_overlap_range(
+    const std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>>& overlap_range,
+    const std::uint64_t flow_start_us,
+    const std::uint64_t flow_end_us
+) noexcept {
+    if (!overlap_range.has_value()) {
+        return true;
+    }
+    if (overlap_range->max.has_value() && flow_start_us > *overlap_range->max) {
+        return false;
+    }
+    if (overlap_range->min.has_value() && flow_end_us < *overlap_range->min) {
+        return false;
+    }
+    return true;
+}
+
+bool matches_time_criteria(
+    const CompiledAdvancedFlowFilterTimeCriteria& criteria,
+    const ListedConnectionRef& connection
+) noexcept {
+    const auto& stats = aggregate_stats(connection);
+    const auto duration_us = stats.last_timestamp_us >= stats.first_timestamp_us
+        ? (stats.last_timestamp_us - stats.first_timestamp_us)
+        : 0U;
+
+    return matches_range(criteria.ranges.start_us, stats.first_timestamp_us) &&
+        matches_range(criteria.ranges.end_us, stats.last_timestamp_us) &&
+        matches_time_overlap_range(criteria.ranges.overlap_us, stats.first_timestamp_us, stats.last_timestamp_us) &&
+        matches_range(criteria.ranges.duration_us, duration_us);
 }
 
 bool matches_directionality_criteria(
@@ -1082,9 +1110,6 @@ AdvancedFlowFilterCompileResult compile_aggregate_criteria(
     if (const auto error = validate_range_field(spec.captured_bytes, "aggregate.captured_bytes")) {
         return *error;
     }
-    if (const auto error = validate_range_field(spec.duration_us, "aggregate.duration_us")) {
-        return *error;
-    }
     if (const auto error = validate_range_field(spec.fragmented_packet_count, "aggregate.fragmented_packet_count")) {
         return *error;
     }
@@ -1104,6 +1129,27 @@ AdvancedFlowFilterCompileResult compile_aggregate_criteria(
         return *error;
     }
     if (const auto error = validate_range_field(spec.max_captured_packet_length, "aggregate.max_captured_packet_length")) {
+        return *error;
+    }
+
+    compiled.ranges = spec;
+    return {};
+}
+
+AdvancedFlowFilterCompileResult compile_time_criteria(
+    const AdvancedFlowFilterTimeCriteria& spec,
+    CompiledAdvancedFlowFilterTimeCriteria& compiled
+) {
+    if (const auto error = validate_range_field(spec.start_us, "time.start_us")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.end_us, "time.end_us")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.overlap_us, "time.overlap_us")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.duration_us, "time.duration_us")) {
         return *error;
     }
 
@@ -1348,7 +1394,6 @@ std::size_t count_aggregate_atomic_rules(const AdvancedFlowFilterAggregateCriter
     return count_range_atomic_rules(aggregate.packet_count) +
         count_range_atomic_rules(aggregate.original_bytes) +
         count_range_atomic_rules(aggregate.captured_bytes) +
-        count_range_atomic_rules(aggregate.duration_us) +
         count_range_atomic_rules(aggregate.fragmented_packet_count) +
         count_range_atomic_rules(aggregate.truncated_packet_count) +
         count_range_atomic_rules(aggregate.tcp_syn_count) +
@@ -1356,6 +1401,13 @@ std::size_t count_aggregate_atomic_rules(const AdvancedFlowFilterAggregateCriter
         count_range_atomic_rules(aggregate.tcp_rst_count) +
         count_range_atomic_rules(aggregate.max_original_packet_length) +
         count_range_atomic_rules(aggregate.max_captured_packet_length);
+}
+
+std::size_t count_time_atomic_rules(const AdvancedFlowFilterTimeCriteria& time) noexcept {
+    return count_range_atomic_rules(time.start_us) +
+        count_range_atomic_rules(time.end_us) +
+        count_range_atomic_rules(time.overlap_us) +
+        count_range_atomic_rules(time.duration_us);
 }
 
 }  // namespace
@@ -1414,17 +1466,22 @@ AdvancedFlowFilterCompileResult compile_advanced_flow_filter(
         return error;
     }
 
-    if (const auto error = compile_aggregate_criteria(spec.aggregate, result.filter.aggregate);
-        error.status != AdvancedFlowFilterCompileStatus::ok) {
-        return error;
-    }
-
     if (const auto error = compile_directionality_criteria(spec.directionality, result.filter.directionality);
         error.status != AdvancedFlowFilterCompileStatus::ok) {
         return error;
     }
 
     if (const auto error = compile_address_criteria(spec.addresses, result.filter.addresses);
+        error.status != AdvancedFlowFilterCompileStatus::ok) {
+        return error;
+    }
+
+    if (const auto error = compile_time_criteria(spec.time, result.filter.time);
+        error.status != AdvancedFlowFilterCompileStatus::ok) {
+        return error;
+    }
+
+    if (const auto error = compile_aggregate_criteria(spec.aggregate, result.filter.aggregate);
         error.status != AdvancedFlowFilterCompileStatus::ok) {
         return error;
     }
@@ -1511,6 +1568,10 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
                 continue;
             }
 
+            if (!matches_time_criteria(filter.time, connection)) {
+                continue;
+            }
+
             if (!matches_service_criteria(filter.service, service_hint_value(connection))) {
                 continue;
             }
@@ -1571,6 +1632,10 @@ AdvancedFlowFilterResult evaluate_advanced_flow_filter(
             continue;
         }
 
+        if (!matches_time_criteria(filter.time, connection)) {
+            continue;
+        }
+
         if (!matches_service_criteria(filter.service, service_hint_value(connection))) {
             continue;
         }
@@ -1611,6 +1676,9 @@ AdvancedFlowFilterSpec make_effective_advanced_flow_filter_spec(
     if (!section_states.ip_addresses) {
         effective.addresses = {};
     }
+    if (!section_states.time) {
+        effective.time = {};
+    }
     if (!section_states.traffic) {
         effective.aggregate = {};
     }
@@ -1650,13 +1718,14 @@ std::size_t count_advanced_flow_filter_atomic_rules(const AdvancedFlowFilterSpec
         spec.quic_version.exclude.size() +
         spec.ports.include.size() +
         spec.ports.exclude.size() +
-        count_aggregate_atomic_rules(spec.aggregate) +
         spec.directionality.include.size() +
         spec.directionality.exclude.size() +
         spec.addresses.ipv4_include.size() +
         spec.addresses.ipv4_exclude.size() +
         spec.addresses.ipv6_include.size() +
         spec.addresses.ipv6_exclude.size() +
+        count_time_atomic_rules(spec.time) +
+        count_aggregate_atomic_rules(spec.aggregate) +
         spec.service.include.size() +
         spec.service.exclude.size();
 }

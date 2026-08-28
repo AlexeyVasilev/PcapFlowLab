@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/ProtocolPathPresentation.h"
@@ -36,6 +37,7 @@ public:
         directionality,
         ports,
         ip_addresses,
+        time,
         traffic,
         service,
         protocol_path,
@@ -51,7 +53,6 @@ public:
         packet_count = 0,
         original_bytes,
         captured_bytes,
-        duration,
         max_original_packet_size,
         max_captured_packet_size,
         fragmented_packet_count,
@@ -98,9 +99,16 @@ public:
     Q_INVOKABLE QVariantList addressScopeOptions() const;
     Q_INVOKABLE QVariantList portRows(bool exclude) const;
     Q_INVOKABLE QVariantList addressRows(bool exclude) const;
+    Q_INVOKABLE QVariantList timeRangeRows() const;
+    Q_INVOKABLE QVariantMap timeDurationRow() const;
     Q_INVOKABLE QVariantList commonTrafficRows() const;
     Q_INVOKABLE QVariantList additionalTrafficRows() const;
     Q_INVOKABLE bool trafficAdditionalFiltersExpandedSuggested() const noexcept;
+    Q_INVOKABLE void setTimeRangeFromText(const QString& metricId, const QString& text);
+    Q_INVOKABLE void setTimeRangeToText(const QString& metricId, const QString& text);
+    Q_INVOKABLE void setTimeDurationMinText(const QString& text);
+    Q_INVOKABLE void setTimeDurationMaxText(const QString& text);
+    Q_INVOKABLE bool setTimeDurationUnit(int unit);
     Q_INVOKABLE void setTrafficMinText(int metric, const QString& text);
     Q_INVOKABLE void setTrafficMaxText(int metric, const QString& text);
     Q_INVOKABLE bool setTrafficUnit(int metric, int unit);
@@ -179,6 +187,11 @@ private:
         QString prefix_text {};
     };
 
+    struct AdvancedFlowFilterTimeRangeEditorRow {
+        QString from_text {};
+        QString to_text {};
+    };
+
     struct AdvancedFlowFilterTrafficEditorRow {
         QString min_text {};
         QString max_text {};
@@ -218,6 +231,8 @@ private:
     [[nodiscard]] bool synchronizeDraftSectionsImpl(QString* errorText);
     [[nodiscard]] QVariantList buildPortRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildAddressRowList(bool exclude) const;
+    [[nodiscard]] QVariantList buildTimeRangeRowList() const;
+    [[nodiscard]] QVariantMap buildTimeDurationRow() const;
     [[nodiscard]] QVariantList buildTrafficRowList(bool additional) const;
     [[nodiscard]] QVariantList buildServiceTextRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildProtocolPathRowList(bool exclude) const;
@@ -233,6 +248,8 @@ private:
     std::vector<AdvancedFlowFilterPortEditorRow> port_exclude_rows_ {};
     std::vector<AdvancedFlowFilterAddressEditorRow> address_include_rows_ {};
     std::vector<AdvancedFlowFilterAddressEditorRow> address_exclude_rows_ {};
+    std::vector<AdvancedFlowFilterTimeRangeEditorRow> time_range_rows_ {};
+    AdvancedFlowFilterTrafficEditorRow time_duration_row_ {};
     std::vector<AdvancedFlowFilterTrafficEditorRow> traffic_rows_ {};
     bool service_include_known_ {false};
     bool service_include_unknown_ {false};

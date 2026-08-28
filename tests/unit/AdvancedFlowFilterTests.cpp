@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -905,7 +906,7 @@ void run_port_and_aggregate_tests() {
         spec.aggregate.packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 60U, .max = 120U};
         spec.aggregate.original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1000U, .max = 130000U};
         spec.aggregate.captured_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 5000U, .max = 120000U};
-        spec.aggregate.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 900000U, .max = 6000000U};
+        spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 900000U, .max = 6000000U};
         spec.aggregate.fragmented_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 0U};
         spec.aggregate.truncated_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 0U};
         spec.aggregate.tcp_syn_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1U};
@@ -919,6 +920,76 @@ void run_port_and_aggregate_tests() {
 
     {
         AdvancedFlowFilterSpec spec {};
+        spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 3000000U, .max = 4500000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {2U, 3U, 4U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {4U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 2000000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 6U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500000U, .max = 5100000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {1U, 4U, 5U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 6000000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 200000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {6U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4550000U, .max = 5000000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 4U, 5U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 5100000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 2000000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 6U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500000U, .max = 4500000U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 4U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
         spec.aggregate.fragmented_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 2U, .max = 2U};
         spec.aggregate.truncated_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1U};
         const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
@@ -928,6 +999,22 @@ void run_port_and_aggregate_tests() {
     {
         AdvancedFlowFilterSpec spec {};
         spec.aggregate.packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U, .max = 9U};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_numeric_range);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4500001U, .max = 4500000U};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_numeric_range);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.time.overlap_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 5000001U, .max = 5000000U};
         const auto compile_result =
             session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
         PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_numeric_range);
@@ -1481,16 +1568,40 @@ void run_document_model_tests() {
         document.configured_spec.aggregate.packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U, .max = 20U};
         document.configured_spec.aggregate.original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {};
         document.configured_spec.aggregate.captured_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1024U};
-        document.configured_spec.aggregate.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 5000U};
+        document.configured_spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 5000U};
 
         PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
         PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 4U);
 
+        document.section_states.time = false;
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.aggregate.packet_count == document.configured_spec.aggregate.packet_count);
+        PFL_EXPECT(effective.aggregate.original_bytes == document.configured_spec.aggregate.original_bytes);
+        PFL_EXPECT(effective.aggregate.captured_bytes == document.configured_spec.aggregate.captured_bytes);
+        PFL_EXPECT(effective.aggregate.max_original_packet_length == document.configured_spec.aggregate.max_original_packet_length);
+        PFL_EXPECT(effective.aggregate.max_captured_packet_length == document.configured_spec.aggregate.max_captured_packet_length);
+        PFL_EXPECT(effective.aggregate.fragmented_packet_count == document.configured_spec.aggregate.fragmented_packet_count);
+        PFL_EXPECT(effective.aggregate.truncated_packet_count == document.configured_spec.aggregate.truncated_packet_count);
+        PFL_EXPECT(effective.aggregate.tcp_syn_count == document.configured_spec.aggregate.tcp_syn_count);
+        PFL_EXPECT(effective.aggregate.tcp_fin_count == document.configured_spec.aggregate.tcp_fin_count);
+        PFL_EXPECT(effective.aggregate.tcp_rst_count == document.configured_spec.aggregate.tcp_rst_count);
+        PFL_EXPECT(effective.time == session_detail::AdvancedFlowFilterTimeCriteria {});
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 3U);
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
+        document.configured_spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1000U};
+
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 1U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 1U);
+
         document.section_states.traffic = false;
         const auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
-        PFL_EXPECT(effective.aggregate == session_detail::AdvancedFlowFilterAggregateCriteria {});
-        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
-        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+        PFL_EXPECT(effective.time.duration_us == document.configured_spec.time.duration_us);
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 1U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 1U);
     }
 
     {
@@ -1712,7 +1823,7 @@ void run_text_format_tests() {
     const auto connections = listed_connections_for_fixture(fixture);
 
     {
-        const auto parsed = require_parse_success("format_version = 2\n");
+        const auto parsed = require_parse_success("format_version = 3\n");
         const auto filter = require_compiled_filter(
             session_detail::make_effective_advanced_flow_filter_spec(parsed.document),
             fixture,
@@ -1720,13 +1831,13 @@ void run_text_format_tests() {
         );
         expect_indices_equal(evaluate_matching_indices(connections, filter), {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U});
         PFL_EXPECT(parsed.document.section_states == session_detail::AdvancedFlowFilterDocumentSectionStates {});
-        PFL_EXPECT(require_format_success(parsed.document) == std::string("format_version = 2\n"));
+        PFL_EXPECT(require_format_success(parsed.document) == std::string("format_version = 3\n"));
     }
 
     {
         const auto parsed = require_parse_success(
             "\xEF\xBB\xBF# comment\r\n"
-            "format_version = 2\r\n"
+            "format_version = 3\r\n"
             "\r\n"
             "flow_protocol.include = TCP\r\n"
             "service.contains.ci.include = \"#hash\"   # trailing comment\r\n"
@@ -1738,7 +1849,7 @@ void run_text_format_tests() {
         PFL_EXPECT(
             require_format_success(parsed.document) ==
             std::string(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "flow_protocol.include = tcp\n"
                 "service.contains.ci.include = \"#hash\"\n"
             )
@@ -1750,7 +1861,7 @@ void run_text_format_tests() {
         expect_parse_status("flow_protocol.include = tcp\n", AdvancedFlowFilterTextParseStatus::missing_format_version);
 
         const auto duplicate_version = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 2\nformat_version = 2\n"
+            "format_version = 3\nformat_version = 3\n"
         );
         PFL_EXPECT(duplicate_version.status == AdvancedFlowFilterTextParseStatus::duplicate_format_version);
         PFL_REQUIRE(duplicate_version.issue.has_value());
@@ -1760,19 +1871,19 @@ void run_text_format_tests() {
         expect_parse_status("format_version = 99\n", AdvancedFlowFilterTextParseStatus::unsupported_format_version);
 
         const auto unknown_key = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 2\nunknown.key = value\n"
+            "format_version = 3\nunknown.key = value\n"
         );
         PFL_EXPECT(unknown_key.status == AdvancedFlowFilterTextParseStatus::unknown_key);
         PFL_REQUIRE(unknown_key.issue.has_value());
         PFL_EXPECT(unknown_key.issue->line == 2U);
         PFL_EXPECT(unknown_key.issue->key == "unknown.key");
 
-        expect_parse_status("format_version = 2\nflow_protocol.include tcp\n", AdvancedFlowFilterTextParseStatus::malformed_assignment);
-        expect_parse_status("format_version = 2\npacket_count.min = 1\npacket_count.min = 2\n",
+        expect_parse_status("format_version = 3\nflow_protocol.include tcp\n", AdvancedFlowFilterTextParseStatus::malformed_assignment);
+        expect_parse_status("format_version = 3\npacket_count.min = 1\npacket_count.min = 2\n",
                             AdvancedFlowFilterTextParseStatus::duplicate_scalar_key);
 
         const auto invalid_enum = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 2\ndirectionality.include = any\n"
+            "format_version = 3\ndirectionality.include = any\n"
         );
         PFL_EXPECT(invalid_enum.status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
         PFL_REQUIRE(invalid_enum.issue.has_value());
@@ -1782,8 +1893,94 @@ void run_text_format_tests() {
     }
 
     {
+        const auto whole_seconds =
+            session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17Z");
+        PFL_REQUIRE(whole_seconds.ok);
+        PFL_EXPECT(!whole_seconds.overflow);
+        const auto whole_seconds_formatted =
+            session_detail::format_advanced_flow_filter_utc_timestamp_text(whole_seconds.value_us);
+        PFL_REQUIRE(whole_seconds_formatted.has_value());
+        PFL_EXPECT(*whole_seconds_formatted == "2026-08-27T14:32:17.000000Z");
+
+        const auto fractional_tenths =
+            session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17.1Z");
+        PFL_REQUIRE(fractional_tenths.ok);
+        PFL_REQUIRE(session_detail::format_advanced_flow_filter_utc_timestamp_text(fractional_tenths.value_us).has_value());
+        PFL_EXPECT(
+            *session_detail::format_advanced_flow_filter_utc_timestamp_text(fractional_tenths.value_us) ==
+            "2026-08-27T14:32:17.100000Z"
+        );
+
+        const auto fractional_millis =
+            session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17.123Z");
+        PFL_REQUIRE(fractional_millis.ok);
+        PFL_REQUIRE(session_detail::format_advanced_flow_filter_utc_timestamp_text(fractional_millis.value_us).has_value());
+        PFL_EXPECT(
+            *session_detail::format_advanced_flow_filter_utc_timestamp_text(fractional_millis.value_us) ==
+            "2026-08-27T14:32:17.123000Z"
+        );
+
+        const auto fractional_micros =
+            session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17.123456Z");
+        PFL_REQUIRE(fractional_micros.ok);
+        const auto fractional_micros_formatted =
+            session_detail::format_advanced_flow_filter_utc_timestamp_text(fractional_micros.value_us);
+        PFL_REQUIRE(fractional_micros_formatted.has_value());
+        PFL_EXPECT(*fractional_micros_formatted == "2026-08-27T14:32:17.123456Z");
+        const auto fractional_micros_reparsed =
+            session_detail::parse_advanced_flow_filter_utc_timestamp_text(*fractional_micros_formatted);
+        PFL_REQUIRE(fractional_micros_reparsed.ok);
+        PFL_EXPECT(fractional_micros_reparsed.value_us == fractional_micros.value_us);
+
+        PFL_EXPECT(session_detail::parse_advanced_flow_filter_utc_timestamp_text("2024-02-29T12:34:56Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2023-02-29T12:34:56Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-13-27T14:32:17Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-32T14:32:17Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T24:32:17Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:60:17Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:60Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17.1234567Z").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17+05:00").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("2026-08-27T14:32:17").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("not-a-timestamp").ok);
+        PFL_EXPECT(!session_detail::parse_advanced_flow_filter_utc_timestamp_text("0000-01-01T00:00:00Z").ok);
+        PFL_EXPECT(!session_detail::format_advanced_flow_filter_utc_timestamp_text(std::numeric_limits<std::uint64_t>::max()).has_value());
+    }
+
+    {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
+            "section.time.enabled = false\n"
+            "time.start.from = \"2026-08-27T14:32:17Z\"\n"
+            "time.start.to = \"2026-08-27T14:35:00Z\"\n"
+            "time.end.from = \"2026-08-27T14:40:00.25Z\"\n"
+            "time.end.to = \"2026-08-27T14:45:00.123456Z\"\n"
+            "time.overlap.from = \"2026-08-27T14:33:00.5Z\"\n"
+            "time.overlap.to = \"2026-08-27T14:36:00Z\"\n"
+            "time.duration.min = 100ms\n"
+            "time.duration.max = 30s\n"
+        );
+        const auto& spec = parsed.document.configured_spec;
+        PFL_EXPECT(parsed.document.section_states.time == false);
+        PFL_REQUIRE(spec.time.start_us.has_value());
+        PFL_REQUIRE(spec.time.end_us.has_value());
+        PFL_REQUIRE(spec.time.overlap_us.has_value());
+        PFL_REQUIRE(spec.time.duration_us.has_value());
+        const auto formatted = require_format_success(parsed.document);
+        PFL_EXPECT(formatted.find("section.time.enabled = false\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.start.from = \"2026-08-27T14:32:17.000000Z\"\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.start.to = \"2026-08-27T14:35:00.000000Z\"\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.end.from = \"2026-08-27T14:40:00.250000Z\"\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.end.to = \"2026-08-27T14:45:00.123456Z\"\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.overlap.from = \"2026-08-27T14:33:00.500000Z\"\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.overlap.to = \"2026-08-27T14:36:00.000000Z\"\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.duration.min = 100ms\n") != std::string::npos);
+        PFL_EXPECT(formatted.find("time.duration.max = 30s\n") != std::string::npos);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 3\n"
             "section.address_family.enabled = false\n"
             "section.flow_protocol.enabled = FALSE\n"
             "section.detected_protocol.enabled = false\n"
@@ -1792,6 +1989,7 @@ void run_text_format_tests() {
             "section.directionality.enabled = false\n"
             "section.ports.enabled = false\n"
             "section.ip_addresses.enabled = false\n"
+            "section.time.enabled = false\n"
             "section.traffic.enabled = false\n"
             "section.service.enabled = false\n"
             "section.protocol_path.enabled = false\n"
@@ -1805,6 +2003,7 @@ void run_text_format_tests() {
         PFL_EXPECT(parsed.document.section_states.directionality == false);
         PFL_EXPECT(parsed.document.section_states.ports == false);
         PFL_EXPECT(parsed.document.section_states.ip_addresses == false);
+        PFL_EXPECT(parsed.document.section_states.time == false);
         PFL_EXPECT(parsed.document.section_states.traffic == false);
         PFL_EXPECT(parsed.document.section_states.service == false);
         PFL_EXPECT(parsed.document.section_states.protocol_path == false);
@@ -1812,7 +2011,7 @@ void run_text_format_tests() {
         PFL_EXPECT(
             require_format_success(parsed.document) ==
             std::string(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "section.address_family.enabled = false\n"
                 "section.flow_protocol.enabled = false\n"
                 "section.detected_protocol.enabled = false\n"
@@ -1821,6 +2020,7 @@ void run_text_format_tests() {
                 "section.directionality.enabled = false\n"
                 "section.ports.enabled = false\n"
                 "section.ip_addresses.enabled = false\n"
+                "section.time.enabled = false\n"
                 "section.traffic.enabled = false\n"
                 "section.service.enabled = false\n"
                 "section.protocol_path.enabled = false\n"
@@ -1829,7 +2029,7 @@ void run_text_format_tests() {
         );
 
         const auto explicit_true = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.ports.enabled = true\n"
             "port.either.include = 443\n"
         );
@@ -1837,28 +2037,28 @@ void run_text_format_tests() {
         PFL_EXPECT(
             require_format_success(explicit_true.document) ==
             std::string(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "port.either.include = 443\n"
             )
         );
 
         expect_parse_status(
-            "format_version = 2\nsection.unknown.enabled = false\n",
+            "format_version = 3\nsection.unknown.enabled = false\n",
             AdvancedFlowFilterTextParseStatus::unknown_key
         );
         expect_parse_status(
-            "format_version = 2\nsection.ports.enabled = maybe\n",
+            "format_version = 3\nsection.ports.enabled = maybe\n",
             AdvancedFlowFilterTextParseStatus::invalid_value
         );
         expect_parse_status(
-            "format_version = 2\nsection.ports.enabled = false\nsection.ports.enabled = true\n",
+            "format_version = 3\nsection.ports.enabled = false\nsection.ports.enabled = true\n",
             AdvancedFlowFilterTextParseStatus::duplicate_scalar_key
         );
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "address_family.include = IPv4\n"
             "address_family.include = ipv6\n"
             "address_family.exclude = IPV6\n"
@@ -1874,7 +2074,7 @@ void run_text_format_tests() {
         PFL_EXPECT(
             require_format_success(parsed.document) ==
             std::string(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "address_family.include = ipv4\n"
                 "address_family.include = ipv6\n"
                 "address_family.exclude = ipv6\n"
@@ -1884,7 +2084,7 @@ void run_text_format_tests() {
 
     {
         const auto invalid_family = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "address_family.include = ipx\n"
         );
         PFL_EXPECT(invalid_family.status == AdvancedFlowFilterTextParseStatus::invalid_enum_token);
@@ -1896,7 +2096,7 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "address_family.include = IPv4\n"
             "flow_protocol.include = TCP\n"
             "flow_protocol.include = udp\n"
@@ -1924,7 +2124,7 @@ void run_text_format_tests() {
         PFL_EXPECT(
             require_format_success(parsed.document) ==
             std::string(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "address_family.include = ipv4\n"
                 "flow_protocol.include = tcp\n"
                 "flow_protocol.include = udp\n"
@@ -1939,19 +2139,19 @@ void run_text_format_tests() {
     }
 
     expect_parse_status(
-        "format_version = 2\n"
+        "format_version = 3\n"
         "detected_protocol.include = possible_tls\n",
         AdvancedFlowFilterTextParseStatus::invalid_enum_token
     );
     expect_parse_status(
-        "format_version = 2\n"
+        "format_version = 3\n"
         "detected_protocol.include = possible_quic\n",
         AdvancedFlowFilterTextParseStatus::invalid_enum_token
     );
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "port.either.include = 443\n"
             "port.a.include = 53000-53010\n"
             "port.b.exclude = 1-1023\n"
@@ -1969,22 +2169,22 @@ void run_text_format_tests() {
         PFL_EXPECT(spec.ports.exclude[0].range.first == 1U);
         PFL_EXPECT(spec.ports.exclude[0].range.last == 1023U);
 
-        expect_parse_status("format_version = 2\nport.either.include = 65536\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
-        expect_parse_status("format_version = 2\nport.either.include = 9000-8000\n", AdvancedFlowFilterTextParseStatus::invalid_value);
-        expect_parse_status("format_version = 2\nport.either.include = 100-200-300\n", AdvancedFlowFilterTextParseStatus::invalid_value);
+        expect_parse_status("format_version = 3\nport.either.include = 65536\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+        expect_parse_status("format_version = 3\nport.either.include = 9000-8000\n", AdvancedFlowFilterTextParseStatus::invalid_value);
+        expect_parse_status("format_version = 3\nport.either.include = 100-200-300\n", AdvancedFlowFilterTextParseStatus::invalid_value);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "packet_count.min = 100\n"
             "packet_count.max = 200\n"
             "original_bytes.min = 1MiB\n"
             "original_bytes.max = 1536B\n"
             "captured_bytes.min = 2048\n"
             "captured_bytes.max = 2GiB\n"
-            "duration.min = 1500ms\n"
-            "duration.max = 2h\n"
+            "time.duration.min = 1500ms\n"
+            "time.duration.max = 2h\n"
             "fragmented_packet_count.min = 1\n"
             "fragmented_packet_count.max = 2\n"
             "truncated_packet_count.min = 3\n"
@@ -2011,9 +2211,9 @@ void run_text_format_tests() {
         PFL_REQUIRE(spec.aggregate.captured_bytes.has_value());
         PFL_EXPECT(spec.aggregate.captured_bytes->min == 2048U);
         PFL_EXPECT(spec.aggregate.captured_bytes->max == 2147483648ULL);
-        PFL_REQUIRE(spec.aggregate.duration_us.has_value());
-        PFL_EXPECT(spec.aggregate.duration_us->min == 1500000U);
-        PFL_EXPECT(spec.aggregate.duration_us->max == 7200000000ULL);
+        PFL_REQUIRE(spec.time.duration_us.has_value());
+        PFL_EXPECT(spec.time.duration_us->min == 1500000U);
+        PFL_EXPECT(spec.time.duration_us->max == 7200000000ULL);
         PFL_REQUIRE(spec.aggregate.max_original_packet_length.has_value());
         PFL_EXPECT(spec.aggregate.max_original_packet_length->min == 1500U);
         PFL_EXPECT(spec.aggregate.max_original_packet_length->max == 9000U);
@@ -2021,14 +2221,14 @@ void run_text_format_tests() {
         PFL_EXPECT(spec.aggregate.max_captured_packet_length->min == 1024U);
         PFL_EXPECT(spec.aggregate.max_captured_packet_length->max == 1024U);
 
-        expect_parse_status("format_version = 2\noriginal_bytes.min = 1MB\n", AdvancedFlowFilterTextParseStatus::invalid_value);
-        expect_parse_status("format_version = 2\ncaptured_bytes.min = 16777216TiB\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
-        expect_parse_status("format_version = 2\nduration.min = 18446744073709551615h\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+        expect_parse_status("format_version = 3\noriginal_bytes.min = 1MB\n", AdvancedFlowFilterTextParseStatus::invalid_value);
+        expect_parse_status("format_version = 3\ncaptured_bytes.min = 16777216TiB\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+        expect_parse_status("format_version = 3\ntime.duration.min = 18446744073709551615h\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "ip.either.include = 192.0.2.10\n"
             "ip.a.exclude = 10.0.0.0/8\n"
             "ip.b.include = 2001:db8::1\n"
@@ -2048,13 +2248,13 @@ void run_text_format_tests() {
         PFL_EXPECT(spec.addresses.ipv6_exclude[0].match_kind == session_detail::AdvancedFlowFilterAddressMatchKind::cidr);
         PFL_EXPECT(spec.addresses.ipv6_exclude[0].prefix_length == 32U);
 
-        expect_parse_status("format_version = 2\nip.either.include = 300.1.2.3\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
-        expect_parse_status("format_version = 2\nip.either.include = 2001:::1\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
+        expect_parse_status("format_version = 3\nip.either.include = 300.1.2.3\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
+        expect_parse_status("format_version = 3\nip.either.include = 2001:::1\n", AdvancedFlowFilterTextParseStatus::invalid_ip_address);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "service.state.include = known\n"
             "service.state.exclude = unknown\n"
             "service.equals.ci.include = \"Example # Service\"\n"
@@ -2071,13 +2271,13 @@ void run_text_format_tests() {
         PFL_EXPECT(spec.service.exclude[0].kind == AdvancedFlowFilterServicePredicateKind::unknown);
         PFL_EXPECT(spec.service.exclude[1].value == "TEST\\prefix");
 
-        expect_parse_status("format_version = 2\nservice.contains.ci.include = \"bad\\q\"\n", AdvancedFlowFilterTextParseStatus::invalid_escape);
-        expect_parse_status("format_version = 2\nservice.contains.ci.include = \"unterminated\n", AdvancedFlowFilterTextParseStatus::unterminated_string);
+        expect_parse_status("format_version = 3\nservice.contains.ci.include = \"bad\\q\"\n", AdvancedFlowFilterTextParseStatus::invalid_escape);
+        expect_parse_status("format_version = 3\nservice.contains.ci.include = \"unterminated\n", AdvancedFlowFilterTextParseStatus::unterminated_string);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.exact.include = EthernetII > IPv4 > TCP\n"
             "protocol_path.prefix.include = EthernetII > VLAN(vid=100) > MPLS(label=16050) > IPv6\n"
             "protocol_path.contains.include = VXLAN(vni=42)\n"
@@ -2111,15 +2311,15 @@ void run_text_format_tests() {
         PFL_EXPECT(spec.protocol_path.include[2].layers[0].identifier->value == 42U);
         PFL_EXPECT(spec.protocol_path.include[4].layers[0].identifier->kind == ProtocolLayerIdentifierKind::gre_key);
 
-        expect_parse_status("format_version = 2\nprotocol_path.contains.include = VLAN(vid=100) > IPv4\n",
+        expect_parse_status("format_version = 3\nprotocol_path.contains.include = VLAN(vid=100) > IPv4\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
-        expect_parse_status("format_version = 2\nprotocol_path.contains.include = UnknownLayer\n",
+        expect_parse_status("format_version = 3\nprotocol_path.contains.include = UnknownLayer\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
-        expect_parse_status("format_version = 2\nprotocol_path.contains.include = VLAN(foo=1)\n",
+        expect_parse_status("format_version = 3\nprotocol_path.contains.include = VLAN(foo=1)\n",
                             AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
 
         const auto identifier_bearing_paths = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
             "protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n"
             "protocol_path.contains.include = AH(spi=0x11111111)\n"
@@ -2150,7 +2350,7 @@ void run_text_format_tests() {
         PFL_EXPECT(ah_contains.layers[0].identifier->value == 0x11111111U);
 
         const auto invalid_protocol_path = session_detail::parse_advanced_flow_filter_text(
-            "format_version = 2\nprotocol_path.contains.include = ESP(key=1)\n"
+            "format_version = 3\nprotocol_path.contains.include = ESP(key=1)\n"
         );
         PFL_EXPECT(invalid_protocol_path.status == AdvancedFlowFilterTextParseStatus::invalid_protocol_path_syntax);
         PFL_REQUIRE(invalid_protocol_path.issue.has_value());
@@ -2159,7 +2359,7 @@ void run_text_format_tests() {
         PFL_EXPECT(invalid_protocol_path.issue->token == "ESP(key=1)");
 
         const auto quoted_equals_service = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "service.contains.ci.include = \"a=b\"\n"
         );
         PFL_REQUIRE(quoted_equals_service.document.configured_spec.service.include.size() == 1U);
@@ -2168,7 +2368,7 @@ void run_text_format_tests() {
 
     {
         const auto formatted_shape = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve > EthernetII > IPv4 > TCP\n"
             "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
             "protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n"
@@ -2179,14 +2379,14 @@ void run_text_format_tests() {
 
     {
         const auto realistic_tls_text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcp\n"
             "detected_protocol.include = tls\n"
             "tls_version.include = tls1_3\n"
             "port.either.include = 443\n"
             "packet_count.min = 100\n"
             "original_bytes.min = 1KiB\n"
-            "duration.min = 1s\n"
+            "time.duration.min = 1s\n"
             "ip.either.include = 10.0.0.0/8\n"
             "directionality.include = bidirectional\n"
             "service.contains.ci.include = \"example\"\n";
@@ -2202,14 +2402,14 @@ void run_text_format_tests() {
 
     {
         const auto realistic_quic_text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = udp\n"
             "detected_protocol.include = quic\n"
             "quic_version.include = v1\n"
             "port.either.include = 443\n"
             "packet_count.min = 7\n"
             "captured_bytes.min = 720B\n"
-            "duration.max = 10s\n"
+            "time.duration.max = 10s\n"
             "ip.a.include = 10.0.0.92\n"
             "directionality.include = unidirectional\n"
             "service.starts_with.ci.include = \"quic-\"\n";
@@ -2270,7 +2470,7 @@ void run_text_format_tests() {
         spec.aggregate.packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1000U};
         spec.aggregate.original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1536U, .max = 1048576U};
         spec.aggregate.captured_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1024U, .max = 2147483648ULL};
-        spec.aggregate.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1000U, .max = 1000000U};
+        spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1000U, .max = 1000000U};
         spec.aggregate.fragmented_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 10U};
         spec.aggregate.truncated_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 10U};
         spec.aggregate.tcp_syn_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 10U};
@@ -2312,7 +2512,7 @@ void run_text_format_tests() {
         const auto reparsed = require_parse_success(first_text);
         const auto second_text = require_format_success(reparsed.document);
         PFL_EXPECT(first_text == second_text);
-        PFL_EXPECT(first_text.find("format_version = 2\n") == 0U);
+        PFL_EXPECT(first_text.find("format_version = 3\n") == 0U);
         PFL_EXPECT(first_text.find("protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n") != std::string::npos);
         PFL_EXPECT(first_text.find("protocol_path.exact.include = EthernetII > IPv4 > UDP > GTP-U(teid=0x01020304) > IPv4 > TCP\n") != std::string::npos);
         PFL_EXPECT(first_text.find("address_family.include = ipv4\n") != std::string::npos);
@@ -2395,7 +2595,7 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.ports.enabled = false\n"
             "port.either.include = 443\n"
             "port.either.include = 8443\n"
@@ -2407,7 +2607,7 @@ void run_text_format_tests() {
         PFL_EXPECT(
             require_format_success(parsed.document) ==
             std::string(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "section.ports.enabled = false\n"
                 "port.either.include = 443\n"
                 "port.either.include = 8443\n"
@@ -2419,7 +2619,7 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.protocol_path.enabled = false\n"
             "protocol_path.prefix.include = EthernetII > IPv4\n"
             "protocol_path.contains.include = VXLAN(vni=100)\n"
@@ -2434,7 +2634,7 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.contains_layer.enabled = false\n"
             "protocol_path.exact.include = EthernetII > IPv4 > TCP\n"
             "protocol_path.contains.exclude = GTP-U(teid=0x12345678)\n"
@@ -2448,27 +2648,27 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
-            "section.traffic.enabled = false\n"
+            "format_version = 3\n"
+            "section.time.enabled = false\n"
             "packet_count.min = 10\n"
             "packet_count.max = 20\n"
             "captured_bytes.min = 1KiB\n"
-            "duration.max = 5s\n"
+            "time.duration.max = 5s\n"
         );
-        PFL_EXPECT(parsed.document.section_states.traffic == false);
+        PFL_EXPECT(parsed.document.section_states.time == false);
         PFL_REQUIRE(parsed.document.configured_spec.aggregate.packet_count.has_value());
         PFL_EXPECT(parsed.document.configured_spec.aggregate.packet_count->min == 10U);
         PFL_EXPECT(parsed.document.configured_spec.aggregate.packet_count->max == 20U);
         PFL_REQUIRE(parsed.document.configured_spec.aggregate.captured_bytes.has_value());
         PFL_EXPECT(parsed.document.configured_spec.aggregate.captured_bytes->min == 1024U);
-        PFL_REQUIRE(parsed.document.configured_spec.aggregate.duration_us.has_value());
-        PFL_EXPECT(parsed.document.configured_spec.aggregate.duration_us->max == 5000000U);
+        PFL_REQUIRE(parsed.document.configured_spec.time.duration_us.has_value());
+        PFL_EXPECT(parsed.document.configured_spec.time.duration_us->max == 5000000U);
         PFL_EXPECT(parsed.document == require_parse_success(require_format_success(parsed.document)).document);
     }
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.ip_addresses.enabled = false\n"
             "section.service.enabled = false\n"
             "ip.either.include = 10.0.0.0/8\n"
@@ -2489,7 +2689,7 @@ void run_text_format_tests() {
 
     {
         const auto parsed = require_parse_success(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.address_family.enabled = false\n"
             "address_family.include = ipv6\n"
         );
@@ -2522,7 +2722,7 @@ void run_text_format_tests() {
                 "section.address_family.enabled = false\n"
                 "section.ports.enabled = false\n"
                 "section.service.enabled = false\n"
-            ) == std::string("format_version = 2\n").size()
+            ) == std::string("format_version = 3\n").size()
         );
         PFL_EXPECT(document == require_parse_success(text).document);
     }
@@ -2531,66 +2731,170 @@ void run_text_format_tests() {
 void run_metadata_only_evaluation_tests() {
     ScopedTestContext context {"advanced_flow_filter/metadata_only"};
 
-    CaptureSession session {};
-    auto& state = session.state();
-    const auto path_id = state.protocol_path_registry.intern(ProtocolPath {
-        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
-    });
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+        const auto path_id = state.protocol_path_registry.intern(ProtocolPath {
+            {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+        });
 
-    const FlowKeyV4 key {
-        .src_addr = ipv4(192, 0, 2, 10),
-        .dst_addr = ipv4(198, 51, 100, 10),
-        .src_port = 50000,
-        .dst_port = 443,
-        .protocol = ProtocolId::tcp,
-    };
+        const FlowKeyV4 key {
+            .src_addr = ipv4(192, 0, 2, 10),
+            .dst_addr = ipv4(198, 51, 100, 10),
+            .src_port = 50000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
 
-    auto& connection = state.ipv4_connections.get_or_create(make_connection_key(key));
-    connection = make_ipv4_connection(
-        key,
-        std::nullopt,
-        path_id,
-        25U,
-        0U,
-        2500U,
-        0U,
-        2048U,
-        1000U,
-        5000U,
-        FlowProtocolHint::unknown,
-        "byte-free.example",
-        0U,
-        0U,
-        1U,
-        0U,
-        0U,
-        512U,
-        480U
-    );
-    connection.flow_a.packets.clear();
-    connection.flow_b.packets.clear();
+        auto& connection = state.ipv4_connections.get_or_create(make_connection_key(key));
+        connection = make_ipv4_connection(
+            key,
+            std::nullopt,
+            path_id,
+            25U,
+            0U,
+            2500U,
+            0U,
+            2048U,
+            1000U,
+            5000U,
+            FlowProtocolHint::unknown,
+            "byte-free.example",
+            0U,
+            0U,
+            1U,
+            0U,
+            0U,
+            512U,
+            480U
+        );
+        connection.flow_a.packets.clear();
+        connection.flow_b.packets.clear();
 
-    const auto connections = session_detail::list_connections(state);
-    PFL_REQUIRE(connections.size() == 1U);
+        const auto connections = session_detail::list_connections(state);
+        PFL_REQUIRE(connections.size() == 1U);
 
-    AdvancedFlowFilterSpec spec {};
-    spec.aggregate.captured_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 2048U, .max = 2048U};
-    spec.aggregate.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4000U, .max = 4000U};
-    spec.service.include = {
-        {
-            .kind = AdvancedFlowFilterServicePredicateKind::contains,
-            .value = "BYTE-FREE",
-            .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
-        },
-    };
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.captured_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 2048U, .max = 2048U};
+        spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 4000U, .max = 4000U};
+        spec.service.include = {
+            {
+                .kind = AdvancedFlowFilterServicePredicateKind::contains,
+                .value = "BYTE-FREE",
+                .case_sensitivity = AdvancedFlowFilterStringCaseSensitivity::ascii_case_insensitive,
+            },
+        };
 
-    const auto compile_result =
-        session_detail::compile_advanced_flow_filter(spec, state.protocol_path_registry, AnalysisSettings {});
-    PFL_REQUIRE(compile_result.status == AdvancedFlowFilterCompileStatus::ok);
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, state.protocol_path_registry, AnalysisSettings {});
+        PFL_REQUIRE(compile_result.status == AdvancedFlowFilterCompileStatus::ok);
 
-    const auto result = session_detail::evaluate_advanced_flow_filter(connections, compile_result.filter);
-    PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
-    expect_indices_equal(result.matching_flow_indices, {0U});
+        const auto result = session_detail::evaluate_advanced_flow_filter(connections, compile_result.filter);
+        PFL_REQUIRE(result.status == AdvancedFlowFilterEvaluationStatus::ok);
+        expect_indices_equal(result.matching_flow_indices, {0U});
+    }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+        const auto path_id = state.protocol_path_registry.intern(ProtocolPath {
+            {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+        });
+
+        const FlowKeyV4 key {
+            .src_addr = ipv4(192, 0, 2, 20),
+            .dst_addr = ipv4(198, 51, 100, 20),
+            .src_port = 50001,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+
+        auto& connection = state.ipv4_connections.get_or_create(make_connection_key(key));
+        connection = make_ipv4_connection(
+            key,
+            std::nullopt,
+            path_id,
+            1U,
+            0U,
+            128U,
+            0U,
+            128U,
+            7000U,
+            7000U,
+            FlowProtocolHint::unknown,
+            "single-packet.example",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            128U,
+            128U
+        );
+        connection.flow_a.packets.clear();
+        connection.flow_b.packets.clear();
+
+        AdvancedFlowFilterSpec spec {};
+        spec.time.duration_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 0U, .max = 0U};
+        expect_indices_equal(
+            evaluate_matching_indices_for_session(session, spec, AnalysisSettings {}),
+            {0U}
+        );
+    }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+        const auto path_id = state.protocol_path_registry.intern(ProtocolPath {
+            {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+        });
+
+        const FlowKeyV4 key {
+            .src_addr = ipv4(192, 0, 2, 30),
+            .dst_addr = ipv4(198, 51, 100, 30),
+            .src_port = 50002,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+
+        auto& connection = state.ipv4_connections.get_or_create(make_connection_key(key));
+        connection = make_ipv4_connection(
+            key,
+            std::nullopt,
+            path_id,
+            2U,
+            0U,
+            256U,
+            0U,
+            256U,
+            1000U,
+            5000U,
+            FlowProtocolHint::unknown,
+            "out-of-order.example",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            128U,
+            128U
+        );
+        connection.flow_a.packets = {
+            PacketRef {.packet_index = 0U, .ts_sec = 9U, .ts_usec = 0U},
+            PacketRef {.packet_index = 1U, .ts_sec = 0U, .ts_usec = 100U},
+        };
+
+        PFL_EXPECT(connection.aggregate_stats.first_timestamp_us == 1000U);
+        PFL_EXPECT(connection.aggregate_stats.last_timestamp_us == 5000U);
+
+        AdvancedFlowFilterSpec spec {};
+        spec.time.start_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1000U, .max = 1000U};
+        spec.time.end_us = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 5000U, .max = 5000U};
+        expect_indices_equal(
+            evaluate_matching_indices_for_session(session, spec, AnalysisSettings {}),
+            {0U}
+        );
+    }
 }
 
 void run_frontend_text_query_tests() {
@@ -2614,7 +2918,7 @@ void run_frontend_text_query_tests() {
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
 
     const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
-    const auto empty = adapter.query_advanced_flows_text("format_version = 2\n", std::nullopt, std::nullopt, std::nullopt);
+    const auto empty = adapter.query_advanced_flows_text("format_version = 3\n", std::nullopt, std::nullopt, std::nullopt);
     PFL_EXPECT(empty.status == FrontendAdvancedFlowQueryStatus::ok);
     PFL_EXPECT(empty.parse_status == AdvancedFlowFilterTextParseStatus::ok);
     PFL_EXPECT(!empty.parse_issue.has_value());
@@ -2627,7 +2931,7 @@ void run_frontend_text_query_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = udp\n";
         const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
         const auto direct = adapter.query_advanced_flows(effective, std::nullopt, std::nullopt, std::nullopt);
@@ -2644,7 +2948,7 @@ void run_frontend_text_query_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.flow_protocol.enabled = false\n"
             "flow_protocol.include = udp\n";
         const auto from_text = adapter.query_advanced_flows_text(text, std::nullopt, std::nullopt, std::nullopt);
@@ -2656,7 +2960,7 @@ void run_frontend_text_query_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = udp\n";
         const auto effective = session_detail::make_effective_advanced_flow_filter_spec(require_parse_success(text).document);
         const std::vector<std::size_t> candidate_flow_indices {0U, 1U};
@@ -2672,7 +2976,7 @@ void run_frontend_text_query_tests() {
 
     {
         const auto malformed = adapter.query_advanced_flows_text(
-            "format_version = 2\nflow_protocol.include = tcpish\n",
+            "format_version = 3\nflow_protocol.include = tcpish\n",
             std::nullopt,
             std::nullopt,
             std::nullopt
@@ -2721,10 +3025,10 @@ void run_frontend_structured_document_tests() {
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
 
     const auto baseline = adapter.query_flows(session_detail::FlowQuery {});
-    const auto empty = adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+    const auto empty = adapter.parse_advanced_flow_filter_structured_document("format_version = 3\n");
     PFL_EXPECT(empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
     PFL_REQUIRE(empty.document.has_value());
-    PFL_EXPECT(empty.document->canonical_text == "format_version = 2\n");
+    PFL_EXPECT(empty.document->canonical_text == "format_version = 3\n");
     PFL_EXPECT(empty.option_catalog.address_family.size() == 2U);
     PFL_EXPECT(empty.option_catalog.flow_protocol.size() == 9U);
     PFL_EXPECT(empty.option_catalog.detected_protocol.size() == 17U);
@@ -2794,6 +3098,17 @@ void run_frontend_structured_document_tests() {
         };
     };
 
+    const auto make_time_row = [](
+                                   std::string metric_id,
+                                   std::string from_text,
+                                   std::string to_text) {
+        return FrontendAdvancedFlowFilterTimeRowDto {
+            .metric_id = std::move(metric_id),
+            .from_text = std::move(from_text),
+            .to_text = std::move(to_text),
+        };
+    };
+
     const auto make_service_text_row = [](
                                            std::string operator_id,
                                            const bool case_sensitive,
@@ -2825,9 +3140,55 @@ void run_frontend_structured_document_tests() {
         };
     };
 
+    const auto find_time_row = [](const auto& rows, const std::string_view metric_id) {
+        return std::find_if(rows.begin(), rows.end(), [&](const auto& row) {
+            return row.metric_id == metric_id;
+        });
+    };
+
+    {
+        FrontendSessionAdapter no_capture_adapter {};
+        const auto parsed = no_capture_adapter.parse_advanced_flow_filter_structured_document(
+            "format_version = 3\n"
+            "section.time.enabled = false\n"
+            "time.start.from = \"2026-08-27T14:32:17Z\"\n"
+            "time.end.to = \"2026-08-27T14:35:00.123456Z\"\n"
+            "time.overlap.from = \"2026-08-27T14:33:00.5Z\"\n"
+            "time.duration.max = 2min\n"
+        );
+        PFL_EXPECT(parsed.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(parsed.document.has_value());
+        PFL_EXPECT(parsed.document->time.enabled == false);
+        const auto start_row = find_time_row(parsed.document->time.ranges, "start");
+        const auto end_row = find_time_row(parsed.document->time.ranges, "end");
+        const auto overlap_row = find_time_row(parsed.document->time.ranges, "overlap");
+        PFL_REQUIRE(start_row != parsed.document->time.ranges.end());
+        PFL_REQUIRE(end_row != parsed.document->time.ranges.end());
+        PFL_REQUIRE(overlap_row != parsed.document->time.ranges.end());
+        PFL_EXPECT(start_row->from_text == "2026-08-27T14:32:17.000000Z");
+        PFL_EXPECT(start_row->to_text.empty());
+        PFL_EXPECT(end_row->from_text.empty());
+        PFL_EXPECT(end_row->to_text == "2026-08-27T14:35:00.123456Z");
+        PFL_EXPECT(overlap_row->from_text == "2026-08-27T14:33:00.500000Z");
+        PFL_EXPECT(overlap_row->to_text.empty());
+        PFL_EXPECT(parsed.document->time.duration.metric_id == "duration");
+        PFL_EXPECT(parsed.document->time.duration.unit_id == "min");
+        PFL_EXPECT(parsed.document->time.duration.max_text == "2");
+
+        const auto round_trip = no_capture_adapter.apply_advanced_flow_filter_structured_document(
+            parsed.document->canonical_text,
+            *parsed.document
+        );
+        PFL_EXPECT(round_trip.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(round_trip.document.has_value());
+        PFL_EXPECT(round_trip.document->canonical_text == parsed.document->canonical_text);
+        PFL_EXPECT(round_trip.configured_rule_count == 4U);
+        PFL_EXPECT(round_trip.active_rule_count == 0U);
+    }
+
     {
         const auto finite = adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = udp\n"
             "directionality.exclude = bidirectional\n"
         );
@@ -2843,7 +3204,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const auto ports_snapshot = adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "port.either.include = 443\n"
             "port.a.exclude = 1000-2000\n"
         );
@@ -2862,7 +3223,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const auto ip_snapshot = adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "ip.either.include = 192.0.2.10\n"
             "ip.b.exclude = 2001:db8::/32\n"
         );
@@ -2881,10 +3242,13 @@ void run_frontend_structured_document_tests() {
 
     {
         const auto traffic_service_snapshot = adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
+            "time.start.from = \"2026-08-27T14:32:17Z\"\n"
+            "time.end.to = \"2026-08-27T14:35:00.123456Z\"\n"
+            "time.overlap.from = \"2026-08-27T14:33:00.5Z\"\n"
             "original_bytes.min = 4MiB\n"
             "captured_bytes.max = 512KiB\n"
-            "duration.min = 2m\n"
+            "time.duration.min = 2m\n"
             "max_original_packet_length.max = 2KiB\n"
             "tcp_syn_count.min = 3\n"
             "service.state.include = unknown\n"
@@ -2893,28 +3257,31 @@ void run_frontend_structured_document_tests() {
         );
         PFL_EXPECT(traffic_service_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(traffic_service_snapshot.document.has_value());
+        const auto start_row = find_time_row(traffic_service_snapshot.document->time.ranges, "start");
+        const auto end_row = find_time_row(traffic_service_snapshot.document->time.ranges, "end");
+        const auto overlap_row = find_time_row(traffic_service_snapshot.document->time.ranges, "overlap");
         const auto original_bytes_row = std::find_if(
             traffic_service_snapshot.document->traffic.primary.begin(),
             traffic_service_snapshot.document->traffic.primary.end(),
             [](const auto& row) { return row.metric_id == "original_bytes"; }
-        );
-        const auto duration_row = std::find_if(
-            traffic_service_snapshot.document->traffic.primary.begin(),
-            traffic_service_snapshot.document->traffic.primary.end(),
-            [](const auto& row) { return row.metric_id == "duration"; }
         );
         const auto max_original_packet_size_row = std::find_if(
             traffic_service_snapshot.document->traffic.additional.begin(),
             traffic_service_snapshot.document->traffic.additional.end(),
             [](const auto& row) { return row.metric_id == "max_original_packet_size"; }
         );
+        PFL_REQUIRE(start_row != traffic_service_snapshot.document->time.ranges.end());
+        PFL_REQUIRE(end_row != traffic_service_snapshot.document->time.ranges.end());
+        PFL_REQUIRE(overlap_row != traffic_service_snapshot.document->time.ranges.end());
         PFL_REQUIRE(original_bytes_row != traffic_service_snapshot.document->traffic.primary.end());
-        PFL_REQUIRE(duration_row != traffic_service_snapshot.document->traffic.primary.end());
         PFL_REQUIRE(max_original_packet_size_row != traffic_service_snapshot.document->traffic.additional.end());
+        PFL_EXPECT(start_row->from_text == "2026-08-27T14:32:17.000000Z");
+        PFL_EXPECT(end_row->to_text == "2026-08-27T14:35:00.123456Z");
+        PFL_EXPECT(overlap_row->from_text == "2026-08-27T14:33:00.500000Z");
         PFL_EXPECT(original_bytes_row->unit_id == "MiB");
         PFL_EXPECT(original_bytes_row->min_text == "4");
-        PFL_EXPECT(duration_row->unit_id == "min");
-        PFL_EXPECT(duration_row->min_text == "2");
+        PFL_EXPECT(traffic_service_snapshot.document->time.duration.unit_id == "min");
+        PFL_EXPECT(traffic_service_snapshot.document->time.duration.min_text == "2");
         PFL_EXPECT(max_original_packet_size_row->unit_id == "KiB");
         PFL_EXPECT(max_original_packet_size_row->max_text == "2");
         PFL_EXPECT(traffic_service_snapshot.document->service.include_unrecognized == true);
@@ -2929,7 +3296,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const auto protocol_path_snapshot = adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
             "protocol_path.exact.exclude = EthernetII > IPv4 > TCP\n"
             "protocol_path.contains.include = GTP-U(teid=0x12345678)\n"
@@ -2957,7 +3324,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const auto absent_snapshot = adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.prefix.include = EthernetII > VLAN(vid=999) > IPv4\n"
             "protocol_path.contains.include = Geneve(vni=999)\n"
         );
@@ -2977,12 +3344,12 @@ void run_frontend_structured_document_tests() {
             fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")
         ).opened);
 
-        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 3\n");
         PFL_EXPECT(tunnel_empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(tunnel_empty.document.has_value());
 
         const auto contains_snapshot = tunnel_adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.contains.include = VXLAN(vni=100)\n"
             "protocol_path.contains.include = VXLAN(vni=200)\n"
             "protocol_path.contains.include = VXLAN(vni=300)\n"
@@ -3222,8 +3589,9 @@ void run_frontend_structured_document_tests() {
             make_traffic_row("packets", "count", "9007199254740993", ""),
             make_traffic_row("original_bytes", "MiB", "4", "8"),
             make_traffic_row("captured_bytes", "KiB", "", "512"),
-            make_traffic_row("duration", "min", "2", ""),
         };
+        draft.time.enabled = true;
+        draft.time.duration = make_traffic_row("duration", "min", "2", "");
         draft.traffic.additional = {
             make_traffic_row("max_original_packet_size", "KiB", "", "2"),
             make_traffic_row("max_captured_packet_size", "B", "1500", ""),
@@ -3240,7 +3608,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->min == std::optional<std::uint64_t> {4ULL * 1024ULL * 1024ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->max == std::optional<std::uint64_t> {8ULL * 1024ULL * 1024ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.captured_bytes->max == std::optional<std::uint64_t> {512ULL * 1024ULL});
-        PFL_EXPECT(reparsed.configured_spec.aggregate.duration_us->min == std::optional<std::uint64_t> {120000000ULL});
+        PFL_EXPECT(reparsed.configured_spec.time.duration_us->min == std::optional<std::uint64_t> {120000000ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.max_original_packet_length->max == std::optional<std::uint32_t> {2048U});
         PFL_EXPECT(reparsed.configured_spec.aggregate.max_captured_packet_length->min == std::optional<std::uint32_t> {1500U});
         PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_syn_count->min == std::optional<std::uint64_t> {3ULL});
@@ -3281,12 +3649,12 @@ void run_frontend_structured_document_tests() {
             fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")
         ).opened);
 
-        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 2\n");
+        const auto tunnel_empty = tunnel_adapter.parse_advanced_flow_filter_structured_document("format_version = 3\n");
         PFL_EXPECT(tunnel_empty.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(tunnel_empty.document.has_value());
 
         const auto tunnel_baseline =
-            tunnel_adapter.query_advanced_flows_text("format_version = 2\n", std::nullopt, std::nullopt, std::nullopt);
+            tunnel_adapter.query_advanced_flows_text("format_version = 3\n", std::nullopt, std::nullopt, std::nullopt);
         PFL_EXPECT(tunnel_baseline.status == FrontendAdvancedFlowQueryStatus::ok);
 
         const auto kind_stats = tunnel_adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::kind_overview);
@@ -3341,7 +3709,7 @@ void run_frontend_structured_document_tests() {
             "EthernetII > IPv4 > UDP > VXLAN(vni=100) > EthernetII > IPv4 > TCP");
 
         const auto identity_snapshot = tunnel_adapter.parse_advanced_flow_filter_structured_document(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "protocol_path.prefix.include = EthernetII > IPv4 > UDP > VXLAN(vni=100)\n"
         );
         PFL_EXPECT(identity_snapshot.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
@@ -3455,6 +3823,23 @@ void run_frontend_structured_document_tests() {
 
     {
         auto draft = *empty.document;
+        draft.time.enabled = true;
+        draft.time.ranges = {
+            make_time_row("start", "not-a-timestamp", ""),
+            make_time_row("end", "", ""),
+            make_time_row("overlap", "", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "time");
+        PFL_EXPECT(invalid.update_issue->group == "start");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "from_text");
+    }
+
+    {
+        auto draft = *empty.document;
         draft.contains_layer.enabled = true;
         draft.contains_layer.include = {
             make_contains_layer_row("vlan", "exact", ""),
@@ -3550,7 +3935,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "aggregate.packet_count.min = 2\n"
             "service.state.include = known\n";
         const auto updated = adapter.update_advanced_flow_filter_structured_section(
@@ -3576,7 +3961,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.ports.enabled = false\n"
             "port.either.include = 443\n"
             "port.b.exclude = 1-1023\n";
@@ -3600,7 +3985,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.ip_addresses.enabled = false\n"
             "ip.either.include = 10.0.0.0/8\n"
             "ip.b.exclude = 2001:db8::/32\n";
@@ -3624,10 +4009,10 @@ void run_frontend_structured_document_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
-            "section.traffic.enabled = false\n"
+            "format_version = 3\n"
+            "section.time.enabled = false\n"
             "original_bytes.min = 4MiB\n"
-            "duration.max = 2m\n";
+            "time.duration.max = 2m\n";
         const auto parsed_with_traffic = adapter.parse_advanced_flow_filter_structured_document(text);
         PFL_EXPECT(parsed_with_traffic.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(parsed_with_traffic.document.has_value());
@@ -3638,14 +4023,14 @@ void run_frontend_structured_document_tests() {
         const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
         PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(updated.document.has_value());
-        PFL_EXPECT(updated.document->traffic.enabled == false);
+        PFL_EXPECT(updated.document->time.enabled == false);
         PFL_EXPECT(updated.document->canonical_text.find("original_bytes.min = 4MiB") != std::string::npos);
-        PFL_EXPECT(updated.document->canonical_text.find("duration.max = 2m") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("time.duration.max = 2m") != std::string::npos);
     }
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.service.enabled = false\n"
             "service.state.include = unknown\n"
             "service.contains.ci.include = \"youtube\"\n";
@@ -3666,7 +4051,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.protocol_path.enabled = false\n"
             "protocol_path.prefix.include = EthernetII > IPv4 > UDP > Geneve(vni=100)\n"
             "protocol_path.exact.exclude = EthernetII > IPv4 > TCP\n";
@@ -3689,7 +4074,7 @@ void run_frontend_structured_document_tests() {
 
     {
         const std::string text =
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.contains_layer.enabled = false\n"
             "protocol_path.contains.include = GTP-U(teid=0x12345678)\n";
         const auto parsed_with_contains = adapter.parse_advanced_flow_filter_structured_document(text);
@@ -3728,12 +4113,13 @@ void run_frontend_structured_document_tests() {
             make_traffic_row("packets", "bogus", "1", ""),
             make_traffic_row("original_bytes", "KiB", "", ""),
             make_traffic_row("captured_bytes", "KiB", "", ""),
-            make_traffic_row("duration", "s", "", ""),
         };
+        draft.time.enabled = true;
+        draft.time.duration = make_traffic_row("duration", "bogus", "", "");
         const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
         PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
         PFL_REQUIRE(invalid.update_issue.has_value());
-        PFL_EXPECT(invalid.update_issue->section_id == "traffic");
+        PFL_EXPECT(invalid.update_issue->section_id == "time");
         PFL_EXPECT(invalid.update_issue->field_id == "unit_id");
     }
 
@@ -3744,10 +4130,10 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(default_workflow.has_unsaved_changes == false);
         PFL_EXPECT(default_workflow.has_unsaved_configuration == false);
         PFL_EXPECT(default_workflow.clear_available == false);
-        PFL_EXPECT(default_workflow.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(default_workflow.canonical_text == "format_version = 3\n");
 
         const auto custom_workflow = adapter.apply_advanced_flow_filter_document_text(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcp\n"
         );
         PFL_EXPECT(custom_workflow.is_file_backed == false);
@@ -3769,7 +4155,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(saved_workflow.can_clear_unsaved_changes == false);
 
         const auto dirty_workflow = adapter.apply_advanced_flow_filter_document_text(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = udp\n"
         );
         PFL_EXPECT(dirty_workflow.is_file_backed == true);
@@ -3796,10 +4182,10 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(clean_file_backed_cleared.clear_available == false);
         PFL_EXPECT(clean_file_backed_cleared.configured_rule_count == 0U);
         PFL_EXPECT(clean_file_backed_cleared.active_rule_count == 0U);
-        PFL_EXPECT(clean_file_backed_cleared.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(clean_file_backed_cleared.canonical_text == "format_version = 3\n");
 
         const auto saved_default_workflow = adapter.accept_saved_advanced_flow_filter_document_text(
-            "format_version = 2\n",
+            "format_version = 3\n",
             std::filesystem::path {"filters/default.filter"}
         );
         PFL_EXPECT(saved_default_workflow.is_file_backed == true);
@@ -3807,7 +4193,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(saved_default_workflow.has_unsaved_changes == false);
         PFL_EXPECT(saved_default_workflow.has_unsaved_configuration == false);
         PFL_EXPECT(saved_default_workflow.clear_available == false);
-        PFL_EXPECT(saved_default_workflow.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(saved_default_workflow.canonical_text == "format_version = 3\n");
 
         const auto saved_default_cleared = adapter.clear_advanced_flow_filter_document();
         PFL_EXPECT(saved_default_cleared.is_file_backed == false);
@@ -3818,10 +4204,10 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(saved_default_cleared.clear_available == false);
         PFL_EXPECT(saved_default_cleared.configured_rule_count == 0U);
         PFL_EXPECT(saved_default_cleared.active_rule_count == 0U);
-        PFL_EXPECT(saved_default_cleared.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(saved_default_cleared.canonical_text == "format_version = 3\n");
 
         const auto enabled_state_only_workflow = adapter.apply_advanced_flow_filter_document_text(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.ports.enabled = false\n"
         );
         PFL_EXPECT(enabled_state_only_workflow.is_file_backed == false);
@@ -3840,7 +4226,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(enabled_state_only_cleared.clear_available == false);
         PFL_EXPECT(enabled_state_only_cleared.configured_rule_count == 0U);
         PFL_EXPECT(enabled_state_only_cleared.active_rule_count == 0U);
-        PFL_EXPECT(enabled_state_only_cleared.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(enabled_state_only_cleared.canonical_text == "format_version = 3\n");
 
         const auto saved_again = adapter.accept_saved_advanced_flow_filter_document_text(
             custom_workflow.canonical_text,
@@ -3850,7 +4236,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(saved_again.has_unsaved_changes == false);
 
         const auto dirty_again = adapter.apply_advanced_flow_filter_document_text(
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = udp\n"
         );
         PFL_EXPECT(dirty_again.is_file_backed == true);
@@ -3866,7 +4252,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(dirty_file_backed_cleared.clear_available == false);
         PFL_EXPECT(dirty_file_backed_cleared.configured_rule_count == 0U);
         PFL_EXPECT(dirty_file_backed_cleared.active_rule_count == 0U);
-        PFL_EXPECT(dirty_file_backed_cleared.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(dirty_file_backed_cleared.canonical_text == "format_version = 3\n");
 
         const auto default_cleared = adapter.clear_advanced_flow_filter_document();
         PFL_EXPECT(default_cleared.is_file_backed == false);
@@ -3877,7 +4263,7 @@ void run_frontend_structured_document_tests() {
         PFL_EXPECT(default_cleared.clear_available == false);
         PFL_EXPECT(default_cleared.configured_rule_count == 0U);
         PFL_EXPECT(default_cleared.active_rule_count == 0U);
-        PFL_EXPECT(default_cleared.canonical_text == "format_version = 2\n");
+        PFL_EXPECT(default_cleared.canonical_text == "format_version = 3\n");
     }
 }
 

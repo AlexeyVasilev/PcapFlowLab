@@ -154,7 +154,6 @@ struct AdvancedFlowFilterAggregateCriteria {
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> packet_count {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> original_bytes {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> captured_bytes {};
-    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> duration_us {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> fragmented_packet_count {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> truncated_packet_count {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> tcp_syn_count {};
@@ -164,6 +163,15 @@ struct AdvancedFlowFilterAggregateCriteria {
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint32_t>> max_captured_packet_length {};
 
     bool operator==(const AdvancedFlowFilterAggregateCriteria&) const = default;
+};
+
+struct AdvancedFlowFilterTimeCriteria {
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> start_us {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> end_us {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> overlap_us {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> duration_us {};
+
+    bool operator==(const AdvancedFlowFilterTimeCriteria&) const = default;
 };
 
 enum class AdvancedFlowFilterDirectionality : std::uint8_t {
@@ -216,9 +224,10 @@ struct AdvancedFlowFilterSpec {
     AdvancedFlowFilterTlsVersionCriteria tls_version {};
     AdvancedFlowFilterQuicVersionCriteria quic_version {};
     AdvancedFlowFilterPortCriteria ports {};
-    AdvancedFlowFilterAggregateCriteria aggregate {};
     AdvancedFlowFilterDirectionalityCriteria directionality {};
     AdvancedFlowFilterAddressCriteria addresses {};
+    AdvancedFlowFilterTimeCriteria time {};
+    AdvancedFlowFilterAggregateCriteria aggregate {};
     AdvancedFlowFilterServiceCriteria service {};
 
     bool operator==(const AdvancedFlowFilterSpec&) const = default;
@@ -233,6 +242,7 @@ struct AdvancedFlowFilterDocumentSectionStates {
     bool directionality {true};
     bool ports {true};
     bool ip_addresses {true};
+    bool time {true};
     bool traffic {true};
     bool service {true};
     bool protocol_path {true};
@@ -337,6 +347,10 @@ struct CompiledAdvancedFlowFilterAggregateCriteria {
     AdvancedFlowFilterAggregateCriteria ranges {};
 };
 
+struct CompiledAdvancedFlowFilterTimeCriteria {
+    AdvancedFlowFilterTimeCriteria ranges {};
+};
+
 struct CompiledAdvancedFlowFilterDirectionalityCriteria {
     std::array<bool, 2> include_membership {};
     std::array<bool, 2> exclude_membership {};
@@ -394,9 +408,10 @@ struct CompiledAdvancedFlowFilter {
     CompiledAdvancedFlowFilterTlsVersionCriteria tls_version {};
     CompiledAdvancedFlowFilterQuicVersionCriteria quic_version {};
     CompiledAdvancedFlowFilterPortCriteria ports {};
-    CompiledAdvancedFlowFilterAggregateCriteria aggregate {};
     CompiledAdvancedFlowFilterDirectionalityCriteria directionality {};
     CompiledAdvancedFlowFilterAddressCriteria addresses {};
+    CompiledAdvancedFlowFilterTimeCriteria time {};
+    CompiledAdvancedFlowFilterAggregateCriteria aggregate {};
     CompiledAdvancedFlowFilterServiceCriteria service {};
 };
 

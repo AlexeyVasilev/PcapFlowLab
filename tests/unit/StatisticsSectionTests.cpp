@@ -1196,7 +1196,7 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     const auto ok_json = take_bridge_string(
         pfl_frontend_session_adapter_query_advanced_flows_text_json(
             handle,
-            "format_version = 2\nflow_protocol.include = udp\n",
+            "format_version = 3\nflow_protocol.include = udp\n",
             nullptr,
             0U
         )
@@ -1211,7 +1211,7 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     const auto scoped_json = take_bridge_string(
         pfl_frontend_session_adapter_query_advanced_flows_text_json(
             handle,
-            "format_version = 2\nflow_protocol.include = udp\n",
+            "format_version = 3\nflow_protocol.include = udp\n",
             scoped_candidates,
             1U
         )
@@ -1224,7 +1224,7 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     const auto explicit_empty_scope_json = take_bridge_string(
         pfl_frontend_session_adapter_query_advanced_flows_text_json(
             handle,
-            "format_version = 2\nflow_protocol.include = udp\n",
+            "format_version = 3\nflow_protocol.include = udp\n",
             &empty_scope_sentinel,
             0U
         )
@@ -1237,7 +1237,7 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     const auto disabled_json = take_bridge_string(
         pfl_frontend_session_adapter_query_advanced_flows_text_json(
             handle,
-            "format_version = 2\nsection.flow_protocol.enabled = false\nflow_protocol.include = udp\n",
+            "format_version = 3\nsection.flow_protocol.enabled = false\nflow_protocol.include = udp\n",
             nullptr,
             0U
         )
@@ -1250,7 +1250,7 @@ void expect_advanced_flow_filter_text_query_bridge_contract() {
     const auto invalid_json = take_bridge_string(
         pfl_frontend_session_adapter_query_advanced_flows_text_json(
             handle,
-            "format_version = 2\nflow_protocol.include = tcpish\n",
+            "format_version = 3\nflow_protocol.include = tcpish\n",
             nullptr,
             0U
         )

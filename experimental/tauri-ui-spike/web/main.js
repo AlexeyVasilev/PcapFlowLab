@@ -146,17 +146,23 @@
     ...advancedFlowFilterSectionDefinitions.map((definition) => definition.id),
     "ports",
     "ip_addresses",
+    "time",
     "traffic",
     "service",
     "protocol_path",
     "contains_layer",
   ]);
 
+  const advancedFlowFilterTimeRangeDefinitions = Object.freeze([
+    { id: "start", title: "Flow start" },
+    { id: "end", title: "Flow end" },
+    { id: "overlap", title: "Flow lifetime overlaps" },
+  ]);
+
   const advancedFlowFilterTrafficMetricDefinitions = Object.freeze([
     { id: "packets", title: "Packets", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: false, unitPresentation: "static", staticUnitLabel: "packets" },
     { id: "original_bytes", title: "Original bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", additional: false, unitPresentation: "select" },
     { id: "captured_bytes", title: "Captured bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", additional: false, unitPresentation: "select" },
-    { id: "duration", title: "Duration", unitOptions: [{ id: "us", label: "us" }, { id: "ms", label: "ms" }, { id: "s", label: "s" }, { id: "min", label: "min" }, { id: "h", label: "h" }], defaultUnitId: "s", additional: false, unitPresentation: "select" },
     { id: "max_original_packet_size", title: "Max original packet size", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", additional: true, unitPresentation: "select" },
     { id: "max_captured_packet_size", title: "Max captured packet size", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", additional: true, unitPresentation: "select" },
     { id: "fragmented_packet_count", title: "Fragmented packet count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
@@ -165,6 +171,10 @@
     { id: "tcp_fin_count", title: "TCP FIN count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
     { id: "tcp_rst_count", title: "TCP RST count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
   ]);
+
+  const advancedFlowFilterTimeDurationDefinition = Object.freeze(
+    { id: "duration", title: "Duration", unitOptions: [{ id: "us", label: "us" }, { id: "ms", label: "ms" }, { id: "s", label: "s" }, { id: "min", label: "min" }, { id: "h", label: "h" }], defaultUnitId: "s", unitPresentation: "select" },
+  );
 
   const advancedFlowFilterServiceOperatorOptions = Object.freeze([
     { id: "contains", label: "Contains" },
@@ -421,7 +431,7 @@
   }
 
   function defaultAdvancedFlowFilterText() {
-    return "format_version = 2\n";
+    return "format_version = 3\n";
   }
 
   function currentAdvancedFlowFilterDocumentText() {
@@ -492,6 +502,8 @@
         return document.ports || null;
       case "ip_addresses":
         return document.ip_addresses || null;
+      case "time":
+        return document.time || null;
       case "traffic":
         return document.traffic || null;
       case "service":
@@ -523,6 +535,8 @@
         return "Ports";
       case "ip_addresses":
         return "IP addresses";
+      case "time":
+        return "Time";
       case "traffic":
         return "Traffic";
       case "service":
@@ -554,6 +568,10 @@
         return "min";
       case "max_text":
         return "max";
+      case "from_text":
+        return "from";
+      case "to_text":
+        return "to";
       case "operator_id":
         return "operator";
       case "text":
@@ -600,6 +618,11 @@
       || advancedFlowFilterHasMeaningfulText(row?.max_text);
   }
 
+  function advancedFlowFilterTimeRangeRowConfigured(row) {
+    return advancedFlowFilterHasMeaningfulText(row?.from_text)
+      || advancedFlowFilterHasMeaningfulText(row?.to_text);
+  }
+
   function advancedFlowFilterServiceTextRowConfigured(row) {
     return advancedFlowFilterHasMeaningfulText(row?.text);
   }
@@ -637,6 +660,20 @@
           ...(Array.isArray(section.include) ? section.include : []).filter(advancedFlowFilterIpRowConfigured),
           ...(Array.isArray(section.exclude) ? section.exclude : []).filter(advancedFlowFilterIpRowConfigured),
         ].length;
+      case "time":
+        return [
+          ...(Array.isArray(section.ranges) ? section.ranges : []).filter(advancedFlowFilterTimeRangeRowConfigured),
+          Boolean(section.duration && advancedFlowFilterTrafficRowConfigured(section.duration)) ? section.duration : null,
+        ].filter(Boolean).reduce((count, row) => {
+          if (row === section.duration) {
+            return count
+              + Number(advancedFlowFilterHasMeaningfulText(row?.min_text))
+              + Number(advancedFlowFilterHasMeaningfulText(row?.max_text));
+          }
+          return count
+            + Number(advancedFlowFilterHasMeaningfulText(row?.from_text))
+            + Number(advancedFlowFilterHasMeaningfulText(row?.to_text));
+        }, 0);
       case "traffic":
         return [
           ...(Array.isArray(section.primary) ? section.primary : []).filter(advancedFlowFilterTrafficRowConfigured),
@@ -674,6 +711,7 @@
           || Boolean(section.exclude_unrecognized)
           || (Array.isArray(section.exclude_text) && section.exclude_text.some(advancedFlowFilterServiceTextRowConfigured));
       case "traffic":
+      case "time":
         return false;
       default:
         return Array.isArray(section.exclude) && section.exclude.some(() => true);
@@ -780,11 +818,33 @@
     return advancedFlowFilterTrafficMetricDefinitionById(metricId)?.unitOptions || [{ id: "count", label: "Count" }];
   }
 
+  function advancedFlowFilterTimeRangeDefinitionById(metricId) {
+    return advancedFlowFilterTimeRangeDefinitions.find((definition) => definition.id === String(metricId || "")) || null;
+  }
+
   function makeAdvancedFlowFilterTrafficRow(metricId) {
     const definition = advancedFlowFilterTrafficMetricDefinitionById(metricId) || advancedFlowFilterTrafficMetricDefinitions[0];
     return {
       metric_id: definition.id,
       unit_id: definition.defaultUnitId,
+      min_text: "",
+      max_text: "",
+    };
+  }
+
+  function makeAdvancedFlowFilterTimeRangeRow(metricId) {
+    const definition = advancedFlowFilterTimeRangeDefinitionById(metricId) || advancedFlowFilterTimeRangeDefinitions[0];
+    return {
+      metric_id: definition.id,
+      from_text: "",
+      to_text: "",
+    };
+  }
+
+  function makeAdvancedFlowFilterTimeDurationRow() {
+    return {
+      metric_id: advancedFlowFilterTimeDurationDefinition.id,
+      unit_id: advancedFlowFilterTimeDurationDefinition.defaultUnitId,
       min_text: "",
       max_text: "",
     };
@@ -954,6 +1014,40 @@
       });
   }
 
+  function normalizeAdvancedFlowFilterTimeRanges(rows) {
+    const configuredRows = Array.isArray(rows) ? rows : [];
+    const configuredByMetric = new Map(
+      configuredRows
+        .filter((row) => row && typeof row === "object")
+        .map((row) => [String(row.metric_id || ""), row])
+    );
+    return advancedFlowFilterTimeRangeDefinitions.map((definition) => {
+      const configuredRow = configuredByMetric.get(definition.id);
+      return {
+        ...makeAdvancedFlowFilterTimeRangeRow(definition.id),
+        ...(configuredRow && typeof configuredRow === "object" ? configuredRow : {}),
+        metric_id: definition.id,
+        from_text: String(configuredRow?.from_text || ""),
+        to_text: String(configuredRow?.to_text || ""),
+      };
+    });
+  }
+
+  function normalizeAdvancedFlowFilterTimeDurationRow(row) {
+    const sourceRow = (row && typeof row === "object") ? row : {};
+    const unitIds = new Set(advancedFlowFilterTimeDurationDefinition.unitOptions.map((option) => option.id));
+    return {
+      ...makeAdvancedFlowFilterTimeDurationRow(),
+      ...sourceRow,
+      metric_id: advancedFlowFilterTimeDurationDefinition.id,
+      unit_id: unitIds.has(String(sourceRow.unit_id || ""))
+        ? String(sourceRow.unit_id || "")
+        : advancedFlowFilterTimeDurationDefinition.defaultUnitId,
+      min_text: String(sourceRow.min_text || ""),
+      max_text: String(sourceRow.max_text || ""),
+    };
+  }
+
   function normalizeAdvancedFlowFilterServiceTextRows(rows) {
     const validOperatorIds = new Set(advancedFlowFilterServiceOperatorOptions.map((option) => option.id));
     return Array.isArray(rows)
@@ -990,6 +1084,12 @@
         enabled: sourceDocument.ip_addresses?.enabled === undefined ? true : Boolean(sourceDocument.ip_addresses.enabled),
         include: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.include),
         exclude: normalizeAdvancedFlowFilterIpAddressRows(sourceDocument.ip_addresses?.exclude),
+      },
+      time: {
+        ...(sourceDocument.time && typeof sourceDocument.time === "object" ? sourceDocument.time : {}),
+        enabled: sourceDocument.time?.enabled === undefined ? true : Boolean(sourceDocument.time.enabled),
+        ranges: normalizeAdvancedFlowFilterTimeRanges(sourceDocument.time?.ranges),
+        duration: normalizeAdvancedFlowFilterTimeDurationRow(sourceDocument.time?.duration),
       },
       traffic: {
         ...(sourceDocument.traffic && typeof sourceDocument.traffic === "object" ? sourceDocument.traffic : {}),
@@ -1061,6 +1161,14 @@
     };
   }
 
+  function advancedFlowFilterTimeRangeRowSnapshot(row) {
+    return {
+      metric_id: String(row?.metric_id || ""),
+      from_text: String(row?.from_text || ""),
+      to_text: String(row?.to_text || ""),
+    };
+  }
+
   function advancedFlowFilterServiceTextRowSnapshot(row) {
     return {
       operator_id: String(row?.operator_id || "contains"),
@@ -1113,6 +1221,13 @@
         exclude: Array.isArray(document?.ip_addresses?.exclude)
           ? document.ip_addresses.exclude.map((row) => advancedFlowFilterIpAddressRowSnapshot(row))
           : [],
+      },
+      time: {
+        enabled: Boolean(document?.time?.enabled),
+        ranges: Array.isArray(document?.time?.ranges)
+          ? document.time.ranges.map((row) => advancedFlowFilterTimeRangeRowSnapshot(row))
+          : [],
+        duration: advancedFlowFilterTrafficRowSnapshot(document?.time?.duration),
       },
       traffic: {
         enabled: Boolean(document?.traffic?.enabled),
@@ -1815,6 +1930,118 @@
     );
   }
 
+  function renderAdvancedFlowFilterTimeRangeRow(row, sectionEnabled, dialogBusy) {
+    const definition = advancedFlowFilterTimeRangeDefinitionById(row?.metric_id);
+    if (!definition) {
+      return "";
+    }
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    return `
+      <div class="advanced-filter-inline-fields-row is-traffic">
+        <label class="advanced-filter-row-label">${escapeHtml(definition.title)}</label>
+        <input
+          type="text"
+          placeholder="YYYY-MM-DDTHH:MM:SS.ffffffZ"
+          value="${escapeHtml(String(row?.from_text || ""))}"
+          data-advanced-filter-row-section-id="time"
+          data-advanced-filter-group="ranges"
+          data-advanced-filter-row-index="${escapeHtml(String(definition.id))}"
+          data-advanced-filter-row-field="from_text"
+          ${editingDisabled ? "disabled" : ""}
+        />
+        <input
+          type="text"
+          placeholder="YYYY-MM-DDTHH:MM:SS.ffffffZ"
+          value="${escapeHtml(String(row?.to_text || ""))}"
+          data-advanced-filter-row-section-id="time"
+          data-advanced-filter-group="ranges"
+          data-advanced-filter-row-index="${escapeHtml(String(definition.id))}"
+          data-advanced-filter-row-field="to_text"
+          ${editingDisabled ? "disabled" : ""}
+        />
+        <span class="advanced-filter-static-unit-label">UTC</span>
+      </div>
+    `;
+  }
+
+  function renderAdvancedFlowFilterTimeSectionCard(document, dialogBusy) {
+    const section = document?.time || { enabled: true, ranges: [], duration: makeAdvancedFlowFilterTimeDurationRow() };
+    const durationRow = section.duration || makeAdvancedFlowFilterTimeDurationRow();
+    const editingDisabled = dialogBusy || !Boolean(section.enabled);
+    const bodyMarkup = `
+      <div class="advanced-filter-group advanced-filter-include-group">
+        <p class="advanced-filter-group-title">Ranges</p>
+        <div class="advanced-filter-row-card">
+          <div class="advanced-filter-inline-fields-row is-traffic">
+            <span class="advanced-filter-row-label">Value</span>
+            <span class="advanced-filter-group-title">From</span>
+            <span class="advanced-filter-group-title">To</span>
+            <span class="advanced-filter-group-title">Unit</span>
+          </div>
+          <div class="advanced-filter-row-list">
+            ${(Array.isArray(section.ranges) ? section.ranges : []).map((row) =>
+              renderAdvancedFlowFilterTimeRangeRow(row, Boolean(section.enabled), dialogBusy)
+            ).join("")}
+          </div>
+        </div>
+      </div>
+      <div class="advanced-filter-group advanced-filter-include-group">
+        <p class="advanced-filter-group-title">Duration</p>
+        <div class="advanced-filter-row-card">
+          <div class="advanced-filter-inline-fields-row is-traffic">
+            <label class="advanced-filter-row-label">Duration</label>
+            <input
+              type="text"
+              placeholder="Min"
+              value="${escapeHtml(String(durationRow?.min_text || ""))}"
+              data-advanced-filter-row-section-id="time"
+              data-advanced-filter-group="duration"
+              data-advanced-filter-row-index="duration"
+              data-advanced-filter-row-field="min_text"
+              ${editingDisabled ? "disabled" : ""}
+            />
+            <input
+              type="text"
+              placeholder="Max"
+              value="${escapeHtml(String(durationRow?.max_text || ""))}"
+              data-advanced-filter-row-section-id="time"
+              data-advanced-filter-group="duration"
+              data-advanced-filter-row-index="duration"
+              data-advanced-filter-row-field="max_text"
+              ${editingDisabled ? "disabled" : ""}
+            />
+            <select
+              data-advanced-filter-row-section-id="time"
+              data-advanced-filter-group="duration"
+              data-advanced-filter-row-index="duration"
+              data-advanced-filter-row-field="unit_id"
+              ${editingDisabled ? "disabled" : ""}
+            >
+              ${advancedFlowFilterTimeDurationDefinition.unitOptions.map((option) => `
+                <option value="${escapeHtml(option.id)}"${option.id === String(durationRow?.unit_id || advancedFlowFilterTimeDurationDefinition.defaultUnitId) ? " selected" : ""}>
+                  ${escapeHtml(option.label)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+        </div>
+        <div class="advanced-filter-time-helper">
+          <p class="advanced-filter-helper-copy">UTC timestamp example: 2026-03-22T12:27:32.000000Z</p>
+          <p class="advanced-filter-helper-copy">Lifetime spans the earliest to latest observed packet; it does not imply continuous traffic.</p>
+        </div>
+      </div>
+    `;
+    return renderAdvancedFlowFilterSectionCard(
+      "time",
+      "Time",
+      advancedFlowFilterSectionSummaryText(document, "time"),
+      Boolean(section.enabled),
+      dialogBusy,
+      bodyMarkup,
+      { wide: true }
+    );
+  }
+
   function advancedFlowFilterServiceIncludeTextEditingDisabled(section, dialogBusy) {
     return dialogBusy
       || !Boolean(section?.enabled)
@@ -2321,6 +2548,9 @@
     if (sectionId === "ip_addresses") {
       return renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy);
     }
+    if (sectionId === "time") {
+      return renderAdvancedFlowFilterTimeSectionCard(document, dialogBusy);
+    }
     if (sectionId === "traffic") {
       return renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy);
     }
@@ -2414,6 +2644,7 @@
         ...finiteSections,
         renderAdvancedFlowFilterPortsSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterIpAddressesSectionCard(document, dialogBusy),
+        renderAdvancedFlowFilterTimeSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterServiceSectionCard(document, dialogBusy),
         renderAdvancedFlowFilterProtocolPathSectionCard(document, dialogBusy),
@@ -11736,11 +11967,19 @@
       if (!section) {
         return;
       }
-      const rows = Array.isArray(section[group]) ? section[group] : [];
       let row = null;
       if (rowSectionId === "traffic") {
+        const rows = Array.isArray(section[group]) ? section[group] : [];
         row = rows.find((candidate) => String(candidate?.metric_id || "") === rowKey) || null;
+      } else if (rowSectionId === "time") {
+        if (group === "ranges") {
+          const rows = Array.isArray(section.ranges) ? section.ranges : [];
+          row = rows.find((candidate) => String(candidate?.metric_id || "") === rowKey) || null;
+        } else if (group === "duration") {
+          row = section.duration || null;
+        }
       } else {
+        const rows = Array.isArray(section[group]) ? section[group] : [];
         const validGroup = rowSectionId === "service"
           ? (group === "include_text" || group === "exclude_text")
           : (group === "include" || group === "exclude");
@@ -11782,11 +12021,19 @@
     if (!section) {
       return;
     }
-    const rows = Array.isArray(section[group]) ? section[group] : [];
     let row = null;
     if (rowSectionId === "traffic") {
+      const rows = Array.isArray(section[group]) ? section[group] : [];
       row = rows.find((candidate) => String(candidate?.metric_id || "") === rowKey) || null;
+    } else if (rowSectionId === "time") {
+      if (group === "ranges") {
+        const rows = Array.isArray(section.ranges) ? section.ranges : [];
+        row = rows.find((candidate) => String(candidate?.metric_id || "") === rowKey) || null;
+      } else if (group === "duration") {
+        row = section.duration || null;
+      }
     } else {
+      const rows = Array.isArray(section[group]) ? section[group] : [];
       const validGroup = rowSectionId === "service"
         ? (group === "include_text" || group === "exclude_text")
         : (group === "include" || group === "exclude");

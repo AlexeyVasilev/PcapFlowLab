@@ -819,7 +819,7 @@ std::filesystem::path write_temp_sized_advanced_filter_service_document(
     const std::string& filename,
     const std::size_t total_size
 ) {
-    constexpr std::string_view prefix = "format_version = 2\nservice.contains.ci.include = \"";
+    constexpr std::string_view prefix = "format_version = 3\nservice.contains.ci.include = \"";
     constexpr std::string_view suffix = "\"\n";
     UI_REQUIRE(total_size >= prefix.size() + suffix.size());
 
@@ -4914,7 +4914,7 @@ int main(int argc, char* argv[]) {
 
         const auto malformed_filter_path = write_temp_advanced_filter_file(
             "pfl_ui_invalid_open.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcpish\n"
         );
         file_workflow_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
@@ -5868,10 +5868,11 @@ int main(int argc, char* argv[]) {
 
         constexpr int traffic_section_id =
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::traffic);
+        constexpr int time_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::time);
         constexpr auto packet_count_metric = static_cast<int>(TrafficMetric::packet_count);
         constexpr auto original_bytes_metric = static_cast<int>(TrafficMetric::original_bytes);
         constexpr auto captured_bytes_metric = static_cast<int>(TrafficMetric::captured_bytes);
-        constexpr auto duration_metric = static_cast<int>(TrafficMetric::duration);
         constexpr auto max_original_packet_size_metric = static_cast<int>(TrafficMetric::max_original_packet_size);
         constexpr auto max_captured_packet_size_metric = static_cast<int>(TrafficMetric::max_captured_packet_size);
 
@@ -5896,10 +5897,7 @@ int main(int argc, char* argv[]) {
             traffic_editor->commonTrafficRows(),
             captured_bytes_metric
         );
-        const auto duration_row = advanced_filter_metric_row_at(
-            traffic_editor->commonTrafficRows(),
-            duration_metric
-        );
+        const auto duration_row = traffic_editor->timeDurationRow();
         auto max_original_row = advanced_filter_metric_row_at(
             traffic_editor->additionalTrafficRows(),
             max_original_packet_size_metric
@@ -5991,16 +5989,14 @@ int main(int argc, char* argv[]) {
         traffic_controller.cancelAdvancedFlowFilterEdit();
 
         traffic_document = {};
-        traffic_document.configured_spec.aggregate.duration_us =
+        traffic_document.configured_spec.time.duration_us =
             pfl::session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t> {
                 .max = 7200000000ULL,
             };
         traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
         traffic_controller.beginAdvancedFlowFilterEdit();
-        const auto loaded_duration_row = advanced_filter_metric_row_at(
-            traffic_editor->commonTrafficRows(),
-            duration_metric
-        );
+        UI_EXPECT(traffic_controller.advancedFlowFilterSectionEnabled(time_section_id));
+        const auto loaded_duration_row = traffic_editor->timeDurationRow();
         UI_EXPECT(loaded_duration_row.value(QStringLiteral("selectedUnit")).toInt()
             == static_cast<int>(TrafficUnit::hours));
         UI_EXPECT(loaded_duration_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("2"));

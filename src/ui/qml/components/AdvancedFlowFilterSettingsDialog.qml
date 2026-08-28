@@ -28,10 +28,11 @@ Dialog {
     readonly property int compactTextButtonHorizontalPadding: 10
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
-    readonly property int trafficSectionId: 8
-    readonly property int serviceSectionId: 9
-    readonly property int protocolPathSectionId: 10
-    readonly property int containsLayerSectionId: 11
+    readonly property int timeSectionId: 8
+    readonly property int trafficSectionId: 9
+    readonly property int serviceSectionId: 10
+    readonly property int protocolPathSectionId: 11
+    readonly property int containsLayerSectionId: 12
     readonly property int serviceKnownKind: 0
     readonly property int serviceUnknownKind: 1
     readonly property int containsLayerIdentifierModeAny: 0
@@ -40,6 +41,7 @@ Dialog {
         0, 1, 2, 3, 4, 5,
         root.portsSectionId,
         root.ipAddressesSectionId,
+        root.timeSectionId,
         root.trafficSectionId,
         root.serviceSectionId,
         root.protocolPathSectionId,
@@ -1139,6 +1141,227 @@ Dialog {
                                     onClicked: {
                                         if (root.editor) {
                                             root.editor.addAddressRow(true)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        AdvancedFlowFilterSection {
+                            id: timeSection
+                            readonly property bool sectionEnabledState: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.timeSectionId)
+                            }
+                            readonly property var rangeRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.timeRangeRows()
+                            }
+                            readonly property var durationRow: {
+                                if (!root.editor) {
+                                    return ({})
+                                }
+                                void(root.editor.revision)
+                                return root.editor.timeDurationRow()
+                            }
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.timeSectionId)
+                            }
+
+                            sectionObjectName: "advancedFlowFilterTimeSection"
+                            collapseButtonObjectName: "advancedFlowFilterTimeCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterTimeEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterTimeContent"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: implicitHeight
+                            title: "Time"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.timeSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
+
+                            onToggleRequested: root.setSectionExpanded(root.timeSectionId, !root.sectionExpanded(root.timeSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.timeSectionId, checked)
+                                }
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: "UTC timestamp example: 2026-03-22T12:27:32.000000Z"
+                                color: root.secondaryTextColor
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Label {
+                                    Layout.preferredWidth: 250
+                                    text: "Value"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 220
+                                    text: "From"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 220
+                                    text: "To"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                            }
+
+                            Repeater {
+                                model: timeSection.rangeRows
+
+                                delegate: RowLayout {
+                                    required property var modelData
+
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Label {
+                                        Layout.preferredWidth: 250
+                                        text: modelData.label
+                                        color: "#0f172a"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    TextField {
+                                        objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "FromTextField"
+                                        Layout.preferredWidth: 220
+                                        text: modelData.fromText
+                                        placeholderText: "YYYY-MM-DDTHH:MM:SS.ffffffZ"
+                                        onTextEdited: {
+                                            if (root.editor) {
+                                                root.editor.setTimeRangeFromText(modelData.metricId, text)
+                                            }
+                                        }
+                                    }
+
+                                    TextField {
+                                        objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "ToTextField"
+                                        Layout.preferredWidth: 220
+                                        text: modelData.toText
+                                        placeholderText: "YYYY-MM-DDTHH:MM:SS.ffffffZ"
+                                        onTextEdited: {
+                                            if (root.editor) {
+                                                root.editor.setTimeRangeToText(modelData.metricId, text)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                                implicitHeight: 4
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Label {
+                                    Layout.preferredWidth: 250
+                                    text: "Duration"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 120
+                                    text: "Minimum"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 120
+                                    text: "Maximum"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 120
+                                    text: "Unit"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Label {
+                                    Layout.preferredWidth: 250
+                                    text: timeSection.durationRow.label || "Duration"
+                                    color: "#0f172a"
+                                    elide: Text.ElideRight
+                                }
+
+                                TextField {
+                                    objectName: "advancedFlowFilterTimeDurationMinTextField"
+                                    Layout.preferredWidth: 120
+                                    text: timeSection.durationRow.minText || ""
+                                    placeholderText: "0"
+                                    onTextEdited: {
+                                        if (root.editor) {
+                                            root.editor.setTimeDurationMinText(text)
+                                        }
+                                    }
+                                }
+
+                                TextField {
+                                    objectName: "advancedFlowFilterTimeDurationMaxTextField"
+                                    Layout.preferredWidth: 120
+                                    text: timeSection.durationRow.maxText || ""
+                                    placeholderText: "100"
+                                    onTextEdited: {
+                                        if (root.editor) {
+                                            root.editor.setTimeDurationMaxText(text)
+                                        }
+                                    }
+                                }
+
+                                ComboBox {
+                                    objectName: "advancedFlowFilterTimeDurationUnitComboBox"
+                                    Layout.preferredWidth: 120
+                                    model: timeSection.durationRow.unitOptions || []
+                                    textRole: "label"
+                                    currentIndex: root.optionIndex(model, timeSection.durationRow.selectedUnit)
+                                    onActivated: {
+                                        if (root.editor) {
+                                            root.editor.setTimeDurationUnit(model[currentIndex].value)
                                         }
                                     }
                                 }

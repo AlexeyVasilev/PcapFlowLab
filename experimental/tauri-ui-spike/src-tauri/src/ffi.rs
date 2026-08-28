@@ -156,6 +156,15 @@ extern "C" {
         ip_exclude_address_text_utf8: *const *const c_char,
         ip_exclude_prefix_text_utf8: *const *const c_char,
         ip_exclude_count: usize,
+        time_enabled: c_uchar,
+        time_range_metric_ids_utf8: *const *const c_char,
+        time_range_from_text_utf8: *const *const c_char,
+        time_range_to_text_utf8: *const *const c_char,
+        time_range_count: usize,
+        time_duration_metric_id_utf8: *const c_char,
+        time_duration_unit_id_utf8: *const c_char,
+        time_duration_min_text_utf8: *const c_char,
+        time_duration_max_text_utf8: *const c_char,
         traffic_enabled: c_uchar,
         traffic_primary_metric_ids_utf8: *const *const c_char,
         traffic_primary_unit_ids_utf8: *const *const c_char,
@@ -702,6 +711,25 @@ impl CppFrontendSessionAdapter {
             Ok((metric_cstrings, unit_cstrings, min_cstrings, max_cstrings, metric_ptrs, unit_ptrs, min_ptrs, max_ptrs))
         };
 
+        let collect_time_rows = |rows: &[crate::dtos::AdvancedFlowFilterTimeRowDto]| -> Result<_, String> {
+            let metric_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.metric_id.as_str()).map_err(|_| "Time metric ID contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let from_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.from_text.as_str()).map_err(|_| "Time from-text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let to_cstrings = rows
+                .iter()
+                .map(|row| CString::new(row.to_text.as_str()).map_err(|_| "Time to-text contains an embedded NUL byte.".to_string()))
+                .collect::<Result<Vec<_>, _>>()?;
+            let metric_ptrs = metric_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let from_ptrs = from_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            let to_ptrs = to_cstrings.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+            Ok((metric_cstrings, from_cstrings, to_cstrings, metric_ptrs, from_ptrs, to_ptrs))
+        };
+
         let collect_service_rows = |rows: &[crate::dtos::AdvancedFlowFilterServiceTextRowDto]| -> Result<_, String> {
             let operator_cstrings = rows
                 .iter()
@@ -792,6 +820,21 @@ impl CppFrontendSessionAdapter {
         let (ip_exclude_scope_cstrings, ip_exclude_address_cstrings, ip_exclude_prefix_cstrings,
             ip_exclude_scope_ptrs, ip_exclude_address_ptrs, ip_exclude_prefix_ptrs, ip_exclude_subnet_flags) =
             collect_ip_rows(&document.ip_addresses.exclude)?;
+        let (time_range_metric_cstrings, time_range_from_cstrings, time_range_to_cstrings,
+            time_range_metric_ptrs, time_range_from_ptrs, time_range_to_ptrs) =
+            collect_time_rows(&document.time.ranges)?;
+        let time_duration_metric = CString::new(document.time.duration.metric_id.as_str())
+            .map_err(|_| "Time duration metric ID contains an embedded NUL byte.".to_string())?;
+        let time_duration_unit = CString::new(document.time.duration.unit_id.as_str())
+            .map_err(|_| "Time duration unit ID contains an embedded NUL byte.".to_string())?;
+        let time_duration_min = CString::new(document.time.duration.min_text.as_str())
+            .map_err(|_| "Time duration min-text contains an embedded NUL byte.".to_string())?;
+        let time_duration_max = CString::new(document.time.duration.max_text.as_str())
+            .map_err(|_| "Time duration max-text contains an embedded NUL byte.".to_string())?;
+        let time_duration_metric_ptr = time_duration_metric.as_ptr();
+        let time_duration_unit_ptr = time_duration_unit.as_ptr();
+        let time_duration_min_ptr = time_duration_min.as_ptr();
+        let time_duration_max_ptr = time_duration_max.as_ptr();
         let (traffic_primary_metric_cstrings, traffic_primary_unit_cstrings, traffic_primary_min_cstrings, traffic_primary_max_cstrings,
             traffic_primary_metric_ptrs, traffic_primary_unit_ptrs, traffic_primary_min_ptrs, traffic_primary_max_ptrs) =
             collect_traffic_rows(&document.traffic.primary)?;
@@ -818,7 +861,7 @@ impl CppFrontendSessionAdapter {
             collect_contains_layer_rows(&document.contains_layer.exclude)?;
 
         // Keep all CString owners alive while the synchronous C ABI call borrows their buffers.
-        let keep_alive = (
+        let _keep_alive = (
             filter_text,
             address_family_include_cstrings,
             address_family_exclude_cstrings,
@@ -844,6 +887,13 @@ impl CppFrontendSessionAdapter {
             ip_exclude_scope_cstrings,
             ip_exclude_address_cstrings,
             ip_exclude_prefix_cstrings,
+            time_range_metric_cstrings,
+            time_range_from_cstrings,
+            time_range_to_cstrings,
+            time_duration_metric,
+            time_duration_unit,
+            time_duration_min,
+            time_duration_max,
             traffic_primary_metric_cstrings,
             traffic_primary_unit_cstrings,
             traffic_primary_min_cstrings,
@@ -924,6 +974,15 @@ impl CppFrontendSessionAdapter {
                 ip_exclude_address_ptrs.as_ptr(),
                 ip_exclude_prefix_ptrs.as_ptr(),
                 ip_exclude_scope_ptrs.len(),
+                if document.time.enabled { 1 } else { 0 },
+                time_range_metric_ptrs.as_ptr(),
+                time_range_from_ptrs.as_ptr(),
+                time_range_to_ptrs.as_ptr(),
+                time_range_metric_ptrs.len(),
+                time_duration_metric_ptr,
+                time_duration_unit_ptr,
+                time_duration_min_ptr,
+                time_duration_max_ptr,
                 if document.traffic.enabled { 1 } else { 0 },
                 traffic_primary_metric_ptrs.as_ptr(),
                 traffic_primary_unit_ptrs.as_ptr(),
@@ -966,7 +1025,6 @@ impl CppFrontendSessionAdapter {
                 contains_layer_exclude_layer_ptrs.len(),
             )
         };
-        drop(keep_alive);
         parse_json_owned::<AdvancedFlowFilterStructuredDocumentResultDto>(json)
     }
 
