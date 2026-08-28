@@ -1,9 +1,10 @@
 # Advanced Flow Filter RFC
 
 Status: implemented backend/compiler/evaluator foundation with current
-`.filter` v2 parse/format support, metadata-backed predicate coverage, current
+`.filter` v3 parse/format support, metadata-backed predicate coverage, current
 `flows --adv-filter` CLI integration, current Qt Advanced Filter UI/workflow,
-and incremental Tauri parity work in progress.
+and current Tauri parity for the implemented Time and directional-traffic
+surface.
 
 This document defines the product and semantic filter model for the Advanced
 Flow Filter in Pcap Flow Lab.
@@ -67,7 +68,7 @@ contract for Advanced Flow Filter documents:
 
 ```text
 AdvancedFlowFilterDocument
-    <-> parse/format current text format v2
+    <-> parse/format current text format v3
     -> make_effective_advanced_flow_filter_spec(document)
 AdvancedFlowFilterSpec
 CompiledAdvancedFlowFilter
@@ -98,7 +99,7 @@ Current rules:
   evaluator after open/import completes.
 - Ordinary evaluation does not require source packet bytes.
 
-## Current Text Format v2
+## Current Text Format v3
 
 The current development text format is line-oriented and UTF-8 friendly.
 
@@ -130,7 +131,7 @@ separately once the format actually ships.
 - The first meaningful line must be:
 
 ```text
-format_version = 2
+format_version = 3
 ```
 
 - `format_version` may appear only once.
@@ -140,7 +141,7 @@ format_version = 2
 - boolean section-enabled values accept `true` and `false`, case-insensitively
   on input
 - Formatter output is canonical, lowercase where applicable, strips comments,
-  and always emits `format_version = 2` first.
+  and always emits `format_version = 3` first.
 
 Each non-comment assignment is:
 
@@ -198,7 +199,7 @@ Canonical top-level ordering is:
 
 ### Grammar shape
 
-The implemented v2 keys are:
+The implemented v3 keys are:
 
 ```text
 section.address_family.enabled = true | false
@@ -209,6 +210,7 @@ section.quic_version.enabled = true | false
 section.directionality.enabled = true | false
 section.ports.enabled = true | false
 section.ip_addresses.enabled = true | false
+section.time.enabled = true | false
 section.traffic.enabled = true | false
 section.service.enabled = true | false
 section.protocol_path.enabled = true | false
@@ -238,6 +240,15 @@ port.<either|a|b>.exclude = <port-or-range>
 ip.<either|a|b>.include = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
 ip.<either|a|b>.exclude = <ipv4-exact-or-cidr> | <ipv6-exact-or-cidr>
 
+time.start.from = <utc-timestamp>
+time.start.to = <utc-timestamp>
+time.end.from = <utc-timestamp>
+time.end.to = <utc-timestamp>
+time.overlap.from = <utc-timestamp>
+time.overlap.to = <utc-timestamp>
+time.duration.min = <duration-quantity>
+time.duration.max = <duration-quantity>
+
 service.state.include = known | unknown
 service.state.exclude = known | unknown
 service.<equals|starts_with|contains>.<ci|cs>.include = <quoted-string>
@@ -249,7 +260,14 @@ protocol_path.<exact|prefix|contains>.exclude = <protocol-path-value>
 packet_count.<min|max> = <uint64>
 original_bytes.<min|max> = <byte-quantity>
 captured_bytes.<min|max> = <byte-quantity>
-duration.<min|max> = <duration-quantity>
+packet_distribution.include = mostly_a_to_b | balanced | mostly_b_to_a
+packet_distribution.exclude = mostly_a_to_b | balanced | mostly_b_to_a
+data_distribution.include = mostly_a_to_b | balanced | mostly_b_to_a
+data_distribution.exclude = mostly_a_to_b | balanced | mostly_b_to_a
+a_to_b.packet_count.<min|max> = <uint64>
+b_to_a.packet_count.<min|max> = <uint64>
+a_to_b.original_bytes.<min|max> = <byte-quantity>
+b_to_a.original_bytes.<min|max> = <byte-quantity>
 fragmented_packet_count.<min|max> = <uint64>
 truncated_packet_count.<min|max> = <uint64>
 tcp_syn_count.<min|max> = <uint64>
@@ -738,19 +756,62 @@ connection" are explicitly out of scope.
 
 ### Flow time
 
-Planned semantics:
-
-- started after / before
-- ended after / before
-- overlaps an interval
-- fully inside an interval
-- relative-to-capture-start time as a later secondary UI mode
-
-### Duration
-
 Already implemented baseline:
 
-- minimum and/or maximum duration
+- flow start bounds:
+  - `time.start.from`
+  - `time.start.to`
+- flow end bounds:
+  - `time.end.from`
+  - `time.end.to`
+- flow lifetime overlap bounds:
+  - `time.overlap.from`
+  - `time.overlap.to`
+- duration bounds:
+  - `time.duration.min`
+  - `time.duration.max`
+
+Time uses the current authoritative connection aggregates:
+
+- `first_timestamp_us`
+- `last_timestamp_us`
+
+No packet rescanning is required.
+
+All implemented time bounds are inclusive.
+
+Start:
+
+- `time.start.from = A` means `first_timestamp >= A`
+- `time.start.to = B` means `first_timestamp <= B`
+
+End:
+
+- `time.end.from = A` means `last_timestamp >= A`
+- `time.end.to = B` means `last_timestamp <= B`
+
+Lifetime overlap:
+
+- `time.overlap.from = A` alone means `last_timestamp >= A`
+- `time.overlap.to = B` alone means `first_timestamp <= B`
+- both together mean:
+  - `first_timestamp <= B`
+  - `last_timestamp >= A`
+
+Duration remains:
+
+- `last_timestamp - first_timestamp`
+
+So a one-packet connection naturally has zero duration.
+
+The current implementation uses absolute UTC timestamps with `Z` and up to
+microsecond precision. Canonical formatting uses six fractional digits, for
+example `2026-03-22T12:27:32.000000Z`.
+
+Future extension:
+
+- relative-to-capture-start time as a later secondary UI mode
+- local-time / offset timestamp input
 
 ### Directionality
 
@@ -760,14 +821,64 @@ Already implemented baseline:
   - unidirectional
   - bidirectional
 
-Future extension using canonical A/B orientation:
+Current user-facing wording is:
+
+- `Only A -> B packets`
+- `Packets in both directions`
+
+Where `A -> B` means the direction of the first observed packet in that
+canonical flow. It does not imply client/server or request/response roles.
+
+### Packet distribution
+
+Already implemented baseline:
+
+- include / exclude values:
+  - `mostly_a_to_b`
+  - `balanced`
+  - `mostly_b_to_a`
+
+This classification uses directional packet counts and shares the same
+`DirectionDistribution` boundary semantics used by Flow Analysis:
+
+- exactly `2:1` is still `balanced`
+- one side becomes `mostly_*` only when it exceeds the other side by more than
+  `2x`
+
+Examples:
+
+- `20 : 10` -> `balanced`
+- `21 : 10` -> `mostly_a_to_b`
+
+### Data distribution
+
+Already implemented baseline:
+
+- include / exclude values:
+  - `mostly_a_to_b`
+  - `balanced`
+  - `mostly_b_to_a`
+
+This classification uses directional original-byte totals, not transport
+payload, application payload, or captured-byte totals.
+
+It uses the same `DirectionDistribution` boundary semantics described above.
+
+### Directional traffic ranges
+
+Already implemented baseline using canonical A/B orientation:
 
 - A->B packet count
 - B->A packet count
 - A->B original bytes
 - B->A original bytes
-- derived packet dominance / ratio
-- derived byte dominance / ratio
+- Packet distribution
+- Data distribution
+
+If the reverse direction was never observed:
+
+- `B -> A` packet count = `0`
+- `B -> A` original bytes = `0`
 
 ### Derived rate predicates
 
@@ -884,6 +995,22 @@ the current Advanced Flow Filter backend stage:
 The current backend stage evaluates numeric predicates from that aggregate
 foundation rather than by rescanning `PacketRef` vectors.
 
+This now covers:
+
+- Time bounds from persisted first/last timestamps
+- directional packet and original-byte ranges from `flow_a` / `flow_b`
+  aggregates
+- packet/data distribution from the shared `DirectionDistribution`
+  classification
+
+Evaluation remains constant-time per candidate connection. It does not require:
+
+- `PacketRef` traversal
+- source capture rereads
+- packet-byte reads
+- reassembly
+- new index v15 fields
+
 ## Derived Data
 
 The following values should remain derived rather than persisted as separate
@@ -927,8 +1054,6 @@ Deferred from the initial implementation:
 - arbitrary packet-content predicates
 - unrecognized-packet filtering
 - saved filter presets as part of the capture index
-- Advanced Filter parity in Smart Export
-- Tauri Advanced Filter UI parity
 
 ## Future Saved Filter Presets
 

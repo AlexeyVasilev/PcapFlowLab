@@ -1,6 +1,6 @@
 # Advanced Flow Filter UI RFC
 
-Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive finite-option and repeated-row presentation, the complete agreed Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer surface, transactional Open/Save/Save As/Clear workflows, the accepted dense desktop-oriented Qt presentation with semantic Include/Exclude grouping and shared Select/double-click Protocol Path acceptance wiring, and current-filter Smart Export parity for applied Advanced Filter results. The Tauri frontend now implements the same current Advanced Filter workflow slice, including current-filter Smart Export parity, while broader future work and later polish remain deferred.
+Status: active UI design RFC. The Qt frontend now implements Simple/Advanced mode switching, controller-owned document state, applied Advanced Filter evaluation into the flow list, the dedicated Advanced Filter Settings dialog for all currently agreed main sections, transactional Apply/Cancel draft behavior, stable multi-character text editing, responsive finite-option and repeated-row presentation, the complete agreed Time / Ports / IP addresses / Traffic / Service / Protocol Path / Contains Layer surface, transactional Open/Save/Save As/Clear workflows, the accepted dense desktop-oriented Qt presentation with semantic Include/Exclude grouping and shared Select/double-click Protocol Path acceptance wiring, and current-filter Smart Export parity for applied Advanced Filter results. The Tauri frontend now implements the same current Advanced Filter workflow slice, including Time and directional Traffic controls plus current-filter Smart Export parity, while broader future work and later polish remain deferred.
 
 This document records the currently agreed UI design for Advanced Flow Filter.
 It is intentionally limited to UI/document-state behavior, current Qt
@@ -251,6 +251,7 @@ Current agreed behavior:
   - TLS Version
   - QUIC Version
   - Observed directions
+  - Time
   - Ports
   - IP addresses
   - Traffic
@@ -817,8 +818,8 @@ pattern.
 
 Values are exactly:
 
-- One direction
-- Both directions
+- Only A -> B packets
+- Packets in both directions
 
 This UI must not reintroduce:
 
@@ -830,11 +831,76 @@ That aligns with the current backend directionality model for listable flows.
 
 Helper text should clarify:
 
-- One direction means packets were observed in only one flow direction.
-- Both directions means at least one packet was observed in each direction.
+- `A -> B` is the direction of the first observed packet in the canonical flow.
+- `Only A -> B packets` means packets were observed only in that stored
+  direction.
+- `Packets in both directions` means at least one packet was observed in each
+  direction.
 
 Qt now implements this finite checkbox editor in the dedicated Advanced Filter
-Settings dialog.
+Settings dialog, and Tauri now implements the same current labels and
+semantics.
+
+## Time
+
+Time is a separate Advanced Filter section with its own independent Enabled
+state.
+
+Conceptual layout:
+
+```text
+Time
+
+Flow start                 From [                        ]  To [                        ]
+Flow end                   From [                        ]  To [                        ]
+Flow lifetime overlaps     From [                        ]  To [                        ]
+Duration                   Minimum [       ]             Maximum [       ]   [ s ▼ ]
+
+UTC timestamp example: 2026-03-22T12:27:32.000000Z
+Lifetime is the interval between the earliest and latest observed packets;
+it does not imply continuous traffic.
+```
+
+Semantics follow the backend:
+
+- all bounds are inclusive
+- `Flow start` uses the earliest observed packet timestamp
+- `Flow end` uses the latest observed packet timestamp
+- `Flow lifetime overlaps` matches interval overlap rather than continuous
+  activity
+- `Duration` is `last_timestamp - first_timestamp`
+- one-packet connections naturally have zero duration
+
+Timestamp input rules:
+
+- input uses absolute UTC timestamps
+- canonical example:
+  - `2026-03-22T12:27:32.000000Z`
+- the current implementation accepts `Z` timestamps with up to microsecond
+  precision
+- canonical formatting uses six fractional digits
+- Duration uses user-friendly labels:
+  - us
+  - ms
+  - s
+  - min
+  - h
+- the UI may display `min` even if the current `.filter` text format uses a
+  different canonical token such as `m`
+- the default empty Duration unit is `s`
+
+Current non-goals:
+
+- no capture-relative input mode
+- no local-time or offset timestamp input
+
+When Time is disabled:
+
+- configured Time values remain in the document
+- they are not active predicates
+- Duration remains part of Time rather than Traffic
+
+Qt and Tauri now both implement the current Time section.
 
 ## Port Editor
 
@@ -1468,7 +1534,6 @@ Value                         Minimum      Maximum      Unit
 Packets                       [       ]    [       ]    packets
 Original bytes                [       ]    [       ]    [ KiB ▼ ]
 Captured bytes                [       ]    [       ]    [ KiB ▼ ]
-Duration                      [       ]    [       ]    [ s   ▼ ]
 
 [ + More traffic filters ]
 ```
@@ -1483,7 +1548,6 @@ Initially visible common rows:
 - Packet count
 - Original bytes
 - Captured bytes
-- Duration
 
 Additional less-common rows are hidden behind:
 
@@ -1493,6 +1557,12 @@ Additional less-common rows are hidden behind:
 
 Additional rows:
 
+- Packet distribution
+- Data distribution
+- A -> B packets
+- B -> A packets
+- A -> B original bytes
+- B -> A original bytes
 - Maximum original packet size
 - Maximum captured packet size
 - Fragmented packet count
@@ -1509,7 +1579,12 @@ Value                         Minimum      Maximum      Unit
 Packets                       [       ]    [       ]    packets
 Original bytes                [       ]    [       ]    [ KiB ▼ ]
 Captured bytes                [       ]    [       ]    [ KiB ▼ ]
-Duration                      [       ]    [       ]    [ s   ▼ ]
+Packet distribution           [ Mostly A -> B | Balanced | Mostly B -> A ]
+Data distribution             [ Mostly A -> B | Balanced | Mostly B -> A ]
+A -> B packets                [       ]    [       ]    packets
+B -> A packets                [       ]    [       ]    packets
+A -> B original bytes         [       ]    [       ]    [ KiB ▼ ]
+B -> A original bytes         [       ]    [       ]    [ KiB ▼ ]
 Maximum original packet size  [       ]    [       ]    [ B   ▼ ]
 Maximum captured packet size  [       ]    [       ]    [ B   ▼ ]
 Fragmented packets            [       ]    [       ]    packets
@@ -1527,6 +1602,19 @@ from the user.
 
 The exact choice and ordering of common versus additional rows may still be
 adjusted later after real UI usage without changing filter semantics.
+
+Current directional/distribution semantics:
+
+- `Packet distribution` uses directional packet counts
+- `Data distribution` uses directional original-byte totals
+- both share the same classification boundary as Flow Analysis:
+  - exactly `2:1` remains `Balanced`
+  - a side becomes `Mostly ...` only when it exceeds the other side by more
+    than `2x`
+- directional packet and original-byte ranges are inclusive
+- if the reverse direction was never observed:
+  - `B -> A packets = 0`
+  - `B -> A original bytes = 0`
 
 ### Minimum And Maximum Semantics
 
@@ -1573,28 +1661,15 @@ Maximum packet-size rows use:
 - B
 - KiB
 
-Duration uses user-friendly labels:
-
-- us
-- ms
-- s
-- min
-- h
-
-The UI may display `min` even if the current `.filter` text format uses a
-different canonical token such as `m`.
-
 Packet/count rows do not need a unit selector. They may show a static
 `packets` / `count` label or an equivalent compact presentation.
-
-The UI may display `min` even if the stable `.filter` text format uses a
-different canonical token such as `m`.
 
 Default empty editor units are:
 
 - Original bytes: `KiB`
 - Captured bytes: `KiB`
-- Duration: `s`
+- A -> B original bytes: `KiB`
+- B -> A original bytes: `KiB`
 - Maximum original packet size: `B`
 - Maximum captured packet size: `B`
 
@@ -1672,11 +1747,12 @@ Validation follows this RFC's existing non-aggressive draft-validation rules.
 The UI must not calculate dynamic flow counts for arbitrary numeric ranges.
 
 Qt now implements this Traffic editor in the dedicated Advanced Filter
-Settings dialog, including the common/additional metric split, default `KiB`
-aggregate-byte units, default `s` duration units, `B/KiB` packet-size unit
-selection, exact integer-only byte/duration conversion, additional-row
-auto-expansion when configured, section Enabled retention, and transactional
-Apply validation.
+Settings dialog, including the common/additional metric split, distribution
+selectors, directional packet/original-byte ranges, default `KiB`
+aggregate-byte units, `B/KiB` packet-size unit selection, exact integer-only
+byte conversion, additional-row auto-expansion when configured, section
+Enabled retention, and transactional Apply validation. Tauri now implements
+the same current Traffic predicate surface.
 
 ## Section Enabled State
 
@@ -1716,6 +1792,7 @@ Representative sections that may have Enabled state include:
 - TLS Version
 - QUIC Version
 - Observed directions
+- Time
 - Ports
 - IP addresses
 - Traffic
