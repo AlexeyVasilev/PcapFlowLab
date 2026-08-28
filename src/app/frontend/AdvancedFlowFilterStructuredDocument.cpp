@@ -70,9 +70,15 @@ constexpr std::array<EnumDescriptor<QuicVersionHint>, 4> kQuicVersionDescriptors
 
 constexpr std::array<EnumDescriptor<session_detail::AdvancedFlowFilterDirectionality>, 2>
     kDirectionalityDescriptors {{
-        {session_detail::AdvancedFlowFilterDirectionality::unidirectional, "unidirectional", "One direction"},
-        {session_detail::AdvancedFlowFilterDirectionality::bidirectional, "bidirectional", "Both directions"},
+        {session_detail::AdvancedFlowFilterDirectionality::unidirectional, "unidirectional", "Only A -> B packets"},
+        {session_detail::AdvancedFlowFilterDirectionality::bidirectional, "bidirectional", "Packets in both directions"},
     }};
+
+constexpr std::array<EnumDescriptor<DirectionDistribution>, 3> kTrafficDistributionDescriptors {{
+    {DirectionDistribution::mostly_a_to_b, "mostly_a_to_b", "Mostly A -> B"},
+    {DirectionDistribution::balanced, "balanced", "Balanced"},
+    {DirectionDistribution::mostly_b_to_a, "mostly_b_to_a", "Mostly B -> A"},
+}};
 
 constexpr std::array<EnumDescriptor<session_detail::AdvancedFlowFilterPortScope>, 3> kPortScopeDescriptors {{
     {session_detail::AdvancedFlowFilterPortScope::either_endpoint, "either", "Either endpoint"},
@@ -111,11 +117,18 @@ enum class StructuredTrafficValueKind : std::uint8_t {
     byte_u32,
 };
 
+enum class StructuredTrafficRowGroup : std::uint8_t {
+    primary = 0,
+    directional_packets,
+    directional_original_bytes,
+    additional,
+};
+
 struct StructuredTrafficMetricDescriptor {
     const char* stable_id {""};
     const char* key_root {""};
     StructuredTrafficValueKind kind {StructuredTrafficValueKind::count_u64};
-    bool additional {false};
+    StructuredTrafficRowGroup group {StructuredTrafficRowGroup::primary};
     const char* default_unit_id {""};
 };
 
@@ -136,20 +149,27 @@ constexpr std::array<StructuredTimeRangeDescriptor, 3> kTimeRangeDescriptors {{
 }};
 
 constexpr StructuredTrafficMetricDescriptor kTimeDurationMetricDescriptor {
-    "duration", "duration", StructuredTrafficValueKind::duration_us_u64, false, "s"
+    "duration", "duration", StructuredTrafficValueKind::duration_us_u64, StructuredTrafficRowGroup::primary, "s"
 };
 
 constexpr std::array<StructuredTrafficMetricDescriptor, 10> kTrafficMetricDescriptors {{
-    {"packets", "packet_count", StructuredTrafficValueKind::count_u64, false, "count"},
-    {"original_bytes", "original_bytes", StructuredTrafficValueKind::byte_u64, false, "KiB"},
-    {"captured_bytes", "captured_bytes", StructuredTrafficValueKind::byte_u64, false, "KiB"},
-    {"max_original_packet_size", "max_original_packet_length", StructuredTrafficValueKind::byte_u32, true, "B"},
-    {"max_captured_packet_size", "max_captured_packet_length", StructuredTrafficValueKind::byte_u32, true, "B"},
-    {"fragmented_packet_count", "fragmented_packet_count", StructuredTrafficValueKind::count_u64, true, "count"},
-    {"truncated_packet_count", "truncated_packet_count", StructuredTrafficValueKind::count_u64, true, "count"},
-    {"tcp_syn_count", "tcp_syn_count", StructuredTrafficValueKind::count_u64, true, "count"},
-    {"tcp_fin_count", "tcp_fin_count", StructuredTrafficValueKind::count_u64, true, "count"},
-    {"tcp_rst_count", "tcp_rst_count", StructuredTrafficValueKind::count_u64, true, "count"},
+    {"packets", "packet_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::primary, "count"},
+    {"original_bytes", "original_bytes", StructuredTrafficValueKind::byte_u64, StructuredTrafficRowGroup::primary, "KiB"},
+    {"captured_bytes", "captured_bytes", StructuredTrafficValueKind::byte_u64, StructuredTrafficRowGroup::primary, "KiB"},
+    {"max_original_packet_size", "max_original_packet_length", StructuredTrafficValueKind::byte_u32, StructuredTrafficRowGroup::additional, "B"},
+    {"max_captured_packet_size", "max_captured_packet_length", StructuredTrafficValueKind::byte_u32, StructuredTrafficRowGroup::additional, "B"},
+    {"fragmented_packet_count", "fragmented_packet_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::additional, "count"},
+    {"truncated_packet_count", "truncated_packet_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::additional, "count"},
+    {"tcp_syn_count", "tcp_syn_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::additional, "count"},
+    {"tcp_fin_count", "tcp_fin_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::additional, "count"},
+    {"tcp_rst_count", "tcp_rst_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::additional, "count"},
+}};
+
+constexpr std::array<StructuredTrafficMetricDescriptor, 4> kDirectionalTrafficMetricDescriptors {{
+    {"a_to_b_packets", "traffic.a_to_b.packet_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::directional_packets, "count"},
+    {"b_to_a_packets", "traffic.b_to_a.packet_count", StructuredTrafficValueKind::count_u64, StructuredTrafficRowGroup::directional_packets, "count"},
+    {"a_to_b_original_bytes", "traffic.a_to_b.original_bytes", StructuredTrafficValueKind::byte_u64, StructuredTrafficRowGroup::directional_original_bytes, "KiB"},
+    {"b_to_a_original_bytes", "traffic.b_to_a.original_bytes", StructuredTrafficValueKind::byte_u64, StructuredTrafficRowGroup::directional_original_bytes, "KiB"},
 }};
 
 constexpr std::array<StructuredTrafficUnitDescriptor, 1> kTrafficCountUnits {{
@@ -222,12 +242,19 @@ const EnumDescriptor<Enum>* descriptor_for_id(
 }
 
 const StructuredTrafficMetricDescriptor* traffic_metric_descriptor_for_id(const std::string_view stable_id) {
-    const auto it = std::find_if(
-        kTrafficMetricDescriptors.begin(),
-        kTrafficMetricDescriptors.end(),
-        [stable_id](const auto& descriptor) { return stable_id == descriptor.stable_id; }
-    );
-    return it == kTrafficMetricDescriptors.end() ? nullptr : &(*it);
+    const auto find_descriptor = [stable_id](const auto& descriptors) -> const StructuredTrafficMetricDescriptor* {
+        const auto it = std::find_if(
+            descriptors.begin(),
+            descriptors.end(),
+            [stable_id](const auto& descriptor) { return stable_id == descriptor.stable_id; }
+        );
+        return it == descriptors.end() ? nullptr : &(*it);
+    };
+
+    if (const auto* descriptor = find_descriptor(kTrafficMetricDescriptors)) {
+        return descriptor;
+    }
+    return find_descriptor(kDirectionalTrafficMetricDescriptors);
 }
 
 const StructuredTimeRangeDescriptor* time_range_descriptor_for_id(const std::string_view stable_id) {
@@ -460,6 +487,7 @@ FrontendAdvancedFlowFilterStructuredOptionCatalogDto build_option_catalog() {
     append_catalog(kTlsVersionDescriptors, catalog.tls_version);
     append_catalog(kQuicVersionDescriptors, catalog.quic_version);
     append_catalog(kDirectionalityDescriptors, catalog.directionality);
+    append_catalog(kTrafficDistributionDescriptors, catalog.traffic_distribution);
     append_catalog(kPortScopeDescriptors, catalog.endpoint_scope);
     append_catalog(kProtocolPathSelectorModeDescriptors, catalog.protocol_path_selector_mode);
     append_catalog(kContainsLayerIdentifierModeDescriptors, catalog.contains_layer_identifier_mode);
@@ -513,6 +541,8 @@ std::string compile_error_text(
         return "Advanced filter is invalid: service predicate.";
     case session_detail::AdvancedFlowFilterCompileStatus::invalid_directionality_predicate:
         return "Advanced filter is invalid: directionality predicate.";
+    case session_detail::AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate:
+        return "Advanced filter is invalid: traffic distribution predicate.";
     case session_detail::AdvancedFlowFilterCompileStatus::invalid_address_family_predicate:
         return "Advanced filter is invalid: address family predicate.";
     case session_detail::AdvancedFlowFilterCompileStatus::ok:
@@ -908,17 +938,57 @@ void encode_traffic_section(
     const session_detail::AdvancedFlowFilterAggregateCriteria& aggregate,
     FrontendAdvancedFlowFilterTrafficSectionDto& traffic
 ) {
+    traffic.packet_distribution.include.clear();
+    traffic.packet_distribution.exclude.clear();
+    traffic.data_distribution.include.clear();
+    traffic.data_distribution.exclude.clear();
     traffic.primary.clear();
+    traffic.directional_packets.clear();
+    traffic.directional_original_bytes.clear();
     traffic.additional.clear();
 
+    const auto append_distribution = [](
+                                         const auto& values,
+                                         std::vector<std::string>& target) {
+        target.reserve(values.size());
+        for (const auto value : values) {
+            if (const auto* descriptor = descriptor_for_value(kTrafficDistributionDescriptors, value)) {
+                target.push_back(descriptor->stable_id);
+            }
+        }
+    };
+
+    append_distribution(aggregate.packet_distribution.include, traffic.packet_distribution.include);
+    append_distribution(aggregate.packet_distribution.exclude, traffic.packet_distribution.exclude);
+    append_distribution(aggregate.data_distribution.include, traffic.data_distribution.include);
+    append_distribution(aggregate.data_distribution.exclude, traffic.data_distribution.exclude);
+
     const auto append_metric = [&](const StructuredTrafficMetricDescriptor& descriptor, const auto& range) {
-        auto& target = descriptor.additional ? traffic.additional : traffic.primary;
-        append_encoded_traffic_row(descriptor, range, target);
+        auto* target = &traffic.primary;
+        switch (descriptor.group) {
+        case StructuredTrafficRowGroup::primary:
+            target = &traffic.primary;
+            break;
+        case StructuredTrafficRowGroup::directional_packets:
+            target = &traffic.directional_packets;
+            break;
+        case StructuredTrafficRowGroup::directional_original_bytes:
+            target = &traffic.directional_original_bytes;
+            break;
+        case StructuredTrafficRowGroup::additional:
+            target = &traffic.additional;
+            break;
+        }
+        append_encoded_traffic_row(descriptor, range, *target);
     };
 
     append_metric(kTrafficMetricDescriptors[0], aggregate.packet_count);
     append_metric(kTrafficMetricDescriptors[1], aggregate.original_bytes);
     append_metric(kTrafficMetricDescriptors[2], aggregate.captured_bytes);
+    append_metric(kDirectionalTrafficMetricDescriptors[0], aggregate.a_to_b_packet_count);
+    append_metric(kDirectionalTrafficMetricDescriptors[1], aggregate.b_to_a_packet_count);
+    append_metric(kDirectionalTrafficMetricDescriptors[2], aggregate.a_to_b_original_bytes);
+    append_metric(kDirectionalTrafficMetricDescriptors[3], aggregate.b_to_a_original_bytes);
     append_metric(kTrafficMetricDescriptors[3], aggregate.max_original_packet_length);
     append_metric(kTrafficMetricDescriptors[4], aggregate.max_captured_packet_length);
     append_metric(kTrafficMetricDescriptors[5], aggregate.fragmented_packet_count);
@@ -1576,6 +1646,37 @@ bool decode_traffic_section(
 ) {
     aggregate = session_detail::AdvancedFlowFilterAggregateCriteria {};
 
+    if (!decode_finite_values(
+            kTrafficDistributionDescriptors,
+            "traffic",
+            "packet_distribution.include",
+            traffic.packet_distribution.include,
+            aggregate.packet_distribution.include,
+            result) ||
+        !decode_finite_values(
+            kTrafficDistributionDescriptors,
+            "traffic",
+            "packet_distribution.exclude",
+            traffic.packet_distribution.exclude,
+            aggregate.packet_distribution.exclude,
+            result) ||
+        !decode_finite_values(
+            kTrafficDistributionDescriptors,
+            "traffic",
+            "data_distribution.include",
+            traffic.data_distribution.include,
+            aggregate.data_distribution.include,
+            result) ||
+        !decode_finite_values(
+            kTrafficDistributionDescriptors,
+            "traffic",
+            "data_distribution.exclude",
+            traffic.data_distribution.exclude,
+            aggregate.data_distribution.exclude,
+            result)) {
+        return false;
+    }
+
     auto decode_row = [&](const FrontendAdvancedFlowFilterTrafficRowDto& row, const std::size_t row_index) -> bool {
         const auto* descriptor = traffic_metric_descriptor_for_id(row.metric_id);
         if (descriptor == nullptr) {
@@ -1611,6 +1712,12 @@ bool decode_traffic_section(
             if (row.metric_id == "tcp_rst_count") {
                 return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.tcp_rst_count, result);
             }
+            if (row.metric_id == "a_to_b_packets") {
+                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.a_to_b_packet_count, result);
+            }
+            if (row.metric_id == "b_to_a_packets") {
+                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.b_to_a_packet_count, result);
+            }
             break;
         case StructuredTrafficValueKind::byte_u64:
             if (row.metric_id == "original_bytes") {
@@ -1618,6 +1725,12 @@ bool decode_traffic_section(
             }
             if (row.metric_id == "captured_bytes") {
                 return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.captured_bytes, result);
+            }
+            if (row.metric_id == "a_to_b_original_bytes") {
+                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.a_to_b_original_bytes, result);
+            }
+            if (row.metric_id == "b_to_a_original_bytes") {
+                return decode_traffic_row_into_range(row, *descriptor, row_index, aggregate.b_to_a_original_bytes, result);
             }
             break;
         case StructuredTrafficValueKind::byte_u32:
@@ -1646,6 +1759,16 @@ bool decode_traffic_section(
 
     std::size_t row_index = 0U;
     for (const auto& row : traffic.primary) {
+        if (!decode_row(row, row_index++)) {
+            return false;
+        }
+    }
+    for (const auto& row : traffic.directional_packets) {
+        if (!decode_row(row, row_index++)) {
+            return false;
+        }
+    }
+    for (const auto& row : traffic.directional_original_bytes) {
         if (!decode_row(row, row_index++)) {
             return false;
         }

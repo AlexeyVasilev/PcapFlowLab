@@ -160,16 +160,20 @@
   ]);
 
   const advancedFlowFilterTrafficMetricDefinitions = Object.freeze([
-    { id: "packets", title: "Packets", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: false, unitPresentation: "static", staticUnitLabel: "packets" },
-    { id: "original_bytes", title: "Original bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", additional: false, unitPresentation: "select" },
-    { id: "captured_bytes", title: "Captured bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", additional: false, unitPresentation: "select" },
-    { id: "max_original_packet_size", title: "Max original packet size", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", additional: true, unitPresentation: "select" },
-    { id: "max_captured_packet_size", title: "Max captured packet size", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", additional: true, unitPresentation: "select" },
-    { id: "fragmented_packet_count", title: "Fragmented packet count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
-    { id: "truncated_packet_count", title: "Truncated packet count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
-    { id: "tcp_syn_count", title: "TCP SYN count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
-    { id: "tcp_fin_count", title: "TCP FIN count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
-    { id: "tcp_rst_count", title: "TCP RST count", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", additional: true, unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "packets", title: "Packets", group: "primary", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "original_bytes", title: "Original bytes", group: "primary", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", unitPresentation: "select" },
+    { id: "captured_bytes", title: "Captured bytes", group: "primary", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", unitPresentation: "select" },
+    { id: "a_to_b_packets", title: "A -> B packets", group: "directional_packets", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "b_to_a_packets", title: "B -> A packets", group: "directional_packets", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "a_to_b_original_bytes", title: "A -> B original bytes", group: "directional_original_bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", unitPresentation: "select" },
+    { id: "b_to_a_original_bytes", title: "B -> A original bytes", group: "directional_original_bytes", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }, { id: "MiB", label: "MiB" }, { id: "GiB", label: "GiB" }, { id: "TiB", label: "TiB" }], defaultUnitId: "KiB", unitPresentation: "select" },
+    { id: "max_original_packet_size", title: "Max original packet size", group: "additional", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", unitPresentation: "select" },
+    { id: "max_captured_packet_size", title: "Max captured packet size", group: "additional", unitOptions: [{ id: "B", label: "B" }, { id: "KiB", label: "KiB" }], defaultUnitId: "B", unitPresentation: "select" },
+    { id: "fragmented_packet_count", title: "Fragmented packet count", group: "additional", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "truncated_packet_count", title: "Truncated packet count", group: "additional", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "tcp_syn_count", title: "TCP SYN count", group: "additional", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "tcp_fin_count", title: "TCP FIN count", group: "additional", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
+    { id: "tcp_rst_count", title: "TCP RST count", group: "additional", unitOptions: [{ id: "count", label: "Count" }], defaultUnitId: "count", unitPresentation: "static", staticUnitLabel: "packets" },
   ]);
 
   const advancedFlowFilterTimeDurationDefinition = Object.freeze(
@@ -675,10 +679,14 @@
             + Number(advancedFlowFilterHasMeaningfulText(row?.to_text));
         }, 0);
       case "traffic":
-        return [
-          ...(Array.isArray(section.primary) ? section.primary : []).filter(advancedFlowFilterTrafficRowConfigured),
-          ...(Array.isArray(section.additional) ? section.additional : []).filter(advancedFlowFilterTrafficRowConfigured),
-        ].length;
+        return advancedFlowFilterTrafficFiniteRuleCount(section.packet_distribution)
+          + advancedFlowFilterTrafficFiniteRuleCount(section.data_distribution)
+          + [
+            ...(Array.isArray(section.primary) ? section.primary : []),
+            ...(Array.isArray(section.directional_packets) ? section.directional_packets : []),
+            ...(Array.isArray(section.directional_original_bytes) ? section.directional_original_bytes : []),
+            ...(Array.isArray(section.additional) ? section.additional : []),
+          ].reduce((count, row) => count + advancedFlowFilterTrafficRowAtomicRuleCount(row), 0);
       case "service":
         return Number(Boolean(section.include_recognized))
           + Number(Boolean(section.include_unrecognized))
@@ -812,6 +820,12 @@
 
   function advancedFlowFilterTrafficMetricDefinitionById(metricId) {
     return advancedFlowFilterTrafficMetricDefinitions.find((definition) => definition.id === String(metricId || "")) || null;
+  }
+
+  function advancedFlowFilterTrafficMetricDefinitionsByGroup(group) {
+    return advancedFlowFilterTrafficMetricDefinitions.filter(
+      (definition) => String(definition.group || "primary") === String(group || "primary")
+    );
   }
 
   function advancedFlowFilterTrafficUnitOptions(metricId) {
@@ -988,15 +1002,14 @@
       : [];
   }
 
-  function normalizeAdvancedFlowFilterTrafficRows(rows, additional) {
+  function normalizeAdvancedFlowFilterTrafficRows(rows, group) {
     const configuredRows = Array.isArray(rows) ? rows : [];
     const configuredByMetric = new Map(
       configuredRows
         .filter((row) => row && typeof row === "object")
         .map((row) => [String(row.metric_id || ""), row])
     );
-    return advancedFlowFilterTrafficMetricDefinitions
-      .filter((definition) => Boolean(definition.additional) === Boolean(additional))
+    return advancedFlowFilterTrafficMetricDefinitionsByGroup(group)
       .map((definition) => {
         const configuredRow = configuredByMetric.get(definition.id);
         const unitOptions = definition.unitOptions;
@@ -1094,8 +1107,12 @@
       traffic: {
         ...(sourceDocument.traffic && typeof sourceDocument.traffic === "object" ? sourceDocument.traffic : {}),
         enabled: sourceDocument.traffic?.enabled === undefined ? true : Boolean(sourceDocument.traffic.enabled),
-        primary: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.primary, false),
-        additional: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.additional, true),
+        packet_distribution: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.traffic?.packet_distribution),
+        data_distribution: normalizeAdvancedFlowFilterFiniteSection(sourceDocument.traffic?.data_distribution),
+        primary: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.primary, "primary"),
+        directional_packets: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.directional_packets, "directional_packets"),
+        directional_original_bytes: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.directional_original_bytes, "directional_original_bytes"),
+        additional: normalizeAdvancedFlowFilterTrafficRows(sourceDocument.traffic?.additional, "additional"),
       },
       service: {
         ...(sourceDocument.service && typeof sourceDocument.service === "object" ? sourceDocument.service : {}),
@@ -1231,8 +1248,16 @@
       },
       traffic: {
         enabled: Boolean(document?.traffic?.enabled),
+        packet_distribution: advancedFlowFilterFiniteSectionSnapshot(document?.traffic?.packet_distribution),
+        data_distribution: advancedFlowFilterFiniteSectionSnapshot(document?.traffic?.data_distribution),
         primary: Array.isArray(document?.traffic?.primary)
           ? document.traffic.primary.map((row) => advancedFlowFilterTrafficRowSnapshot(row))
+          : [],
+        directional_packets: Array.isArray(document?.traffic?.directional_packets)
+          ? document.traffic.directional_packets.map((row) => advancedFlowFilterTrafficRowSnapshot(row))
+          : [],
+        directional_original_bytes: Array.isArray(document?.traffic?.directional_original_bytes)
+          ? document.traffic.directional_original_bytes.map((row) => advancedFlowFilterTrafficRowSnapshot(row))
           : [],
         additional: Array.isArray(document?.traffic?.additional)
           ? document.traffic.additional.map((row) => advancedFlowFilterTrafficRowSnapshot(row))
@@ -1275,6 +1300,16 @@
   function advancedFlowFilterTrafficHasConfiguredAdditionalRows(document) {
     return Array.isArray(document?.traffic?.additional)
       && document.traffic.additional.some((row) => String(row?.min_text || "").length > 0 || String(row?.max_text || "").length > 0);
+  }
+
+  function advancedFlowFilterTrafficFiniteRuleCount(section) {
+    return (Array.isArray(section?.include) ? section.include.length : 0)
+      + (Array.isArray(section?.exclude) ? section.exclude.length : 0);
+  }
+
+  function advancedFlowFilterTrafficRowAtomicRuleCount(row) {
+    return Number(advancedFlowFilterHasMeaningfulText(row?.min_text))
+      + Number(advancedFlowFilterHasMeaningfulText(row?.max_text));
   }
 
   function captureAdvancedFlowFilterSettingsDraftBaseline() {
@@ -1476,6 +1511,9 @@
   function advancedFlowFilterOptionCatalogBySectionId(optionCatalog, sectionId) {
     if (!optionCatalog) {
       return [];
+    }
+    if (sectionId === "traffic_distribution") {
+      return Array.isArray(optionCatalog.traffic_distribution) ? optionCatalog.traffic_distribution : [];
     }
     const definition = advancedFlowFilterSectionDefinitions.find((candidate) => candidate.id === sectionId);
     if (!definition) {
@@ -2109,8 +2147,69 @@
     `;
   }
 
+  function renderAdvancedFlowFilterTrafficDistributionBlock(
+    sectionKey,
+    title,
+    distributionSection,
+    sectionEnabled,
+    dialogBusy,
+    helperText = ""
+  ) {
+    const editingDisabled = dialogBusy || !sectionEnabled;
+    const optionCatalog = advancedFlowFilterOptionCatalogBySectionId(
+      state.advancedFlowFilterSettings.optionCatalog,
+      "traffic_distribution"
+    );
+    const includeSelected = new Set(
+      Array.isArray(distributionSection?.include) ? distributionSection.include.map((value) => String(value)) : []
+    );
+    const excludeSelected = new Set(
+      Array.isArray(distributionSection?.exclude) ? distributionSection.exclude.map((value) => String(value)) : []
+    );
+    const renderOptionGroup = (groupName, selectedValues) => `
+      <div class="advanced-filter-group ${escapeHtml(advancedFlowFilterToneClass(groupName))}">
+        <p class="advanced-filter-group-title">${escapeHtml(groupName)}</p>
+        <div class="advanced-filter-option-grid">
+          ${optionCatalog.map((option) => {
+            const stableId = String(option?.stable_id || "");
+            return `
+              <label class="advanced-filter-option-row">
+                <input
+                  type="checkbox"
+                  data-advanced-filter-section-id="${escapeHtml(sectionKey)}"
+                  data-advanced-filter-group="${escapeHtml(groupName.toLowerCase())}"
+                  data-advanced-filter-value-id="${escapeHtml(stableId)}"
+                  ${selectedValues.has(stableId) ? "checked" : ""}
+                  ${editingDisabled ? "disabled" : ""}
+                />
+                <span>${escapeHtml(String(option?.label || stableId))}</span>
+              </label>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+
+    return `
+      <div class="advanced-filter-group advanced-filter-include-group">
+        <p class="advanced-filter-group-title">${escapeHtml(title)}</p>
+        ${helperText ? `<p class="advanced-filter-helper-copy">${escapeHtml(helperText)}</p>` : ""}
+        ${renderOptionGroup("Include", includeSelected)}
+        ${renderOptionGroup("Exclude", excludeSelected)}
+      </div>
+    `;
+  }
+
   function renderAdvancedFlowFilterTrafficSectionCard(document, dialogBusy) {
-    const trafficSection = document?.traffic || { enabled: true, primary: [], additional: [] };
+    const trafficSection = document?.traffic || {
+      enabled: true,
+      packet_distribution: { enabled: true, include: [], exclude: [] },
+      data_distribution: { enabled: true, include: [], exclude: [] },
+      primary: [],
+      directional_packets: [],
+      directional_original_bytes: [],
+      additional: [],
+    };
     const additionalExpanded = Boolean(state.advancedFlowFilterSettings.trafficAdditionalExpanded);
     const bodyMarkup = `
       <div class="advanced-filter-group advanced-filter-include-group">
@@ -2150,6 +2249,56 @@
               ${(Array.isArray(trafficSection.additional) ? trafficSection.additional : []).map((row) =>
                 renderAdvancedFlowFilterTrafficRow(row, "additional", Boolean(trafficSection.enabled), dialogBusy)
               ).join("")}
+            </div>
+          </div>
+          <div class="advanced-filter-group advanced-filter-include-group">
+            <p class="advanced-filter-helper-copy">A -> B is the direction of the first observed packet in the connection.</p>
+          </div>
+          ${renderAdvancedFlowFilterTrafficDistributionBlock(
+            "traffic_distribution",
+            "Packet distribution",
+            trafficSection.packet_distribution,
+            Boolean(trafficSection.enabled),
+            dialogBusy
+          )}
+          ${renderAdvancedFlowFilterTrafficDistributionBlock(
+            "traffic_data_distribution",
+            "Data distribution",
+            trafficSection.data_distribution,
+            Boolean(trafficSection.enabled),
+            dialogBusy,
+            "Data distribution uses original packet bytes."
+          )}
+          <div class="advanced-filter-group advanced-filter-include-group">
+            <p class="advanced-filter-group-title">Directional packets</p>
+            <div class="advanced-filter-row-card">
+              <div class="advanced-filter-inline-fields-row is-traffic">
+                <span class="advanced-filter-row-label">Value</span>
+                <span class="advanced-filter-group-title">Minimum</span>
+                <span class="advanced-filter-group-title">Maximum</span>
+                <span class="advanced-filter-group-title">Unit</span>
+              </div>
+              <div class="advanced-filter-row-list">
+                ${(Array.isArray(trafficSection.directional_packets) ? trafficSection.directional_packets : []).map((row) =>
+                  renderAdvancedFlowFilterTrafficRow(row, "directional_packets", Boolean(trafficSection.enabled), dialogBusy)
+                ).join("")}
+              </div>
+            </div>
+          </div>
+          <div class="advanced-filter-group advanced-filter-include-group">
+            <p class="advanced-filter-group-title">Directional original bytes</p>
+            <div class="advanced-filter-row-card">
+              <div class="advanced-filter-inline-fields-row is-traffic">
+                <span class="advanced-filter-row-label">Value</span>
+                <span class="advanced-filter-group-title">Minimum</span>
+                <span class="advanced-filter-group-title">Maximum</span>
+                <span class="advanced-filter-group-title">Unit</span>
+              </div>
+              <div class="advanced-filter-row-list">
+                ${(Array.isArray(trafficSection.directional_original_bytes) ? trafficSection.directional_original_bytes : []).map((row) =>
+                  renderAdvancedFlowFilterTrafficRow(row, "directional_original_bytes", Boolean(trafficSection.enabled), dialogBusy)
+                ).join("")}
+              </div>
             </div>
           </div>
         ` : ""}
@@ -11915,7 +12064,12 @@
 
     if (optionSectionId) {
       mutateAdvancedFlowFilterSettingsDraftWithOptions((draft) => {
-        const currentSection = advancedFlowFilterSectionById(draft, sectionId);
+        let currentSection = advancedFlowFilterSectionById(draft, sectionId);
+        if (optionSectionId === "traffic_distribution") {
+          currentSection = draft?.traffic?.packet_distribution || null;
+        } else if (optionSectionId === "traffic_data_distribution") {
+          currentSection = draft?.traffic?.data_distribution || null;
+        }
         if (!currentSection) {
           return;
         }

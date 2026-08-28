@@ -1241,6 +1241,250 @@ void run_directionality_and_service_tests() {
     }
 }
 
+void run_directional_traffic_tests() {
+    ScopedTestContext context {"advanced_flow_filter/directional_traffic"};
+    auto fixture = build_fixture();
+    const auto fixture_connections = listed_connections_for_fixture(fixture);
+
+    {
+        PFL_EXPECT(classify_direction_distribution(10U, 0U) == DirectionDistribution::mostly_a_to_b);
+        PFL_EXPECT(classify_direction_distribution(10U, 5U) == DirectionDistribution::balanced);
+        PFL_EXPECT(classify_direction_distribution(10U, 4U) == DirectionDistribution::mostly_a_to_b);
+        PFL_EXPECT(classify_direction_distribution(5U, 10U) == DirectionDistribution::balanced);
+        PFL_EXPECT(classify_direction_distribution(4U, 10U) == DirectionDistribution::mostly_b_to_a);
+        PFL_EXPECT(classify_direction_distribution(0U, 10U) == DirectionDistribution::mostly_b_to_a);
+        PFL_EXPECT(classify_direction_distribution(0U, 0U) == DirectionDistribution::balanced);
+        PFL_EXPECT(classify_direction_distribution(20U, 10U) == DirectionDistribution::balanced);
+        PFL_EXPECT(classify_direction_distribution(21U, 10U) == DirectionDistribution::mostly_a_to_b);
+        PFL_EXPECT(classify_direction_distribution(10U, 20U) == DirectionDistribution::balanced);
+        PFL_EXPECT(classify_direction_distribution(10U, 21U) == DirectionDistribution::mostly_b_to_a);
+
+        constexpr auto large_smaller = (std::numeric_limits<std::uint64_t>::max)() / 2U + 10U;
+        constexpr auto large_larger = (std::numeric_limits<std::uint64_t>::max)();
+        PFL_EXPECT(classify_direction_distribution(large_larger, large_smaller) == DirectionDistribution::balanced);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.include = {DirectionDistribution::balanced};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {0U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.include = {DirectionDistribution::mostly_a_to_b};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U, 2U, 3U, 4U, 5U, 6U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.exclude = {DirectionDistribution::mostly_a_to_b};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {0U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 20U, .max = 20U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 0U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U, 2U, 3U, 4U, 5U, 6U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 50U, .max = 50U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {0U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.a_to_b_original_bytes =
+            AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 700U, .max = 800U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {4U, 5U, 7U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U};
+        spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 1U};
+        const auto filter = require_compiled_filter(spec, fixture, fixture.default_settings);
+        expect_indices_equal(evaluate_matching_indices(fixture_connections, filter), {1U, 2U, 3U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.include = {static_cast<DirectionDistribution>(3)};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate);
+        PFL_REQUIRE(compile_result.issue.has_value());
+        PFL_EXPECT(compile_result.issue->category == "aggregate.packet_distribution.include");
+        PFL_EXPECT(compile_result.issue->predicate_index == 0U);
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U, .max = 9U};
+        const auto compile_result =
+            session_detail::compile_advanced_flow_filter(spec, fixture.session.state().protocol_path_registry, fixture.default_settings);
+        PFL_EXPECT(compile_result.status == AdvancedFlowFilterCompileStatus::invalid_numeric_range);
+    }
+
+    CaptureSession distribution_session {};
+    {
+        auto& state = distribution_session.state();
+        const auto tcp_path_id = state.protocol_path_registry.intern(ProtocolPath {
+            {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+        });
+
+        const FlowKeyV4 balanced_flow_ab {
+            .src_addr = ipv4(192, 0, 2, 10),
+            .dst_addr = ipv4(198, 51, 100, 10),
+            .src_port = 41000,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+        state.ipv4_connections.get_or_create(make_connection_key(balanced_flow_ab)) = make_ipv4_connection(
+            balanced_flow_ab,
+            reverse_flow_key(balanced_flow_ab),
+            tcp_path_id,
+            10U,
+            10U,
+            1000U,
+            1000U,
+            2000U,
+            1000U,
+            2000U,
+            FlowProtocolHint::tls,
+            "balanced.example",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            200U,
+            200U
+        );
+
+        const FlowKeyV4 balanced_packets_byte_skew_ab {
+            .src_addr = ipv4(192, 0, 2, 11),
+            .dst_addr = ipv4(198, 51, 100, 11),
+            .src_port = 41001,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+        state.ipv4_connections.get_or_create(make_connection_key(balanced_packets_byte_skew_ab)) = make_ipv4_connection(
+            balanced_packets_byte_skew_ab,
+            reverse_flow_key(balanced_packets_byte_skew_ab),
+            tcp_path_id,
+            10U,
+            10U,
+            1000U,
+            10000U,
+            11000U,
+            3000U,
+            4000U,
+            FlowProtocolHint::tls,
+            "byte-skew.example",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            400U,
+            400U
+        );
+
+        const FlowKeyV4 b_dominant_flow_ab {
+            .src_addr = ipv4(192, 0, 2, 12),
+            .dst_addr = ipv4(198, 51, 100, 12),
+            .src_port = 41002,
+            .dst_port = 443,
+            .protocol = ProtocolId::tcp,
+        };
+        state.ipv4_connections.get_or_create(make_connection_key(b_dominant_flow_ab)) = make_ipv4_connection(
+            b_dominant_flow_ab,
+            reverse_flow_key(b_dominant_flow_ab),
+            tcp_path_id,
+            10U,
+            21U,
+            8192U,
+            1048576U,
+            1056768U,
+            5000U,
+            6000U,
+            FlowProtocolHint::tls,
+            "reverse-heavy.example",
+            0U,
+            0U,
+            0U,
+            0U,
+            0U,
+            600U,
+            600U
+        );
+    }
+
+    const auto distribution_connections = session_detail::list_connections(distribution_session.state());
+    PFL_REQUIRE(distribution_connections.size() == 3U);
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.include = {DirectionDistribution::mostly_b_to_a};
+        const auto filter =
+            require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
+        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {2U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.include = {DirectionDistribution::balanced};
+        spec.aggregate.data_distribution.include = {DirectionDistribution::mostly_b_to_a};
+        const auto filter =
+            require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
+        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {1U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.data_distribution.include = {DirectionDistribution::mostly_b_to_a};
+        const auto filter =
+            require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
+        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {1U, 2U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.packet_distribution.include = {
+            DirectionDistribution::balanced,
+            DirectionDistribution::mostly_b_to_a,
+        };
+        const auto filter =
+            require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
+        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {0U, 1U, 2U});
+    }
+
+    {
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.a_to_b_original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 10U * 1024U};
+        spec.aggregate.b_to_a_original_bytes = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U * 1024U * 1024U};
+        const auto filter =
+            require_compiled_filter(spec, distribution_session.state().protocol_path_registry, AnalysisSettings {});
+        expect_indices_equal(evaluate_matching_indices(distribution_connections, filter), {2U});
+    }
+}
+
 void run_address_family_tests() {
     ScopedTestContext context {"advanced_flow_filter/address_family"};
     auto fixture = build_fixture();
@@ -1606,6 +1850,28 @@ void run_document_model_tests() {
 
     {
         AdvancedFlowFilterDocument document {};
+        document.configured_spec.aggregate.packet_distribution.include = {DirectionDistribution::balanced};
+        document.configured_spec.aggregate.data_distribution.exclude = {DirectionDistribution::mostly_a_to_b};
+        document.configured_spec.aggregate.a_to_b_packet_count =
+            AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 10U};
+        document.configured_spec.aggregate.b_to_a_original_bytes =
+            AdvancedFlowFilterInclusiveRange<std::uint64_t> {.max = 2048U};
+
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 4U);
+
+        document.section_states.traffic = false;
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(document);
+        PFL_EXPECT(effective.aggregate == session_detail::AdvancedFlowFilterAggregateCriteria {});
+        PFL_EXPECT(session_detail::count_configured_advanced_flow_filter_atomic_rules(document) == 4U);
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 0U);
+
+        document.section_states.traffic = true;
+        PFL_EXPECT(session_detail::count_active_advanced_flow_filter_atomic_rules(document) == 4U);
+    }
+
+    {
+        AdvancedFlowFilterDocument document {};
         document.configured_spec.ports.include = {
             {.scope = AdvancedFlowFilterPortScope::either_endpoint, .range = {.first = 443U, .last = 443U}},
         };
@@ -1804,6 +2070,37 @@ void run_index_roundtrip_tests() {
 
         AdvancedFlowFilterSpec spec {};
         spec.quic_version.include = {QuicVersionHint::v1};
+        const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
+        PFL_EXPECT(!raw_matches.empty());
+        PFL_REQUIRE(raw_session.save_index(index_path));
+
+        CaptureSession loaded_session {};
+        PFL_REQUIRE(loaded_session.load_index(index_path));
+        expect_indices_equal(
+            evaluate_matching_indices_for_session(loaded_session, spec, AnalysisSettings {}),
+            raw_matches
+        );
+    }
+
+    {
+        const auto capture_path = write_temp_pcap(
+            "pfl_advanced_flow_filter_directional_roundtrip.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, make_ethernet_ipv4_tcp_packet(ipv4(192, 0, 2, 50), ipv4(198, 51, 100, 50), 41000U, 443U)},
+                {200U, make_ethernet_ipv4_tcp_packet(ipv4(192, 0, 2, 50), ipv4(198, 51, 100, 50), 41000U, 443U)},
+                {300U, make_ethernet_ipv4_tcp_packet(ipv4(198, 51, 100, 50), ipv4(192, 0, 2, 50), 443U, 41000U)},
+            })
+        );
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_advanced_flow_filter_directional_roundtrip.idx";
+
+        CaptureSession raw_session {};
+        PFL_REQUIRE(raw_session.open_capture(capture_path));
+
+        AdvancedFlowFilterSpec spec {};
+        spec.aggregate.a_to_b_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 2U, .max = 2U};
+        spec.aggregate.b_to_a_packet_count = AdvancedFlowFilterInclusiveRange<std::uint64_t> {.min = 1U, .max = 1U};
+        spec.aggregate.packet_distribution.include = {DirectionDistribution::mostly_a_to_b};
+
         const auto raw_matches = evaluate_matching_indices_for_session(raw_session, spec, AnalysisSettings {});
         PFL_EXPECT(!raw_matches.empty());
         PFL_REQUIRE(raw_session.save_index(index_path));
@@ -2224,6 +2521,64 @@ void run_text_format_tests() {
         expect_parse_status("format_version = 3\noriginal_bytes.min = 1MB\n", AdvancedFlowFilterTextParseStatus::invalid_value);
         expect_parse_status("format_version = 3\ncaptured_bytes.min = 16777216TiB\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
         expect_parse_status("format_version = 3\ntime.duration.min = 18446744073709551615h\n", AdvancedFlowFilterTextParseStatus::numeric_overflow);
+    }
+
+    {
+        const auto parsed = require_parse_success(
+            "format_version = 3\n"
+            "section.traffic.enabled = false\n"
+            "traffic.packet_distribution.include = balanced\n"
+            "traffic.packet_distribution.exclude = mostly_b_to_a\n"
+            "traffic.data_distribution.include = mostly_a_to_b\n"
+            "traffic.data_distribution.exclude = balanced\n"
+            "traffic.a_to_b.packet_count.min = 10\n"
+            "traffic.a_to_b.packet_count.max = 20\n"
+            "traffic.b_to_a.packet_count.max = 1\n"
+            "traffic.a_to_b.original_bytes.min = 2KiB\n"
+            "traffic.b_to_a.original_bytes.max = 1MiB\n"
+        );
+        const auto& aggregate = parsed.document.configured_spec.aggregate;
+        PFL_EXPECT(parsed.document.section_states.traffic == false);
+        PFL_EXPECT((aggregate.packet_distribution.include == std::vector<DirectionDistribution> {
+            DirectionDistribution::balanced
+        }));
+        PFL_EXPECT((aggregate.packet_distribution.exclude == std::vector<DirectionDistribution> {
+            DirectionDistribution::mostly_b_to_a
+        }));
+        PFL_EXPECT((aggregate.data_distribution.include == std::vector<DirectionDistribution> {
+            DirectionDistribution::mostly_a_to_b
+        }));
+        PFL_EXPECT((aggregate.data_distribution.exclude == std::vector<DirectionDistribution> {
+            DirectionDistribution::balanced
+        }));
+        PFL_REQUIRE(aggregate.a_to_b_packet_count.has_value());
+        PFL_REQUIRE(aggregate.b_to_a_packet_count.has_value());
+        PFL_REQUIRE(aggregate.a_to_b_original_bytes.has_value());
+        PFL_REQUIRE(aggregate.b_to_a_original_bytes.has_value());
+        PFL_EXPECT(aggregate.a_to_b_packet_count->min == 10U);
+        PFL_EXPECT(aggregate.a_to_b_packet_count->max == 20U);
+        PFL_EXPECT(!aggregate.b_to_a_packet_count->min.has_value());
+        PFL_EXPECT(aggregate.b_to_a_packet_count->max == 1U);
+        PFL_EXPECT(aggregate.a_to_b_original_bytes->min == 2048U);
+        PFL_EXPECT(aggregate.b_to_a_original_bytes->max == 1048576U);
+        PFL_EXPECT(
+            require_format_success(parsed.document) ==
+            std::string(
+                "format_version = 3\n"
+                "section.traffic.enabled = false\n"
+                "traffic.packet_distribution.include = balanced\n"
+                "traffic.packet_distribution.exclude = mostly_b_to_a\n"
+                "traffic.data_distribution.include = mostly_a_to_b\n"
+                "traffic.data_distribution.exclude = balanced\n"
+                "traffic.a_to_b.packet_count.min = 10\n"
+                "traffic.a_to_b.packet_count.max = 20\n"
+                "traffic.b_to_a.packet_count.max = 1\n"
+                "traffic.a_to_b.original_bytes.min = 2KiB\n"
+                "traffic.b_to_a.original_bytes.max = 1MiB\n"
+            )
+        );
+        const auto effective = session_detail::make_effective_advanced_flow_filter_spec(parsed.document);
+        PFL_EXPECT(effective.aggregate == session_detail::AdvancedFlowFilterAggregateCriteria {});
     }
 
     {
@@ -3035,6 +3390,7 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.option_catalog.tls_version.size() == 3U);
     PFL_EXPECT(empty.option_catalog.quic_version.size() == 4U);
     PFL_EXPECT(empty.option_catalog.directionality.size() == 2U);
+    PFL_EXPECT(empty.option_catalog.traffic_distribution.size() == 3U);
     PFL_EXPECT(empty.option_catalog.endpoint_scope.size() == 3U);
     PFL_EXPECT(empty.option_catalog.protocol_path_selector_mode.size() == 3U);
     PFL_EXPECT(empty.option_catalog.contains_layer_identifier_mode.size() == 2U);
@@ -3054,7 +3410,11 @@ void run_frontend_structured_document_tests() {
     PFL_EXPECT(empty.active_rule_count == 0U);
     PFL_EXPECT(empty.document->ports.include.empty());
     PFL_EXPECT(empty.document->ip_addresses.include.empty());
-    PFL_EXPECT(empty.document->traffic.primary.size() == 4U);
+    PFL_EXPECT(empty.document->traffic.packet_distribution.include.empty());
+    PFL_EXPECT(empty.document->traffic.data_distribution.include.empty());
+    PFL_EXPECT(empty.document->traffic.primary.size() == 3U);
+    PFL_EXPECT(empty.document->traffic.directional_packets.size() == 2U);
+    PFL_EXPECT(empty.document->traffic.directional_original_bytes.size() == 2U);
     PFL_EXPECT(empty.document->traffic.additional.size() == 7U);
     PFL_EXPECT(empty.document->service.include_text.empty());
     PFL_EXPECT(empty.document->service.exclude_text.empty());
@@ -3246,6 +3606,12 @@ void run_frontend_structured_document_tests() {
             "time.start.from = \"2026-08-27T14:32:17Z\"\n"
             "time.end.to = \"2026-08-27T14:35:00.123456Z\"\n"
             "time.overlap.from = \"2026-08-27T14:33:00.5Z\"\n"
+            "traffic.packet_distribution.include = balanced\n"
+            "traffic.data_distribution.exclude = mostly_a_to_b\n"
+            "traffic.a_to_b.packet_count.min = 10\n"
+            "traffic.b_to_a.packet_count.max = 1\n"
+            "traffic.a_to_b.original_bytes.min = 2KiB\n"
+            "traffic.b_to_a.original_bytes.max = 1MiB\n"
             "original_bytes.min = 4MiB\n"
             "captured_bytes.max = 512KiB\n"
             "time.duration.min = 2m\n"
@@ -3265,6 +3631,16 @@ void run_frontend_structured_document_tests() {
             traffic_service_snapshot.document->traffic.primary.end(),
             [](const auto& row) { return row.metric_id == "original_bytes"; }
         );
+        const auto a_to_b_packets_row = std::find_if(
+            traffic_service_snapshot.document->traffic.directional_packets.begin(),
+            traffic_service_snapshot.document->traffic.directional_packets.end(),
+            [](const auto& row) { return row.metric_id == "a_to_b_packets"; }
+        );
+        const auto b_to_a_original_bytes_row = std::find_if(
+            traffic_service_snapshot.document->traffic.directional_original_bytes.begin(),
+            traffic_service_snapshot.document->traffic.directional_original_bytes.end(),
+            [](const auto& row) { return row.metric_id == "b_to_a_original_bytes"; }
+        );
         const auto max_original_packet_size_row = std::find_if(
             traffic_service_snapshot.document->traffic.additional.begin(),
             traffic_service_snapshot.document->traffic.additional.end(),
@@ -3274,12 +3650,23 @@ void run_frontend_structured_document_tests() {
         PFL_REQUIRE(end_row != traffic_service_snapshot.document->time.ranges.end());
         PFL_REQUIRE(overlap_row != traffic_service_snapshot.document->time.ranges.end());
         PFL_REQUIRE(original_bytes_row != traffic_service_snapshot.document->traffic.primary.end());
+        PFL_REQUIRE(a_to_b_packets_row != traffic_service_snapshot.document->traffic.directional_packets.end());
+        PFL_REQUIRE(
+            b_to_a_original_bytes_row !=
+            traffic_service_snapshot.document->traffic.directional_original_bytes.end()
+        );
         PFL_REQUIRE(max_original_packet_size_row != traffic_service_snapshot.document->traffic.additional.end());
         PFL_EXPECT(start_row->from_text == "2026-08-27T14:32:17.000000Z");
         PFL_EXPECT(end_row->to_text == "2026-08-27T14:35:00.123456Z");
         PFL_EXPECT(overlap_row->from_text == "2026-08-27T14:33:00.500000Z");
+        PFL_EXPECT(traffic_service_snapshot.document->traffic.packet_distribution.include == std::vector<std::string>({"balanced"}));
+        PFL_EXPECT(traffic_service_snapshot.document->traffic.data_distribution.exclude == std::vector<std::string>({"mostly_a_to_b"}));
+        PFL_EXPECT(a_to_b_packets_row->min_text == "10");
+        PFL_EXPECT(a_to_b_packets_row->unit_id == "count");
         PFL_EXPECT(original_bytes_row->unit_id == "MiB");
         PFL_EXPECT(original_bytes_row->min_text == "4");
+        PFL_EXPECT(b_to_a_original_bytes_row->unit_id == "MiB");
+        PFL_EXPECT(b_to_a_original_bytes_row->max_text == "1");
         PFL_EXPECT(traffic_service_snapshot.document->time.duration.unit_id == "min");
         PFL_EXPECT(traffic_service_snapshot.document->time.duration.min_text == "2");
         PFL_EXPECT(max_original_packet_size_row->unit_id == "KiB");
@@ -3585,10 +3972,20 @@ void run_frontend_structured_document_tests() {
     {
         auto draft = *empty.document;
         draft.traffic.enabled = true;
+        draft.traffic.packet_distribution.include = {"balanced"};
+        draft.traffic.data_distribution.exclude = {"mostly_a_to_b"};
         draft.traffic.primary = {
             make_traffic_row("packets", "count", "9007199254740993", ""),
             make_traffic_row("original_bytes", "MiB", "4", "8"),
             make_traffic_row("captured_bytes", "KiB", "", "512"),
+        };
+        draft.traffic.directional_packets = {
+            make_traffic_row("a_to_b_packets", "count", "10", "20"),
+            make_traffic_row("b_to_a_packets", "count", "", "1"),
+        };
+        draft.traffic.directional_original_bytes = {
+            make_traffic_row("a_to_b_original_bytes", "KiB", "2", ""),
+            make_traffic_row("b_to_a_original_bytes", "MiB", "", "1"),
         };
         draft.time.enabled = true;
         draft.time.duration = make_traffic_row("duration", "min", "2", "");
@@ -3603,17 +4000,34 @@ void run_frontend_structured_document_tests() {
         };
         const auto applied = expect_apply_matches_direct(empty.document->canonical_text, draft);
         const auto& reparsed = applied.second;
+        PFL_EXPECT((reparsed.configured_spec.aggregate.packet_distribution.include == std::vector<DirectionDistribution> {
+            DirectionDistribution::balanced
+        }));
+        PFL_EXPECT((reparsed.configured_spec.aggregate.data_distribution.exclude == std::vector<DirectionDistribution> {
+            DirectionDistribution::mostly_a_to_b
+        }));
         PFL_REQUIRE(reparsed.configured_spec.aggregate.packet_count.has_value());
+        PFL_REQUIRE(reparsed.configured_spec.aggregate.a_to_b_packet_count.has_value());
+        PFL_REQUIRE(reparsed.configured_spec.aggregate.b_to_a_packet_count.has_value());
+        PFL_REQUIRE(reparsed.configured_spec.aggregate.a_to_b_original_bytes.has_value());
+        PFL_REQUIRE(reparsed.configured_spec.aggregate.b_to_a_original_bytes.has_value());
         PFL_EXPECT(reparsed.configured_spec.aggregate.packet_count->min == std::optional<std::uint64_t> {9007199254740993ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->min == std::optional<std::uint64_t> {4ULL * 1024ULL * 1024ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.original_bytes->max == std::optional<std::uint64_t> {8ULL * 1024ULL * 1024ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.captured_bytes->max == std::optional<std::uint64_t> {512ULL * 1024ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.a_to_b_packet_count->min == std::optional<std::uint64_t> {10ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.a_to_b_packet_count->max == std::optional<std::uint64_t> {20ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.b_to_a_packet_count->max == std::optional<std::uint64_t> {1ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.a_to_b_original_bytes->min == std::optional<std::uint64_t> {2048ULL});
+        PFL_EXPECT(reparsed.configured_spec.aggregate.b_to_a_original_bytes->max == std::optional<std::uint64_t> {1048576ULL});
         PFL_EXPECT(reparsed.configured_spec.time.duration_us->min == std::optional<std::uint64_t> {120000000ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.max_original_packet_length->max == std::optional<std::uint32_t> {2048U});
         PFL_EXPECT(reparsed.configured_spec.aggregate.max_captured_packet_length->min == std::optional<std::uint32_t> {1500U});
         PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_syn_count->min == std::optional<std::uint64_t> {3ULL});
         PFL_EXPECT(reparsed.configured_spec.aggregate.tcp_fin_count->max == std::optional<std::uint64_t> {7ULL});
         PFL_EXPECT(applied.first.document->canonical_text.find("packet_count.min = 9007199254740993") != std::string::npos);
+        PFL_EXPECT(applied.first.document->canonical_text.find("traffic.packet_distribution.include = balanced") != std::string::npos);
+        PFL_EXPECT(applied.first.document->canonical_text.find("traffic.b_to_a.original_bytes.max = 1MiB") != std::string::npos);
     }
 
     {
@@ -3840,6 +4254,22 @@ void run_frontend_structured_document_tests() {
 
     {
         auto draft = *empty.document;
+        draft.traffic.enabled = true;
+        draft.traffic.directional_packets = {
+            make_traffic_row("a_to_b_packets", "count", "10", "9"),
+            make_traffic_row("b_to_a_packets", "count", "", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "traffic");
+        PFL_EXPECT(invalid.update_issue->group == "traffic");
+        PFL_EXPECT(invalid.update_issue->value_id == "a_to_b_packets");
+        PFL_EXPECT(invalid.update_issue->field_id == "max_text");
+    }
+
+    {
+        auto draft = *empty.document;
         draft.contains_layer.enabled = true;
         draft.contains_layer.include = {
             make_contains_layer_row("vlan", "exact", ""),
@@ -4011,6 +4441,10 @@ void run_frontend_structured_document_tests() {
         const std::string text =
             "format_version = 3\n"
             "section.time.enabled = false\n"
+            "section.traffic.enabled = false\n"
+            "traffic.packet_distribution.include = balanced\n"
+            "traffic.a_to_b.packet_count.min = 10\n"
+            "traffic.b_to_a.original_bytes.max = 1MiB\n"
             "original_bytes.min = 4MiB\n"
             "time.duration.max = 2m\n";
         const auto parsed_with_traffic = adapter.parse_advanced_flow_filter_structured_document(text);
@@ -4018,12 +4452,19 @@ void run_frontend_structured_document_tests() {
         PFL_REQUIRE(parsed_with_traffic.document.has_value());
         auto draft = *parsed_with_traffic.document;
         draft.address_family.include = {"ipv4"};
+        draft.traffic.packet_distribution.include.clear();
         draft.traffic.primary.clear();
+        draft.traffic.directional_packets.clear();
+        draft.traffic.directional_original_bytes.clear();
         draft.traffic.additional.clear();
         const auto updated = adapter.apply_advanced_flow_filter_structured_document(text, draft);
         PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
         PFL_REQUIRE(updated.document.has_value());
         PFL_EXPECT(updated.document->time.enabled == false);
+        PFL_EXPECT(updated.document->traffic.enabled == false);
+        PFL_EXPECT(updated.document->traffic.packet_distribution.include == std::vector<std::string>({"balanced"}));
+        PFL_EXPECT(updated.document->canonical_text.find("traffic.a_to_b.packet_count.min = 10") != std::string::npos);
+        PFL_EXPECT(updated.document->canonical_text.find("traffic.b_to_a.original_bytes.max = 1MiB") != std::string::npos);
         PFL_EXPECT(updated.document->canonical_text.find("original_bytes.min = 4MiB") != std::string::npos);
         PFL_EXPECT(updated.document->canonical_text.find("time.duration.max = 2m") != std::string::npos);
     }
@@ -4275,6 +4716,7 @@ void run_advanced_flow_filter_tests() {
     run_protocol_path_tests();
     run_port_and_aggregate_tests();
     run_directionality_and_service_tests();
+    run_directional_traffic_tests();
     run_address_family_tests();
     run_address_and_version_tests();
     run_document_model_tests();

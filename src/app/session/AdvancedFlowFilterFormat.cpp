@@ -873,6 +873,19 @@ std::optional<AdvancedFlowFilterDirectionality> parse_directionality_token(const
     return std::nullopt;
 }
 
+std::optional<DirectionDistribution> parse_direction_distribution_token(const std::string_view token) {
+    if (equals_ascii_case_insensitive(token, "mostly_a_to_b")) {
+        return DirectionDistribution::mostly_a_to_b;
+    }
+    if (equals_ascii_case_insensitive(token, "balanced")) {
+        return DirectionDistribution::balanced;
+    }
+    if (equals_ascii_case_insensitive(token, "mostly_b_to_a")) {
+        return DirectionDistribution::mostly_b_to_a;
+    }
+    return std::nullopt;
+}
+
 std::optional<FlowAddressFamily> parse_address_family_token(const std::string_view token) {
     if (equals_ascii_case_insensitive(token, "ipv4")) {
         return FlowAddressFamily::ipv4;
@@ -1486,6 +1499,10 @@ std::string format_directionality_token(const AdvancedFlowFilterDirectionality v
     return {};
 }
 
+std::string format_direction_distribution_token(const DirectionDistribution value) {
+    return std::string(direction_distribution_stable_id(value));
+}
+
 std::string format_address_family_token(const FlowAddressFamily family) {
     switch (family) {
     case FlowAddressFamily::ipv4:
@@ -1714,6 +1731,14 @@ bool is_scalar_key(const std::string_view key) {
         key == "time.overlap.to" ||
         key == "time.duration.min" ||
         key == "time.duration.max" ||
+        key == "traffic.a_to_b.packet_count.min" ||
+        key == "traffic.a_to_b.packet_count.max" ||
+        key == "traffic.b_to_a.packet_count.min" ||
+        key == "traffic.b_to_a.packet_count.max" ||
+        key == "traffic.a_to_b.original_bytes.min" ||
+        key == "traffic.a_to_b.original_bytes.max" ||
+        key == "traffic.b_to_a.original_bytes.min" ||
+        key == "traffic.b_to_a.original_bytes.max" ||
         key == "packet_count.min" ||
         key == "packet_count.max" ||
         key == "original_bytes.min" ||
@@ -2183,6 +2208,92 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                             "Unknown directionality key."
                         );
                     }
+                } else if (root == "traffic" &&
+                           key_segments.values.size() == 3U &&
+                           (key_segments.values[1] == "packet_distribution" ||
+                            key_segments.values[1] == "data_distribution")) {
+                    const auto distribution = parse_direction_distribution_token(value);
+                    if (!distribution.has_value()) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::invalid_enum_token,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            std::string(value),
+                            "Unknown directional traffic distribution token."
+                        );
+                    }
+
+                    auto* criteria = key_segments.values[1] == "packet_distribution"
+                        ? &configured_spec.aggregate.packet_distribution
+                        : &configured_spec.aggregate.data_distribution;
+                    if (key_segments.values[2] == "include") {
+                        criteria->include.push_back(*distribution);
+                    } else if (key_segments.values[2] == "exclude") {
+                        criteria->exclude.push_back(*distribution);
+                    } else {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::unknown_key,
+                            line_number,
+                            1U,
+                            std::string(key),
+                            {},
+                            "Unknown directional traffic distribution key."
+                        );
+                    }
+                } else if (root == "traffic" &&
+                           key_segments.values.size() == 4U &&
+                           (key_segments.values[1] == "a_to_b" || key_segments.values[1] == "b_to_a") &&
+                           (key_segments.values[2] == "packet_count" || key_segments.values[2] == "original_bytes") &&
+                           (key_segments.values[3] == "min" || key_segments.values[3] == "max")) {
+                    if (key_segments.values[2] == "packet_count") {
+                        const auto parsed_value = parse_uint64_decimal(value);
+                        if (!parsed_value.ok) {
+                            return make_parse_error(
+                                parsed_value.overflow
+                                    ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                    : AdvancedFlowFilterTextParseStatus::invalid_value,
+                                line_number,
+                                value_column,
+                                std::string(key),
+                                std::string(value),
+                                "Expected an unsigned integer value."
+                            );
+                        }
+
+                        auto* range = (key_segments.values[1] == "a_to_b")
+                            ? &configured_spec.aggregate.a_to_b_packet_count
+                            : &configured_spec.aggregate.b_to_a_packet_count;
+                        assign_range_bound(*range, key_segments.values[3], parsed_value.value);
+                    } else {
+                        const auto parsed_value = parse_byte_quantity_value(value, true);
+                        if (!parsed_value.ok) {
+                            return make_parse_error(
+                                parsed_value.overflow
+                                    ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                    : AdvancedFlowFilterTextParseStatus::invalid_value,
+                                line_number,
+                                value_column,
+                                std::string(key),
+                                std::string(value),
+                                "Invalid byte quantity."
+                            );
+                        }
+
+                        auto* range = (key_segments.values[1] == "a_to_b")
+                            ? &configured_spec.aggregate.a_to_b_original_bytes
+                            : &configured_spec.aggregate.b_to_a_original_bytes;
+                        assign_range_bound(*range, key_segments.values[3], parsed_value.value);
+                    }
+                } else if (root == "traffic") {
+                    return make_parse_error(
+                        AdvancedFlowFilterTextParseStatus::unknown_key,
+                        line_number,
+                        1U,
+                        std::string(key),
+                        {},
+                        "Unknown traffic key."
+                    );
                 } else if (root == "port" && key_segments.values.size() == 3U) {
                     const auto scope = parse_port_scope_token(key_segments.values[1]);
                     if (!scope.has_value()) {
@@ -2860,6 +2971,68 @@ AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const Advanc
         }
         if (spec.time.duration_us->max.has_value()) {
             append_line("time.duration.max", format_duration_value(*spec.time.duration_us->max));
+        }
+    }
+
+    for (const auto value : spec.aggregate.packet_distribution.include) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.packet_distribution", "Spec contains an unrepresentable packet distribution token.");
+        }
+        append_line("traffic.packet_distribution.include", token);
+    }
+    for (const auto value : spec.aggregate.packet_distribution.exclude) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.packet_distribution", "Spec contains an unrepresentable packet distribution token.");
+        }
+        append_line("traffic.packet_distribution.exclude", token);
+    }
+    for (const auto value : spec.aggregate.data_distribution.include) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.data_distribution", "Spec contains an unrepresentable data distribution token.");
+        }
+        append_line("traffic.data_distribution.include", token);
+    }
+    for (const auto value : spec.aggregate.data_distribution.exclude) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.data_distribution", "Spec contains an unrepresentable data distribution token.");
+        }
+        append_line("traffic.data_distribution.exclude", token);
+    }
+
+    if (spec.aggregate.a_to_b_packet_count.has_value()) {
+        if (spec.aggregate.a_to_b_packet_count->min.has_value()) {
+            append_line("traffic.a_to_b.packet_count.min", std::to_string(*spec.aggregate.a_to_b_packet_count->min));
+        }
+        if (spec.aggregate.a_to_b_packet_count->max.has_value()) {
+            append_line("traffic.a_to_b.packet_count.max", std::to_string(*spec.aggregate.a_to_b_packet_count->max));
+        }
+    }
+    if (spec.aggregate.b_to_a_packet_count.has_value()) {
+        if (spec.aggregate.b_to_a_packet_count->min.has_value()) {
+            append_line("traffic.b_to_a.packet_count.min", std::to_string(*spec.aggregate.b_to_a_packet_count->min));
+        }
+        if (spec.aggregate.b_to_a_packet_count->max.has_value()) {
+            append_line("traffic.b_to_a.packet_count.max", std::to_string(*spec.aggregate.b_to_a_packet_count->max));
+        }
+    }
+    if (spec.aggregate.a_to_b_original_bytes.has_value()) {
+        if (spec.aggregate.a_to_b_original_bytes->min.has_value()) {
+            append_line("traffic.a_to_b.original_bytes.min", format_byte_quantity_value(*spec.aggregate.a_to_b_original_bytes->min));
+        }
+        if (spec.aggregate.a_to_b_original_bytes->max.has_value()) {
+            append_line("traffic.a_to_b.original_bytes.max", format_byte_quantity_value(*spec.aggregate.a_to_b_original_bytes->max));
+        }
+    }
+    if (spec.aggregate.b_to_a_original_bytes.has_value()) {
+        if (spec.aggregate.b_to_a_original_bytes->min.has_value()) {
+            append_line("traffic.b_to_a.original_bytes.min", format_byte_quantity_value(*spec.aggregate.b_to_a_original_bytes->min));
+        }
+        if (spec.aggregate.b_to_a_original_bytes->max.has_value()) {
+            append_line("traffic.b_to_a.original_bytes.max", format_byte_quantity_value(*spec.aggregate.b_to_a_original_bytes->max));
         }
     }
 

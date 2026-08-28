@@ -8,6 +8,8 @@
 #include <sstream>
 #include <vector>
 
+#include "core/domain/DirectionDistribution.h"
+
 namespace pfl {
 
 namespace {
@@ -133,25 +135,15 @@ std::string format_direction_ratio_text(const std::uint64_t a_to_b, const std::u
 }
 
 std::string derive_direction_summary_text(const std::uint64_t a_to_b_value, const std::uint64_t b_to_a_value) {
-    if (a_to_b_value == 0U && b_to_a_value == 0U) {
+    switch (classify_direction_distribution(a_to_b_value, b_to_a_value)) {
+    case DirectionDistribution::balanced:
         return "Balanced";
-    }
-
-    if (a_to_b_value == 0U) {
+    case DirectionDistribution::mostly_a_to_b:
+        return "Mostly A->B";
+    case DirectionDistribution::mostly_b_to_a:
         return "Mostly B->A";
     }
-
-    if (b_to_a_value == 0U) {
-        return "Mostly A->B";
-    }
-
-    const auto larger = std::max(a_to_b_value, b_to_a_value);
-    const auto smaller = std::min(a_to_b_value, b_to_a_value);
-    if (larger <= (smaller * 2U)) {
-        return "Balanced";
-    }
-
-    return a_to_b_value > b_to_a_value ? "Mostly A->B" : "Mostly B->A";
+    return "Balanced";
 }
 
 const char* quic_version_hint_text(const QuicVersionHint hint) noexcept {

@@ -365,7 +365,7 @@ Dialog {
                                 Label {
                                     Layout.fillWidth: true
                                     visible: finiteSectionCard.sectionId === 5
-                                    text: "One direction means packets were observed in only one flow direction. Both directions means at least one packet was observed in each direction."
+                                    text: "A -> B is the direction of the first observed packet in the connection."
                                     color: "#64748b"
                                     font.pixelSize: 12
                                     wrapMode: Text.WordWrap
@@ -1384,6 +1384,48 @@ Dialog {
                                 void(root.editor.revision)
                                 return root.editor.commonTrafficRows()
                             }
+                            readonly property var packetDistributionIncludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.packetDistributionIncludeOptions()
+                            }
+                            readonly property var packetDistributionExcludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.packetDistributionExcludeOptions()
+                            }
+                            readonly property var dataDistributionIncludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.dataDistributionIncludeOptions()
+                            }
+                            readonly property var dataDistributionExcludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.dataDistributionExcludeOptions()
+                            }
+                            readonly property var directionalPacketRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.directionalPacketTrafficRows()
+                            }
+                            readonly property var directionalOriginalByteRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.directionalOriginalByteTrafficRows()
+                            }
                             readonly property var additionalRows: {
                                 if (!root.editor) {
                                     return []
@@ -1535,8 +1577,8 @@ Dialog {
                                                 text: modelData.unitText
                                                 color: "#475569"
                                                 verticalAlignment: Text.AlignVCenter
-                                            }
-                                        }
+                                    }
+                                }
                             }
 
                             FilterTextButton {
@@ -1614,6 +1656,379 @@ Dialog {
                                                     text: modelData.unitText
                                                     color: "#475569"
                                                     verticalAlignment: Text.AlignVCenter
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            objectName: "advancedFlowFilterTrafficDirectionalSeparator"
+                                            Layout.fillWidth: true
+                                            implicitHeight: 1
+                                            color: "#e2e8f0"
+                                        }
+
+                                        ColumnLayout {
+                                            objectName: "advancedFlowFilterTrafficDirectionalCluster"
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Label {
+                                                objectName: "advancedFlowFilterTrafficDirectionHelperText"
+                                                Layout.fillWidth: true
+                                                text: "A -> B is the direction of the first observed packet in the connection."
+                                                color: "#64748b"
+                                                font.pixelSize: 12
+                                                wrapMode: Text.WordWrap
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficPacketDistributionGroup"
+                                                Layout.fillWidth: true
+                                                title: "Packet distribution"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Include"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.packetDistributionIncludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficPacketDistributionInclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(false, modelData.value, false, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Exclude"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.packetDistributionExcludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficPacketDistributionExclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(false, modelData.value, true, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficDataDistributionGroup"
+                                                Layout.fillWidth: true
+                                                title: "Data distribution"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Data distribution uses original packet bytes."
+                                                    color: "#64748b"
+                                                    font.pixelSize: 12
+                                                    wrapMode: Text.WordWrap
+                                                }
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Include"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.dataDistributionIncludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficDataDistributionInclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(true, modelData.value, false, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Exclude"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.dataDistributionExcludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficDataDistributionExclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(true, modelData.value, true, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficDirectionalPacketsGroup"
+                                                Layout.fillWidth: true
+                                                title: "Directional packets"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Label {
+                                                        Layout.preferredWidth: 250
+                                                        text: "Value"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Minimum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Maximum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Unit"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+                                                }
+
+                                                Repeater {
+                                                    model: trafficSection.directionalPacketRows
+
+                                                    delegate: RowLayout {
+                                                        required property var modelData
+
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Label {
+                                                            Layout.preferredWidth: 250
+                                                            text: modelData.label
+                                                            color: "#0f172a"
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MinTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.minText
+                                                            placeholderText: "0"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMinText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MaxTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.maxText
+                                                            placeholderText: "100"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMaxText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitLabel"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.unitText
+                                                            color: "#475569"
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficDirectionalOriginalBytesGroup"
+                                                Layout.fillWidth: true
+                                                title: "Directional original bytes"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Label {
+                                                        Layout.preferredWidth: 250
+                                                        text: "Value"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Minimum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Maximum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Unit"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+                                                }
+
+                                                Repeater {
+                                                    model: trafficSection.directionalOriginalByteRows
+
+                                                    delegate: RowLayout {
+                                                        required property var modelData
+
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Label {
+                                                            Layout.preferredWidth: 250
+                                                            text: modelData.label
+                                                            color: "#0f172a"
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MinTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.minText
+                                                            placeholderText: "0"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMinText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MaxTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.maxText
+                                                            placeholderText: "100"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMaxText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        ComboBox {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitComboBox"
+                                                            Layout.preferredWidth: 120
+                                                            model: modelData.unitOptions
+                                                            textRole: "label"
+                                                            currentIndex: root.optionIndex(model, modelData.selectedUnit)
+                                                            onActivated: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficUnit(modelData.metricId, model[currentIndex].value)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

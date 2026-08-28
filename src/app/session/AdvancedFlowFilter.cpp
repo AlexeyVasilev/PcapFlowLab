@@ -397,6 +397,20 @@ std::pair<std::uint64_t, std::uint64_t> directional_packet_counts(const ListedCo
     };
 }
 
+std::pair<std::uint64_t, std::uint64_t> directional_original_bytes(const ListedConnectionRef& connection) noexcept {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return {
+            connection.ipv4->has_flow_a ? connection.ipv4->flow_a.total_bytes : 0U,
+            connection.ipv4->has_flow_b ? connection.ipv4->flow_b.total_bytes : 0U,
+        };
+    }
+
+    return {
+        connection.ipv6->has_flow_a ? connection.ipv6->flow_a.total_bytes : 0U,
+        connection.ipv6->has_flow_b ? connection.ipv6->flow_b.total_bytes : 0U,
+    };
+}
+
 bool matches_directionality_value(
     const AdvancedFlowFilterDirectionality value,
     const ListedConnectionRef& connection
@@ -412,6 +426,14 @@ bool matches_directionality_value(
     }
 }
 
+bool matches_direction_distribution_membership(
+    const std::array<bool, 3>& membership,
+    const std::uint64_t a_to_b_value,
+    const std::uint64_t b_to_a_value
+) noexcept {
+    return membership[static_cast<std::size_t>(classify_direction_distribution(a_to_b_value, b_to_a_value))];
+}
+
 bool is_valid_directionality_value(const AdvancedFlowFilterDirectionality value) noexcept {
     switch (value) {
     case AdvancedFlowFilterDirectionality::unidirectional:
@@ -420,6 +442,16 @@ bool is_valid_directionality_value(const AdvancedFlowFilterDirectionality value)
     default:
         return false;
     }
+}
+
+bool is_valid_direction_distribution_value(const DirectionDistribution value) noexcept {
+    switch (value) {
+    case DirectionDistribution::mostly_a_to_b:
+    case DirectionDistribution::balanced:
+    case DirectionDistribution::mostly_b_to_a:
+        return true;
+    }
+    return false;
 }
 
 bool matches_service_text_predicate(
@@ -525,10 +557,49 @@ bool matches_aggregate_criteria(
     const ListedConnectionRef& connection
 ) noexcept {
     const auto& stats = aggregate_stats(connection);
+    const auto [a_to_b_packets, b_to_a_packets] = directional_packet_counts(connection);
+    const auto [a_to_b_original_bytes, b_to_a_original_bytes] = directional_original_bytes(connection);
 
-    return matches_range(criteria.ranges.packet_count, packet_count(connection)) &&
+    const bool packet_distribution_include_match =
+        !criteria.has_packet_distribution_include_predicates ||
+        matches_direction_distribution_membership(
+            criteria.packet_distribution_include_membership,
+            a_to_b_packets,
+            b_to_a_packets
+        );
+    const bool packet_distribution_exclude_match =
+        criteria.has_packet_distribution_exclude_predicates &&
+        matches_direction_distribution_membership(
+            criteria.packet_distribution_exclude_membership,
+            a_to_b_packets,
+            b_to_a_packets
+        );
+    const bool data_distribution_include_match =
+        !criteria.has_data_distribution_include_predicates ||
+        matches_direction_distribution_membership(
+            criteria.data_distribution_include_membership,
+            a_to_b_original_bytes,
+            b_to_a_original_bytes
+        );
+    const bool data_distribution_exclude_match =
+        criteria.has_data_distribution_exclude_predicates &&
+        matches_direction_distribution_membership(
+            criteria.data_distribution_exclude_membership,
+            a_to_b_original_bytes,
+            b_to_a_original_bytes
+        );
+
+    return packet_distribution_include_match &&
+        !packet_distribution_exclude_match &&
+        data_distribution_include_match &&
+        !data_distribution_exclude_match &&
+        matches_range(criteria.ranges.packet_count, packet_count(connection)) &&
         matches_range(criteria.ranges.original_bytes, total_bytes(connection)) &&
         matches_range(criteria.ranges.captured_bytes, stats.captured_bytes) &&
+        matches_range(criteria.ranges.a_to_b_packet_count, a_to_b_packets) &&
+        matches_range(criteria.ranges.b_to_a_packet_count, b_to_a_packets) &&
+        matches_range(criteria.ranges.a_to_b_original_bytes, a_to_b_original_bytes) &&
+        matches_range(criteria.ranges.b_to_a_original_bytes, b_to_a_original_bytes) &&
         matches_range(criteria.ranges.fragmented_packet_count, fragmented_packet_count_value(connection)) &&
         matches_range(criteria.ranges.truncated_packet_count, stats.truncated_packet_count) &&
         matches_range(criteria.ranges.tcp_syn_count, stats.tcp_syn_count) &&
@@ -1101,6 +1172,8 @@ AdvancedFlowFilterCompileResult compile_aggregate_criteria(
     const AdvancedFlowFilterAggregateCriteria& spec,
     CompiledAdvancedFlowFilterAggregateCriteria& compiled
 ) {
+    compiled = {};
+
     if (const auto error = validate_range_field(spec.packet_count, "aggregate.packet_count")) {
         return *error;
     }
@@ -1108,6 +1181,18 @@ AdvancedFlowFilterCompileResult compile_aggregate_criteria(
         return *error;
     }
     if (const auto error = validate_range_field(spec.captured_bytes, "aggregate.captured_bytes")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.a_to_b_packet_count, "aggregate.a_to_b_packet_count")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.b_to_a_packet_count, "aggregate.b_to_a_packet_count")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.a_to_b_original_bytes, "aggregate.a_to_b_original_bytes")) {
+        return *error;
+    }
+    if (const auto error = validate_range_field(spec.b_to_a_original_bytes, "aggregate.b_to_a_original_bytes")) {
         return *error;
     }
     if (const auto error = validate_range_field(spec.fragmented_packet_count, "aggregate.fragmented_packet_count")) {
@@ -1130,6 +1215,56 @@ AdvancedFlowFilterCompileResult compile_aggregate_criteria(
     }
     if (const auto error = validate_range_field(spec.max_captured_packet_length, "aggregate.max_captured_packet_length")) {
         return *error;
+    }
+
+    compiled.has_packet_distribution_include_predicates = !spec.packet_distribution.include.empty();
+    compiled.has_packet_distribution_exclude_predicates = !spec.packet_distribution.exclude.empty();
+    compiled.has_data_distribution_include_predicates = !spec.data_distribution.include.empty();
+    compiled.has_data_distribution_exclude_predicates = !spec.data_distribution.exclude.empty();
+
+    for (std::size_t index = 0; index < spec.packet_distribution.include.size(); ++index) {
+        const auto value = spec.packet_distribution.include[index];
+        if (!is_valid_direction_distribution_value(value)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate,
+                "aggregate.packet_distribution.include",
+                index
+            );
+        }
+        compiled.packet_distribution_include_membership[static_cast<std::size_t>(value)] = true;
+    }
+    for (std::size_t index = 0; index < spec.packet_distribution.exclude.size(); ++index) {
+        const auto value = spec.packet_distribution.exclude[index];
+        if (!is_valid_direction_distribution_value(value)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate,
+                "aggregate.packet_distribution.exclude",
+                index
+            );
+        }
+        compiled.packet_distribution_exclude_membership[static_cast<std::size_t>(value)] = true;
+    }
+    for (std::size_t index = 0; index < spec.data_distribution.include.size(); ++index) {
+        const auto value = spec.data_distribution.include[index];
+        if (!is_valid_direction_distribution_value(value)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate,
+                "aggregate.data_distribution.include",
+                index
+            );
+        }
+        compiled.data_distribution_include_membership[static_cast<std::size_t>(value)] = true;
+    }
+    for (std::size_t index = 0; index < spec.data_distribution.exclude.size(); ++index) {
+        const auto value = spec.data_distribution.exclude[index];
+        if (!is_valid_direction_distribution_value(value)) {
+            return make_compile_error(
+                AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate,
+                "aggregate.data_distribution.exclude",
+                index
+            );
+        }
+        compiled.data_distribution_exclude_membership[static_cast<std::size_t>(value)] = true;
     }
 
     compiled.ranges = spec;
@@ -1391,9 +1526,17 @@ std::size_t count_range_atomic_rules(
 }
 
 std::size_t count_aggregate_atomic_rules(const AdvancedFlowFilterAggregateCriteria& aggregate) noexcept {
-    return count_range_atomic_rules(aggregate.packet_count) +
+    return aggregate.packet_distribution.include.size() +
+        aggregate.packet_distribution.exclude.size() +
+        aggregate.data_distribution.include.size() +
+        aggregate.data_distribution.exclude.size() +
+        count_range_atomic_rules(aggregate.packet_count) +
         count_range_atomic_rules(aggregate.original_bytes) +
         count_range_atomic_rules(aggregate.captured_bytes) +
+        count_range_atomic_rules(aggregate.a_to_b_packet_count) +
+        count_range_atomic_rules(aggregate.b_to_a_packet_count) +
+        count_range_atomic_rules(aggregate.a_to_b_original_bytes) +
+        count_range_atomic_rules(aggregate.b_to_a_original_bytes) +
         count_range_atomic_rules(aggregate.fragmented_packet_count) +
         count_range_atomic_rules(aggregate.truncated_packet_count) +
         count_range_atomic_rules(aggregate.tcp_syn_count) +

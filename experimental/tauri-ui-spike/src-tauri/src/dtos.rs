@@ -258,7 +258,11 @@ pub struct AdvancedFlowFilterTimeSectionDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedFlowFilterTrafficSectionDto {
     pub enabled: bool,
+    pub packet_distribution: AdvancedFlowFilterFiniteSectionDto,
+    pub data_distribution: AdvancedFlowFilterFiniteSectionDto,
     pub primary: Vec<AdvancedFlowFilterTrafficRowDto>,
+    pub directional_packets: Vec<AdvancedFlowFilterTrafficRowDto>,
+    pub directional_original_bytes: Vec<AdvancedFlowFilterTrafficRowDto>,
     pub additional: Vec<AdvancedFlowFilterTrafficRowDto>,
 }
 
@@ -334,6 +338,7 @@ pub struct AdvancedFlowFilterStructuredOptionCatalogDto {
     pub tls_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub quic_version: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub directionality: Vec<AdvancedFlowFilterFiniteOptionDto>,
+    pub traffic_distribution: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub endpoint_scope: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub protocol_path_selector_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,
     pub contains_layer_identifier_mode: Vec<AdvancedFlowFilterFiniteOptionDto>,

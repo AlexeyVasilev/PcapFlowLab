@@ -60,6 +60,10 @@ public:
         tcp_syn_count,
         tcp_fin_count,
         tcp_rst_count,
+        a_to_b_packets,
+        b_to_a_packets,
+        a_to_b_original_bytes,
+        b_to_a_original_bytes,
     };
 
     enum class AdvancedFlowFilterTrafficUnit {
@@ -73,6 +77,13 @@ public:
         seconds,
         minutes,
         hours,
+    };
+
+    enum class TrafficRowGroup {
+        primary = 0,
+        directional_packets,
+        directional_original_bytes,
+        additional,
     };
 
     explicit AdvancedFlowFilterEditorModel(
@@ -102,6 +113,12 @@ public:
     Q_INVOKABLE QVariantList timeRangeRows() const;
     Q_INVOKABLE QVariantMap timeDurationRow() const;
     Q_INVOKABLE QVariantList commonTrafficRows() const;
+    Q_INVOKABLE QVariantList packetDistributionIncludeOptions() const;
+    Q_INVOKABLE QVariantList packetDistributionExcludeOptions() const;
+    Q_INVOKABLE QVariantList dataDistributionIncludeOptions() const;
+    Q_INVOKABLE QVariantList dataDistributionExcludeOptions() const;
+    Q_INVOKABLE QVariantList directionalPacketTrafficRows() const;
+    Q_INVOKABLE QVariantList directionalOriginalByteTrafficRows() const;
     Q_INVOKABLE QVariantList additionalTrafficRows() const;
     Q_INVOKABLE bool trafficAdditionalFiltersExpandedSuggested() const noexcept;
     Q_INVOKABLE void setTimeRangeFromText(const QString& metricId, const QString& text);
@@ -112,6 +129,7 @@ public:
     Q_INVOKABLE void setTrafficMinText(int metric, const QString& text);
     Q_INVOKABLE void setTrafficMaxText(int metric, const QString& text);
     Q_INVOKABLE bool setTrafficUnit(int metric, int unit);
+    Q_INVOKABLE void setTrafficDistributionOptionChecked(bool dataDistribution, int value, bool exclude, bool checked);
     Q_INVOKABLE bool serviceStateChecked(bool exclude, int stateKind) const noexcept;
     Q_INVOKABLE bool serviceTextRulesEditable(bool exclude) const noexcept;
     Q_INVOKABLE QVariantList serviceOperatorOptions() const;
@@ -233,7 +251,7 @@ private:
     [[nodiscard]] QVariantList buildAddressRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildTimeRangeRowList() const;
     [[nodiscard]] QVariantMap buildTimeDurationRow() const;
-    [[nodiscard]] QVariantList buildTrafficRowList(bool additional) const;
+    [[nodiscard]] QVariantList buildTrafficRowList(TrafficRowGroup group) const;
     [[nodiscard]] QVariantList buildServiceTextRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildProtocolPathRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildContainsLayerRowList(bool exclude) const;

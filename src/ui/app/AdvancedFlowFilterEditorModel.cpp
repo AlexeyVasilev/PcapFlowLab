@@ -77,8 +77,15 @@ constexpr std::array<AdvancedFilterOptionDescriptor<QuicVersionHint>, 4> kAdvanc
 
 constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlowFilterDirectionality>, 2>
     kAdvancedFilterDirectionalityOptions {{
-        {session_detail::AdvancedFlowFilterDirectionality::unidirectional, "One direction", "Unidirectional"},
-        {session_detail::AdvancedFlowFilterDirectionality::bidirectional, "Both directions", "Bidirectional"},
+        {session_detail::AdvancedFlowFilterDirectionality::unidirectional, "Only A -> B packets", "Unidirectional"},
+        {session_detail::AdvancedFlowFilterDirectionality::bidirectional, "Packets in both directions", "Bidirectional"},
+    }};
+
+constexpr std::array<AdvancedFilterOptionDescriptor<DirectionDistribution>, 3>
+    kAdvancedFilterTrafficDistributionOptions {{
+        {DirectionDistribution::mostly_a_to_b, "Mostly A -> B", "MostlyAToB"},
+        {DirectionDistribution::balanced, "Balanced", "Balanced"},
+        {DirectionDistribution::mostly_b_to_a, "Mostly B -> A", "MostlyBToA"},
     }};
 
 constexpr std::array<AdvancedFilterOptionDescriptor<session_detail::AdvancedFlowFilterPortScope>, 3>
@@ -145,7 +152,9 @@ struct TrafficMetricDescriptor {
     AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric metric {};
     const char* label {""};
     const char* object_name_prefix {""};
-    bool additional {false};
+    AdvancedFlowFilterEditorModel::TrafficRowGroup group {
+        AdvancedFlowFilterEditorModel::TrafficRowGroup::primary
+    };
     TrafficMetricValueKind value_kind {TrafficMetricValueKind::count};
 };
 
@@ -165,7 +174,7 @@ constexpr TrafficMetricDescriptor kTimeDurationDescriptor {
     AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::packet_count,
     "Duration",
     "TimeDuration",
-    false,
+    AdvancedFlowFilterEditorModel::TrafficRowGroup::primary,
     TrafficMetricValueKind::duration_us,
 };
 
@@ -173,53 +182,76 @@ constexpr std::array<TrafficMetricDescriptor, 10> kTrafficMetricDescriptors {{
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::packet_count,
      "Packets",
      "PacketCount",
-     false,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::primary,
      TrafficMetricValueKind::count},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::original_bytes,
      "Original bytes",
      "OriginalBytes",
-     false,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::primary,
      TrafficMetricValueKind::bytes_u64},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::captured_bytes,
      "Captured bytes",
      "CapturedBytes",
-     false,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::primary,
      TrafficMetricValueKind::bytes_u64},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::max_original_packet_size,
      "Maximum original packet size",
      "MaxOriginalPacketSize",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::bytes_u32},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::max_captured_packet_size,
      "Maximum captured packet size",
      "MaxCapturedPacketSize",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::bytes_u32},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::fragmented_packet_count,
      "Fragmented packet count",
      "FragmentedPacketCount",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::count},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::truncated_packet_count,
      "Truncated packet count",
      "TruncatedPacketCount",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::count},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::tcp_syn_count,
      "TCP SYN count",
      "TcpSynCount",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::count},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::tcp_fin_count,
      "TCP FIN count",
      "TcpFinCount",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::count},
     {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::tcp_rst_count,
      "TCP RST count",
      "TcpRstCount",
-     true,
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::additional,
      TrafficMetricValueKind::count},
+}};
+
+constexpr std::array<TrafficMetricDescriptor, 4> kDirectionalTrafficMetricDescriptors {{
+    {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::a_to_b_packets,
+     "A -> B packets",
+     "AToBPackets",
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::directional_packets,
+     TrafficMetricValueKind::count},
+    {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::b_to_a_packets,
+     "B -> A packets",
+     "BToAPackets",
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::directional_packets,
+     TrafficMetricValueKind::count},
+    {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::a_to_b_original_bytes,
+     "A -> B original bytes",
+     "AToBOriginalBytes",
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::directional_original_bytes,
+     TrafficMetricValueKind::bytes_u64},
+    {AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric::b_to_a_original_bytes,
+     "B -> A original bytes",
+     "BToAOriginalBytes",
+     AdvancedFlowFilterEditorModel::TrafficRowGroup::directional_original_bytes,
+     TrafficMetricValueKind::bytes_u64},
 }};
 
 template <typename T>
@@ -348,6 +380,11 @@ const TrafficMetricDescriptor* traffic_metric_descriptor(
     const AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric metric
 ) noexcept {
     for (const auto& descriptor : kTrafficMetricDescriptors) {
+        if (descriptor.metric == metric) {
+            return &descriptor;
+        }
+    }
+    for (const auto& descriptor : kDirectionalTrafficMetricDescriptors) {
         if (descriptor.metric == metric) {
             return &descriptor;
         }
@@ -494,11 +531,15 @@ AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficUnit traffic_metric_defa
     switch (descriptor.metric) {
     case TrafficMetric::original_bytes:
     case TrafficMetric::captured_bytes:
+    case TrafficMetric::a_to_b_original_bytes:
+    case TrafficMetric::b_to_a_original_bytes:
         return TrafficUnit::kib;
     case TrafficMetric::max_original_packet_size:
     case TrafficMetric::max_captured_packet_size:
         return TrafficUnit::bytes;
     case TrafficMetric::packet_count:
+    case TrafficMetric::a_to_b_packets:
+    case TrafficMetric::b_to_a_packets:
     case TrafficMetric::fragmented_packet_count:
     case TrafficMetric::truncated_packet_count:
     case TrafficMetric::tcp_syn_count:
@@ -592,6 +633,14 @@ std::optional<session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t>> t
         return load_u64_range(aggregate.original_bytes);
     case Metric::captured_bytes:
         return load_u64_range(aggregate.captured_bytes);
+    case Metric::a_to_b_packets:
+        return load_u64_range(aggregate.a_to_b_packet_count);
+    case Metric::b_to_a_packets:
+        return load_u64_range(aggregate.b_to_a_packet_count);
+    case Metric::a_to_b_original_bytes:
+        return load_u64_range(aggregate.a_to_b_original_bytes);
+    case Metric::b_to_a_original_bytes:
+        return load_u64_range(aggregate.b_to_a_original_bytes);
     case Metric::max_original_packet_size:
         return promote_u32_range(aggregate.max_original_packet_length);
     case Metric::max_captured_packet_size:
@@ -629,7 +678,7 @@ std::optional<session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t>> t
 
 bool any_additional_traffic_metric_active(const session_detail::AdvancedFlowFilterAggregateCriteria& aggregate) {
     for (const auto& descriptor : kTrafficMetricDescriptors) {
-        if (!descriptor.additional) {
+        if (descriptor.group != AdvancedFlowFilterEditorModel::TrafficRowGroup::additional) {
             continue;
         }
         if (traffic_metric_range_u64(aggregate, descriptor.metric).has_value()) {
@@ -677,9 +726,17 @@ std::size_t count_range_atomic_rules(
 std::size_t count_aggregate_atomic_rules(
     const session_detail::AdvancedFlowFilterAggregateCriteria& aggregate
 ) noexcept {
-    return count_range_atomic_rules(aggregate.packet_count) +
+    return aggregate.packet_distribution.include.size() +
+        aggregate.packet_distribution.exclude.size() +
+        aggregate.data_distribution.include.size() +
+        aggregate.data_distribution.exclude.size() +
+        count_range_atomic_rules(aggregate.packet_count) +
         count_range_atomic_rules(aggregate.original_bytes) +
         count_range_atomic_rules(aggregate.captured_bytes) +
+        count_range_atomic_rules(aggregate.a_to_b_packet_count) +
+        count_range_atomic_rules(aggregate.b_to_a_packet_count) +
+        count_range_atomic_rules(aggregate.a_to_b_original_bytes) +
+        count_range_atomic_rules(aggregate.b_to_a_original_bytes) +
         count_range_atomic_rules(aggregate.fragmented_packet_count) +
         count_range_atomic_rules(aggregate.truncated_packet_count) +
         count_range_atomic_rules(aggregate.tcp_syn_count) +
@@ -1089,16 +1146,11 @@ std::size_t count_configured_address_rows(const auto& rows) {
     return count;
 }
 
-std::size_t count_configured_traffic_rows(const auto& rows) {
+std::size_t count_configured_traffic_rows(const auto& rows, const auto& descriptors) {
     std::size_t count {0};
-    for (std::size_t index = 0; index < rows.size(); ++index) {
-        const auto metric = static_cast<AdvancedFlowFilterEditorModel::AdvancedFlowFilterTrafficMetric>(index);
-        const auto* descriptor = std::find_if(
-            kTrafficMetricDescriptors.begin(),
-            kTrafficMetricDescriptors.end(),
-            [&](const auto& candidate) { return candidate.metric == metric; }
-        );
-        if (descriptor == kTrafficMetricDescriptors.end()) {
+    for (const auto& descriptor : descriptors) {
+        const auto index = static_cast<std::size_t>(descriptor.metric);
+        if (index >= rows.size()) {
             continue;
         }
 
@@ -1108,10 +1160,10 @@ std::size_t count_configured_traffic_rows(const auto& rows) {
             continue;
         }
 
-        const auto multiplier = traffic_metric_has_unit_selector(*descriptor)
+        const auto multiplier = traffic_metric_has_unit_selector(descriptor)
             ? traffic_unit_multiplier(rows[index].unit)
             : 1ULL;
-        const auto uses_u32_storage = descriptor->value_kind == TrafficMetricValueKind::bytes_u32;
+        const auto uses_u32_storage = descriptor.value_kind == TrafficMetricValueKind::bytes_u32;
         const auto min_valid = minimum_text.isEmpty() ||
             (uses_u32_storage
                 ? checked_parse_scaled_value<std::uint32_t>(minimum_text, multiplier).has_value()
@@ -1421,7 +1473,12 @@ int AdvancedFlowFilterEditorModel::sectionConfiguredRuleCount(const int section)
         break;
     case AdvancedFlowFilterFiniteSection::traffic:
         count = document_state_.is_editing()
-            ? count_configured_traffic_rows(traffic_rows_)
+            ? spec.aggregate.packet_distribution.include.size() +
+                spec.aggregate.packet_distribution.exclude.size() +
+                spec.aggregate.data_distribution.include.size() +
+                spec.aggregate.data_distribution.exclude.size() +
+                count_configured_traffic_rows(traffic_rows_, kTrafficMetricDescriptors) +
+                count_configured_traffic_rows(traffic_rows_, kDirectionalTrafficMetricDescriptors)
             : count_aggregate_atomic_rules(spec.aggregate);
         break;
     case AdvancedFlowFilterFiniteSection::service:
@@ -1564,11 +1621,47 @@ QVariantMap AdvancedFlowFilterEditorModel::timeDurationRow() const {
 }
 
 QVariantList AdvancedFlowFilterEditorModel::commonTrafficRows() const {
-    return buildTrafficRowList(false);
+    return buildTrafficRowList(TrafficRowGroup::primary);
+}
+
+QVariantList AdvancedFlowFilterEditorModel::packetDistributionIncludeOptions() const {
+    return build_advanced_filter_option_list(
+        document_state_.current_user_visible_document().configured_spec.aggregate.packet_distribution.include,
+        kAdvancedFilterTrafficDistributionOptions
+    );
+}
+
+QVariantList AdvancedFlowFilterEditorModel::packetDistributionExcludeOptions() const {
+    return build_advanced_filter_option_list(
+        document_state_.current_user_visible_document().configured_spec.aggregate.packet_distribution.exclude,
+        kAdvancedFilterTrafficDistributionOptions
+    );
+}
+
+QVariantList AdvancedFlowFilterEditorModel::dataDistributionIncludeOptions() const {
+    return build_advanced_filter_option_list(
+        document_state_.current_user_visible_document().configured_spec.aggregate.data_distribution.include,
+        kAdvancedFilterTrafficDistributionOptions
+    );
+}
+
+QVariantList AdvancedFlowFilterEditorModel::dataDistributionExcludeOptions() const {
+    return build_advanced_filter_option_list(
+        document_state_.current_user_visible_document().configured_spec.aggregate.data_distribution.exclude,
+        kAdvancedFilterTrafficDistributionOptions
+    );
+}
+
+QVariantList AdvancedFlowFilterEditorModel::directionalPacketTrafficRows() const {
+    return buildTrafficRowList(TrafficRowGroup::directional_packets);
+}
+
+QVariantList AdvancedFlowFilterEditorModel::directionalOriginalByteTrafficRows() const {
+    return buildTrafficRowList(TrafficRowGroup::directional_original_bytes);
 }
 
 QVariantList AdvancedFlowFilterEditorModel::additionalTrafficRows() const {
-    return buildTrafficRowList(true);
+    return buildTrafficRowList(TrafficRowGroup::additional);
 }
 
 bool AdvancedFlowFilterEditorModel::trafficAdditionalFiltersExpandedSuggested() const noexcept {
@@ -1831,6 +1924,29 @@ bool AdvancedFlowFilterEditorModel::setTrafficUnit(const int metric, const int u
     (void)synchronizeDraftSections();
     notifyRowsChanged();
     return true;
+}
+
+void AdvancedFlowFilterEditorModel::setTrafficDistributionOptionChecked(
+    const bool dataDistribution,
+    const int value,
+    const bool exclude,
+    const bool checked
+) {
+    ensureEditingInitialized();
+    auto* draft_document = document_state_.draft_document();
+    if (draft_document == nullptr) {
+        return;
+    }
+
+    auto& criteria = dataDistribution
+        ? draft_document->configured_spec.aggregate.data_distribution
+        : draft_document->configured_spec.aggregate.packet_distribution;
+    auto& values = exclude ? criteria.exclude : criteria.include;
+    if (!set_advanced_filter_option_checked(values, static_cast<DirectionDistribution>(value), checked)) {
+        return;
+    }
+
+    notifyRowsChanged();
 }
 
 void AdvancedFlowFilterEditorModel::setServiceStateChecked(const bool exclude, const int stateKind, const bool checked) {
@@ -2336,7 +2452,10 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
     address_exclude_rows_.clear();
     time_range_rows_.assign(kTimeRangeDescriptors.size(), {});
     time_duration_row_ = {};
-    traffic_rows_.assign(kTrafficMetricDescriptors.size(), {});
+    traffic_rows_.assign(
+        static_cast<std::size_t>(AdvancedFlowFilterTrafficMetric::b_to_a_original_bytes) + 1U,
+        {}
+    );
     service_include_known_ = false;
     service_include_unknown_ = false;
     service_exclude_known_ = false;
@@ -2424,18 +2543,22 @@ void AdvancedFlowFilterEditorModel::initializeFromCurrentDocument() {
         time_duration_row_.max_text = format_scaled_integer_text(range.has_value() ? range->max : std::nullopt, unit);
     }
 
-    for (const auto& descriptor : kTrafficMetricDescriptors) {
-        const auto range = traffic_metric_range_u64(document.configured_spec.aggregate, descriptor.metric);
-        const auto unit = choose_largest_exact_unit(
-            descriptor,
-            range.has_value() ? range->min : std::nullopt,
-            range.has_value() ? range->max : std::nullopt
-        );
-        auto& row = traffic_rows_[static_cast<std::size_t>(descriptor.metric)];
-        row.unit = unit;
-        row.min_text = format_scaled_integer_text(range.has_value() ? range->min : std::nullopt, unit);
-        row.max_text = format_scaled_integer_text(range.has_value() ? range->max : std::nullopt, unit);
-    }
+    const auto initialize_traffic_rows = [&](const auto& descriptors) {
+        for (const auto& descriptor : descriptors) {
+            const auto range = traffic_metric_range_u64(document.configured_spec.aggregate, descriptor.metric);
+            const auto unit = choose_largest_exact_unit(
+                descriptor,
+                range.has_value() ? range->min : std::nullopt,
+                range.has_value() ? range->max : std::nullopt
+            );
+            auto& row = traffic_rows_[static_cast<std::size_t>(descriptor.metric)];
+            row.unit = unit;
+            row.min_text = format_scaled_integer_text(range.has_value() ? range->min : std::nullopt, unit);
+            row.max_text = format_scaled_integer_text(range.has_value() ? range->max : std::nullopt, unit);
+        }
+    };
+    initialize_traffic_rows(kTrafficMetricDescriptors);
+    initialize_traffic_rows(kDirectionalTrafficMetricDescriptors);
 
     const auto append_service_rows =
         [](const std::vector<session_detail::AdvancedFlowFilterServicePredicate>& predicates,
@@ -3003,60 +3126,89 @@ bool AdvancedFlowFilterEditorModel::synchronizeDraftSectionsImpl(QString* errorT
 
     if (draft_document->section_states.traffic) {
         updated_aggregate = {};
-        for (const auto& descriptor : kTrafficMetricDescriptors) {
-            const auto& row = traffic_rows_[static_cast<std::size_t>(descriptor.metric)];
-            switch (descriptor.metric) {
-            case AdvancedFlowFilterTrafficMetric::packet_count:
-                if (!set_u64_range(updated_aggregate.packet_count, descriptor, row)) {
-                    return false;
+        updated_aggregate.packet_distribution = draft_document->configured_spec.aggregate.packet_distribution;
+        updated_aggregate.data_distribution = draft_document->configured_spec.aggregate.data_distribution;
+        const auto apply_traffic_rows = [&](const auto& descriptors) -> bool {
+            for (const auto& descriptor : descriptors) {
+                const auto& row = traffic_rows_[static_cast<std::size_t>(descriptor.metric)];
+                switch (descriptor.metric) {
+                case AdvancedFlowFilterTrafficMetric::packet_count:
+                    if (!set_u64_range(updated_aggregate.packet_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::original_bytes:
+                    if (!set_u64_range(updated_aggregate.original_bytes, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::captured_bytes:
+                    if (!set_u64_range(updated_aggregate.captured_bytes, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::a_to_b_packets:
+                    if (!set_u64_range(updated_aggregate.a_to_b_packet_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::b_to_a_packets:
+                    if (!set_u64_range(updated_aggregate.b_to_a_packet_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::a_to_b_original_bytes:
+                    if (!set_u64_range(updated_aggregate.a_to_b_original_bytes, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::b_to_a_original_bytes:
+                    if (!set_u64_range(updated_aggregate.b_to_a_original_bytes, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::max_original_packet_size:
+                    if (!set_u32_range(updated_aggregate.max_original_packet_length, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::max_captured_packet_size:
+                    if (!set_u32_range(updated_aggregate.max_captured_packet_length, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::fragmented_packet_count:
+                    if (!set_u64_range(updated_aggregate.fragmented_packet_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::truncated_packet_count:
+                    if (!set_u64_range(updated_aggregate.truncated_packet_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::tcp_syn_count:
+                    if (!set_u64_range(updated_aggregate.tcp_syn_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::tcp_fin_count:
+                    if (!set_u64_range(updated_aggregate.tcp_fin_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
+                case AdvancedFlowFilterTrafficMetric::tcp_rst_count:
+                    if (!set_u64_range(updated_aggregate.tcp_rst_count, descriptor, row)) {
+                        return false;
+                    }
+                    break;
                 }
-                break;
-            case AdvancedFlowFilterTrafficMetric::original_bytes:
-                if (!set_u64_range(updated_aggregate.original_bytes, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::captured_bytes:
-                if (!set_u64_range(updated_aggregate.captured_bytes, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::max_original_packet_size:
-                if (!set_u32_range(updated_aggregate.max_original_packet_length, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::max_captured_packet_size:
-                if (!set_u32_range(updated_aggregate.max_captured_packet_length, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::fragmented_packet_count:
-                if (!set_u64_range(updated_aggregate.fragmented_packet_count, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::truncated_packet_count:
-                if (!set_u64_range(updated_aggregate.truncated_packet_count, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::tcp_syn_count:
-                if (!set_u64_range(updated_aggregate.tcp_syn_count, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::tcp_fin_count:
-                if (!set_u64_range(updated_aggregate.tcp_fin_count, descriptor, row)) {
-                    return false;
-                }
-                break;
-            case AdvancedFlowFilterTrafficMetric::tcp_rst_count:
-                if (!set_u64_range(updated_aggregate.tcp_rst_count, descriptor, row)) {
-                    return false;
-                }
-                break;
             }
+            return true;
+        };
+        if (!apply_traffic_rows(kTrafficMetricDescriptors) ||
+            !apply_traffic_rows(kDirectionalTrafficMetricDescriptors)) {
+            return false;
         }
     }
 
@@ -3359,49 +3511,59 @@ QVariantMap AdvancedFlowFilterEditorModel::buildTimeDurationRow() const {
     return value;
 }
 
-QVariantList AdvancedFlowFilterEditorModel::buildTrafficRowList(const bool additional) const {
+QVariantList AdvancedFlowFilterEditorModel::buildTrafficRowList(const TrafficRowGroup group) const {
     std::vector<AdvancedFlowFilterTrafficEditorRow> fallback_rows {};
     const auto* rows = &traffic_rows_;
     if (!document_state_.is_editing() || !editing_initialized_) {
-        fallback_rows.assign(kTrafficMetricDescriptors.size(), {});
-        for (const auto& descriptor : kTrafficMetricDescriptors) {
-            const auto range = traffic_metric_range_u64(
-                document_state_.current_user_visible_document().configured_spec.aggregate,
-                descriptor.metric
-            );
-            const auto unit = choose_largest_exact_unit(
-                descriptor,
-                range.has_value() ? range->min : std::nullopt,
-                range.has_value() ? range->max : std::nullopt
-            );
-            auto& row = fallback_rows[static_cast<std::size_t>(descriptor.metric)];
-            row.unit = unit;
-            row.min_text = format_scaled_integer_text(range.has_value() ? range->min : std::nullopt, unit);
-            row.max_text = format_scaled_integer_text(range.has_value() ? range->max : std::nullopt, unit);
-        }
+        fallback_rows.assign(
+            static_cast<std::size_t>(AdvancedFlowFilterTrafficMetric::b_to_a_original_bytes) + 1U,
+            {}
+        );
+        const auto initialize_rows = [&](const auto& descriptors) {
+            for (const auto& descriptor : descriptors) {
+                const auto range = traffic_metric_range_u64(
+                    document_state_.current_user_visible_document().configured_spec.aggregate,
+                    descriptor.metric
+                );
+                const auto unit = choose_largest_exact_unit(
+                    descriptor,
+                    range.has_value() ? range->min : std::nullopt,
+                    range.has_value() ? range->max : std::nullopt
+                );
+                auto& row = fallback_rows[static_cast<std::size_t>(descriptor.metric)];
+                row.unit = unit;
+                row.min_text = format_scaled_integer_text(range.has_value() ? range->min : std::nullopt, unit);
+                row.max_text = format_scaled_integer_text(range.has_value() ? range->max : std::nullopt, unit);
+            }
+        };
+        initialize_rows(kTrafficMetricDescriptors);
+        initialize_rows(kDirectionalTrafficMetricDescriptors);
         rows = &fallback_rows;
     }
 
     QVariantList result {};
-    for (const auto& descriptor : kTrafficMetricDescriptors) {
-        if (descriptor.additional != additional) {
-            continue;
-        }
+    const auto append_rows = [&](const auto& descriptors) {
+        for (const auto& descriptor : descriptors) {
+            if (descriptor.group != group) {
+                continue;
+            }
 
-        const auto& row = (*rows)[static_cast<std::size_t>(descriptor.metric)];
-        QVariantMap value {};
-        value.insert(QStringLiteral("metricId"), static_cast<int>(descriptor.metric));
-        value.insert(QStringLiteral("label"), QString::fromLatin1(descriptor.label));
-        value.insert(QStringLiteral("objectNamePrefix"), QString::fromLatin1(descriptor.object_name_prefix));
-        value.insert(QStringLiteral("minText"), row.min_text);
-        value.insert(QStringLiteral("maxText"), row.max_text);
-        value.insert(QStringLiteral("hasUnitSelector"), traffic_metric_has_unit_selector(descriptor));
-        value.insert(QStringLiteral("unitText"), traffic_metric_static_unit_text(descriptor));
-        value.insert(QStringLiteral("unitOptions"), traffic_metric_unit_options(descriptor));
-        value.insert(QStringLiteral("selectedUnit"), static_cast<int>(row.unit));
-        value.insert(QStringLiteral("additional"), descriptor.additional);
-        result.push_back(value);
-    }
+            const auto& row = (*rows)[static_cast<std::size_t>(descriptor.metric)];
+            QVariantMap value {};
+            value.insert(QStringLiteral("metricId"), static_cast<int>(descriptor.metric));
+            value.insert(QStringLiteral("label"), QString::fromLatin1(descriptor.label));
+            value.insert(QStringLiteral("objectNamePrefix"), QString::fromLatin1(descriptor.object_name_prefix));
+            value.insert(QStringLiteral("minText"), row.min_text);
+            value.insert(QStringLiteral("maxText"), row.max_text);
+            value.insert(QStringLiteral("hasUnitSelector"), traffic_metric_has_unit_selector(descriptor));
+            value.insert(QStringLiteral("unitText"), traffic_metric_static_unit_text(descriptor));
+            value.insert(QStringLiteral("unitOptions"), traffic_metric_unit_options(descriptor));
+            value.insert(QStringLiteral("selectedUnit"), static_cast<int>(row.unit));
+            result.push_back(value);
+        }
+    };
+    append_rows(kTrafficMetricDescriptors);
+    append_rows(kDirectionalTrafficMetricDescriptors);
     return result;
 }
 

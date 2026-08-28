@@ -125,7 +125,11 @@ struct FrontendAdvancedFlowFilterTimeSectionDto {
 
 struct FrontendAdvancedFlowFilterTrafficSectionDto {
     bool enabled {true};
+    FrontendAdvancedFlowFilterFiniteSectionDto packet_distribution {};
+    FrontendAdvancedFlowFilterFiniteSectionDto data_distribution {};
     std::vector<FrontendAdvancedFlowFilterTrafficRowDto> primary {};
+    std::vector<FrontendAdvancedFlowFilterTrafficRowDto> directional_packets {};
+    std::vector<FrontendAdvancedFlowFilterTrafficRowDto> directional_original_bytes {};
     std::vector<FrontendAdvancedFlowFilterTrafficRowDto> additional {};
 };
 
@@ -193,6 +197,7 @@ struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> tls_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> quic_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> directionality {};
+    std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> traffic_distribution {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> endpoint_scope {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> protocol_path_selector_mode {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> contains_layer_identifier_mode {};
