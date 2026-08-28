@@ -183,75 +183,85 @@ Dialog {
 
     contentItem: Item {
         implicitWidth: 920
-        implicitHeight: contentLayout.implicitHeight + 24
+        implicitHeight: contentLayout.implicitHeight + 16
 
         ColumnLayout {
             id: contentLayout
             anchors.fill: parent
-            anchors.margins: 18
-            spacing: 12
+            anchors.margins: 16
+            spacing: 8
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterOpenFilterButton"
-                    text: "Open filter..."
-                    enabled: root.controller !== null
-                    onClicked: root.controller.openAdvancedFlowFilterFile()
-                }
+                RowLayout {
+                    spacing: 8
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterClearUnsavedChangesButton"
-                    text: "Clear unsaved changes"
-                    enabled: root.editor ? root.editor.draftClearUnsavedChangesAvailable : false
-                    onClicked: {
-                        if (root.controller) {
-                            root.controller.clearAdvancedFlowFilterUnsavedChanges()
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterOpenFilterButton"
+                        text: "Open filter..."
+                        enabled: root.controller !== null
+                        onClicked: root.controller.openAdvancedFlowFilterFile()
+                    }
+
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterClearUnsavedChangesButton"
+                        text: "Clear unsaved changes"
+                        enabled: root.editor ? root.editor.draftClearUnsavedChangesAvailable : false
+                        onClicked: {
+                            if (root.controller) {
+                                root.controller.clearAdvancedFlowFilterUnsavedChanges()
+                            }
                         }
                     }
                 }
 
-                Item {
+                ColumnLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.leftMargin: 8
+                    Layout.rightMargin: 8
+                    spacing: 0
+
+                    Label {
+                        objectName: "advancedFlowFilterIdentityLabel"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: "Filter: " + (root.controller ? root.controller.advancedFlowFilterDisplayName : "Custom filter")
+                        color: "#0f172a"
+                        font.pixelSize: 15
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        objectName: "advancedFlowFilterIdentityRuleCountLabel"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: root.controller ? root.controller.advancedFlowFilterRuleCountText : "0 rules"
+                        color: "#64748b"
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                    }
                 }
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterSaveButton"
-                    text: "Save"
-                    enabled: root.controller !== null
-                    onClicked: root.controller.saveAdvancedFlowFilterFile()
-                }
+                RowLayout {
+                    spacing: 8
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterSaveAsButton"
-                    text: "Save As..."
-                    enabled: root.controller !== null
-                    onClicked: root.controller.saveAdvancedFlowFilterFileAs()
-                }
-            }
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterSaveButton"
+                        text: "Save"
+                        enabled: root.controller !== null
+                        onClicked: root.controller.saveAdvancedFlowFilterFile()
+                    }
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 4
-
-                Label {
-                    objectName: "advancedFlowFilterIdentityLabel"
-                    Layout.fillWidth: true
-                    text: "Filter: " + (root.controller ? root.controller.advancedFlowFilterDisplayName : "Custom filter")
-                    color: "#0f172a"
-                    font.pixelSize: 15
-                    font.bold: true
-                    elide: Text.ElideRight
-                }
-
-                Label {
-                    objectName: "advancedFlowFilterIdentityRuleCountLabel"
-                    Layout.fillWidth: true
-                    text: root.controller ? root.controller.advancedFlowFilterRuleCountText : "0 rules"
-                    color: "#64748b"
-                    font.pixelSize: 12
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterSaveAsButton"
+                        text: "Save As..."
+                        enabled: root.controller !== null
+                        onClicked: root.controller.saveAdvancedFlowFilterFileAs()
+                    }
                 }
             }
 
@@ -264,12 +274,18 @@ Dialog {
 
                 ScrollView {
                     id: sectionScrollView
+                    readonly property real verticalScrollBarGutter:
+                        sectionVerticalScrollBar.policy !== ScrollBar.AlwaysOff
+                        ? sectionVerticalScrollBar.width + 4
+                        : 0
                     anchors.fill: parent
                     anchors.margins: 1
                     clip: true
+                    rightPadding: verticalScrollBarGutter
                     contentWidth: availableWidth
 
                     ScrollBar.vertical: AppScrollBar {
+                        id: sectionVerticalScrollBar
                         parent: sectionScrollView
                         x: sectionScrollView.mirrored ? 0 : sectionScrollView.width - width
                         y: sectionScrollView.topPadding
@@ -3097,6 +3113,52 @@ Dialog {
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
             }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                Layout.bottomMargin: 4
+                spacing: 8
+
+                FilterTextButton {
+                    objectName: "advancedFlowFilterClearAllButton"
+                    text: "Clear all"
+                    enabled: root.editor ? root.editor.draftClearAllAvailable : false
+                    onClicked: {
+                        if (root.controller) {
+                            root.controller.clearAdvancedFlowFilter()
+                        }
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                FilterTextButton {
+                    objectName: "advancedFlowFilterCancelButton"
+                    text: "Cancel"
+                    onClicked: root.close()
+                }
+
+                FilterTextButton {
+                    objectName: "advancedFlowFilterApplyButton"
+                    text: "Apply"
+                    highlighted: true
+                    onClicked: {
+                        if (!root.controller) {
+                            root.applyingDraft = true
+                            root.close()
+                            return
+                        }
+
+                        if (root.controller.applyAdvancedFlowFilterEdit()) {
+                            root.applyingDraft = true
+                            root.close()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -3113,48 +3175,4 @@ Dialog {
         }
     }
 
-    footer: DialogButtonBox {
-        contentItem: RowLayout {
-            spacing: 8
-
-            FilterTextButton {
-                objectName: "advancedFlowFilterClearAllButton"
-                text: "Clear all"
-                enabled: root.editor ? root.editor.draftClearAllAvailable : false
-                onClicked: {
-                    if (root.controller) {
-                        root.controller.clearAdvancedFlowFilter()
-                    }
-                }
-            }
-
-            Item {
-                Layout.fillWidth: true
-            }
-
-            FilterTextButton {
-                objectName: "advancedFlowFilterCancelButton"
-                text: "Cancel"
-                onClicked: root.close()
-            }
-
-            FilterTextButton {
-                objectName: "advancedFlowFilterApplyButton"
-                text: "Apply"
-                highlighted: true
-                onClicked: {
-                    if (!root.controller) {
-                        root.applyingDraft = true
-                        root.close()
-                        return
-                    }
-
-                    if (root.controller.applyAdvancedFlowFilterEdit()) {
-                        root.applyingDraft = true
-                        root.close()
-                    }
-                }
-            }
-        }
-    }
 }
