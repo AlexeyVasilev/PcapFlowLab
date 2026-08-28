@@ -1606,6 +1606,20 @@ bool decode_time_section(
             !parse_bound(row.to_text, "to_text", range.max)) {
             return false;
         }
+
+        if (range.min.has_value() && range.max.has_value() && *range.min > *range.max) {
+            set_invalid_update_issue(
+                result,
+                "time",
+                descriptor->stable_id,
+                row.metric_id,
+                row_index,
+                "to_text",
+                "Time From must be less than or equal to To."
+            );
+            return false;
+        }
+
         *target = range;
     }
 

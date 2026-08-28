@@ -4254,6 +4254,76 @@ void run_frontend_structured_document_tests() {
 
     {
         auto draft = *empty.document;
+        draft.time.enabled = true;
+        draft.time.ranges = {
+            make_time_row("start", "2026-08-27T14:35:00Z", "2026-08-27T14:32:17Z"),
+            make_time_row("end", "", ""),
+            make_time_row("overlap", "", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "time");
+        PFL_EXPECT(invalid.update_issue->group == "start");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {0U});
+        PFL_EXPECT(invalid.update_issue->field_id == "to_text");
+        PFL_EXPECT(invalid.update_issue->message == "Time From must be less than or equal to To.");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.time.enabled = true;
+        draft.time.ranges = {
+            make_time_row("start", "", ""),
+            make_time_row("end", "2026-08-27T14:35:00Z", "2026-08-27T14:32:17Z"),
+            make_time_row("overlap", "", ""),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "time");
+        PFL_EXPECT(invalid.update_issue->group == "end");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {1U});
+        PFL_EXPECT(invalid.update_issue->field_id == "to_text");
+        PFL_EXPECT(invalid.update_issue->message == "Time From must be less than or equal to To.");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.time.enabled = true;
+        draft.time.ranges = {
+            make_time_row("start", "", ""),
+            make_time_row("end", "", ""),
+            make_time_row("overlap", "2026-08-27T14:36:00Z", "2026-08-27T14:33:00Z"),
+        };
+        const auto invalid = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(invalid.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::invalid_document_update);
+        PFL_REQUIRE(invalid.update_issue.has_value());
+        PFL_EXPECT(invalid.update_issue->section_id == "time");
+        PFL_EXPECT(invalid.update_issue->group == "overlap");
+        PFL_EXPECT(invalid.update_issue->row_index == std::optional<std::size_t> {2U});
+        PFL_EXPECT(invalid.update_issue->field_id == "to_text");
+        PFL_EXPECT(invalid.update_issue->message == "Time From must be less than or equal to To.");
+    }
+
+    {
+        auto draft = *empty.document;
+        draft.time.enabled = true;
+        draft.time.ranges = {
+            make_time_row("start", "2026-08-27T14:32:17Z", "2026-08-27T14:32:17Z"),
+            make_time_row("end", "", ""),
+            make_time_row("overlap", "", ""),
+        };
+        const auto updated = adapter.apply_advanced_flow_filter_structured_document(empty.document->canonical_text, draft);
+        PFL_EXPECT(updated.status == FrontendAdvancedFlowFilterStructuredDocumentStatus::ok);
+        PFL_REQUIRE(updated.document.has_value());
+        const auto reparsed = require_parse_success(updated.document->canonical_text);
+        PFL_REQUIRE(reparsed.document.configured_spec.time.start_us.has_value());
+        PFL_EXPECT(reparsed.document.configured_spec.time.start_us->min == reparsed.document.configured_spec.time.start_us->max);
+    }
+
+    {
+        auto draft = *empty.document;
         draft.traffic.enabled = true;
         draft.traffic.directional_packets = {
             make_traffic_row("a_to_b_packets", "count", "10", "9"),

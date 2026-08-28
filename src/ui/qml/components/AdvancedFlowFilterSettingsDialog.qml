@@ -381,7 +381,7 @@ Dialog {
                                 Label {
                                     Layout.fillWidth: true
                                     visible: finiteSectionCard.sectionId === 5
-                                    text: "A -> B is the direction of the first observed packet in the connection."
+                                    text: "A -> B is the direction of the first observed packet in the connection. \"Only A -> B packets\" means no B -> A packets were observed; \"Packets in both directions\" means at least one packet was observed in each direction."
                                     color: "#64748b"
                                     font.pixelSize: 12
                                     wrapMode: Text.WordWrap
@@ -1691,7 +1691,7 @@ Dialog {
                                             Label {
                                                 objectName: "advancedFlowFilterTrafficDirectionHelperText"
                                                 Layout.fillWidth: true
-                                                text: "A -> B is the direction of the first observed packet in the connection."
+                                                text: "A -> B is the direction of the first observed packet in the connection. \"Only A -> B packets\" means no B -> A packets were observed; \"Packets in both directions\" means at least one packet was observed in each direction."
                                                 color: "#64748b"
                                                 font.pixelSize: 12
                                                 wrapMode: Text.WordWrap
