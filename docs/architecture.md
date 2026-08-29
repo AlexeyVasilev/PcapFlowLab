@@ -65,7 +65,8 @@ transport-correct session analysis during open.
 
 Saved indexes reopen previously imported session state.
 
-Current index format is version `14` and uses exact-version compatibility.
+Current stable index format is revision `15` and uses exact-version
+compatibility.
 Loading a mismatched version fails and requires rebuilding the index from the
 source capture.
 

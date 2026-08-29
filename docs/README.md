@@ -88,6 +88,9 @@ different responsibilities.
   Current compact per-connection aggregate metadata and PacketRef foundation.
 - [Index v15 Container RFC](features/index-v15-container-rfc.md)
   Current stable v15 container/header and per-section compatibility contract.
+- [Statistics, Reporting, and Large-Index Architecture RFC](features/statistics-reporting-index-rfc.md)
+  Planned target architecture for future shared Statistics/reporting and one
+  later large-index migration; not current production behavior.
 
 ## Export
 
