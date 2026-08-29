@@ -16,9 +16,11 @@ Raw capture open/import builds the current canonical flow inventory from packet
 metadata and bounded decode facts. Saved indexes reopen previously materialized
 analysis state without reimporting the original capture.
 
-Indexes are exact-version artifacts. Current index format compatibility is
-strictly versioned at `14`. When an index version does not match, the product
-requires rebuilding the index from the source capture.
+Indexes are exact-version artifacts. The current stable index baseline is
+revision `15`, with header inspection kept independent from full payload
+compatibility. When the saved index revision or required section schemas are
+not supported, the product requires rebuilding the index from the source
+capture.
 
 An index can open without the original source capture. In that index-only mode,
 metadata-backed workflows remain available, but byte-backed inspection,
