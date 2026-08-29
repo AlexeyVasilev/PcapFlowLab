@@ -533,11 +533,6 @@ private:
         bool has_pagination_lookahead {false};
     };
 
-    struct CachedTopSummary {
-        std::size_t limit {0};
-        CaptureTopSummary summary {};
-    };
-
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_terminal(const PacketRef& packet) const;
     void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
@@ -566,6 +561,7 @@ private:
     [[nodiscard]] SelectedFlowStreamSuppressionSignature current_selected_flow_stream_suppression_signature(
         std::size_t flow_index
     ) const noexcept;
+    [[nodiscard]] const CaptureGeneralStatistics& general_statistics() const;
 
     void swap(CaptureSession& other) noexcept;
     void reset_runtime_state() noexcept;
@@ -589,11 +585,8 @@ private:
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
     mutable std::optional<SelectedFlowStreamContext> selected_flow_stream_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
-    mutable std::optional<CaptureProtocolSummary> protocol_summary_cache_ {};
-    mutable std::optional<FlowPacketCountHistogram> flow_packet_count_histogram_cache_ {};
+    mutable std::optional<CaptureGeneralStatistics> general_statistics_cache_ {};
     mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
-    mutable std::optional<CaptureQuicTlsSummary> quic_tls_summary_cache_ {};
-    mutable std::optional<CachedTopSummary> top_summary_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
     mutable std::uint64_t selected_flow_stream_context_generation_ {0};
 };

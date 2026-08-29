@@ -104,6 +104,10 @@ std::string format_statistics_count_with_percent_text(std::uint64_t count, doubl
 std::string format_statistics_size_with_percent_text(std::uint64_t size, double percent);
 std::string format_statistics_size_value(std::uint64_t value);
 std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary);
+CaptureGeneralStatistics build_capture_general_statistics(
+    std::span<const ListedConnectionRef> connections,
+    std::size_t top_summary_capacity = 20U
+);
 FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections);
 CaptureProtocolPathSummary build_protocol_path_summary(
     const CaptureState& state,

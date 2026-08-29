@@ -2,33 +2,329 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cctype>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <unordered_map>
 
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
+#include "core/domain/DirectionDistribution.h"
 #include "core/domain/FlowHints.h"
 
 namespace pfl::session_detail {
 
 namespace {
 
-template <typename Flow>
-std::uint64_t sum_captured_bytes(const Flow& flow) noexcept {
-    std::uint64_t total {0};
-    for (const auto& packet : flow.packets) {
-        total += packet.captured_length;
-    }
+bool has_port_443(const ListedConnectionRef& connection) noexcept;
+std::size_t flow_packet_count_histogram_bucket_index(std::uint64_t packet_count_value) noexcept;
 
-    return total;
-}
+struct FlowPacketCountHistogramBucketDefinition {
+    const char* stable_id;
+    std::uint64_t lower_bound_inclusive;
+    std::optional<std::uint64_t> upper_bound_inclusive;
+};
+
+const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountHistogramBucketDefinitions {{
+    {"packets_1", 1U, 1U},
+    {"packets_2", 2U, 2U},
+    {"packets_3_5", 3U, 5U},
+    {"packets_6_10", 6U, 10U},
+    {"packets_11_25", 11U, 25U},
+    {"packets_26_50", 26U, 50U},
+    {"packets_51_100", 51U, 100U},
+    {"packets_101_250", 101U, 250U},
+    {"packets_251_500", 251U, 500U},
+    {"packets_501_1000", 501U, 1000U},
+    {"packets_1001_5000", 1001U, 5000U},
+    {"packets_5001_plus", 5001U, std::nullopt},
+}};
 
 FlowProtocolHint protocol_hint(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->protocol_hint : connection.ipv6->protocol_hint;
+}
+
+const ConnectionAggregateStats& aggregate_stats(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4)
+        ? connection.ipv4->aggregate_stats
+        : connection.ipv6->aggregate_stats;
+}
+
+const std::string& service_hint(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->service_hint : connection.ipv6->service_hint;
+}
+
+std::uint64_t directional_packet_count(const ListedConnectionRef& connection, const Direction direction) noexcept {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return direction == Direction::a_to_b
+            ? connection.ipv4->flow_a.packet_count
+            : connection.ipv4->flow_b.packet_count;
+    }
+
+    return direction == Direction::a_to_b
+        ? connection.ipv6->flow_a.packet_count
+        : connection.ipv6->flow_b.packet_count;
+}
+
+std::uint64_t directional_original_byte_count(const ListedConnectionRef& connection, const Direction direction) noexcept {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return direction == Direction::a_to_b
+            ? connection.ipv4->flow_a.total_bytes
+            : connection.ipv4->flow_b.total_bytes;
+    }
+
+    return direction == Direction::a_to_b
+        ? connection.ipv6->flow_a.total_bytes
+        : connection.ipv6->flow_b.total_bytes;
+}
+
+void add_distribution_flow(
+    FlowDirectionDistributionStatistics& distribution,
+    const DirectionDistribution classification
+) noexcept {
+    switch (classification) {
+    case DirectionDistribution::mostly_a_to_b:
+        ++distribution.mostly_a_to_b_flow_count;
+        break;
+    case DirectionDistribution::balanced:
+        ++distribution.balanced_flow_count;
+        break;
+    case DirectionDistribution::mostly_b_to_a:
+        ++distribution.mostly_b_to_a_flow_count;
+        break;
+    }
+}
+
+void append_flow_packet_histogram_bucket_definitions(FlowPacketCountHistogram& histogram) {
+    histogram.buckets.reserve(kFlowPacketCountHistogramBucketDefinitions.size());
+    for (const auto& definition : kFlowPacketCountHistogramBucketDefinitions) {
+        histogram.buckets.push_back(FlowPacketCountHistogramBucket {
+            .stable_id = definition.stable_id,
+            .lower_bound_inclusive = definition.lower_bound_inclusive,
+            .upper_bound_inclusive = definition.upper_bound_inclusive,
+            .flow_count = 0U,
+            .captured_byte_count = 0U,
+            .original_byte_count = 0U,
+        });
+    }
+}
+
+void observe_protocol_hint(
+    CaptureGeneralProtocolStatistics& statistics,
+    const ListedConnectionRef& connection
+) noexcept {
+    switch (protocol_hint(connection)) {
+    case FlowProtocolHint::http:
+        add_protocol_stats(statistics.hint_http, connection);
+        break;
+    case FlowProtocolHint::tls:
+        add_protocol_stats(statistics.hint_tls, connection);
+        break;
+    case FlowProtocolHint::dns:
+        add_protocol_stats(statistics.hint_dns, connection);
+        break;
+    case FlowProtocolHint::quic:
+        add_protocol_stats(statistics.hint_quic, connection);
+        break;
+    case FlowProtocolHint::ssh:
+        add_protocol_stats(statistics.hint_ssh, connection);
+        break;
+    case FlowProtocolHint::stun:
+        add_protocol_stats(statistics.hint_stun, connection);
+        break;
+    case FlowProtocolHint::bittorrent:
+        add_protocol_stats(statistics.hint_bittorrent, connection);
+        break;
+    case FlowProtocolHint::dhcp:
+        add_protocol_stats(statistics.hint_dhcp, connection);
+        break;
+    case FlowProtocolHint::mdns:
+        add_protocol_stats(statistics.hint_mdns, connection);
+        break;
+    case FlowProtocolHint::smtp:
+        add_protocol_stats(statistics.hint_smtp, connection);
+        add_protocol_stats(statistics.hint_mail_protocols, connection);
+        break;
+    case FlowProtocolHint::pop3:
+        add_protocol_stats(statistics.hint_pop3, connection);
+        add_protocol_stats(statistics.hint_mail_protocols, connection);
+        break;
+    case FlowProtocolHint::imap:
+        add_protocol_stats(statistics.hint_imap, connection);
+        add_protocol_stats(statistics.hint_mail_protocols, connection);
+        break;
+    case FlowProtocolHint::possible_tls:
+        add_protocol_stats(statistics.hint_possible_tls_candidate, connection);
+        break;
+    case FlowProtocolHint::possible_quic:
+        add_protocol_stats(statistics.hint_possible_quic_candidate, connection);
+        break;
+    case FlowProtocolHint::igmp:
+    case FlowProtocolHint::igmpv1:
+    case FlowProtocolHint::igmpv2:
+    case FlowProtocolHint::igmpv3:
+    case FlowProtocolHint::unknown:
+    default:
+        if (has_port_443(connection)) {
+            switch (protocol_id(connection)) {
+            case ProtocolId::tcp:
+                add_protocol_stats(statistics.hint_possible_tls_candidate, connection);
+                return;
+            case ProtocolId::udp:
+                add_protocol_stats(statistics.hint_possible_quic_candidate, connection);
+                return;
+            default:
+                break;
+            }
+        }
+
+        add_protocol_stats(statistics.hint_unknown_without_possible, connection);
+        break;
+    }
+}
+
+void observe_histogram(
+    FlowPacketCountHistogram& histogram,
+    const ListedConnectionRef& connection
+) noexcept {
+    const auto packets_for_flow = packet_count(connection);
+    const auto captured_bytes_for_flow = captured_bytes(connection);
+    const auto original_bytes_for_flow = total_bytes(connection);
+
+    if (packets_for_flow == 0U) {
+        ++histogram.excluded_zero_packet_flow_count;
+        histogram.excluded_zero_packet_captured_byte_count += captured_bytes_for_flow;
+        histogram.excluded_zero_packet_original_byte_count += original_bytes_for_flow;
+        return;
+    }
+
+    const auto bucket_index = flow_packet_count_histogram_bucket_index(packets_for_flow);
+    auto& bucket = histogram.buckets[bucket_index];
+    ++bucket.flow_count;
+    bucket.captured_byte_count += captured_bytes_for_flow;
+    bucket.original_byte_count += original_bytes_for_flow;
+    ++histogram.total_flow_count;
+    histogram.total_captured_byte_count += captured_bytes_for_flow;
+    histogram.total_original_byte_count += original_bytes_for_flow;
+}
+
+void finalize_histogram(FlowPacketCountHistogram& histogram) noexcept {
+    for (const auto& bucket : histogram.buckets) {
+        histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
+        histogram.maximum_bucket_captured_byte_count = std::max(
+            histogram.maximum_bucket_captured_byte_count,
+            bucket.captured_byte_count
+        );
+        histogram.maximum_bucket_original_byte_count = std::max(
+            histogram.maximum_bucket_original_byte_count,
+            bucket.original_byte_count
+        );
+    }
+}
+
+CaptureTopSummary build_top_summary_from_maps(
+    std::map<std::string, TopEndpointRow>& endpoints,
+    std::map<std::uint16_t, TopPortRow>& ports,
+    const std::size_t limit
+) {
+    CaptureTopSummary summary {};
+    summary.endpoints_by_bytes.reserve(endpoints.size());
+    summary.ports_by_bytes.reserve(ports.size());
+
+    for (const auto& [_, row] : endpoints) {
+        summary.endpoints_by_bytes.push_back(row);
+    }
+
+    for (const auto& [_, row] : ports) {
+        summary.ports_by_bytes.push_back(row);
+    }
+
+    std::sort(summary.endpoints_by_bytes.begin(), summary.endpoints_by_bytes.end(), [](const TopEndpointRow& left, const TopEndpointRow& right) {
+        if (left.total_bytes != right.total_bytes) {
+            return left.total_bytes > right.total_bytes;
+        }
+        if (left.packet_count != right.packet_count) {
+            return left.packet_count > right.packet_count;
+        }
+        return left.endpoint < right.endpoint;
+    });
+
+    std::sort(summary.ports_by_bytes.begin(), summary.ports_by_bytes.end(), [](const TopPortRow& left, const TopPortRow& right) {
+        if (left.total_bytes != right.total_bytes) {
+            return left.total_bytes > right.total_bytes;
+        }
+        if (left.packet_count != right.packet_count) {
+            return left.packet_count > right.packet_count;
+        }
+        return left.port < right.port;
+    });
+
+    if (summary.endpoints_by_bytes.size() > limit) {
+        summary.endpoints_by_bytes.resize(limit);
+    }
+
+    if (summary.ports_by_bytes.size() > limit) {
+        summary.ports_by_bytes.resize(limit);
+    }
+
+    return summary;
+}
+
+void observe_top_summary_maps(
+    std::map<std::string, TopEndpointRow>& endpoints,
+    std::map<std::uint16_t, TopPortRow>& ports,
+    const ListedConnectionRef& connection
+) {
+    const auto connection_packets = packet_count(connection);
+    const auto connection_bytes = total_bytes(connection);
+
+    if (connection.family == FlowAddressFamily::ipv4) {
+        const auto& key = connection.ipv4->key;
+
+        for (const auto& endpoint_text : {format_endpoint(key.first), format_endpoint(key.second)}) {
+            auto& row = endpoints[endpoint_text];
+            row.endpoint = endpoint_text;
+            row.packet_count += connection_packets;
+            row.total_bytes += connection_bytes;
+        }
+
+        for (const auto port : {key.first.port, key.second.port}) {
+            if (port == 0U) {
+                continue;
+            }
+
+            auto& row = ports[port];
+            row.port = port;
+            row.packet_count += connection_packets;
+            row.total_bytes += connection_bytes;
+        }
+
+        return;
+    }
+
+    const auto& key = connection.ipv6->key;
+
+    for (const auto& endpoint_text : {format_endpoint(key.first), format_endpoint(key.second)}) {
+        auto& row = endpoints[endpoint_text];
+        row.endpoint = endpoint_text;
+        row.packet_count += connection_packets;
+        row.total_bytes += connection_bytes;
+    }
+
+    for (const auto port : {key.first.port, key.second.port}) {
+        if (port == 0U) {
+            continue;
+        }
+
+        auto& row = ports[port];
+        row.port = port;
+        row.packet_count += connection_packets;
+        row.total_bytes += connection_bytes;
+    }
 }
 
 bool has_port_443(const ListedConnectionRef& connection) noexcept {
@@ -131,27 +427,6 @@ struct PrefixStepKeyHash {
         return seed;
     }
 };
-
-struct FlowPacketCountHistogramBucketDefinition {
-    const char* stable_id;
-    std::uint64_t lower_bound_inclusive;
-    std::optional<std::uint64_t> upper_bound_inclusive;
-};
-
-const std::array<FlowPacketCountHistogramBucketDefinition, 12> kFlowPacketCountHistogramBucketDefinitions {{
-    {"packets_1", 1U, 1U},
-    {"packets_2", 2U, 2U},
-    {"packets_3_5", 3U, 5U},
-    {"packets_6_10", 6U, 10U},
-    {"packets_11_25", 11U, 25U},
-    {"packets_26_50", 26U, 50U},
-    {"packets_51_100", 51U, 100U},
-    {"packets_101_250", 101U, 250U},
-    {"packets_251_500", 251U, 500U},
-    {"packets_501_1000", 501U, 1000U},
-    {"packets_1001_5000", 1001U, 5000U},
-    {"packets_5001_plus", 5001U, std::nullopt},
-}};
 
 char ascii_lower(const char value) noexcept {
     if (value >= 'A' && value <= 'Z') {
@@ -610,11 +885,7 @@ std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
 }
 
 std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept {
-    if (connection.family == FlowAddressFamily::ipv4) {
-        return sum_captured_bytes(connection.ipv4->flow_a) + sum_captured_bytes(connection.ipv4->flow_b);
-    }
-
-    return sum_captured_bytes(connection.ipv6->flow_a) + sum_captured_bytes(connection.ipv6->flow_b);
+    return aggregate_stats(connection).captured_bytes;
 }
 
 std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
@@ -904,43 +1175,173 @@ FlowQueryResult query_flow_indices(
 }
 
 FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections) {
-    FlowPacketCountHistogram histogram {};
-    histogram.buckets.reserve(kFlowPacketCountHistogramBucketDefinitions.size());
-    for (const auto& definition : kFlowPacketCountHistogramBucketDefinitions) {
-        histogram.buckets.push_back(FlowPacketCountHistogramBucket {
-            .stable_id = definition.stable_id,
-            .lower_bound_inclusive = definition.lower_bound_inclusive,
-            .upper_bound_inclusive = definition.upper_bound_inclusive,
-            .flow_count = 0U,
-            .original_byte_count = 0U,
-        });
-    }
+    return build_capture_general_statistics(
+        std::span<const ListedConnectionRef>(connections.data(), connections.size()),
+        0U
+    ).flow_packet_count_histogram;
+}
+
+CaptureGeneralStatistics build_capture_general_statistics(
+    const std::span<const ListedConnectionRef> connections,
+    const std::size_t top_summary_capacity
+) {
+    CaptureGeneralStatistics statistics {};
+    append_flow_packet_histogram_bucket_definitions(statistics.flow_packet_count_histogram);
+
+    std::map<std::string, TopEndpointRow> top_endpoint_rows {};
+    std::map<std::uint16_t, TopPortRow> top_port_rows {};
 
     for (const auto& connection : connections) {
-        const auto packets_for_flow = packet_count(connection);
-        const auto original_bytes_for_flow = total_bytes(connection);
-        if (packets_for_flow == 0U) {
-            ++histogram.excluded_zero_packet_flow_count;
-            histogram.excluded_zero_packet_original_byte_count += original_bytes_for_flow;
-            continue;
+        if (connection.family == FlowAddressFamily::ipv4) {
+            add_protocol_stats(statistics.protocol.ipv4, connection);
+        } else {
+            add_protocol_stats(statistics.protocol.ipv6, connection);
         }
 
-        const auto bucket_index = flow_packet_count_histogram_bucket_index(packets_for_flow);
-        ++histogram.buckets[bucket_index].flow_count;
-        histogram.buckets[bucket_index].original_byte_count += original_bytes_for_flow;
-        ++histogram.total_flow_count;
-        histogram.total_original_byte_count += original_bytes_for_flow;
+        switch (protocol_id(connection)) {
+        case ProtocolId::tcp:
+            add_protocol_stats(statistics.protocol.tcp, connection);
+            break;
+        case ProtocolId::udp:
+            add_protocol_stats(statistics.protocol.udp, connection);
+            break;
+        case ProtocolId::sctp:
+            add_protocol_stats(statistics.protocol.sctp, connection);
+            break;
+        default:
+            add_protocol_stats(statistics.protocol.other, connection);
+            break;
+        }
+
+        observe_protocol_hint(statistics.protocol, connection);
+        observe_histogram(statistics.flow_packet_count_histogram, connection);
+
+        ++statistics.flow_characteristics.total_flow_count;
+        if (directional_packet_count(connection, Direction::a_to_b) > 0U &&
+            directional_packet_count(connection, Direction::b_to_a) == 0U) {
+            ++statistics.flow_characteristics.only_a_to_b_flow_count;
+        }
+        if (!service_hint(connection).empty()) {
+            ++statistics.flow_characteristics.service_recognized_flow_count;
+        }
+
+        add_distribution_flow(
+            statistics.packet_direction_distribution,
+            classify_direction_distribution(
+                directional_packet_count(connection, Direction::a_to_b),
+                directional_packet_count(connection, Direction::b_to_a)
+            )
+        );
+        add_distribution_flow(
+            statistics.original_byte_direction_distribution,
+            classify_direction_distribution(
+                directional_original_byte_count(connection, Direction::a_to_b),
+                directional_original_byte_count(connection, Direction::b_to_a)
+            )
+        );
+
+        switch (protocol_hint(connection)) {
+        case FlowProtocolHint::quic:
+            ++statistics.quic_tls_summary.quic.total_flows;
+            if (service_hint(connection).empty()) {
+                ++statistics.quic_tls_summary.quic.without_sni;
+            } else {
+                ++statistics.quic_tls_summary.quic.with_sni;
+            }
+
+            switch (connection.family == FlowAddressFamily::ipv4
+                    ? connection.ipv4->quic_version
+                    : connection.ipv6->quic_version) {
+            case QuicVersionHint::v1:
+                ++statistics.quic_tls_summary.quic.version_v1;
+                break;
+            case QuicVersionHint::draft29:
+                ++statistics.quic_tls_summary.quic.version_draft29;
+                break;
+            case QuicVersionHint::v2:
+                ++statistics.quic_tls_summary.quic.version_v2;
+                break;
+            case QuicVersionHint::unknown:
+            default:
+                ++statistics.quic_tls_summary.quic.version_unknown;
+                break;
+            }
+            break;
+        case FlowProtocolHint::tls:
+            ++statistics.quic_tls_summary.tls.total_flows;
+            if (service_hint(connection).empty()) {
+                ++statistics.quic_tls_summary.tls.without_sni;
+            } else {
+                ++statistics.quic_tls_summary.tls.with_sni;
+            }
+
+            switch (connection.family == FlowAddressFamily::ipv4
+                    ? connection.ipv4->tls_version
+                    : connection.ipv6->tls_version) {
+            case TlsVersionHint::tls12:
+                ++statistics.quic_tls_summary.tls.version_tls12;
+                break;
+            case TlsVersionHint::tls13:
+                ++statistics.quic_tls_summary.tls.version_tls13;
+                break;
+            case TlsVersionHint::unknown:
+            default:
+                ++statistics.quic_tls_summary.tls.version_unknown;
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+
+        if (top_summary_capacity > 0U) {
+            observe_top_summary_maps(top_endpoint_rows, top_port_rows, connection);
+        }
     }
 
-    for (const auto& bucket : histogram.buckets) {
-        histogram.maximum_bucket_flow_count = std::max(histogram.maximum_bucket_flow_count, bucket.flow_count);
-        histogram.maximum_bucket_original_byte_count = std::max(
-            histogram.maximum_bucket_original_byte_count,
-            bucket.original_byte_count
+    finalize_histogram(statistics.flow_packet_count_histogram);
+    if (top_summary_capacity > 0U) {
+        statistics.top_summary = build_top_summary_from_maps(
+            top_endpoint_rows,
+            top_port_rows,
+            top_summary_capacity
         );
     }
 
-    return histogram;
+#ifndef NDEBUG
+    const auto packet_distribution_sum =
+        statistics.packet_direction_distribution.mostly_a_to_b_flow_count +
+        statistics.packet_direction_distribution.balanced_flow_count +
+        statistics.packet_direction_distribution.mostly_b_to_a_flow_count;
+    assert(packet_distribution_sum == statistics.flow_characteristics.total_flow_count);
+
+    const auto original_byte_distribution_sum =
+        statistics.original_byte_direction_distribution.mostly_a_to_b_flow_count +
+        statistics.original_byte_direction_distribution.balanced_flow_count +
+        statistics.original_byte_direction_distribution.mostly_b_to_a_flow_count;
+    assert(original_byte_distribution_sum == statistics.flow_characteristics.total_flow_count);
+
+    const auto quic_sni_sum =
+        statistics.quic_tls_summary.quic.with_sni + statistics.quic_tls_summary.quic.without_sni;
+    const auto quic_version_sum =
+        statistics.quic_tls_summary.quic.version_v1 +
+        statistics.quic_tls_summary.quic.version_draft29 +
+        statistics.quic_tls_summary.quic.version_v2 +
+        statistics.quic_tls_summary.quic.version_unknown;
+    assert(quic_sni_sum == statistics.quic_tls_summary.quic.total_flows);
+    assert(quic_version_sum == statistics.quic_tls_summary.quic.total_flows);
+
+    const auto tls_sni_sum =
+        statistics.quic_tls_summary.tls.with_sni + statistics.quic_tls_summary.tls.without_sni;
+    const auto tls_version_sum =
+        statistics.quic_tls_summary.tls.version_tls12 +
+        statistics.quic_tls_summary.tls.version_tls13 +
+        statistics.quic_tls_summary.tls.version_unknown;
+    assert(tls_sni_sum == statistics.quic_tls_summary.tls.total_flows);
+    assert(tls_version_sum == statistics.quic_tls_summary.tls.total_flows);
+#endif
+
+    return statistics;
 }
 
 CaptureProtocolPathSummary build_protocol_path_summary(
