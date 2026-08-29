@@ -2833,6 +2833,16 @@ select:disabled {
   min-height: 0;
 }
 
+.statistics-warning-note {
+  padding: 8px 10px;
+  border: 1px solid #f0d39d;
+  border-left: 4px solid #e0a138;
+  border-radius: 10px;
+  background: #fff9ef;
+  color: #704e14;
+  font-size: 12px;
+}
+
 .statistics-disclosure {
   border: 1px solid #d8e2ee;
   border-radius: 10px;
@@ -3042,6 +3052,21 @@ select:disabled {
   gap: 8px;
 }
 
+.statistics-direction-distributions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 8px;
+}
+
+.statistics-direction-section {
+  margin: 0;
+}
+
+.compact-help-text {
+  margin: 2px 0 0;
+  line-height: 1.35;
+}
+
 .statistics-histogram-rows {
   display: flex;
   flex-direction: column;
@@ -3091,8 +3116,18 @@ select:disabled {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 
+.statistics-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
 .compact-stats-table {
   min-width: 560px;
+}
+
+.statistics-direction-table {
+  min-width: 420px;
 }
 
 .protocol-path-stats-viewport {
@@ -3134,6 +3169,12 @@ select:disabled {
 .metric-value {
   font-size: 16px;
   font-weight: 600;
+}
+
+.statistics-metric-value-compact {
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .packet-details-tab-panel {

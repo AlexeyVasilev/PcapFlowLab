@@ -420,6 +420,66 @@ pub struct WholeCaptureTotalsDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureTimeStatisticsDto {
+    pub available: bool,
+    pub capture_start_timestamp_us: Option<u64>,
+    pub capture_start_text: String,
+    pub capture_end_timestamp_us: Option<u64>,
+    pub capture_end_text: String,
+    pub duration_us: Option<u64>,
+    pub duration_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureMetricsDto {
+    pub average_captured_packet_size: Option<f64>,
+    pub average_captured_packet_size_text: String,
+    pub average_original_packet_size: Option<f64>,
+    pub average_original_packet_size_text: String,
+    pub average_packet_rate: Option<f64>,
+    pub average_packet_rate_text: String,
+    pub average_captured_data_rate: Option<f64>,
+    pub average_captured_data_rate_text: String,
+    pub average_original_data_rate: Option<f64>,
+    pub average_original_data_rate_text: String,
+    pub truncated_packet_count: u64,
+    pub truncated_packet_fraction: f64,
+    pub truncated_packets_text: String,
+    pub not_captured_bytes: u64,
+    pub not_captured_bytes_text: String,
+    pub capture_completeness: Option<f64>,
+    pub capture_completeness_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowCharacteristicsDto {
+    pub total_flow_count: u64,
+    pub only_a_to_b_flow_count: u64,
+    pub only_a_to_b_flow_fraction: f64,
+    pub only_a_to_b_flows_text: String,
+    pub service_recognized_flow_count: u64,
+    pub service_recognized_flow_fraction: f64,
+    pub service_recognized_flows_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectionDistributionRowDto {
+    pub stable_id: String,
+    pub label: String,
+    pub flow_count: u64,
+    pub flow_fraction: f64,
+    pub flow_count_text: String,
+    pub percent_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectionDistributionDto {
+    pub total_flow_count: u64,
+    pub help_text: String,
+    pub rows: Vec<DirectionDistributionRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewProtocolSummaryDto {
     pub tcp: ProtocolStatsDto,
     pub udp: ProtocolStatsDto,
@@ -433,7 +493,9 @@ pub struct OverviewProtocolSummaryDto {
 pub struct UnrecognizedPacketStatisticsDto {
     pub packet_count: u64,
     pub captured_bytes: u64,
+    pub captured_bytes_text: String,
     pub original_bytes: u64,
+    pub original_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -611,6 +673,12 @@ pub struct OverviewDto {
     pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
     pub whole_capture_totals: WholeCaptureTotalsDto,
+    pub capture_time: CaptureTimeStatisticsDto,
+    pub capture_metrics: CaptureMetricsDto,
+    pub flow_characteristics: FlowCharacteristicsDto,
+    pub packet_direction_distribution: DirectionDistributionDto,
+    pub original_byte_direction_distribution: DirectionDistributionDto,
+    pub statistics_partial_open_warning_text: String,
     pub protocol_summary: OverviewProtocolSummaryDto,
     pub protocol_path_statistics_default_mode: u8,
     pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,

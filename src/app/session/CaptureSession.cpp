@@ -2996,6 +2996,30 @@ FlowPacketCountHistogram CaptureSession::flow_packet_count_histogram() const {
     return general_statistics().flow_packet_count_histogram;
 }
 
+CaptureFlowCharacteristicsStatistics CaptureSession::flow_characteristics_statistics() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    return general_statistics().flow_characteristics;
+}
+
+FlowDirectionDistributionStatistics CaptureSession::packet_direction_distribution_statistics() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    return general_statistics().packet_direction_distribution;
+}
+
+FlowDirectionDistributionStatistics CaptureSession::original_byte_direction_distribution_statistics() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    return general_statistics().original_byte_direction_distribution;
+}
+
 CaptureProtocolPathSummary CaptureSession::protocol_path_summary(const ProtocolPathStatisticsMode mode) const {
     const auto cache_index = static_cast<std::size_t>(mode);
     if (cache_index < protocol_path_summary_cache_.size() && protocol_path_summary_cache_[cache_index].has_value()) {

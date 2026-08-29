@@ -1,5 +1,6 @@
 ﻿#include "ui/app/MainController.h"
 
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/AdvancedFlowFilterFormat.h"
 #include "app/session/ByteExport.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -1793,6 +1794,93 @@ QVariantList packet_summary_layers_to_variant_list(const std::vector<session_det
     return result;
 }
 
+QString qstring_from_utf8(const std::string& text) {
+    return QString::fromStdString(text);
+}
+
+QVariant optional_u64_variant(const std::optional<std::uint64_t>& value) {
+    return value.has_value() ? QVariant::fromValue<qulonglong>(*value) : QVariant {};
+}
+
+QVariant optional_double_variant(const std::optional<double>& value) {
+    return value.has_value() ? QVariant::fromValue(*value) : QVariant {};
+}
+
+QVariantList direction_distribution_rows_to_variant_list(
+    const std::vector<FrontendDirectionDistributionRowDto>& rows
+) {
+    QVariantList list {};
+    list.reserve(static_cast<qsizetype>(rows.size()));
+    for (const auto& row : rows) {
+        QVariantMap map {};
+        map.insert(QStringLiteral("stableId"), qstring_from_utf8(row.stable_id));
+        map.insert(QStringLiteral("label"), qstring_from_utf8(row.label));
+        map.insert(QStringLiteral("flowCount"), QVariant::fromValue<qulonglong>(row.flow_count));
+        map.insert(QStringLiteral("flowFraction"), row.flow_fraction);
+        map.insert(QStringLiteral("flowCountText"), qstring_from_utf8(row.flow_count_text));
+        map.insert(QStringLiteral("percentText"), qstring_from_utf8(row.percent_text));
+        list.push_back(map);
+    }
+    return list;
+}
+
+QVariantMap capture_time_statistics_to_variant_map(const FrontendCaptureTimeStatisticsDto& statistics) {
+    QVariantMap map {};
+    map.insert(QStringLiteral("available"), statistics.available);
+    map.insert(QStringLiteral("captureStartTimestampUs"), optional_u64_variant(statistics.capture_start_timestamp_us));
+    map.insert(QStringLiteral("captureStartText"), qstring_from_utf8(statistics.capture_start_text));
+    map.insert(QStringLiteral("captureEndTimestampUs"), optional_u64_variant(statistics.capture_end_timestamp_us));
+    map.insert(QStringLiteral("captureEndText"), qstring_from_utf8(statistics.capture_end_text));
+    map.insert(QStringLiteral("durationUs"), optional_u64_variant(statistics.duration_us));
+    map.insert(QStringLiteral("durationText"), qstring_from_utf8(statistics.duration_text));
+    return map;
+}
+
+QVariantMap capture_metrics_to_variant_map(const FrontendCaptureMetricsDto& metrics) {
+    QVariantMap map {};
+    map.insert(QStringLiteral("averageCapturedPacketSize"), optional_double_variant(metrics.average_captured_packet_size));
+    map.insert(QStringLiteral("averageCapturedPacketSizeText"), qstring_from_utf8(metrics.average_captured_packet_size_text));
+    map.insert(QStringLiteral("averageOriginalPacketSize"), optional_double_variant(metrics.average_original_packet_size));
+    map.insert(QStringLiteral("averageOriginalPacketSizeText"), qstring_from_utf8(metrics.average_original_packet_size_text));
+    map.insert(QStringLiteral("averagePacketRate"), optional_double_variant(metrics.average_packet_rate));
+    map.insert(QStringLiteral("averagePacketRateText"), qstring_from_utf8(metrics.average_packet_rate_text));
+    map.insert(QStringLiteral("averageCapturedDataRate"), optional_double_variant(metrics.average_captured_data_rate));
+    map.insert(QStringLiteral("averageCapturedDataRateText"), qstring_from_utf8(metrics.average_captured_data_rate_text));
+    map.insert(QStringLiteral("averageOriginalDataRate"), optional_double_variant(metrics.average_original_data_rate));
+    map.insert(QStringLiteral("averageOriginalDataRateText"), qstring_from_utf8(metrics.average_original_data_rate_text));
+    map.insert(QStringLiteral("truncatedPacketCount"), QVariant::fromValue<qulonglong>(metrics.truncated_packet_count));
+    map.insert(QStringLiteral("truncatedPacketFraction"), metrics.truncated_packet_fraction);
+    map.insert(QStringLiteral("truncatedPacketsText"), qstring_from_utf8(metrics.truncated_packets_text));
+    map.insert(QStringLiteral("notCapturedBytes"), QVariant::fromValue<qulonglong>(metrics.not_captured_bytes));
+    map.insert(QStringLiteral("notCapturedBytesText"), qstring_from_utf8(metrics.not_captured_bytes_text));
+    map.insert(QStringLiteral("captureCompleteness"), optional_double_variant(metrics.capture_completeness));
+    map.insert(QStringLiteral("captureCompletenessText"), qstring_from_utf8(metrics.capture_completeness_text));
+    return map;
+}
+
+QVariantMap flow_characteristics_to_variant_map(const FrontendFlowCharacteristicsDto& statistics) {
+    QVariantMap map {};
+    map.insert(QStringLiteral("totalFlowCount"), QVariant::fromValue<qulonglong>(statistics.total_flow_count));
+    map.insert(QStringLiteral("onlyAToBFlowCount"), QVariant::fromValue<qulonglong>(statistics.only_a_to_b_flow_count));
+    map.insert(QStringLiteral("onlyAToBFlowFraction"), statistics.only_a_to_b_flow_fraction);
+    map.insert(QStringLiteral("onlyAToBFlowsText"), qstring_from_utf8(statistics.only_a_to_b_flows_text));
+    map.insert(
+        QStringLiteral("serviceRecognizedFlowCount"),
+        QVariant::fromValue<qulonglong>(statistics.service_recognized_flow_count)
+    );
+    map.insert(QStringLiteral("serviceRecognizedFlowFraction"), statistics.service_recognized_flow_fraction);
+    map.insert(QStringLiteral("serviceRecognizedFlowsText"), qstring_from_utf8(statistics.service_recognized_flows_text));
+    return map;
+}
+
+QVariantMap direction_distribution_to_variant_map(const FrontendDirectionDistributionDto& distribution) {
+    QVariantMap map {};
+    map.insert(QStringLiteral("totalFlowCount"), QVariant::fromValue<qulonglong>(distribution.total_flow_count));
+    map.insert(QStringLiteral("helpText"), qstring_from_utf8(distribution.help_text));
+    map.insert(QStringLiteral("rows"), direction_distribution_rows_to_variant_list(distribution.rows));
+    return map;
+}
+
 QString format_duration_us(const std::uint64_t duration_us) {
     if (duration_us == 0U) {
         return QStringLiteral("0 us");
@@ -3173,6 +3261,30 @@ QString MainController::originalBytesText() const {
 
 qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
+}
+
+QVariantMap MainController::captureTimeStatistics() const {
+    return capture_time_statistics_;
+}
+
+QVariantMap MainController::captureMetrics() const {
+    return capture_metrics_;
+}
+
+QVariantMap MainController::flowCharacteristics() const {
+    return flow_characteristics_;
+}
+
+QVariantMap MainController::packetDirectionDistribution() const {
+    return packet_direction_distribution_;
+}
+
+QVariantMap MainController::dataDirectionDistribution() const {
+    return data_direction_distribution_;
+}
+
+QString MainController::statisticsPartialOpenWarningText() const {
+    return statistics_partial_open_warning_text_;
 }
 
 int MainController::statisticsSectionsResetToken() const noexcept {
@@ -6894,6 +7006,12 @@ void MainController::resetLoadedState() {
     whole_capture_packet_count_ = 0U;
     whole_capture_captured_bytes_ = 0U;
     whole_capture_original_bytes_ = 0U;
+    capture_time_statistics_.clear();
+    capture_metrics_.clear();
+    flow_characteristics_.clear();
+    packet_direction_distribution_.clear();
+    data_direction_distribution_.clear();
+    statistics_partial_open_warning_text_.clear();
     resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
     flow_model_.clear();
@@ -6943,6 +7061,7 @@ void MainController::applyLoadedState(const QString& path) {
     whole_capture_packet_count_ = whole_capture_packet_statistics.total_packet_count;
     whole_capture_captured_bytes_ = whole_capture_packet_statistics.total_captured_bytes;
     whole_capture_original_bytes_ = whole_capture_packet_statistics.total_original_bytes;
+    refreshStatisticsOverviewPresentation();
     resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
     // Clear any selected-flow state from the previous capture before publishing
@@ -6974,6 +7093,48 @@ void MainController::refreshTopSummaryModels() {
     const auto top = session_.top_summary(kTopSummaryLimit);
     top_endpoints_model_.refreshEndpoints(top.endpoints_by_bytes);
     top_ports_model_.refreshPorts(top.ports_by_bytes);
+}
+
+void MainController::refreshStatisticsOverviewPresentation() {
+    if (!session_.has_capture()) {
+        capture_time_statistics_.clear();
+        capture_metrics_.clear();
+        flow_characteristics_.clear();
+        packet_direction_distribution_.clear();
+        data_direction_distribution_.clear();
+        statistics_partial_open_warning_text_.clear();
+        return;
+    }
+
+    const auto& packet_statistics = session_.packet_statistics();
+    const auto flow_characteristics_statistics = session_.flow_characteristics_statistics();
+    const auto packet_direction_distribution_statistics = session_.packet_direction_distribution_statistics();
+    const auto original_byte_direction_distribution_statistics =
+        session_.original_byte_direction_distribution_statistics();
+    capture_time_statistics_ = capture_time_statistics_to_variant_map(
+        build_frontend_capture_time_statistics(packet_statistics)
+    );
+    capture_metrics_ = capture_metrics_to_variant_map(
+        build_frontend_capture_metrics(packet_statistics)
+    );
+    flow_characteristics_ = flow_characteristics_to_variant_map(
+        build_frontend_flow_characteristics(flow_characteristics_statistics)
+    );
+    packet_direction_distribution_ = direction_distribution_to_variant_map(
+        build_frontend_packet_direction_distribution(
+            flow_characteristics_statistics,
+            packet_direction_distribution_statistics
+        )
+    );
+    data_direction_distribution_ = direction_distribution_to_variant_map(
+        build_frontend_original_byte_direction_distribution(
+            flow_characteristics_statistics,
+            original_byte_direction_distribution_statistics
+        )
+    );
+    statistics_partial_open_warning_text_ = QString::fromStdString(
+        build_frontend_statistics_partial_open_warning_text(session_.is_partial_open())
+    );
 }
 
 bool MainController::openPath(const QString& path, const bool asIndex) {

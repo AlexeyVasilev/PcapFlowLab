@@ -12,6 +12,7 @@
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/frontend/FrontendSessionAdapterBridge.h"
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CapturePacketSizeStatistics.h"
@@ -413,6 +414,17 @@ std::string take_bridge_string(char* value) {
 
 bool contains_text(const std::string& text, const std::string_view fragment) {
     return text.find(fragment) != std::string::npos;
+}
+
+std::string unavailable_text() {
+    return std::string("\xE2\x80\x94");
+}
+
+void expect_not_nan_or_inf_text(const std::string& text) {
+    PFL_EXPECT(!contains_text(text, "NaN"));
+    PFL_EXPECT(!contains_text(text, "nan"));
+    PFL_EXPECT(!contains_text(text, "Inf"));
+    PFL_EXPECT(!contains_text(text, "inf"));
 }
 
 void expect_shared_statistics_formatting_helpers() {
@@ -1384,6 +1396,8 @@ void expect_overview_excludes_optional_statistics_sections() {
 
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
 
     const auto overview = adapter.get_overview();
     const auto hint_statistics = adapter.get_protocol_hint_statistics();
@@ -1391,6 +1405,20 @@ void expect_overview_excludes_optional_statistics_sections() {
     const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
     const auto packet_size_statistics = adapter.get_capture_packet_size_statistics();
     const auto histogram = adapter.get_flow_packet_count_histogram();
+    const auto expected_capture_time = build_frontend_capture_time_statistics(session.packet_statistics());
+    const auto expected_capture_metrics = build_frontend_capture_metrics(session.packet_statistics());
+    const auto expected_flow_characteristics =
+        build_frontend_flow_characteristics(session.flow_characteristics_statistics());
+    const auto expected_packet_direction_distribution =
+        build_frontend_packet_direction_distribution(
+            session.flow_characteristics_statistics(),
+            session.packet_direction_distribution_statistics()
+        );
+    const auto expected_original_byte_direction_distribution =
+        build_frontend_original_byte_direction_distribution(
+            session.flow_characteristics_statistics(),
+            session.original_byte_direction_distribution_statistics()
+        );
 
     PFL_EXPECT(overview.has_capture);
     PFL_EXPECT(overview.summary.flow_count == 3U);
@@ -1418,6 +1446,60 @@ void expect_overview_excludes_optional_statistics_sections() {
         == session_detail::format_statistics_compact_size_value(overview.protocol_summary.tcp.captured_bytes));
     PFL_EXPECT(overview.protocol_summary.udp.original_bytes_text
         == session_detail::format_statistics_compact_size_value(overview.protocol_summary.udp.original_bytes));
+    PFL_EXPECT(overview.capture_time.available);
+    PFL_EXPECT(overview.capture_time.capture_start_text == expected_capture_time.capture_start_text);
+    PFL_EXPECT(overview.capture_time.capture_end_text == expected_capture_time.capture_end_text);
+    PFL_EXPECT(overview.capture_time.duration_text == expected_capture_time.duration_text);
+    PFL_EXPECT(overview.capture_metrics.average_captured_packet_size_text
+        == expected_capture_metrics.average_captured_packet_size_text);
+    PFL_EXPECT(overview.capture_metrics.average_original_packet_size_text
+        == expected_capture_metrics.average_original_packet_size_text);
+    PFL_EXPECT(overview.capture_metrics.average_packet_rate_text
+        == expected_capture_metrics.average_packet_rate_text);
+    PFL_EXPECT(overview.capture_metrics.average_captured_data_rate_text
+        == expected_capture_metrics.average_captured_data_rate_text);
+    PFL_EXPECT(overview.capture_metrics.average_original_data_rate_text
+        == expected_capture_metrics.average_original_data_rate_text);
+    PFL_EXPECT(overview.capture_metrics.truncated_packets_text
+        == expected_capture_metrics.truncated_packets_text);
+    PFL_EXPECT(overview.capture_metrics.not_captured_bytes_text
+        == expected_capture_metrics.not_captured_bytes_text);
+    PFL_EXPECT(overview.capture_metrics.capture_completeness_text
+        == expected_capture_metrics.capture_completeness_text);
+    PFL_EXPECT(overview.flow_characteristics.total_flow_count == 3U);
+    PFL_EXPECT(overview.flow_characteristics.only_a_to_b_flows_text
+        == expected_flow_characteristics.only_a_to_b_flows_text);
+    PFL_EXPECT(overview.flow_characteristics.service_recognized_flows_text
+        == expected_flow_characteristics.service_recognized_flows_text);
+    PFL_EXPECT(overview.packet_direction_distribution.rows.size() == 3U);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[0].label
+        == expected_packet_direction_distribution.rows[0].label);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[0].flow_count_text
+        == expected_packet_direction_distribution.rows[0].flow_count_text);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[0].percent_text
+        == expected_packet_direction_distribution.rows[0].percent_text);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[1].label
+        == expected_packet_direction_distribution.rows[1].label);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[1].flow_count_text
+        == expected_packet_direction_distribution.rows[1].flow_count_text);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[1].percent_text
+        == expected_packet_direction_distribution.rows[1].percent_text);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[2].label
+        == expected_packet_direction_distribution.rows[2].label);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[2].flow_count_text
+        == expected_packet_direction_distribution.rows[2].flow_count_text);
+    PFL_EXPECT(overview.packet_direction_distribution.rows[2].percent_text
+        == expected_packet_direction_distribution.rows[2].percent_text);
+    PFL_EXPECT(overview.original_byte_direction_distribution.help_text
+        == expected_original_byte_direction_distribution.help_text);
+    PFL_EXPECT(overview.original_byte_direction_distribution.rows.size() == 3U);
+    PFL_EXPECT(overview.original_byte_direction_distribution.rows[0].percent_text
+        == expected_original_byte_direction_distribution.rows[0].percent_text);
+    PFL_EXPECT(overview.original_byte_direction_distribution.rows[1].percent_text
+        == expected_original_byte_direction_distribution.rows[1].percent_text);
+    PFL_EXPECT(overview.original_byte_direction_distribution.rows[2].percent_text
+        == expected_original_byte_direction_distribution.rows[2].percent_text);
+    PFL_EXPECT(overview.statistics_partial_open_warning_text.empty());
 
     PFL_EXPECT(hint_statistics.has_capture);
     PFL_EXPECT(hint_statistics.protocol_hints.size() == 13U);
@@ -1479,6 +1561,194 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_original_byte_fraction > 0.0);
 }
 
+void expect_frontend_statistics_overview_helpers_cover_availability_and_direction_distributions() {
+    const auto empty_time = build_frontend_capture_time_statistics(CapturePacketStatistics {});
+    const auto empty_metrics = build_frontend_capture_metrics(CapturePacketStatistics {});
+    const auto empty_characteristics = build_frontend_flow_characteristics(CaptureFlowCharacteristicsStatistics {});
+    const auto empty_packet_distribution = build_frontend_packet_direction_distribution(
+        CaptureFlowCharacteristicsStatistics {},
+        FlowDirectionDistributionStatistics {}
+    );
+    const auto empty_original_distribution = build_frontend_original_byte_direction_distribution(
+        CaptureFlowCharacteristicsStatistics {},
+        FlowDirectionDistributionStatistics {}
+    );
+    const auto unavailable = unavailable_text();
+
+    PFL_EXPECT(!empty_time.available);
+    PFL_EXPECT(empty_time.capture_start_text == unavailable);
+    PFL_EXPECT(empty_time.capture_end_text == unavailable);
+    PFL_EXPECT(empty_time.duration_text == unavailable);
+    PFL_EXPECT(empty_metrics.average_captured_packet_size_text == unavailable);
+    PFL_EXPECT(empty_metrics.average_original_packet_size_text == unavailable);
+    PFL_EXPECT(empty_metrics.average_packet_rate_text == unavailable);
+    PFL_EXPECT(empty_metrics.average_captured_data_rate_text == unavailable);
+    PFL_EXPECT(empty_metrics.average_original_data_rate_text == unavailable);
+    PFL_EXPECT(empty_metrics.truncated_packets_text == "0 (0%)");
+    PFL_EXPECT(empty_metrics.not_captured_bytes_text == "0 B");
+    PFL_EXPECT(empty_metrics.capture_completeness_text == unavailable);
+    PFL_EXPECT(empty_characteristics.only_a_to_b_flows_text == "0 (0%)");
+    PFL_EXPECT(empty_characteristics.service_recognized_flows_text == "0 (0%)");
+    PFL_EXPECT(empty_packet_distribution.rows.size() == 3U);
+    PFL_EXPECT(empty_original_distribution.rows.size() == 3U);
+    expect_not_nan_or_inf_text(empty_metrics.average_captured_packet_size_text);
+    expect_not_nan_or_inf_text(empty_metrics.average_original_packet_size_text);
+    expect_not_nan_or_inf_text(empty_metrics.average_packet_rate_text);
+    expect_not_nan_or_inf_text(empty_metrics.average_captured_data_rate_text);
+    expect_not_nan_or_inf_text(empty_metrics.average_original_data_rate_text);
+    expect_not_nan_or_inf_text(empty_metrics.capture_completeness_text);
+
+    CapturePacketStatistics single_packet_statistics {};
+    single_packet_statistics.total_packet_count = 1U;
+    single_packet_statistics.total_captured_bytes = 60U;
+    single_packet_statistics.total_original_bytes = 100U;
+    single_packet_statistics.timestamp_range = CapturePacketTimestampRange {
+        .available = true,
+        .earliest_timestamp_us = 0U,
+        .latest_timestamp_us = 0U,
+    };
+    single_packet_statistics.truncated_packet_count = 1U;
+
+    const auto single_time = build_frontend_capture_time_statistics(single_packet_statistics);
+    const auto single_metrics = build_frontend_capture_metrics(single_packet_statistics);
+    PFL_EXPECT(single_time.available);
+    PFL_EXPECT(single_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
+    PFL_EXPECT(single_time.capture_end_text == "1970-01-01 00:00:00.000 UTC");
+    PFL_EXPECT(single_time.duration_text == "00:00:00.000");
+    PFL_EXPECT(single_metrics.average_captured_packet_size_text == "60 B");
+    PFL_EXPECT(single_metrics.average_original_packet_size_text == "100 B");
+    PFL_EXPECT(single_metrics.average_packet_rate_text == unavailable);
+    PFL_EXPECT(single_metrics.average_captured_data_rate_text == unavailable);
+    PFL_EXPECT(single_metrics.average_original_data_rate_text == unavailable);
+    PFL_EXPECT(single_metrics.truncated_packets_text == "1 (100%)");
+    PFL_EXPECT(single_metrics.not_captured_bytes_text == "40 B");
+    PFL_EXPECT(single_metrics.capture_completeness_text == "60%");
+    expect_not_nan_or_inf_text(single_metrics.average_packet_rate_text);
+    expect_not_nan_or_inf_text(single_metrics.average_captured_data_rate_text);
+    expect_not_nan_or_inf_text(single_metrics.average_original_data_rate_text);
+
+    CapturePacketStatistics multi_packet_statistics {};
+    multi_packet_statistics.total_packet_count = 4U;
+    multi_packet_statistics.total_captured_bytes = 2048U;
+    multi_packet_statistics.total_original_bytes = 4096U;
+    multi_packet_statistics.timestamp_range = CapturePacketTimestampRange {
+        .available = true,
+        .earliest_timestamp_us = 0U,
+        .latest_timestamp_us = 2'000'000U,
+    };
+    multi_packet_statistics.truncated_packet_count = 1U;
+
+    const auto multi_time = build_frontend_capture_time_statistics(multi_packet_statistics);
+    const auto multi_metrics = build_frontend_capture_metrics(multi_packet_statistics);
+    PFL_EXPECT(multi_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
+    PFL_EXPECT(multi_time.capture_end_text == "1970-01-01 00:00:02.000 UTC");
+    PFL_EXPECT(multi_time.duration_text == "00:00:02.000");
+    PFL_EXPECT(multi_metrics.average_captured_packet_size_text == "512 B");
+    PFL_EXPECT(multi_metrics.average_original_packet_size_text == "1 KB");
+    PFL_EXPECT(multi_metrics.average_packet_rate_text == "2 pkt/s");
+    PFL_EXPECT(multi_metrics.average_captured_data_rate_text == "1 KB/s");
+    PFL_EXPECT(multi_metrics.average_original_data_rate_text == "2 KB/s");
+    PFL_EXPECT(multi_metrics.truncated_packets_text == "1 (25%)");
+    PFL_EXPECT(multi_metrics.not_captured_bytes_text == "2 KB (2 048 B)");
+    PFL_EXPECT(multi_metrics.capture_completeness_text == "50%");
+    expect_not_nan_or_inf_text(multi_metrics.average_captured_packet_size_text);
+    expect_not_nan_or_inf_text(multi_metrics.average_original_packet_size_text);
+    expect_not_nan_or_inf_text(multi_metrics.average_packet_rate_text);
+    expect_not_nan_or_inf_text(multi_metrics.average_captured_data_rate_text);
+    expect_not_nan_or_inf_text(multi_metrics.average_original_data_rate_text);
+    expect_not_nan_or_inf_text(multi_metrics.capture_completeness_text);
+
+    CapturePacketStatistics complete_statistics {};
+    complete_statistics.total_packet_count = 8U;
+    complete_statistics.total_captured_bytes = 4096U;
+    complete_statistics.total_original_bytes = 4096U;
+    const auto complete_metrics = build_frontend_capture_metrics(complete_statistics);
+    PFL_EXPECT(complete_metrics.capture_completeness_text == "100%");
+    expect_not_nan_or_inf_text(complete_metrics.capture_completeness_text);
+
+    CapturePacketStatistics zero_original_statistics {};
+    zero_original_statistics.total_packet_count = 2U;
+    zero_original_statistics.total_captured_bytes = 128U;
+    zero_original_statistics.total_original_bytes = 0U;
+    const auto zero_original_metrics = build_frontend_capture_metrics(zero_original_statistics);
+    PFL_EXPECT(zero_original_metrics.average_captured_packet_size_text == "64 B");
+    PFL_EXPECT(zero_original_metrics.average_original_packet_size_text == "0 B");
+    PFL_EXPECT(zero_original_metrics.capture_completeness_text == unavailable);
+    expect_not_nan_or_inf_text(zero_original_metrics.capture_completeness_text);
+
+    CapturePacketStatistics slightly_incomplete_statistics {};
+    slightly_incomplete_statistics.total_packet_count = 10U;
+    slightly_incomplete_statistics.total_captured_bytes = 9'999U;
+    slightly_incomplete_statistics.total_original_bytes = 10'000U;
+    slightly_incomplete_statistics.timestamp_range = CapturePacketTimestampRange {
+        .available = true,
+        .earliest_timestamp_us = 0U,
+        .latest_timestamp_us = 732'333U,
+    };
+    const auto slightly_incomplete_time = build_frontend_capture_time_statistics(slightly_incomplete_statistics);
+    const auto slightly_incomplete_metrics = build_frontend_capture_metrics(slightly_incomplete_statistics);
+    PFL_EXPECT(slightly_incomplete_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
+    PFL_EXPECT(slightly_incomplete_time.capture_end_text == "1970-01-01 00:00:00.732 UTC");
+    PFL_EXPECT(slightly_incomplete_time.duration_text == "00:00:00.732");
+    PFL_EXPECT(slightly_incomplete_metrics.average_packet_rate_text == "13.65 pkt/s");
+    PFL_EXPECT(slightly_incomplete_metrics.capture_completeness_text != "100%");
+    PFL_EXPECT(slightly_incomplete_metrics.capture_completeness_text == "99.99%");
+    expect_not_nan_or_inf_text(slightly_incomplete_metrics.average_packet_rate_text);
+    expect_not_nan_or_inf_text(slightly_incomplete_metrics.capture_completeness_text);
+
+    CaptureFlowCharacteristicsStatistics flow_characteristics {};
+    flow_characteristics.total_flow_count = 10U;
+    flow_characteristics.only_a_to_b_flow_count = 2U;
+    flow_characteristics.service_recognized_flow_count = 7U;
+    const auto packet_direction_distribution_statistics = FlowDirectionDistributionStatistics {
+        .mostly_a_to_b_flow_count = 3U,
+        .balanced_flow_count = 4U,
+        .mostly_b_to_a_flow_count = 3U,
+    };
+    const auto original_byte_direction_distribution_statistics = FlowDirectionDistributionStatistics {
+        .mostly_a_to_b_flow_count = 5U,
+        .balanced_flow_count = 1U,
+        .mostly_b_to_a_flow_count = 4U,
+    };
+
+    const auto characteristics = build_frontend_flow_characteristics(flow_characteristics);
+    const auto packet_distribution = build_frontend_packet_direction_distribution(
+        flow_characteristics,
+        packet_direction_distribution_statistics
+    );
+    const auto original_distribution = build_frontend_original_byte_direction_distribution(
+        flow_characteristics,
+        original_byte_direction_distribution_statistics
+    );
+
+    PFL_EXPECT(characteristics.only_a_to_b_flows_text == "2 (20%)");
+    PFL_EXPECT(characteristics.service_recognized_flows_text == "7 (70%)");
+    PFL_EXPECT(packet_distribution.total_flow_count == 10U);
+    PFL_EXPECT(packet_distribution.rows.size() == 3U);
+    PFL_EXPECT(packet_distribution.rows[0].stable_id == "mostly_a_to_b");
+    PFL_EXPECT(packet_distribution.rows[0].label == "Mostly A -> B");
+    PFL_EXPECT(packet_distribution.rows[0].flow_count_text == "3");
+    PFL_EXPECT(packet_distribution.rows[0].percent_text == "30%");
+    PFL_EXPECT(packet_distribution.rows[1].stable_id == "balanced");
+    PFL_EXPECT(packet_distribution.rows[1].flow_count_text == "4");
+    PFL_EXPECT(packet_distribution.rows[1].percent_text == "40%");
+    PFL_EXPECT(packet_distribution.rows[2].stable_id == "mostly_b_to_a");
+    PFL_EXPECT(packet_distribution.rows[2].flow_count_text == "3");
+    PFL_EXPECT(packet_distribution.rows[2].percent_text == "30%");
+    PFL_EXPECT(original_distribution.total_flow_count == 10U);
+    PFL_EXPECT(original_distribution.help_text == "Flows grouped by directional original-byte balance.");
+    PFL_EXPECT(original_distribution.rows.size() == 3U);
+    PFL_EXPECT(original_distribution.rows[0].flow_count_text == "5");
+    PFL_EXPECT(original_distribution.rows[0].percent_text == "50%");
+    PFL_EXPECT(original_distribution.rows[1].flow_count_text == "1");
+    PFL_EXPECT(original_distribution.rows[1].percent_text == "10%");
+    PFL_EXPECT(original_distribution.rows[2].flow_count_text == "4");
+    PFL_EXPECT(original_distribution.rows[2].percent_text == "40%");
+    PFL_EXPECT(build_frontend_statistics_partial_open_warning_text(true)
+        == "Statistics cover successfully imported packets only; the capture was opened partially.");
+    PFL_EXPECT(build_frontend_statistics_partial_open_warning_text(false).empty());
+}
+
 void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_and_index_inputs() {
     const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 66, 0, 1), ipv4(10, 66, 0, 2), 6601, 443);
     const auto unrecognized_packet = unrecognized_ethernet_frame();
@@ -1528,6 +1798,34 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(indexed_overview.whole_capture_totals.packet_count == raw_overview.whole_capture_totals.packet_count);
     PFL_EXPECT(indexed_overview.whole_capture_totals.captured_bytes == raw_overview.whole_capture_totals.captured_bytes);
     PFL_EXPECT(indexed_overview.whole_capture_totals.original_bytes == raw_overview.whole_capture_totals.original_bytes);
+    PFL_EXPECT(indexed_overview.capture_time.capture_start_text == raw_overview.capture_time.capture_start_text);
+    PFL_EXPECT(indexed_overview.capture_time.capture_end_text == raw_overview.capture_time.capture_end_text);
+    PFL_EXPECT(indexed_overview.capture_time.duration_text == raw_overview.capture_time.duration_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_captured_packet_size_text
+        == raw_overview.capture_metrics.average_captured_packet_size_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_original_packet_size_text
+        == raw_overview.capture_metrics.average_original_packet_size_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_packet_rate_text
+        == raw_overview.capture_metrics.average_packet_rate_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_captured_data_rate_text
+        == raw_overview.capture_metrics.average_captured_data_rate_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.average_original_data_rate_text
+        == raw_overview.capture_metrics.average_original_data_rate_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.truncated_packets_text
+        == raw_overview.capture_metrics.truncated_packets_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.not_captured_bytes_text
+        == raw_overview.capture_metrics.not_captured_bytes_text);
+    PFL_EXPECT(indexed_overview.capture_metrics.capture_completeness_text
+        == raw_overview.capture_metrics.capture_completeness_text);
+    PFL_EXPECT(indexed_overview.flow_characteristics.only_a_to_b_flows_text
+        == raw_overview.flow_characteristics.only_a_to_b_flows_text);
+    PFL_EXPECT(indexed_overview.flow_characteristics.service_recognized_flows_text
+        == raw_overview.flow_characteristics.service_recognized_flows_text);
+    PFL_EXPECT(indexed_overview.packet_direction_distribution.rows.size()
+        == raw_overview.packet_direction_distribution.rows.size());
+    PFL_EXPECT(indexed_overview.original_byte_direction_distribution.rows.size()
+        == raw_overview.original_byte_direction_distribution.rows.size());
+    PFL_EXPECT(indexed_overview.statistics_partial_open_warning_text.empty());
 
     const auto pcapng_packet = make_ethernet_ipv4_udp_packet(ipv4(10, 67, 0, 1), ipv4(10, 67, 0, 2), 6701, 53);
     const auto pcapng_path = write_temp_pcap(
@@ -1545,6 +1843,30 @@ void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_
     PFL_EXPECT(pcapng_overview.input_metadata.input_kind == FrontendInputKind::pcapng);
     PFL_EXPECT(pcapng_overview.input_metadata.input_path == pcapng_path.string());
     PFL_EXPECT(pcapng_overview.input_metadata.input_file_size == std::filesystem::file_size(pcapng_path));
+}
+
+void expect_statistics_overview_marks_partial_open_runtime_state() {
+    const auto first_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 77, 0, 1), ipv4(10, 77, 0, 2), 7701, 443);
+    const auto second_packet = make_ethernet_ipv4_udp_packet(ipv4(10, 77, 0, 3), ipv4(10, 77, 0, 4), 7702, 53);
+    auto partial_capture = make_classic_pcap({
+        {100U, first_packet},
+        {200U, second_packet},
+    });
+    partial_capture.resize(partial_capture.size() - 5U);
+    const auto capture_path = write_temp_pcap("pfl_statistics_partial_overview_runtime.pcap", partial_capture);
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+    const auto overview = adapter.get_overview();
+
+    PFL_EXPECT(overview.has_capture);
+    PFL_EXPECT(overview.whole_capture_totals.packet_count == 1U);
+    PFL_EXPECT(overview.capture_time.available);
+    PFL_EXPECT(overview.capture_time.capture_start_text == "1970-01-01 00:00:00.000 UTC");
+    PFL_EXPECT(overview.capture_time.capture_end_text == "1970-01-01 00:00:00.000 UTC");
+    PFL_EXPECT(overview.capture_time.duration_text == "00:00:00.000");
+    PFL_EXPECT(overview.statistics_partial_open_warning_text
+        == "Statistics cover successfully imported packets only; the capture was opened partially.");
 }
 
 void expect_statistics_adapter_exposes_total_based_percentage_fields() {
@@ -1704,7 +2026,31 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"captured_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"original_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"whole_capture_totals\""));
+    PFL_EXPECT(contains_text(overview_json, "\"capture_time\""));
+    PFL_EXPECT(contains_text(overview_json, "\"capture_start_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"capture_end_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"duration_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"capture_metrics\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_captured_packet_size_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_original_packet_size_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_packet_rate_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_captured_data_rate_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"average_original_data_rate_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"truncated_packets_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"not_captured_bytes_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"capture_completeness_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"flow_characteristics\""));
+    PFL_EXPECT(contains_text(overview_json, "\"only_a_to_b_flows_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"service_recognized_flows_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"packet_direction_distribution\""));
+    PFL_EXPECT(contains_text(overview_json, "\"original_byte_direction_distribution\""));
+    PFL_EXPECT(contains_text(overview_json, "\"stable_id\":\"mostly_a_to_b\""));
+    PFL_EXPECT(contains_text(overview_json, "\"percent_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"statistics_partial_open_warning_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"packet_count\""));
+    PFL_EXPECT(contains_text(overview_json, "\"unrecognized_packets\""));
+    PFL_EXPECT(contains_text(overview_json, "\"captured_bytes_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"original_bytes_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_metadata\""));
     PFL_EXPECT(contains_text(overview_json, "\"input_kind\":\"pcap\""));
     PFL_EXPECT(contains_text(overview_json, "\"protocol_path_presentations\""));
@@ -1891,7 +2237,9 @@ void run_statistics_section_tests() {
     expect_capture_packet_size_statistics_ignores_unsurfaced_classic_packet_failures();
     expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing_reader_error();
     expect_overview_excludes_optional_statistics_sections();
+    expect_frontend_statistics_overview_helpers_cover_availability_and_direction_distributions();
     expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_and_index_inputs();
+    expect_statistics_overview_marks_partial_open_runtime_state();
     expect_statistics_adapter_exposes_total_based_percentage_fields();
     expect_quic_tls_section_keeps_one_empty_side();
     expect_statistics_section_requests_handle_missing_capture();

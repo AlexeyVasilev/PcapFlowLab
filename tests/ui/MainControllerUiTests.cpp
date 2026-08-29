@@ -718,6 +718,21 @@ QStringList direct_child_tab_button_texts(QObject* root, const char* objectName)
     return labels;
 }
 
+int direct_child_item_index_by_object_name(QQuickItem* root, const QString& object_name) {
+    if (root == nullptr) {
+        return -1;
+    }
+
+    const auto children = root->childItems();
+    for (int index = 0; index < static_cast<int>(children.size()); ++index) {
+        if (children[index] != nullptr && children[index]->objectName() == object_name) {
+            return index;
+        }
+    }
+
+    return -1;
+}
+
 QString packet_size_bucket_label(const std::uint32_t captured_length) {
     if (captured_length <= 63U) {
         return QStringLiteral("0-63");
@@ -3836,6 +3851,36 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "quicTlsStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "topEndpointPortStatisticsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureMetricsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowCharacteristicsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "directionDistributionToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "statisticsColumn") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureTimeSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureMetricsSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "flowCharacteristicsSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "directionDistributionSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "packetDirectionDistributionSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "dataDirectionDistributionSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureStartValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureEndValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureDurationValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averageCapturedPacketSizeValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averageOriginalPacketSizeValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averagePacketRateValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averageCapturedDataRateValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "averageOriginalDataRateValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "truncatedPacketsValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "notCapturedBytesValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "captureCompletenessValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "onlyAToBFlowsValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "serviceRecognizedFlowsValue") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "dataDirectionDistributionHelpText") != nullptr);
+        UI_EXPECT(named_object(statistics_pane.object.get(), "captureStartValue")->property("text").toString()
+            == QString::fromUtf8("\xE2\x80\x94"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averagePacketRateValue")->property("text").toString()
+            == QString::fromUtf8("\xE2\x80\x94"));
+        UI_EXPECT(!item_visible(statistics_pane.object.get(), "statisticsPartialOpenWarning"));
+        UI_EXPECT(find_object_with_text(statistics_pane.object.get(), QStringLiteral("Capture Time")) == nullptr);
 
         auto stable_toggle_component = load_qml_component(
             "src/ui/qml/components/CollapsibleStatisticsSection.qml",
@@ -3846,6 +3891,9 @@ int main(int argc, char* argv[]) {
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_REQUIRE(named_object(stable_toggle_component.object.get(), "stableStatisticsToggle") != nullptr);
 
+        statistics_pane.object->setProperty("captureMetricsExpanded", true);
+        statistics_pane.object->setProperty("flowCharacteristicsExpanded", true);
+        statistics_pane.object->setProperty("directionDistributionExpanded", true);
         statistics_pane.object->setProperty("packetSizeDistributionExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
         statistics_pane.object->setProperty("flowPacketHistogramDisplayMode", 1);
@@ -3854,6 +3902,9 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("quicTlsExpanded", true);
         statistics_pane.object->setProperty("topEndpointsPortsExpanded", true);
         statistics_pane.object->setProperty("statisticsSectionsResetToken", 1);
+        UI_EXPECT(!statistics_pane.object->property("captureMetricsExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("flowCharacteristicsExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("directionDistributionExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("packetSizeDistributionExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("flowPacketHistogramExpanded").toBool());
         UI_EXPECT(statistics_pane.object->property("flowPacketHistogramDisplayMode").toInt() == 0);
@@ -3864,6 +3915,66 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!protocol_path_export_button->property("enabled").toBool());
 
         statistics_pane.object->setProperty("hasCapture", true);
+        statistics_pane.object->setProperty("statisticsPartialOpenWarningText",
+            QStringLiteral("Statistics cover successfully imported packets only; the capture was opened partially."));
+        statistics_pane.object->setProperty("captureTimeStatistics", QVariantMap {
+            {QStringLiteral("captureStartText"), QStringLiteral("1970-01-01 00:00:00.100 UTC")},
+            {QStringLiteral("captureEndText"), QStringLiteral("1970-01-01 00:00:00.400 UTC")},
+            {QStringLiteral("durationText"), QStringLiteral("00:00:00.300")},
+        });
+        statistics_pane.object->setProperty("captureMetrics", QVariantMap {
+            {QStringLiteral("averageCapturedPacketSizeText"), QStringLiteral("54 B")},
+            {QStringLiteral("averageOriginalPacketSizeText"), QStringLiteral("54 B")},
+            {QStringLiteral("averagePacketRateText"), QStringLiteral("13 333.33 pkt/s")},
+            {QStringLiteral("averageCapturedDataRateText"), QStringLiteral("720 KB/s")},
+            {QStringLiteral("averageOriginalDataRateText"), QStringLiteral("720 KB/s")},
+            {QStringLiteral("truncatedPacketsText"), QStringLiteral("0 (0%)")},
+            {QStringLiteral("notCapturedBytesText"), QStringLiteral("0 B")},
+            {QStringLiteral("captureCompletenessText"), QStringLiteral("100%")},
+        });
+        statistics_pane.object->setProperty("flowCharacteristics", QVariantMap {
+            {QStringLiteral("onlyAToBFlowsText"), QStringLiteral("2 (67%)")},
+            {QStringLiteral("serviceRecognizedFlowsText"), QStringLiteral("0 (0%)")},
+        });
+        statistics_pane.object->setProperty("packetDirectionDistribution", QVariantMap {
+            {QStringLiteral("rows"), QVariantList {
+                QVariantMap {
+                    {QStringLiteral("label"), QStringLiteral("Mostly A -> B")},
+                    {QStringLiteral("flowCountText"), QStringLiteral("2")},
+                    {QStringLiteral("percentText"), QStringLiteral("67%")},
+                },
+                QVariantMap {
+                    {QStringLiteral("label"), QStringLiteral("Balanced")},
+                    {QStringLiteral("flowCountText"), QStringLiteral("1")},
+                    {QStringLiteral("percentText"), QStringLiteral("33%")},
+                },
+                QVariantMap {
+                    {QStringLiteral("label"), QStringLiteral("Mostly B -> A")},
+                    {QStringLiteral("flowCountText"), QStringLiteral("0")},
+                    {QStringLiteral("percentText"), QStringLiteral("0%")},
+                },
+            }},
+        });
+        statistics_pane.object->setProperty("dataDirectionDistribution", QVariantMap {
+            {QStringLiteral("helpText"), QStringLiteral("Flows grouped by directional original-byte balance.")},
+            {QStringLiteral("rows"), QVariantList {
+                QVariantMap {
+                    {QStringLiteral("label"), QStringLiteral("Mostly A -> B")},
+                    {QStringLiteral("flowCountText"), QStringLiteral("2")},
+                    {QStringLiteral("percentText"), QStringLiteral("67%")},
+                },
+                QVariantMap {
+                    {QStringLiteral("label"), QStringLiteral("Balanced")},
+                    {QStringLiteral("flowCountText"), QStringLiteral("1")},
+                    {QStringLiteral("percentText"), QStringLiteral("33%")},
+                },
+                QVariantMap {
+                    {QStringLiteral("label"), QStringLiteral("Mostly B -> A")},
+                    {QStringLiteral("flowCountText"), QStringLiteral("0")},
+                    {QStringLiteral("percentText"), QStringLiteral("0%")},
+                },
+            }},
+        });
         statistics_pane.object->setProperty("protocolPathSectionState", section_ready);
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         statistics_pane.object->setProperty("unrecognizedStatsCapturedBytes", 2048);
@@ -3871,6 +3982,41 @@ int main(int argc, char* argv[]) {
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(protocol_path_export_button->property("enabled").toBool());
         UI_EXPECT(!item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
+        UI_EXPECT(item_visible(statistics_pane.object.get(), "statisticsPartialOpenWarning"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "captureStartValue")->property("text").toString()
+            == QStringLiteral("1970-01-01 00:00:00.100 UTC"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "captureEndValue")->property("text").toString()
+            == QStringLiteral("1970-01-01 00:00:00.400 UTC"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "captureDurationValue")->property("text").toString()
+            == QStringLiteral("00:00:00.300"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averageCapturedPacketSizeValue")->property("text").toString()
+            == QStringLiteral("54 B"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averageOriginalPacketSizeValue")->property("text").toString()
+            == QStringLiteral("54 B"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averagePacketRateValue")->property("text").toString()
+            == QStringLiteral("13 333.33 pkt/s"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averageCapturedDataRateValue")->property("text").toString()
+            == QStringLiteral("720 KB/s"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "averageOriginalDataRateValue")->property("text").toString()
+            == QStringLiteral("720 KB/s"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "truncatedPacketsValue")->property("text").toString()
+            == QStringLiteral("0 (0%)"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "notCapturedBytesValue")->property("text").toString()
+            == QStringLiteral("0 B"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "captureCompletenessValue")->property("text").toString()
+            == QStringLiteral("100%"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "onlyAToBFlowsValue")->property("text").toString()
+            == QStringLiteral("2 (67%)"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "serviceRecognizedFlowsValue")->property("text").toString()
+            == QStringLiteral("0 (0%)"));
+        UI_EXPECT(named_object(statistics_pane.object.get(), "dataDirectionDistributionHelpText")->property("text").toString()
+            == QStringLiteral("Flows grouped by directional original-byte balance."));
+        UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "captureMetricsSection"))
+            ->property("expanded").toBool());
+        UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "flowCharacteristicsSection"))
+            ->property("expanded").toBool());
+        UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "directionDistributionSection"))
+            ->property("expanded").toBool());
 
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 250206);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -3881,19 +4027,48 @@ int main(int argc, char* argv[]) {
             == QStringLiteral("2 KB"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "unrecognizedStatsOriginalBytesValue")->property("text").toString()
             == QStringLiteral("3 KB"));
-        auto* unrecognized_stats_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "unrecognizedStatsSection"));
-        auto* packet_size_distribution_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "packetSizeDistributionSection"));
-        auto* flow_packet_histogram_section = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "flowPacketHistogramSection"));
-        UI_REQUIRE(unrecognized_stats_section != nullptr);
-        UI_REQUIRE(packet_size_distribution_section != nullptr);
-        UI_REQUIRE(flow_packet_histogram_section != nullptr);
-        UI_EXPECT(packet_size_distribution_section->y() > unrecognized_stats_section->y());
-        UI_EXPECT(flow_packet_histogram_section->y() > unrecognized_stats_section->y());
-        UI_EXPECT(flow_packet_histogram_section->y() > packet_size_distribution_section->y());
+        auto* statistics_column = qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "statisticsColumn"));
+        UI_REQUIRE(statistics_column != nullptr);
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("captureTimeSection")) >= 0);
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("unrecognizedStatsSection")) >= 0);
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("packetSizeDistributionSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("unrecognizedStatsSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowPacketHistogramSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("packetSizeDistributionSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolPathSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowPacketHistogramSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolHintsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolPathSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("captureMetricsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("protocolHintsSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowCharacteristicsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("captureMetricsSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("directionDistributionSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowCharacteristicsSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("quicTlsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("directionDistributionSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("topEndpointsPortsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("quicTlsSection")));
+
+        statistics_pane.object->setProperty("captureMetricsExpanded", true);
+        statistics_pane.object->setProperty("flowCharacteristicsExpanded", true);
+        statistics_pane.object->setProperty("directionDistributionExpanded", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "captureMetricsSection"))
+            ->property("expanded").toBool());
+        UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "flowCharacteristicsSection"))
+            ->property("expanded").toBool());
+        UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "directionDistributionSection"))
+            ->property("expanded").toBool());
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "packetDirectionDistributionSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "dataDirectionDistributionSection") != nullptr);
 
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!item_visible(statistics_pane.object.get(), "unrecognizedStatsSection"));
+        statistics_pane.object->setProperty("statisticsPartialOpenWarningText", QString {});
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(statistics_pane.object.get(), "statisticsPartialOpenWarning"));
 
         statistics_pane.object->setProperty("packetSizeDistributionExpanded", true);
         statistics_pane.object->setProperty("packetSizeDistributionState", section_ready);

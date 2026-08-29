@@ -191,6 +191,7 @@ fn main() {
         "src/core/services/HexDumpService.cpp",
         "src/core/services/IcmpInspectionParser.cpp",
         "src/app/frontend/FrontendSessionAdapter.cpp",
+        "src/app/frontend/FrontendStatisticsOverview.cpp",
         "src/app/frontend/AdvancedFlowFilterStructuredDocument.cpp",
         "src/app/frontend/FrontendSettingsJson.cpp",
         "src/app/frontend/FrontendSessionAdapterBridge.cpp",

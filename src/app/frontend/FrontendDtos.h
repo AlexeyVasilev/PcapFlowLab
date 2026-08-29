@@ -318,15 +318,84 @@ struct FrontendProtocolPathPresentationDto {
     std::vector<ProtocolPathBadgeRow> badges {};
 };
 
+struct FrontendCaptureTimeStatisticsDto {
+    bool available {false};
+    std::optional<std::uint64_t> capture_start_timestamp_us {};
+    std::string capture_start_text {};
+    std::optional<std::uint64_t> capture_end_timestamp_us {};
+    std::string capture_end_text {};
+    std::optional<std::uint64_t> duration_us {};
+    std::string duration_text {};
+};
+
+struct FrontendCaptureMetricsDto {
+    std::optional<double> average_captured_packet_size {};
+    std::string average_captured_packet_size_text {};
+    std::optional<double> average_original_packet_size {};
+    std::string average_original_packet_size_text {};
+    std::optional<double> average_packet_rate {};
+    std::string average_packet_rate_text {};
+    std::optional<double> average_captured_data_rate {};
+    std::string average_captured_data_rate_text {};
+    std::optional<double> average_original_data_rate {};
+    std::string average_original_data_rate_text {};
+    std::uint64_t truncated_packet_count {0};
+    double truncated_packet_fraction {0.0};
+    std::string truncated_packets_text {};
+    std::uint64_t not_captured_bytes {0};
+    std::string not_captured_bytes_text {};
+    std::optional<double> capture_completeness {};
+    std::string capture_completeness_text {};
+};
+
+struct FrontendFlowCharacteristicsDto {
+    std::uint64_t total_flow_count {0};
+    std::uint64_t only_a_to_b_flow_count {0};
+    double only_a_to_b_flow_fraction {0.0};
+    std::string only_a_to_b_flows_text {};
+    std::uint64_t service_recognized_flow_count {0};
+    double service_recognized_flow_fraction {0.0};
+    std::string service_recognized_flows_text {};
+};
+
+struct FrontendDirectionDistributionRowDto {
+    std::string stable_id {};
+    std::string label {};
+    std::uint64_t flow_count {0};
+    double flow_fraction {0.0};
+    std::string flow_count_text {};
+    std::string percent_text {};
+};
+
+struct FrontendDirectionDistributionDto {
+    std::uint64_t total_flow_count {0};
+    std::string help_text {};
+    std::vector<FrontendDirectionDistributionRowDto> rows {};
+};
+
+struct FrontendUnrecognizedPacketStatisticsDto {
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
+};
+
 struct FrontendOverviewDto {
     bool has_capture {false};
     FrontendOverviewSummaryDto summary {};
     FrontendWholeCaptureTotalsDto whole_capture_totals {};
     FrontendInputMetadataDto input_metadata {};
+    FrontendCaptureTimeStatisticsDto capture_time {};
+    FrontendCaptureMetricsDto capture_metrics {};
+    FrontendFlowCharacteristicsDto flow_characteristics {};
+    FrontendDirectionDistributionDto packet_direction_distribution {};
+    FrontendDirectionDistributionDto original_byte_direction_distribution {};
+    std::string statistics_partial_open_warning_text {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
     std::uint64_t unrecognized_packet_count {0};
-    std::optional<UnrecognizedPacketStatistics> unrecognized_packets {};
+    std::optional<FrontendUnrecognizedPacketStatisticsDto> unrecognized_packets {};
     FrontendOverviewProtocolSummaryDto protocol_summary {};
     ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
     std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};

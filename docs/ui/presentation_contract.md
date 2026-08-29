@@ -407,9 +407,20 @@ The Statistics contract aligns to current shared behavior:
 
 ### Always-visible core
 
-- overview counters;
+- overview counters in the order `Packets`, `Flows`, `Original Bytes`,
+  `Captured Bytes`;
+- Capture Start / Capture End / Duration values;
 - Transport Summary;
 - IP Family Summary.
+
+When the active capture was opened partially, the Statistics page must show a
+compact warning that the values cover successfully imported packets only.
+
+Shared always-visible Statistics semantics now also include:
+
+- absolute UTC capture start/end timestamps;
+- capture duration, with zero duration distinct from unavailable time;
+- millisecond-precision visible formatting for capture-level timestamps and duration.
 
 ### Optional/lazy sections
 
@@ -419,17 +430,29 @@ The current optional independently collapsible/lazy statistics sections are:
 - `Flows by Packet Count`
 - `Protocol Path Tree`
 - `Detected Protocol Hints`
+- `Capture Metrics`
+- `Flow Characteristics`
+- `Direction Distribution`
 - `QUIC and TLS`
 - `Top Endpoints and Ports`
 
 These sections are based on whole-capture/session statistics, not selected-flow
 state.
 
+`Direction Distribution` is one collapsible section containing both:
+
+- `Packet Direction`
+- `Data Direction (Original Bytes)`
+
 Shared semantics include:
 
 - whole-capture totals;
 - original bytes;
 - percentages;
+- packet-level derived metrics from `CapturePacketStatistics`;
+- flow-level characteristics from canonical-flow totals;
+- packet-direction distribution by canonical flow count;
+- original-byte direction distribution by canonical flow count;
 - structured drill-down / `Show flows` behavior where currently exposed.
 
 This contract does not preserve implementation chronology for how those sections

@@ -11,6 +11,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "app/session/CaptureSession.h"
 #include "app/session/AdvancedFlowFilterDocumentState.h"
@@ -213,6 +214,12 @@ private:
     Q_PROPERTY(qulonglong originalBytes READ originalBytes NOTIFY stateChanged)
     Q_PROPERTY(QString originalBytesText READ originalBytesText NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap captureTimeStatistics READ captureTimeStatistics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap captureMetrics READ captureMetrics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap flowCharacteristics READ flowCharacteristics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap packetDirectionDistribution READ packetDirectionDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap dataDirectionDistribution READ dataDirectionDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QString statisticsPartialOpenWarningText READ statisticsPartialOpenWarningText NOTIFY stateChanged)
     Q_PROPERTY(int statisticsSectionsResetToken READ statisticsSectionsResetToken NOTIFY statisticsSectionsResetTokenChanged)
     Q_PROPERTY(int packetSizeDistributionState READ packetSizeDistributionState NOTIFY stateChanged)
     Q_PROPERTY(QString packetSizeDistributionStatusText READ packetSizeDistributionStatusText NOTIFY stateChanged)
@@ -487,6 +494,12 @@ public:
     [[nodiscard]] qulonglong originalBytes() const noexcept;
     [[nodiscard]] QString originalBytesText() const;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
+    [[nodiscard]] QVariantMap captureTimeStatistics() const;
+    [[nodiscard]] QVariantMap captureMetrics() const;
+    [[nodiscard]] QVariantMap flowCharacteristics() const;
+    [[nodiscard]] QVariantMap packetDirectionDistribution() const;
+    [[nodiscard]] QVariantMap dataDirectionDistribution() const;
+    [[nodiscard]] QString statisticsPartialOpenWarningText() const;
     [[nodiscard]] int statisticsSectionsResetToken() const noexcept;
     [[nodiscard]] int packetSizeDistributionState() const noexcept;
     [[nodiscard]] QString packetSizeDistributionStatusText() const;
@@ -895,6 +908,7 @@ private:
     void setLastDirectoryFromPath(const std::filesystem::path& path);
     void finalizeAdvancedFlowFilterClearAll();
     void refreshAdvancedFlowFilterEditingPresentation();
+    void refreshStatisticsOverviewPresentation();
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
@@ -903,6 +917,12 @@ private:
     FlowPacketCountHistogram flow_packet_count_histogram_ {};
     QVariantList flow_packet_histogram_rows_ {};
     QVariantList protocol_hint_distribution_ {};
+    QVariantMap capture_time_statistics_ {};
+    QVariantMap capture_metrics_ {};
+    QVariantMap flow_characteristics_ {};
+    QVariantMap packet_direction_distribution_ {};
+    QVariantMap data_direction_distribution_ {};
+    QString statistics_partial_open_warning_text_ {};
     UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
     std::uint64_t whole_capture_packet_count_ {0U};
     std::uint64_t whole_capture_captured_bytes_ {0U};

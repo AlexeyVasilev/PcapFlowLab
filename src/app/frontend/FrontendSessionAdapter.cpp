@@ -1,5 +1,6 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedPacketSummaryPreparation.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -2954,9 +2955,25 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto& packet_statistics = session_.packet_statistics();
+    const auto flow_characteristics_statistics = session_.flow_characteristics_statistics();
+    const auto packet_direction_distribution_statistics = session_.packet_direction_distribution_statistics();
+    const auto original_byte_direction_distribution_statistics =
+        session_.original_byte_direction_distribution_statistics();
     const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto input_metadata = build_frontend_input_metadata(session_);
+    const auto capture_time = build_frontend_capture_time_statistics(packet_statistics);
+    const auto capture_metrics = build_frontend_capture_metrics(packet_statistics);
+    const auto flow_characteristics = build_frontend_flow_characteristics(flow_characteristics_statistics);
+    const auto packet_direction_distribution = build_frontend_packet_direction_distribution(
+        flow_characteristics_statistics,
+        packet_direction_distribution_statistics
+    );
+    const auto original_byte_direction_distribution =
+        build_frontend_original_byte_direction_distribution(
+            flow_characteristics_statistics,
+            original_byte_direction_distribution_statistics
+        );
     const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
         protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
     const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
@@ -2983,11 +3000,28 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             .original_bytes_text = session_detail::format_statistics_compact_size_value(whole_capture_original_bytes),
         },
         .input_metadata = std::move(input_metadata),
+        .capture_time = std::move(capture_time),
+        .capture_metrics = std::move(capture_metrics),
+        .flow_characteristics = std::move(flow_characteristics),
+        .packet_direction_distribution = std::move(packet_direction_distribution),
+        .original_byte_direction_distribution = std::move(original_byte_direction_distribution),
+        .statistics_partial_open_warning_text =
+            build_frontend_statistics_partial_open_warning_text(session_.is_partial_open()),
         .captured_bytes = captured_bytes,
         .original_bytes = original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
         .unrecognized_packets = unrecognized_packets.packet_count > 0U
-            ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
+            ? std::optional<FrontendUnrecognizedPacketStatisticsDto> {
+                FrontendUnrecognizedPacketStatisticsDto {
+                    .packet_count = unrecognized_packets.packet_count,
+                    .captured_bytes = unrecognized_packets.captured_bytes,
+                    .captured_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.captured_bytes),
+                    .original_bytes = unrecognized_packets.original_bytes,
+                    .original_bytes_text =
+                        session_detail::format_statistics_compact_size_value(unrecognized_packets.original_bytes),
+                }
+            }
             : std::nullopt,
         .protocol_summary = FrontendOverviewProtocolSummaryDto {
             .tcp = make_frontend_protocol_stats(protocol_summary.tcp),

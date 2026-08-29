@@ -1373,6 +1373,12 @@ ApplicationWindow {
                 capturedBytesText: mainController.capturedBytesText
                 originalBytes: mainController.originalBytes
                 originalBytesText: mainController.originalBytesText
+                captureTimeStatistics: mainController.captureTimeStatistics
+                captureMetrics: mainController.captureMetrics
+                flowCharacteristics: mainController.flowCharacteristics
+                packetDirectionDistribution: mainController.packetDirectionDistribution
+                dataDirectionDistribution: mainController.dataDirectionDistribution
+                statisticsPartialOpenWarningText: mainController.statisticsPartialOpenWarningText
                 tcpFlowCount: mainController.tcpFlowCount
                 tcpPacketCount: mainController.tcpPacketCount
                 tcpCapturedBytes: mainController.tcpCapturedBytes

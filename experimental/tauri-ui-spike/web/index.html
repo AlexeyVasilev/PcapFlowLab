@@ -320,12 +320,31 @@
                   <span id="metricFlows" class="metric-value">-</span>
                 </div>
                 <div class="metric">
+                  <span class="metric-label">Original Bytes</span>
+                  <span id="metricOriginalBytes" class="metric-value">-</span>
+                </div>
+                <div class="metric">
                   <span class="metric-label">Captured Bytes</span>
                   <span id="metricCapturedBytes" class="metric-value">-</span>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Original Bytes</span>
-                  <span id="metricOriginalBytes" class="metric-value">-</span>
+              </div>
+
+              <div id="statisticsPartialOpenWarning" class="statistics-warning-note is-hidden"></div>
+
+              <div class="statistics-section">
+                <div class="statistics-overview-grid compact-overview-grid">
+                  <div class="metric">
+                    <span class="metric-label">Capture Start</span>
+                    <span id="captureStartValue" class="metric-value statistics-metric-value-compact">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Capture End</span>
+                    <span id="captureEndValue" class="metric-value statistics-metric-value-compact">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Duration</span>
+                    <span id="captureDurationValue" class="metric-value statistics-metric-value-compact">-</span>
+                  </div>
                 </div>
               </div>
 
@@ -492,6 +511,119 @@
                       </thead>
                       <tbody id="protocolHintStatsBody"></tbody>
                     </table>
+                  </div>
+                </div>
+              </details>
+
+              <details id="captureMetricsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Capture Metrics</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-overview-grid">
+                    <div class="metric">
+                      <span class="metric-label">Average Captured Packet Size</span>
+                      <span id="averageCapturedPacketSizeValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Original Packet Size</span>
+                      <span id="averageOriginalPacketSizeValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Packet Rate</span>
+                      <span id="averagePacketRateValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Captured Data Rate</span>
+                      <span id="averageCapturedDataRateValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Average Original Data Rate</span>
+                      <span id="averageOriginalDataRateValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Truncated Packets</span>
+                      <span id="truncatedPacketsValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Not Captured Bytes</span>
+                      <span id="notCapturedBytesValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Capture Completeness</span>
+                      <span id="captureCompletenessValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details id="flowCharacteristicsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Flow Characteristics</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-overview-grid compact-overview-grid">
+                    <div class="metric">
+                      <span class="metric-label">Only A -&gt; B Flows</span>
+                      <span id="onlyAToBFlowsValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                    <div class="metric">
+                      <span class="metric-label">Service Recognized</span>
+                      <span id="serviceRecognizedFlowsValue" class="metric-value statistics-metric-value-compact">-</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <details id="directionDistributionDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Direction Distribution</span>
+                  </span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-direction-distributions">
+                    <div class="statistics-section statistics-direction-section">
+                      <div class="statistics-section-heading">
+                        <h3>Packet Direction</h3>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table statistics-direction-table">
+                          <thead>
+                            <tr>
+                              <th>Group</th>
+                              <th>Flows</th>
+                              <th>Percent</th>
+                            </tr>
+                          </thead>
+                          <tbody id="packetDirectionDistributionBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div class="statistics-section statistics-direction-section">
+                      <div class="statistics-section-heading">
+                        <div>
+                          <h3>Data Direction (Original Bytes)</h3>
+                          <p id="dataDirectionDistributionHelpText" class="panel-subtitle compact-help-text"></p>
+                        </div>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="data-table compact-stats-table statistics-direction-table">
+                          <thead>
+                            <tr>
+                              <th>Group</th>
+                              <th>Flows</th>
+                              <th>Percent</th>
+                            </tr>
+                          </thead>
+                          <tbody id="dataDirectionDistributionBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </details>

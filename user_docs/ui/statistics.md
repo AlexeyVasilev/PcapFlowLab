@@ -21,23 +21,25 @@ This is the key distinction from `Analysis`:
 
 You do not need to select a flow first.
 
-The upper summary blocks are always visible. The heavier detailed sections are
-collapsible and are loaded when you expand them. That keeps the workspace fast
-to open while still exposing deeper capture-wide summaries when you need them.
+The top summary blocks and capture-time values are always visible. The heavier
+detailed sections are collapsible and are loaded when you expand them. That
+keeps the workspace fast to open while still exposing deeper capture-wide
+summaries when you need them.
 
 ## Capture overview
 
 ![Statistics overview](images/statistics/statistics-overview.png)
 
-*Whole-capture totals, transport summary, IP family summary, and unrecognized-
-packet totals.*
+*Whole-capture totals, capture-time values, transport/family summaries, and
+unrecognized-packet totals, with deeper capture-wide metrics in collapsible
+sections below.*
 
 At the top of `Statistics`, the application shows capture-wide totals:
 
 - `Packets`
 - `Flows`
-- `Captured Bytes`
 - `Original Bytes`
+- `Captured Bytes`
 
 Current semantics:
 
@@ -52,6 +54,109 @@ Current semantics:
 The whole-capture packet and byte totals can therefore be larger than the
 recognized-flow-only summary if some imported packets could not be assigned to
 canonical flows.
+
+When the active capture was opened only partially, `Statistics` shows a
+warning that the values cover successfully imported packets only. The page must
+not silently imply that a partial import represents the complete nominal
+source file.
+
+The always-visible capture-time row shows:
+
+- `Capture Start`
+- `Capture End`
+- `Duration`
+
+Current semantics:
+
+- `Capture Start` is the earliest timestamp among successfully surfaced
+  imported packets;
+- `Capture End` is the latest timestamp among successfully surfaced imported
+  packets;
+- recognized and unrecognized packets both participate;
+- `Duration` is the non-negative difference between end and start;
+- a one-packet capture can therefore show identical start and end with a zero
+  duration;
+- an unavailable time range remains visually distinct from a real zero
+  duration.
+
+The UI presents absolute timestamps in UTC and does not silently switch to the
+local machine timezone. Current visible formatting uses millisecond precision,
+for example:
+
+- `2026-03-22 12:26:40.000 UTC`
+- `2026-03-22 12:28:34.023 UTC`
+- `00:01:54.023`
+
+### Capture Metrics
+
+`Capture Metrics` is a collapsible section that summarizes packet-level
+properties derived from the whole surfaced capture:
+
+- `Average Captured Packet Size`
+- `Average Original Packet Size`
+- `Average Packet Rate`
+- `Average Captured Data Rate`
+- `Average Original Data Rate`
+- `Truncated Packets`
+- `Not Captured Bytes`
+- `Capture Completeness`
+
+Current semantics:
+
+- average packet sizes divide captured/original byte totals by surfaced packet
+  count when at least one packet is present;
+- packet and data rates use capture duration, so a valid zero-duration
+  one-packet capture still shows rate fields as unavailable rather than
+  `inf`/`NaN`;
+- data rates are byte-based values per second, not bits per second;
+- `Truncated Packets` shows both count and share of surfaced packets;
+- `Not Captured Bytes` is `Original Bytes - Captured Bytes` clamped at zero;
+- `Capture Completeness` is the captured/original byte ratio when original-byte
+  totals are non-zero.
+
+`Not Captured Bytes` reflects truncation or capture-incompleteness semantics in
+the imported data. It is not a network packet-loss measurement.
+
+### Flow Characteristics
+
+`Flow Characteristics` is a collapsible section that currently reports:
+
+- `Only A -> B Flows`
+- `Service Recognized`
+
+Current semantics:
+
+- `Only A -> B Flows` means flows whose first-observed `A -> B` direction has
+  packets while the reverse `B -> A` direction has none;
+- `Service Recognized` means the stored canonical flow has a non-empty service
+  hint;
+- both values are shown as count plus percentage of recognized canonical
+  flows.
+
+### Direction Distribution
+
+`Direction Distribution` is one collapsible section containing two separate
+tables:
+
+- `Packet Direction`
+- `Data Direction (Original Bytes)`
+
+Both tables use the same three direction groups:
+
+- `Mostly A -> B`
+- `Balanced`
+- `Mostly B -> A`
+
+Each row shows:
+
+- `Flows`
+- `Percent`
+
+Percentages use the recognized canonical flow total as the denominator.
+
+`Data Direction (Original Bytes)` is based on ORIGINAL bytes, not captured
+bytes. Its helper text explains that flows are grouped by directional
+original-byte balance.
 
 ### Transport summary
 

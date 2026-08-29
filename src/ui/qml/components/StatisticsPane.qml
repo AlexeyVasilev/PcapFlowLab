@@ -13,6 +13,12 @@ Item {
     property string capturedBytesText: ""
     property var originalBytes: 0
     property string originalBytesText: ""
+    property var captureTimeStatistics: ({})
+    property var captureMetrics: ({})
+    property var flowCharacteristics: ({})
+    property var packetDirectionDistribution: ({})
+    property var dataDirectionDistribution: ({})
+    property string statisticsPartialOpenWarningText: ""
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
     property var tcpCapturedBytes: 0
@@ -119,6 +125,10 @@ Item {
     readonly property int hintCapturedColumnWidth: 118
     readonly property int hintOriginalColumnWidth: 118
     readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintCapturedColumnWidth + hintOriginalColumnWidth + (tableColumnSpacing * 5) + (tablePadding * 2)
+    readonly property int directionLabelColumnWidth: 220
+    readonly property int directionFlowColumnWidth: 96
+    readonly property int directionPercentColumnWidth: 110
+    readonly property int directionTableWidth: directionLabelColumnWidth + directionFlowColumnWidth + directionPercentColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
     readonly property int pathTreeLabelColumnWidth: 420
     readonly property int pathTreeFlowsColumnWidth: 138
     readonly property int pathTreePacketsColumnWidth: 150
@@ -129,6 +139,9 @@ Item {
     readonly property int pathTreeExpanderWidth: 16
     readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
 
+    property bool captureMetricsExpanded: false
+    property bool flowCharacteristicsExpanded: false
+    property bool directionDistributionExpanded: false
     property bool packetSizeDistributionExpanded: false
     property bool flowPacketHistogramExpanded: false
     property bool protocolPathExpanded: false
@@ -145,6 +158,9 @@ Item {
     signal statisticsSectionExpandedChanged(int section, bool expanded)
 
     onStatisticsSectionsResetTokenChanged: {
+        captureMetricsExpanded = false
+        flowCharacteristicsExpanded = false
+        directionDistributionExpanded = false
         packetSizeDistributionExpanded = false
         flowPacketHistogramExpanded = false
         protocolPathExpanded = false
@@ -202,6 +218,19 @@ Item {
         return formatShare(part, total) + " (" + groupInteger(part) + " flows)"
     }
 
+    function statisticsText(section, key) {
+        if (!section || section[key] === undefined || section[key] === null)
+            return "—"
+        const text = String(section[key])
+        return text.length > 0 ? text : "—"
+    }
+
+    function statisticsRows(section) {
+        if (!section || section.rows === undefined || section.rows === null)
+            return []
+        return section.rows
+    }
+
     function protocolHintGroup(title) {
         if (title === "Possible TLS" || title === "Possible QUIC")
             return "Possible"
@@ -237,6 +266,56 @@ Item {
         color: "#334155"
         wrapMode: Text.NoWrap
         elide: Text.ElideRight
+    }
+
+    component OverviewMetricBlock: Rectangle {
+        required property string title
+        required property string valueText
+        property string subtitleText: ""
+        property string valueObjectName: ""
+        property bool wrapValue: false
+
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        radius: 6
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+        implicitHeight: metricBlockLayout.implicitHeight + 16
+
+        ColumnLayout {
+            id: metricBlockLayout
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 4
+
+            Label {
+                Layout.fillWidth: true
+                text: parent.parent.title
+                font.pixelSize: 12
+                color: "#64748b"
+                elide: Text.ElideRight
+            }
+
+            Label {
+                objectName: parent.parent.valueObjectName
+                Layout.fillWidth: true
+                text: parent.parent.valueText
+                font.pixelSize: 14
+                font.bold: true
+                color: "#0f172a"
+                wrapMode: parent.parent.wrapValue ? Text.WordWrap : Text.NoWrap
+                elide: parent.parent.wrapValue ? Text.ElideNone : Text.ElideRight
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: parent.parent.subtitleText.length > 0
+                text: parent.parent.subtitleText
+                font.pixelSize: 11
+                color: "#64748b"
+                wrapMode: Text.WordWrap
+            }
+        }
     }
 
     component ProtocolPathModeButton: Button {
@@ -351,6 +430,57 @@ Item {
         }
     }
 
+    component ThreeColumnHeader: Rectangle {
+        required property string firstTitle
+        required property string secondTitle
+        required property string thirdTitle
+        required property int firstWidth
+        required property int secondWidth
+        required property int thirdWidth
+        required property int tableWidth
+
+        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        height: root.tableHeaderHeight
+        radius: 4
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: root.tablePadding
+            anchors.rightMargin: root.tablePadding
+
+            Label {
+                x: 0
+                width: parent.parent.firstWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.firstTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing
+                width: parent.parent.secondWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.secondTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
+                width: parent.parent.thirdWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.thirdTitle
+                font.bold: true
+                color: "#334155"
+            }
+        }
+    }
+
     ScrollView {
         id: statisticsScroll
         readonly property real verticalScrollbarGutter: statisticsVerticalScrollBar.visible
@@ -383,6 +513,7 @@ Item {
 
             ColumnLayout {
                 id: statisticsColumn
+                objectName: "statisticsColumn"
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
@@ -398,6 +529,58 @@ Item {
                     originalBytes: root.originalBytes
                     originalBytesText: root.originalBytesText
                     hasCapture: root.hasCapture
+                }
+
+                SectionFrame {
+                    id: captureTimeSection
+                    objectName: "captureTimeSection"
+                    Layout.fillWidth: true
+
+                    Rectangle {
+                        objectName: "statisticsPartialOpenWarning"
+                        Layout.fillWidth: true
+                        visible: root.statisticsPartialOpenWarningText.length > 0
+                        radius: 6
+                        color: "#fffbeb"
+                        border.color: "#f59e0b"
+                        implicitHeight: partialOpenWarningLabel.implicitHeight + 12
+
+                        Label {
+                            id: partialOpenWarningLabel
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            text: root.statisticsPartialOpenWarningText
+                            color: "#92400e"
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 980 ? 3 : 1
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        OverviewMetricBlock {
+                            title: "Capture Start"
+                            valueText: root.statisticsText(root.captureTimeStatistics, "captureStartText")
+                            valueObjectName: "captureStartValue"
+                            wrapValue: true
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Capture End"
+                            valueText: root.statisticsText(root.captureTimeStatistics, "captureEndText")
+                            valueObjectName: "captureEndValue"
+                            wrapValue: true
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Duration"
+                            valueText: root.statisticsText(root.captureTimeStatistics, "durationText")
+                            valueObjectName: "captureDurationValue"
+                        }
+                    }
                 }
 
                 ProtocolStatsPane {
@@ -1147,6 +1330,287 @@ Item {
                             visible: root.protocolHintDistribution.length === 0
                             text: "No protocol-hint statistics are available for this capture."
                             color: "#64748b"
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: captureMetricsSection
+                    objectName: "captureMetricsSection"
+                    title: "Capture Metrics"
+                    toggleObjectName: "captureMetricsToggleButton"
+                    expanded: root.captureMetricsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.captureMetricsExpanded = expanded
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 860 ? 2 : 1
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        OverviewMetricBlock {
+                            title: "Average Captured Packet Size"
+                            valueText: root.statisticsText(root.captureMetrics, "averageCapturedPacketSizeText")
+                            valueObjectName: "averageCapturedPacketSizeValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Original Packet Size"
+                            valueText: root.statisticsText(root.captureMetrics, "averageOriginalPacketSizeText")
+                            valueObjectName: "averageOriginalPacketSizeValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Packet Rate"
+                            valueText: root.statisticsText(root.captureMetrics, "averagePacketRateText")
+                            valueObjectName: "averagePacketRateValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Captured Data Rate"
+                            valueText: root.statisticsText(root.captureMetrics, "averageCapturedDataRateText")
+                            valueObjectName: "averageCapturedDataRateValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Average Original Data Rate"
+                            valueText: root.statisticsText(root.captureMetrics, "averageOriginalDataRateText")
+                            valueObjectName: "averageOriginalDataRateValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Truncated Packets"
+                            valueText: root.statisticsText(root.captureMetrics, "truncatedPacketsText")
+                            valueObjectName: "truncatedPacketsValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Not Captured Bytes"
+                            valueText: root.statisticsText(root.captureMetrics, "notCapturedBytesText")
+                            valueObjectName: "notCapturedBytesValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Capture Completeness"
+                            valueText: root.statisticsText(root.captureMetrics, "captureCompletenessText")
+                            valueObjectName: "captureCompletenessValue"
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: flowCharacteristicsSection
+                    objectName: "flowCharacteristicsSection"
+                    title: "Flow Characteristics"
+                    toggleObjectName: "flowCharacteristicsToggleButton"
+                    expanded: root.flowCharacteristicsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.flowCharacteristicsExpanded = expanded
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 720 ? 2 : 1
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        OverviewMetricBlock {
+                            title: "Only A -> B Flows"
+                            valueText: root.statisticsText(root.flowCharacteristics, "onlyAToBFlowsText")
+                            valueObjectName: "onlyAToBFlowsValue"
+                        }
+
+                        OverviewMetricBlock {
+                            title: "Service Recognized"
+                            valueText: root.statisticsText(root.flowCharacteristics, "serviceRecognizedFlowsText")
+                            valueObjectName: "serviceRecognizedFlowsValue"
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: directionDistributionSection
+                    objectName: "directionDistributionSection"
+                    title: "Direction Distribution"
+                    toggleObjectName: "directionDistributionToggleButton"
+                    expanded: root.directionDistributionExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.directionDistributionExpanded = expanded
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= (root.directionTableWidth * 2) + 24 ? 2 : 1
+                        rowSpacing: 10
+                        columnSpacing: 10
+
+                        SectionFrame {
+                            objectName: "packetDirectionDistributionSection"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.alignment: Qt.AlignTop
+
+                            Label {
+                                text: "Packet Direction"
+                                font.bold: true
+                                font.pixelSize: 14
+                                color: "#0f172a"
+                            }
+
+                            ThreeColumnHeader {
+                                firstTitle: "Group"
+                                secondTitle: "Flows"
+                                thirdTitle: "Percent"
+                                firstWidth: root.directionLabelColumnWidth
+                                secondWidth: root.directionFlowColumnWidth
+                                thirdWidth: root.directionPercentColumnWidth
+                                tableWidth: root.directionTableWidth
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Repeater {
+                                    model: root.statisticsRows(root.packetDirectionDistribution)
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: packetDirectionRowLayout.implicitHeight + 8
+                                        radius: 4
+                                        color: "transparent"
+
+                                        RowLayout {
+                                            id: packetDirectionRowLayout
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.tablePadding
+                                            anchors.rightMargin: root.tablePadding
+                                            spacing: root.tableColumnSpacing
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionLabelColumnWidth
+                                                Layout.minimumWidth: root.directionLabelColumnWidth
+                                                text: modelData.label
+                                                color: "#0f172a"
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionFlowColumnWidth
+                                                Layout.minimumWidth: root.directionFlowColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.flowCountText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionPercentColumnWidth
+                                                Layout.minimumWidth: root.directionPercentColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.percentText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        SectionFrame {
+                            objectName: "dataDirectionDistributionSection"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.alignment: Qt.AlignTop
+
+                            Label {
+                                text: "Data Direction (Original Bytes)"
+                                font.bold: true
+                                font.pixelSize: 14
+                                color: "#0f172a"
+                            }
+
+                            Label {
+                                objectName: "dataDirectionDistributionHelpText"
+                                readonly property string helpTextValue: root.statisticsText(root.dataDirectionDistribution, "helpText")
+                                visible: helpTextValue.length > 0
+                                text: helpTextValue
+                                color: "#64748b"
+                                wrapMode: Text.WordWrap
+                            }
+
+                            ThreeColumnHeader {
+                                firstTitle: "Group"
+                                secondTitle: "Flows"
+                                thirdTitle: "Percent"
+                                firstWidth: root.directionLabelColumnWidth
+                                secondWidth: root.directionFlowColumnWidth
+                                thirdWidth: root.directionPercentColumnWidth
+                                tableWidth: root.directionTableWidth
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Repeater {
+                                    model: root.statisticsRows(root.dataDirectionDistribution)
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: dataDirectionRowLayout.implicitHeight + 8
+                                        radius: 4
+                                        color: "transparent"
+
+                                        RowLayout {
+                                            id: dataDirectionRowLayout
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.tablePadding
+                                            anchors.rightMargin: root.tablePadding
+                                            spacing: root.tableColumnSpacing
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionLabelColumnWidth
+                                                Layout.minimumWidth: root.directionLabelColumnWidth
+                                                text: modelData.label
+                                                color: "#0f172a"
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionFlowColumnWidth
+                                                Layout.minimumWidth: root.directionFlowColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.flowCountText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Label {
+                                                Layout.preferredWidth: root.directionPercentColumnWidth
+                                                Layout.minimumWidth: root.directionPercentColumnWidth
+                                                horizontalAlignment: Text.AlignRight
+                                                text: modelData.percentText
+                                                color: "#334155"
+                                                elide: Text.ElideLeft
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

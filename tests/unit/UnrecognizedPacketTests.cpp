@@ -101,7 +101,11 @@ void run_unrecognized_packet_tests() {
         PFL_REQUIRE(overview.unrecognized_packets.has_value());
         PFL_EXPECT(overview.unrecognized_packets->packet_count == 1U);
         PFL_EXPECT(overview.unrecognized_packets->captured_bytes > 0U);
+        PFL_EXPECT(!overview.unrecognized_packets->captured_bytes_text.empty());
+        PFL_EXPECT(overview.unrecognized_packets->captured_bytes_text.find('B') != std::string::npos);
         PFL_EXPECT(overview.unrecognized_packets->original_bytes >= overview.unrecognized_packets->captured_bytes);
+        PFL_EXPECT(!overview.unrecognized_packets->original_bytes_text.empty());
+        PFL_EXPECT(overview.unrecognized_packets->original_bytes_text.find('B') != std::string::npos);
 
         const auto packets = adapter.get_unrecognized_packets(0U, 30U);
         PFL_EXPECT(packets.has_capture);

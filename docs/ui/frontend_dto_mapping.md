@@ -182,6 +182,11 @@ Current shared statistics coverage includes:
 
 - overview summary;
 - whole-capture totals;
+- capture-time DTO fields and shared UTC/duration formatting;
+- capture-metrics DTO fields derived from `CapturePacketStatistics`;
+- flow-characteristics DTO fields derived from `CaptureGeneralStatistics`;
+- packet-direction and original-byte-direction distribution DTO rows;
+- partial-open Statistics warning text;
 - transport/family summary values;
 - packet-size distribution;
 - flows-by-packet-count histogram;

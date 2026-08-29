@@ -21,6 +21,9 @@
   const tauriEagerFlowLoadLimit = 250000;
   const topEndpointPortStatisticsLimit = 5;
   const statisticsSectionKeys = Object.freeze({
+    captureMetrics: "captureMetrics",
+    flowCharacteristics: "flowCharacteristics",
+    directionDistribution: "directionDistribution",
     packetSizeDistribution: "packetSizeDistribution",
     flowPacketHistogram: "flowPacketHistogram",
     protocolPath: "protocolPath",
@@ -46,6 +49,9 @@
 
   function createStatisticsSectionsState() {
     return {
+      [statisticsSectionKeys.captureMetrics]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.flowCharacteristics]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.directionDistribution]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.packetSizeDistribution]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.flowPacketHistogram]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolPath]: createStatisticsSectionEntry(),
@@ -3553,6 +3559,26 @@
     metricFlows: document.getElementById("metricFlows"),
     metricCapturedBytes: document.getElementById("metricCapturedBytes"),
     metricOriginalBytes: document.getElementById("metricOriginalBytes"),
+    statisticsPartialOpenWarning: document.getElementById("statisticsPartialOpenWarning"),
+    captureStartValue: document.getElementById("captureStartValue"),
+    captureEndValue: document.getElementById("captureEndValue"),
+    captureDurationValue: document.getElementById("captureDurationValue"),
+    captureMetricsDetails: document.getElementById("captureMetricsDetails"),
+    averageCapturedPacketSizeValue: document.getElementById("averageCapturedPacketSizeValue"),
+    averageOriginalPacketSizeValue: document.getElementById("averageOriginalPacketSizeValue"),
+    averagePacketRateValue: document.getElementById("averagePacketRateValue"),
+    averageCapturedDataRateValue: document.getElementById("averageCapturedDataRateValue"),
+    averageOriginalDataRateValue: document.getElementById("averageOriginalDataRateValue"),
+    truncatedPacketsValue: document.getElementById("truncatedPacketsValue"),
+    notCapturedBytesValue: document.getElementById("notCapturedBytesValue"),
+    captureCompletenessValue: document.getElementById("captureCompletenessValue"),
+    flowCharacteristicsDetails: document.getElementById("flowCharacteristicsDetails"),
+    onlyAToBFlowsValue: document.getElementById("onlyAToBFlowsValue"),
+    serviceRecognizedFlowsValue: document.getElementById("serviceRecognizedFlowsValue"),
+    directionDistributionDetails: document.getElementById("directionDistributionDetails"),
+    packetDirectionDistributionBody: document.getElementById("packetDirectionDistributionBody"),
+    dataDirectionDistributionHelpText: document.getElementById("dataDirectionDistributionHelpText"),
+    dataDirectionDistributionBody: document.getElementById("dataDirectionDistributionBody"),
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
     unrecognizedStatsSection: document.getElementById("unrecognizedStatsSection"),
@@ -3606,6 +3632,32 @@
     return String(Math.trunc(number));
   }
 
+  function statisticsDisplayText(value) {
+    const text = String(value ?? "").trim();
+    return text.length > 0 ? text : "—";
+  }
+
+  function setStatisticsText(element, value) {
+    if (element) {
+      element.textContent = statisticsDisplayText(value);
+    }
+  }
+
+  function renderDirectionDistributionRows(rows, emptyText) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (safeRows.length === 0) {
+      return renderStatsStateRow(3, emptyText);
+    }
+
+    return safeRows.map((row) => `
+      <tr>
+        <td>${escapeHtml(String(row?.label ?? "—"))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.flow_count_text))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.percent_text))}</td>
+      </tr>
+    `).join("");
+  }
+
   function currentCaptureGeneration() {
     return Number(state.openRequestToken ?? 0);
   }
@@ -3650,6 +3702,9 @@
 
   function synchronizeStatisticsDisclosureState() {
     const detailsBindings = [
+      [elements.captureMetricsDetails, statisticsSectionKeys.captureMetrics],
+      [elements.flowCharacteristicsDetails, statisticsSectionKeys.flowCharacteristics],
+      [elements.directionDistributionDetails, statisticsSectionKeys.directionDistribution],
       [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
       [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
       [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
@@ -7158,6 +7213,24 @@
     elements.protocolHintsSummaryValue && (elements.protocolHintsSummaryValue.textContent = "");
     elements.quicTlsSummaryValue && (elements.quicTlsSummaryValue.textContent = "");
     elements.topEndpointsPortsSummaryValue && (elements.topEndpointsPortsSummaryValue.textContent = "");
+    elements.statisticsPartialOpenWarning && elements.statisticsPartialOpenWarning.classList.add("is-hidden");
+    elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
+    setStatisticsText(elements.captureStartValue, "");
+    setStatisticsText(elements.captureEndValue, "");
+    setStatisticsText(elements.captureDurationValue, "");
+    setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+    setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+    setStatisticsText(elements.averagePacketRateValue, "");
+    setStatisticsText(elements.averageCapturedDataRateValue, "");
+    setStatisticsText(elements.averageOriginalDataRateValue, "");
+    setStatisticsText(elements.truncatedPacketsValue, "");
+    setStatisticsText(elements.notCapturedBytesValue, "");
+    setStatisticsText(elements.captureCompletenessValue, "");
+    setStatisticsText(elements.onlyAToBFlowsValue, "");
+    setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+    elements.packetDirectionDistributionBody && (elements.packetDirectionDistributionBody.innerHTML = "");
+    elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+    elements.dataDirectionDistributionBody && (elements.dataDirectionDistributionBody.innerHTML = "");
     elements.transportStatsBody && (elements.transportStatsBody.innerHTML = "");
     elements.familyStatsBody && (elements.familyStatsBody.innerHTML = "");
     elements.unrecognizedStatsBody && (elements.unrecognizedStatsBody.innerHTML = "");
@@ -7594,6 +7667,11 @@
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
     const unrecognizedStats = overview?.unrecognized_packets || null;
+    const captureTime = overview?.capture_time || null;
+    const captureMetrics = overview?.capture_metrics || null;
+    const flowCharacteristics = overview?.flow_characteristics || null;
+    const packetDirectionDistribution = overview?.packet_direction_distribution || null;
+    const dataDirectionDistribution = overview?.original_byte_direction_distribution || null;
 
     elements.metricPackets.textContent = overview ? formatNumber(overview.whole_capture_totals?.packet_count ?? overview.summary?.packet_count ?? 0) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
@@ -7605,6 +7683,28 @@
       : "-";
 
     if (state.openState === "opening") {
+      setStatisticsText(elements.captureStartValue, "");
+      setStatisticsText(elements.captureEndValue, "");
+      setStatisticsText(elements.captureDurationValue, "");
+      setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+      setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketRateValue, "");
+      setStatisticsText(elements.averageCapturedDataRateValue, "");
+      setStatisticsText(elements.averageOriginalDataRateValue, "");
+      setStatisticsText(elements.truncatedPacketsValue, "");
+      setStatisticsText(elements.notCapturedBytesValue, "");
+      setStatisticsText(elements.captureCompletenessValue, "");
+      setStatisticsText(elements.onlyAToBFlowsValue, "");
+      setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+      elements.packetDirectionDistributionBody && (
+        elements.packetDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Loading packet-direction statistics...")
+      );
+      elements.dataDirectionDistributionBody && (
+        elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Loading original-byte direction statistics...")
+      );
+      elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
+      elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "Loading overview...";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Loading transport statistics...");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Loading IP family statistics...");
@@ -7616,6 +7716,28 @@
     }
 
     if (state.openState === "error") {
+      setStatisticsText(elements.captureStartValue, "");
+      setStatisticsText(elements.captureEndValue, "");
+      setStatisticsText(elements.captureDurationValue, "");
+      setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+      setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketRateValue, "");
+      setStatisticsText(elements.averageCapturedDataRateValue, "");
+      setStatisticsText(elements.averageOriginalDataRateValue, "");
+      setStatisticsText(elements.truncatedPacketsValue, "");
+      setStatisticsText(elements.notCapturedBytesValue, "");
+      setStatisticsText(elements.captureCompletenessValue, "");
+      setStatisticsText(elements.onlyAToBFlowsValue, "");
+      setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+      elements.packetDirectionDistributionBody && (
+        elements.packetDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open failed. No packet-direction statistics were loaded.", "error")
+      );
+      elements.dataDirectionDistributionBody && (
+        elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open failed. No original-byte direction statistics were loaded.", "error")
+      );
+      elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
+      elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "No overview is available after open failure.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No IP family statistics were loaded.", "error");
@@ -7627,6 +7749,28 @@
     }
 
     if (state.openState !== "opened" || !overview) {
+      setStatisticsText(elements.captureStartValue, "");
+      setStatisticsText(elements.captureEndValue, "");
+      setStatisticsText(elements.captureDurationValue, "");
+      setStatisticsText(elements.averageCapturedPacketSizeValue, "");
+      setStatisticsText(elements.averageOriginalPacketSizeValue, "");
+      setStatisticsText(elements.averagePacketRateValue, "");
+      setStatisticsText(elements.averageCapturedDataRateValue, "");
+      setStatisticsText(elements.averageOriginalDataRateValue, "");
+      setStatisticsText(elements.truncatedPacketsValue, "");
+      setStatisticsText(elements.notCapturedBytesValue, "");
+      setStatisticsText(elements.captureCompletenessValue, "");
+      setStatisticsText(elements.onlyAToBFlowsValue, "");
+      setStatisticsText(elements.serviceRecognizedFlowsValue, "");
+      elements.packetDirectionDistributionBody && (
+        elements.packetDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load packet-direction statistics.")
+      );
+      elements.dataDirectionDistributionBody && (
+        elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load original-byte direction statistics.")
+      );
+      elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
+      elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "No capture loaded.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load transport statistics.");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load IP family statistics.");
@@ -7637,6 +7781,39 @@
       return;
     }
 
+    setStatisticsText(elements.captureStartValue, captureTime?.capture_start_text);
+    setStatisticsText(elements.captureEndValue, captureTime?.capture_end_text);
+    setStatisticsText(elements.captureDurationValue, captureTime?.duration_text);
+    setStatisticsText(elements.averageCapturedPacketSizeValue, captureMetrics?.average_captured_packet_size_text);
+    setStatisticsText(elements.averageOriginalPacketSizeValue, captureMetrics?.average_original_packet_size_text);
+    setStatisticsText(elements.averagePacketRateValue, captureMetrics?.average_packet_rate_text);
+    setStatisticsText(elements.averageCapturedDataRateValue, captureMetrics?.average_captured_data_rate_text);
+    setStatisticsText(elements.averageOriginalDataRateValue, captureMetrics?.average_original_data_rate_text);
+    setStatisticsText(elements.truncatedPacketsValue, captureMetrics?.truncated_packets_text);
+    setStatisticsText(elements.notCapturedBytesValue, captureMetrics?.not_captured_bytes_text);
+    setStatisticsText(elements.captureCompletenessValue, captureMetrics?.capture_completeness_text);
+    setStatisticsText(elements.onlyAToBFlowsValue, flowCharacteristics?.only_a_to_b_flows_text);
+    setStatisticsText(elements.serviceRecognizedFlowsValue, flowCharacteristics?.service_recognized_flows_text);
+    if (elements.packetDirectionDistributionBody) {
+      elements.packetDirectionDistributionBody.innerHTML = renderDirectionDistributionRows(
+        packetDirectionDistribution?.rows,
+        "No packet-direction statistics are available."
+      );
+    }
+    if (elements.dataDirectionDistributionHelpText) {
+      elements.dataDirectionDistributionHelpText.textContent = String(dataDirectionDistribution?.help_text ?? "");
+    }
+    if (elements.dataDirectionDistributionBody) {
+      elements.dataDirectionDistributionBody.innerHTML = renderDirectionDistributionRows(
+        dataDirectionDistribution?.rows,
+        "No original-byte direction statistics are available."
+      );
+    }
+    if (elements.statisticsPartialOpenWarning) {
+      const warningText = String(overview.statistics_partial_open_warning_text ?? "");
+      elements.statisticsPartialOpenWarning.textContent = warningText;
+      elements.statisticsPartialOpenWarning.classList.toggle("is-hidden", warningText.length === 0);
+    }
     elements.overviewMeta.textContent = "Overview and protocol summaries loaded from the active capture or index.";
     elements.transportStatsBody.innerHTML = transportRows
       .map(([label, stats]) => `
@@ -7668,8 +7845,8 @@
         ? `
           <tr>
             <td>${formatNumber(unrecognizedStats?.packet_count)}</td>
-            <td>${formatNumber(unrecognizedStats?.captured_bytes)}</td>
-            <td>${formatNumber(unrecognizedStats?.original_bytes)}</td>
+            <td>${escapeHtml(statisticsDisplayText(unrecognizedStats?.captured_bytes_text))}</td>
+            <td>${escapeHtml(statisticsDisplayText(unrecognizedStats?.original_bytes_text))}</td>
           </tr>
         `
         : "";
@@ -12332,6 +12509,9 @@
     scheduleProtocolPathStatsViewportRender();
   });
   for (const [detailsElement, sectionKey] of [
+    [elements.captureMetricsDetails, statisticsSectionKeys.captureMetrics],
+    [elements.flowCharacteristicsDetails, statisticsSectionKeys.flowCharacteristics],
+    [elements.directionDistributionDetails, statisticsSectionKeys.directionDistribution],
     [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
     [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
