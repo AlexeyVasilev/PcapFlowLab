@@ -146,22 +146,22 @@ bool write_connection_table(
 bool read_connection_table_chunk(
     std::istream& stream,
     ConnectionTableV4& table,
-    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+    CapturePacketStatistics* packet_statistics = nullptr
 );
 bool read_connection_table_chunk(
     std::istream& stream,
     ConnectionTableV6& table,
-    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+    CapturePacketStatistics* packet_statistics = nullptr
 );
 bool read_connection_table(
     std::istream& stream,
     ConnectionTableV4& table,
-    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+    CapturePacketStatistics* packet_statistics = nullptr
 );
 bool read_connection_table(
     std::istream& stream,
     ConnectionTableV6& table,
-    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+    CapturePacketStatistics* packet_statistics = nullptr
 );
 
 bool write_unrecognized_packet_records(
@@ -176,7 +176,7 @@ bool write_unrecognized_packet_records(
 bool read_unrecognized_packet_records(
     std::istream& stream,
     std::vector<UnrecognizedPacketRecord>& records,
-    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+    CapturePacketStatistics* packet_statistics = nullptr
 );
 
 bool write_capture_packet_locator(
@@ -192,7 +192,7 @@ bool write_capture_state(std::ostream& stream, const CaptureState& state);
 bool read_capture_state(
     std::istream& stream,
     CaptureState& state,
-    CapturePacketSizeStatistics* packet_size_statistics = nullptr
+    CapturePacketStatistics* packet_statistics = nullptr
 );
 
 std::vector<const ConnectionV4*> sorted_connections(const ConnectionTableV4& table);

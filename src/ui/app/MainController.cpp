@@ -6938,11 +6938,11 @@ void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     advanced_flow_filter_protocol_path_selector_model_.setCaptureSession(&session_);
     protocol_summary_ = session_.protocol_summary();
+    const auto& whole_capture_packet_statistics = session_.packet_statistics();
     unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
-    const auto whole_capture_packet_size_statistics = session_.packet_size_statistics();
-    whole_capture_packet_count_ = whole_capture_packet_size_statistics.total_packet_count;
-    whole_capture_captured_bytes_ = whole_capture_packet_size_statistics.total_captured_bytes;
-    whole_capture_original_bytes_ = session_.summary().total_bytes + unrecognized_packet_statistics_.original_bytes;
+    whole_capture_packet_count_ = whole_capture_packet_statistics.total_packet_count;
+    whole_capture_captured_bytes_ = whole_capture_packet_statistics.total_captured_bytes;
+    whole_capture_original_bytes_ = whole_capture_packet_statistics.total_original_bytes;
     resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
     // Clear any selected-flow state from the previous capture before publishing

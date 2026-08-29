@@ -2913,9 +2913,13 @@ const CaptureSummary& CaptureSession::summary() const noexcept {
     return state_.summary;
 }
 
-const CapturePacketSizeStatistics& CaptureSession::packet_size_statistics() const noexcept {
-    static const CapturePacketSizeStatistics empty_statistics {};
-    return has_capture() ? state_.packet_size_statistics : empty_statistics;
+const CapturePacketStatistics& CaptureSession::packet_statistics() const noexcept {
+    static const CapturePacketStatistics empty_statistics {};
+    return has_capture() ? state_.packet_statistics : empty_statistics;
+}
+
+CapturePacketSizeStatistics CaptureSession::packet_size_statistics() const noexcept {
+    return make_capture_packet_size_statistics(packet_statistics());
 }
 
 CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
@@ -5132,15 +5136,11 @@ std::size_t CaptureSession::unrecognized_packet_count() const noexcept {
 }
 
 UnrecognizedPacketStatistics CaptureSession::unrecognized_packet_statistics() const noexcept {
-    UnrecognizedPacketStatistics summary {};
-    summary.packet_count = static_cast<std::uint64_t>(state_.unrecognized_packets.size());
-
-    for (const auto& record : state_.unrecognized_packets) {
-        summary.captured_bytes += record.packet.captured_length;
-        summary.original_bytes += record.packet.original_length;
-    }
-
-    return summary;
+    return UnrecognizedPacketStatistics {
+        .packet_count = state_.packet_statistics.unrecognized_packet_count,
+        .captured_bytes = state_.packet_statistics.unrecognized_captured_bytes,
+        .original_bytes = state_.packet_statistics.unrecognized_original_bytes,
+    };
 }
 
 std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::size_t flow_index) const {

@@ -328,7 +328,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
 
         CaptureSourceInfo source_info {};
         CaptureState state {};
-        state.packet_size_statistics = {};
+        state.packet_statistics = {};
         bool has_summary {false};
         bool has_protocol_paths {false};
         bool has_ipv4_connections {false};
@@ -552,7 +552,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                     return detail::read_connection_table_chunk(
                         section_stream,
                         state.ipv4_connections,
-                        &state.packet_size_statistics
+                        &state.packet_statistics
                     );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv4 connection section");
@@ -580,7 +580,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                     return detail::read_connection_table_chunk(
                         section_stream,
                         state.ipv6_connections,
-                        &state.packet_size_statistics
+                        &state.packet_statistics
                     );
                 })) {
                     set_error_context(section_header_offset, "invalid IPv6 connection section");
@@ -608,7 +608,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                     return detail::read_unrecognized_packet_records(
                         section_stream,
                         state.unrecognized_packets,
-                        &state.packet_size_statistics
+                        &state.packet_statistics
                     );
                 })) {
                     set_error_context(section_header_offset, "invalid unrecognized-packets section");

@@ -134,6 +134,18 @@ const CapturePacketSizeStatisticsBucket* find_bucket(
     return nullptr;
 }
 
+const CapturePacketSizeStatisticsBucket* find_bucket(
+    const CapturePacketSizeDistribution& distribution,
+    const std::string_view stable_id
+) {
+    for (const auto& bucket : distribution.buckets) {
+        if (bucket.stable_id == stable_id) {
+            return &bucket;
+        }
+    }
+    return nullptr;
+}
+
 const FrontendFlowPacketCountHistogramBucketDto* find_bucket(
     const FrontendFlowPacketCountHistogramDto& histogram,
     const std::string_view stable_id
@@ -186,6 +198,77 @@ void expect_capture_packet_size_bucket(
     PFL_EXPECT(bucket->packet_count == expected_packet_count);
     PFL_EXPECT(bucket->lower_bound_inclusive == expected_lower_bound);
     PFL_EXPECT(bucket->upper_bound_inclusive == expected_upper_bound);
+}
+
+void expect_capture_packet_size_bucket(
+    const CapturePacketSizeDistribution& distribution,
+    const std::string_view stable_id,
+    const std::uint64_t expected_packet_count,
+    const std::uint32_t expected_lower_bound,
+    const std::optional<std::uint32_t> expected_upper_bound
+) {
+    const auto* bucket = find_bucket(distribution, stable_id);
+    PFL_REQUIRE(bucket != nullptr);
+    PFL_EXPECT(bucket->packet_count == expected_packet_count);
+    PFL_EXPECT(bucket->lower_bound_inclusive == expected_lower_bound);
+    PFL_EXPECT(bucket->upper_bound_inclusive == expected_upper_bound);
+}
+
+void expect_capture_packet_statistics_equal(
+    const CapturePacketStatistics& left,
+    const CapturePacketStatistics& right
+) {
+    PFL_EXPECT(left.total_packet_count == right.total_packet_count);
+    PFL_EXPECT(left.total_captured_bytes == right.total_captured_bytes);
+    PFL_EXPECT(left.total_original_bytes == right.total_original_bytes);
+    PFL_EXPECT(left.timestamp_range.available == right.timestamp_range.available);
+    PFL_EXPECT(left.timestamp_range.earliest_timestamp_us == right.timestamp_range.earliest_timestamp_us);
+    PFL_EXPECT(left.timestamp_range.latest_timestamp_us == right.timestamp_range.latest_timestamp_us);
+    PFL_EXPECT(left.truncated_packet_count == right.truncated_packet_count);
+    PFL_EXPECT(left.maximum_captured_packet_length == right.maximum_captured_packet_length);
+    PFL_EXPECT(left.maximum_original_packet_length == right.maximum_original_packet_length);
+    PFL_EXPECT(left.captured_size_distribution.maximum_bucket_packet_count ==
+        right.captured_size_distribution.maximum_bucket_packet_count);
+    PFL_EXPECT(left.original_size_distribution.maximum_bucket_packet_count ==
+        right.original_size_distribution.maximum_bucket_packet_count);
+    PFL_EXPECT(left.unrecognized_packet_count == right.unrecognized_packet_count);
+    PFL_EXPECT(left.unrecognized_captured_bytes == right.unrecognized_captured_bytes);
+    PFL_EXPECT(left.unrecognized_original_bytes == right.unrecognized_original_bytes);
+    PFL_EXPECT(left.captured_size_distribution.buckets.size() == right.captured_size_distribution.buckets.size());
+    PFL_EXPECT(left.original_size_distribution.buckets.size() == right.original_size_distribution.buckets.size());
+
+    for (std::size_t index = 0U; index < left.captured_size_distribution.buckets.size(); ++index) {
+        PFL_EXPECT(left.captured_size_distribution.buckets[index].stable_id ==
+            right.captured_size_distribution.buckets[index].stable_id);
+        PFL_EXPECT(left.captured_size_distribution.buckets[index].packet_count ==
+            right.captured_size_distribution.buckets[index].packet_count);
+    }
+
+    for (std::size_t index = 0U; index < left.original_size_distribution.buckets.size(); ++index) {
+        PFL_EXPECT(left.original_size_distribution.buckets[index].stable_id ==
+            right.original_size_distribution.buckets[index].stable_id);
+        PFL_EXPECT(left.original_size_distribution.buckets[index].packet_count ==
+            right.original_size_distribution.buckets[index].packet_count);
+    }
+}
+
+void expect_capture_packet_statistics_invariants(const CapturePacketStatistics& statistics) {
+    std::uint64_t captured_histogram_packet_count = 0U;
+    for (const auto& bucket : statistics.captured_size_distribution.buckets) {
+        captured_histogram_packet_count += bucket.packet_count;
+    }
+
+    std::uint64_t original_histogram_packet_count = 0U;
+    for (const auto& bucket : statistics.original_size_distribution.buckets) {
+        original_histogram_packet_count += bucket.packet_count;
+    }
+
+    PFL_EXPECT(captured_histogram_packet_count == statistics.total_packet_count);
+    PFL_EXPECT(original_histogram_packet_count == statistics.total_packet_count);
+    PFL_EXPECT(statistics.truncated_packet_count <= statistics.total_packet_count);
+    PFL_EXPECT(statistics.unrecognized_packet_count <= statistics.total_packet_count);
+    PFL_EXPECT(statistics.unrecognized_captured_bytes <= statistics.total_captured_bytes);
+    PFL_EXPECT(statistics.unrecognized_original_bytes <= statistics.total_original_bytes);
 }
 
 void expect_histogram_equal(const FlowPacketCountHistogram& left, const FlowPacketCountHistogram& right) {
@@ -575,6 +658,111 @@ void expect_capture_packet_size_statistics_supports_empty_state() {
     }
 }
 
+void expect_capture_packet_statistics_supports_empty_state() {
+    const CapturePacketStatistics statistics {};
+    PFL_EXPECT(statistics.total_packet_count == 0U);
+    PFL_EXPECT(statistics.total_captured_bytes == 0U);
+    PFL_EXPECT(statistics.total_original_bytes == 0U);
+    PFL_EXPECT(!statistics.timestamp_range.available);
+    PFL_EXPECT(statistics.timestamp_range.earliest_timestamp_us == 0U);
+    PFL_EXPECT(statistics.timestamp_range.latest_timestamp_us == 0U);
+    PFL_EXPECT(statistics.truncated_packet_count == 0U);
+    PFL_EXPECT(statistics.maximum_captured_packet_length == 0U);
+    PFL_EXPECT(statistics.maximum_original_packet_length == 0U);
+    PFL_EXPECT(statistics.captured_size_distribution.maximum_bucket_packet_count == 0U);
+    PFL_EXPECT(statistics.original_size_distribution.maximum_bucket_packet_count == 0U);
+    PFL_EXPECT(statistics.unrecognized_packet_count == 0U);
+    PFL_EXPECT(statistics.unrecognized_captured_bytes == 0U);
+    PFL_EXPECT(statistics.unrecognized_original_bytes == 0U);
+    expect_capture_packet_statistics_invariants(statistics);
+}
+
+void expect_capture_packet_statistics_track_single_recognized_packet() {
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 60, 2, 1), ipv4(10, 60, 2, 2), 6003, 443);
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_statistics_single_recognized.pcap",
+        make_classic_pcap({
+            {100U, recognized_packet},
+        })
+    );
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+
+    const auto& statistics = session.packet_statistics();
+    PFL_EXPECT(statistics.total_packet_count == 1U);
+    PFL_EXPECT(statistics.total_captured_bytes == static_cast<std::uint64_t>(recognized_packet.size()));
+    PFL_EXPECT(statistics.total_original_bytes == static_cast<std::uint64_t>(recognized_packet.size()));
+    PFL_EXPECT(statistics.timestamp_range.available);
+    PFL_EXPECT(statistics.timestamp_range.earliest_timestamp_us == 1'000'100ULL);
+    PFL_EXPECT(statistics.timestamp_range.latest_timestamp_us == 1'000'100ULL);
+    PFL_EXPECT(statistics.truncated_packet_count == 0U);
+    PFL_EXPECT(statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(statistics.maximum_original_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(statistics.unrecognized_packet_count == 0U);
+    PFL_EXPECT(statistics.unrecognized_captured_bytes == 0U);
+    PFL_EXPECT(statistics.unrecognized_original_bytes == 0U);
+    expect_capture_packet_statistics_invariants(statistics);
+    expect_capture_packet_size_bucket(
+        statistics.captured_size_distribution,
+        "captured_bytes_0_63",
+        1U,
+        0U,
+        63U
+    );
+    expect_capture_packet_size_bucket(
+        statistics.original_size_distribution,
+        "original_bytes_0_63",
+        1U,
+        0U,
+        63U
+    );
+}
+
+void expect_capture_packet_statistics_track_single_truncated_packet() {
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 60, 3, 1), ipv4(10, 60, 3, 2), 6004, 443);
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_statistics_single_truncated.pcap",
+        make_classic_pcap_with_captured_lengths({
+            {
+                .ts_usec = 220U,
+                .captured_bytes = recognized_packet,
+                .original_length = 600U,
+            },
+        })
+    );
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+
+    const auto& statistics = session.packet_statistics();
+    PFL_EXPECT(statistics.total_packet_count == 1U);
+    PFL_EXPECT(statistics.total_captured_bytes == static_cast<std::uint64_t>(recognized_packet.size()));
+    PFL_EXPECT(statistics.total_original_bytes == 600U);
+    PFL_EXPECT(statistics.timestamp_range.available);
+    PFL_EXPECT(statistics.timestamp_range.earliest_timestamp_us == 1'000'220ULL);
+    PFL_EXPECT(statistics.timestamp_range.latest_timestamp_us == 1'000'220ULL);
+    PFL_EXPECT(statistics.truncated_packet_count == 1U);
+    PFL_EXPECT(statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(statistics.maximum_original_packet_length == 600U);
+    PFL_EXPECT(statistics.unrecognized_packet_count == 0U);
+    expect_capture_packet_statistics_invariants(statistics);
+    expect_capture_packet_size_bucket(
+        statistics.captured_size_distribution,
+        "captured_bytes_0_63",
+        1U,
+        0U,
+        63U
+    );
+    expect_capture_packet_size_bucket(
+        statistics.original_size_distribution,
+        "original_bytes_512_1000",
+        1U,
+        512U,
+        1000U
+    );
+}
+
 void expect_capture_packet_size_statistics_counts_recognized_and_unrecognized_packets() {
     const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 6001, 443);
     const auto unrecognized_packet = unrecognized_ethernet_frame();
@@ -599,6 +787,115 @@ void expect_capture_packet_size_statistics_counts_recognized_and_unrecognized_pa
     PFL_EXPECT(statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
     PFL_EXPECT(session.summary().packet_count == 1U);
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+}
+
+void expect_capture_packet_statistics_tracks_total_original_timestamp_truncation_and_unrecognized_fields() {
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 60, 1, 1), ipv4(10, 60, 1, 2), 6002, 443);
+    const auto unrecognized_packet = large_unrecognized_ethernet_frame();
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_statistics_full_runtime_authority.pcap",
+        make_classic_pcap_with_captured_lengths({
+            {
+                .ts_usec = 400U,
+                .captured_bytes = recognized_packet,
+                .original_length = 300U,
+            },
+            {
+                .ts_usec = 100U,
+                .captured_bytes = unrecognized_packet,
+                .original_length = 9001U,
+            },
+        })
+    );
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+
+    const auto& statistics = session.packet_statistics();
+    PFL_EXPECT(statistics.total_packet_count == 2U);
+    PFL_EXPECT(
+        statistics.total_captured_bytes ==
+        static_cast<std::uint64_t>(recognized_packet.size() + unrecognized_packet.size())
+    );
+    PFL_EXPECT(statistics.total_original_bytes == 9301U);
+    PFL_EXPECT(statistics.timestamp_range.available);
+    PFL_EXPECT(statistics.timestamp_range.earliest_timestamp_us == 1'000'400ULL);
+    PFL_EXPECT(statistics.timestamp_range.latest_timestamp_us == 2'000'100ULL);
+    PFL_EXPECT(statistics.truncated_packet_count == 2U);
+    PFL_EXPECT(statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(unrecognized_packet.size()));
+    PFL_EXPECT(statistics.maximum_original_packet_length == 9001U);
+    PFL_EXPECT(statistics.captured_size_distribution.maximum_bucket_packet_count == 1U);
+    PFL_EXPECT(statistics.original_size_distribution.maximum_bucket_packet_count == 1U);
+    PFL_EXPECT(statistics.unrecognized_packet_count == 1U);
+    PFL_EXPECT(statistics.unrecognized_captured_bytes == static_cast<std::uint64_t>(unrecognized_packet.size()));
+    PFL_EXPECT(statistics.unrecognized_original_bytes == 9001U);
+    expect_capture_packet_statistics_invariants(statistics);
+    expect_capture_packet_size_bucket(
+        statistics.captured_size_distribution,
+        "captured_bytes_0_63",
+        1U,
+        0U,
+        63U
+    );
+    expect_capture_packet_size_bucket(
+        statistics.captured_size_distribution,
+        "captured_bytes_256_511",
+        1U,
+        256U,
+        511U
+    );
+    expect_capture_packet_size_bucket(
+        statistics.original_size_distribution,
+        "original_bytes_256_511",
+        1U,
+        256U,
+        511U
+    );
+    expect_capture_packet_size_bucket(
+        statistics.original_size_distribution,
+        "original_bytes_9001_16000",
+        1U,
+        9001U,
+        16000U
+    );
+}
+
+void expect_capture_packet_statistics_use_temporal_min_max_for_out_of_order_pcapng_packets() {
+    const auto first_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 60, 4, 1), ipv4(10, 60, 4, 2), 6005, 443);
+    const auto second_packet = unrecognized_ethernet_frame();
+    const auto third_packet = make_ethernet_ipv4_udp_packet(ipv4(10, 60, 4, 3), ipv4(10, 60, 4, 4), 53005, 53);
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_statistics_out_of_order_timestamps.pcapng",
+        make_pcapng({
+            make_pcapng_section_header_block(),
+            make_pcapng_interface_description_block(),
+            make_pcapng_enhanced_packet_block(0U, 5U, 900U, first_packet),
+            make_pcapng_enhanced_packet_block(0U, 3U, 50U, second_packet),
+            make_pcapng_enhanced_packet_block(0U, 4U, 700U, third_packet),
+        })
+    );
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+
+    const auto& statistics = session.packet_statistics();
+    PFL_EXPECT(statistics.total_packet_count == 3U);
+    PFL_EXPECT(
+        statistics.total_captured_bytes ==
+        static_cast<std::uint64_t>(first_packet.size() + second_packet.size() + third_packet.size())
+    );
+    PFL_EXPECT(
+        statistics.total_original_bytes ==
+        static_cast<std::uint64_t>(first_packet.size() + second_packet.size() + third_packet.size())
+    );
+    PFL_EXPECT(statistics.timestamp_range.available);
+    PFL_EXPECT(statistics.timestamp_range.earliest_timestamp_us == 3'000'050ULL);
+    PFL_EXPECT(statistics.timestamp_range.latest_timestamp_us == 5'000'900ULL);
+    PFL_EXPECT(statistics.truncated_packet_count == 0U);
+    PFL_EXPECT(statistics.unrecognized_packet_count == 1U);
+    PFL_EXPECT(statistics.unrecognized_captured_bytes == static_cast<std::uint64_t>(second_packet.size()));
+    PFL_EXPECT(statistics.unrecognized_original_bytes == static_cast<std::uint64_t>(second_packet.size()));
+    expect_capture_packet_statistics_invariants(statistics);
 }
 
 void expect_capture_packet_size_statistics_counts_decode_malformed_packets() {
@@ -714,6 +1011,40 @@ void expect_capture_packet_size_statistics_survives_index_roundtrip() {
     );
 }
 
+void expect_capture_packet_statistics_survive_index_roundtrip() {
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 64, 1, 1), ipv4(10, 64, 1, 2), 6402, 443);
+    const auto unrecognized_packet = large_unrecognized_ethernet_frame();
+    const auto capture_path = write_temp_pcap(
+        "pfl_capture_packet_statistics_roundtrip.pcap",
+        make_classic_pcap_with_captured_lengths({
+            {
+                .ts_usec = 250U,
+                .captured_bytes = recognized_packet,
+                .original_length = 600U,
+            },
+            {
+                .ts_usec = 900U,
+                .captured_bytes = unrecognized_packet,
+                .original_length = 30'000U,
+            },
+        })
+    );
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(capture_path));
+    const auto imported_statistics = session.packet_statistics();
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_capture_packet_statistics_roundtrip.idx";
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    const auto loaded_statistics = loaded_session.packet_statistics();
+
+    expect_capture_packet_statistics_equal(imported_statistics, loaded_statistics);
+}
+
 void expect_capture_packet_size_statistics_ignores_unsurfaced_classic_packet_failures() {
     const auto large_packet = large_unrecognized_ethernet_frame();
     const auto capture_path = write_temp_pcap(
@@ -734,10 +1065,13 @@ void expect_capture_packet_size_statistics_ignores_unsurfaced_classic_packet_fai
     PFL_EXPECT(result == CaptureImportResult::failure);
     PFL_EXPECT(state.summary.packet_count == 0U);
     PFL_EXPECT(state.unrecognized_packets.empty());
-    PFL_EXPECT(state.packet_size_statistics.total_packet_count == 0U);
-    PFL_EXPECT(state.packet_size_statistics.total_captured_bytes == 0U);
-    PFL_EXPECT(state.packet_size_statistics.maximum_bucket_packet_count == 0U);
-    PFL_EXPECT(state.packet_size_statistics.maximum_captured_packet_length == 0U);
+    PFL_EXPECT(state.packet_statistics.total_packet_count == 0U);
+    PFL_EXPECT(state.packet_statistics.total_captured_bytes == 0U);
+    PFL_EXPECT(state.packet_statistics.total_original_bytes == 0U);
+    PFL_EXPECT(state.packet_statistics.captured_size_distribution.maximum_bucket_packet_count == 0U);
+    PFL_EXPECT(state.packet_statistics.maximum_captured_packet_length == 0U);
+    PFL_EXPECT(state.packet_statistics.maximum_original_packet_length == 0U);
+    expect_capture_packet_statistics_invariants(state.packet_statistics);
 }
 
 void expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing_reader_error() {
@@ -764,10 +1098,17 @@ void expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing
     PFL_EXPECT(result == CaptureImportResult::partial_success_with_warning);
     PFL_EXPECT(state.summary.packet_count == 1U);
     PFL_EXPECT(state.unrecognized_packets.empty());
-    PFL_EXPECT(state.packet_size_statistics.total_packet_count == 1U);
-    PFL_EXPECT(state.packet_size_statistics.total_captured_bytes == static_cast<std::uint64_t>(recognized_packet.size()));
-    PFL_EXPECT(state.packet_size_statistics.maximum_bucket_packet_count == 1U);
-    PFL_EXPECT(state.packet_size_statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(state.packet_statistics.total_packet_count == 1U);
+    PFL_EXPECT(state.packet_statistics.total_captured_bytes == static_cast<std::uint64_t>(recognized_packet.size()));
+    PFL_EXPECT(state.packet_statistics.total_original_bytes == static_cast<std::uint64_t>(recognized_packet.size()));
+    PFL_EXPECT(state.packet_statistics.captured_size_distribution.maximum_bucket_packet_count == 1U);
+    PFL_EXPECT(state.packet_statistics.maximum_captured_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(state.packet_statistics.maximum_original_packet_length == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(state.packet_statistics.timestamp_range.available);
+    PFL_EXPECT(state.packet_statistics.timestamp_range.earliest_timestamp_us == 1'000'100ULL);
+    PFL_EXPECT(state.packet_statistics.timestamp_range.latest_timestamp_us == 1'000'100ULL);
+    PFL_EXPECT(state.packet_statistics.truncated_packet_count == 0U);
+    expect_capture_packet_statistics_invariants(state.packet_statistics);
 }
 
 void expect_overview_excludes_optional_statistics_sections() {
@@ -1277,11 +1618,17 @@ void run_statistics_section_tests() {
     expect_flow_packet_count_histogram_is_cached_per_capture();
     expect_capture_packet_size_statistics_boundaries();
     expect_capture_packet_size_statistics_supports_empty_state();
+    expect_capture_packet_statistics_supports_empty_state();
+    expect_capture_packet_statistics_track_single_recognized_packet();
+    expect_capture_packet_statistics_track_single_truncated_packet();
     expect_capture_packet_size_statistics_counts_recognized_and_unrecognized_packets();
+    expect_capture_packet_statistics_tracks_total_original_timestamp_truncation_and_unrecognized_fields();
+    expect_capture_packet_statistics_use_temporal_min_max_for_out_of_order_pcapng_packets();
     expect_capture_packet_size_statistics_counts_decode_malformed_packets();
     expect_capture_packet_size_statistics_excludes_unreadable_truncated_tail();
     expect_capture_packet_size_statistics_counts_supported_pcapng_packets();
     expect_capture_packet_size_statistics_survives_index_roundtrip();
+    expect_capture_packet_statistics_survive_index_roundtrip();
     expect_capture_packet_size_statistics_ignores_unsurfaced_classic_packet_failures();
     expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing_reader_error();
     expect_overview_excludes_optional_statistics_sections();

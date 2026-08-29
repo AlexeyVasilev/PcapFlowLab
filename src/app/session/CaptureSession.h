@@ -208,7 +208,8 @@ public:
     [[nodiscard]] bool flow_grouping_ignores_vlan_and_mpls_layers() const noexcept;
     [[nodiscard]] bool flow_grouping_ignores_gtpu_teids() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
-    [[nodiscard]] const CapturePacketSizeStatistics& packet_size_statistics() const noexcept;
+    [[nodiscard]] const CapturePacketStatistics& packet_statistics() const noexcept;
+    [[nodiscard]] CapturePacketSizeStatistics packet_size_statistics() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
     [[nodiscard]] FlowPacketCountHistogram flow_packet_count_histogram() const;
     [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(

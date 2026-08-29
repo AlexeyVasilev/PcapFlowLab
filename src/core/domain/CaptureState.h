@@ -27,7 +27,7 @@ struct CaptureState {
     std::vector<UnrecognizedPacketRecord> unrecognized_packets {};
     std::vector<CapturePacketLocatorEntry> packet_locator {};
     ProtocolPathRegistry protocol_path_registry {};
-    CapturePacketSizeStatistics packet_size_statistics {};
+    CapturePacketStatistics packet_statistics {};
     CaptureSummary summary {};
 };
 

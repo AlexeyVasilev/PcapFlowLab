@@ -6,8 +6,6 @@
 #include <optional>
 #include <utility>
 
-#include "core/domain/CapturePacketSizeStatistics.h"
-
 namespace pfl::detail {
 
 namespace {
@@ -993,16 +991,16 @@ bool write_connection_table(
 }
 
 template <typename Flow>
-void accumulate_flow_packet_sizes(
+void accumulate_flow_packet_statistics(
     const Flow& flow,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
-    if (packet_size_statistics == nullptr) {
+    if (packet_statistics == nullptr) {
         return;
     }
 
     for (const auto& packet : flow.packets) {
-        accumulate_capture_packet_size(*packet_size_statistics, packet.captured_length);
+        observe_capture_packet_statistics(*packet_statistics, packet, true);
     }
 }
 
@@ -1010,7 +1008,7 @@ template <typename Connection, typename Table>
 bool read_connection_table_chunk_into(
     std::istream& stream,
     Table& table,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
     std::uint64_t connection_count {0};
     if (!read_u64(stream, connection_count) ||
@@ -1029,10 +1027,10 @@ bool read_connection_table_chunk_into(
         }
 
         if (connection.has_flow_a) {
-            accumulate_flow_packet_sizes(connection.flow_a, packet_size_statistics);
+            accumulate_flow_packet_statistics(connection.flow_a, packet_statistics);
         }
         if (connection.has_flow_b) {
-            accumulate_flow_packet_sizes(connection.flow_b, packet_size_statistics);
+            accumulate_flow_packet_statistics(connection.flow_b, packet_statistics);
         }
 
         table.get_or_create(connection.key) = std::move(connection);
@@ -1044,26 +1042,26 @@ bool read_connection_table_chunk_into(
 bool read_connection_table_chunk(
     std::istream& stream,
     ConnectionTableV4& table,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
-    return read_connection_table_chunk_into<ConnectionV4>(stream, table, packet_size_statistics);
+    return read_connection_table_chunk_into<ConnectionV4>(stream, table, packet_statistics);
 }
 
 bool read_connection_table_chunk(
     std::istream& stream,
     ConnectionTableV6& table,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
-    return read_connection_table_chunk_into<ConnectionV6>(stream, table, packet_size_statistics);
+    return read_connection_table_chunk_into<ConnectionV6>(stream, table, packet_statistics);
 }
 
 bool read_connection_table(
     std::istream& stream,
     ConnectionTableV4& table,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
     table.clear();
-    if (!read_connection_table_chunk(stream, table, packet_size_statistics)) {
+    if (!read_connection_table_chunk(stream, table, packet_statistics)) {
         table.clear();
         return false;
     }
@@ -1074,10 +1072,10 @@ bool read_connection_table(
 bool read_connection_table(
     std::istream& stream,
     ConnectionTableV6& table,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
     table.clear();
-    if (!read_connection_table_chunk(stream, table, packet_size_statistics)) {
+    if (!read_connection_table_chunk(stream, table, packet_statistics)) {
         table.clear();
         return false;
     }
@@ -1185,7 +1183,7 @@ bool write_unrecognized_packet_records(
 bool read_unrecognized_packet_records(
     std::istream& stream,
     std::vector<UnrecognizedPacketRecord>& records,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
     std::uint64_t record_count {0};
     if (!read_u64(stream, record_count) ||
@@ -1201,8 +1199,8 @@ bool read_unrecognized_packet_records(
             records.clear();
             return false;
         }
-        if (packet_size_statistics != nullptr) {
-            accumulate_capture_packet_size(*packet_size_statistics, record.packet.captured_length);
+        if (packet_statistics != nullptr) {
+            observe_capture_packet_statistics(*packet_statistics, record.packet, false);
         }
         records.push_back(std::move(record));
     }
@@ -1275,14 +1273,14 @@ bool write_capture_state(std::ostream& stream, const CaptureState& state) {
 bool read_capture_state(
     std::istream& stream,
     CaptureState& state,
-    CapturePacketSizeStatistics* const packet_size_statistics
+    CapturePacketStatistics* const packet_statistics
 ) {
     state = {};
     return read_capture_summary(stream, state.summary) &&
            read_protocol_path_registry(stream, state.protocol_path_registry) &&
-           read_connection_table(stream, state.ipv4_connections, packet_size_statistics) &&
-           read_connection_table(stream, state.ipv6_connections, packet_size_statistics) &&
-           read_unrecognized_packet_records(stream, state.unrecognized_packets, packet_size_statistics) &&
+           read_connection_table(stream, state.ipv4_connections, packet_statistics) &&
+           read_connection_table(stream, state.ipv6_connections, packet_statistics) &&
+           read_unrecognized_packet_records(stream, state.unrecognized_packets, packet_statistics) &&
            read_capture_packet_locator(stream, state.packet_locator);
 }
 
