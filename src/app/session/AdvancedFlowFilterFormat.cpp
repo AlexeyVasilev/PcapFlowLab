@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <cstdio>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -24,7 +25,7 @@ namespace pfl::session_detail {
 namespace {
 
 constexpr std::string_view kFormatVersionKey {"format_version"};
-constexpr std::string_view kFormatVersionValue {"2"};
+constexpr std::string_view kFormatVersionValue {"3"};
 
 char ascii_lower(const char value) noexcept {
     if (value >= 'A' && value <= 'Z') {
@@ -127,6 +128,219 @@ struct ParsedLayerToken {
 struct KeySegments {
     std::vector<std::string_view> values {};
 };
+
+struct ParsedUtcTimestamp {
+    bool ok {false};
+    bool overflow {false};
+    std::uint64_t value_us {0U};
+};
+
+struct CivilDate {
+    int year {0};
+    unsigned month {0};
+    unsigned day {0};
+};
+
+std::optional<std::uint64_t> checked_multiply(std::uint64_t left, std::uint64_t right);
+
+bool is_ascii_digit_string(const std::string_view text) noexcept {
+    return !text.empty() && std::all_of(
+        text.begin(),
+        text.end(),
+        [](const char ch) { return std::isdigit(static_cast<unsigned char>(ch)) != 0; }
+    );
+}
+
+bool is_leap_year(const int year) noexcept {
+    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+unsigned days_in_month(const int year, const unsigned month) noexcept {
+    switch (month) {
+    case 1U:
+    case 3U:
+    case 5U:
+    case 7U:
+    case 8U:
+    case 10U:
+    case 12U:
+        return 31U;
+    case 4U:
+    case 6U:
+    case 9U:
+    case 11U:
+        return 30U;
+    case 2U:
+        return is_leap_year(year) ? 29U : 28U;
+    default:
+        return 0U;
+    }
+}
+
+std::int64_t days_from_civil(const int year, const unsigned month, const unsigned day) noexcept {
+    const int adjusted_year = year - (month <= 2U ? 1 : 0);
+    const int era = (adjusted_year >= 0 ? adjusted_year : adjusted_year - 399) / 400;
+    const unsigned year_of_era = static_cast<unsigned>(adjusted_year - era * 400);
+    const unsigned month_index = month > 2U ? (month - 3U) : (month + 9U);
+    const unsigned day_of_year = (153U * month_index + 2U) / 5U + day - 1U;
+    const unsigned day_of_era =
+        year_of_era * 365U + year_of_era / 4U - year_of_era / 100U + day_of_year;
+    return static_cast<std::int64_t>(era) * 146097LL + static_cast<std::int64_t>(day_of_era) - 719468LL;
+}
+
+CivilDate civil_from_days(std::int64_t days_since_epoch) noexcept {
+    days_since_epoch += 719468LL;
+    const std::int64_t era = (days_since_epoch >= 0 ? days_since_epoch : days_since_epoch - 146096LL) / 146097LL;
+    const unsigned day_of_era = static_cast<unsigned>(days_since_epoch - era * 146097LL);
+    const unsigned year_of_era =
+        (day_of_era - day_of_era / 1460U + day_of_era / 36524U - day_of_era / 146096U) / 365U;
+    int year = static_cast<int>(year_of_era) + static_cast<int>(era) * 400;
+    const unsigned day_of_year =
+        day_of_era - (365U * year_of_era + year_of_era / 4U - year_of_era / 100U);
+    const unsigned month_prime = (5U * day_of_year + 2U) / 153U;
+    const unsigned day = day_of_year - (153U * month_prime + 2U) / 5U + 1U;
+    const unsigned month = month_prime < 10U ? (month_prime + 3U) : (month_prime - 9U);
+    year += month <= 2U ? 1 : 0;
+    return CivilDate {.year = year, .month = month, .day = day};
+}
+
+std::optional<unsigned> parse_fixed_decimal_component(
+    const std::string_view text,
+    const std::size_t offset,
+    const std::size_t width
+) {
+    if (offset + width > text.size()) {
+        return std::nullopt;
+    }
+    const auto token = text.substr(offset, width);
+    if (!is_ascii_digit_string(token)) {
+        return std::nullopt;
+    }
+
+    unsigned value {0U};
+    for (const char ch : token) {
+        value = value * 10U + static_cast<unsigned>(ch - '0');
+    }
+    return value;
+}
+
+ParsedUtcTimestamp parse_utc_timestamp_value(const std::string_view text) {
+    ParsedUtcTimestamp parsed {};
+    if (text.size() < 20U || text.back() != 'Z') {
+        return parsed;
+    }
+    if (text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':') {
+        return parsed;
+    }
+
+    const auto year = parse_fixed_decimal_component(text, 0U, 4U);
+    const auto month = parse_fixed_decimal_component(text, 5U, 2U);
+    const auto day = parse_fixed_decimal_component(text, 8U, 2U);
+    const auto hour = parse_fixed_decimal_component(text, 11U, 2U);
+    const auto minute = parse_fixed_decimal_component(text, 14U, 2U);
+    const auto second = parse_fixed_decimal_component(text, 17U, 2U);
+    if (!year.has_value() || !month.has_value() || !day.has_value() || !hour.has_value() ||
+        !minute.has_value() || !second.has_value()) {
+        return parsed;
+    }
+
+    std::uint64_t fractional_us {0U};
+    if (text.size() == 20U) {
+        if (text[19] != 'Z') {
+            return parsed;
+        }
+    } else if (text[19] == '.') {
+        const auto fraction = text.substr(20U, text.size() - 21U);
+        if (fraction.empty() || fraction.size() > 6U || !is_ascii_digit_string(fraction)) {
+            return parsed;
+        }
+
+        for (const char ch : fraction) {
+            fractional_us = fractional_us * 10U + static_cast<std::uint64_t>(ch - '0');
+        }
+        for (std::size_t index = fraction.size(); index < 6U; ++index) {
+            fractional_us *= 10U;
+        }
+    } else {
+        return parsed;
+    }
+
+    if (*month < 1U || *month > 12U || *day < 1U || *day > days_in_month(static_cast<int>(*year), *month) ||
+        *hour > 23U || *minute > 59U || *second > 59U) {
+        return parsed;
+    }
+
+    const auto days = days_from_civil(static_cast<int>(*year), *month, *day);
+    if (days < 0) {
+        return parsed;
+    }
+
+    const auto days_u64 = static_cast<std::uint64_t>(days);
+    constexpr std::uint64_t kSecondsPerDay = 24ULL * 60ULL * 60ULL;
+    constexpr std::uint64_t kMicrosPerSecond = 1000ULL * 1000ULL;
+    constexpr std::uint64_t kMicrosPerDay = kSecondsPerDay * kMicrosPerSecond;
+    const auto day_us = checked_multiply(days_u64, kMicrosPerDay);
+    if (!day_us.has_value()) {
+        parsed.overflow = true;
+        return parsed;
+    }
+
+    const std::uint64_t seconds_since_midnight =
+        static_cast<std::uint64_t>(*hour) * 3600ULL +
+        static_cast<std::uint64_t>(*minute) * 60ULL +
+        static_cast<std::uint64_t>(*second);
+    const auto time_us = checked_multiply(seconds_since_midnight, kMicrosPerSecond);
+    if (!time_us.has_value()) {
+        parsed.overflow = true;
+        return parsed;
+    }
+    if (*day_us > std::numeric_limits<std::uint64_t>::max() - *time_us ||
+        (*day_us + *time_us) > std::numeric_limits<std::uint64_t>::max() - fractional_us) {
+        parsed.overflow = true;
+        return parsed;
+    }
+
+    parsed.ok = true;
+    parsed.value_us = *day_us + *time_us + fractional_us;
+    return parsed;
+}
+
+std::optional<std::string> format_utc_timestamp_value(const std::uint64_t value_us) {
+    constexpr std::uint64_t kMicrosPerSecond = 1000ULL * 1000ULL;
+    constexpr std::uint64_t kSecondsPerDay = 24ULL * 60ULL * 60ULL;
+    constexpr std::uint64_t kMicrosPerDay = kSecondsPerDay * kMicrosPerSecond;
+
+    const auto days = static_cast<std::int64_t>(value_us / kMicrosPerDay);
+    const auto time_us = value_us % kMicrosPerDay;
+    const auto date = civil_from_days(days);
+    if (date.year < 0 || date.year > 9999) {
+        return std::nullopt;
+    }
+
+    const auto total_seconds = time_us / kMicrosPerSecond;
+    const auto micros = time_us % kMicrosPerSecond;
+    const auto hour = total_seconds / 3600ULL;
+    const auto minute = (total_seconds % 3600ULL) / 60ULL;
+    const auto second = total_seconds % 60ULL;
+
+    char buffer[40] {};
+    const int written = std::snprintf(
+        buffer,
+        sizeof(buffer),
+        "%04d-%02u-%02uT%02llu:%02llu:%02llu.%06lluZ",
+        date.year,
+        date.month,
+        date.day,
+        static_cast<unsigned long long>(hour),
+        static_cast<unsigned long long>(minute),
+        static_cast<unsigned long long>(second),
+        static_cast<unsigned long long>(micros)
+    );
+    if (written <= 0) {
+        return std::nullopt;
+    }
+    return std::string(buffer, static_cast<std::size_t>(written));
+}
 
 AdvancedFlowFilterTextParseResult make_parse_error(
     const AdvancedFlowFilterTextParseStatus status,
@@ -659,6 +873,19 @@ std::optional<AdvancedFlowFilterDirectionality> parse_directionality_token(const
     return std::nullopt;
 }
 
+std::optional<DirectionDistribution> parse_direction_distribution_token(const std::string_view token) {
+    if (equals_ascii_case_insensitive(token, "mostly_a_to_b")) {
+        return DirectionDistribution::mostly_a_to_b;
+    }
+    if (equals_ascii_case_insensitive(token, "balanced")) {
+        return DirectionDistribution::balanced;
+    }
+    if (equals_ascii_case_insensitive(token, "mostly_b_to_a")) {
+        return DirectionDistribution::mostly_b_to_a;
+    }
+    return std::nullopt;
+}
+
 std::optional<FlowAddressFamily> parse_address_family_token(const std::string_view token) {
     if (equals_ascii_case_insensitive(token, "ipv4")) {
         return FlowAddressFamily::ipv4;
@@ -962,7 +1189,7 @@ ParsedUint64 parse_duration_quantity_value(const std::string_view value) {
         multiplier = 1000U;
     } else if (suffix == "s") {
         multiplier = 1000ULL * 1000ULL;
-    } else if (suffix == "m") {
+    } else if (suffix == "m" || suffix == "min") {
         multiplier = 60ULL * 1000ULL * 1000ULL;
     } else if (suffix == "h") {
         multiplier = 60ULL * 60ULL * 1000ULL * 1000ULL;
@@ -1272,6 +1499,10 @@ std::string format_directionality_token(const AdvancedFlowFilterDirectionality v
     return {};
 }
 
+std::string format_direction_distribution_token(const DirectionDistribution value) {
+    return std::string(direction_distribution_stable_id(value));
+}
+
 std::string format_address_family_token(const FlowAddressFamily family) {
     switch (family) {
     case FlowAddressFamily::ipv4:
@@ -1418,7 +1649,7 @@ std::string format_duration_value(const std::uint64_t value_us) {
 
     static constexpr std::array<Unit, 5> units {{
         {"h", 60ULL * 60ULL * 1000ULL * 1000ULL},
-        {"m", 60ULL * 1000ULL * 1000ULL},
+        {"min", 60ULL * 1000ULL * 1000ULL},
         {"s", 1000ULL * 1000ULL},
         {"ms", 1000ULL},
         {"us", 1ULL},
@@ -1487,18 +1718,33 @@ bool is_scalar_key(const std::string_view key) {
         key == "section.directionality.enabled" ||
         key == "section.ports.enabled" ||
         key == "section.ip_addresses.enabled" ||
+        key == "section.time.enabled" ||
         key == "section.traffic.enabled" ||
         key == "section.service.enabled" ||
         key == "section.protocol_path.enabled" ||
         key == "section.contains_layer.enabled" ||
+        key == "time.start.from" ||
+        key == "time.start.to" ||
+        key == "time.end.from" ||
+        key == "time.end.to" ||
+        key == "time.overlap.from" ||
+        key == "time.overlap.to" ||
+        key == "time.duration.min" ||
+        key == "time.duration.max" ||
+        key == "traffic.a_to_b.packet_count.min" ||
+        key == "traffic.a_to_b.packet_count.max" ||
+        key == "traffic.b_to_a.packet_count.min" ||
+        key == "traffic.b_to_a.packet_count.max" ||
+        key == "traffic.a_to_b.original_bytes.min" ||
+        key == "traffic.a_to_b.original_bytes.max" ||
+        key == "traffic.b_to_a.original_bytes.min" ||
+        key == "traffic.b_to_a.original_bytes.max" ||
         key == "packet_count.min" ||
         key == "packet_count.max" ||
         key == "original_bytes.min" ||
         key == "original_bytes.max" ||
         key == "captured_bytes.min" ||
         key == "captured_bytes.max" ||
-        key == "duration.min" ||
-        key == "duration.max" ||
         key == "fragmented_packet_count.min" ||
         key == "fragmented_packet_count.max" ||
         key == "truncated_packet_count.min" ||
@@ -1552,6 +1798,8 @@ bool assign_section_enabled_state(
         states.ports = enabled;
     } else if (section_key == "ip_addresses") {
         states.ip_addresses = enabled;
+    } else if (section_key == "time") {
+        states.time = enabled;
     } else if (section_key == "traffic") {
         states.traffic = enabled;
     } else if (section_key == "service") {
@@ -1585,6 +1833,7 @@ void append_non_default_section_state_lines(
     append_if_disabled("directionality", section_states.directionality);
     append_if_disabled("ports", section_states.ports);
     append_if_disabled("ip_addresses", section_states.ip_addresses);
+    append_if_disabled("time", section_states.time);
     append_if_disabled("traffic", section_states.traffic);
     append_if_disabled("service", section_states.service);
     append_if_disabled("protocol_path", section_states.protocol_path);
@@ -1602,6 +1851,21 @@ AdvancedFlowFilterParsedUnsignedIntegerText parse_advanced_flow_filter_unsigned_
         .overflow = parsed.overflow,
         .value = parsed.value,
     };
+}
+
+AdvancedFlowFilterParsedUtcTimestampText parse_advanced_flow_filter_utc_timestamp_text(
+    const std::string_view text
+) {
+    const auto parsed = parse_utc_timestamp_value(text);
+    return AdvancedFlowFilterParsedUtcTimestampText {
+        .ok = parsed.ok,
+        .overflow = parsed.overflow,
+        .value_us = parsed.value_us,
+    };
+}
+
+std::optional<std::string> format_advanced_flow_filter_utc_timestamp_text(const std::uint64_t value_us) {
+    return format_utc_timestamp_value(value_us);
 }
 
 AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::string_view input_text) {
@@ -1665,7 +1929,7 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                     1U,
                     std::string(key),
                     {},
-                    "The first meaningful line must be 'format_version = 2'."
+                    "The first meaningful line must be 'format_version = 3'."
                 );
             }
             saw_meaningful_line = true;
@@ -1695,14 +1959,14 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         "format_version must be a decimal integer."
                     );
                 }
-                if (parsed_version.value != 2U) {
+                if (parsed_version.value != 3U) {
                     return make_parse_error(
                         AdvancedFlowFilterTextParseStatus::unsupported_format_version,
                         line_number,
                         *equals + 2U,
                         std::string(key),
                         std::string(value),
-                        "Only format_version = 2 is currently supported."
+                        "Only format_version = 3 is currently supported."
                     );
                 }
 
@@ -1944,6 +2208,92 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                             "Unknown directionality key."
                         );
                     }
+                } else if (root == "traffic" &&
+                           key_segments.values.size() == 3U &&
+                           (key_segments.values[1] == "packet_distribution" ||
+                            key_segments.values[1] == "data_distribution")) {
+                    const auto distribution = parse_direction_distribution_token(value);
+                    if (!distribution.has_value()) {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::invalid_enum_token,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            std::string(value),
+                            "Unknown directional traffic distribution token."
+                        );
+                    }
+
+                    auto* criteria = key_segments.values[1] == "packet_distribution"
+                        ? &configured_spec.aggregate.packet_distribution
+                        : &configured_spec.aggregate.data_distribution;
+                    if (key_segments.values[2] == "include") {
+                        criteria->include.push_back(*distribution);
+                    } else if (key_segments.values[2] == "exclude") {
+                        criteria->exclude.push_back(*distribution);
+                    } else {
+                        return make_parse_error(
+                            AdvancedFlowFilterTextParseStatus::unknown_key,
+                            line_number,
+                            1U,
+                            std::string(key),
+                            {},
+                            "Unknown directional traffic distribution key."
+                        );
+                    }
+                } else if (root == "traffic" &&
+                           key_segments.values.size() == 4U &&
+                           (key_segments.values[1] == "a_to_b" || key_segments.values[1] == "b_to_a") &&
+                           (key_segments.values[2] == "packet_count" || key_segments.values[2] == "original_bytes") &&
+                           (key_segments.values[3] == "min" || key_segments.values[3] == "max")) {
+                    if (key_segments.values[2] == "packet_count") {
+                        const auto parsed_value = parse_uint64_decimal(value);
+                        if (!parsed_value.ok) {
+                            return make_parse_error(
+                                parsed_value.overflow
+                                    ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                    : AdvancedFlowFilterTextParseStatus::invalid_value,
+                                line_number,
+                                value_column,
+                                std::string(key),
+                                std::string(value),
+                                "Expected an unsigned integer value."
+                            );
+                        }
+
+                        auto* range = (key_segments.values[1] == "a_to_b")
+                            ? &configured_spec.aggregate.a_to_b_packet_count
+                            : &configured_spec.aggregate.b_to_a_packet_count;
+                        assign_range_bound(*range, key_segments.values[3], parsed_value.value);
+                    } else {
+                        const auto parsed_value = parse_byte_quantity_value(value, true);
+                        if (!parsed_value.ok) {
+                            return make_parse_error(
+                                parsed_value.overflow
+                                    ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                    : AdvancedFlowFilterTextParseStatus::invalid_value,
+                                line_number,
+                                value_column,
+                                std::string(key),
+                                std::string(value),
+                                "Invalid byte quantity."
+                            );
+                        }
+
+                        auto* range = (key_segments.values[1] == "a_to_b")
+                            ? &configured_spec.aggregate.a_to_b_original_bytes
+                            : &configured_spec.aggregate.b_to_a_original_bytes;
+                        assign_range_bound(*range, key_segments.values[3], parsed_value.value);
+                    }
+                } else if (root == "traffic") {
+                    return make_parse_error(
+                        AdvancedFlowFilterTextParseStatus::unknown_key,
+                        line_number,
+                        1U,
+                        std::string(key),
+                        {},
+                        "Unknown traffic key."
+                    );
                 } else if (root == "port" && key_segments.values.size() == 3U) {
                     const auto scope = parse_port_scope_token(key_segments.values[1]);
                     if (!scope.has_value()) {
@@ -2278,6 +2628,73 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                             "Unknown protocol_path action."
                         );
                     }
+                } else if (root == "time" &&
+                           key_segments.values.size() == 3U &&
+                           ((key_segments.values[1] == "start" ||
+                             key_segments.values[1] == "end" ||
+                             key_segments.values[1] == "overlap") &&
+                                (key_segments.values[2] == "from" || key_segments.values[2] == "to"))) {
+                    const auto parsed_string = parse_quoted_string(value, value_column);
+                    if (!parsed_string.ok) {
+                        return make_parse_error(
+                            parsed_string.invalid_escape
+                                ? AdvancedFlowFilterTextParseStatus::invalid_escape
+                                : AdvancedFlowFilterTextParseStatus::unterminated_string,
+                            line_number,
+                            parsed_string.error_column == 0U
+                                ? std::optional<std::size_t> {value_column}
+                                : std::optional<std::size_t> {parsed_string.error_column},
+                            std::string(key),
+                            std::string(value),
+                            parsed_string.invalid_escape
+                                ? "Invalid escape sequence in quoted UTC timestamp."
+                                : "Expected a quoted UTC timestamp."
+                        );
+                    }
+
+                    const auto parsed_timestamp = parse_utc_timestamp_value(parsed_string.value);
+                    if (!parsed_timestamp.ok) {
+                        return make_parse_error(
+                            parsed_timestamp.overflow
+                                ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                : AdvancedFlowFilterTextParseStatus::invalid_value,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            parsed_string.value,
+                            parsed_timestamp.overflow
+                                ? "UTC timestamp is too large."
+                                : "Expected a UTC timestamp in the form YYYY-MM-DDTHH:MM:SS(.ffffff)Z."
+                        );
+                    }
+
+                    const auto bound = key_segments.values[2] == "from" ? "min" : "max";
+                    if (key_segments.values[1] == "start") {
+                        assign_range_bound(configured_spec.time.start_us, bound, parsed_timestamp.value_us);
+                    } else if (key_segments.values[1] == "end") {
+                        assign_range_bound(configured_spec.time.end_us, bound, parsed_timestamp.value_us);
+                    } else {
+                        assign_range_bound(configured_spec.time.overlap_us, bound, parsed_timestamp.value_us);
+                    }
+                } else if (root == "time" &&
+                           key_segments.values.size() == 3U &&
+                           key_segments.values[1] == "duration" &&
+                           (key_segments.values[2] == "min" || key_segments.values[2] == "max")) {
+                    const auto parsed_value = parse_duration_quantity_value(value);
+                    if (!parsed_value.ok) {
+                        return make_parse_error(
+                            parsed_value.overflow
+                                ? AdvancedFlowFilterTextParseStatus::numeric_overflow
+                                : AdvancedFlowFilterTextParseStatus::invalid_value,
+                            line_number,
+                            value_column,
+                            std::string(key),
+                            std::string(value),
+                            "Invalid duration value."
+                        );
+                    }
+
+                    assign_range_bound(configured_spec.time.duration_us, key_segments.values[2], parsed_value.value);
                 } else if ((root == "packet_count" ||
                             root == "fragmented_packet_count" ||
                             root == "truncated_packet_count" ||
@@ -2314,13 +2731,10 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         assign_range_bound(configured_spec.aggregate.tcp_rst_count, key_segments.values[1], parsed_value.value);
                     }
                 } else if ((root == "original_bytes" ||
-                            root == "captured_bytes" ||
-                            root == "duration") &&
+                            root == "captured_bytes") &&
                            key_segments.values.size() == 2U &&
                            (key_segments.values[1] == "min" || key_segments.values[1] == "max")) {
-                    const auto parsed_value = root == "duration"
-                        ? parse_duration_quantity_value(value)
-                        : parse_byte_quantity_value(value, true);
+                    const auto parsed_value = parse_byte_quantity_value(value, true);
                     if (!parsed_value.ok) {
                         return make_parse_error(
                             parsed_value.overflow
@@ -2330,9 +2744,7 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                             value_column,
                             std::string(key),
                             std::string(value),
-                            root == "duration"
-                                ? "Invalid duration value."
-                                : "Invalid byte quantity."
+                            "Invalid byte quantity."
                         );
                     }
 
@@ -2340,8 +2752,6 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
                         assign_range_bound(configured_spec.aggregate.original_bytes, key_segments.values[1], parsed_value.value);
                     } else if (root == "captured_bytes") {
                         assign_range_bound(configured_spec.aggregate.captured_bytes, key_segments.values[1], parsed_value.value);
-                    } else {
-                        assign_range_bound(configured_spec.aggregate.duration_us, key_segments.values[1], parsed_value.value);
                     }
                 } else if ((root == "max_original_packet_length" ||
                             root == "max_captured_packet_length") &&
@@ -2393,7 +2803,7 @@ AdvancedFlowFilterTextParseResult parse_advanced_flow_filter_text(const std::str
             std::nullopt,
             {},
             {},
-            "Missing required format_version = 2 declaration."
+            "Missing required format_version = 3 declaration."
         );
     }
 
@@ -2526,6 +2936,106 @@ AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const Advanc
         append_line("port." + scope + ".exclude", format_port_range_value(predicate.range));
     }
 
+    const auto append_time_timestamp_range = [&](const std::string_view key_root,
+                                                 const std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>>& range) {
+        if (!range.has_value()) {
+            return true;
+        }
+        if (range->min.has_value()) {
+            const auto formatted = format_utc_timestamp_value(*range->min);
+            if (!formatted.has_value()) {
+                result = make_format_error("time", "Spec contains an unrepresentable UTC timestamp.");
+                return false;
+            }
+            append_line(std::string("time.") + std::string(key_root) + ".from", escape_quoted_string(*formatted));
+        }
+        if (range->max.has_value()) {
+            const auto formatted = format_utc_timestamp_value(*range->max);
+            if (!formatted.has_value()) {
+                result = make_format_error("time", "Spec contains an unrepresentable UTC timestamp.");
+                return false;
+            }
+            append_line(std::string("time.") + std::string(key_root) + ".to", escape_quoted_string(*formatted));
+        }
+        return true;
+    };
+
+    if (!append_time_timestamp_range("start", spec.time.start_us) ||
+        !append_time_timestamp_range("end", spec.time.end_us) ||
+        !append_time_timestamp_range("overlap", spec.time.overlap_us)) {
+        return result;
+    }
+    if (spec.time.duration_us.has_value()) {
+        if (spec.time.duration_us->min.has_value()) {
+            append_line("time.duration.min", format_duration_value(*spec.time.duration_us->min));
+        }
+        if (spec.time.duration_us->max.has_value()) {
+            append_line("time.duration.max", format_duration_value(*spec.time.duration_us->max));
+        }
+    }
+
+    for (const auto value : spec.aggregate.packet_distribution.include) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.packet_distribution", "Spec contains an unrepresentable packet distribution token.");
+        }
+        append_line("traffic.packet_distribution.include", token);
+    }
+    for (const auto value : spec.aggregate.packet_distribution.exclude) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.packet_distribution", "Spec contains an unrepresentable packet distribution token.");
+        }
+        append_line("traffic.packet_distribution.exclude", token);
+    }
+    for (const auto value : spec.aggregate.data_distribution.include) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.data_distribution", "Spec contains an unrepresentable data distribution token.");
+        }
+        append_line("traffic.data_distribution.include", token);
+    }
+    for (const auto value : spec.aggregate.data_distribution.exclude) {
+        const auto token = format_direction_distribution_token(value);
+        if (token.empty()) {
+            return make_format_error("traffic.data_distribution", "Spec contains an unrepresentable data distribution token.");
+        }
+        append_line("traffic.data_distribution.exclude", token);
+    }
+
+    if (spec.aggregate.a_to_b_packet_count.has_value()) {
+        if (spec.aggregate.a_to_b_packet_count->min.has_value()) {
+            append_line("traffic.a_to_b.packet_count.min", std::to_string(*spec.aggregate.a_to_b_packet_count->min));
+        }
+        if (spec.aggregate.a_to_b_packet_count->max.has_value()) {
+            append_line("traffic.a_to_b.packet_count.max", std::to_string(*spec.aggregate.a_to_b_packet_count->max));
+        }
+    }
+    if (spec.aggregate.b_to_a_packet_count.has_value()) {
+        if (spec.aggregate.b_to_a_packet_count->min.has_value()) {
+            append_line("traffic.b_to_a.packet_count.min", std::to_string(*spec.aggregate.b_to_a_packet_count->min));
+        }
+        if (spec.aggregate.b_to_a_packet_count->max.has_value()) {
+            append_line("traffic.b_to_a.packet_count.max", std::to_string(*spec.aggregate.b_to_a_packet_count->max));
+        }
+    }
+    if (spec.aggregate.a_to_b_original_bytes.has_value()) {
+        if (spec.aggregate.a_to_b_original_bytes->min.has_value()) {
+            append_line("traffic.a_to_b.original_bytes.min", format_byte_quantity_value(*spec.aggregate.a_to_b_original_bytes->min));
+        }
+        if (spec.aggregate.a_to_b_original_bytes->max.has_value()) {
+            append_line("traffic.a_to_b.original_bytes.max", format_byte_quantity_value(*spec.aggregate.a_to_b_original_bytes->max));
+        }
+    }
+    if (spec.aggregate.b_to_a_original_bytes.has_value()) {
+        if (spec.aggregate.b_to_a_original_bytes->min.has_value()) {
+            append_line("traffic.b_to_a.original_bytes.min", format_byte_quantity_value(*spec.aggregate.b_to_a_original_bytes->min));
+        }
+        if (spec.aggregate.b_to_a_original_bytes->max.has_value()) {
+            append_line("traffic.b_to_a.original_bytes.max", format_byte_quantity_value(*spec.aggregate.b_to_a_original_bytes->max));
+        }
+    }
+
     if (spec.aggregate.packet_count.has_value()) {
         if (spec.aggregate.packet_count->min.has_value()) {
             append_line("packet_count.min", std::to_string(*spec.aggregate.packet_count->min));
@@ -2548,14 +3058,6 @@ AdvancedFlowFilterTextFormatResult format_advanced_flow_filter_text(const Advanc
         }
         if (spec.aggregate.captured_bytes->max.has_value()) {
             append_line("captured_bytes.max", format_byte_quantity_value(*spec.aggregate.captured_bytes->max));
-        }
-    }
-    if (spec.aggregate.duration_us.has_value()) {
-        if (spec.aggregate.duration_us->min.has_value()) {
-            append_line("duration.min", format_duration_value(*spec.aggregate.duration_us->min));
-        }
-        if (spec.aggregate.duration_us->max.has_value()) {
-            append_line("duration.max", format_duration_value(*spec.aggregate.duration_us->max));
         }
     }
     if (spec.aggregate.fragmented_packet_count.has_value()) {

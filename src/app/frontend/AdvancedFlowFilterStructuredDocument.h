@@ -111,9 +111,25 @@ struct FrontendAdvancedFlowFilterTrafficRowDto {
     std::string max_text {};
 };
 
+struct FrontendAdvancedFlowFilterTimeRowDto {
+    std::string metric_id {};
+    std::string from_text {};
+    std::string to_text {};
+};
+
+struct FrontendAdvancedFlowFilterTimeSectionDto {
+    bool enabled {true};
+    std::vector<FrontendAdvancedFlowFilterTimeRowDto> ranges {};
+    FrontendAdvancedFlowFilterTrafficRowDto duration {};
+};
+
 struct FrontendAdvancedFlowFilterTrafficSectionDto {
     bool enabled {true};
+    FrontendAdvancedFlowFilterFiniteSectionDto packet_distribution {};
+    FrontendAdvancedFlowFilterFiniteSectionDto data_distribution {};
     std::vector<FrontendAdvancedFlowFilterTrafficRowDto> primary {};
+    std::vector<FrontendAdvancedFlowFilterTrafficRowDto> directional_packets {};
+    std::vector<FrontendAdvancedFlowFilterTrafficRowDto> directional_original_bytes {};
     std::vector<FrontendAdvancedFlowFilterTrafficRowDto> additional {};
 };
 
@@ -181,6 +197,7 @@ struct FrontendAdvancedFlowFilterStructuredOptionCatalogDto {
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> tls_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> quic_version {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> directionality {};
+    std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> traffic_distribution {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> endpoint_scope {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> protocol_path_selector_mode {};
     std::vector<FrontendAdvancedFlowFilterFiniteOptionDto> contains_layer_identifier_mode {};
@@ -197,6 +214,7 @@ struct FrontendAdvancedFlowFilterStructuredDocumentDto {
     FrontendAdvancedFlowFilterFiniteSectionDto directionality {};
     FrontendAdvancedFlowFilterPortSectionDto ports {};
     FrontendAdvancedFlowFilterIpAddressSectionDto ip_addresses {};
+    FrontendAdvancedFlowFilterTimeSectionDto time {};
     FrontendAdvancedFlowFilterTrafficSectionDto traffic {};
     FrontendAdvancedFlowFilterServiceSectionDto service {};
     FrontendAdvancedFlowFilterProtocolPathSectionDto protocol_path {};

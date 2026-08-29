@@ -122,6 +122,35 @@ In other words, `--filter` can match things like:
 
 It does **not** currently search the compact `Path` column.
 
+## Use a structured Advanced Filter document
+
+`flows` also supports the structured Advanced Filter path:
+
+```text
+pcap-flow-lab flows <input> --adv-filter <path>
+```
+
+This is separate from the legacy text `--filter` option:
+
+- `--filter` is case-insensitive text matching over user-visible flow fields;
+- `--adv-filter` loads a structured `.filter` document and evaluates it through
+  the shared Advanced Flow Filter backend.
+
+The two modes are mutually exclusive.
+
+Advanced `.filter` documents can include the same current Time and directional
+Traffic predicates used by the desktop UI, for example:
+
+- flow start / end bounds;
+- flow lifetime overlap;
+- duration;
+- packet distribution / data distribution;
+- `A -> B` and `B -> A` packet ranges;
+- `A -> B` and `B -> A` original-byte ranges.
+
+These predicates stay metadata-backed for ordinary flow listing. They do not
+require source-packet rereads or packet rescanning during evaluation.
+
 ## Find the busiest flows
 
 Filtering and sorting solve different problems.

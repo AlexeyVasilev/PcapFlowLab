@@ -819,7 +819,7 @@ std::filesystem::path write_temp_sized_advanced_filter_service_document(
     const std::string& filename,
     const std::size_t total_size
 ) {
-    constexpr std::string_view prefix = "format_version = 2\nservice.contains.ci.include = \"";
+    constexpr std::string_view prefix = "format_version = 3\nservice.contains.ci.include = \"";
     constexpr std::string_view suffix = "\"\n";
     UI_REQUIRE(total_size >= prefix.size() + suffix.size());
 
@@ -4529,8 +4529,14 @@ int main(int argc, char* argv[]) {
             QStringLiteral("Possible QUIC")));
         UI_EXPECT(advanced_filter_option_present(
             advanced_settings_controller.advancedFlowFilterIncludeOptions(directionality_section_id),
-            QStringLiteral("One direction")));
+            QStringLiteral("Only A -> B packets")));
         UI_EXPECT(advanced_filter_option_present(
+            advanced_settings_controller.advancedFlowFilterIncludeOptions(directionality_section_id),
+            QStringLiteral("Packets in both directions")));
+        UI_EXPECT(!advanced_filter_option_present(
+            advanced_settings_controller.advancedFlowFilterIncludeOptions(directionality_section_id),
+            QStringLiteral("One direction")));
+        UI_EXPECT(!advanced_filter_option_present(
             advanced_settings_controller.advancedFlowFilterIncludeOptions(directionality_section_id),
             QStringLiteral("Both directions")));
         UI_EXPECT(!advanced_filter_option_present(
@@ -4914,7 +4920,7 @@ int main(int argc, char* argv[]) {
 
         const auto malformed_filter_path = write_temp_advanced_filter_file(
             "pfl_ui_invalid_open.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcpish\n"
         );
         file_workflow_controller.setAdvancedFlowFilterOpenFileChooserForTests([&]() {
@@ -5868,15 +5874,118 @@ int main(int argc, char* argv[]) {
 
         constexpr int traffic_section_id =
             static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::traffic);
+        constexpr int time_section_id =
+            static_cast<int>(MainController::AdvancedFlowFilterFiniteSection::time);
         constexpr auto packet_count_metric = static_cast<int>(TrafficMetric::packet_count);
         constexpr auto original_bytes_metric = static_cast<int>(TrafficMetric::original_bytes);
         constexpr auto captured_bytes_metric = static_cast<int>(TrafficMetric::captured_bytes);
-        constexpr auto duration_metric = static_cast<int>(TrafficMetric::duration);
+        constexpr auto a_to_b_packets_metric = static_cast<int>(TrafficMetric::a_to_b_packets);
+        constexpr auto b_to_a_packets_metric = static_cast<int>(TrafficMetric::b_to_a_packets);
+        constexpr auto a_to_b_original_bytes_metric = static_cast<int>(TrafficMetric::a_to_b_original_bytes);
+        constexpr auto b_to_a_original_bytes_metric = static_cast<int>(TrafficMetric::b_to_a_original_bytes);
         constexpr auto max_original_packet_size_metric = static_cast<int>(TrafficMetric::max_original_packet_size);
         constexpr auto max_captured_packet_size_metric = static_cast<int>(TrafficMetric::max_captured_packet_size);
-
         traffic_controller.useAdvancedFlowFilter();
         UI_EXPECT(traffic_controller.advancedFlowFilterSectionEnabled(traffic_section_id));
+
+        auto traffic_window = load_main_qml_component(traffic_controller);
+        auto* traffic_qml_window = qobject_cast<QQuickWindow*>(traffic_window.object.get());
+        auto* traffic_settings_button =
+            named_object(traffic_window.object.get(), "advancedFlowFilterSettingsButton");
+        auto* traffic_settings_dialog =
+            named_object(traffic_window.object.get(), "advancedFlowFilterSettingsDialog");
+        UI_REQUIRE(traffic_qml_window != nullptr);
+        UI_REQUIRE(traffic_settings_button != nullptr);
+        UI_REQUIRE(traffic_settings_dialog != nullptr);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return traffic_settings_dialog->property("visible").toBool()
+                && popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficCollapseButton") != nullptr
+                && popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficContent") != nullptr
+                && popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficAdditionalToggleButton") != nullptr
+                && popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficAdditionalSection") != nullptr;
+        }));
+
+        auto* traffic_collapse_button =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficCollapseButton");
+        auto* traffic_content =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficContent");
+        auto* traffic_additional_toggle_button =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficAdditionalToggleButton");
+        auto* traffic_additional_section =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficAdditionalSection");
+        auto* traffic_direction_helper =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficDirectionHelperText");
+        auto* traffic_packet_distribution_group =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficPacketDistributionGroup");
+        auto* traffic_data_distribution_group =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficDataDistributionGroup");
+        auto* traffic_directional_packets_group =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficDirectionalPacketsGroup");
+        auto* traffic_directional_original_bytes_group =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficDirectionalOriginalBytesGroup");
+        auto* traffic_packet_count_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterPacketCountMinTextField");
+        auto* traffic_original_bytes_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterOriginalBytesMinTextField");
+        auto* traffic_captured_bytes_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterCapturedBytesMinTextField");
+        auto* traffic_max_original_packet_size_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterMaxOriginalPacketSizeMinTextField");
+        UI_REQUIRE(traffic_collapse_button != nullptr);
+        UI_REQUIRE(traffic_content != nullptr);
+        UI_REQUIRE(traffic_additional_toggle_button != nullptr);
+        UI_REQUIRE(traffic_additional_section != nullptr);
+        UI_REQUIRE(traffic_direction_helper != nullptr);
+        UI_REQUIRE(traffic_packet_distribution_group != nullptr);
+        UI_REQUIRE(traffic_data_distribution_group != nullptr);
+        UI_REQUIRE(traffic_directional_packets_group != nullptr);
+        UI_REQUIRE(traffic_directional_original_bytes_group != nullptr);
+        UI_REQUIRE(traffic_packet_count_field != nullptr);
+        UI_REQUIRE(traffic_original_bytes_field != nullptr);
+        UI_REQUIRE(traffic_captured_bytes_field != nullptr);
+        UI_REQUIRE(traffic_max_original_packet_size_field != nullptr);
+
+        if (!traffic_content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(traffic_collapse_button, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        UI_EXPECT(traffic_content->property("visible").toBool());
+        UI_EXPECT(traffic_packet_count_field->isVisible());
+        UI_EXPECT(traffic_original_bytes_field->isVisible());
+        UI_EXPECT(traffic_captured_bytes_field->isVisible());
+        UI_EXPECT(traffic_additional_toggle_button->isVisible());
+        UI_EXPECT(!traffic_additional_section->property("visible").toBool());
+        UI_EXPECT(!traffic_direction_helper->isVisible());
+        UI_EXPECT(!traffic_packet_distribution_group->isVisible());
+        UI_EXPECT(!traffic_data_distribution_group->isVisible());
+        UI_EXPECT(!traffic_directional_packets_group->isVisible());
+        UI_EXPECT(!traffic_directional_original_bytes_group->isVisible());
+
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_additional_toggle_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return traffic_additional_section->property("visible").toBool() &&
+                traffic_max_original_packet_size_field->isVisible() &&
+                traffic_direction_helper->isVisible() &&
+                traffic_packet_distribution_group->isVisible() &&
+                traffic_data_distribution_group->isVisible() &&
+                traffic_directional_packets_group->isVisible() &&
+                traffic_directional_original_bytes_group->isVisible();
+        }));
+
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_additional_toggle_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!traffic_additional_section->property("visible").toBool());
+        UI_EXPECT(!traffic_direction_helper->isVisible());
+        UI_EXPECT(!traffic_packet_distribution_group->isVisible());
+        UI_EXPECT(!traffic_data_distribution_group->isVisible());
+        UI_EXPECT(!traffic_directional_packets_group->isVisible());
+        UI_EXPECT(!traffic_directional_original_bytes_group->isVisible());
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_settings_dialog, "close"));
+        app.processEvents(QEventLoop::AllEvents, 25);
 
         traffic_controller.beginAdvancedFlowFilterEdit();
         traffic_editor->setTrafficMinText(packet_count_metric, QStringLiteral("2"));
@@ -5896,10 +6005,7 @@ int main(int argc, char* argv[]) {
             traffic_editor->commonTrafficRows(),
             captured_bytes_metric
         );
-        const auto duration_row = advanced_filter_metric_row_at(
-            traffic_editor->commonTrafficRows(),
-            duration_metric
-        );
+        const auto duration_row = traffic_editor->timeDurationRow();
         auto max_original_row = advanced_filter_metric_row_at(
             traffic_editor->additionalTrafficRows(),
             max_original_packet_size_metric
@@ -5921,6 +6027,41 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(original_bytes_row.value(QStringLiteral("unitOptions")).toList().size() == 5);
         UI_EXPECT(max_original_row.value(QStringLiteral("unitOptions")).toList().size() == 2);
         UI_EXPECT(max_captured_row.value(QStringLiteral("unitOptions")).toList().size() == 2);
+        UI_EXPECT(advanced_filter_option_present(
+            traffic_editor->packetDistributionIncludeOptions(),
+            QStringLiteral("Mostly A -> B")));
+        UI_EXPECT(advanced_filter_option_present(
+            traffic_editor->packetDistributionIncludeOptions(),
+            QStringLiteral("Balanced")));
+        UI_EXPECT(advanced_filter_option_present(
+            traffic_editor->packetDistributionIncludeOptions(),
+            QStringLiteral("Mostly B -> A")));
+        UI_EXPECT(advanced_filter_option_present(
+            traffic_editor->dataDistributionIncludeOptions(),
+            QStringLiteral("Mostly A -> B")));
+        const auto a_to_b_packets_row = advanced_filter_metric_row_at(
+            traffic_editor->directionalPacketTrafficRows(),
+            a_to_b_packets_metric
+        );
+        const auto b_to_a_packets_row = advanced_filter_metric_row_at(
+            traffic_editor->directionalPacketTrafficRows(),
+            b_to_a_packets_metric
+        );
+        const auto a_to_b_original_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->directionalOriginalByteTrafficRows(),
+            a_to_b_original_bytes_metric
+        );
+        const auto b_to_a_original_bytes_row = advanced_filter_metric_row_at(
+            traffic_editor->directionalOriginalByteTrafficRows(),
+            b_to_a_original_bytes_metric
+        );
+        UI_EXPECT(a_to_b_packets_row.value(QStringLiteral("hasUnitSelector")).toBool() == false);
+        UI_EXPECT(a_to_b_packets_row.value(QStringLiteral("unitText")).toString() == QStringLiteral("packets"));
+        UI_EXPECT(b_to_a_packets_row.value(QStringLiteral("hasUnitSelector")).toBool() == false);
+        UI_EXPECT(a_to_b_original_bytes_row.value(QStringLiteral("hasUnitSelector")).toBool());
+        UI_EXPECT(a_to_b_original_bytes_row.value(QStringLiteral("selectedUnit")).toInt()
+            == static_cast<int>(TrafficUnit::kib));
+        UI_EXPECT(b_to_a_original_bytes_row.value(QStringLiteral("hasUnitSelector")).toBool());
         traffic_controller.cancelAdvancedFlowFilterEdit();
 
         traffic_controller.beginAdvancedFlowFilterEdit();
@@ -5932,13 +6073,174 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("TCP")) >= 0);
         UI_EXPECT(traffic_flow_model->hasAdvancedFlowIndexFilter());
 
+        traffic_controller.applyAdvancedFlowFilterDocument({});
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return traffic_settings_dialog->property("visible").toBool();
+        }));
+        if (!traffic_content->property("visible").toBool()) {
+            UI_REQUIRE(QMetaObject::invokeMethod(traffic_collapse_button, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        UI_EXPECT(!traffic_additional_section->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_additional_toggle_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return traffic_additional_section->property("visible").toBool() &&
+                popup_visual_item(
+                    traffic_settings_dialog,
+                    "advancedFlowFilterTrafficPacketDistributionIncludeMostlyAToBCheckBox"
+                ) != nullptr &&
+                popup_visual_item(traffic_settings_dialog, "advancedFlowFilterAToBPacketsMinTextField") != nullptr &&
+                popup_visual_item(traffic_settings_dialog, "advancedFlowFilterBToAPacketsMaxTextField") != nullptr;
+        }));
+        auto* mostly_a_to_b_checkbox = popup_visual_item(
+            traffic_settings_dialog,
+            "advancedFlowFilterTrafficPacketDistributionIncludeMostlyAToBCheckBox"
+        );
+        auto* balanced_exclude_checkbox = popup_visual_item(
+            traffic_settings_dialog,
+            "advancedFlowFilterTrafficDataDistributionExcludeBalancedCheckBox"
+        );
+        auto* a_to_b_packets_min_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterAToBPacketsMinTextField");
+        auto* b_to_a_packets_max_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterBToAPacketsMaxTextField");
+        UI_REQUIRE(mostly_a_to_b_checkbox != nullptr);
+        UI_REQUIRE(balanced_exclude_checkbox != nullptr);
+        UI_REQUIRE(a_to_b_packets_min_field != nullptr);
+        UI_REQUIRE(b_to_a_packets_max_field != nullptr);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(mostly_a_to_b_checkbox, "click"));
+        UI_REQUIRE(QMetaObject::invokeMethod(balanced_exclude_checkbox, "click"));
+        UI_EXPECT(type_text_into_field(
+            app,
+            traffic_qml_window,
+            a_to_b_packets_min_field,
+            QStringLiteral("3")));
+        UI_EXPECT(type_text_into_field(
+            app,
+            traffic_qml_window,
+            b_to_a_packets_max_field,
+            QStringLiteral("0")));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("4 rules"));
+        UI_EXPECT(wait_until(app, [&]() {
+            return mostly_a_to_b_checkbox->property("checked").toBool()
+                && balanced_exclude_checkbox->property("checked").toBool()
+                && a_to_b_packets_min_field->property("text").toString() == QStringLiteral("3")
+                && b_to_a_packets_max_field->property("text").toString() == QStringLiteral("0");
+        }));
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_additional_toggle_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!traffic_additional_section->property("visible").toBool());
+        auto* traffic_apply_button =
+            named_object(traffic_settings_dialog, "advancedFlowFilterApplyButton");
+        UI_REQUIRE(traffic_apply_button != nullptr);
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_apply_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return !traffic_settings_dialog->property("visible").toBool();
+        }));
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("TCP")) >= 0);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("UDP")) < 0);
+
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_settings_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return traffic_settings_dialog->property("visible").toBool();
+        }));
+        traffic_content =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficContent");
+        traffic_additional_toggle_button =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficAdditionalToggleButton");
+        traffic_additional_section =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficAdditionalSection");
+        UI_REQUIRE(traffic_content != nullptr);
+        UI_REQUIRE(traffic_additional_toggle_button != nullptr);
+        UI_REQUIRE(traffic_additional_section != nullptr);
+        if (!traffic_content->property("visible").toBool()) {
+            traffic_collapse_button =
+                popup_visual_item(traffic_settings_dialog, "advancedFlowFilterTrafficCollapseButton");
+            UI_REQUIRE(traffic_collapse_button != nullptr);
+            UI_REQUIRE(QMetaObject::invokeMethod(traffic_collapse_button, "click"));
+            app.processEvents(QEventLoop::AllEvents, 25);
+        }
+        UI_EXPECT(!traffic_additional_section->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_additional_toggle_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wait_until(app, [&]() {
+            return traffic_additional_section->property("visible").toBool() &&
+                popup_visual_item(
+                    traffic_settings_dialog,
+                    "advancedFlowFilterTrafficPacketDistributionIncludeMostlyAToBCheckBox"
+                ) != nullptr &&
+                popup_visual_item(traffic_settings_dialog, "advancedFlowFilterAToBPacketsMinTextField") != nullptr &&
+                popup_visual_item(traffic_settings_dialog, "advancedFlowFilterBToAPacketsMaxTextField") != nullptr;
+        }));
+        mostly_a_to_b_checkbox = popup_visual_item(
+            traffic_settings_dialog,
+            "advancedFlowFilterTrafficPacketDistributionIncludeMostlyAToBCheckBox"
+        );
+        a_to_b_packets_min_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterAToBPacketsMinTextField");
+        b_to_a_packets_max_field =
+            popup_visual_item(traffic_settings_dialog, "advancedFlowFilterBToAPacketsMaxTextField");
+        UI_REQUIRE(mostly_a_to_b_checkbox != nullptr);
+        UI_REQUIRE(a_to_b_packets_min_field != nullptr);
+        UI_REQUIRE(b_to_a_packets_max_field != nullptr);
+        UI_EXPECT(mostly_a_to_b_checkbox->property("checked").toBool());
+        UI_EXPECT(a_to_b_packets_min_field->property("text").toString() == QStringLiteral("3"));
+        UI_EXPECT(b_to_a_packets_max_field->property("text").toString() == QStringLiteral("0"));
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_additional_toggle_button, "click"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!traffic_additional_section->property("visible").toBool());
+        UI_REQUIRE(QMetaObject::invokeMethod(traffic_settings_dialog, "close"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+
         traffic_controller.beginAdvancedFlowFilterEdit();
-        traffic_editor->setTrafficMaxText(packet_count_metric, QStringLiteral("1"));
+        UI_EXPECT(advanced_filter_option_checked(
+            traffic_editor->packetDistributionIncludeOptions(),
+            QStringLiteral("Mostly A -> B")));
+        UI_EXPECT(advanced_filter_option_checked(
+            traffic_editor->dataDistributionExcludeOptions(),
+            QStringLiteral("Balanced")));
+        UI_EXPECT(advanced_filter_metric_row_at(
+            traffic_editor->directionalPacketTrafficRows(),
+            a_to_b_packets_metric
+        ).value(QStringLiteral("minText")).toString() == QStringLiteral("3"));
+        UI_EXPECT(advanced_filter_metric_row_at(
+            traffic_editor->directionalPacketTrafficRows(),
+            b_to_a_packets_metric
+        ).value(QStringLiteral("maxText")).toString() == QStringLiteral("0"));
+        traffic_controller.setAdvancedFlowFilterSectionEnabled(traffic_section_id, false);
+        UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 3);
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("0 rules"));
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        UI_EXPECT(!traffic_controller.advancedFlowFilterSectionEnabled(traffic_section_id));
+        UI_EXPECT(advanced_filter_option_checked(
+            traffic_editor->packetDistributionIncludeOptions(),
+            QStringLiteral("Mostly A -> B")));
+        UI_EXPECT(advanced_filter_metric_row_at(
+            traffic_editor->directionalPacketTrafficRows(),
+            a_to_b_packets_metric
+        ).value(QStringLiteral("minText")).toString() == QStringLiteral("3"));
+        traffic_controller.setAdvancedFlowFilterSectionEnabled(traffic_section_id, true);
+        UI_EXPECT(traffic_controller.applyAdvancedFlowFilterEdit());
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(traffic_controller.advancedFlowFilterRuleCountText() == QStringLiteral("4 rules"));
+
+        traffic_controller.beginAdvancedFlowFilterEdit();
+        traffic_editor->setTrafficMaxText(a_to_b_packets_metric, QStringLiteral("2"));
         UI_EXPECT(!traffic_controller.applyAdvancedFlowFilterEdit());
         UI_EXPECT(traffic_controller.advancedFlowFilterEditorValidationText().contains(
-            QStringLiteral("Packets minimum must not exceed maximum")));
-        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 2);
-        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("UDP")) >= 0);
+            QStringLiteral("A -> B packets minimum must not exceed maximum.")));
+        UI_EXPECT(traffic_flow_model->visibleFlowCount() == 1);
+        UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("UDP")) < 0);
         UI_EXPECT(find_flow_index_by_protocol(traffic_flow_model, QStringLiteral("TCP")) >= 0);
         traffic_controller.cancelAdvancedFlowFilterEdit();
 
@@ -5991,16 +6293,14 @@ int main(int argc, char* argv[]) {
         traffic_controller.cancelAdvancedFlowFilterEdit();
 
         traffic_document = {};
-        traffic_document.configured_spec.aggregate.duration_us =
+        traffic_document.configured_spec.time.duration_us =
             pfl::session_detail::AdvancedFlowFilterInclusiveRange<std::uint64_t> {
                 .max = 7200000000ULL,
             };
         traffic_controller.applyAdvancedFlowFilterDocument(traffic_document);
         traffic_controller.beginAdvancedFlowFilterEdit();
-        const auto loaded_duration_row = advanced_filter_metric_row_at(
-            traffic_editor->commonTrafficRows(),
-            duration_metric
-        );
+        UI_EXPECT(traffic_controller.advancedFlowFilterSectionEnabled(time_section_id));
+        const auto loaded_duration_row = traffic_editor->timeDurationRow();
         UI_EXPECT(loaded_duration_row.value(QStringLiteral("selectedUnit")).toInt()
             == static_cast<int>(TrafficUnit::hours));
         UI_EXPECT(loaded_duration_row.value(QStringLiteral("maxText")).toString() == QStringLiteral("2"));

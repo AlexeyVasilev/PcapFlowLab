@@ -165,7 +165,17 @@ status line below the flow table.
 
 ## Filter and sort flows
 
-Use the text filter above the flow table to narrow the visible flow set.
+The Flows workspace has two primary filter modes:
+
+- `Simple Filter`
+- `Advanced Filter`
+
+`Simple Filter` uses the text field above the flow table. `Advanced Filter`
+uses the dedicated `Settings` dialog and applies a structured `.filter`
+document through the shared backend path.
+
+Use the text filter above the flow table to narrow the visible flow set in
+`Simple Filter` mode.
 
 Current flow text filtering matches against:
 
@@ -178,6 +188,32 @@ Current flow text filtering matches against:
 - ports.
 
 Use `Clear` to remove the current text filter quickly.
+
+In `Advanced Filter` mode, the compact toolbar shows the current filter name
+and rule count instead of the text field. `Settings` opens the structured
+editor for the current filter document.
+
+Current Advanced Filter areas include:
+
+- family, protocol, detected protocol, TLS, QUIC, and observed directions;
+- `Time`:
+  - flow start
+  - flow end
+  - flow lifetime overlap
+  - duration
+- `Traffic`:
+  - packets / original bytes / captured bytes
+  - packet distribution / data distribution
+  - `A -> B` and `B -> A` packet and original-byte ranges
+  - additional advanced metrics such as fragmentation, truncation, TCP control
+    counts, and maximum packet sizes
+
+Observed-direction and directional-traffic semantics use the stored flow
+orientation:
+
+- `A -> B` is the direction of the first observed packet in the flow
+- `Only A -> B packets` means no reverse-direction packet was observed
+- `Packets in both directions` means both directions were observed
 
 Column sorting is available directly from the flow-table headers. Current
 sorting is available for the main visible inventory fields such as:

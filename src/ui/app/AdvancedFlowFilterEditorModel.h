@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "app/session/AdvancedFlowFilter.h"
 #include "app/session/ProtocolPathPresentation.h"
@@ -36,6 +37,7 @@ public:
         directionality,
         ports,
         ip_addresses,
+        time,
         traffic,
         service,
         protocol_path,
@@ -51,7 +53,6 @@ public:
         packet_count = 0,
         original_bytes,
         captured_bytes,
-        duration,
         max_original_packet_size,
         max_captured_packet_size,
         fragmented_packet_count,
@@ -59,6 +60,10 @@ public:
         tcp_syn_count,
         tcp_fin_count,
         tcp_rst_count,
+        a_to_b_packets,
+        b_to_a_packets,
+        a_to_b_original_bytes,
+        b_to_a_original_bytes,
     };
 
     enum class AdvancedFlowFilterTrafficUnit {
@@ -72,6 +77,13 @@ public:
         seconds,
         minutes,
         hours,
+    };
+
+    enum class TrafficRowGroup {
+        primary = 0,
+        directional_packets,
+        directional_original_bytes,
+        additional,
     };
 
     explicit AdvancedFlowFilterEditorModel(
@@ -98,12 +110,26 @@ public:
     Q_INVOKABLE QVariantList addressScopeOptions() const;
     Q_INVOKABLE QVariantList portRows(bool exclude) const;
     Q_INVOKABLE QVariantList addressRows(bool exclude) const;
+    Q_INVOKABLE QVariantList timeRangeRows() const;
+    Q_INVOKABLE QVariantMap timeDurationRow() const;
     Q_INVOKABLE QVariantList commonTrafficRows() const;
+    Q_INVOKABLE QVariantList packetDistributionIncludeOptions() const;
+    Q_INVOKABLE QVariantList packetDistributionExcludeOptions() const;
+    Q_INVOKABLE QVariantList dataDistributionIncludeOptions() const;
+    Q_INVOKABLE QVariantList dataDistributionExcludeOptions() const;
+    Q_INVOKABLE QVariantList directionalPacketTrafficRows() const;
+    Q_INVOKABLE QVariantList directionalOriginalByteTrafficRows() const;
     Q_INVOKABLE QVariantList additionalTrafficRows() const;
     Q_INVOKABLE bool trafficAdditionalFiltersExpandedSuggested() const noexcept;
+    Q_INVOKABLE void setTimeRangeFromText(const QString& metricId, const QString& text);
+    Q_INVOKABLE void setTimeRangeToText(const QString& metricId, const QString& text);
+    Q_INVOKABLE void setTimeDurationMinText(const QString& text);
+    Q_INVOKABLE void setTimeDurationMaxText(const QString& text);
+    Q_INVOKABLE bool setTimeDurationUnit(int unit);
     Q_INVOKABLE void setTrafficMinText(int metric, const QString& text);
     Q_INVOKABLE void setTrafficMaxText(int metric, const QString& text);
     Q_INVOKABLE bool setTrafficUnit(int metric, int unit);
+    Q_INVOKABLE void setTrafficDistributionOptionChecked(bool dataDistribution, int value, bool exclude, bool checked);
     Q_INVOKABLE bool serviceStateChecked(bool exclude, int stateKind) const noexcept;
     Q_INVOKABLE bool serviceTextRulesEditable(bool exclude) const noexcept;
     Q_INVOKABLE QVariantList serviceOperatorOptions() const;
@@ -179,6 +205,11 @@ private:
         QString prefix_text {};
     };
 
+    struct AdvancedFlowFilterTimeRangeEditorRow {
+        QString from_text {};
+        QString to_text {};
+    };
+
     struct AdvancedFlowFilterTrafficEditorRow {
         QString min_text {};
         QString max_text {};
@@ -218,7 +249,9 @@ private:
     [[nodiscard]] bool synchronizeDraftSectionsImpl(QString* errorText);
     [[nodiscard]] QVariantList buildPortRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildAddressRowList(bool exclude) const;
-    [[nodiscard]] QVariantList buildTrafficRowList(bool additional) const;
+    [[nodiscard]] QVariantList buildTimeRangeRowList() const;
+    [[nodiscard]] QVariantMap buildTimeDurationRow() const;
+    [[nodiscard]] QVariantList buildTrafficRowList(TrafficRowGroup group) const;
     [[nodiscard]] QVariantList buildServiceTextRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildProtocolPathRowList(bool exclude) const;
     [[nodiscard]] QVariantList buildContainsLayerRowList(bool exclude) const;
@@ -233,6 +266,8 @@ private:
     std::vector<AdvancedFlowFilterPortEditorRow> port_exclude_rows_ {};
     std::vector<AdvancedFlowFilterAddressEditorRow> address_include_rows_ {};
     std::vector<AdvancedFlowFilterAddressEditorRow> address_exclude_rows_ {};
+    std::vector<AdvancedFlowFilterTimeRangeEditorRow> time_range_rows_ {};
+    AdvancedFlowFilterTrafficEditorRow time_duration_row_ {};
     std::vector<AdvancedFlowFilterTrafficEditorRow> traffic_rows_ {};
     bool service_include_known_ {false};
     bool service_include_unknown_ {false};

@@ -9,6 +9,7 @@
 
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/FlowHints.h"
+#include "core/domain/DirectionDistribution.h"
 #include "core/domain/ProtocolId.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/AnalysisSettings.h"
@@ -151,10 +152,22 @@ struct AdvancedFlowFilterPortCriteria {
 };
 
 struct AdvancedFlowFilterAggregateCriteria {
+    struct DirectionDistributionCriteria {
+        std::vector<DirectionDistribution> include {};
+        std::vector<DirectionDistribution> exclude {};
+
+        bool operator==(const DirectionDistributionCriteria&) const = default;
+    };
+
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> packet_count {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> original_bytes {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> captured_bytes {};
-    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> duration_us {};
+    DirectionDistributionCriteria packet_distribution {};
+    DirectionDistributionCriteria data_distribution {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> a_to_b_packet_count {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> b_to_a_packet_count {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> a_to_b_original_bytes {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> b_to_a_original_bytes {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> fragmented_packet_count {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> truncated_packet_count {};
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> tcp_syn_count {};
@@ -164,6 +177,15 @@ struct AdvancedFlowFilterAggregateCriteria {
     std::optional<AdvancedFlowFilterInclusiveRange<std::uint32_t>> max_captured_packet_length {};
 
     bool operator==(const AdvancedFlowFilterAggregateCriteria&) const = default;
+};
+
+struct AdvancedFlowFilterTimeCriteria {
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> start_us {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> end_us {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> overlap_us {};
+    std::optional<AdvancedFlowFilterInclusiveRange<std::uint64_t>> duration_us {};
+
+    bool operator==(const AdvancedFlowFilterTimeCriteria&) const = default;
 };
 
 enum class AdvancedFlowFilterDirectionality : std::uint8_t {
@@ -216,9 +238,10 @@ struct AdvancedFlowFilterSpec {
     AdvancedFlowFilterTlsVersionCriteria tls_version {};
     AdvancedFlowFilterQuicVersionCriteria quic_version {};
     AdvancedFlowFilterPortCriteria ports {};
-    AdvancedFlowFilterAggregateCriteria aggregate {};
     AdvancedFlowFilterDirectionalityCriteria directionality {};
     AdvancedFlowFilterAddressCriteria addresses {};
+    AdvancedFlowFilterTimeCriteria time {};
+    AdvancedFlowFilterAggregateCriteria aggregate {};
     AdvancedFlowFilterServiceCriteria service {};
 
     bool operator==(const AdvancedFlowFilterSpec&) const = default;
@@ -233,6 +256,7 @@ struct AdvancedFlowFilterDocumentSectionStates {
     bool directionality {true};
     bool ports {true};
     bool ip_addresses {true};
+    bool time {true};
     bool traffic {true};
     bool service {true};
     bool protocol_path {true};
@@ -255,6 +279,7 @@ enum class AdvancedFlowFilterCompileStatus : std::uint8_t {
     invalid_address_predicate,
     invalid_service_predicate,
     invalid_directionality_predicate,
+    invalid_traffic_distribution_predicate,
     invalid_address_family_predicate,
 };
 
@@ -334,7 +359,19 @@ struct CompiledAdvancedFlowFilterPortCriteria {
 };
 
 struct CompiledAdvancedFlowFilterAggregateCriteria {
+    std::array<bool, 3> packet_distribution_include_membership {};
+    std::array<bool, 3> packet_distribution_exclude_membership {};
+    std::array<bool, 3> data_distribution_include_membership {};
+    std::array<bool, 3> data_distribution_exclude_membership {};
+    bool has_packet_distribution_include_predicates {false};
+    bool has_packet_distribution_exclude_predicates {false};
+    bool has_data_distribution_include_predicates {false};
+    bool has_data_distribution_exclude_predicates {false};
     AdvancedFlowFilterAggregateCriteria ranges {};
+};
+
+struct CompiledAdvancedFlowFilterTimeCriteria {
+    AdvancedFlowFilterTimeCriteria ranges {};
 };
 
 struct CompiledAdvancedFlowFilterDirectionalityCriteria {
@@ -394,9 +431,10 @@ struct CompiledAdvancedFlowFilter {
     CompiledAdvancedFlowFilterTlsVersionCriteria tls_version {};
     CompiledAdvancedFlowFilterQuicVersionCriteria quic_version {};
     CompiledAdvancedFlowFilterPortCriteria ports {};
-    CompiledAdvancedFlowFilterAggregateCriteria aggregate {};
     CompiledAdvancedFlowFilterDirectionalityCriteria directionality {};
     CompiledAdvancedFlowFilterAddressCriteria addresses {};
+    CompiledAdvancedFlowFilterTimeCriteria time {};
+    CompiledAdvancedFlowFilterAggregateCriteria aggregate {};
     CompiledAdvancedFlowFilterServiceCriteria service {};
 };
 

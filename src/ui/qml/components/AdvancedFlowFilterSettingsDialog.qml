@@ -28,10 +28,11 @@ Dialog {
     readonly property int compactTextButtonHorizontalPadding: 10
     readonly property int portsSectionId: 6
     readonly property int ipAddressesSectionId: 7
-    readonly property int trafficSectionId: 8
-    readonly property int serviceSectionId: 9
-    readonly property int protocolPathSectionId: 10
-    readonly property int containsLayerSectionId: 11
+    readonly property int timeSectionId: 8
+    readonly property int trafficSectionId: 9
+    readonly property int serviceSectionId: 10
+    readonly property int protocolPathSectionId: 11
+    readonly property int containsLayerSectionId: 12
     readonly property int serviceKnownKind: 0
     readonly property int serviceUnknownKind: 1
     readonly property int containsLayerIdentifierModeAny: 0
@@ -40,6 +41,7 @@ Dialog {
         0, 1, 2, 3, 4, 5,
         root.portsSectionId,
         root.ipAddressesSectionId,
+        root.timeSectionId,
         root.trafficSectionId,
         root.serviceSectionId,
         root.protocolPathSectionId,
@@ -181,75 +183,85 @@ Dialog {
 
     contentItem: Item {
         implicitWidth: 920
-        implicitHeight: contentLayout.implicitHeight + 24
+        implicitHeight: contentLayout.implicitHeight + 16
 
         ColumnLayout {
             id: contentLayout
             anchors.fill: parent
-            anchors.margins: 18
-            spacing: 12
+            anchors.margins: 16
+            spacing: 8
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterOpenFilterButton"
-                    text: "Open filter..."
-                    enabled: root.controller !== null
-                    onClicked: root.controller.openAdvancedFlowFilterFile()
-                }
+                RowLayout {
+                    spacing: 8
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterClearUnsavedChangesButton"
-                    text: "Clear unsaved changes"
-                    enabled: root.editor ? root.editor.draftClearUnsavedChangesAvailable : false
-                    onClicked: {
-                        if (root.controller) {
-                            root.controller.clearAdvancedFlowFilterUnsavedChanges()
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterOpenFilterButton"
+                        text: "Open filter..."
+                        enabled: root.controller !== null
+                        onClicked: root.controller.openAdvancedFlowFilterFile()
+                    }
+
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterClearUnsavedChangesButton"
+                        text: "Clear unsaved changes"
+                        enabled: root.editor ? root.editor.draftClearUnsavedChangesAvailable : false
+                        onClicked: {
+                            if (root.controller) {
+                                root.controller.clearAdvancedFlowFilterUnsavedChanges()
+                            }
                         }
                     }
                 }
 
-                Item {
+                ColumnLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.leftMargin: 8
+                    Layout.rightMargin: 8
+                    spacing: 0
+
+                    Label {
+                        objectName: "advancedFlowFilterIdentityLabel"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: "Filter: " + (root.controller ? root.controller.advancedFlowFilterDisplayName : "Custom filter")
+                        color: "#0f172a"
+                        font.pixelSize: 15
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        objectName: "advancedFlowFilterIdentityRuleCountLabel"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: root.controller ? root.controller.advancedFlowFilterRuleCountText : "0 rules"
+                        color: "#64748b"
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                    }
                 }
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterSaveButton"
-                    text: "Save"
-                    enabled: root.controller !== null
-                    onClicked: root.controller.saveAdvancedFlowFilterFile()
-                }
+                RowLayout {
+                    spacing: 8
 
-                FilterTextButton {
-                    objectName: "advancedFlowFilterSaveAsButton"
-                    text: "Save As..."
-                    enabled: root.controller !== null
-                    onClicked: root.controller.saveAdvancedFlowFilterFileAs()
-                }
-            }
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterSaveButton"
+                        text: "Save"
+                        enabled: root.controller !== null
+                        onClicked: root.controller.saveAdvancedFlowFilterFile()
+                    }
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 4
-
-                Label {
-                    objectName: "advancedFlowFilterIdentityLabel"
-                    Layout.fillWidth: true
-                    text: "Filter: " + (root.controller ? root.controller.advancedFlowFilterDisplayName : "Custom filter")
-                    color: "#0f172a"
-                    font.pixelSize: 15
-                    font.bold: true
-                    elide: Text.ElideRight
-                }
-
-                Label {
-                    objectName: "advancedFlowFilterIdentityRuleCountLabel"
-                    Layout.fillWidth: true
-                    text: root.controller ? root.controller.advancedFlowFilterRuleCountText : "0 rules"
-                    color: "#64748b"
-                    font.pixelSize: 12
+                    FilterTextButton {
+                        objectName: "advancedFlowFilterSaveAsButton"
+                        text: "Save As..."
+                        enabled: root.controller !== null
+                        onClicked: root.controller.saveAdvancedFlowFilterFileAs()
+                    }
                 }
             }
 
@@ -262,12 +274,18 @@ Dialog {
 
                 ScrollView {
                     id: sectionScrollView
+                    readonly property real verticalScrollBarGutter:
+                        sectionVerticalScrollBar.policy !== ScrollBar.AlwaysOff
+                        ? sectionVerticalScrollBar.width + 4
+                        : 0
                     anchors.fill: parent
                     anchors.margins: 1
                     clip: true
+                    rightPadding: verticalScrollBarGutter
                     contentWidth: availableWidth
 
                     ScrollBar.vertical: AppScrollBar {
+                        id: sectionVerticalScrollBar
                         parent: sectionScrollView
                         x: sectionScrollView.mirrored ? 0 : sectionScrollView.width - width
                         y: sectionScrollView.topPadding
@@ -363,7 +381,7 @@ Dialog {
                                 Label {
                                     Layout.fillWidth: true
                                     visible: finiteSectionCard.sectionId === 5
-                                    text: "One direction means packets were observed in only one flow direction. Both directions means at least one packet was observed in each direction."
+                                    text: "A -> B is the direction of the first observed packet in the connection. \"Only A -> B packets\" means no B -> A packets were observed; \"Packets in both directions\" means at least one packet was observed in each direction."
                                     color: "#64748b"
                                     font.pixelSize: 12
                                     wrapMode: Text.WordWrap
@@ -1146,6 +1164,227 @@ Dialog {
                         }
 
                         AdvancedFlowFilterSection {
+                            id: timeSection
+                            readonly property bool sectionEnabledState: {
+                                if (!root.editor) {
+                                    return false
+                                }
+                                void(root.editor.revision)
+                                return root.editor.sectionEnabled(root.timeSectionId)
+                            }
+                            readonly property var rangeRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.timeRangeRows()
+                            }
+                            readonly property var durationRow: {
+                                if (!root.editor) {
+                                    return ({})
+                                }
+                                void(root.editor.revision)
+                                return root.editor.timeDurationRow()
+                            }
+                            readonly property string sectionSummaryText: {
+                                if (!root.editor) {
+                                    return ""
+                                }
+                                void(root.editor.sectionSummaryRevision)
+                                return root.editor.sectionSummaryText(root.timeSectionId)
+                            }
+
+                            sectionObjectName: "advancedFlowFilterTimeSection"
+                            collapseButtonObjectName: "advancedFlowFilterTimeCollapseButton"
+                            enabledCheckBoxObjectName: "advancedFlowFilterTimeEnabledCheckBox"
+                            contentObjectName: "advancedFlowFilterTimeContent"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: implicitHeight
+                            title: "Time"
+                            summaryText: sectionSummaryText
+                            expanded: root.sectionExpanded(root.timeSectionId)
+                            sectionEnabled: sectionEnabledState
+                            contentEnabled: sectionEnabledState
+
+                            onToggleRequested: root.setSectionExpanded(root.timeSectionId, !root.sectionExpanded(root.timeSectionId))
+                            onSectionEnabledToggled: function(checked) {
+                                if (root.editor) {
+                                    root.editor.setSectionEnabled(root.timeSectionId, checked)
+                                }
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: "UTC timestamp example: 2026-03-22T12:27:32.000000Z"
+                                color: root.secondaryTextColor
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Label {
+                                    Layout.preferredWidth: 250
+                                    text: "Value"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 220
+                                    text: "From"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 220
+                                    text: "To"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                            }
+
+                            Repeater {
+                                model: timeSection.rangeRows
+
+                                delegate: RowLayout {
+                                    required property var modelData
+
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Label {
+                                        Layout.preferredWidth: 250
+                                        text: modelData.label
+                                        color: "#0f172a"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    TextField {
+                                        objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "FromTextField"
+                                        Layout.preferredWidth: 220
+                                        text: modelData.fromText
+                                        placeholderText: "YYYY-MM-DDTHH:MM:SS.ffffffZ"
+                                        onTextEdited: {
+                                            if (root.editor) {
+                                                root.editor.setTimeRangeFromText(modelData.metricId, text)
+                                            }
+                                        }
+                                    }
+
+                                    TextField {
+                                        objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "ToTextField"
+                                        Layout.preferredWidth: 220
+                                        text: modelData.toText
+                                        placeholderText: "YYYY-MM-DDTHH:MM:SS.ffffffZ"
+                                        onTextEdited: {
+                                            if (root.editor) {
+                                                root.editor.setTimeRangeToText(modelData.metricId, text)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                                implicitHeight: 4
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Label {
+                                    Layout.preferredWidth: 250
+                                    text: "Duration"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 120
+                                    text: "Minimum"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 120
+                                    text: "Maximum"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    Layout.preferredWidth: 120
+                                    text: "Unit"
+                                    color: "#475569"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Label {
+                                    Layout.preferredWidth: 250
+                                    text: timeSection.durationRow.label || "Duration"
+                                    color: "#0f172a"
+                                    elide: Text.ElideRight
+                                }
+
+                                TextField {
+                                    objectName: "advancedFlowFilterTimeDurationMinTextField"
+                                    Layout.preferredWidth: 120
+                                    text: timeSection.durationRow.minText || ""
+                                    placeholderText: "0"
+                                    onTextEdited: {
+                                        if (root.editor) {
+                                            root.editor.setTimeDurationMinText(text)
+                                        }
+                                    }
+                                }
+
+                                TextField {
+                                    objectName: "advancedFlowFilterTimeDurationMaxTextField"
+                                    Layout.preferredWidth: 120
+                                    text: timeSection.durationRow.maxText || ""
+                                    placeholderText: "100"
+                                    onTextEdited: {
+                                        if (root.editor) {
+                                            root.editor.setTimeDurationMaxText(text)
+                                        }
+                                    }
+                                }
+
+                                ComboBox {
+                                    objectName: "advancedFlowFilterTimeDurationUnitComboBox"
+                                    Layout.preferredWidth: 120
+                                    model: timeSection.durationRow.unitOptions || []
+                                    textRole: "label"
+                                    currentIndex: root.optionIndex(model, timeSection.durationRow.selectedUnit)
+                                    onActivated: {
+                                        if (root.editor) {
+                                            root.editor.setTimeDurationUnit(model[currentIndex].value)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        AdvancedFlowFilterSection {
                             id: trafficSection
                             readonly property bool sectionEnabledState: {
                                 if (!root.editor) {
@@ -1160,6 +1399,48 @@ Dialog {
                                 }
                                 void(root.editor.revision)
                                 return root.editor.commonTrafficRows()
+                            }
+                            readonly property var packetDistributionIncludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.packetDistributionIncludeOptions()
+                            }
+                            readonly property var packetDistributionExcludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.packetDistributionExcludeOptions()
+                            }
+                            readonly property var dataDistributionIncludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.dataDistributionIncludeOptions()
+                            }
+                            readonly property var dataDistributionExcludeOptions: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.dataDistributionExcludeOptions()
+                            }
+                            readonly property var directionalPacketRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.directionalPacketTrafficRows()
+                            }
+                            readonly property var directionalOriginalByteRows: {
+                                if (!root.editor) {
+                                    return []
+                                }
+                                void(root.editor.revision)
+                                return root.editor.directionalOriginalByteTrafficRows()
                             }
                             readonly property var additionalRows: {
                                 if (!root.editor) {
@@ -1312,8 +1593,8 @@ Dialog {
                                                 text: modelData.unitText
                                                 color: "#475569"
                                                 verticalAlignment: Text.AlignVCenter
-                                            }
-                                        }
+                                    }
+                                }
                             }
 
                             FilterTextButton {
@@ -1391,6 +1672,379 @@ Dialog {
                                                     text: modelData.unitText
                                                     color: "#475569"
                                                     verticalAlignment: Text.AlignVCenter
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            objectName: "advancedFlowFilterTrafficDirectionalSeparator"
+                                            Layout.fillWidth: true
+                                            implicitHeight: 1
+                                            color: "#e2e8f0"
+                                        }
+
+                                        ColumnLayout {
+                                            objectName: "advancedFlowFilterTrafficDirectionalCluster"
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Label {
+                                                objectName: "advancedFlowFilterTrafficDirectionHelperText"
+                                                Layout.fillWidth: true
+                                                text: "A -> B is the direction of the first observed packet in the connection. \"Only A -> B packets\" means no B -> A packets were observed; \"Packets in both directions\" means at least one packet was observed in each direction."
+                                                color: "#64748b"
+                                                font.pixelSize: 12
+                                                wrapMode: Text.WordWrap
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficPacketDistributionGroup"
+                                                Layout.fillWidth: true
+                                                title: "Packet distribution"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Include"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.packetDistributionIncludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficPacketDistributionInclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(false, modelData.value, false, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Exclude"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.packetDistributionExcludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficPacketDistributionExclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(false, modelData.value, true, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficDataDistributionGroup"
+                                                Layout.fillWidth: true
+                                                title: "Data distribution"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Data distribution uses original packet bytes."
+                                                    color: "#64748b"
+                                                    font.pixelSize: 12
+                                                    wrapMode: Text.WordWrap
+                                                }
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Include"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.dataDistributionIncludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficDataDistributionInclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(true, modelData.value, false, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Exclude"
+                                                    color: "#475569"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    width: parent.width
+                                                    spacing: 12
+
+                                                    Repeater {
+                                                        model: trafficSection.dataDistributionExcludeOptions
+
+                                                        delegate: CheckBox {
+                                                            required property var modelData
+
+                                                            objectName: "advancedFlowFilterTrafficDataDistributionExclude"
+                                                                + modelData.objectNameSuffix
+                                                                + "CheckBox"
+                                                            text: modelData.label
+                                                            checked: modelData.checked
+                                                            onToggled: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficDistributionOptionChecked(true, modelData.value, true, checked)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficDirectionalPacketsGroup"
+                                                Layout.fillWidth: true
+                                                title: "Directional packets"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Label {
+                                                        Layout.preferredWidth: 250
+                                                        text: "Value"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Minimum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Maximum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Unit"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+                                                }
+
+                                                Repeater {
+                                                    model: trafficSection.directionalPacketRows
+
+                                                    delegate: RowLayout {
+                                                        required property var modelData
+
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Label {
+                                                            Layout.preferredWidth: 250
+                                                            text: modelData.label
+                                                            color: "#0f172a"
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MinTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.minText
+                                                            placeholderText: "0"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMinText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MaxTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.maxText
+                                                            placeholderText: "100"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMaxText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitLabel"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.unitText
+                                                            color: "#475569"
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            AdvancedFlowFilterSemanticGroup {
+                                                objectName: "advancedFlowFilterTrafficDirectionalOriginalBytesGroup"
+                                                Layout.fillWidth: true
+                                                title: "Directional original bytes"
+                                                fillColor: root.includeRegionColor
+                                                strokeColor: root.includeRegionBorderColor
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    Label {
+                                                        Layout.preferredWidth: 250
+                                                        text: "Value"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Minimum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Maximum"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+
+                                                    Label {
+                                                        Layout.preferredWidth: 120
+                                                        text: "Unit"
+                                                        color: "#475569"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                    }
+                                                }
+
+                                                Repeater {
+                                                    model: trafficSection.directionalOriginalByteRows
+
+                                                    delegate: RowLayout {
+                                                        required property var modelData
+
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Label {
+                                                            Layout.preferredWidth: 250
+                                                            text: modelData.label
+                                                            color: "#0f172a"
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MinTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.minText
+                                                            placeholderText: "0"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMinText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        TextField {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "MaxTextField"
+                                                            Layout.preferredWidth: 120
+                                                            text: modelData.maxText
+                                                            placeholderText: "100"
+                                                            onTextEdited: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficMaxText(modelData.metricId, text)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        ComboBox {
+                                                            objectName: "advancedFlowFilter" + modelData.objectNamePrefix + "UnitComboBox"
+                                                            Layout.preferredWidth: 120
+                                                            model: modelData.unitOptions
+                                                            textRole: "label"
+                                                            currentIndex: root.optionIndex(model, modelData.selectedUnit)
+                                                            onActivated: {
+                                                                if (root.editor) {
+                                                                    root.editor.setTrafficUnit(modelData.metricId, model[currentIndex].value)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -2459,6 +3113,52 @@ Dialog {
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
             }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                Layout.bottomMargin: 4
+                spacing: 8
+
+                FilterTextButton {
+                    objectName: "advancedFlowFilterClearAllButton"
+                    text: "Clear all"
+                    enabled: root.editor ? root.editor.draftClearAllAvailable : false
+                    onClicked: {
+                        if (root.controller) {
+                            root.controller.clearAdvancedFlowFilter()
+                        }
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                FilterTextButton {
+                    objectName: "advancedFlowFilterCancelButton"
+                    text: "Cancel"
+                    onClicked: root.close()
+                }
+
+                FilterTextButton {
+                    objectName: "advancedFlowFilterApplyButton"
+                    text: "Apply"
+                    highlighted: true
+                    onClicked: {
+                        if (!root.controller) {
+                            root.applyingDraft = true
+                            root.close()
+                            return
+                        }
+
+                        if (root.controller.applyAdvancedFlowFilterEdit()) {
+                            root.applyingDraft = true
+                            root.close()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2475,48 +3175,4 @@ Dialog {
         }
     }
 
-    footer: DialogButtonBox {
-        contentItem: RowLayout {
-            spacing: 8
-
-            FilterTextButton {
-                objectName: "advancedFlowFilterClearAllButton"
-                text: "Clear all"
-                enabled: root.editor ? root.editor.draftClearAllAvailable : false
-                onClicked: {
-                    if (root.controller) {
-                        root.controller.clearAdvancedFlowFilter()
-                    }
-                }
-            }
-
-            Item {
-                Layout.fillWidth: true
-            }
-
-            FilterTextButton {
-                objectName: "advancedFlowFilterCancelButton"
-                text: "Cancel"
-                onClicked: root.close()
-            }
-
-            FilterTextButton {
-                objectName: "advancedFlowFilterApplyButton"
-                text: "Apply"
-                highlighted: true
-                onClicked: {
-                    if (!root.controller) {
-                        root.applyingDraft = true
-                        root.close()
-                        return
-                    }
-
-                    if (root.controller.applyAdvancedFlowFilterEdit()) {
-                        root.applyingDraft = true
-                        root.close()
-                    }
-                }
-            }
-        }
-    }
 }

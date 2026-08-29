@@ -718,7 +718,7 @@ void expect_flows_runtime_behavior() {
     PFL_EXPECT(baseline_query.result_count_before_limit == 4U);
     const auto advanced_filter_path = write_temp_advanced_filter_file(
         "pfl_cli_flows_http_adv.filter",
-        "format_version = 2\n"
+        "format_version = 3\n"
         "flow_protocol.include = tcp\n"
         "port.b.include = 80\n"
     );
@@ -828,7 +828,7 @@ void expect_flows_runtime_behavior() {
     {
         const auto expected = adapter.query_advanced_flows(
             require_effective_advanced_filter_spec(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "flow_protocol.include = tcp\n"
                 "port.b.include = 80\n"
             ),
@@ -853,14 +853,14 @@ void expect_flows_runtime_behavior() {
     {
         const auto disabled_section_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_disabled_protocol_section.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "section.flow_protocol.enabled = false\n"
             "flow_protocol.include = tcp\n"
             "address_family.include = ipv6\n"
         );
         const auto expected = adapter.query_advanced_flows(
             require_effective_advanced_filter_spec(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "section.flow_protocol.enabled = false\n"
                 "flow_protocol.include = tcp\n"
                 "address_family.include = ipv6\n"
@@ -887,12 +887,12 @@ void expect_flows_runtime_behavior() {
     {
         const auto address_family_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_address_family.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "address_family.include = ipv6\n"
         );
         const auto expected = adapter.query_advanced_flows(
             require_effective_advanced_filter_spec(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "address_family.include = ipv6\n"
             ),
             std::nullopt,
@@ -916,7 +916,7 @@ void expect_flows_runtime_behavior() {
     {
         const auto expected = adapter.query_advanced_flows(
             require_effective_advanced_filter_spec(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "flow_protocol.include = tcp\n"
             ),
             std::optional<std::vector<std::size_t>> {std::vector<std::size_t> {baseline_query.ordered_flow_indices[2]}},
@@ -928,7 +928,7 @@ void expect_flows_runtime_behavior() {
 
         const auto scoped_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_scoped_adv.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcp\n"
         );
         const std::vector<std::string> args {
@@ -1011,7 +1011,7 @@ void expect_flows_runtime_behavior() {
     {
         const auto invalid_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_invalid_tls_token.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "tls_version.include = tls9_9\n"
         );
         const std::vector<std::string> args {
@@ -1037,7 +1037,7 @@ void expect_flows_runtime_behavior() {
     {
         const auto invalid_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_invalid_protocol_token.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcpish\n"
         );
         const std::vector<std::string> args {
@@ -1071,7 +1071,7 @@ void expect_flows_runtime_behavior() {
         PFL_EXPECT(result.exit_code == 1);
         PFL_EXPECT(result.stdout_text.empty());
         PFL_EXPECT(contains_text(result.stderr_text, "Invalid advanced flow filter file:"));
-        PFL_EXPECT(contains_text(result.stderr_text, "Only format_version = 2 is currently supported."));
+        PFL_EXPECT(contains_text(result.stderr_text, "Only format_version = 3 is currently supported."));
         PFL_EXPECT(!contains_text(result.stderr_text, "Failed to open input:"));
     }
 
@@ -1099,7 +1099,7 @@ void expect_flows_runtime_behavior() {
     {
         const auto compile_invalid_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_compile_invalid.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "service.contains.ci.include = \"\"\n"
         );
         const std::vector<std::string> args {
@@ -1119,7 +1119,7 @@ void expect_flows_runtime_behavior() {
     {
         const auto compile_invalid_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_compile_invalid_real_capture.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "service.contains.ci.include = \"\"\n"
         );
         const std::vector<std::string> args {
@@ -1245,14 +1245,14 @@ void expect_preview_and_csv_behavior() {
         const auto capture_path = build_cli_flows_capture_path();
         const auto advanced_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_export_adv.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcp\n"
         );
         FrontendSessionAdapter adapter {};
         PFL_REQUIRE(adapter.open_capture(capture_path).opened);
         const auto expected = adapter.query_advanced_flows(
             require_effective_advanced_filter_spec(
-                "format_version = 2\n"
+                "format_version = 3\n"
                 "flow_protocol.include = tcp\n"
             ),
             std::nullopt,
@@ -1429,7 +1429,7 @@ void expect_preview_and_csv_behavior() {
         const auto capture_path = build_cli_flows_capture_path();
         const auto advanced_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_collision_adv.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcp\n"
         );
         const std::vector<std::string> args {
@@ -1475,7 +1475,7 @@ void expect_preview_and_csv_behavior() {
         );
         const auto advanced_filter_path = write_temp_advanced_filter_file(
             "pfl_cli_flows_distinct_paths.filter",
-            "format_version = 2\n"
+            "format_version = 3\n"
             "flow_protocol.include = tcp\n"
         );
         const auto output_path = std::filesystem::temp_directory_path() / "pfl_cli_flows_distinct_paths.csv";

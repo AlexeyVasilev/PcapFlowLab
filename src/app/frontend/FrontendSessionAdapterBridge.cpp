@@ -247,6 +247,8 @@ std::string compile_status_json(const pfl::session_detail::AdvancedFlowFilterCom
         return json_string("invalid_service_predicate");
     case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_directionality_predicate:
         return json_string("invalid_directionality_predicate");
+    case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_traffic_distribution_predicate:
+        return json_string("invalid_traffic_distribution_predicate");
     case pfl::session_detail::AdvancedFlowFilterCompileStatus::invalid_address_family_predicate:
         return json_string("invalid_address_family_predicate");
     }
@@ -470,7 +472,18 @@ std::string structured_ip_section_json(const pfl::FrontendAdvancedFlowFilterIpAd
     return out.str();
 }
 
-std::string structured_traffic_row_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterTrafficRowDto>& rows) {
+std::string structured_traffic_row_json(const pfl::FrontendAdvancedFlowFilterTrafficRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"metric_id\":" << json_string(row.metric_id) << ','
+        << "\"unit_id\":" << json_string(row.unit_id) << ','
+        << "\"min_text\":" << json_string(row.min_text) << ','
+        << "\"max_text\":" << json_string(row.max_text)
+        << '}';
+    return out.str();
+}
+
+std::string structured_time_row_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterTimeRowDto>& rows) {
     std::ostringstream out {};
     out << '[';
     for (std::size_t index = 0; index < rows.size(); ++index) {
@@ -480,10 +493,32 @@ std::string structured_traffic_row_array_json(const std::vector<pfl::FrontendAdv
         const auto& row = rows[index];
         out << '{'
             << "\"metric_id\":" << json_string(row.metric_id) << ','
-            << "\"unit_id\":" << json_string(row.unit_id) << ','
-            << "\"min_text\":" << json_string(row.min_text) << ','
-            << "\"max_text\":" << json_string(row.max_text)
+            << "\"from_text\":" << json_string(row.from_text) << ','
+            << "\"to_text\":" << json_string(row.to_text)
             << '}';
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string structured_time_section_json(const pfl::FrontendAdvancedFlowFilterTimeSectionDto& section) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"ranges\":" << structured_time_row_array_json(section.ranges) << ','
+        << "\"duration\":" << structured_traffic_row_json(section.duration)
+        << '}';
+    return out.str();
+}
+
+std::string structured_traffic_row_array_json(const std::vector<pfl::FrontendAdvancedFlowFilterTrafficRowDto>& rows) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << structured_traffic_row_json(rows[index]);
     }
     out << ']';
     return out.str();
@@ -493,7 +528,11 @@ std::string structured_traffic_section_json(const pfl::FrontendAdvancedFlowFilte
     std::ostringstream out {};
     out << '{'
         << "\"enabled\":" << bool_json(section.enabled) << ','
+        << "\"packet_distribution\":" << structured_section_json(section.packet_distribution) << ','
+        << "\"data_distribution\":" << structured_section_json(section.data_distribution) << ','
         << "\"primary\":" << structured_traffic_row_array_json(section.primary) << ','
+        << "\"directional_packets\":" << structured_traffic_row_array_json(section.directional_packets) << ','
+        << "\"directional_original_bytes\":" << structured_traffic_row_array_json(section.directional_original_bytes) << ','
         << "\"additional\":" << structured_traffic_row_array_json(section.additional)
         << '}';
     return out.str();
@@ -652,6 +691,7 @@ std::string structured_option_catalog_json(
         << "\"tls_version\":" << finite_option_array_json(catalog.tls_version) << ','
         << "\"quic_version\":" << finite_option_array_json(catalog.quic_version) << ','
         << "\"directionality\":" << finite_option_array_json(catalog.directionality) << ','
+        << "\"traffic_distribution\":" << finite_option_array_json(catalog.traffic_distribution) << ','
         << "\"endpoint_scope\":" << finite_option_array_json(catalog.endpoint_scope) << ','
         << "\"protocol_path_selector_mode\":" << finite_option_array_json(catalog.protocol_path_selector_mode) << ','
         << "\"contains_layer_identifier_mode\":"
@@ -679,6 +719,7 @@ std::string structured_document_json(
         << "\"directionality\":" << structured_section_json(document->directionality) << ','
         << "\"ports\":" << structured_port_section_json(document->ports) << ','
         << "\"ip_addresses\":" << structured_ip_section_json(document->ip_addresses) << ','
+        << "\"time\":" << structured_time_section_json(document->time) << ','
         << "\"traffic\":" << structured_traffic_section_json(document->traffic) << ','
         << "\"service\":" << structured_service_section_json(document->service) << ','
         << "\"protocol_path\":" << structured_protocol_path_section_json(document->protocol_path) << ','
@@ -2449,12 +2490,39 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
     const char* const* ip_exclude_address_text_utf8,
     const char* const* ip_exclude_prefix_text_utf8,
     const std::size_t ip_exclude_count,
+    const std::uint8_t time_enabled,
+    const char* const* time_range_metric_ids_utf8,
+    const char* const* time_range_from_text_utf8,
+    const char* const* time_range_to_text_utf8,
+    const std::size_t time_range_count,
+    const char* time_duration_metric_id_utf8,
+    const char* time_duration_unit_id_utf8,
+    const char* time_duration_min_text_utf8,
+    const char* time_duration_max_text_utf8,
     const std::uint8_t traffic_enabled,
+    const char* const* packet_distribution_include_ids_utf8,
+    const std::size_t packet_distribution_include_id_count,
+    const char* const* packet_distribution_exclude_ids_utf8,
+    const std::size_t packet_distribution_exclude_id_count,
+    const char* const* data_distribution_include_ids_utf8,
+    const std::size_t data_distribution_include_id_count,
+    const char* const* data_distribution_exclude_ids_utf8,
+    const std::size_t data_distribution_exclude_id_count,
     const char* const* traffic_primary_metric_ids_utf8,
     const char* const* traffic_primary_unit_ids_utf8,
     const char* const* traffic_primary_min_text_utf8,
     const char* const* traffic_primary_max_text_utf8,
     const std::size_t traffic_primary_count,
+    const char* const* traffic_directional_packets_metric_ids_utf8,
+    const char* const* traffic_directional_packets_unit_ids_utf8,
+    const char* const* traffic_directional_packets_min_text_utf8,
+    const char* const* traffic_directional_packets_max_text_utf8,
+    const std::size_t traffic_directional_packets_count,
+    const char* const* traffic_directional_original_bytes_metric_ids_utf8,
+    const char* const* traffic_directional_original_bytes_unit_ids_utf8,
+    const char* const* traffic_directional_original_bytes_min_text_utf8,
+    const char* const* traffic_directional_original_bytes_max_text_utf8,
+    const std::size_t traffic_directional_original_bytes_count,
     const char* const* traffic_additional_metric_ids_utf8,
     const char* const* traffic_additional_unit_ids_utf8,
     const char* const* traffic_additional_min_text_utf8,
@@ -2532,10 +2600,33 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         (ip_exclude_count > 0U && (ip_exclude_subnet_enabled == nullptr ||
                                    ip_exclude_address_text_utf8 == nullptr ||
                                    ip_exclude_prefix_text_utf8 == nullptr)) ||
+        string_array_invalid(time_range_metric_ids_utf8, time_range_count) ||
+        (time_range_count > 0U && (time_range_from_text_utf8 == nullptr ||
+                                   time_range_to_text_utf8 == nullptr)) ||
+        time_duration_metric_id_utf8 == nullptr ||
+        time_duration_unit_id_utf8 == nullptr ||
+        time_duration_min_text_utf8 == nullptr ||
+        time_duration_max_text_utf8 == nullptr ||
+        string_array_invalid(packet_distribution_include_ids_utf8, packet_distribution_include_id_count) ||
+        string_array_invalid(packet_distribution_exclude_ids_utf8, packet_distribution_exclude_id_count) ||
+        string_array_invalid(data_distribution_include_ids_utf8, data_distribution_include_id_count) ||
+        string_array_invalid(data_distribution_exclude_ids_utf8, data_distribution_exclude_id_count) ||
         string_array_invalid(traffic_primary_metric_ids_utf8, traffic_primary_count) ||
         (traffic_primary_count > 0U && (traffic_primary_unit_ids_utf8 == nullptr ||
                                         traffic_primary_min_text_utf8 == nullptr ||
                                         traffic_primary_max_text_utf8 == nullptr)) ||
+        string_array_invalid(traffic_directional_packets_metric_ids_utf8, traffic_directional_packets_count) ||
+        (traffic_directional_packets_count > 0U &&
+         (traffic_directional_packets_unit_ids_utf8 == nullptr ||
+          traffic_directional_packets_min_text_utf8 == nullptr ||
+          traffic_directional_packets_max_text_utf8 == nullptr)) ||
+        string_array_invalid(
+            traffic_directional_original_bytes_metric_ids_utf8,
+            traffic_directional_original_bytes_count) ||
+        (traffic_directional_original_bytes_count > 0U &&
+         (traffic_directional_original_bytes_unit_ids_utf8 == nullptr ||
+          traffic_directional_original_bytes_min_text_utf8 == nullptr ||
+          traffic_directional_original_bytes_max_text_utf8 == nullptr)) ||
         string_array_invalid(traffic_additional_metric_ids_utf8, traffic_additional_count) ||
         (traffic_additional_count > 0U && (traffic_additional_unit_ids_utf8 == nullptr ||
                                            traffic_additional_min_text_utf8 == nullptr ||
@@ -2607,6 +2698,23 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
                 .subnet_enabled = subnet_enabled[index] != 0U,
                 .address_text = address_text_utf8[index] != nullptr ? std::string {address_text_utf8[index]} : std::string {},
                 .prefix_text = prefix_text_utf8[index] != nullptr ? std::string {prefix_text_utf8[index]} : std::string {},
+            });
+        }
+        return rows;
+    };
+
+    const auto collect_time_rows = [](
+                                      const char* const* metric_ids_utf8,
+                                      const char* const* from_text_utf8,
+                                      const char* const* to_text_utf8,
+                                      const std::size_t count) {
+        std::vector<pfl::FrontendAdvancedFlowFilterTimeRowDto> rows {};
+        rows.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            rows.push_back(pfl::FrontendAdvancedFlowFilterTimeRowDto {
+                .metric_id = metric_ids_utf8[index] != nullptr ? std::string {metric_ids_utf8[index]} : std::string {},
+                .from_text = from_text_utf8[index] != nullptr ? std::string {from_text_utf8[index]} : std::string {},
+                .to_text = to_text_utf8[index] != nullptr ? std::string {to_text_utf8[index]} : std::string {},
             });
         }
         return rows;
@@ -2739,13 +2847,48 @@ char* pfl_frontend_session_adapter_apply_advanced_flow_filter_structured_documen
         ip_exclude_prefix_text_utf8,
         ip_exclude_count
     );
+    draft.time.enabled = time_enabled != 0U;
+    draft.time.ranges = collect_time_rows(
+        time_range_metric_ids_utf8,
+        time_range_from_text_utf8,
+        time_range_to_text_utf8,
+        time_range_count
+    );
+    draft.time.duration = pfl::FrontendAdvancedFlowFilterTrafficRowDto {
+        .metric_id = std::string {time_duration_metric_id_utf8},
+        .unit_id = std::string {time_duration_unit_id_utf8},
+        .min_text = std::string {time_duration_min_text_utf8},
+        .max_text = std::string {time_duration_max_text_utf8},
+    };
     draft.traffic.enabled = traffic_enabled != 0U;
+    draft.traffic.packet_distribution.include =
+        collect_strings(packet_distribution_include_ids_utf8, packet_distribution_include_id_count);
+    draft.traffic.packet_distribution.exclude =
+        collect_strings(packet_distribution_exclude_ids_utf8, packet_distribution_exclude_id_count);
+    draft.traffic.data_distribution.include =
+        collect_strings(data_distribution_include_ids_utf8, data_distribution_include_id_count);
+    draft.traffic.data_distribution.exclude =
+        collect_strings(data_distribution_exclude_ids_utf8, data_distribution_exclude_id_count);
     draft.traffic.primary = collect_traffic_rows(
         traffic_primary_metric_ids_utf8,
         traffic_primary_unit_ids_utf8,
         traffic_primary_min_text_utf8,
         traffic_primary_max_text_utf8,
         traffic_primary_count
+    );
+    draft.traffic.directional_packets = collect_traffic_rows(
+        traffic_directional_packets_metric_ids_utf8,
+        traffic_directional_packets_unit_ids_utf8,
+        traffic_directional_packets_min_text_utf8,
+        traffic_directional_packets_max_text_utf8,
+        traffic_directional_packets_count
+    );
+    draft.traffic.directional_original_bytes = collect_traffic_rows(
+        traffic_directional_original_bytes_metric_ids_utf8,
+        traffic_directional_original_bytes_unit_ids_utf8,
+        traffic_directional_original_bytes_min_text_utf8,
+        traffic_directional_original_bytes_max_text_utf8,
+        traffic_directional_original_bytes_count
     );
     draft.traffic.additional = collect_traffic_rows(
         traffic_additional_metric_ids_utf8,

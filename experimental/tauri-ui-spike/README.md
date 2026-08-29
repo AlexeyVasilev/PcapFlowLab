@@ -44,7 +44,7 @@ Implemented slice:
 - frontend-neutral `Flows` workflow:
   - filtering
   - explicit `Simple` / `Advanced` filter modes
-  - backend-authoritative `.filter` v2 evaluation in Advanced mode through the shared C++ parser/compiler/evaluator
+  - backend-authoritative `.filter` v3 evaluation in Advanced mode through the shared C++ parser/compiler/evaluator
   - structured Advanced Filter `Settings` workflow for all currently agreed predicate sections:
     - Address Family
     - Flow Protocol
@@ -52,6 +52,7 @@ Implemented slice:
     - TLS Version
     - QUIC Version
     - Observed directions
+    - Time
     - Ports
     - IP addresses
     - Traffic
@@ -272,11 +273,24 @@ Implemented slice:
   - `Settings`, `Open filter...`, `Save`, `Save As...`, and file-backed `Clear unsaved changes` now follow the shared document workflow
   - Tauri Advanced Filter Settings now uses a compact one-column collapsible layout aligned with the Qt workflow, including the final Qt-oriented Include/Exclude presentation
   - the Settings document workflow is available without an open capture; Protocol Path selection remains capture-dependent
+  - Time filtering now exists in both Qt and Tauri through the shared backend document/parser/compiler path:
+    - Flow start: `From` / `To`
+    - Flow end: `From` / `To`
+    - Flow lifetime overlaps: `From` / `To`
+    - Duration: `Minimum` / `Maximum`
+    - UTC input example: `2026-03-22T12:27:32.000000Z`
+  - directional Traffic filtering now exists in both Qt and Tauri through shared connection aggregates:
+    - Packet distribution
+    - Data distribution
+    - `A -> B packets`
+    - `B -> A packets`
+    - `A -> B original bytes`
+    - `B -> A original bytes`
   - current-filter Smart Export now supports both `Simple` and `Advanced` primary filters and keeps the same Protocol Path candidate restriction semantics as Qt
 - Broader export parity is still incomplete in Tauri.
-- Traffic and Service structured editing now exist in Tauri.
+- Traffic, Time, and Service structured editing now exist in Tauri.
 - File-backed and destructive-clear Advanced Filter document workflow now matches the shared document-state model, including `Settings -> Clear all` and toolbar `Clear`.
-- Remaining Advanced Filter Tauri parity work is now primarily concrete defects found during manual testing plus later polish.
+- Remaining Advanced Filter Tauri work is now primarily later polish and other still-deferred areas outside the currently implemented Time/directional filter surface.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
 - Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.
