@@ -228,16 +228,15 @@ the packet-level workflow.
 
 ![Packet Size Distribution](images/statistics/statistics-packet-size-distribution.png)
 
-*Captured packet-length distribution for the active capture or index.*
-
-`Packet Size Distribution` uses captured packet length, not original packet
-length.
+*Captured/original packet-length distribution for the active capture or index.*
 
 Current production contract:
 
 - it counts all surfaced imported packets;
 - recognized and unrecognized packets both contribute;
-- the buckets are based on captured lengths.
+- the buckets are shared across both modes;
+- `Captured` uses the packet lengths actually present in the capture;
+- `Original` uses the original packet lengths recorded by capture metadata.
 
 Current bucket boundaries:
 
@@ -255,17 +254,21 @@ Current bucket boundaries:
 12. `16001-25000`
 13. `25001+`
 
-The separate line:
+The mode buttons are:
 
-`Maximum captured packet size`
+- `Captured`
+- `Original`
 
-shows the largest captured packet length seen anywhere in the active capture or
-index.
+The separate maximum line follows the selected mode:
+
+- `Maximum captured packet size`
+- `Maximum original packet size`
 
 This intentionally differs from the selected-flow Analysis packet-size
 histogram. In current production:
 
-- `Statistics -> Packet Size Distribution` uses captured packet length;
+- `Statistics -> Packet Size Distribution` can show captured or original packet
+  length across the whole capture;
 - `Analysis -> Packet Size Histogram` uses original packet length.
 
 That difference matters whenever truncation or snaplen causes captured length
@@ -302,6 +305,12 @@ Current bucket boundaries:
 Bucket membership is based on flow packet count. Changing display mode does not
 move flows into different buckets.
 
+The mode buttons are:
+
+- `Flows`
+- `Captured bytes`
+- `Original bytes`
+
 ### Flows mode
 
 In `Flows` mode, each bucket value is:
@@ -310,6 +319,16 @@ In `Flows` mode, each bucket value is:
   bucket.
 
 The bar height/length is normalized against the largest bucket flow count.
+
+### Captured bytes mode
+
+In `Captured bytes` mode, each bucket value is:
+
+- the sum of captured bytes for recognized canonical flows whose packet count
+  falls inside that same bucket.
+
+The bucket membership still comes from packet count. Only the aggregated value
+displayed for each bucket changes.
 
 ### Original bytes mode
 

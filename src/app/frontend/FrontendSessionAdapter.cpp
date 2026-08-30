@@ -289,34 +289,54 @@ FrontendInputMetadataDto build_frontend_input_metadata(const CaptureSession& ses
 }
 
 FrontendCapturePacketSizeStatisticsDto build_capture_packet_size_statistics_dto(
-    const CapturePacketSizeStatistics& statistics
+    const CapturePacketStatistics& statistics
 ) {
     FrontendCapturePacketSizeStatisticsDto dto {};
     dto.has_capture = true;
     dto.total_packet_count = statistics.total_packet_count;
-    dto.maximum_bucket_packet_count = statistics.maximum_bucket_packet_count;
+    dto.maximum_captured_bucket_packet_count = statistics.captured_size_distribution.maximum_bucket_packet_count;
+    dto.maximum_original_bucket_packet_count = statistics.original_size_distribution.maximum_bucket_packet_count;
     dto.maximum_captured_packet_length = statistics.maximum_captured_packet_length;
     dto.maximum_captured_packet_length_text = session_detail::format_statistics_size_value(
         statistics.maximum_captured_packet_length
     );
-    dto.buckets.reserve(statistics.buckets.size());
+    dto.maximum_original_packet_length = statistics.maximum_original_packet_length;
+    dto.maximum_original_packet_length_text = session_detail::format_statistics_size_value(
+        statistics.maximum_original_packet_length
+    );
+    dto.buckets.reserve(statistics.captured_size_distribution.buckets.size());
 
-    for (const auto& bucket : statistics.buckets) {
+    for (std::size_t index = 0U; index < statistics.captured_size_distribution.buckets.size(); ++index) {
+        const auto& captured_bucket = statistics.captured_size_distribution.buckets[index];
+        const auto& original_bucket = statistics.original_size_distribution.buckets[index];
         dto.buckets.push_back(FrontendCapturePacketSizeStatisticsBucketDto {
-            .bucket_id = std::string(bucket.stable_id),
-            .label = session_detail::capture_packet_size_bucket_label(bucket),
-            .lower_bound_inclusive = bucket.lower_bound_inclusive,
-            .upper_bound_inclusive = bucket.upper_bound_inclusive,
-            .packet_count = bucket.packet_count,
-            .packet_count_text = session_detail::format_statistics_count_value(bucket.packet_count),
-            .total_fraction = statistics.total_packet_count > 0U
-                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
+            .bucket_id = std::string(captured_bucket.stable_id),
+            .label = session_detail::capture_packet_size_bucket_label(captured_bucket),
+            .lower_bound_inclusive = captured_bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = captured_bucket.upper_bound_inclusive,
+            .captured_packet_count = captured_bucket.packet_count,
+            .captured_packet_count_text = session_detail::format_statistics_count_value(captured_bucket.packet_count),
+            .captured_total_fraction = statistics.total_packet_count > 0U
+                ? static_cast<double>(captured_bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
                 : 0.0,
-            .total_percent_text = session_detail::format_statistics_percent_text(
-                safe_percent(bucket.packet_count, statistics.total_packet_count)
+            .captured_total_percent_text = session_detail::format_statistics_percent_text(
+                safe_percent(captured_bucket.packet_count, statistics.total_packet_count)
             ),
-            .normalized_fraction = statistics.maximum_bucket_packet_count > 0U
-                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
+            .captured_normalized_fraction = statistics.captured_size_distribution.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(captured_bucket.packet_count)
+                    / static_cast<double>(statistics.captured_size_distribution.maximum_bucket_packet_count)
+                : 0.0,
+            .original_packet_count = original_bucket.packet_count,
+            .original_packet_count_text = session_detail::format_statistics_count_value(original_bucket.packet_count),
+            .original_total_fraction = statistics.total_packet_count > 0U
+                ? static_cast<double>(original_bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
+                : 0.0,
+            .original_total_percent_text = session_detail::format_statistics_percent_text(
+                safe_percent(original_bucket.packet_count, statistics.total_packet_count)
+            ),
+            .original_normalized_fraction = statistics.original_size_distribution.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(original_bucket.packet_count)
+                    / static_cast<double>(statistics.original_size_distribution.maximum_bucket_packet_count)
                 : 0.0,
         });
     }
@@ -330,10 +350,13 @@ FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
     FrontendFlowPacketCountHistogramDto dto {};
     dto.has_capture = true;
     dto.total_flow_count = histogram.total_flow_count;
+    dto.total_captured_byte_count = histogram.total_captured_byte_count;
     dto.total_original_byte_count = histogram.total_original_byte_count;
     dto.maximum_bucket_flow_count = histogram.maximum_bucket_flow_count;
+    dto.maximum_bucket_captured_byte_count = histogram.maximum_bucket_captured_byte_count;
     dto.maximum_bucket_original_byte_count = histogram.maximum_bucket_original_byte_count;
     dto.excluded_zero_packet_flow_count = histogram.excluded_zero_packet_flow_count;
+    dto.excluded_zero_packet_captured_byte_count = histogram.excluded_zero_packet_captured_byte_count;
     dto.excluded_zero_packet_original_byte_count = histogram.excluded_zero_packet_original_byte_count;
     dto.buckets.reserve(histogram.buckets.size());
 
@@ -351,6 +374,12 @@ FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
                 bucket.flow_count,
                 safe_percent(bucket.flow_count, histogram.total_flow_count)
             ),
+            .captured_byte_count = bucket.captured_byte_count,
+            .captured_byte_count_text = format_size_value(bucket.captured_byte_count),
+            .captured_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
+                bucket.captured_byte_count,
+                safe_percent(bucket.captured_byte_count, histogram.total_captured_byte_count)
+            ),
             .original_byte_count = bucket.original_byte_count,
             .original_byte_count_text = format_size_value(bucket.original_byte_count),
             .original_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
@@ -360,11 +389,18 @@ FrontendFlowPacketCountHistogramDto build_flow_packet_count_histogram_dto(
             .total_flow_fraction = histogram.total_flow_count > 0U
                 ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.total_flow_count)
                 : 0.0,
+            .total_captured_byte_fraction = histogram.total_captured_byte_count > 0U
+                ? static_cast<double>(bucket.captured_byte_count) / static_cast<double>(histogram.total_captured_byte_count)
+                : 0.0,
             .total_original_byte_fraction = histogram.total_original_byte_count > 0U
                 ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(histogram.total_original_byte_count)
                 : 0.0,
             .normalized_flow_fraction = histogram.maximum_bucket_flow_count > 0U
                 ? static_cast<double>(bucket.flow_count) / static_cast<double>(histogram.maximum_bucket_flow_count)
+                : 0.0,
+            .normalized_captured_byte_fraction = histogram.maximum_bucket_captured_byte_count > 0U
+                ? static_cast<double>(bucket.captured_byte_count)
+                    / static_cast<double>(histogram.maximum_bucket_captured_byte_count)
                 : 0.0,
             .normalized_original_byte_fraction = histogram.maximum_bucket_original_byte_count > 0U
                 ? static_cast<double>(bucket.original_byte_count)
@@ -3041,7 +3077,7 @@ FrontendCapturePacketSizeStatisticsDto FrontendSessionAdapter::get_capture_packe
         return {};
     }
 
-    return build_capture_packet_size_statistics_dto(session_.packet_size_statistics());
+    return build_capture_packet_size_statistics_dto(session_.packet_statistics());
 }
 
 FrontendFlowPacketCountHistogramDto FrontendSessionAdapter::get_flow_packet_count_histogram() const {

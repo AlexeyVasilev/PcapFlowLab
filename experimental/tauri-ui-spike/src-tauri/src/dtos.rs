@@ -554,9 +554,18 @@ pub struct FlowPacketCountHistogramBucketDto {
     pub lower_bound_inclusive: u64,
     pub upper_bound_inclusive: Option<u64>,
     pub flow_count: u64,
+    pub flow_count_with_total_percent_text: String,
+    pub captured_byte_count: u64,
+    pub captured_byte_count_text: String,
+    pub captured_byte_count_with_total_percent_text: String,
     pub original_byte_count: u64,
     pub original_byte_count_text: String,
+    pub original_byte_count_with_total_percent_text: String,
+    pub total_flow_fraction: f64,
+    pub total_captured_byte_fraction: f64,
+    pub total_original_byte_fraction: f64,
     pub normalized_flow_fraction: f64,
+    pub normalized_captured_byte_fraction: f64,
     pub normalized_original_byte_fraction: f64,
 }
 
@@ -566,17 +575,28 @@ pub struct CapturePacketSizeStatisticsBucketDto {
     pub label: String,
     pub lower_bound_inclusive: u32,
     pub upper_bound_inclusive: Option<u32>,
-    pub packet_count: u64,
-    pub normalized_fraction: f64,
+    pub captured_packet_count: u64,
+    pub captured_packet_count_text: String,
+    pub captured_total_fraction: f64,
+    pub captured_total_percent_text: String,
+    pub captured_normalized_fraction: f64,
+    pub original_packet_count: u64,
+    pub original_packet_count_text: String,
+    pub original_total_fraction: f64,
+    pub original_total_percent_text: String,
+    pub original_normalized_fraction: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapturePacketSizeStatisticsDto {
     pub has_capture: bool,
     pub total_packet_count: u64,
-    pub maximum_bucket_packet_count: u64,
+    pub maximum_captured_bucket_packet_count: u64,
+    pub maximum_original_bucket_packet_count: u64,
     pub maximum_captured_packet_length: u32,
     pub maximum_captured_packet_length_text: String,
+    pub maximum_original_packet_length: u32,
+    pub maximum_original_packet_length_text: String,
     pub buckets: Vec<CapturePacketSizeStatisticsBucketDto>,
 }
 
@@ -584,10 +604,13 @@ pub struct CapturePacketSizeStatisticsDto {
 pub struct FlowPacketCountHistogramDto {
     pub has_capture: bool,
     pub total_flow_count: u64,
+    pub total_captured_byte_count: u64,
     pub total_original_byte_count: u64,
     pub maximum_bucket_flow_count: u64,
+    pub maximum_bucket_captured_byte_count: u64,
     pub maximum_bucket_original_byte_count: u64,
     pub excluded_zero_packet_flow_count: u64,
+    pub excluded_zero_packet_captured_byte_count: u64,
     pub excluded_zero_packet_original_byte_count: u64,
     pub buckets: Vec<FlowPacketCountHistogramBucketDto>,
 }

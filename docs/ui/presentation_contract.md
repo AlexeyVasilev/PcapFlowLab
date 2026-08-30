@@ -439,6 +439,15 @@ The current optional independently collapsible/lazy statistics sections are:
 These sections are based on whole-capture/session statistics, not selected-flow
 state.
 
+`Packet Size Distribution` loads one shared whole-capture DTO per expansion and
+supports frontend-local `Captured` and `Original` display modes over the same
+bucket boundaries. Mode switching changes only presentation and must not by
+itself trigger another backend statistics request.
+
+`Flows by Packet Count` likewise loads one shared whole-capture histogram DTO
+per expansion and supports frontend-local `Flows`, `Captured bytes`, and
+`Original bytes` modes over identical packet-count bucket membership.
+
 `Direction Distribution` is one collapsible section containing both:
 
 - `Packet Direction`

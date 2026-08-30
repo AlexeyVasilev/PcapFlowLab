@@ -1314,11 +1314,16 @@ std::string capture_packet_size_statistics_bucket_json(const pfl::FrontendCaptur
         out << "null";
     }
     out << ','
-        << "\"packet_count\":" << bucket.packet_count << ','
-        << "\"packet_count_text\":" << json_string(bucket.packet_count_text) << ','
-        << "\"total_fraction\":" << bucket.total_fraction << ','
-        << "\"total_percent_text\":" << json_string(bucket.total_percent_text) << ','
-        << "\"normalized_fraction\":" << bucket.normalized_fraction
+        << "\"captured_packet_count\":" << bucket.captured_packet_count << ','
+        << "\"captured_packet_count_text\":" << json_string(bucket.captured_packet_count_text) << ','
+        << "\"captured_total_fraction\":" << bucket.captured_total_fraction << ','
+        << "\"captured_total_percent_text\":" << json_string(bucket.captured_total_percent_text) << ','
+        << "\"captured_normalized_fraction\":" << bucket.captured_normalized_fraction << ','
+        << "\"original_packet_count\":" << bucket.original_packet_count << ','
+        << "\"original_packet_count_text\":" << json_string(bucket.original_packet_count_text) << ','
+        << "\"original_total_fraction\":" << bucket.original_total_fraction << ','
+        << "\"original_total_percent_text\":" << json_string(bucket.original_total_percent_text) << ','
+        << "\"original_normalized_fraction\":" << bucket.original_normalized_fraction
         << '}';
     return out.str();
 }
@@ -1328,10 +1333,14 @@ std::string capture_packet_size_statistics_json(const pfl::FrontendCapturePacket
     out << '{'
         << "\"has_capture\":" << bool_json(statistics.has_capture) << ','
         << "\"total_packet_count\":" << statistics.total_packet_count << ','
-        << "\"maximum_bucket_packet_count\":" << statistics.maximum_bucket_packet_count << ','
+        << "\"maximum_captured_bucket_packet_count\":" << statistics.maximum_captured_bucket_packet_count << ','
+        << "\"maximum_original_bucket_packet_count\":" << statistics.maximum_original_bucket_packet_count << ','
         << "\"maximum_captured_packet_length\":" << statistics.maximum_captured_packet_length << ','
         << "\"maximum_captured_packet_length_text\":"
         << json_string(statistics.maximum_captured_packet_length_text) << ','
+        << "\"maximum_original_packet_length\":" << statistics.maximum_original_packet_length << ','
+        << "\"maximum_original_packet_length_text\":"
+        << json_string(statistics.maximum_original_packet_length_text) << ','
         << "\"buckets\":[";
 
     for (std::size_t index = 0; index < statistics.buckets.size(); ++index) {
@@ -1361,13 +1370,19 @@ std::string flow_packet_count_histogram_bucket_json(const pfl::FrontendFlowPacke
         << "\"flow_count\":" << bucket.flow_count << ','
         << "\"flow_count_with_total_percent_text\":"
         << json_string(bucket.flow_count_with_total_percent_text) << ','
+        << "\"captured_byte_count\":" << bucket.captured_byte_count << ','
+        << "\"captured_byte_count_text\":" << json_string(bucket.captured_byte_count_text) << ','
+        << "\"captured_byte_count_with_total_percent_text\":"
+        << json_string(bucket.captured_byte_count_with_total_percent_text) << ','
         << "\"original_byte_count\":" << bucket.original_byte_count << ','
         << "\"original_byte_count_text\":" << json_string(bucket.original_byte_count_text) << ','
         << "\"original_byte_count_with_total_percent_text\":"
         << json_string(bucket.original_byte_count_with_total_percent_text) << ','
         << "\"total_flow_fraction\":" << bucket.total_flow_fraction << ','
+        << "\"total_captured_byte_fraction\":" << bucket.total_captured_byte_fraction << ','
         << "\"total_original_byte_fraction\":" << bucket.total_original_byte_fraction << ','
         << "\"normalized_flow_fraction\":" << bucket.normalized_flow_fraction << ','
+        << "\"normalized_captured_byte_fraction\":" << bucket.normalized_captured_byte_fraction << ','
         << "\"normalized_original_byte_fraction\":" << bucket.normalized_original_byte_fraction
         << '}';
     return out.str();
@@ -1392,10 +1407,13 @@ std::string flow_packet_count_histogram_json(const pfl::FrontendFlowPacketCountH
     out << '{'
         << "\"has_capture\":" << bool_json(histogram.has_capture) << ','
         << "\"total_flow_count\":" << histogram.total_flow_count << ','
+        << "\"total_captured_byte_count\":" << histogram.total_captured_byte_count << ','
         << "\"total_original_byte_count\":" << histogram.total_original_byte_count << ','
         << "\"maximum_bucket_flow_count\":" << histogram.maximum_bucket_flow_count << ','
+        << "\"maximum_bucket_captured_byte_count\":" << histogram.maximum_bucket_captured_byte_count << ','
         << "\"maximum_bucket_original_byte_count\":" << histogram.maximum_bucket_original_byte_count << ','
         << "\"excluded_zero_packet_flow_count\":" << histogram.excluded_zero_packet_flow_count << ','
+        << "\"excluded_zero_packet_captured_byte_count\":" << histogram.excluded_zero_packet_captured_byte_count << ','
         << "\"excluded_zero_packet_original_byte_count\":" << histogram.excluded_zero_packet_original_byte_count << ','
         << "\"buckets\":[";
 

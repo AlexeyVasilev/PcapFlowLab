@@ -65,6 +65,8 @@ Item {
     property var packetSizeDistributionMaximumBucketPacketCount: 0
     property var packetSizeDistributionMaximumCapturedPacketLength: 0
     property string packetSizeDistributionMaximumCapturedPacketLengthText: ""
+    property var packetSizeDistributionMaximumOriginalPacketLength: 0
+    property string packetSizeDistributionMaximumOriginalPacketLengthText: ""
     property var packetSizeDistributionRows: []
     property int flowPacketHistogramState: 0
     property string flowPacketHistogramStatusText: ""
@@ -112,8 +114,11 @@ Item {
     readonly property int sectionProtocolHints: 3
     readonly property int sectionQuicTls: 4
     readonly property int sectionTopEndpointsPorts: 5
+    readonly property int packetSizeDistributionModeCaptured: 0
+    readonly property int packetSizeDistributionModeOriginal: 1
     readonly property int flowPacketHistogramModeFlows: 0
-    readonly property int flowPacketHistogramModeOriginalBytes: 1
+    readonly property int flowPacketHistogramModeCapturedBytes: 1
+    readonly property int flowPacketHistogramModeOriginalBytes: 2
     readonly property int tableRowHeight: 26
     readonly property int tableHeaderHeight: 28
     readonly property int tablePadding: 8
@@ -148,6 +153,7 @@ Item {
     property bool protocolHintsExpanded: false
     property bool quicTlsExpanded: false
     property bool topEndpointsPortsExpanded: false
+    property int packetSizeDistributionDisplayMode: packetSizeDistributionModeCaptured
     property int flowPacketHistogramDisplayMode: flowPacketHistogramModeFlows
 
     signal endpointActivated(string endpointText)
@@ -167,6 +173,7 @@ Item {
         protocolHintsExpanded = false
         quicTlsExpanded = false
         topEndpointsPortsExpanded = false
+        packetSizeDistributionDisplayMode = packetSizeDistributionModeCaptured
         flowPacketHistogramDisplayMode = flowPacketHistogramModeFlows
     }
 
@@ -753,80 +760,146 @@ Item {
                         root.statisticsSectionExpandedChanged(root.sectionPacketSizeDistribution, expanded)
                     }
 
-                    Label {
-                        Layout.fillWidth: true
-                        visible: root.hasCapture
-                        text: "Captured packet lengths for all packets imported from the capture, including unrecognized packets."
-                        color: "#64748b"
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Label {
-                        visible: root.packetSizeDistributionState === root.requestStateLoading ||
-                            root.packetSizeDistributionState === root.requestStateUnavailable ||
-                            root.packetSizeDistributionState === root.requestStateError
-                        text: root.packetSizeDistributionStatusText
-                        color: "#64748b"
-                    }
-
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        visible: root.packetSizeDistributionState === root.requestStateReady
                         spacing: 8
 
-                        Repeater {
-                            model: root.packetSizeDistributionRows
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.hasCapture
+                            spacing: 8
 
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                spacing: 10
+                            Label {
+                                text: "Mode"
+                                color: "#64748b"
+                            }
 
-                                Label {
-                                    Layout.preferredWidth: 90
-                                    Layout.minimumWidth: 60
-                                    text: modelData.label
-                                    color: "#0f172a"
-                                    elide: Text.ElideRight
-                                }
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: packetSizeDistributionModeLayout.implicitHeight + 4
+                                implicitWidth: packetSizeDistributionModeLayout.implicitWidth + 8
 
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.minimumWidth: 0
-                                    Layout.preferredHeight: 18
-                                    radius: 9
-                                    color: "#f1f5f9"
-                                    border.color: "#e2e8f0"
+                                RowLayout {
+                                    id: packetSizeDistributionModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
 
-                                    Rectangle {
-                                        width: Math.max(0, (parent.width - 2) * Number(modelData.normalizedFraction))
-                                        height: parent.height - 2
-                                        radius: 8
-                                        x: 1
-                                        y: 1
-                                        color: "#34d399"
+                                    ButtonGroup {
+                                        id: packetSizeDistributionModeGroup
                                     }
-                                }
 
-                                Label {
-                                    Layout.preferredWidth: 90
-                                    Layout.minimumWidth: 0
-                                    horizontalAlignment: Text.AlignRight
-                                    text: root.groupInteger(modelData.packetCount)
-                                    color: "#334155"
-                                    elide: Text.ElideLeft
+                                    HistogramModeButton {
+                                        objectName: "packetSizeDistributionModeCapturedButton"
+                                        text: "Captured"
+                                        checked: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                        ButtonGroup.group: packetSizeDistributionModeGroup
+                                        onClicked: root.packetSizeDistributionDisplayMode = root.packetSizeDistributionModeCaptured
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeDistributionModeOriginalButton"
+                                        text: "Original"
+                                        checked: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeOriginal
+                                        ButtonGroup.group: packetSizeDistributionModeGroup
+                                        onClicked: root.packetSizeDistributionDisplayMode = root.packetSizeDistributionModeOriginal
+                                    }
                                 }
                             }
                         }
 
                         Label {
-                            objectName: "packetSizeDistributionMaximumCapturedPacketLengthValue"
                             Layout.fillWidth: true
-                            text: "Maximum captured packet size: " + root.packetSizeDistributionMaximumCapturedPacketLengthText
-                            color: "#0f172a"
+                            visible: root.hasCapture
+                            text: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                ? "Captured packet lengths for all packets imported from the capture, including unrecognized packets."
+                                : "Original packet lengths for all packets imported from the capture, including unrecognized packets."
+                            color: "#64748b"
                             wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            visible: root.packetSizeDistributionState === root.requestStateLoading ||
+                                root.packetSizeDistributionState === root.requestStateUnavailable ||
+                                root.packetSizeDistributionState === root.requestStateError
+                            text: root.packetSizeDistributionStatusText
+                            color: "#64748b"
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            visible: root.packetSizeDistributionState === root.requestStateReady
+                            spacing: 8
+
+                            Repeater {
+                                model: root.packetSizeDistributionRows
+
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 10
+
+                                    Label {
+                                        Layout.preferredWidth: 90
+                                        Layout.minimumWidth: 60
+                                        text: modelData.label
+                                        color: "#0f172a"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredHeight: 18
+                                        radius: 9
+                                        color: "#f1f5f9"
+                                        border.color: "#e2e8f0"
+
+                                        Rectangle {
+                                            width: Math.max(
+                                                0,
+                                                (parent.width - 2) * Number(
+                                                    root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                                        ? modelData.capturedNormalizedFraction
+                                                        : modelData.originalNormalizedFraction
+                                                )
+                                            )
+                                            height: parent.height - 2
+                                            radius: 8
+                                            x: 1
+                                            y: 1
+                                            color: "#34d399"
+                                        }
+                                    }
+
+                                    Label {
+                                        Layout.preferredWidth: 90
+                                        Layout.minimumWidth: 0
+                                        horizontalAlignment: Text.AlignRight
+                                        text: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                            ? modelData.capturedPacketCountText
+                                            : modelData.originalPacketCountText
+                                        color: "#334155"
+                                        elide: Text.ElideLeft
+                                    }
+                                }
+                            }
+
+                            Label {
+                                objectName: "packetSizeDistributionMaximumPacketLengthValue"
+                                Layout.fillWidth: true
+                                text: root.packetSizeDistributionDisplayMode === root.packetSizeDistributionModeCaptured
+                                    ? "Maximum captured packet size: " + root.packetSizeDistributionMaximumCapturedPacketLengthText
+                                    : "Maximum original packet size: " + root.packetSizeDistributionMaximumOriginalPacketLengthText
+                                color: "#0f172a"
+                                wrapMode: Text.WordWrap
+                            }
                         }
                     }
                 }
@@ -881,6 +954,18 @@ Item {
                                     ToolTip.timeout: 8000
                                     ToolTip.text: "Number of flows in each packet-count range."
                                     onClicked: root.flowPacketHistogramDisplayMode = root.flowPacketHistogramModeFlows
+                                }
+
+                                HistogramModeButton {
+                                    objectName: "flowPacketHistogramModeCapturedBytesButton"
+                                    text: "Captured bytes"
+                                    checked: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                    ButtonGroup.group: flowPacketHistogramModeGroup
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 250
+                                    ToolTip.timeout: 8000
+                                    ToolTip.text: "Sum of captured bytes for flows in each packet-count range."
+                                    onClicked: root.flowPacketHistogramDisplayMode = root.flowPacketHistogramModeCapturedBytes
                                 }
 
                                 HistogramModeButton {
@@ -943,7 +1028,9 @@ Item {
                                             (parent.width - 2) * Number(
                                                 root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
                                                     ? modelData.normalizedFlowFraction
-                                                    : modelData.normalizedOriginalByteFraction
+                                                    : (root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                                        ? modelData.normalizedCapturedByteFraction
+                                                        : modelData.normalizedOriginalByteFraction)
                                             )
                                         )
                                         height: parent.height - 2
@@ -960,7 +1047,9 @@ Item {
                                     horizontalAlignment: Text.AlignRight
                                     text: root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeFlows
                                         ? root.groupInteger(modelData.flowCount)
-                                        : modelData.originalByteCountText
+                                        : (root.flowPacketHistogramDisplayMode === root.flowPacketHistogramModeCapturedBytes
+                                            ? modelData.capturedByteCountText
+                                            : modelData.originalByteCountText)
                                     color: "#334155"
                                     elide: Text.ElideLeft
                                 }

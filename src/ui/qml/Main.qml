@@ -1425,6 +1425,8 @@ ApplicationWindow {
                 packetSizeDistributionMaximumBucketPacketCount: mainController.packetSizeDistributionMaximumBucketPacketCount
                 packetSizeDistributionMaximumCapturedPacketLength: mainController.packetSizeDistributionMaximumCapturedPacketLength
                 packetSizeDistributionMaximumCapturedPacketLengthText: mainController.packetSizeDistributionMaximumCapturedPacketLengthText
+                packetSizeDistributionMaximumOriginalPacketLength: mainController.packetSizeDistributionMaximumOriginalPacketLength
+                packetSizeDistributionMaximumOriginalPacketLengthText: mainController.packetSizeDistributionMaximumOriginalPacketLengthText
                 packetSizeDistributionRows: mainController.packetSizeDistributionRows
                 flowPacketHistogramState: mainController.flowPacketHistogramState
                 flowPacketHistogramStatusText: mainController.flowPacketHistogramStatusText

@@ -341,8 +341,8 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
     for (const auto& bucket : packet_size_statistics.buckets) {
         packet_size_rows.push_back({
             bucket.label,
-            bucket.packet_count_text,
-            bucket.total_percent_text,
+            bucket.captured_packet_count_text,
+            bucket.captured_total_percent_text,
         });
     }
     out << render_table(

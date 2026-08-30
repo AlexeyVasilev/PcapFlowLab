@@ -315,6 +315,7 @@
     analysisFlowVirtualizationActive: false,
     statisticsSections: createStatisticsSectionsState(),
     capturePacketSizeStatistics: null,
+    packetSizeDistributionDisplayMode: "captured",
     flowPacketCountHistogram: null,
     flowPacketHistogramDisplayMode: "flows",
     protocolHintStatistics: null,
@@ -3585,6 +3586,9 @@
     unrecognizedStatsBody: document.getElementById("unrecognizedStatsBody"),
     packetSizeDistributionDetails: document.getElementById("packetSizeDistributionDetails"),
     packetSizeDistributionSummaryValue: document.getElementById("packetSizeDistributionSummaryValue"),
+    packetSizeDistributionModeCaptured: document.getElementById("packetSizeDistributionModeCaptured"),
+    packetSizeDistributionModeOriginal: document.getElementById("packetSizeDistributionModeOriginal"),
+    packetSizeDistributionHelperText: document.getElementById("packetSizeDistributionHelperText"),
     packetSizeDistributionStateText: document.getElementById("packetSizeDistributionStateText"),
     packetSizeDistributionMaximumValue: document.getElementById("packetSizeDistributionMaximumValue"),
     packetSizeDistributionRows: document.getElementById("packetSizeDistributionRows"),
@@ -3592,6 +3596,7 @@
     flowPacketHistogramSummaryValue: document.getElementById("flowPacketHistogramSummaryValue"),
     flowPacketHistogramStateText: document.getElementById("flowPacketHistogramStateText"),
     flowPacketHistogramModeFlows: document.getElementById("flowPacketHistogramModeFlows"),
+    flowPacketHistogramModeCapturedBytes: document.getElementById("flowPacketHistogramModeCapturedBytes"),
     flowPacketHistogramModeOriginalBytes: document.getElementById("flowPacketHistogramModeOriginalBytes"),
     flowPacketHistogramExcludedZeroPacketLabel: document.getElementById("flowPacketHistogramExcludedZeroPacketLabel"),
     flowPacketHistogramRows: document.getElementById("flowPacketHistogramRows"),
@@ -3686,6 +3691,7 @@
   function resetOptionalStatisticsSections() {
     state.statisticsSections = createStatisticsSectionsState();
     state.capturePacketSizeStatistics = null;
+    state.packetSizeDistributionDisplayMode = "captured";
     state.flowPacketCountHistogram = null;
     state.flowPacketHistogramDisplayMode = "flows";
     state.protocolHintStatistics = null;
@@ -7245,11 +7251,30 @@
 
   function renderFlowPacketHistogramModeButtons() {
     elements.flowPacketHistogramModeFlows?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "flows");
+    elements.flowPacketHistogramModeCapturedBytes?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "captured_bytes");
     elements.flowPacketHistogramModeOriginalBytes?.classList.toggle("is-active", state.flowPacketHistogramDisplayMode === "original_bytes");
   }
 
+  function renderPacketSizeDistributionModeButtons() {
+    elements.packetSizeDistributionModeCaptured?.classList.toggle("is-active", state.packetSizeDistributionDisplayMode === "captured");
+    elements.packetSizeDistributionModeOriginal?.classList.toggle("is-active", state.packetSizeDistributionDisplayMode === "original");
+  }
+
+  function setPacketSizeDistributionDisplayMode(mode) {
+    const normalizedMode = mode === "original" ? "original" : "captured";
+    if (state.packetSizeDistributionDisplayMode === normalizedMode) {
+      renderPacketSizeDistributionModeButtons();
+      return;
+    }
+
+    state.packetSizeDistributionDisplayMode = normalizedMode;
+    renderCapturePacketSizeStatisticsSection();
+  }
+
   function setFlowPacketHistogramDisplayMode(mode) {
-    const normalizedMode = mode === "original_bytes" ? "original_bytes" : "flows";
+    const normalizedMode = mode === "captured_bytes"
+      ? "captured_bytes"
+      : (mode === "original_bytes" ? "original_bytes" : "flows");
     if (state.flowPacketHistogramDisplayMode === normalizedMode) {
       renderFlowPacketHistogramModeButtons();
       return;
@@ -7262,6 +7287,14 @@
   function renderCapturePacketSizeStatisticsSection() {
     const section = statisticsSectionEntry(statisticsSectionKeys.packetSizeDistribution);
     const statistics = state.capturePacketSizeStatistics;
+    const showingOriginal = state.packetSizeDistributionDisplayMode === "original";
+
+    renderPacketSizeDistributionModeButtons();
+    if (elements.packetSizeDistributionHelperText) {
+      elements.packetSizeDistributionHelperText.textContent = showingOriginal
+        ? "Original packet lengths for all packets imported from the capture, including unrecognized packets."
+        : "Captured packet lengths for all packets imported from the capture, including unrecognized packets.";
+    }
 
     if (elements.packetSizeDistributionSummaryValue) {
       elements.packetSizeDistributionSummaryValue.textContent = statistics?.has_capture
@@ -7275,15 +7308,23 @@
       }
       if (elements.packetSizeDistributionMaximumValue) {
         elements.packetSizeDistributionMaximumValue.textContent =
-          `Maximum captured packet size: ${String(statistics.maximum_captured_packet_length_text || "0 B")}`;
+          showingOriginal
+            ? `Maximum original packet size: ${String(statistics.maximum_original_packet_length_text || "0 B")}`
+            : `Maximum captured packet size: ${String(statistics.maximum_captured_packet_length_text || "0 B")}`;
       }
 
       const buckets = Array.isArray(statistics.buckets) ? statistics.buckets : [];
       elements.packetSizeDistributionRows.innerHTML = buckets.length > 0
         ? buckets
           .map((bucket) => {
-            const packetCount = Number(bucket?.packet_count ?? 0);
-            const normalizedFraction = Number(bucket?.normalized_fraction ?? 0);
+            const packetCountText = showingOriginal
+              ? String(bucket?.original_packet_count_text || "0")
+              : String(bucket?.captured_packet_count_text || "0");
+            const normalizedFraction = Number(
+              showingOriginal
+                ? bucket?.original_normalized_fraction
+                : bucket?.captured_normalized_fraction
+            );
             const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
             return `
               <div class="statistics-histogram-row">
@@ -7291,7 +7332,7 @@
                 <div class="statistics-histogram-track">
                   <div class="statistics-histogram-fill" style="width:${percent}%; background:#34d399;"></div>
                 </div>
-                <span class="statistics-histogram-count">${formatNumber(packetCount)}</span>
+                <span class="statistics-histogram-count">${escapeHtml(packetCountText)}</span>
               </div>
             `;
           })
@@ -7879,6 +7920,7 @@
       }
 
       const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : [];
+      const showingCapturedBytes = state.flowPacketHistogramDisplayMode === "captured_bytes";
       const showingOriginalBytes = state.flowPacketHistogramDisplayMode === "original_bytes";
       elements.flowPacketHistogramRows.innerHTML = buckets.length > 0
         ? buckets
@@ -7887,12 +7929,16 @@
             const normalizedFraction = Number(
               showingOriginalBytes
                 ? bucket?.normalized_original_byte_fraction
-                : bucket?.normalized_flow_fraction
+                : (showingCapturedBytes
+                    ? bucket?.normalized_captured_byte_fraction
+                    : bucket?.normalized_flow_fraction)
             );
             const percent = Math.max(0, Math.min(100, normalizedFraction * 100));
             const valueText = showingOriginalBytes
               ? String(bucket?.original_byte_count_text || "0 B")
-              : formatNumber(flowCount);
+              : (showingCapturedBytes
+                  ? String(bucket?.captured_byte_count_text || "0 B")
+                  : formatNumber(flowCount));
             return `
               <div class="statistics-histogram-row">
                 <span class="statistics-histogram-label">${escapeHtml(String(bucket?.label || ""))}</span>
@@ -12523,8 +12569,17 @@
       handleStatisticsSectionToggle(sectionKey, detailsElement.open);
     });
   }
+  elements.packetSizeDistributionModeCaptured?.addEventListener("click", () => {
+    setPacketSizeDistributionDisplayMode("captured");
+  });
+  elements.packetSizeDistributionModeOriginal?.addEventListener("click", () => {
+    setPacketSizeDistributionDisplayMode("original");
+  });
   elements.flowPacketHistogramModeFlows?.addEventListener("click", () => {
     setFlowPacketHistogramDisplayMode("flows");
+  });
+  elements.flowPacketHistogramModeCapturedBytes?.addEventListener("click", () => {
+    setFlowPacketHistogramDisplayMode("captured_bytes");
   });
   elements.flowPacketHistogramModeOriginalBytes?.addEventListener("click", () => {
     setFlowPacketHistogramDisplayMode("original_bytes");

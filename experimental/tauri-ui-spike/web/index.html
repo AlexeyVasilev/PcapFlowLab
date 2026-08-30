@@ -417,7 +417,16 @@
                   <span id="packetSizeDistributionSummaryValue" class="statistics-disclosure-summary-value"></span>
                 </summary>
                 <div class="statistics-disclosure-body">
-                  <p class="panel-subtitle">
+                  <div class="statistics-section-heading">
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Packet size distribution mode">
+                        <button id="packetSizeDistributionModeCaptured" type="button" class="secondary-button">Captured</button>
+                        <button id="packetSizeDistributionModeOriginal" type="button" class="secondary-button">Original</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p id="packetSizeDistributionHelperText" class="panel-subtitle">
                     Captured packet lengths for all packets imported from the capture, including unrecognized packets.
                   </p>
                   <p id="packetSizeDistributionStateText" class="status-text compact-status-text"></p>
@@ -439,6 +448,7 @@
                       <span class="inline-select-label">Mode</span>
                       <div class="statistics-mode-tabs" aria-label="Flow packet histogram mode">
                         <button id="flowPacketHistogramModeFlows" type="button" class="secondary-button" title="Number of flows in each packet-count range.">Flows</button>
+                        <button id="flowPacketHistogramModeCapturedBytes" type="button" class="secondary-button" title="Sum of captured bytes for flows in each packet-count range.">Captured bytes</button>
                         <button id="flowPacketHistogramModeOriginalBytes" type="button" class="secondary-button" title="Sum of original bytes for flows in each packet-count range.">Original bytes</button>
                       </div>
                     </div>

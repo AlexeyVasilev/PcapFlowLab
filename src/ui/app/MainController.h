@@ -228,6 +228,8 @@ private:
     Q_PROPERTY(qulonglong packetSizeDistributionMaximumBucketPacketCount READ packetSizeDistributionMaximumBucketPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong packetSizeDistributionMaximumCapturedPacketLength READ packetSizeDistributionMaximumCapturedPacketLength NOTIFY stateChanged)
     Q_PROPERTY(QString packetSizeDistributionMaximumCapturedPacketLengthText READ packetSizeDistributionMaximumCapturedPacketLengthText NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong packetSizeDistributionMaximumOriginalPacketLength READ packetSizeDistributionMaximumOriginalPacketLength NOTIFY stateChanged)
+    Q_PROPERTY(QString packetSizeDistributionMaximumOriginalPacketLengthText READ packetSizeDistributionMaximumOriginalPacketLengthText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList packetSizeDistributionRows READ packetSizeDistributionRows NOTIFY stateChanged)
     Q_PROPERTY(int flowPacketHistogramState READ flowPacketHistogramState NOTIFY stateChanged)
     Q_PROPERTY(QString flowPacketHistogramStatusText READ flowPacketHistogramStatusText NOTIFY stateChanged)
@@ -508,6 +510,8 @@ public:
     [[nodiscard]] qulonglong packetSizeDistributionMaximumBucketPacketCount() const noexcept;
     [[nodiscard]] qulonglong packetSizeDistributionMaximumCapturedPacketLength() const noexcept;
     [[nodiscard]] QString packetSizeDistributionMaximumCapturedPacketLengthText() const;
+    [[nodiscard]] qulonglong packetSizeDistributionMaximumOriginalPacketLength() const noexcept;
+    [[nodiscard]] QString packetSizeDistributionMaximumOriginalPacketLengthText() const;
     [[nodiscard]] QVariantList packetSizeDistributionRows() const;
     [[nodiscard]] int flowPacketHistogramState() const noexcept;
     [[nodiscard]] QString flowPacketHistogramStatusText() const;
@@ -912,7 +916,7 @@ private:
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
-    CapturePacketSizeStatistics packet_size_statistics_ {};
+    CapturePacketStatistics packet_size_statistics_ {};
     QVariantList packet_size_distribution_rows_ {};
     FlowPacketCountHistogram flow_packet_count_histogram_ {};
     QVariantList flow_packet_histogram_rows_ {};

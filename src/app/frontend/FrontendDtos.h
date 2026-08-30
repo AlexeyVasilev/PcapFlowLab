@@ -230,22 +230,30 @@ struct FrontendFlowPacketCountHistogramBucketDto {
     std::optional<std::uint64_t> upper_bound_inclusive {};
     std::uint64_t flow_count {0};
     std::string flow_count_with_total_percent_text {};
+    std::uint64_t captured_byte_count {0};
+    std::string captured_byte_count_text {};
+    std::string captured_byte_count_with_total_percent_text {};
     std::uint64_t original_byte_count {0};
     std::string original_byte_count_text {};
     std::string original_byte_count_with_total_percent_text {};
     double total_flow_fraction {0.0};
+    double total_captured_byte_fraction {0.0};
     double total_original_byte_fraction {0.0};
     double normalized_flow_fraction {0.0};
+    double normalized_captured_byte_fraction {0.0};
     double normalized_original_byte_fraction {0.0};
 };
 
 struct FrontendFlowPacketCountHistogramDto {
     bool has_capture {false};
     std::uint64_t total_flow_count {0};
+    std::uint64_t total_captured_byte_count {0};
     std::uint64_t total_original_byte_count {0};
     std::uint64_t maximum_bucket_flow_count {0};
+    std::uint64_t maximum_bucket_captured_byte_count {0};
     std::uint64_t maximum_bucket_original_byte_count {0};
     std::uint64_t excluded_zero_packet_flow_count {0};
+    std::uint64_t excluded_zero_packet_captured_byte_count {0};
     std::uint64_t excluded_zero_packet_original_byte_count {0};
     std::vector<FrontendFlowPacketCountHistogramBucketDto> buckets {};
 };
@@ -255,19 +263,27 @@ struct FrontendCapturePacketSizeStatisticsBucketDto {
     std::string label {};
     std::uint32_t lower_bound_inclusive {0};
     std::optional<std::uint32_t> upper_bound_inclusive {};
-    std::uint64_t packet_count {0};
-    std::string packet_count_text {};
-    double total_fraction {0.0};
-    std::string total_percent_text {};
-    double normalized_fraction {0.0};
+    std::uint64_t captured_packet_count {0};
+    std::string captured_packet_count_text {};
+    double captured_total_fraction {0.0};
+    std::string captured_total_percent_text {};
+    double captured_normalized_fraction {0.0};
+    std::uint64_t original_packet_count {0};
+    std::string original_packet_count_text {};
+    double original_total_fraction {0.0};
+    std::string original_total_percent_text {};
+    double original_normalized_fraction {0.0};
 };
 
 struct FrontendCapturePacketSizeStatisticsDto {
     bool has_capture {false};
     std::uint64_t total_packet_count {0};
-    std::uint64_t maximum_bucket_packet_count {0};
+    std::uint64_t maximum_captured_bucket_packet_count {0};
+    std::uint64_t maximum_original_bucket_packet_count {0};
     std::uint32_t maximum_captured_packet_length {0};
     std::string maximum_captured_packet_length_text {};
+    std::uint32_t maximum_original_packet_length {0};
+    std::string maximum_original_packet_length_text {};
     std::vector<FrontendCapturePacketSizeStatisticsBucketDto> buckets {};
 };
 

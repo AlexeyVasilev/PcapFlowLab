@@ -518,25 +518,68 @@ QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary&
 
 QString format_size_value(const std::uint64_t value);
 
-QVariantList build_packet_size_distribution_rows(const CapturePacketSizeStatistics& statistics) {
+QVariantList build_packet_size_distribution_rows(const CapturePacketStatistics& statistics) {
     QVariantList rows {};
-    rows.reserve(static_cast<qsizetype>(statistics.buckets.size()));
+    rows.reserve(static_cast<qsizetype>(statistics.captured_size_distribution.buckets.size()));
 
-    for (const auto& bucket : statistics.buckets) {
+    for (std::size_t index = 0U; index < statistics.captured_size_distribution.buckets.size(); ++index) {
+        const auto& captured_bucket = statistics.captured_size_distribution.buckets[index];
+        const auto& original_bucket = statistics.original_size_distribution.buckets[index];
         QVariantMap row {};
         row.insert(
             QStringLiteral("bucketId"),
-            QString::fromUtf8(bucket.stable_id.data(), static_cast<qsizetype>(bucket.stable_id.size()))
+            QString::fromUtf8(
+                captured_bucket.stable_id.data(),
+                static_cast<qsizetype>(captured_bucket.stable_id.size())
+            )
         );
-        row.insert(QStringLiteral("label"), QString::fromStdString(session_detail::capture_packet_size_bucket_label(bucket)));
-        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(bucket.lower_bound_inclusive));
-        row.insert(QStringLiteral("upperBoundInclusive"), bucket.upper_bound_inclusive.has_value()
-            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*bucket.upper_bound_inclusive))
+        row.insert(
+            QStringLiteral("label"),
+            QString::fromStdString(session_detail::capture_packet_size_bucket_label(captured_bucket))
+        );
+        row.insert(QStringLiteral("lowerBoundInclusive"), static_cast<qulonglong>(captured_bucket.lower_bound_inclusive));
+        row.insert(QStringLiteral("upperBoundInclusive"), captured_bucket.upper_bound_inclusive.has_value()
+            ? QVariant::fromValue<qulonglong>(static_cast<qulonglong>(*captured_bucket.upper_bound_inclusive))
             : QVariant {});
-        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(bucket.packet_count));
-        row.insert(QStringLiteral("normalizedFraction"),
-            statistics.maximum_bucket_packet_count > 0U
-                ? static_cast<double>(bucket.packet_count) / static_cast<double>(statistics.maximum_bucket_packet_count)
+        row.insert(QStringLiteral("capturedPacketCount"), static_cast<qulonglong>(captured_bucket.packet_count));
+        row.insert(QStringLiteral("capturedPacketCountText"), QString::number(captured_bucket.packet_count));
+        row.insert(QStringLiteral("capturedTotalFraction"),
+            statistics.total_packet_count > 0U
+                ? static_cast<double>(captured_bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
+                : 0.0);
+        row.insert(
+            QStringLiteral("capturedTotalPercentText"),
+            QString::fromStdString(session_detail::format_statistics_percent_text(
+                statistics.total_packet_count > 0U
+                    ? (static_cast<double>(captured_bucket.packet_count) * 100.0)
+                        / static_cast<double>(statistics.total_packet_count)
+                    : 0.0
+            ))
+        );
+        row.insert(QStringLiteral("capturedNormalizedFraction"),
+            statistics.captured_size_distribution.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(captured_bucket.packet_count)
+                    / static_cast<double>(statistics.captured_size_distribution.maximum_bucket_packet_count)
+                : 0.0);
+        row.insert(QStringLiteral("originalPacketCount"), static_cast<qulonglong>(original_bucket.packet_count));
+        row.insert(QStringLiteral("originalPacketCountText"), QString::number(original_bucket.packet_count));
+        row.insert(QStringLiteral("originalTotalFraction"),
+            statistics.total_packet_count > 0U
+                ? static_cast<double>(original_bucket.packet_count) / static_cast<double>(statistics.total_packet_count)
+                : 0.0);
+        row.insert(
+            QStringLiteral("originalTotalPercentText"),
+            QString::fromStdString(session_detail::format_statistics_percent_text(
+                statistics.total_packet_count > 0U
+                    ? (static_cast<double>(original_bucket.packet_count) * 100.0)
+                        / static_cast<double>(statistics.total_packet_count)
+                    : 0.0
+            ))
+        );
+        row.insert(QStringLiteral("originalNormalizedFraction"),
+            statistics.original_size_distribution.maximum_bucket_packet_count > 0U
+                ? static_cast<double>(original_bucket.packet_count)
+                    / static_cast<double>(statistics.original_size_distribution.maximum_bucket_packet_count)
                 : 0.0);
         rows.push_back(row);
     }
@@ -549,6 +592,7 @@ QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& hi
     rows.reserve(static_cast<qsizetype>(histogram.buckets.size()));
 
     const auto max_flow_count = histogram.maximum_bucket_flow_count;
+    const auto max_captured_byte_count = histogram.maximum_bucket_captured_byte_count;
     const auto max_original_byte_count = histogram.maximum_bucket_original_byte_count;
     for (const auto& bucket : histogram.buckets) {
         QVariantMap row {};
@@ -563,6 +607,8 @@ QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& hi
                 : QStringLiteral("%1-%2").arg(bucket.lower_bound_inclusive).arg(*bucket.upper_bound_inclusive))
             : QStringLiteral("%1+").arg(bucket.lower_bound_inclusive));
         row.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(bucket.flow_count));
+        row.insert(QStringLiteral("capturedByteCount"), static_cast<qulonglong>(bucket.captured_byte_count));
+        row.insert(QStringLiteral("capturedByteCountText"), format_size_value(bucket.captured_byte_count));
         row.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(bucket.original_byte_count));
         row.insert(QStringLiteral("originalByteCountText"), format_size_value(bucket.original_byte_count));
         const auto normalized_flow_fraction =
@@ -571,6 +617,10 @@ QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& hi
                 : 0.0;
         row.insert(QStringLiteral("normalizedFraction"), normalized_flow_fraction);
         row.insert(QStringLiteral("normalizedFlowFraction"), normalized_flow_fraction);
+        row.insert(QStringLiteral("normalizedCapturedByteFraction"),
+            max_captured_byte_count > 0U
+                ? static_cast<double>(bucket.captured_byte_count) / static_cast<double>(max_captured_byte_count)
+                : 0.0);
         row.insert(QStringLiteral("normalizedOriginalByteFraction"),
             max_original_byte_count > 0U
                 ? static_cast<double>(bucket.original_byte_count) / static_cast<double>(max_original_byte_count)
@@ -3310,7 +3360,7 @@ qulonglong MainController::packetSizeDistributionTotalPacketCount() const noexce
 }
 
 qulonglong MainController::packetSizeDistributionMaximumBucketPacketCount() const noexcept {
-    return static_cast<qulonglong>(packet_size_statistics_.maximum_bucket_packet_count);
+    return static_cast<qulonglong>(packet_size_statistics_.captured_size_distribution.maximum_bucket_packet_count);
 }
 
 qulonglong MainController::packetSizeDistributionMaximumCapturedPacketLength() const noexcept {
@@ -3320,6 +3370,16 @@ qulonglong MainController::packetSizeDistributionMaximumCapturedPacketLength() c
 QString MainController::packetSizeDistributionMaximumCapturedPacketLengthText() const {
     return QString::fromStdString(
         session_detail::format_statistics_size_value(packet_size_statistics_.maximum_captured_packet_length)
+    );
+}
+
+qulonglong MainController::packetSizeDistributionMaximumOriginalPacketLength() const noexcept {
+    return static_cast<qulonglong>(packet_size_statistics_.maximum_original_packet_length);
+}
+
+QString MainController::packetSizeDistributionMaximumOriginalPacketLengthText() const {
+    return QString::fromStdString(
+        session_detail::format_statistics_size_value(packet_size_statistics_.maximum_original_packet_length)
     );
 }
 
@@ -5389,8 +5449,9 @@ void MainController::ensurePacketSizeDistributionLoaded() {
 
     setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::loading);
     emit stateChanged();
-    packet_size_statistics_ = session_.packet_size_statistics();
-    packet_size_distribution_rows_ = build_packet_size_distribution_rows(packet_size_statistics_);
+    const auto packet_statistics = session_.packet_statistics();
+    packet_size_statistics_ = packet_statistics;
+    packet_size_distribution_rows_ = build_packet_size_distribution_rows(packet_statistics);
     setStatisticsSectionState(StatisticsOptionalSection::packet_size_distribution, StatisticsSectionRequestState::ready);
     emit stateChanged();
 }

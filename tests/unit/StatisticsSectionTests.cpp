@@ -1534,18 +1534,26 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(packet_size_statistics.has_capture);
     PFL_EXPECT(packet_size_statistics.total_packet_count == 4U);
     PFL_EXPECT(packet_size_statistics.maximum_captured_packet_length > 0U);
+    PFL_EXPECT(packet_size_statistics.maximum_original_packet_length > 0U);
     PFL_EXPECT(!packet_size_statistics.maximum_captured_packet_length_text.empty());
+    PFL_EXPECT(!packet_size_statistics.maximum_original_packet_length_text.empty());
     PFL_REQUIRE(find_bucket(packet_size_statistics, "captured_bytes_0_63") != nullptr);
     PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->label == "0-63");
-    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->packet_count_text == "4");
-    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->total_fraction == 1.0);
-    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->total_percent_text == "100%");
+    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->captured_packet_count_text == "4");
+    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->captured_total_fraction == 1.0);
+    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->captured_total_percent_text == "100%");
+    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->original_packet_count_text == "4");
+    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->original_total_fraction == 1.0);
+    PFL_EXPECT(find_bucket(packet_size_statistics, "captured_bytes_0_63")->original_total_percent_text == "100%");
 
     PFL_EXPECT(histogram.has_capture);
     PFL_EXPECT(histogram.total_flow_count == 3U);
+    PFL_EXPECT(histogram.total_captured_byte_count > 0U);
     PFL_EXPECT(histogram.total_original_byte_count > 0U);
     PFL_EXPECT(histogram.maximum_bucket_flow_count == 2U);
+    PFL_EXPECT(histogram.maximum_bucket_captured_byte_count > 0U);
     PFL_EXPECT(histogram.maximum_bucket_original_byte_count > 0U);
+    PFL_EXPECT(histogram.excluded_zero_packet_captured_byte_count == 0U);
     PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 0U);
     PFL_REQUIRE(find_bucket(histogram, "packets_1") != nullptr);
     PFL_REQUIRE(find_bucket(histogram, "packets_2") != nullptr);
@@ -1555,7 +1563,10 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(find_bucket(histogram, "packets_1")->total_flow_fraction > 0.66);
     PFL_EXPECT(find_bucket(histogram, "packets_1")->total_flow_fraction < 0.67);
     PFL_EXPECT(find_bucket(histogram, "packets_1")->normalized_flow_fraction == 1.0);
+    PFL_EXPECT(find_bucket(histogram, "packets_1")->captured_byte_count_text.find('B') != std::string::npos);
+    PFL_EXPECT(find_bucket(histogram, "packets_1")->captured_byte_count_with_total_percent_text.find('%') != std::string::npos);
     PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_flow_fraction == 0.5);
+    PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_captured_byte_fraction > 0.0);
     PFL_EXPECT(find_bucket(histogram, "packets_1")->original_byte_count_text.find('B') != std::string::npos);
     PFL_EXPECT(find_bucket(histogram, "packets_1")->original_byte_count_with_total_percent_text.find('%') != std::string::npos);
     PFL_EXPECT(find_bucket(histogram, "packets_2")->normalized_original_byte_fraction > 0.0);
@@ -1895,15 +1906,21 @@ void expect_statistics_adapter_exposes_total_based_percentage_fields() {
     PFL_REQUIRE(medium_bucket != nullptr);
     PFL_REQUIRE(zero_bucket != nullptr);
     PFL_EXPECT(packet_size_statistics.buckets.size() == kCapturePacketSizeStatisticsBucketCount);
-    PFL_EXPECT(small_bucket->packet_count == 3U);
-    PFL_EXPECT(small_bucket->normalized_fraction == 1.0);
-    PFL_EXPECT(small_bucket->total_fraction == 0.75);
-    PFL_EXPECT(small_bucket->total_percent_text == "75%");
-    PFL_EXPECT(medium_bucket->packet_count == 1U);
-    PFL_EXPECT(medium_bucket->total_percent_text == "25%");
-    PFL_EXPECT(zero_bucket->packet_count == 0U);
-    PFL_EXPECT(zero_bucket->total_fraction == 0.0);
-    PFL_EXPECT(zero_bucket->total_percent_text == "0%");
+    PFL_EXPECT(small_bucket->captured_packet_count == 3U);
+    PFL_EXPECT(small_bucket->captured_packet_count_text == "3");
+    PFL_EXPECT(small_bucket->captured_normalized_fraction == 1.0);
+    PFL_EXPECT(small_bucket->captured_total_fraction == 0.75);
+    PFL_EXPECT(small_bucket->captured_total_percent_text == "75%");
+    PFL_EXPECT(medium_bucket->captured_packet_count == 1U);
+    PFL_EXPECT(medium_bucket->captured_total_percent_text == "25%");
+    PFL_EXPECT(zero_bucket->captured_packet_count == 0U);
+    PFL_EXPECT(zero_bucket->captured_total_fraction == 0.0);
+    PFL_EXPECT(zero_bucket->captured_total_percent_text == "0%");
+    PFL_EXPECT(small_bucket->original_packet_count == 3U);
+    PFL_EXPECT(small_bucket->original_packet_count_text == "3");
+    PFL_EXPECT(small_bucket->original_normalized_fraction == 1.0);
+    PFL_EXPECT(small_bucket->original_total_fraction == 0.75);
+    PFL_EXPECT(small_bucket->original_total_percent_text == "75%");
 
     const auto histogram = adapter.get_flow_packet_count_histogram();
     const auto* packets_1 = find_bucket(histogram, "packets_1");
@@ -1917,6 +1934,9 @@ void expect_statistics_adapter_exposes_total_based_percentage_fields() {
     PFL_EXPECT(packets_1->total_flow_fraction > 0.66);
     PFL_EXPECT(packets_1->total_flow_fraction < 0.67);
     PFL_EXPECT(packets_1->normalized_flow_fraction == 1.0);
+    PFL_EXPECT(packets_1->captured_byte_count_text.find('B') != std::string::npos);
+    PFL_EXPECT(packets_1->captured_byte_count_with_total_percent_text.find('%') != std::string::npos);
+    PFL_EXPECT(packets_1->normalized_captured_byte_fraction > 0.0);
     PFL_EXPECT(packets_2->flow_count_with_total_percent_text == "1 (33%)");
     PFL_EXPECT(packets_2->normalized_flow_fraction == 0.5);
     PFL_EXPECT(packets_2->original_byte_count_with_total_percent_text.find('%') != std::string::npos);
@@ -1945,6 +1965,57 @@ void expect_quic_tls_section_keeps_one_empty_side() {
     }
 }
 
+void expect_frontend_packet_size_statistics_preserve_captured_original_bucket_split() {
+    const auto recognized_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 49001, 443);
+    const auto unrecognized_packet = unrecognized_ethernet_frame();
+    const auto capture_path = write_temp_pcap(
+        "pfl_frontend_packet_size_statistics_captured_original_split.pcap",
+        make_classic_pcap_with_captured_lengths({
+            {
+                .ts_usec = 100U,
+                .captured_bytes = recognized_packet,
+                .original_length = 600U,
+            },
+            {
+                .ts_usec = 200U,
+                .captured_bytes = unrecognized_packet,
+                .original_length = 700U,
+            },
+        })
+    );
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+
+    const auto packet_size_statistics = adapter.get_capture_packet_size_statistics();
+    const auto* captured_small_bucket = find_bucket(packet_size_statistics, "captured_bytes_0_63");
+    const auto* original_large_bucket = find_bucket(packet_size_statistics, "captured_bytes_512_1023");
+    PFL_REQUIRE(captured_small_bucket != nullptr);
+    PFL_REQUIRE(original_large_bucket != nullptr);
+    PFL_EXPECT(packet_size_statistics.total_packet_count == 2U);
+    PFL_EXPECT(packet_size_statistics.maximum_captured_bucket_packet_count == 2U);
+    PFL_EXPECT(packet_size_statistics.maximum_original_bucket_packet_count == 2U);
+    PFL_EXPECT(packet_size_statistics.maximum_captured_packet_length
+        == static_cast<std::uint32_t>(recognized_packet.size()));
+    PFL_EXPECT(packet_size_statistics.maximum_original_packet_length == 700U);
+    PFL_EXPECT(captured_small_bucket->lower_bound_inclusive == 0U);
+    PFL_EXPECT(captured_small_bucket->upper_bound_inclusive == 63U);
+    PFL_EXPECT(captured_small_bucket->captured_packet_count == 2U);
+    PFL_EXPECT(captured_small_bucket->captured_total_fraction == 1.0);
+    PFL_EXPECT(captured_small_bucket->captured_normalized_fraction == 1.0);
+    PFL_EXPECT(captured_small_bucket->original_packet_count == 0U);
+    PFL_EXPECT(captured_small_bucket->original_total_fraction == 0.0);
+    PFL_EXPECT(captured_small_bucket->original_normalized_fraction == 0.0);
+    PFL_EXPECT(original_large_bucket->lower_bound_inclusive == 512U);
+    PFL_EXPECT(original_large_bucket->upper_bound_inclusive == 1023U);
+    PFL_EXPECT(original_large_bucket->captured_packet_count == 0U);
+    PFL_EXPECT(original_large_bucket->captured_total_fraction == 0.0);
+    PFL_EXPECT(original_large_bucket->captured_normalized_fraction == 0.0);
+    PFL_EXPECT(original_large_bucket->original_packet_count == 2U);
+    PFL_EXPECT(original_large_bucket->original_total_fraction == 1.0);
+    PFL_EXPECT(original_large_bucket->original_normalized_fraction == 1.0);
+}
+
 void expect_statistics_section_requests_handle_missing_capture() {
     FrontendSessionAdapter adapter {};
 
@@ -1956,14 +2027,20 @@ void expect_statistics_section_requests_handle_missing_capture() {
 
     PFL_EXPECT(!packet_size_statistics.has_capture);
     PFL_EXPECT(packet_size_statistics.total_packet_count == 0U);
-    PFL_EXPECT(packet_size_statistics.maximum_bucket_packet_count == 0U);
+    PFL_EXPECT(packet_size_statistics.maximum_captured_bucket_packet_count == 0U);
+    PFL_EXPECT(packet_size_statistics.maximum_original_bucket_packet_count == 0U);
     PFL_EXPECT(packet_size_statistics.maximum_captured_packet_length == 0U);
+    PFL_EXPECT(packet_size_statistics.maximum_original_packet_length == 0U);
     PFL_EXPECT(packet_size_statistics.maximum_captured_packet_length_text.empty());
+    PFL_EXPECT(packet_size_statistics.maximum_original_packet_length_text.empty());
     PFL_EXPECT(packet_size_statistics.buckets.empty());
     PFL_EXPECT(!histogram.has_capture);
+    PFL_EXPECT(histogram.total_captured_byte_count == 0U);
     PFL_EXPECT(histogram.total_original_byte_count == 0U);
+    PFL_EXPECT(histogram.maximum_bucket_captured_byte_count == 0U);
     PFL_EXPECT(histogram.maximum_bucket_original_byte_count == 0U);
     PFL_EXPECT(histogram.excluded_zero_packet_original_byte_count == 0U);
+    PFL_EXPECT(histogram.excluded_zero_packet_captured_byte_count == 0U);
     PFL_EXPECT(histogram.buckets.empty());
     PFL_EXPECT(!hints.has_capture);
     PFL_EXPECT(hints.protocol_hints.empty());
@@ -1996,29 +2073,44 @@ void expect_statistics_section_bridge_json_shapes() {
         pfl_frontend_session_adapter_get_capture_packet_size_statistics_json(handle)
     );
     PFL_EXPECT(contains_text(packet_size_json, "\"total_packet_count\""));
-    PFL_EXPECT(contains_text(packet_size_json, "\"maximum_bucket_packet_count\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"maximum_captured_bucket_packet_count\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"maximum_original_bucket_packet_count\""));
     PFL_EXPECT(contains_text(packet_size_json, "\"maximum_captured_packet_length\""));
     PFL_EXPECT(contains_text(packet_size_json, "\"maximum_captured_packet_length_text\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"maximum_original_packet_length\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"maximum_original_packet_length_text\""));
     PFL_EXPECT(contains_text(packet_size_json, "\"bucket_id\":\"captured_bytes_0_63\""));
     PFL_EXPECT(contains_text(packet_size_json, "\"label\":\"0-63\""));
-    PFL_EXPECT(contains_text(packet_size_json, "\"packet_count_text\""));
-    PFL_EXPECT(contains_text(packet_size_json, "\"total_fraction\""));
-    PFL_EXPECT(contains_text(packet_size_json, "\"total_percent_text\""));
-    PFL_EXPECT(contains_text(packet_size_json, "\"normalized_fraction\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"captured_packet_count_text\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"captured_total_fraction\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"captured_total_percent_text\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"captured_normalized_fraction\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"original_packet_count_text\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"original_total_fraction\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"original_total_percent_text\""));
+    PFL_EXPECT(contains_text(packet_size_json, "\"original_normalized_fraction\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"total_captured_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"total_original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"maximum_bucket_flow_count\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"maximum_bucket_captured_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"maximum_bucket_original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"excluded_zero_packet_flow_count\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"excluded_zero_packet_captured_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"excluded_zero_packet_original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"bucket_id\":\"packets_2\""));
     PFL_EXPECT(contains_text(histogram_json, "\"label\":\"2\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"captured_byte_count\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"captured_byte_count_text\""));
     PFL_EXPECT(contains_text(histogram_json, "\"original_byte_count\""));
     PFL_EXPECT(contains_text(histogram_json, "\"original_byte_count_text\""));
     PFL_EXPECT(contains_text(histogram_json, "\"flow_count_with_total_percent_text\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"captured_byte_count_with_total_percent_text\""));
     PFL_EXPECT(contains_text(histogram_json, "\"original_byte_count_with_total_percent_text\""));
     PFL_EXPECT(contains_text(histogram_json, "\"total_flow_fraction\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"total_captured_byte_fraction\""));
     PFL_EXPECT(contains_text(histogram_json, "\"total_original_byte_fraction\""));
     PFL_EXPECT(contains_text(histogram_json, "\"normalized_flow_fraction\""));
+    PFL_EXPECT(contains_text(histogram_json, "\"normalized_captured_byte_fraction\""));
     PFL_EXPECT(contains_text(histogram_json, "\"normalized_original_byte_fraction\""));
 
     const auto overview_json = take_bridge_string(pfl_frontend_session_adapter_get_overview_json(handle));
@@ -2242,6 +2334,7 @@ void run_statistics_section_tests() {
     expect_statistics_overview_marks_partial_open_runtime_state();
     expect_statistics_adapter_exposes_total_based_percentage_fields();
     expect_quic_tls_section_keeps_one_empty_side();
+    expect_frontend_packet_size_statistics_preserve_captured_original_bucket_split();
     expect_statistics_section_requests_handle_missing_capture();
     expect_statistics_section_bridge_json_shapes();
     expect_advanced_flow_filter_text_query_bridge_contract();

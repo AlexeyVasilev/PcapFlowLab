@@ -188,8 +188,11 @@ Current shared statistics coverage includes:
 - packet-direction and original-byte-direction distribution DTO rows;
 - partial-open Statistics warning text;
 - transport/family summary values;
-- packet-size distribution;
-- flows-by-packet-count histogram;
+- packet-size distribution DTO rows carrying both captured and original
+  packet-length bucket values so Qt/Tauri can switch modes locally after one
+  lazy load;
+- flows-by-packet-count histogram DTO rows carrying flow counts plus captured
+  and original byte aggregates for the same bucket membership;
 - protocol-hint statistics;
 - Protocol Path statistics;
 - QUIC/TLS statistics;
