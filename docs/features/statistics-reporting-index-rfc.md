@@ -1,8 +1,10 @@
 # Statistics, Reporting, and Large-Index Architecture RFC
 
-Status: design draft for `feature/statistics-reporting-improvements`.
+Status: design freeze for `feature/statistics-reporting-improvements`.
+
 Current production behavior remains the stable v15 architecture until the
-planned migration is implemented.
+planned migration is implemented. The frozen v16 layout is defined in the
+companion [Index v16 Container RFC](index-v16-container-rfc.md).
 
 Related current references:
 
@@ -11,6 +13,7 @@ Related current references:
 - [Large-Capture Performance Guidelines](../large-capture-performance-guidelines.md)
 - [Flow Aggregate Metadata RFC](flow-aggregate-metadata-rfc.md)
 - [Index v15 Container RFC](index-v15-container-rfc.md)
+- [Index v16 Container RFC](index-v16-container-rfc.md)
 - [Analysis](../analysis-tab.md)
 - [Presentation Contract](../ui/presentation_contract.md)
 - [Frontend DTO Mapping](../ui/frontend_dto_mapping.md)
@@ -25,10 +28,10 @@ Related current references:
 This RFC records the agreed target direction for Statistics, reporting, and
 the next deliberate large-index architecture migration.
 
-The sequence is intentional:
+The sequence remains intentional:
 
 - Stage 0: architecture audit. Complete.
-- Stage 1: agree on this RFC before implementation starts.
+- Stage 1: freeze the design and migration target before implementation.
 - Stage 2: implement new runtime Statistics calculations and Statistics UI
   without changing stable-index serialization.
 - Stage 3: implement selected-flow Analysis time/graph improvements without
@@ -58,27 +61,20 @@ Current production behavior:
 - unrecognized packet records are also eagerly loaded
 - `CaptureIndexReader` currently materializes complete known section payloads
   into temporary byte vectors before parsing them
-- index loading reconstructs `CapturePacketSizeStatistics` by scanning the
-  `PacketRef` records it has just loaded
-- some Statistics helpers still scan `PacketRef` data even where
-  connection-level aggregates already contain authoritative metadata
-- multiple Statistics sections currently perform separate `O(flow_count)`
-  passes
-- current persisted `ConnectionAggregateStats` already contains many useful
-  metadata-only facts
-- current `PacketRef` is intentionally compact locator/ordering metadata, not
-  the owner of reusable flow-level aggregates
+- index loading reconstructs packet-level Statistics by scanning loaded
+  `PacketRef` data
+- several whole-capture Statistics sections still depend on runtime
+  reconstruction or separate `O(flow_count)` passes
 
 ## Design Goals
 
 The target design should support:
 
 1. Whole-capture Statistics without rescanning `PacketRef` data.
-2. General whole-capture Statistics built from one packet-level accumulation
-   path during raw import plus one canonical `O(flow_count)` final Statistics
-   pass.
-3. No repeated independent full-flow traversals for ordinary whole-capture
-   Statistics.
+2. One packet-level accumulation path during import plus one canonical
+   `O(flow_count)` Statistics pass.
+3. No repeated independent full-flow-list traversals for ordinary
+   whole-capture Statistics.
 4. Future persisted Statistics sufficient for a stats-only CLI command to read
    only a small early part of a multi-gigabyte index.
 5. Future Qt/Tauri ability to show Statistics before the remainder of a large
@@ -94,17 +90,15 @@ The target design should support:
 
 ## Non-Goals
 
-This RFC does not currently require:
+This RFC does not require:
 
-- PDF generation
-- storing packet payload bytes in the index
+- packet payload bytes in the index
 - global Stream or reassembly state
-- storing formatted UI strings in the index
-- storing percentages as authoritative persisted values
-- storing HTML or Markdown in the index
-- making every selected-flow Analysis graph precomputed
-- implementing asynchronous partial UI open in this branch immediately
-- removing `possible_tls` or `possible_quic` yet
+- formatted UI strings in the index
+- persisted percentages as authoritative values
+- HTML or Markdown stored in the index
+- asynchronous partial UI open as a required Stage 4 deliverable
+- removal of `possible_tls` or `possible_quic` in this design freeze
 
 The source-byte boundary remains in force:
 
@@ -112,47 +106,16 @@ The source-byte boundary remains in force:
 - features requiring packet payload or source bytes still require an attached
   source capture
 
-## Terminology
+## Frozen Runtime Statistics Model
 
-- A user-visible "flow" is the canonical bidirectional connection.
-- `A -> B` remains the direction of the first observed packet.
-- `B -> A` is the reverse of that first-observed orientation.
-- Do not infer client/server semantics from `A` / `B`.
-- Use `captured bytes` and `original bytes` consistently.
-- `original_bytes - captured_bytes` represents capture truncation or
-  incompleteness, not demonstrated network loss.
-
-## Current vs Target
-
-| Area | Current v15 | Target design |
-| --- | --- | --- |
-| Statistics ownership | Split across several runtime passes and helpers | One shared whole-capture Statistics authority |
-| Capture packet histogram | Captured-size histogram only | Captured and original whole-capture histograms |
-| Whole-capture packet facts | Partly reconstructed from eager packet metadata | Persisted raw packet-level snapshot facts |
-| PacketRef loading | Eager global deserialization on index open | Lazy and bounded access for index-backed sessions |
-| Flow metadata | Interleaved with `PacketRef` arrays in connection payloads | Separated from large packet-detail storage |
-| Unrecognized details | Eagerly resident | Aggregate in fast tier, detail rows in later lazy tier |
-| Protocol Path display stats | Rebuilt from loaded flow metadata | Fast display aggregate available without full flow load |
-| Stats-only CLI | Requires full runtime metadata path | Reads an early compact Statistics tier |
-| Report data source | No dedicated shared report model yet | Shared frontend-neutral Statistics snapshot/model |
-| Index open cost model | Strongly packet-count-proportional | Fast Statistics tier plus metadata/detail separation |
-
-## Target Runtime Statistics Model
-
-Two complementary calculation layers are planned.
+Two complementary calculation layers remain the planned shared authority.
 
 ### Packet-level capture accumulator
 
 During raw capture import, every surfaced packet should update one compact
 capture-level accumulator exactly once.
 
-Tentative conceptual name:
-
-- `CapturePacketStatistics`
-
-The exact production type name is not frozen by this RFC.
-
-Raw facts to support:
+Raw facts remain:
 
 - total packet count
 - total captured bytes
@@ -168,36 +131,31 @@ Raw facts to support:
 - unrecognized captured bytes
 - unrecognized original bytes
 
-Capture start and capture end must include recognized and unrecognized
-surfaced packets. Earliest and latest are temporal min/max, not storage-order
+Capture start and capture end include recognized and unrecognized surfaced
+packets. Earliest and latest are temporal min/max, not storage-order
 first/last. An empty capture has no valid time range.
 
 ### One canonical flow Statistics pass
 
-After raw import completes and canonical connections exist, perform one
-canonical `O(flow_count)` Statistics pass.
-
-That pass should be capable of producing:
+After raw import completes and canonical connections exist, one canonical
+`O(flow_count)` Statistics pass should produce:
 
 - IPv4 / IPv6 summary
 - TCP / UDP / SCTP / Other summary
-- detected protocol categories
+- detected-protocol category counters
 - flow packet-count histogram
-- original bytes per flow-count histogram bucket
-- captured bytes per flow-count histogram bucket
+- original bytes per flow-count bucket
+- captured bytes per flow-count bucket
 - Only `A -> B` flow count
 - service-recognized flow count
 - packet direction distribution
 - original-byte direction distribution
 - QUIC/TLS recognition and version statistics
+- whole-capture TCP `SYN` / `FIN` / `RST` counts
 - bounded top endpoints
 - bounded top ports
 - fixed top 10 flows by original bytes
-- Protocol Path display statistics, subject to the Protocol Path design
-  decision below
-
-This replaces the architecture of several independent whole-flow-list
-Statistics passes.
+- Protocol Path display statistics
 
 Protocol Path display Statistics must not require flow-membership
 materialization.
@@ -221,309 +179,31 @@ Derive inexpensive presentation values such as:
 - formatted byte strings
 - formatted timestamps
 
-Examples:
+Derived presentation must guard against zero or malformed denominators. This
+RFC still does not authorize formatted UI strings as persisted index data.
 
-- capture duration = `max(0, capture_end - capture_start)`
-- average captured packet size = `captured_bytes / packet_count`
-- average original packet size = `original_bytes / packet_count`
-- average packet rate = `packet_count / duration`
-- average captured data rate = `captured_bytes / duration`
-- average original data rate = `original_bytes / duration`
-- not captured bytes = `max(0, original_bytes - captured_bytes)`
-- capture completeness = `captured_bytes / original_bytes`
+## Partial Capture And Partial Import Semantics
 
-Derived presentation must guard against zero or malformed denominators:
-
-- no packets -> averages unavailable or explicitly empty
-- zero duration -> rate unavailable, never infinity
-- zero original bytes -> completeness unavailable
-- not-captured bytes never underflows
-
-Formatted percentages and strings are not authoritative index data.
-
-## Planned Statistics UI
-
-### Top capture cards
-
-Current top cards remain:
-
-- Packets
-- Flows
-- Original bytes
-- Captured bytes
-
-Add a second row directly below them:
-
-- Capture start
-- Capture end
-- Duration
-
-Start and end should later be presented as complete absolute timestamps with
-calendar date and unambiguous timezone or UTC indication. Persist raw
-timestamps, not formatted text.
-
-### Capture Metrics block
-
-Planned compact metrics:
-
-- Average captured packet size
-- Average original packet size
-- Average packet rate
-- Average captured data rate
-- Average original data rate
-- Truncated packets: count plus percentage
-- Not captured bytes
-- Capture completeness
-
-This is intended as a compact metrics block, not a large-card row.
-
-### Flow Characteristics block
-
-Planned metrics:
-
-- Only `A -> B` flows: count plus percentage
-- Service recognized: count plus percentage
-
-Only `A -> B` means:
-
-- `A` packet count `> 0`
-- `B` packet count `== 0`
-
-Because `A` is first-observed direction, there is no normal "Only `B -> A`"
-category.
-
-`Service recognized` currently means a canonical connection with a non-empty
-`service_hint`.
-
-### Packet Direction Distribution
-
-Display:
-
-| Category | Flows | Percent |
-| --- | --- | --- |
-| Mostly A -> B | count | percent |
-| Balanced | count | percent |
-| Mostly B -> A | count | percent |
-
-Use the existing shared `DirectionDistribution` classifier with existing
-semantics, including:
-
-- exactly `2:1` -> `Balanced`
-- strictly greater than `2:1` -> `Mostly`
-
-Classification input is directional packet counts.
-
-### Data Direction Distribution
-
-Display the same categories:
-
-| Category | Flows | Percent |
-| --- | --- | --- |
-| Mostly A -> B | count | percent |
-| Balanced | count | percent |
-| Mostly B -> A | count | percent |
-
-Classification input is directional original-byte totals. The `Flows` column
-means the number of canonical flows whose original-byte balance falls into
-that category.
-
-## Planned Statistics Graph Improvements
-
-These requirements affect the future persisted Statistics design.
-
-Packet Size Distribution:
-
-- `Captured`
-- `Original`
-
-Both whole-capture histograms should eventually be available without scanning
-`PacketRef` data.
-
-Flows by Packet Count:
-
-- `Flows`
-- `Captured bytes`
-- `Original bytes`
-
-Each bucket therefore needs enough raw values to display:
-
-- flow count
-- total captured bytes
-- total original bytes
-
-## Planned Analysis Improvements
-
-Selected-flow Analysis remains a separate cost model.
-
-Planned changes:
-
-- timeline presentation becomes `Start`, `End`, `Duration`
-- start and end should show full absolute date/time, not only time-of-day
-- Packet Size Histogram adds `Original` and `Captured`
-- Flow Rate adds `Original data`, `Captured data`, and `Packets`
-
-Direction selection remains compatible with current `A -> B`, `B -> A`, and
-`Both` semantics.
-
-These selected-flow graphs may legitimately require ordered lazy `PacketRef`
-access. They do not become whole-capture precomputed Statistics.
-
-## Flow Metadata Requirements
-
-Current directional flow metadata already includes:
-
-- packet count
-- original byte total
-
-Current `ConnectionAggregateStats` already includes:
-
-- first timestamp
-- last timestamp
-- captured byte total
-- truncated packet count
-- TCP SYN/FIN/RST counts
-- maximum captured packet length
-- maximum original packet length
-
-One high-value planned metadata candidate is directional captured-byte total
-for Flow A and Flow B.
-
-Benefits:
-
-- avoids current captured-byte scans over `PacketRef`
-- supports future directional captured-byte queries
-- supports Statistics, filtering, reporting, and richer metadata-only flow
-  analysis
-
-This RFC records it as a planned field to freeze before Stage 4. It is not
-implemented by this document.
-
-## Possible TLS / QUIC Policy
-
-Current project policy:
-
-- `possible_tls` remains supported
-- `possible_quic` remains supported
-- their raw categories should remain representable in the future index and
-  Statistics snapshot
-- they are not removed in this branch at this stage
-
-However:
-
-- they are heuristic categories
-- they are not preferred public report content
-- future HTML/Markdown reports should exclude `possible_tls` and
-  `possible_quic` by default
-- confirmed/recognized protocol statistics should be the default
-  report-facing semantics
-
-The long-term fate of these heuristic categories remains unresolved. The
-snapshot should preserve their identity without hard-wiring them into report
-presentation schemas.
-
-## Protocol Recognition Snapshot Representation
-
-The snapshot must preserve enough raw category data to allow runtime policy to
-decide whether heuristic categories participate in UI totals.
-
-Conceptually, raw counters should remain able to distinguish:
-
-- confirmed TLS
-- possible TLS
-- confirmed QUIC
-- possible QUIC
-
-Other protocol/service categories should likewise keep stable raw identity.
-Do not persist localized labels as identity. Use stable enum/id semantics or
-another compact stable representation consistent with current project
-patterns.
-
-The exact serialized representation remains open until Stage 4 design freeze.
-
-## Runtime Mutability and Enrichment
-
-Persisted Statistics represents the baseline at index-creation time.
-
-Some canonical metadata may change during a live source-backed session, for
-example selected-flow service enrichment.
-
-Preferred runtime model:
-
-- persisted snapshot -> initial in-memory Statistics baseline
-- known canonical metadata mutations update or invalidate only the affected
-  in-memory Statistics subset
-
-Example:
-
-- `service_hint: empty -> non-empty` may increment runtime
-  service-recognized-flow statistics without requiring a `PacketRef` scan
-
-This RFC does not require rewriting `.pflidx` files merely because an open
-session performs ephemeral enrichment.
-
-## Future Persisted Statistics Snapshot
-
-Define a frontend-neutral whole-capture Statistics snapshot.
-
-Tentative conceptual name:
-
-- `CaptureStatisticsSnapshot`
-
-Exact production type naming is not frozen yet.
-
-The snapshot should be sufficient for:
-
-- Qt Statistics
-- Tauri Statistics
-- CLI Statistics
-- future HTML report generation
-- future Markdown report generation
-
-without requiring ordinary consumers to scan flows or `PacketRef` data.
-
-Design coverage must include:
-
-- capture totals: packets, flows, captured bytes, original bytes
-- capture time: start, end
-- capture packet facts: truncation, maximum packet lengths, captured
-  histogram, original histogram, unrecognized aggregates
-- family and transport Statistics
-- recognized protocol category Statistics
-- flow packet-count histogram with flow count, captured bytes, original bytes
-- flow characteristics: Only `A -> B`, Service recognized
-- packet direction distribution
-- original-byte direction distribution
-- whole-capture TCP SYN/FIN/RST packet counts
-- QUIC/TLS statistics
-- bounded top endpoints
-- bounded top ports
-- fixed top 10 flows by original bytes
-- Protocol Path display statistics
-
-Do not store presentation strings in this snapshot.
-
-### Partial capture and partial import semantics
-
-`CaptureStatisticsSnapshot` must describe the successfully surfaced and
-imported packet set.
+`CaptureStatisticsSnapshot` describes the successfully surfaced and imported
+packet set.
 
 A partial capture/import must not be presented as if its Statistics
-necessarily covered the complete nominal source file. Current product behavior
-already distinguishes partial source-backed opens with an explicit warning;
-this RFC extends that design requirement to future persisted Statistics
-presentation as well.
+necessarily covered the complete nominal source file.
 
-Future Qt/Tauri/CLI/HTML/Markdown presentation must therefore have enough
-provenance to distinguish:
+The frozen v16 design persists completeness provenance directly in the
+Statistics snapshot via a versioned `CaptureStatisticsScope` field. Exact
+encoding lives in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
+
+Future Qt/Tauri/CLI/HTML/Markdown presentation must therefore be able to
+distinguish:
 
 - complete capture Statistics
 - partial-import Statistics
 
-This RFC does not yet freeze the exact stable persistence location of that
-provenance. The key rule is that partial Statistics must never masquerade as
-known-complete capture Statistics.
+Partial Statistics must never masquerade as known-complete capture
+Statistics.
 
-### Snapshot consistency invariants
+## Snapshot Consistency Invariants
 
 Authoritative persisted Statistics must be internally self-consistent.
 
@@ -538,8 +218,7 @@ Representative invariants include:
 - `unrecognized_packet_count <= packet_count`
 
 Only categories intentionally modeled as complete partitions should carry
-partition-sum invariants. This RFC does not require every protocol or
-heuristic grouping to form a complete partition.
+partition-sum invariants.
 
 Target principle:
 
@@ -547,214 +226,102 @@ Target principle:
   authoritative Statistics rather than silently present contradictory snapshot
   values.
 
-## Top Endpoints, Ports, and Flows
+## Top Endpoints, Ports, And Flows
 
-Current UI semantics are bounded Top-N, currently effectively Top 5.
+The frozen fast-tier limits are:
 
-Preferred direction:
+- up to `20` top endpoints
+- up to `20` top ports
+- fixed `Top 10 Flows by Original Bytes`
 
-- persist a bounded Top-K larger than the default visible UI set
-- persist endpoint rows with endpoint identity/presentation source, `flow_count`,
-  `packet_count`, and `original_bytes`
-- persist port rows with port, `flow_count`, `packet_count`, and
+The frozen row direction is:
+
+- top endpoint rows persist raw endpoint identity plus `flow_count`,
+  `packet_count`, `captured_bytes`, and `original_bytes`
+- top port rows persist raw port identity plus `flow_count`, `packet_count`,
+  `captured_bytes`, and `original_bytes`
+- top flow rows persist raw identity, transport/protocol-hint inputs,
+  service hint, `protocol_path_id`, `packet_count`, `captured_bytes`, and
   `original_bytes`
-- persist a fixed `Top 10 Flows by Original Bytes` slice with enough raw data
-  to reproduce:
-  - flow identity/reference
-  - Endpoint A
-  - Endpoint B
-  - Protocol
-  - Detected Protocol
-  - Service
-  - compact Protocol Path
-  - Packets
-  - Captured bytes
-  - Original bytes
 
-This allows UI and reporting to show a useful shortlist without full
-flow-metadata loading.
-
-For top flows, prefer stable/raw snapshot fields rather than redundant display
-strings where current shared presentation can derive them. In particular:
-
-- stable flow identity/reference rather than UI row position alone
-- protocol identity / hint rather than localized detected text
-- `protocol_path_id` plus the future early Protocol Path registry/presentation
-  data rather than duplicating compact path strings everywhere
-
-The exact `K` remains an open design decision to resolve before Stage 4.
 Unlimited endpoint or port aggregation is not part of the fast Statistics
 tier without a demonstrated requirement.
 
-The `Top 10 Flows by Original Bytes` requirement is now part of the current
-product direction rather than an open-ended UI convenience.
+Exact row payloads are frozen in the companion
+[Index v16 Container RFC](index-v16-container-rfc.md).
 
 ## Protocol Path Statistics
 
-Separate:
+The frozen v16 fast display model is:
 
-- Protocol Path display Statistics
-- Protocol Path to flow membership
+- persist the canonical Protocol Path registry early
+- persist terminal-path aggregate rows keyed by `protocol_path_id`
+- derive `Terminal paths`, `Identity tree`, and `Kind overview` from those
+  early authorities without scanning canonical flows
+- keep potentially large flow-membership data out of the fast Statistics tier
 
-Preferred design direction:
+Exact section families and raw aggregate fields are frozen in the companion
+[Index v16 Container RFC](index-v16-container-rfc.md).
 
-- persist one canonical compact Protocol Path aggregate representation
-- derive current presentation modes from that representation if semantically
-  possible
-- do not blindly persist three duplicate UI-mode trees
-- keep potentially large flow-membership data out of the fast display
-  Statistics snapshot
+## Frozen Future Index Physical Architecture
 
-This RFC does not claim that one existing terminal-path aggregate already
-proves all current modes are reproducible. That proof remains required before
-Stage 4:
-
-- all current Protocol Path presentation modes must be reproducible without
-  scanning canonical flows
-
-Until proven, the exact canonical Protocol Path persisted representation
-remains an open design decision.
-
-## Future Index Physical Architecture
-
-Preferred target architecture:
+The frozen v16 target architecture is:
 
 - Stable header
 - Fast Statistics tier
+  - `capture_statistics_snapshot`
+  - `protocol_path_registry_early`
+  - `protocol_path_terminal_aggregates`
 - Flow metadata tier
+  - `ipv4_flow_metadata`
+  - `ipv6_flow_metadata`
+  - `protocol_path_membership`
+  - `packetref_directory`
+  - `unrecognized_directory`
 - Detail tier
+  - `packetref_detail_blocks`
+  - `unrecognized_reason_blobs`
+  - `packet_locator`
 
-Conceptually:
-
-- Fast Statistics tier
-  - capture/statistics summary
-  - Protocol Path display aggregates
-  - other compact whole-capture reporting data
-- Flow metadata tier
-  - IPv4/IPv6 canonical connection metadata
-  - flow metadata
-  - `PacketRef` block descriptors
-  - Protocol Path membership / flow mapping
-  - unrecognized detail directory if needed
-- Detail tier
-  - `PacketRef` blocks
-  - unrecognized packet detail blocks
-  - packet locator and other late detail storage as appropriate
-
-The architectural rule is:
+The architectural rule remains:
 
 - flow metadata should not require globally deserializing `PacketRef` arrays
 
-Preferred direction is physical separation of metadata from large packet
-detail rather than keeping today's interleaved layout and relying only on
-seek tricks.
+Exact section IDs, ordering, and chunking rules are frozen in the companion
+[Index v16 Container RFC](index-v16-container-rfc.md).
 
-Exact final section IDs and field ordering remain open pending Stage 4 review.
+## Fast Statistics Validation Boundary
 
-## Fast Statistics Prefix
+The frozen design distinguishes:
 
-Target property:
-
-- a future command equivalent to `pcap-flow-lab stats huge.pflidx` must be
-  able to return whole-capture Statistics without reading multi-gigabyte
-  flow/`PacketRef`/detail sections
-
-The fast Statistics data must therefore be physically early in the index.
-
-Successful fast Statistics-only access must not be treated as proof that every
-later flow-metadata or detail section in a multi-gigabyte index is valid.
-
-The design should conceptually distinguish:
-
-- header and Statistics-tier validation
-- flow-metadata-tier validation
-- detail/block validation
+- header validity
+- fast Statistics-tier validity
+- flow metadata-tier validity
+- detail-block validity
 - full-session load validity
 
-Future APIs may conceptually separate:
-
-- inspect index
-- read Statistics
-- load flow metadata
-- read flow `PacketRef`
-- read unrecognized details
-
-This API split is a design goal, not an implemented contract.
+A successful future fast Statistics-only read does not prove that later
+flow-metadata or detail sections are valid.
 
 A Statistics-only CLI operation must be allowed to stop after the required
 early Statistics data rather than scan the rest of the index merely to prove
-unrelated detail validity. The same distinction should make future
-progressive Qt/Tauri loading architecturally possible.
+unrelated detail validity.
 
-The format should also allow future Qt/Tauri to display Statistics while flow
-metadata is still loading, without making asynchronous partial UI open a
-required Stage 4 deliverable.
+This same separation keeps future progressive Qt/Tauri loading architecturally
+possible without making asynchronous partial UI open a required Stage 4
+deliverable.
 
-## Lazy PacketRef Architecture
+## Lazy PacketRef And Unrecognized Architecture
 
-Today both raw and index-loaded sessions keep:
+The frozen v16 direction is:
 
-- `Flow -> vector<PacketRef>`
+- metadata-only flow loading without embedded `PacketRef` arrays
+- one shared lazy `PacketRef` directory and detail-tier access model
+- bounded selected-flow bidirectional paging
+- fixed-size unrecognized directory rows plus separate lazy reason blobs
 
-Future index-backed sessions should be able to keep flow metadata resident
-without keeping all `PacketRef` values resident.
-
-Preferred direction:
-
-- one shared backend packet-reference source/range abstraction
-
-It should eventually support:
-
-- merged flow packet window by `offset + limit`
-- directional prefix access
-- exact selected-packet lookup
-- bounded Stream/reassembly prefix access
-- selected-flow Analysis packet access
-- explicit full-flow iteration/streaming for export
-- global packet-index lookup where required
-
-Qt, Tauri, and CLI should not each implement lazy `PacketRef` access
-independently. Shared C++ remains authoritative.
-
-## Index-Only Semantics
-
-Desired distinction:
-
-An index-only session with lazy `PacketRef` access may still support
-metadata-only packet/flow features such as:
-
-- packet row metadata available from `PacketRef`
-- timestamps
-- captured/original length
-- packet index
-- flow metadata
-- Statistics
-- metadata-only Analysis where semantically valid
-
-Features requiring source packet bytes still require an attached source
-capture, including examples such as:
-
-- Packet Summary requiring packet bytes
-- byte views
-- payload decode
-- packet-backed TLS/QUIC inspection
-- payload Stream/reassembly
-
-Lazy `PacketRef` access does not imply stored payload bytes.
-
-## Unrecognized Packet Architecture
-
-Current unrecognized packet details are eagerly resident.
-
-Future target:
-
-- whole-capture Statistics uses persisted aggregate unrecognized counts/bytes
-- detailed unrecognized rows are stored in a later detail tier
-- detail rows can be paged or lazily read when the user opens that list
-
-Because `reason_text` is variable-length, the exact directory/chunk layout may
-need different handling from fixed-size `PacketRef` blocks. That is part of
-the Stage 4 design surface.
+The exact directory/detail representation is now frozen in the companion
+[Index v16 Container RFC](index-v16-container-rfc.md).
 
 ## Reporting Architecture
 
@@ -778,7 +345,7 @@ Source/index identity metadata needed by reports, such as:
 - source fingerprint or other source identity where applicable
 
 belongs to the existing stable header/source-metadata authority and should not
-be duplicated merely because reports need it.
+be duplicated into the Statistics snapshot merely because reports need it.
 
 Future HTML/Markdown report construction may combine:
 
@@ -787,26 +354,10 @@ Future HTML/Markdown report construction may combine:
 
 into one report model.
 
-HTML should support:
-
-- tables
-- simple document charts, likely inline SVG
-- no dependency on screenshots
-- no dependency on UI collapsible sections having been opened
-
-Markdown should support:
-
-- tables
-- simple textual replacements for bar-chart views where appropriate
-- a single useful textual report where practical
-
-PDF is not part of the committed scope in this RFC. External printing of HTML
-to PDF remains acceptable.
-
 ## Report Content Policy
 
-The report should represent confident capture Statistics rather than dumping
-all internal heuristic categories.
+The report should represent confident capture Statistics rather than dump all
+internal heuristic categories.
 
 Policy:
 
@@ -816,115 +367,97 @@ Policy:
 - `possible_tls` and `possible_quic` are excluded from default HTML/Markdown
   report content
 
-This is report-presentation policy, not an irreversible file-format
-restriction.
-
 ## One Index Migration Rule
 
-This project decision is explicit:
+This project decision remains explicit:
 
-- Stage 2 must not change stable-index serialization
-- Stage 3 must not change stable-index serialization
+- Stage 2 does not change stable-index serialization
+- Stage 3 does not change stable-index serialization
 - Stage 4 performs one deliberate format/layout migration after the
   Statistics and Analysis data requirements have been validated
 
-Stage 4 may consist of multiple reviewable implementation commits, but the
-wire-format contract should be defined once.
+The frozen stable target is now v16, with exact payload topology defined in
+the companion [Index v16 Container RFC](index-v16-container-rfc.md).
 
-Conceptual Stage 4 sub-passes may include:
-
-- define and write new sections
-- read the fast Statistics tier
-- load flow metadata without `PacketRef` arrays
-- add an index-backed `PacketRef` source
-- migrate selected-flow consumers
-- add lazy unrecognized details
-- remove old eager-loading dependencies
-- add tests, docs, and performance validation
-
-None of these are implemented by this RFC.
-
-## Index Version and Compatibility Policy
+## Index Version And Compatibility Policy
 
 Current production remains stable v15.
 
-Expected direction:
+The frozen Stage 4 target is:
 
-- Stage 4 is likely to use one next stable revision / compatibility boundary
-  after v15
+- stable magic remains `PFLIDXV1`
+- `container_format_version` remains `1`
+- `index_revision = 16`
+- rebuild-required behavior across the v15/v16 full-payload boundary is
+  acceptable
+- stable-header inspection remains independent of full payload compatibility
 
-However:
+`kCaptureIndexStableIndexRevision` still does not change in production until
+the migration is actually implemented.
 
-- `kCaptureIndexStableIndexRevision` does not change now
-- current v15 serialization does not change now
-- no production version constant is assigned now
+## Frozen Stage 4 Decisions
 
-Rebuild-required behavior for older indexes is acceptable where needed.
-Stable outer-container principles remain preferred unless later design
-discovers a reason to change them.
+The following design points are now frozen:
 
-## Open Design Decisions
+- top endpoint and top port persisted limits are `20`
+- top flow persisted limit is `10`
+- Protocol Path fast display uses the early registry plus terminal-path
+  aggregate rows keyed by `protocol_path_id`
+- protocol-recognition counters remain raw and setting-independent
+- directional `captured_bytes` is not a new mandatory directional flow field
+- directional maximum packet-size metadata is not added
+- the v16 section-family boundaries and IDs are frozen
+- the `PacketRef` directory uses fixed-size contiguous directional extents
+- unrecognized details use a fixed-size directory plus separate reason blobs
+- the next stable compatibility boundary is v16
+- partial-import/completeness provenance lives in the Statistics snapshot
+- fast Statistics success is explicitly not full-index validity
+- asynchronous partial UI open is not a required Stage 4 deliverable
+- source/index identity metadata remains outside the Statistics snapshot
+- selected-flow Analysis adds no new mandatory directional persisted fields
 
-The following decisions must be resolved before Stage 4:
+## Frozen Stage 4 Implementation Sequence
 
-1. Exact bounded persisted Top-K for endpoints and ports.
-2. Exact canonical persisted Protocol Path display representation that can
-   reproduce all current Statistics modes without scanning flows.
-3. Final persistent representation of protocol-recognition category counters.
-4. Whether directional captured bytes becomes a mandatory directional flow
-   metadata field.
-5. Exact new section-family boundaries and IDs.
-6. Exact `PacketRef` block-directory representation.
-7. Exact lazy unrecognized-detail directory/chunk representation.
-8. Exact next stable revision/schema compatibility boundary.
-9. Whether any Stage 4 asynchronous fast-Statistics UI behavior is included
-   or deliberately deferred.
-10. Where partial-import/completeness provenance is persisted
-    (`CaptureStatisticsSnapshot`, source/session metadata, or another
-    appropriate stable field), unless Stage 4 design proves partial indexes
-    cannot exist.
+The planned reviewable implementation sequence is:
 
-The following are already agreed and therefore not open here:
+1. Stage 4B: snapshot model, serialization helpers, and focused tests
+2. Stage 4C: v16 section constants/topology plus writer and fast Statistics
+   reader
+3. Stage 4D: early Protocol Path registry and display aggregates
+4. Stage 4E: split connection/flow metadata from `PacketRef` detail and add
+   the directory
+5. Stage 4F: lazy `PacketRef` provider plus selected-flow paging and Analysis
+   integration
+6. Stage 4G: unrecognized directory/detail lazy access
+7. Stage 4H: move packet locator fully late/lazy and finish the full-session
+   v16 reader
+8. Stage 4I: CLI stats-only fast path plus session/frontend staged-loading
+   plumbing
 
-- capture time semantics
-- first-observed A/B semantics
-- one packet accumulator plus one flow Statistics pass
-- no repeated index migration during Stages 2 and 3
-- `possible_tls` / `possible_quic` remain persisted/internal for now
-- default reports exclude `possible_tls` / `possible_quic`
+## Required Test Matrix Categories
 
-## Stage 4 Completion Checklist
+Stage 4 implementation must cover at least:
 
-- [ ] current Statistics UI
-- [ ] new Capture Time values
-- [ ] new Capture Metrics
-- [ ] Only A -> B statistic
-- [ ] Service recognized statistic
-- [ ] packet direction distribution
-- [ ] original-byte direction distribution
-- [ ] TCP Flags statistics
-- [ ] captured/original Packet Size Distribution
-- [ ] Flows by Packet Count: flows/captured/original
-- [ ] confirmed/current protocol Statistics
-- [ ] possible TLS/QUIC internal representation
-- [ ] QUIC/TLS Statistics
-- [ ] Top endpoints/ports
-- [ ] Top 10 flows by original bytes
-- [ ] Protocol Path Statistics
-- [ ] CLI Statistics without full index load
-- [ ] lazy selected-flow `PacketRef`
-- [ ] lazy unrecognized details
-- [ ] index-only metadata semantics
-- [ ] future HTML report data
-- [ ] future Markdown report data
+- header inspection across v15/v16 revision boundaries
+- fast Statistics-only reads that stop before metadata/detail tiers
+- malformed snapshot invariant rejection
+- bounded top endpoint/port/top flow ordering and row-count limits
+- protocol-hint projection with `use_possible_tls_quic` both enabled and
+  disabled from fast-tier data alone
+- Protocol Path `Terminal paths`, `Identity tree`, and `Kind overview`
+  derivation from early registry plus terminal aggregates
+- metadata-only flow load without eager global `PacketRef` arrays
+- bounded selected-flow lazy paging across both directions
+- huge single-direction flow persistence using one contiguous extent
+- unrecognized-row lazy pagination and reason lookup
+- partial vs complete Statistics provenance persistence and presentation
+- late packet-locator access remaining independent from fast Statistics reads
 
 ## Review Notes
 
-This RFC intentionally distinguishes:
+This RFC freezes the intended stable v16 layout while preserving the key
+current/target distinction:
 
-- current production v15 behavior
-- target architecture direction
-- unresolved wire/layout decisions
-
-It does not standardize final section IDs, final snapshot field ordering, or
-the exact lazy-detail representation before Stage 4 design review.
+- current production is still stable v15
+- current code does not yet implement the v16 layout
+- this document is the frozen design target for the later migration
