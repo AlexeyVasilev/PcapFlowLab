@@ -14,6 +14,14 @@ namespace pfl {
 [[nodiscard]] FrontendCaptureTimeStatisticsDto build_frontend_capture_time_statistics(
     const CapturePacketStatistics& packet_statistics
 );
+[[nodiscard]] std::optional<std::string> format_frontend_absolute_utc_timestamp(std::uint64_t value_us);
+[[nodiscard]] std::string format_frontend_absolute_utc_timestamp_or_unavailable(
+    const std::optional<std::uint64_t>& timestamp_us
+);
+[[nodiscard]] std::string format_frontend_duration_milliseconds(std::uint64_t duration_us);
+[[nodiscard]] std::string format_frontend_duration_milliseconds_or_unavailable(
+    const std::optional<std::uint64_t>& duration_us
+);
 [[nodiscard]] FrontendCaptureMetricsDto build_frontend_capture_metrics(
     const CapturePacketStatistics& packet_statistics
 );

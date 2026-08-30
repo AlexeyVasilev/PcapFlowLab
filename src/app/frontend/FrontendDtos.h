@@ -719,8 +719,20 @@ struct FrontendAnalysisHistogramRowDto {
 
 struct FrontendAnalysisRatePointDto {
     std::uint64_t relative_time_us {0};
+    double original_data_per_second {0.0};
+    // Compatibility alias for current visible Data/s mode: original bytes/sec.
     double data_per_second {0.0};
     double packets_per_second {0.0};
+};
+
+struct FrontendAnalysisPacketSizeHistogramDimensionRowDto {
+    std::string bucket_label {};
+    std::uint64_t original_count_all {0};
+    std::uint64_t original_count_a_to_b {0};
+    std::uint64_t original_count_b_to_a {0};
+    std::uint64_t captured_count_all {0};
+    std::uint64_t captured_count_a_to_b {0};
+    std::uint64_t captured_count_b_to_a {0};
 };
 
 struct FrontendAnalysisSequenceExportResultDto {
@@ -752,6 +764,12 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string protocol_version_text {};
     std::string protocol_service_text {};
     std::string protocol_fallback_text {};
+    std::optional<std::uint64_t> start_timestamp_us {};
+    std::string start_time_full_utc_text {};
+    std::optional<std::uint64_t> end_timestamp_us {};
+    std::string end_time_full_utc_text {};
+    std::optional<std::uint64_t> duration_us {};
+    std::string duration_text_milliseconds {};
     std::string first_packet_time_text {};
     std::string last_packet_time_text {};
     std::string duration_text {};
@@ -801,6 +819,8 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string unavailable_text {};
     std::string error_text {};
     std::vector<FrontendAnalysisHistogramRowDto> inter_arrival_histogram_rows {};
+    std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto> packet_size_histogram_dimension_rows {};
+    // Compatibility projection for current visible packet-size histogram: original lengths.
     std::vector<FrontendAnalysisHistogramRowDto> packet_size_histogram_rows {};
     std::vector<FrontendAnalysisSequencePreviewRowDto> sequence_preview_rows {};
 };

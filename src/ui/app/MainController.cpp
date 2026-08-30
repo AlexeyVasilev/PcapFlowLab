@@ -2132,7 +2132,8 @@ QVariantList make_analysis_rate_series(const std::vector<FlowAnalysisRatePoint>&
         QVariantMap row {};
         row.insert(QStringLiteral("xUs"), static_cast<qulonglong>(point.relative_time_us));
         row.insert(QStringLiteral("xSeconds"), static_cast<double>(point.relative_time_us) / 1000000.0);
-        row.insert(QStringLiteral("dataPerSecond"), point.data_per_second);
+        row.insert(QStringLiteral("originalDataPerSecond"), point.original_data_per_second);
+        row.insert(QStringLiteral("dataPerSecond"), point.original_data_per_second);
         row.insert(QStringLiteral("packetsPerSecond"), point.packets_per_second);
         rows.push_back(row);
     }
@@ -3268,8 +3269,8 @@ QVariantList MainController::analysisPacketSizeHistogramAll() const {
         return rows;
     }
 
-    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.histogram_all.size()));
-    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.histogram_all) {
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.original.histogram_all.size()));
+    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.original.histogram_all) {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
@@ -3286,8 +3287,8 @@ QVariantList MainController::analysisPacketSizeHistogramAToB() const {
         return rows;
     }
 
-    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.histogram_a_to_b.size()));
-    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.histogram_a_to_b) {
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.original.histogram_a_to_b.size()));
+    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.original.histogram_a_to_b) {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
@@ -3304,8 +3305,8 @@ QVariantList MainController::analysisPacketSizeHistogramBToA() const {
         return rows;
     }
 
-    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.histogram_b_to_a.size()));
-    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.histogram_b_to_a) {
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.original.histogram_b_to_a.size()));
+    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.original.histogram_b_to_a) {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));

@@ -221,6 +221,21 @@ Current shared selected-flow analysis DTOs already cover a substantial slice:
 - sequence preview rows;
 - sequence export API.
 
+Stage 3A extends that shared analysis DTO contract further without yet changing
+the visible desktop controls:
+
+- packet-size histogram data now carries both `original` and `captured`
+  dimensions for `all`, `A->B`, and `B->A`;
+- rate points now carry explicit `original_data_per_second` and
+  `packets_per_second`;
+- analysis timing now carries raw absolute start/end timestamps plus shared
+  frontend-formatted full UTC start/end text and millisecond-precision
+  duration text;
+- temporary compatibility projections remain so current Qt/Tauri Analysis
+  presentation still reads `packet_size_histogram_rows` as `original` and the
+  existing visible `data_per_second` path still means original bytes/sec until
+  the later Stage 3B presentation switch.
+
 Qt still exposes the richer reference workspace. Tauri now consumes a meaningful
 shared selected-flow analysis slice rather than a fake placeholder.
 

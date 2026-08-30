@@ -2071,6 +2071,28 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         return rows_out.str();
     };
 
+    auto packet_size_dimension_rows_json = [](const std::vector<pfl::FrontendAnalysisPacketSizeHistogramDimensionRowDto>& rows) {
+        std::ostringstream rows_out {};
+        rows_out << '[';
+        for (std::size_t index = 0; index < rows.size(); ++index) {
+            if (index != 0U) {
+                rows_out << ',';
+            }
+            const auto& row = rows[index];
+            rows_out << '{'
+                << "\"bucket_label\":" << json_string(row.bucket_label) << ','
+                << "\"original_count_all\":" << row.original_count_all << ','
+                << "\"original_count_a_to_b\":" << row.original_count_a_to_b << ','
+                << "\"original_count_b_to_a\":" << row.original_count_b_to_a << ','
+                << "\"captured_count_all\":" << row.captured_count_all << ','
+                << "\"captured_count_a_to_b\":" << row.captured_count_a_to_b << ','
+                << "\"captured_count_b_to_a\":" << row.captured_count_b_to_a
+                << '}';
+        }
+        rows_out << ']';
+        return rows_out.str();
+    };
+
     auto rate_points_json = [](const std::vector<pfl::FrontendAnalysisRatePointDto>& points) {
         std::ostringstream out {};
         out << '[';
@@ -2081,6 +2103,7 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
             const auto& point = points[index];
             out << '{'
                 << "\"relative_time_us\":" << point.relative_time_us << ','
+                << "\"original_data_per_second\":" << point.original_data_per_second << ','
                 << "\"data_per_second\":" << point.data_per_second << ','
                 << "\"packets_per_second\":" << point.packets_per_second
                 << '}';
@@ -2140,6 +2163,30 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"protocol_version_text\":" << json_string(analysis.protocol_version_text) << ','
         << "\"protocol_service_text\":" << json_string(analysis.protocol_service_text) << ','
         << "\"protocol_fallback_text\":" << json_string(analysis.protocol_fallback_text) << ','
+        << "\"start_timestamp_us\":";
+    if (analysis.start_timestamp_us.has_value()) {
+        out << *analysis.start_timestamp_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"start_time_full_utc_text\":" << json_string(analysis.start_time_full_utc_text) << ','
+        << "\"end_timestamp_us\":";
+    if (analysis.end_timestamp_us.has_value()) {
+        out << *analysis.end_timestamp_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"end_time_full_utc_text\":" << json_string(analysis.end_time_full_utc_text) << ','
+        << "\"duration_us\":";
+    if (analysis.duration_us.has_value()) {
+        out << *analysis.duration_us;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"duration_text_milliseconds\":" << json_string(analysis.duration_text_milliseconds) << ','
         << "\"first_packet_time_text\":" << json_string(analysis.first_packet_time_text) << ','
         << "\"last_packet_time_text\":" << json_string(analysis.last_packet_time_text) << ','
         << "\"duration_text\":" << json_string(analysis.duration_text) << ','
@@ -2189,6 +2236,8 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"unavailable_text\":" << json_string(analysis.unavailable_text) << ','
         << "\"error_text\":" << json_string(analysis.error_text) << ','
         << "\"inter_arrival_histogram_rows\":" << histogram_rows_json(analysis.inter_arrival_histogram_rows) << ','
+        << "\"packet_size_histogram_dimension_rows\":"
+        << packet_size_dimension_rows_json(analysis.packet_size_histogram_dimension_rows) << ','
         << "\"packet_size_histogram_rows\":" << histogram_rows_json(analysis.packet_size_histogram_rows) << ','
         << "\"sequence_preview_rows\":" << sequence_preview_rows_json()
         << '}';

@@ -177,6 +177,8 @@ struct PacketPreviewCandidate {
     FlowDirection direction {FlowDirection::a_to_b};
 };
 
+using PacketSizeBucketCounts = std::array<std::uint64_t, kPacketSizeBuckets.size()>;
+
 const char* flow_direction_text(const FlowDirection direction) noexcept {
     return direction == FlowDirection::a_to_b ? "A->B" : "B->A";
 }
@@ -214,8 +216,8 @@ std::vector<PacketPreviewCandidate> build_time_ordered_packet_refs(const Connect
 }
 
 struct RateWindowAccumulator {
-    std::uint64_t bytes_a_to_b {0};
-    std::uint64_t bytes_b_to_a {0};
+    std::uint64_t original_bytes_a_to_b {0};
+    std::uint64_t original_bytes_b_to_a {0};
     std::uint64_t packets_a_to_b {0};
     std::uint64_t packets_b_to_a {0};
 };
@@ -276,10 +278,10 @@ FlowAnalysisRateGraph build_rate_graph(const std::vector<PacketPreviewCandidate>
 
         auto& window = windows[window_index];
         if (ordered_packet.direction == FlowDirection::a_to_b) {
-            window.bytes_a_to_b += ordered_packet.packet->original_length;
+            window.original_bytes_a_to_b += ordered_packet.packet->original_length;
             window.packets_a_to_b += 1U;
         } else {
-            window.bytes_b_to_a += ordered_packet.packet->original_length;
+            window.original_bytes_b_to_a += ordered_packet.packet->original_length;
             window.packets_b_to_a += 1U;
         }
     }
@@ -298,13 +300,13 @@ FlowAnalysisRateGraph build_rate_graph(const std::vector<PacketPreviewCandidate>
         const auto relative_time_us = static_cast<std::uint64_t>(index) * window_us;
         rate_graph.points_a_to_b.push_back(FlowAnalysisRatePoint {
             .relative_time_us = relative_time_us,
-            .data_per_second = static_cast<double>(window.bytes_a_to_b) / window_seconds,
+            .original_data_per_second = static_cast<double>(window.original_bytes_a_to_b) / window_seconds,
             .packets_per_second = static_cast<double>(window.packets_a_to_b) / window_seconds,
         });
 
         rate_graph.points_b_to_a.push_back(FlowAnalysisRatePoint {
             .relative_time_us = relative_time_us,
-            .data_per_second = static_cast<double>(window.bytes_b_to_a) / window_seconds,
+            .original_data_per_second = static_cast<double>(window.original_bytes_b_to_a) / window_seconds,
             .packets_per_second = static_cast<double>(window.packets_b_to_a) / window_seconds,
         });
     }
@@ -403,9 +405,14 @@ std::size_t inter_arrival_bucket_index(const std::uint64_t delta_us) {
 }
 
 template <typename Flow>
-void accumulate_packet_size_histogram(const Flow& flow, std::array<std::uint64_t, kPacketSizeBuckets.size()>& counts) {
+void accumulate_packet_size_histogram(
+    const Flow& flow,
+    PacketSizeBucketCounts& original_counts,
+    PacketSizeBucketCounts& captured_counts
+) {
     for (const auto& packet : flow.packets) {
-        counts[packet_size_bucket_index(packet.original_length)] += 1U;
+        original_counts[packet_size_bucket_index(packet.original_length)] += 1U;
+        captured_counts[packet_size_bucket_index(packet.captured_length)] += 1U;
     }
 }
 
@@ -459,21 +466,32 @@ void finalize_burst(
 
 template <typename Connection>
 FlowAnalysisPacketSizeHistogramSet build_packet_size_histograms(const Connection& connection) {
-    std::array<std::uint64_t, kPacketSizeBuckets.size()> counts_all {};
-    std::array<std::uint64_t, kPacketSizeBuckets.size()> counts_a_to_b {};
-    std::array<std::uint64_t, kPacketSizeBuckets.size()> counts_b_to_a {};
+    PacketSizeBucketCounts original_counts_all {};
+    PacketSizeBucketCounts original_counts_a_to_b {};
+    PacketSizeBucketCounts original_counts_b_to_a {};
+    PacketSizeBucketCounts captured_counts_all {};
+    PacketSizeBucketCounts captured_counts_a_to_b {};
+    PacketSizeBucketCounts captured_counts_b_to_a {};
 
-    accumulate_packet_size_histogram(connection.flow_a, counts_a_to_b);
-    accumulate_packet_size_histogram(connection.flow_b, counts_b_to_a);
+    accumulate_packet_size_histogram(connection.flow_a, original_counts_a_to_b, captured_counts_a_to_b);
+    accumulate_packet_size_histogram(connection.flow_b, original_counts_b_to_a, captured_counts_b_to_a);
 
     for (std::size_t index = 0; index < kPacketSizeBuckets.size(); ++index) {
-        counts_all[index] = counts_a_to_b[index] + counts_b_to_a[index];
+        original_counts_all[index] = original_counts_a_to_b[index] + original_counts_b_to_a[index];
+        captured_counts_all[index] = captured_counts_a_to_b[index] + captured_counts_b_to_a[index];
     }
 
     return FlowAnalysisPacketSizeHistogramSet {
-        .histogram_all = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, counts_all),
-        .histogram_a_to_b = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, counts_a_to_b),
-        .histogram_b_to_a = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, counts_b_to_a),
+        .original = FlowAnalysisPacketSizeHistogramDimension {
+            .histogram_all = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, original_counts_all),
+            .histogram_a_to_b = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, original_counts_a_to_b),
+            .histogram_b_to_a = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, original_counts_b_to_a),
+        },
+        .captured = FlowAnalysisPacketSizeHistogramDimension {
+            .histogram_all = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, captured_counts_all),
+            .histogram_a_to_b = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, captured_counts_a_to_b),
+            .histogram_b_to_a = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, captured_counts_b_to_a),
+        },
     };
 }
 
@@ -537,6 +555,8 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     result.captured_bytes = connection.aggregate_stats.captured_bytes;
     if (connection.packet_count > 0U
         && connection.aggregate_stats.last_timestamp_us >= connection.aggregate_stats.first_timestamp_us) {
+        result.first_packet_timestamp_us = connection.aggregate_stats.first_timestamp_us;
+        result.last_packet_timestamp_us = connection.aggregate_stats.last_timestamp_us;
         result.duration_us =
             connection.aggregate_stats.last_timestamp_us - connection.aggregate_stats.first_timestamp_us;
         result.first_packet_timestamp_text =
@@ -631,7 +651,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     result.packet_size_histograms = build_packet_size_histograms(connection);
     result.rate_graph = build_rate_graph(ordered_packets);
     result.inter_arrival_histogram_rows = result.inter_arrival_histograms.histogram_all;
-    result.packet_size_histogram_rows = result.packet_size_histograms.histogram_all;
+    result.packet_size_histogram_rows = result.packet_size_histograms.original.histogram_all;
     result.sequence_preview_rows = build_sequence_preview_rows(ordered_packets, &result.sequence_preview_packets);
 
     return result;

@@ -29,10 +29,15 @@ struct FlowAnalysisInterArrivalHistogramRow {
     std::uint64_t packet_count {0};
 };
 
-struct FlowAnalysisPacketSizeHistogramSet {
+struct FlowAnalysisPacketSizeHistogramDimension {
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_all {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_a_to_b {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_b_to_a {};
+};
+
+struct FlowAnalysisPacketSizeHistogramSet {
+    FlowAnalysisPacketSizeHistogramDimension original {};
+    FlowAnalysisPacketSizeHistogramDimension captured {};
 };
 
 struct FlowAnalysisInterArrivalHistogramSet {
@@ -43,7 +48,7 @@ struct FlowAnalysisInterArrivalHistogramSet {
 
 struct FlowAnalysisRatePoint {
     std::uint64_t relative_time_us {0};
-    double data_per_second {0.0};
+    double original_data_per_second {0.0};
     double packets_per_second {0.0};
 };
 
@@ -81,6 +86,9 @@ struct FlowAnalysisResult {
     std::uint32_t max_packet_size_a_to_b_bytes {0};
     std::uint32_t min_packet_size_b_to_a_bytes {0};
     std::uint32_t max_packet_size_b_to_a_bytes {0};
+    std::optional<std::uint64_t> first_packet_timestamp_us {};
+    std::optional<std::uint64_t> last_packet_timestamp_us {};
+    // Compatibility projection for current visible Analysis Start/End fields.
     std::string first_packet_timestamp_text {};
     std::string last_packet_timestamp_text {};
     std::string protocol_hint {};

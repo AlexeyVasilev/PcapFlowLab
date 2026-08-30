@@ -130,7 +130,7 @@ std::string format_display_rate(
     return group_integer_part(trim_trailing_zeros(out.str())) + ' ' + std::string(suffix);
 }
 
-std::optional<std::string> format_absolute_utc_timestamp(const std::uint64_t value_us) {
+std::optional<std::string> format_absolute_utc_timestamp_impl(const std::uint64_t value_us) {
     const auto days = static_cast<std::int64_t>(value_us / kMicrosPerDay);
     const auto time_us = value_us % kMicrosPerDay;
     const auto date = civil_from_days(days);
@@ -164,7 +164,7 @@ std::optional<std::string> format_absolute_utc_timestamp(const std::uint64_t val
     return std::string(buffer, static_cast<std::size_t>(written));
 }
 
-std::string format_duration_text(const std::uint64_t duration_us) {
+std::string format_duration_text_impl(const std::uint64_t duration_us) {
     const auto days = duration_us / kMicrosPerDay;
     const auto remainder_after_days = duration_us % kMicrosPerDay;
     const auto hours = remainder_after_days / kMicrosPerHour;
@@ -186,18 +186,18 @@ std::string format_duration_text(const std::uint64_t duration_us) {
     return out.str();
 }
 
-std::string timestamp_text_or_unavailable(const std::optional<std::uint64_t>& timestamp_us) {
+std::string timestamp_text_or_unavailable_impl(const std::optional<std::uint64_t>& timestamp_us) {
     if (!timestamp_us.has_value()) {
         return std::string {kUnavailableText};
     }
 
-    const auto formatted = format_absolute_utc_timestamp(*timestamp_us);
+    const auto formatted = format_absolute_utc_timestamp_impl(*timestamp_us);
     return formatted.value_or(std::string {kUnavailableText});
 }
 
-std::string duration_text_or_unavailable(const std::optional<std::uint64_t>& duration_us) {
+std::string duration_text_or_unavailable_impl(const std::optional<std::uint64_t>& duration_us) {
     return duration_us.has_value()
-        ? format_duration_text(*duration_us)
+        ? format_duration_text_impl(*duration_us)
         : std::string {kUnavailableText};
 }
 
@@ -381,6 +381,26 @@ FrontendTcpFlagStatisticsRowDto make_tcp_flag_statistics_row(
 
 }  // namespace
 
+std::optional<std::string> format_frontend_absolute_utc_timestamp(const std::uint64_t value_us) {
+    return format_absolute_utc_timestamp_impl(value_us);
+}
+
+std::string format_frontend_absolute_utc_timestamp_or_unavailable(
+    const std::optional<std::uint64_t>& timestamp_us
+) {
+    return timestamp_text_or_unavailable_impl(timestamp_us);
+}
+
+std::string format_frontend_duration_milliseconds(const std::uint64_t duration_us) {
+    return format_duration_text_impl(duration_us);
+}
+
+std::string format_frontend_duration_milliseconds_or_unavailable(
+    const std::optional<std::uint64_t>& duration_us
+) {
+    return duration_text_or_unavailable_impl(duration_us);
+}
+
 FrontendCaptureTimeStatisticsDto build_frontend_capture_time_statistics(
     const CapturePacketStatistics& packet_statistics
 ) {
@@ -402,9 +422,9 @@ FrontendCaptureTimeStatisticsDto build_frontend_capture_time_statistics(
             packet_statistics.timestamp_range.earliest_timestamp_us
         }
         : std::optional<std::uint64_t> {0U};
-    dto.capture_start_text = timestamp_text_or_unavailable(dto.capture_start_timestamp_us);
-    dto.capture_end_text = timestamp_text_or_unavailable(dto.capture_end_timestamp_us);
-    dto.duration_text = duration_text_or_unavailable(dto.duration_us);
+    dto.capture_start_text = format_frontend_absolute_utc_timestamp_or_unavailable(dto.capture_start_timestamp_us);
+    dto.capture_end_text = format_frontend_absolute_utc_timestamp_or_unavailable(dto.capture_end_timestamp_us);
+    dto.duration_text = format_frontend_duration_milliseconds_or_unavailable(dto.duration_us);
     return dto;
 }
 

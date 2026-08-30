@@ -1885,6 +1885,45 @@ std::vector<FrontendAnalysisHistogramRowDto> build_analysis_histogram_rows(
     return rows;
 }
 
+std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto> build_analysis_packet_size_histogram_dimension_rows(
+    const FlowAnalysisPacketSizeHistogramSet& histograms
+) {
+    std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto> rows {};
+    std::map<std::string, std::size_t, std::less<>> row_index_by_bucket {};
+
+    auto ensure_row = [&](const std::string& bucket_label) -> FrontendAnalysisPacketSizeHistogramDimensionRowDto& {
+        const auto existing = row_index_by_bucket.find(bucket_label);
+        if (existing != row_index_by_bucket.end()) {
+            return rows[existing->second];
+        }
+
+        row_index_by_bucket.emplace(bucket_label, rows.size());
+        rows.push_back(FrontendAnalysisPacketSizeHistogramDimensionRowDto {.bucket_label = bucket_label});
+        return rows.back();
+    };
+
+    for (const auto& row : histograms.original.histogram_all) {
+        ensure_row(row.bucket_label).original_count_all = row.packet_count;
+    }
+    for (const auto& row : histograms.original.histogram_a_to_b) {
+        ensure_row(row.bucket_label).original_count_a_to_b = row.packet_count;
+    }
+    for (const auto& row : histograms.original.histogram_b_to_a) {
+        ensure_row(row.bucket_label).original_count_b_to_a = row.packet_count;
+    }
+    for (const auto& row : histograms.captured.histogram_all) {
+        ensure_row(row.bucket_label).captured_count_all = row.packet_count;
+    }
+    for (const auto& row : histograms.captured.histogram_a_to_b) {
+        ensure_row(row.bucket_label).captured_count_a_to_b = row.packet_count;
+    }
+    for (const auto& row : histograms.captured.histogram_b_to_a) {
+        ensure_row(row.bucket_label).captured_count_b_to_a = row.packet_count;
+    }
+
+    return rows;
+}
+
 std::string group_integer_part(std::string text) {
     const auto decimal_index = text.find('.');
     const auto fraction = decimal_index == std::string::npos ? std::string {} : text.substr(decimal_index);
@@ -3687,6 +3726,18 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         result.protocol_service_text = !row->service_hint.empty() ? row->service_hint : "unknown";
     }
     result.protocol_fallback_text = analysis->protocol_panel_fallback_text;
+    result.start_timestamp_us = analysis->first_packet_timestamp_us;
+    result.start_time_full_utc_text =
+        format_frontend_absolute_utc_timestamp_or_unavailable(result.start_timestamp_us);
+    result.end_timestamp_us = analysis->last_packet_timestamp_us;
+    result.end_time_full_utc_text =
+        format_frontend_absolute_utc_timestamp_or_unavailable(result.end_timestamp_us);
+    if (result.start_timestamp_us.has_value() && result.end_timestamp_us.has_value()) {
+        result.duration_us = analysis->duration_us;
+        result.duration_text_milliseconds = format_frontend_duration_milliseconds(analysis->duration_us);
+    } else {
+        result.duration_text_milliseconds = format_frontend_duration_milliseconds_or_unavailable(std::nullopt);
+    }
     result.first_packet_time_text = analysis->first_packet_timestamp_text;
     result.last_packet_time_text = analysis->last_packet_timestamp_text;
     result.duration_text = format_duration_us(analysis->duration_us);
@@ -3748,7 +3799,8 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     for (const auto& point : analysis->rate_graph.points_a_to_b) {
         result.rate_graph_points_a_to_b.push_back(FrontendAnalysisRatePointDto {
             .relative_time_us = point.relative_time_us,
-            .data_per_second = point.data_per_second,
+            .original_data_per_second = point.original_data_per_second,
+            .data_per_second = point.original_data_per_second,
             .packets_per_second = point.packets_per_second,
         });
     }
@@ -3756,7 +3808,8 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     for (const auto& point : analysis->rate_graph.points_b_to_a) {
         result.rate_graph_points_b_to_a.push_back(FrontendAnalysisRatePointDto {
             .relative_time_us = point.relative_time_us,
-            .data_per_second = point.data_per_second,
+            .original_data_per_second = point.original_data_per_second,
+            .data_per_second = point.original_data_per_second,
             .packets_per_second = point.packets_per_second,
         });
     }
@@ -3765,10 +3818,12 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         analysis->inter_arrival_histograms.histogram_a_to_b,
         analysis->inter_arrival_histograms.histogram_b_to_a
     );
+    result.packet_size_histogram_dimension_rows =
+        build_analysis_packet_size_histogram_dimension_rows(analysis->packet_size_histograms);
     result.packet_size_histogram_rows = build_analysis_histogram_rows(
-        analysis->packet_size_histograms.histogram_all,
-        analysis->packet_size_histograms.histogram_a_to_b,
-        analysis->packet_size_histograms.histogram_b_to_a
+        analysis->packet_size_histograms.original.histogram_all,
+        analysis->packet_size_histograms.original.histogram_a_to_b,
+        analysis->packet_size_histograms.original.histogram_b_to_a
     );
     result.sequence_preview_rows.reserve(analysis->sequence_preview_rows.size());
     for (const auto& row_preview : analysis->sequence_preview_rows) {
@@ -3860,9 +3915,9 @@ FrontendFlowInfoDto FrontendSessionAdapter::get_flow_info(const std::size_t flow
     result.packet_direction_text = analysis->packet_direction_text;
     result.data_direction_text = analysis->data_direction_text;
     result.packet_size_histogram_rows = build_analysis_histogram_rows(
-        analysis->packet_size_histograms.histogram_all,
-        analysis->packet_size_histograms.histogram_a_to_b,
-        analysis->packet_size_histograms.histogram_b_to_a
+        analysis->packet_size_histograms.original.histogram_all,
+        analysis->packet_size_histograms.original.histogram_a_to_b,
+        analysis->packet_size_histograms.original.histogram_b_to_a
     );
     return result;
 }
