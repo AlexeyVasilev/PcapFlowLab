@@ -16,6 +16,7 @@ class TopSummaryListModel final : public QAbstractListModel {
 public:
     enum Role {
         ItemRole = Qt::UserRole + 1,
+        FlowsRole,
         PacketsRole,
         BytesRole,
     };
@@ -33,6 +34,7 @@ public:
 private:
     struct Item {
         QString label {};
+        qulonglong flows {0};
         qulonglong packets {0};
         qulonglong bytes {0};
     };

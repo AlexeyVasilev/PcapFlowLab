@@ -1458,6 +1458,9 @@ ApplicationWindow {
                 tlsVersion12: mainController.tlsVersion12
                 tlsVersion13: mainController.tlsVersion13
                 tlsVersionUnknown: mainController.tlsVersionUnknown
+                topFlowSectionState: mainController.topFlowSectionState
+                topFlowSectionStatusText: mainController.topFlowSectionStatusText
+                topFlowRows: mainController.topFlowRows
                 topEndpointPortSectionState: mainController.topEndpointPortSectionState
                 topEndpointPortSectionStatusText: mainController.topEndpointPortSectionStatusText
                 topEndpointsModel: mainController.topEndpointsModel

@@ -55,6 +55,7 @@ public:
         protocol_path,
         protocol_hints,
         quic_tls,
+        top_flows,
         top_endpoints_ports,
     };
     Q_ENUM(StatisticsOptionalSection)
@@ -306,6 +307,9 @@ private:
     Q_PROPERTY(qulonglong tlsVersion12 READ tlsVersion12 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersion13 READ tlsVersion13 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersionUnknown READ tlsVersionUnknown NOTIFY stateChanged)
+    Q_PROPERTY(int topFlowSectionState READ topFlowSectionState NOTIFY stateChanged)
+    Q_PROPERTY(QString topFlowSectionStatusText READ topFlowSectionStatusText NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList topFlowRows READ topFlowRows NOTIFY stateChanged)
     Q_PROPERTY(int topEndpointPortSectionState READ topEndpointPortSectionState NOTIFY stateChanged)
     Q_PROPERTY(QString topEndpointPortSectionStatusText READ topEndpointPortSectionStatusText NOTIFY stateChanged)
     Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
@@ -589,6 +593,9 @@ public:
     [[nodiscard]] qulonglong tlsVersion12() const noexcept;
     [[nodiscard]] qulonglong tlsVersion13() const noexcept;
     [[nodiscard]] qulonglong tlsVersionUnknown() const noexcept;
+    [[nodiscard]] int topFlowSectionState() const noexcept;
+    [[nodiscard]] QString topFlowSectionStatusText() const;
+    [[nodiscard]] QVariantList topFlowRows() const;
     [[nodiscard]] int topEndpointPortSectionState() const noexcept;
     [[nodiscard]] QString topEndpointPortSectionStatusText() const;
     [[nodiscard]] int statisticsMode() const noexcept;
@@ -814,7 +821,9 @@ private:
     void ensureProtocolHintsLoaded();
     void ensureProtocolPathSectionLoaded();
     void ensureQuicTlsSectionLoaded();
+    void ensureTopFlowsSectionLoaded();
     void ensureTopEndpointsAndPortsSectionLoaded();
+    void ensureTopStatisticsLoaded();
     void resetStatisticsSectionState(bool emitResetToken);
     void setStatisticsSectionState(StatisticsOptionalSection section, StatisticsSectionRequestState state, QString errorText = {});
     [[nodiscard]] QString statisticsSectionStatusText(StatisticsOptionalSection section) const;
@@ -937,6 +946,7 @@ private:
     CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};
+    QVariantList top_flow_rows_ {};
     FlowListModel flow_model_ {};
     session_detail::AdvancedFlowFilterDocumentState advanced_flow_filter_document_state_ {};
     AdvancedFlowFilterEditorModel advanced_flow_filter_editor_model_;
@@ -961,6 +971,7 @@ private:
     QString protocol_hints_error_text_ {};
     QString protocol_path_error_text_ {};
     QString quic_tls_error_text_ {};
+    QString top_flows_error_text_ {};
     QString top_endpoints_ports_error_text_ {};
     AnalysisSettings pending_analysis_settings_ {};
     bool validate_selected_packet_checksums_ {false};
@@ -983,6 +994,7 @@ private:
     bool protocol_path_section_expanded_ {false};
     bool protocol_hints_section_expanded_ {false};
     bool quic_tls_section_expanded_ {false};
+    bool top_flows_section_expanded_ {false};
     bool top_endpoints_ports_section_expanded_ {false};
     bool has_active_protocol_path_filter_ {false};
     ProtocolPathStatisticsMode active_protocol_path_filter_mode_ {ProtocolPathStatisticsMode::kind_overview};
@@ -1013,6 +1025,7 @@ private:
     StatisticsSectionRequestState protocol_hints_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState protocol_path_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState quic_tls_section_state_ {StatisticsSectionRequestState::not_requested};
+    StatisticsSectionRequestState top_flows_section_state_ {StatisticsSectionRequestState::not_requested};
     StatisticsSectionRequestState top_endpoints_ports_section_state_ {StatisticsSectionRequestState::not_requested};
     bool analysis_sequence_export_in_progress_ {false};
     bool flow_info_csv_export_in_progress_ {false};

@@ -192,6 +192,7 @@ That pass should be capable of producing:
 - QUIC/TLS recognition and version statistics
 - bounded top endpoints
 - bounded top ports
+- fixed top 10 flows by original bytes
 - Protocol Path display statistics, subject to the Protocol Path design
   decision below
 
@@ -496,6 +497,7 @@ Design coverage must include:
 - QUIC/TLS statistics
 - bounded top endpoints
 - bounded top ports
+- fixed top 10 flows by original bytes
 - Protocol Path display statistics
 
 Do not store presentation strings in this snapshot.
@@ -545,20 +547,47 @@ Target principle:
   authoritative Statistics rather than silently present contradictory snapshot
   values.
 
-## Top Endpoints and Ports
+## Top Endpoints, Ports, and Flows
 
 Current UI semantics are bounded Top-N, currently effectively Top 5.
 
 Preferred direction:
 
 - persist a bounded Top-K larger than the default visible UI set
+- persist endpoint rows with endpoint identity/presentation source, `flow_count`,
+  `packet_count`, and `original_bytes`
+- persist port rows with port, `flow_count`, `packet_count`, and
+  `original_bytes`
+- persist a fixed `Top 10 Flows by Original Bytes` slice with enough raw data
+  to reproduce:
+  - flow identity/reference
+  - Endpoint A
+  - Endpoint B
+  - Protocol
+  - Detected Protocol
+  - Service
+  - compact Protocol Path
+  - Packets
+  - Captured bytes
+  - Original bytes
 
 This allows UI and reporting to show a useful shortlist without full
 flow-metadata loading.
 
+For top flows, prefer stable/raw snapshot fields rather than redundant display
+strings where current shared presentation can derive them. In particular:
+
+- stable flow identity/reference rather than UI row position alone
+- protocol identity / hint rather than localized detected text
+- `protocol_path_id` plus the future early Protocol Path registry/presentation
+  data rather than duplicating compact path strings everywhere
+
 The exact `K` remains an open design decision to resolve before Stage 4.
 Unlimited endpoint or port aggregation is not part of the fast Statistics
 tier without a demonstrated requirement.
+
+The `Top 10 Flows by Original Bytes` requirement is now part of the current
+product direction rather than an open-ended UI convenience.
 
 ## Protocol Path Statistics
 
@@ -880,6 +909,7 @@ The following are already agreed and therefore not open here:
 - [ ] possible TLS/QUIC internal representation
 - [ ] QUIC/TLS Statistics
 - [ ] Top endpoints/ports
+- [ ] Top 10 flows by original bytes
 - [ ] Protocol Path Statistics
 - [ ] CLI Statistics without full index load
 - [ ] lazy selected-flow `PacketRef`

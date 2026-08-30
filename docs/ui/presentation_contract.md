@@ -435,6 +435,7 @@ The current optional independently collapsible/lazy statistics sections are:
 - `Direction Distribution`
 - `TCP Flags`
 - `QUIC and TLS`
+- `Top Flows by Original Bytes`
 - `Top Endpoints and Ports`
 
 These sections are based on whole-capture/session statistics, not selected-flow
@@ -473,6 +474,67 @@ Shared semantics include:
 - `SYN` includes `SYN+ACK`;
 - one packet may contribute to more than one row when multiple flags are set;
 - zero TCP packets must render stable zero percentages rather than `NaN`/`Inf`.
+
+`Top Flows by Original Bytes` is one collapsible whole-capture section
+containing at most ten rows ranked by:
+
+- original bytes descending;
+- packet count descending;
+- canonical flow index ascending for deterministic ties.
+
+Each row shows:
+
+- `Flow`
+- `Endpoint A`
+- `Endpoint B`
+- `Protocol`
+- `Detected Protocol`
+- `Service`
+- `Protocol Path`
+- `Packets`
+- `Captured`
+- `Original`
+
+Shared semantics include:
+
+- `Flow` uses the same user-visible one-based numbering convention as the
+  normal Flows list while remaining anchored to the same canonical flow index;
+- `Endpoint A` / `Endpoint B` preserve first-observed orientation semantics;
+- `Protocol` uses the same canonical transport/protocol presentation as the
+  normal Flows list;
+- `Detected Protocol` reuses the same effective possible-TLS/QUIC projection
+  policy as the normal Flows list rather than owning an independent top-flow
+  heuristic;
+- `Service` uses the stored canonical service hint and renders a neutral `—`
+  marker when empty;
+- `Protocol Path` reuses the shared compact Protocol Path presentation for the
+  stored `protocol_path_id`;
+- `Packets`, `Captured`, and `Original` are metadata-backed connection totals;
+- ranking is by `Original`, not by `Captured`.
+
+`Top Endpoints and Ports` is one collapsible whole-capture section containing
+two bounded tables:
+
+- `Top Endpoints`
+- `Top Ports`
+
+Each table currently shows:
+
+- identity column (`Endpoint` or `Port`)
+- `Flows`
+- `Packets`
+- `Original Bytes`
+
+Shared semantics include:
+
+- both tables rank by original bytes descending, then packet count descending,
+  then deterministic identity ascending;
+- endpoint rows count distinct canonical flows involving that endpoint;
+- port rows count distinct canonical flows involving each non-zero port number;
+- a canonical flow contributes once per distinct non-zero port number, so a
+  `4500 -> 4500` flow counts once for port `4500`, not twice;
+- the section continues to share one metadata-backed top-statistics source with
+  the top-flow section rather than triggering separate whole-flow traversals.
 
 Shared semantics include:
 

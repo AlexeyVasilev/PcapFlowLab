@@ -3812,6 +3812,7 @@ int main(int argc, char* argv[]) {
     const int protocol_path_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_path);
     const int protocol_hints_section = static_cast<int>(MainController::StatisticsOptionalSection::protocol_hints);
     const int quic_tls_section = static_cast<int>(MainController::StatisticsOptionalSection::quic_tls);
+    const int top_flows_section = static_cast<int>(MainController::StatisticsOptionalSection::top_flows);
     const int top_endpoints_ports_section = static_cast<int>(MainController::StatisticsOptionalSection::top_endpoints_ports);
     const int section_not_requested = static_cast<int>(MainController::StatisticsSectionRequestState::not_requested);
     const int section_ready = static_cast<int>(MainController::StatisticsSectionRequestState::ready);
@@ -3850,6 +3851,7 @@ int main(int argc, char* argv[]) {
         UI_REQUIRE(protocol_path_export_button != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "protocolHintStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "quicTlsStatisticsToggleButton") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "topFlowStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "topEndpointPortStatisticsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "captureMetricsToggleButton") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "flowCharacteristicsToggleButton") != nullptr);
@@ -3902,6 +3904,7 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("protocolPathExpanded", true);
         statistics_pane.object->setProperty("protocolHintsExpanded", true);
         statistics_pane.object->setProperty("quicTlsExpanded", true);
+        statistics_pane.object->setProperty("topFlowsExpanded", true);
         statistics_pane.object->setProperty("topEndpointsPortsExpanded", true);
         statistics_pane.object->setProperty("statisticsSectionsResetToken", 1);
         UI_EXPECT(!statistics_pane.object->property("captureMetricsExpanded").toBool());
@@ -3915,10 +3918,12 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!statistics_pane.object->property("protocolPathExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("protocolHintsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("quicTlsExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("topFlowsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("topEndpointsPortsExpanded").toBool());
         UI_EXPECT(!protocol_path_export_button->property("enabled").toBool());
 
         statistics_pane.object->setProperty("hasCapture", true);
+        statistics_pane.object->setProperty("flowCount", 58);
         statistics_pane.object->setProperty("statisticsPartialOpenWarningText",
             QStringLiteral("Statistics cover successfully imported packets only; the capture was opened partially."));
         statistics_pane.object->setProperty("captureTimeStatistics", QVariantMap {
@@ -4005,6 +4010,34 @@ int main(int argc, char* argv[]) {
             }},
         });
         statistics_pane.object->setProperty("protocolPathSectionState", section_ready);
+        statistics_pane.object->setProperty("topFlowSectionState", section_ready);
+        statistics_pane.object->setProperty("topFlowsExpanded", true);
+        statistics_pane.object->setProperty("topFlowRows", QVariantList {
+            QVariantMap {
+                {QStringLiteral("flowIndexText"), QStringLiteral("1")},
+                {QStringLiteral("endpointA"), QStringLiteral("192.0.2.10 : 41000")},
+                {QStringLiteral("endpointB"), QStringLiteral("198.51.100.10 : 443")},
+                {QStringLiteral("protocolText"), QStringLiteral("TCP")},
+                {QStringLiteral("detectedProtocolText"), QStringLiteral("TLS")},
+                {QStringLiteral("serviceText"), QStringLiteral("bulk-download.example.test")},
+                {QStringLiteral("protocolPathCompactText"), QStringLiteral("EII|Ip4|TCP")},
+                {QStringLiteral("packetCountText"), QStringLiteral("2")},
+                {QStringLiteral("capturedBytesText"), QStringLiteral("84 B")},
+                {QStringLiteral("originalBytesText"), QStringLiteral("200 B")},
+            },
+            QVariantMap {
+                {QStringLiteral("flowIndexText"), QStringLiteral("2")},
+                {QStringLiteral("endpointA"), QStringLiteral("[2001:db8::10] : 42000")},
+                {QStringLiteral("endpointB"), QStringLiteral("[2001:db8::20] : 9000")},
+                {QStringLiteral("protocolText"), QStringLiteral("UDP")},
+                {QStringLiteral("detectedProtocolText"), QStringLiteral("QUIC")},
+                {QStringLiteral("serviceText"), QStringLiteral("quic.example")},
+                {QStringLiteral("protocolPathCompactText"), QStringLiteral("EII|Ip6|UDP")},
+                {QStringLiteral("packetCountText"), QStringLiteral("3")},
+                {QStringLiteral("capturedBytesText"), QStringLiteral("210 B")},
+                {QStringLiteral("originalBytesText"), QStringLiteral("210 B")},
+            },
+        });
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         statistics_pane.object->setProperty("unrecognizedStatsCapturedBytes", 2048);
         statistics_pane.object->setProperty("unrecognizedStatsOriginalBytes", 3072);
@@ -4040,6 +4073,29 @@ int main(int argc, char* argv[]) {
             == QStringLiteral("0 (0%)"));
         UI_EXPECT(named_object(statistics_pane.object.get(), "dataDirectionDistributionHelpText")->property("text").toString()
             == QStringLiteral("Flows grouped by directional original-byte balance."));
+        UI_REQUIRE(wait_until(app, [&]() {
+            return named_object(statistics_pane.object.get(), "topFlowTableFlickable") != nullptr
+                && named_object(statistics_pane.object.get(), "topFlowTableContent") != nullptr
+                && named_object(statistics_pane.object.get(), "topFlowTableHeader") != nullptr
+                && named_object(statistics_pane.object.get(), "topFlowRowsRepeater") != nullptr;
+        }));
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "topFlowsSection") != nullptr);
+        UI_EXPECT(item_visible(statistics_pane.object.get(), "topFlowsSection"));
+        UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "topFlowsSection"))
+            ->property("expanded").toBool());
+        auto* top_flow_table_flickable =
+            qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "topFlowTableFlickable"));
+        auto* top_flow_table_content =
+            qobject_cast<QQuickItem*>(named_object(statistics_pane.object.get(), "topFlowTableContent"));
+        auto* top_flow_rows_repeater = named_object(statistics_pane.object.get(), "topFlowRowsRepeater");
+        UI_REQUIRE(top_flow_table_flickable != nullptr);
+        UI_REQUIRE(top_flow_table_content != nullptr);
+        UI_REQUIRE(top_flow_rows_repeater != nullptr);
+        UI_EXPECT(top_flow_rows_repeater->property("count").toInt() == 2);
+        UI_EXPECT(top_flow_table_flickable->height() > 0.0);
+        UI_EXPECT(top_flow_table_flickable->property("contentWidth").toReal() > 0.0);
+        UI_EXPECT(top_flow_table_flickable->property("contentHeight").toReal() > 0.0);
+        UI_EXPECT(top_flow_table_content->property("implicitHeight").toReal() > 0.0);
         UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "captureMetricsSection"))
             ->property("expanded").toBool());
         UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "flowCharacteristicsSection"))
@@ -4392,16 +4448,22 @@ int main(int argc, char* argv[]) {
         auto* top_ports_model = qobject_cast<TopSummaryListModel*>(top_talkers_controller.topPortsModel());
         UI_REQUIRE(top_endpoints_model != nullptr);
         UI_REQUIRE(top_ports_model != nullptr);
+        UI_EXPECT(top_talkers_controller.topFlowSectionState() == section_not_requested);
         UI_EXPECT(top_talkers_controller.topEndpointPortSectionState() == section_not_requested);
         UI_EXPECT(top_endpoints_model->rowCount() == 0);
         UI_EXPECT(top_ports_model->rowCount() == 0);
+        top_talkers_controller.setStatisticsSectionExpanded(top_flows_section, true);
+        UI_EXPECT(top_talkers_controller.topFlowSectionState() == section_ready);
+        UI_EXPECT(!top_talkers_controller.topFlowRows().isEmpty());
         top_talkers_controller.setStatisticsSectionExpanded(top_endpoints_ports_section, true);
         UI_EXPECT(top_talkers_controller.topEndpointPortSectionState() == section_ready);
         UI_EXPECT(top_endpoints_model->rowCount() > 0);
         UI_EXPECT(top_ports_model->rowCount() > 0);
 
         UI_EXPECT(open_capture_and_wait(app, top_talkers_controller, protocol_path_capture_path));
+        UI_EXPECT(top_talkers_controller.topFlowSectionState() == section_not_requested);
         UI_EXPECT(top_talkers_controller.topEndpointPortSectionState() == section_not_requested);
+        UI_EXPECT(top_talkers_controller.topFlowRows().isEmpty());
         UI_EXPECT(top_endpoints_model->rowCount() == 0);
         UI_EXPECT(top_ports_model->rowCount() == 0);
     });

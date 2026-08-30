@@ -213,14 +213,40 @@ struct FrontendOverviewProtocolSummaryDto {
 
 struct FrontendTopEndpointDto {
     std::string endpoint_label {};
+    std::uint64_t flow_count {0};
+    std::string flow_count_text {};
     std::uint64_t packet_count {0};
+    std::string packet_count_text {};
     std::uint64_t total_bytes {0};
+    std::string total_bytes_text {};
 };
 
 struct FrontendTopPortDto {
     std::uint16_t port {0};
+    std::uint64_t flow_count {0};
+    std::string flow_count_text {};
     std::uint64_t packet_count {0};
+    std::string packet_count_text {};
     std::uint64_t total_bytes {0};
+    std::string total_bytes_text {};
+};
+
+struct FrontendTopFlowDto {
+    std::size_t flow_index {0};
+    std::string flow_index_text {};
+    std::string endpoint_a {};
+    std::string endpoint_b {};
+    std::string protocol_text {};
+    std::string detected_protocol_text {};
+    std::string service_text {};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    std::string protocol_path_compact_text {};
+    std::uint64_t packet_count {0};
+    std::string packet_count_text {};
+    std::uint64_t captured_bytes {0};
+    std::string captured_bytes_text {};
+    std::uint64_t original_bytes {0};
+    std::string original_bytes_text {};
 };
 
 struct FrontendFlowPacketCountHistogramBucketDto {
@@ -303,6 +329,7 @@ struct FrontendTopEndpointPortStatisticsDto {
     std::size_t limit {0};
     std::vector<FrontendTopEndpointDto> top_endpoints {};
     std::vector<FrontendTopPortDto> top_ports {};
+    std::vector<FrontendTopFlowDto> top_flows {};
 };
 
 struct FrontendProtocolPathStatsDto {

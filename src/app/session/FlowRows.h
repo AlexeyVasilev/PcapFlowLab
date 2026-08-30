@@ -10,6 +10,7 @@
 
 #include "core/domain/DnsInspection.h"
 #include "core/domain/Direction.h"
+#include "core/domain/FlowHints.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/ProtocolPath.h"
@@ -25,6 +26,7 @@ enum class FlowAddressFamily : std::uint8_t {
 };
 
 using FlowConnectionKey = std::variant<ConnectionKeyV4, ConnectionKeyV6>;
+using FlowEndpointIdentity = std::variant<EndpointKeyV4, EndpointKeyV6>;
 
 struct ProtocolPathBadgeRow {
     std::string short_label {};
@@ -242,13 +244,30 @@ struct CaptureProtocolSummary {
 
 struct TopEndpointRow {
     std::string endpoint {};
+    std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
 };
 
 struct TopPortRow {
     std::uint16_t port {0};
+    std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct TopFlowRow {
+    std::size_t flow_index {0};
+    FlowAddressFamily family {FlowAddressFamily::ipv4};
+    FlowConnectionKey key {ConnectionKeyV4 {}};
+    FlowEndpointIdentity endpoint_a_key {EndpointKeyV4 {}};
+    FlowEndpointIdentity endpoint_b_key {EndpointKeyV4 {}};
+    ProtocolId protocol {ProtocolId::unknown};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 
@@ -289,6 +308,7 @@ inline constexpr std::uint64_t kInvalidProtocolPathStatisticsNodeId = 0U;
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
+    std::vector<TopFlowRow> flows_by_original_bytes {};
 };
 
 struct FlowPacketCountHistogramBucket {

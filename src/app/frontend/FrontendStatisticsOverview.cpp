@@ -10,6 +10,8 @@
 #include <sstream>
 #include <string_view>
 
+#include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SessionFormatting.h"
 #include "app/session/SessionFlowHelpers.h"
 
 namespace pfl {
@@ -199,6 +201,32 @@ std::string duration_text_or_unavailable(const std::optional<std::uint64_t>& dur
         : std::string {kUnavailableText};
 }
 
+std::string format_top_flow_endpoint_text(const FlowEndpointIdentity& endpoint) {
+    return std::visit([](const auto& value) {
+        return session_detail::format_endpoint(value);
+    }, endpoint);
+}
+
+std::string top_flow_detected_protocol_text(
+    const TopFlowRow& row,
+    const AnalysisSettings& settings
+) {
+    const auto first_port = std::visit([](const auto& value) { return value.port; }, row.endpoint_a_key);
+    const auto second_port = std::visit([](const auto& value) { return value.port; }, row.endpoint_b_key);
+    const auto hint = session_detail::effective_protocol_hint(
+        row.protocol_hint,
+        row.protocol,
+        first_port,
+        second_port,
+        settings
+    );
+    if (hint == FlowProtocolHint::unknown) {
+        return {};
+    }
+
+    return session_detail::format_flow_protocol_hint_display(flow_protocol_hint_text(hint));
+}
+
 std::string optional_size_text(const std::optional<double>& value) {
     return value.has_value() ? format_display_size(*value) : std::string {kUnavailableText};
 }
@@ -243,6 +271,79 @@ double safe_fraction(const std::uint64_t part, const std::uint64_t total) noexce
 
     return clamp_unit_fraction(static_cast<double>(part) / static_cast<double>(total));
 }
+
+}  // namespace
+
+std::vector<FrontendTopEndpointDto> build_frontend_top_endpoints(const CaptureTopSummary& summary) {
+    std::vector<FrontendTopEndpointDto> rows {};
+    rows.reserve(summary.endpoints_by_bytes.size());
+
+    for (const auto& endpoint : summary.endpoints_by_bytes) {
+        rows.push_back(FrontendTopEndpointDto {
+            .endpoint_label = endpoint.endpoint,
+            .flow_count = endpoint.flow_count,
+            .flow_count_text = session_detail::format_statistics_count_value(endpoint.flow_count),
+            .packet_count = endpoint.packet_count,
+            .packet_count_text = session_detail::format_statistics_count_value(endpoint.packet_count),
+            .total_bytes = endpoint.total_bytes,
+            .total_bytes_text = session_detail::format_statistics_compact_size_value(endpoint.total_bytes),
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FrontendTopPortDto> build_frontend_top_ports(const CaptureTopSummary& summary) {
+    std::vector<FrontendTopPortDto> rows {};
+    rows.reserve(summary.ports_by_bytes.size());
+
+    for (const auto& port : summary.ports_by_bytes) {
+        rows.push_back(FrontendTopPortDto {
+            .port = port.port,
+            .flow_count = port.flow_count,
+            .flow_count_text = session_detail::format_statistics_count_value(port.flow_count),
+            .packet_count = port.packet_count,
+            .packet_count_text = session_detail::format_statistics_count_value(port.packet_count),
+            .total_bytes = port.total_bytes,
+            .total_bytes_text = session_detail::format_statistics_compact_size_value(port.total_bytes),
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FrontendTopFlowDto> build_frontend_top_flows(
+    const std::span<const TopFlowRow> rows,
+    const ProtocolPathRegistry& registry,
+    const AnalysisSettings& settings
+) {
+    std::vector<FrontendTopFlowDto> top_flows {};
+    top_flows.reserve(rows.size());
+
+    for (const auto& row : rows) {
+        top_flows.push_back(FrontendTopFlowDto {
+            .flow_index = row.flow_index,
+            .flow_index_text = std::to_string(row.flow_index + 1U),
+            .endpoint_a = format_top_flow_endpoint_text(row.endpoint_a_key),
+            .endpoint_b = format_top_flow_endpoint_text(row.endpoint_b_key),
+            .protocol_text = session_detail::format_flow_protocol_text(row.protocol),
+            .detected_protocol_text = top_flow_detected_protocol_text(row, settings),
+            .service_text = row.service_hint.empty() ? std::string {kUnavailableText} : row.service_hint,
+            .protocol_path_id = row.protocol_path_id,
+            .protocol_path_compact_text = session_detail::protocol_path_compact_text(registry, row.protocol_path_id),
+            .packet_count = row.packet_count,
+            .packet_count_text = session_detail::format_statistics_count_value(row.packet_count),
+            .captured_bytes = row.captured_bytes,
+            .captured_bytes_text = session_detail::format_statistics_compact_size_value(row.captured_bytes),
+            .original_bytes = row.total_bytes,
+            .original_bytes_text = session_detail::format_statistics_compact_size_value(row.total_bytes),
+        });
+    }
+
+    return top_flows;
+}
+
+namespace {
 
 FrontendDirectionDistributionRowDto make_direction_distribution_row(
     const std::string_view stable_id,

@@ -150,6 +150,7 @@ CaptureTopSummary slice_top_summary(const CaptureTopSummary& summary, const std:
         summary.ports_by_bytes.begin(),
         summary.ports_by_bytes.begin() + static_cast<std::ptrdiff_t>(std::min(limit, summary.ports_by_bytes.size()))
     );
+    projected.flows_by_original_bytes = summary.flows_by_original_bytes;
     return projected;
 }
 

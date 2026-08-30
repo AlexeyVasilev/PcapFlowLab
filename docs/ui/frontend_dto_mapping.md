@@ -196,7 +196,10 @@ Current shared statistics coverage includes:
 - protocol-hint statistics;
 - Protocol Path statistics;
 - QUIC/TLS statistics;
-- top endpoints and ports.
+- top endpoints and ports with shared flow-count, packet-count, and original-
+  byte presentation values;
+- top-flow rows with shared flow numbering, endpoint/protocol/detected/service
+  text, compact Protocol Path text, and packet/captured/original totals.
 
 Qt and Tauri still differ in layout and local drill-down interaction, but the
 main data model is already shared.

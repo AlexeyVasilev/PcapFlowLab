@@ -1,10 +1,13 @@
 #pragma once
 
+#include <span>
 #include <string>
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/FlowRows.h"
+#include "core/domain/ProtocolPath.h"
 #include "core/domain/CapturePacketSizeStatistics.h"
+#include "core/services/AnalysisSettings.h"
 
 namespace pfl {
 
@@ -28,6 +31,17 @@ namespace pfl {
 [[nodiscard]] FrontendTcpFlagStatisticsDto build_frontend_tcp_flag_statistics(
     const CaptureTcpFlagStatistics& statistics,
     std::uint64_t total_tcp_packet_count
+);
+[[nodiscard]] std::vector<FrontendTopEndpointDto> build_frontend_top_endpoints(
+    const CaptureTopSummary& summary
+);
+[[nodiscard]] std::vector<FrontendTopPortDto> build_frontend_top_ports(
+    const CaptureTopSummary& summary
+);
+[[nodiscard]] std::vector<FrontendTopFlowDto> build_frontend_top_flows(
+    std::span<const TopFlowRow> rows,
+    const ProtocolPathRegistry& registry,
+    const AnalysisSettings& settings
 );
 [[nodiscard]] std::string build_frontend_statistics_partial_open_warning_text(bool partial_open);
 

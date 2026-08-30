@@ -631,6 +631,35 @@ QVariantList build_flow_packet_histogram_rows(const FlowPacketCountHistogram& hi
     return rows;
 }
 
+QVariantList build_top_flow_rows(
+    const std::vector<FrontendTopFlowDto>& top_flows
+) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(top_flows.size()));
+
+    for (const auto& row : top_flows) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("flowIndex"), static_cast<qulonglong>(row.flow_index));
+        item.insert(QStringLiteral("flowIndexText"), QString::fromStdString(row.flow_index_text));
+        item.insert(QStringLiteral("endpointA"), QString::fromStdString(row.endpoint_a));
+        item.insert(QStringLiteral("endpointB"), QString::fromStdString(row.endpoint_b));
+        item.insert(QStringLiteral("protocolText"), QString::fromStdString(row.protocol_text));
+        item.insert(QStringLiteral("detectedProtocolText"), QString::fromStdString(row.detected_protocol_text));
+        item.insert(QStringLiteral("serviceText"), QString::fromStdString(row.service_text));
+        item.insert(QStringLiteral("protocolPathId"), static_cast<qulonglong>(row.protocol_path_id));
+        item.insert(QStringLiteral("protocolPathCompactText"), QString::fromStdString(row.protocol_path_compact_text));
+        item.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(row.packet_count));
+        item.insert(QStringLiteral("packetCountText"), QString::fromStdString(row.packet_count_text));
+        item.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(row.captured_bytes));
+        item.insert(QStringLiteral("capturedBytesText"), QString::fromStdString(row.captured_bytes_text));
+        item.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(row.original_bytes));
+        item.insert(QStringLiteral("originalBytesText"), QString::fromStdString(row.original_bytes_text));
+        rows.push_back(item);
+    }
+
+    return rows;
+}
+
 QString selected_flow_service_hint(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -3741,6 +3770,18 @@ qulonglong MainController::tlsVersionUnknown() const noexcept {
     return static_cast<qulonglong>(tls_recognition_stats_.version_unknown);
 }
 
+int MainController::topFlowSectionState() const noexcept {
+    return static_cast<int>(top_flows_section_state_);
+}
+
+QString MainController::topFlowSectionStatusText() const {
+    return statisticsSectionStatusText(StatisticsOptionalSection::top_flows);
+}
+
+QVariantList MainController::topFlowRows() const {
+    return top_flow_rows_;
+}
+
 int MainController::topEndpointPortSectionState() const noexcept {
     return static_cast<int>(top_endpoints_ports_section_state_);
 }
@@ -5371,6 +5412,10 @@ void MainController::setStatisticsSectionState(
         quic_tls_section_state_ = state;
         quic_tls_error_text_ = std::move(errorText);
         break;
+    case StatisticsOptionalSection::top_flows:
+        top_flows_section_state_ = state;
+        top_flows_error_text_ = std::move(errorText);
+        break;
     case StatisticsOptionalSection::top_endpoints_ports:
         top_endpoints_ports_section_state_ = state;
         top_endpoints_ports_error_text_ = std::move(errorText);
@@ -5403,6 +5448,10 @@ QString MainController::statisticsSectionStatusText(const StatisticsOptionalSect
         state = quic_tls_section_state_;
         error_text = quic_tls_error_text_;
         break;
+    case StatisticsOptionalSection::top_flows:
+        state = top_flows_section_state_;
+        error_text = top_flows_error_text_;
+        break;
     case StatisticsOptionalSection::top_endpoints_ports:
         state = top_endpoints_ports_section_state_;
         error_text = top_endpoints_ports_error_text_;
@@ -5433,6 +5482,7 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
     protocol_path_section_expanded_ = false;
     protocol_hints_section_expanded_ = false;
     quic_tls_section_expanded_ = false;
+    top_flows_section_expanded_ = false;
     top_endpoints_ports_section_expanded_ = false;
 
     packet_size_statistics_ = {};
@@ -5446,6 +5496,7 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
     protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
     quic_recognition_stats_ = {};
     tls_recognition_stats_ = {};
+    top_flow_rows_.clear();
     top_endpoints_model_.clear();
     top_ports_model_.clear();
 
@@ -5454,6 +5505,7 @@ void MainController::resetStatisticsSectionState(const bool emitResetToken) {
     setStatisticsSectionState(StatisticsOptionalSection::protocol_path, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::protocol_hints, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::quic_tls, StatisticsSectionRequestState::not_requested);
+    setStatisticsSectionState(StatisticsOptionalSection::top_flows, StatisticsSectionRequestState::not_requested);
     setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::not_requested);
 
     if (emitResetToken) {
@@ -5591,25 +5643,44 @@ void MainController::ensureQuicTlsSectionLoaded() {
     emit stateChanged();
 }
 
+void MainController::ensureTopFlowsSectionLoaded() {
+    if (!top_flows_section_expanded_) {
+        return;
+    }
+
+    ensureTopStatisticsLoaded();
+}
+
 void MainController::ensureTopEndpointsAndPortsSectionLoaded() {
     if (!top_endpoints_ports_section_expanded_) {
+        return;
+    }
+    ensureTopStatisticsLoaded();
+}
+
+void MainController::ensureTopStatisticsLoaded() {
+    if (!top_flows_section_expanded_ && !top_endpoints_ports_section_expanded_) {
         return;
     }
     if (current_tab_index_ != kStatsTabIndex) {
         return;
     }
     if (!session_.has_capture()) {
+        setStatisticsSectionState(StatisticsOptionalSection::top_flows, StatisticsSectionRequestState::unavailable);
         setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::unavailable);
         emit stateChanged();
         return;
     }
-    if (top_endpoints_ports_section_state_ == StatisticsSectionRequestState::ready) {
+    if (top_flows_section_state_ == StatisticsSectionRequestState::ready &&
+        top_endpoints_ports_section_state_ == StatisticsSectionRequestState::ready) {
         return;
     }
 
+    setStatisticsSectionState(StatisticsOptionalSection::top_flows, StatisticsSectionRequestState::loading);
     setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::loading);
     emit stateChanged();
     refreshTopSummaryModels();
+    setStatisticsSectionState(StatisticsOptionalSection::top_flows, StatisticsSectionRequestState::ready);
     setStatisticsSectionState(StatisticsOptionalSection::top_endpoints_ports, StatisticsSectionRequestState::ready);
     emit stateChanged();
 }
@@ -5620,6 +5691,7 @@ void MainController::maybeLoadExpandedStatisticsSections() {
     ensureProtocolPathSectionLoaded();
     ensureProtocolHintsLoaded();
     ensureQuicTlsSectionLoaded();
+    ensureTopFlowsSectionLoaded();
     ensureTopEndpointsAndPortsSectionLoaded();
 }
 
@@ -5640,6 +5712,9 @@ void MainController::setStatisticsSectionExpanded(const int section, const bool 
         break;
     case StatisticsOptionalSection::quic_tls:
         quic_tls_section_expanded_ = expanded;
+        break;
+    case StatisticsOptionalSection::top_flows:
+        top_flows_section_expanded_ = expanded;
         break;
     case StatisticsOptionalSection::top_endpoints_ports:
         top_endpoints_ports_section_expanded_ = expanded;
@@ -5763,6 +5838,9 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
         applyActiveFlowFilterModeToModel();
         if (protocol_hints_section_state_ == StatisticsSectionRequestState::ready) {
             protocol_hint_distribution_ = build_protocol_hint_distribution_rows(protocol_summary_);
+        }
+        if (top_flows_section_state_ == StatisticsSectionRequestState::ready) {
+            refreshTopSummaryModels();
         }
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
@@ -7178,12 +7256,20 @@ void MainController::applyLoadedState(const QString& path) {
 
 void MainController::refreshTopSummaryModels() {
     if (session_.summary().flow_count <= 30U) {
+        top_flow_rows_.clear();
         top_endpoints_model_.refreshEndpoints({});
         top_ports_model_.refreshPorts({});
         return;
     }
 
     const auto top = session_.top_summary(kTopSummaryLimit);
+    top_flow_rows_ = build_top_flow_rows(
+        build_frontend_top_flows(
+            std::span<const TopFlowRow>(top.flows_by_original_bytes.data(), top.flows_by_original_bytes.size()),
+            session_.state().protocol_path_registry,
+            pending_analysis_settings_
+        )
+    );
     top_endpoints_model_.refreshEndpoints(top.endpoints_by_bytes);
     top_ports_model_.refreshPorts(top.ports_by_bytes);
 }

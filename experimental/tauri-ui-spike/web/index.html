@@ -712,6 +712,38 @@
                 </div>
               </details>
 
+              <details id="topFlowsDetails" class="statistics-disclosure">
+                <summary class="statistics-disclosure-summary">
+                  <span class="statistics-disclosure-title-wrap">
+                    <span class="statistics-disclosure-title">Top Flows by Original Bytes</span>
+                  </span>
+                  <span id="topFlowsSummaryValue" class="statistics-disclosure-summary-value"></span>
+                </summary>
+                <div class="statistics-disclosure-body">
+                  <div class="statistics-section">
+                    <div class="table-wrap">
+                      <table class="data-table compact-stats-table">
+                        <thead>
+                          <tr>
+                            <th>Flow</th>
+                            <th>Endpoint A</th>
+                            <th>Endpoint B</th>
+                            <th>Protocol</th>
+                            <th>Detected Protocol</th>
+                            <th>Service</th>
+                            <th>Protocol Path</th>
+                            <th>Packets</th>
+                            <th>Captured</th>
+                            <th>Original</th>
+                          </tr>
+                        </thead>
+                        <tbody id="topFlowsBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
               <details id="topEndpointsPortsDetails" class="statistics-disclosure">
                 <summary class="statistics-disclosure-summary">
                   <span class="statistics-disclosure-title-wrap">
@@ -730,8 +762,9 @@
                           <thead>
                             <tr>
                               <th>Endpoint</th>
+                              <th>Flows</th>
                               <th>Packets</th>
-                              <th>Bytes</th>
+                              <th>Original Bytes</th>
                             </tr>
                           </thead>
                           <tbody id="topEndpointsBody"></tbody>
@@ -747,8 +780,9 @@
                           <thead>
                             <tr>
                               <th>Port</th>
+                              <th>Flows</th>
                               <th>Packets</th>
-                              <th>Bytes</th>
+                              <th>Original Bytes</th>
                             </tr>
                           </thead>
                           <tbody id="topPortsBody"></tbody>

@@ -218,36 +218,6 @@ std::vector<FrontendProtocolHintStatsDto> build_protocol_hint_stats(const Captur
     return rows;
 }
 
-std::vector<FrontendTopEndpointDto> build_top_endpoints(const CaptureTopSummary& summary) {
-    std::vector<FrontendTopEndpointDto> rows {};
-    rows.reserve(summary.endpoints_by_bytes.size());
-
-    for (const auto& endpoint : summary.endpoints_by_bytes) {
-        rows.push_back(FrontendTopEndpointDto {
-            .endpoint_label = endpoint.endpoint,
-            .packet_count = endpoint.packet_count,
-            .total_bytes = endpoint.total_bytes,
-        });
-    }
-
-    return rows;
-}
-
-std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary) {
-    std::vector<FrontendTopPortDto> rows {};
-    rows.reserve(summary.ports_by_bytes.size());
-
-    for (const auto& port : summary.ports_by_bytes) {
-        rows.push_back(FrontendTopPortDto {
-            .port = port.port,
-            .packet_count = port.packet_count,
-            .total_bytes = port.total_bytes,
-        });
-    }
-
-    return rows;
-}
-
 std::string format_size_value(const std::uint64_t value);
 
 double safe_percent(const std::uint64_t numerator, const std::uint64_t denominator) {
@@ -3123,11 +3093,17 @@ FrontendTopEndpointPortStatisticsDto FrontendSessionAdapter::get_top_endpoint_po
     }
 
     const auto summary = session_.top_summary(limit);
+    const auto analysis_settings = to_analysis_settings(settings_);
     return FrontendTopEndpointPortStatisticsDto {
         .has_capture = true,
         .limit = limit,
-        .top_endpoints = build_top_endpoints(summary),
-        .top_ports = build_top_ports(summary),
+        .top_endpoints = build_frontend_top_endpoints(summary),
+        .top_ports = build_frontend_top_ports(summary),
+        .top_flows = build_frontend_top_flows(
+            std::span<const TopFlowRow>(summary.flows_by_original_bytes.data(), summary.flows_by_original_bytes.size()),
+            session_.state().protocol_path_registry,
+            analysis_settings
+        ),
     };
 }
 

@@ -98,6 +98,9 @@ Item {
     property var tlsVersion12: 0
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
+    property int topFlowSectionState: 0
+    property string topFlowSectionStatusText: ""
+    property var topFlowRows: []
     property int topEndpointPortSectionState: 0
     property string topEndpointPortSectionStatusText: ""
     property var topEndpointsModel: null
@@ -114,7 +117,8 @@ Item {
     readonly property int sectionProtocolPath: 2
     readonly property int sectionProtocolHints: 3
     readonly property int sectionQuicTls: 4
-    readonly property int sectionTopEndpointsPorts: 5
+    readonly property int sectionTopFlows: 5
+    readonly property int sectionTopEndpointsPorts: 6
     readonly property int packetSizeDistributionModeCaptured: 0
     readonly property int packetSizeDistributionModeOriginal: 1
     readonly property int flowPacketHistogramModeFlows: 0
@@ -148,6 +152,15 @@ Item {
     readonly property int pathTreeIndentWidth: 18
     readonly property int pathTreeExpanderWidth: 16
     readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
+    readonly property int topFlowColumnFlowWidth: 72
+    readonly property int topFlowColumnEndpointWidth: 220
+    readonly property int topFlowColumnProtocolWidth: 82
+    readonly property int topFlowColumnDetectedWidth: 120
+    readonly property int topFlowColumnServiceWidth: 180
+    readonly property int topFlowColumnPathWidth: 120
+    readonly property int topFlowColumnPacketsWidth: 98
+    readonly property int topFlowColumnBytesWidth: 118
+    readonly property int topFlowTableWidth: topFlowColumnFlowWidth + (topFlowColumnEndpointWidth * 2) + topFlowColumnProtocolWidth + topFlowColumnDetectedWidth + topFlowColumnServiceWidth + topFlowColumnPathWidth + topFlowColumnPacketsWidth + (topFlowColumnBytesWidth * 2) + (tableColumnSpacing * 9) + (tablePadding * 2)
 
     property bool captureMetricsExpanded: false
     property bool flowCharacteristicsExpanded: false
@@ -158,6 +171,7 @@ Item {
     property bool protocolPathExpanded: false
     property bool protocolHintsExpanded: false
     property bool quicTlsExpanded: false
+    property bool topFlowsExpanded: false
     property bool topEndpointsPortsExpanded: false
     property int packetSizeDistributionDisplayMode: packetSizeDistributionModeCaptured
     property int flowPacketHistogramDisplayMode: flowPacketHistogramModeFlows
@@ -179,6 +193,7 @@ Item {
         protocolPathExpanded = false
         protocolHintsExpanded = false
         quicTlsExpanded = false
+        topFlowsExpanded = false
         topEndpointsPortsExpanded = false
         packetSizeDistributionDisplayMode = packetSizeDistributionModeCaptured
         flowPacketHistogramDisplayMode = flowPacketHistogramModeFlows
@@ -1867,6 +1882,125 @@ Item {
                             CompactMetricLabel { text: "TLS 1.2: " + root.groupInteger(root.tlsVersion12) }
                             CompactMetricLabel { text: "TLS 1.3: " + root.groupInteger(root.tlsVersion13) }
                             CompactMetricLabel { text: "Version unavailable: " + root.groupInteger(root.tlsVersionUnknown) }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: topFlowsSection
+                    objectName: "topFlowsSection"
+                    title: "Top Flows by Original Bytes"
+                    toggleObjectName: "topFlowStatisticsToggleButton"
+                    expanded: root.topFlowsExpanded
+                    visible: root.showTopTalkers
+                    onExpandedChangedByUser: function(expanded) {
+                        root.topFlowsExpanded = expanded
+                        root.statisticsSectionExpandedChanged(root.sectionTopFlows, expanded)
+                    }
+
+                    Label {
+                        visible: root.topFlowSectionState === root.requestStateLoading ||
+                            root.topFlowSectionState === root.requestStateUnavailable ||
+                            root.topFlowSectionState === root.requestStateError
+                        text: root.topFlowSectionStatusText
+                        color: "#64748b"
+                    }
+
+                    Flickable {
+                        id: topFlowTableFlickable
+                        objectName: "topFlowTableFlickable"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredHeight: topFlowTableContent.implicitHeight
+                            + (root.topFlowTableWidth > width ? topFlowHorizontalScrollBar.implicitHeight + 4 : 0)
+                        implicitHeight: Layout.preferredHeight
+                        visible: root.topFlowSectionState === root.requestStateReady
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.HorizontalFlick
+                        interactive: contentWidth > width
+                        contentWidth: topFlowTableContent.width
+                        contentHeight: topFlowTableContent.implicitHeight
+
+                        ScrollBar.horizontal: AppScrollBar {
+                            id: topFlowHorizontalScrollBar
+                            policy: topFlowTableFlickable.contentWidth > topFlowTableFlickable.width
+                                ? ScrollBar.AlwaysOn
+                                : ScrollBar.AlwaysOff
+                        }
+
+                        Column {
+                            id: topFlowTableContent
+                            objectName: "topFlowTableContent"
+                            width: Math.max(topFlowTableFlickable.width, root.topFlowTableWidth)
+                            spacing: 8
+
+                            Rectangle {
+                                id: topFlowHeader
+                                objectName: "topFlowTableHeader"
+                                width: parent.width
+                                height: root.tableHeaderHeight + 2
+                                radius: 4
+                                color: "#f8fafc"
+                                border.color: "#e2e8f0"
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: root.tablePadding
+                                    anchors.rightMargin: root.tablePadding
+                                    spacing: root.tableColumnSpacing
+
+                                    Label { Layout.preferredWidth: root.topFlowColumnFlowWidth; text: "Flow"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: "Endpoint A"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: "Endpoint B"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnProtocolWidth; text: "Protocol"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnDetectedWidth; text: "Detected Protocol"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnServiceWidth; text: "Service"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnPathWidth; text: "Protocol Path"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnPacketsWidth; horizontalAlignment: Text.AlignRight; text: "Packets"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: "Captured"; font.bold: true; color: "#334155" }
+                                    Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: "Original"; font.bold: true; color: "#334155" }
+                                }
+                            }
+
+                            Column {
+                                id: topFlowRowsColumn
+                                width: parent.width
+                                spacing: 4
+
+                                Repeater {
+                                    id: topFlowRowsRepeater
+                                    objectName: "topFlowRowsRepeater"
+                                    model: root.topFlowRows
+
+                                    delegate: Rectangle {
+                                        required property int index
+                                        required property var modelData
+                                        width: topFlowRowsColumn.width
+                                        height: 34
+                                        radius: 4
+                                        color: index % 2 === 0 ? "transparent" : "#f8fafc"
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.tablePadding
+                                            anchors.rightMargin: root.tablePadding
+                                            spacing: root.tableColumnSpacing
+
+                                            Label { Layout.preferredWidth: root.topFlowColumnFlowWidth; text: modelData.flowIndexText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: modelData.endpointA; elide: Text.ElideMiddle; color: "#0f172a"; ToolTip.visible: endpointAHover.hovered; ToolTip.text: modelData.endpointA; HoverHandler { id: endpointAHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnEndpointWidth; text: modelData.endpointB; elide: Text.ElideMiddle; color: "#0f172a"; ToolTip.visible: endpointBHover.hovered; ToolTip.text: modelData.endpointB; HoverHandler { id: endpointBHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnProtocolWidth; text: modelData.protocolText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnDetectedWidth; text: modelData.detectedProtocolText; color: "#0f172a"; elide: Text.ElideRight }
+                                            Label { Layout.preferredWidth: root.topFlowColumnServiceWidth; text: modelData.serviceText; color: "#0f172a"; elide: Text.ElideRight; ToolTip.visible: serviceHover.hovered; ToolTip.text: modelData.serviceText; HoverHandler { id: serviceHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnPathWidth; text: modelData.protocolPathCompactText; color: "#0f172a"; elide: Text.ElideRight; ToolTip.visible: pathHover.hovered; ToolTip.text: modelData.protocolPathCompactText; HoverHandler { id: pathHover } }
+                                            Label { Layout.preferredWidth: root.topFlowColumnPacketsWidth; horizontalAlignment: Text.AlignRight; text: modelData.packetCountText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: modelData.capturedBytesText; color: "#0f172a" }
+                                            Label { Layout.preferredWidth: root.topFlowColumnBytesWidth; horizontalAlignment: Text.AlignRight; text: modelData.originalBytesText; color: "#0f172a" }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

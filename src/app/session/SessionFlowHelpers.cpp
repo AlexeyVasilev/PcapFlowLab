@@ -7,7 +7,6 @@
 #include <cctype>
 #include <iomanip>
 #include <limits>
-#include <map>
 #include <sstream>
 #include <unordered_map>
 
@@ -21,6 +20,8 @@ namespace pfl::session_detail {
 namespace {
 
 bool has_port_443(const ListedConnectionRef& connection) noexcept;
+bool has_port_443(std::uint16_t first_port, std::uint16_t second_port) noexcept;
+bool is_listable_connection(const ListedConnectionRef& connection) noexcept;
 std::size_t flow_packet_count_histogram_bucket_index(std::uint64_t packet_count_value) noexcept;
 
 struct FlowPacketCountHistogramBucketDefinition {
@@ -226,136 +227,288 @@ void finalize_histogram(FlowPacketCountHistogram& histogram) noexcept {
     }
 }
 
-CaptureTopSummary build_top_summary_from_maps(
-    std::map<std::string, TopEndpointRow>& endpoints,
-    std::map<std::uint16_t, TopPortRow>& ports,
-    const std::size_t limit
+constexpr std::size_t kTopFlowSummaryCapacity = 10U;
+
+struct EndpointAccumulator {
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct PortAccumulator {
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct EndpointKeyV4Hash {
+    [[nodiscard]] std::size_t operator()(const EndpointKeyV4& key) const noexcept {
+        auto seed = std::hash<std::uint32_t> {}(key.addr);
+        seed ^= std::hash<std::uint16_t> {}(key.port) + 0x9e3779b9U + (seed << 6U) + (seed >> 2U);
+        return seed;
+    }
+};
+
+struct EndpointKeyV6Hash {
+    [[nodiscard]] std::size_t operator()(const EndpointKeyV6& key) const noexcept {
+        auto seed = std::hash<std::uint16_t> {}(key.port);
+        for (const auto octet : key.addr) {
+            seed ^= std::hash<std::uint8_t> {}(octet) + 0x9e3779b9U + (seed << 6U) + (seed >> 2U);
+        }
+        return seed;
+    }
+};
+
+struct AggregatedEndpointCandidate {
+    FlowEndpointIdentity key {EndpointKeyV4 {}};
+    EndpointAccumulator accumulator {};
+};
+
+struct AggregatedPortCandidate {
+    std::uint16_t port {0};
+    PortAccumulator accumulator {};
+};
+
+template <typename Candidate, typename Better>
+void retain_top_candidate(
+    std::vector<Candidate>& heap,
+    Candidate candidate,
+    const std::size_t limit,
+    Better better
 ) {
-    CaptureTopSummary summary {};
-    summary.endpoints_by_bytes.reserve(endpoints.size());
-    summary.ports_by_bytes.reserve(ports.size());
-
-    for (const auto& [_, row] : endpoints) {
-        summary.endpoints_by_bytes.push_back(row);
-    }
-
-    for (const auto& [_, row] : ports) {
-        summary.ports_by_bytes.push_back(row);
-    }
-
-    std::sort(summary.endpoints_by_bytes.begin(), summary.endpoints_by_bytes.end(), [](const TopEndpointRow& left, const TopEndpointRow& right) {
-        if (left.total_bytes != right.total_bytes) {
-            return left.total_bytes > right.total_bytes;
-        }
-        if (left.packet_count != right.packet_count) {
-            return left.packet_count > right.packet_count;
-        }
-        return left.endpoint < right.endpoint;
-    });
-
-    std::sort(summary.ports_by_bytes.begin(), summary.ports_by_bytes.end(), [](const TopPortRow& left, const TopPortRow& right) {
-        if (left.total_bytes != right.total_bytes) {
-            return left.total_bytes > right.total_bytes;
-        }
-        if (left.packet_count != right.packet_count) {
-            return left.packet_count > right.packet_count;
-        }
-        return left.port < right.port;
-    });
-
-    if (summary.endpoints_by_bytes.size() > limit) {
-        summary.endpoints_by_bytes.resize(limit);
-    }
-
-    if (summary.ports_by_bytes.size() > limit) {
-        summary.ports_by_bytes.resize(limit);
-    }
-
-    return summary;
-}
-
-void observe_top_summary_maps(
-    std::map<std::string, TopEndpointRow>& endpoints,
-    std::map<std::uint16_t, TopPortRow>& ports,
-    const ListedConnectionRef& connection
-) {
-    const auto connection_packets = packet_count(connection);
-    const auto connection_bytes = total_bytes(connection);
-
-    if (connection.family == FlowAddressFamily::ipv4) {
-        const auto& key = connection.ipv4->key;
-
-        for (const auto& endpoint_text : {format_endpoint(key.first), format_endpoint(key.second)}) {
-            auto& row = endpoints[endpoint_text];
-            row.endpoint = endpoint_text;
-            row.packet_count += connection_packets;
-            row.total_bytes += connection_bytes;
-        }
-
-        for (const auto port : {key.first.port, key.second.port}) {
-            if (port == 0U) {
-                continue;
-            }
-
-            auto& row = ports[port];
-            row.port = port;
-            row.packet_count += connection_packets;
-            row.total_bytes += connection_bytes;
-        }
-
+    if (limit == 0U) {
         return;
     }
 
-    const auto& key = connection.ipv6->key;
-
-    for (const auto& endpoint_text : {format_endpoint(key.first), format_endpoint(key.second)}) {
-        auto& row = endpoints[endpoint_text];
-        row.endpoint = endpoint_text;
-        row.packet_count += connection_packets;
-        row.total_bytes += connection_bytes;
+    if (heap.size() < limit) {
+        heap.push_back(std::move(candidate));
+        std::push_heap(heap.begin(), heap.end(), better);
+        return;
     }
 
-    for (const auto port : {key.first.port, key.second.port}) {
-        if (port == 0U) {
-            continue;
+    if (!better(candidate, heap.front())) {
+        return;
+    }
+
+    std::pop_heap(heap.begin(), heap.end(), better);
+    heap.back() = std::move(candidate);
+    std::push_heap(heap.begin(), heap.end(), better);
+}
+
+template <typename Candidate, typename Better>
+std::vector<Candidate> finalize_top_candidates(std::vector<Candidate> heap, Better better) {
+    std::sort(heap.begin(), heap.end(), better);
+    return heap;
+}
+
+bool endpoint_identity_less(const FlowEndpointIdentity& left, const FlowEndpointIdentity& right) noexcept {
+    if (left.index() != right.index()) {
+        return left.index() < right.index();
+    }
+
+    if (std::holds_alternative<EndpointKeyV4>(left)) {
+        return std::get<EndpointKeyV4>(left) < std::get<EndpointKeyV4>(right);
+    }
+
+    return std::get<EndpointKeyV6>(left) < std::get<EndpointKeyV6>(right);
+}
+
+std::string format_endpoint_identity(const FlowEndpointIdentity& endpoint) {
+    return std::visit([](const auto& value) {
+        return format_endpoint(value);
+    }, endpoint);
+}
+
+bool endpoint_candidate_better(
+    const AggregatedEndpointCandidate& left,
+    const AggregatedEndpointCandidate& right
+) noexcept {
+    if (left.accumulator.total_bytes != right.accumulator.total_bytes) {
+        return left.accumulator.total_bytes > right.accumulator.total_bytes;
+    }
+    if (left.accumulator.packet_count != right.accumulator.packet_count) {
+        return left.accumulator.packet_count > right.accumulator.packet_count;
+    }
+    return endpoint_identity_less(left.key, right.key);
+}
+
+bool port_candidate_better(const AggregatedPortCandidate& left, const AggregatedPortCandidate& right) noexcept {
+    if (left.accumulator.total_bytes != right.accumulator.total_bytes) {
+        return left.accumulator.total_bytes > right.accumulator.total_bytes;
+    }
+    if (left.accumulator.packet_count != right.accumulator.packet_count) {
+        return left.accumulator.packet_count > right.accumulator.packet_count;
+    }
+    return left.port < right.port;
+}
+
+bool top_flow_row_better(const TopFlowRow& left, const TopFlowRow& right) noexcept {
+    if (left.total_bytes != right.total_bytes) {
+        return left.total_bytes > right.total_bytes;
+    }
+    if (left.packet_count != right.packet_count) {
+        return left.packet_count > right.packet_count;
+    }
+    return left.flow_index < right.flow_index;
+}
+
+void observe_endpoint_accumulator(
+    EndpointAccumulator& accumulator,
+    const std::uint64_t packet_count_value,
+    const std::uint64_t total_bytes_value
+) noexcept {
+    ++accumulator.flow_count;
+    accumulator.packet_count += packet_count_value;
+    accumulator.total_bytes += total_bytes_value;
+}
+
+void observe_port_accumulator(
+    PortAccumulator& accumulator,
+    const std::uint64_t packet_count_value,
+    const std::uint64_t total_bytes_value
+) noexcept {
+    ++accumulator.flow_count;
+    accumulator.packet_count += packet_count_value;
+    accumulator.total_bytes += total_bytes_value;
+}
+
+std::optional<TopFlowRow> make_top_flow_row(
+    const std::size_t flow_index,
+    const ListedConnectionRef& connection
+) {
+    if (!is_listable_connection(connection)) {
+        return std::nullopt;
+    }
+
+    if (connection.family == FlowAddressFamily::ipv4) {
+        const auto endpoint_a = first_observed_endpoint_a(*connection.ipv4);
+        const auto endpoint_b = first_observed_endpoint_b(*connection.ipv4);
+        if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+            return std::nullopt;
         }
 
-        auto& row = ports[port];
-        row.port = port;
-        row.packet_count += connection_packets;
-        row.total_bytes += connection_bytes;
+        return TopFlowRow {
+            .flow_index = flow_index,
+            .family = FlowAddressFamily::ipv4,
+            .key = connection.ipv4->key,
+            .endpoint_a_key = *endpoint_a,
+            .endpoint_b_key = *endpoint_b,
+            .protocol = connection.ipv4->key.protocol,
+            .protocol_path_id = connection.ipv4->key.protocol_path_id,
+            .protocol_hint = connection.ipv4->protocol_hint,
+            .service_hint = connection.ipv4->service_hint,
+            .packet_count = connection.ipv4->packet_count,
+            .captured_bytes = connection.ipv4->aggregate_stats.captured_bytes,
+            .total_bytes = connection.ipv4->total_bytes,
+        };
     }
+
+    const auto endpoint_a = first_observed_endpoint_a(*connection.ipv6);
+    const auto endpoint_b = first_observed_endpoint_b(*connection.ipv6);
+    if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+        return std::nullopt;
+    }
+
+    return TopFlowRow {
+        .flow_index = flow_index,
+        .family = FlowAddressFamily::ipv6,
+        .key = connection.ipv6->key,
+        .endpoint_a_key = *endpoint_a,
+        .endpoint_b_key = *endpoint_b,
+        .protocol = connection.ipv6->key.protocol,
+        .protocol_path_id = connection.ipv6->key.protocol_path_id,
+        .protocol_hint = connection.ipv6->protocol_hint,
+        .service_hint = connection.ipv6->service_hint,
+        .packet_count = connection.ipv6->packet_count,
+        .captured_bytes = connection.ipv6->aggregate_stats.captured_bytes,
+        .total_bytes = connection.ipv6->total_bytes,
+    };
+}
+
+CaptureTopSummary build_top_summary_from_aggregates(
+    const std::unordered_map<EndpointKeyV4, EndpointAccumulator, EndpointKeyV4Hash>& endpoint_rows_v4,
+    const std::unordered_map<EndpointKeyV6, EndpointAccumulator, EndpointKeyV6Hash>& endpoint_rows_v6,
+    const std::vector<PortAccumulator>& port_rows,
+    const std::vector<std::uint16_t>& touched_ports,
+    std::vector<TopFlowRow> top_flow_heap,
+    const std::size_t limit
+) {
+    std::vector<AggregatedEndpointCandidate> endpoint_heap {};
+    endpoint_heap.reserve(std::min(limit, endpoint_rows_v4.size() + endpoint_rows_v6.size()));
+    for (const auto& [endpoint, accumulator] : endpoint_rows_v4) {
+        retain_top_candidate(
+            endpoint_heap,
+            AggregatedEndpointCandidate {
+                .key = endpoint,
+                .accumulator = accumulator,
+            },
+            limit,
+            endpoint_candidate_better
+        );
+    }
+    for (const auto& [endpoint, accumulator] : endpoint_rows_v6) {
+        retain_top_candidate(
+            endpoint_heap,
+            AggregatedEndpointCandidate {
+                .key = endpoint,
+                .accumulator = accumulator,
+            },
+            limit,
+            endpoint_candidate_better
+        );
+    }
+
+    std::vector<AggregatedPortCandidate> port_heap {};
+    port_heap.reserve(std::min(limit, touched_ports.size()));
+    for (const auto port : touched_ports) {
+        retain_top_candidate(
+            port_heap,
+            AggregatedPortCandidate {
+                .port = port,
+                .accumulator = port_rows[port],
+            },
+            limit,
+            port_candidate_better
+        );
+    }
+
+    CaptureTopSummary summary {};
+    const auto top_endpoints = finalize_top_candidates(std::move(endpoint_heap), endpoint_candidate_better);
+    summary.endpoints_by_bytes.reserve(top_endpoints.size());
+    for (const auto& candidate : top_endpoints) {
+        summary.endpoints_by_bytes.push_back(TopEndpointRow {
+            .endpoint = format_endpoint_identity(candidate.key),
+            .flow_count = candidate.accumulator.flow_count,
+            .packet_count = candidate.accumulator.packet_count,
+            .total_bytes = candidate.accumulator.total_bytes,
+        });
+    }
+
+    const auto top_ports = finalize_top_candidates(std::move(port_heap), port_candidate_better);
+    summary.ports_by_bytes.reserve(top_ports.size());
+    for (const auto& candidate : top_ports) {
+        summary.ports_by_bytes.push_back(TopPortRow {
+            .port = candidate.port,
+            .flow_count = candidate.accumulator.flow_count,
+            .packet_count = candidate.accumulator.packet_count,
+            .total_bytes = candidate.accumulator.total_bytes,
+        });
+    }
+
+    summary.flows_by_original_bytes = finalize_top_candidates(std::move(top_flow_heap), top_flow_row_better);
+    return summary;
 }
 
 bool has_port_443(const ListedConnectionRef& connection) noexcept {
     if (connection.family == FlowAddressFamily::ipv4) {
-        return connection.ipv4->key.first.port == 443U || connection.ipv4->key.second.port == 443U;
+        return has_port_443(connection.ipv4->key.first.port, connection.ipv4->key.second.port);
     }
 
-    return connection.ipv6->key.first.port == 443U || connection.ipv6->key.second.port == 443U;
+    return has_port_443(connection.ipv6->key.first.port, connection.ipv6->key.second.port);
 }
 
-std::string protocol_text(const ProtocolId protocol) {
-    switch (protocol) {
-    case ProtocolId::arp:
-        return "ARP";
-    case ProtocolId::icmp:
-        return "ICMP";
-    case ProtocolId::igmp:
-        return "IGMP";
-    case ProtocolId::tcp:
-        return "TCP";
-    case ProtocolId::udp:
-        return "UDP";
-    case ProtocolId::esp:
-        return "ESP";
-    case ProtocolId::sctp:
-        return "SCTP";
-    case ProtocolId::icmpv6:
-        return "ICMPv6";
-    default:
-        return "unknown";
-    }
+bool has_port_443(const std::uint16_t first_port, const std::uint16_t second_port) noexcept {
+    return first_port == 443U || second_port == 443U;
 }
 
 bool listed_connection_less(const ListedConnectionRef& left, const ListedConnectionRef& right) noexcept {
@@ -753,6 +906,29 @@ std::size_t flow_packet_count_histogram_bucket_index(const std::uint64_t packet_
 
 }  // namespace
 
+std::string format_flow_protocol_text(const ProtocolId protocol) {
+    switch (protocol) {
+    case ProtocolId::arp:
+        return "ARP";
+    case ProtocolId::icmp:
+        return "ICMP";
+    case ProtocolId::igmp:
+        return "IGMP";
+    case ProtocolId::tcp:
+        return "TCP";
+    case ProtocolId::udp:
+        return "UDP";
+    case ProtocolId::esp:
+        return "ESP";
+    case ProtocolId::sctp:
+        return "SCTP";
+    case ProtocolId::icmpv6:
+        return "ICMPv6";
+    default:
+        return "unknown";
+    }
+}
+
 std::string format_statistics_bucket_label(
     const std::uint64_t lower_bound_inclusive,
     const std::optional<std::uint64_t> upper_bound_inclusive
@@ -897,16 +1073,41 @@ ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
 }
 
 FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept {
-    const auto confirmed_hint = protocol_hint(connection);
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return effective_protocol_hint(
+            connection.ipv4->protocol_hint,
+            connection.ipv4->key.protocol,
+            connection.ipv4->key.first.port,
+            connection.ipv4->key.second.port,
+            settings
+        );
+    }
+
+    return effective_protocol_hint(
+        connection.ipv6->protocol_hint,
+        connection.ipv6->key.protocol,
+        connection.ipv6->key.first.port,
+        connection.ipv6->key.second.port,
+        settings
+    );
+}
+
+FlowProtocolHint effective_protocol_hint(
+    const FlowProtocolHint confirmed_hint,
+    const ProtocolId protocol,
+    const std::uint16_t first_port,
+    const std::uint16_t second_port,
+    const AnalysisSettings& settings
+) noexcept {
     if (confirmed_hint != FlowProtocolHint::unknown) {
         return confirmed_hint;
     }
 
-    if (!settings.use_possible_tls_quic || !has_port_443(connection)) {
+    if (!settings.use_possible_tls_quic || !has_port_443(first_port, second_port)) {
         return FlowProtocolHint::unknown;
     }
 
-    switch (protocol_id(connection)) {
+    switch (protocol) {
     case ProtocolId::tcp:
         return FlowProtocolHint::possible_tls;
     case ProtocolId::udp:
@@ -1000,7 +1201,7 @@ std::optional<FlowRow> make_flow_row(
             .family = FlowAddressFamily::ipv4,
             .key = key,
             .protocol_path_id = key.protocol_path_id,
-            .protocol_text = protocol_text(key.protocol),
+            .protocol_text = format_flow_protocol_text(key.protocol),
             .protocol_hint = hint_text,
             .service_hint = connection.ipv4->service_hint,
             .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
@@ -1027,7 +1228,7 @@ std::optional<FlowRow> make_flow_row(
         .family = FlowAddressFamily::ipv6,
         .key = key,
         .protocol_path_id = key.protocol_path_id,
-        .protocol_text = protocol_text(key.protocol),
+        .protocol_text = format_flow_protocol_text(key.protocol),
         .protocol_hint = hint_text,
         .service_hint = connection.ipv6->service_hint,
         .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
@@ -1187,11 +1388,20 @@ CaptureGeneralStatistics build_capture_general_statistics(
 ) {
     CaptureGeneralStatistics statistics {};
     append_flow_packet_histogram_bucket_definitions(statistics.flow_packet_count_histogram);
+    std::unordered_map<EndpointKeyV4, EndpointAccumulator, EndpointKeyV4Hash> top_endpoint_rows_v4 {};
+    std::unordered_map<EndpointKeyV6, EndpointAccumulator, EndpointKeyV6Hash> top_endpoint_rows_v6 {};
+    std::vector<PortAccumulator> top_port_rows {};
+    std::vector<std::uint16_t> touched_ports {};
+    std::vector<TopFlowRow> top_flow_heap {};
 
-    std::map<std::string, TopEndpointRow> top_endpoint_rows {};
-    std::map<std::uint16_t, TopPortRow> top_port_rows {};
+    if (top_summary_capacity > 0U) {
+        top_port_rows.resize(static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()) + 1U);
+        touched_ports.reserve(std::min(connections.size() * 2U, top_summary_capacity * 4U));
+        top_flow_heap.reserve(kTopFlowSummaryCapacity);
+    }
 
-    for (const auto& connection : connections) {
+    for (std::size_t connection_index = 0U; connection_index < connections.size(); ++connection_index) {
+        const auto& connection = connections[connection_index];
         if (connection.family == FlowAddressFamily::ipv4) {
             add_protocol_stats(statistics.protocol.ipv4, connection);
         } else {
@@ -1299,15 +1509,92 @@ CaptureGeneralStatistics build_capture_general_statistics(
         }
 
         if (top_summary_capacity > 0U) {
-            observe_top_summary_maps(top_endpoint_rows, top_port_rows, connection);
+            const auto packets_for_flow = packet_count(connection);
+            const auto original_bytes_for_flow = total_bytes(connection);
+
+            if (connection.family == FlowAddressFamily::ipv4) {
+                const auto endpoint_a = first_observed_endpoint_a(*connection.ipv4);
+                const auto endpoint_b = first_observed_endpoint_b(*connection.ipv4);
+                if (endpoint_a.has_value()) {
+                    observe_endpoint_accumulator(
+                        top_endpoint_rows_v4[*endpoint_a],
+                        packets_for_flow,
+                        original_bytes_for_flow
+                    );
+                }
+                if (endpoint_b.has_value() && (!endpoint_a.has_value() || *endpoint_b != *endpoint_a)) {
+                    observe_endpoint_accumulator(
+                        top_endpoint_rows_v4[*endpoint_b],
+                        packets_for_flow,
+                        original_bytes_for_flow
+                    );
+                }
+            } else {
+                const auto endpoint_a = first_observed_endpoint_a(*connection.ipv6);
+                const auto endpoint_b = first_observed_endpoint_b(*connection.ipv6);
+                if (endpoint_a.has_value()) {
+                    observe_endpoint_accumulator(
+                        top_endpoint_rows_v6[*endpoint_a],
+                        packets_for_flow,
+                        original_bytes_for_flow
+                    );
+                }
+                if (endpoint_b.has_value() && (!endpoint_a.has_value() || *endpoint_b != *endpoint_a)) {
+                    observe_endpoint_accumulator(
+                        top_endpoint_rows_v6[*endpoint_b],
+                        packets_for_flow,
+                        original_bytes_for_flow
+                    );
+                }
+            }
+
+            const auto first_port = connection.family == FlowAddressFamily::ipv4
+                ? connection.ipv4->key.first.port
+                : connection.ipv6->key.first.port;
+            const auto second_port = connection.family == FlowAddressFamily::ipv4
+                ? connection.ipv4->key.second.port
+                : connection.ipv6->key.second.port;
+
+            if (first_port != 0U) {
+                if (top_port_rows[first_port].flow_count == 0U) {
+                    touched_ports.push_back(first_port);
+                }
+                observe_port_accumulator(
+                    top_port_rows[first_port],
+                    packets_for_flow,
+                    original_bytes_for_flow
+                );
+            }
+            if (second_port != 0U && second_port != first_port) {
+                if (top_port_rows[second_port].flow_count == 0U) {
+                    touched_ports.push_back(second_port);
+                }
+                observe_port_accumulator(
+                    top_port_rows[second_port],
+                    packets_for_flow,
+                    original_bytes_for_flow
+                );
+            }
+
+            if (const auto top_flow_row = make_top_flow_row(connection_index, connection); top_flow_row.has_value()) {
+                retain_top_candidate(
+                    top_flow_heap,
+                    *top_flow_row,
+                    kTopFlowSummaryCapacity,
+                    top_flow_row_better
+                );
+            }
         }
     }
 
     finalize_histogram(statistics.flow_packet_count_histogram);
     if (top_summary_capacity > 0U) {
-        statistics.top_summary = build_top_summary_from_maps(
-            top_endpoint_rows,
+        statistics.top_summary = build_top_summary_from_aggregates(
+            top_endpoint_rows_v4,
+            top_endpoint_rows_v6,
             top_port_rows,
+            touched_ports,
+            std::move(top_flow_heap),
             top_summary_capacity
         );
     }

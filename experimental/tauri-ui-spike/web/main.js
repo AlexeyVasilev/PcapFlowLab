@@ -30,6 +30,7 @@
     protocolPath: "protocolPath",
     protocolHints: "protocolHints",
     quicTls: "quicTls",
+    topFlows: "topFlows",
     topEndpointsPorts: "topEndpointsPorts",
   });
   const statisticsSectionRequestStates = Object.freeze({
@@ -59,6 +60,7 @@
       [statisticsSectionKeys.protocolPath]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolHints]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.quicTls]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.topFlows]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.topEndpointsPorts]: createStatisticsSectionEntry(),
     };
   }
@@ -3624,6 +3626,9 @@
     quicTlsSummaryValue: document.getElementById("quicTlsSummaryValue"),
     quicStatsBody: document.getElementById("quicStatsBody"),
     tlsStatsBody: document.getElementById("tlsStatsBody"),
+    topFlowsDetails: document.getElementById("topFlowsDetails"),
+    topFlowsSummaryValue: document.getElementById("topFlowsSummaryValue"),
+    topFlowsBody: document.getElementById("topFlowsBody"),
     topEndpointsPortsDetails: document.getElementById("topEndpointsPortsDetails"),
     topEndpointsPortsSummaryValue: document.getElementById("topEndpointsPortsSummaryValue"),
     topEndpointsBody: document.getElementById("topEndpointsBody"),
@@ -3737,6 +3742,7 @@
       [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
       [elements.protocolHintsDetails, statisticsSectionKeys.protocolHints],
       [elements.quicTlsDetails, statisticsSectionKeys.quicTls],
+      [elements.topFlowsDetails, statisticsSectionKeys.topFlows],
       [elements.topEndpointsPortsDetails, statisticsSectionKeys.topEndpointsPorts],
     ];
 
@@ -4456,6 +4462,7 @@
     clearHtml(elements.protocolPathStatsBody);
     clearHtml(elements.quicStatsBody);
     clearHtml(elements.tlsStatsBody);
+    clearHtml(elements.topFlowsBody);
     clearHtml(elements.topEndpointsBody);
     clearHtml(elements.topPortsBody);
     clearHtml(elements.packetDetailsSummary);
@@ -6112,28 +6119,39 @@
   }
 
   async function ensureTopEndpointPortStatisticsLoaded() {
-    const sectionKey = statisticsSectionKeys.topEndpointsPorts;
-    const section = statisticsSectionEntry(sectionKey);
+    const topFlowsSection = statisticsSectionEntry(statisticsSectionKeys.topFlows);
+    const topEndpointsSection = statisticsSectionEntry(statisticsSectionKeys.topEndpointsPorts);
     if (state.openState !== "opened" || !state.overview) {
       return null;
     }
 
     if (state.topEndpointPortStatistics) {
-      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.ready);
+      setStatisticsSectionRequestState(statisticsSectionKeys.topFlows, statisticsSectionRequestStates.ready);
+      setStatisticsSectionRequestState(statisticsSectionKeys.topEndpointsPorts, statisticsSectionRequestStates.ready);
       return state.topEndpointPortStatistics;
     }
 
-    if (section?.requestState === statisticsSectionRequestStates.unavailable || section?.requestState === statisticsSectionRequestStates.error) {
+    if (
+      topFlowsSection?.requestState === statisticsSectionRequestStates.unavailable ||
+      topFlowsSection?.requestState === statisticsSectionRequestStates.error ||
+      topEndpointsSection?.requestState === statisticsSectionRequestStates.unavailable ||
+      topEndpointsSection?.requestState === statisticsSectionRequestStates.error
+    ) {
       return null;
     }
 
-    if (section?.requestState === statisticsSectionRequestStates.loading) {
+    if (
+      topFlowsSection?.requestState === statisticsSectionRequestStates.loading ||
+      topEndpointsSection?.requestState === statisticsSectionRequestStates.loading
+    ) {
       return null;
     }
 
     const captureGeneration = currentCaptureGeneration();
-    setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.loading);
+    setStatisticsSectionRequestState(statisticsSectionKeys.topFlows, statisticsSectionRequestStates.loading);
+    setStatisticsSectionRequestState(statisticsSectionKeys.topEndpointsPorts, statisticsSectionRequestStates.loading);
     if (state.activeTab === "statistics") {
+      renderTopFlowsSection();
       renderTopEndpointPortSection();
     }
 
@@ -6145,7 +6163,11 @@
 
       state.topEndpointPortStatistics = statistics || null;
       setStatisticsSectionRequestState(
-        sectionKey,
+        statisticsSectionKeys.topFlows,
+        statistics?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
+      );
+      setStatisticsSectionRequestState(
+        statisticsSectionKeys.topEndpointsPorts,
         statistics?.has_capture ? statisticsSectionRequestStates.ready : statisticsSectionRequestStates.unavailable
       );
       return state.topEndpointPortStatistics;
@@ -6154,10 +6176,13 @@
         return null;
       }
 
-      setStatisticsSectionRequestState(sectionKey, statisticsSectionRequestStates.error, `Failed to load top endpoints and ports: ${String(error)}`);
+      const errorText = `Failed to load top statistics: ${String(error)}`;
+      setStatisticsSectionRequestState(statisticsSectionKeys.topFlows, statisticsSectionRequestStates.error, errorText);
+      setStatisticsSectionRequestState(statisticsSectionKeys.topEndpointsPorts, statisticsSectionRequestStates.error, errorText);
       return null;
     } finally {
       if (captureGeneration === currentCaptureGeneration() && state.activeTab === "statistics") {
+        renderTopFlowsSection();
         renderTopEndpointPortSection();
       }
     }
@@ -6179,7 +6204,10 @@
     if (statisticsSectionEligible(statisticsSectionKeys.quicTls)) {
       void ensureQuicTlsStatisticsLoaded();
     }
-    if (statisticsSectionEligible(statisticsSectionKeys.topEndpointsPorts)) {
+    if (
+      statisticsSectionEligible(statisticsSectionKeys.topFlows) ||
+      statisticsSectionEligible(statisticsSectionKeys.topEndpointsPorts)
+    ) {
       void ensureTopEndpointPortStatisticsLoaded();
     }
   }
@@ -7241,6 +7269,7 @@
     elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
     elements.tcpFlagsBody && (elements.tcpFlagsBody.innerHTML = "");
     elements.quicTlsSummaryValue && (elements.quicTlsSummaryValue.textContent = "");
+    elements.topFlowsSummaryValue && (elements.topFlowsSummaryValue.textContent = "");
     elements.topEndpointsPortsSummaryValue && (elements.topEndpointsPortsSummaryValue.textContent = "");
     elements.statisticsPartialOpenWarning && elements.statisticsPartialOpenWarning.classList.add("is-hidden");
     elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
@@ -7268,6 +7297,7 @@
     state.protocolPathStatsVisibleRows = [];
     elements.quicStatsBody && (elements.quicStatsBody.innerHTML = "");
     elements.tlsStatsBody && (elements.tlsStatsBody.innerHTML = "");
+    elements.topFlowsBody && (elements.topFlowsBody.innerHTML = "");
     elements.topEndpointsBody && (elements.topEndpointsBody.innerHTML = "");
     elements.topPortsBody && (elements.topPortsBody.innerHTML = "");
   }
@@ -8131,6 +8161,58 @@
     elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, message, kind);
   }
 
+  function renderTopFlowsSection() {
+    const section = statisticsSectionEntry(statisticsSectionKeys.topFlows);
+    const statistics = state.topEndpointPortStatistics;
+    const topFlows = Array.isArray(statistics?.top_flows) ? statistics.top_flows : [];
+    const topTalkersVisible = Number(state.overview?.summary?.flow_count ?? 0) > 30;
+
+    if (elements.topFlowsSummaryValue) {
+      elements.topFlowsSummaryValue.textContent = statistics?.has_capture
+        ? `Top ${formatNumber(topFlows.length)}`
+        : "";
+    }
+
+    if (section.requestState === statisticsSectionRequestStates.ready && statistics?.has_capture) {
+      elements.topFlowsBody.innerHTML = topFlows.length > 0 && topTalkersVisible
+        ? topFlows.map((row) => `
+            <tr>
+              <td>${escapeHtml(String(row.flow_index_text ?? ""))}</td>
+              <td title="${escapeHtml(String(row.endpoint_a ?? ""))}">${escapeHtml(String(row.endpoint_a ?? ""))}</td>
+              <td title="${escapeHtml(String(row.endpoint_b ?? ""))}">${escapeHtml(String(row.endpoint_b ?? ""))}</td>
+              <td>${escapeHtml(String(row.protocol_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.detected_protocol_text ?? ""))}</td>
+              <td title="${escapeHtml(statisticsDisplayText(row.service_text))}">${escapeHtml(statisticsDisplayText(row.service_text))}</td>
+              <td title="${escapeHtml(String(row.protocol_path_compact_text ?? ""))}">${escapeHtml(String(row.protocol_path_compact_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.packet_count_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.captured_bytes_text ?? ""))}</td>
+              <td>${escapeHtml(String(row.original_bytes_text ?? ""))}</td>
+            </tr>
+          `).join("")
+        : renderStatsStateRow(
+          10,
+          topTalkersVisible
+            ? "No top-flow summary is available for this capture."
+            : "Top-flow summary appears once more than 30 flows are present."
+        );
+      return;
+    }
+
+    const message = section.requestState === statisticsSectionRequestStates.loading
+      ? "Calculating..."
+      : section.requestState === statisticsSectionRequestStates.error
+        ? (section.errorText || "Failed to load top flows.")
+        : section.requestState === statisticsSectionRequestStates.unavailable
+          ? "Top flows are unavailable."
+          : state.openState === "error"
+            ? "Open failed. No top-flow summary was loaded."
+            : state.openState !== "opened" || !state.overview
+              ? "Open a capture or index to load top flows."
+              : "Top flows load when this section is opened.";
+    const kind = section.requestState === statisticsSectionRequestStates.error || state.openState === "error" ? "error" : undefined;
+    elements.topFlowsBody.innerHTML = renderStatsStateRow(10, message, kind);
+  }
+
   function renderTopEndpointPortSection() {
     const section = statisticsSectionEntry(statisticsSectionKeys.topEndpointsPorts);
     const statistics = state.topEndpointPortStatistics;
@@ -8150,13 +8232,14 @@
           .map((row) => `
             <tr class="stats-drilldown-row" data-endpoint-filter="${escapeHtml(row.endpoint_label)}" title="Filter flows by this endpoint">
               <td>${escapeHtml(row.endpoint_label)}</td>
-              <td>${formatNumber(row.packet_count)}</td>
-              <td>${formatNumber(row.total_bytes)}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.flow_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.packet_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.total_bytes_text))}</td>
             </tr>
           `)
           .join("")
         : renderStatsStateRow(
-          3,
+          4,
           topTalkersVisible
             ? "No top-endpoint summary is available for this capture."
             : "Top-endpoint summary appears once more than 30 flows are present."
@@ -8166,13 +8249,14 @@
           .map((row) => `
             <tr class="stats-drilldown-row" data-port-filter="${row.port}" title="Filter flows by this port">
               <td>${formatNumber(row.port)}</td>
-              <td>${formatNumber(row.packet_count)}</td>
-              <td>${formatNumber(row.total_bytes)}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.flow_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.packet_count_text))}</td>
+              <td>${escapeHtml(statisticsDisplayText(row.total_bytes_text))}</td>
             </tr>
           `)
           .join("")
         : renderStatsStateRow(
-          3,
+          4,
           topTalkersVisible
             ? "No top-port summary is available for this capture."
             : "Top-port summary appears once more than 30 flows are present."
@@ -8212,8 +8296,8 @@
               ? "Open a capture or index to load top endpoints and ports."
               : "Top endpoints and ports load when this section is opened.";
     const kind = section.requestState === statisticsSectionRequestStates.error || state.openState === "error" ? "error" : undefined;
-    elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, message, kind);
-    elements.topPortsBody.innerHTML = renderStatsStateRow(3, message, kind);
+    elements.topEndpointsBody.innerHTML = renderStatsStateRow(4, message, kind);
+    elements.topPortsBody.innerHTML = renderStatsStateRow(4, message, kind);
   }
 
   function renderStatisticsTab() {
@@ -8224,6 +8308,7 @@
     renderProtocolPathStatsSection();
     renderProtocolHintSection();
     renderQuicTlsSection();
+    renderTopFlowsSection();
     renderTopEndpointPortSection();
   }
 
@@ -11231,6 +11316,7 @@
 
       if (state.openState === "opened") {
         await loadOverviewAndFlows();
+        state.topEndpointPortStatistics = null;
         if (state.analysisState !== "idle" && state.selectedFlowIndex != null) {
           await loadSelectedFlowAnalysis();
         }
@@ -11260,6 +11346,15 @@
         setStatus("Settings updated. Capture-processing changes apply when a raw capture is opened.", "success");
       } else {
         setStatus("Settings updated.", "success");
+      }
+      if (
+        state.activeTab === "statistics" &&
+        (
+          statisticsSectionEligible(statisticsSectionKeys.topFlows) ||
+          statisticsSectionEligible(statisticsSectionKeys.topEndpointsPorts)
+        )
+      ) {
+        void ensureTopEndpointPortStatisticsLoaded();
       }
       state.settingsDialogVisible = false;
       clearSettingsStatus();

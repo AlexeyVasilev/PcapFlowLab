@@ -554,15 +554,42 @@ pub struct ProtocolHintStatsDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopEndpointDto {
     pub endpoint_label: String,
+    pub flow_count: u64,
+    pub flow_count_text: String,
     pub packet_count: u64,
+    pub packet_count_text: String,
     pub total_bytes: u64,
+    pub total_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopPortDto {
     pub port: u16,
+    pub flow_count: u64,
+    pub flow_count_text: String,
     pub packet_count: u64,
+    pub packet_count_text: String,
     pub total_bytes: u64,
+    pub total_bytes_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopFlowDto {
+    pub flow_index: usize,
+    pub flow_index_text: String,
+    pub endpoint_a: String,
+    pub endpoint_b: String,
+    pub protocol_text: String,
+    pub detected_protocol_text: String,
+    pub service_text: String,
+    pub protocol_path_id: u32,
+    pub protocol_path_compact_text: String,
+    pub packet_count: u64,
+    pub packet_count_text: String,
+    pub captured_bytes: u64,
+    pub captured_bytes_text: String,
+    pub original_bytes: u64,
+    pub original_bytes_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -652,6 +679,7 @@ pub struct TopEndpointPortStatisticsDto {
     pub limit: usize,
     pub top_endpoints: Vec<TopEndpointDto>,
     pub top_ports: Vec<TopPortDto>,
+    pub top_flows: Vec<TopFlowDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

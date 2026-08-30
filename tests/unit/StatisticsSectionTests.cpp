@@ -14,9 +14,12 @@
 #include "app/frontend/FrontendSessionAdapterBridge.h"
 #include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SessionFormatting.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CapturePacketSizeStatistics.h"
 #include "core/domain/Connection.h"
+#include "core/domain/ProtocolPath.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/PcapReader.h"
 #include "core/services/CaptureImportProcessor.h"
@@ -347,17 +350,31 @@ void expect_quic_tls_summary_equal(const CaptureQuicTlsSummary& left, const Capt
 void expect_top_summary_equal(const CaptureTopSummary& left, const CaptureTopSummary& right) {
     PFL_EXPECT(left.endpoints_by_bytes.size() == right.endpoints_by_bytes.size());
     PFL_EXPECT(left.ports_by_bytes.size() == right.ports_by_bytes.size());
+    PFL_EXPECT(left.flows_by_original_bytes.size() == right.flows_by_original_bytes.size());
 
     for (std::size_t index = 0; index < left.endpoints_by_bytes.size(); ++index) {
         PFL_EXPECT(left.endpoints_by_bytes[index].endpoint == right.endpoints_by_bytes[index].endpoint);
+        PFL_EXPECT(left.endpoints_by_bytes[index].flow_count == right.endpoints_by_bytes[index].flow_count);
         PFL_EXPECT(left.endpoints_by_bytes[index].packet_count == right.endpoints_by_bytes[index].packet_count);
         PFL_EXPECT(left.endpoints_by_bytes[index].total_bytes == right.endpoints_by_bytes[index].total_bytes);
     }
 
     for (std::size_t index = 0; index < left.ports_by_bytes.size(); ++index) {
         PFL_EXPECT(left.ports_by_bytes[index].port == right.ports_by_bytes[index].port);
+        PFL_EXPECT(left.ports_by_bytes[index].flow_count == right.ports_by_bytes[index].flow_count);
         PFL_EXPECT(left.ports_by_bytes[index].packet_count == right.ports_by_bytes[index].packet_count);
         PFL_EXPECT(left.ports_by_bytes[index].total_bytes == right.ports_by_bytes[index].total_bytes);
+    }
+
+    for (std::size_t index = 0; index < left.flows_by_original_bytes.size(); ++index) {
+        PFL_EXPECT(left.flows_by_original_bytes[index].flow_index == right.flows_by_original_bytes[index].flow_index);
+        PFL_EXPECT(left.flows_by_original_bytes[index].protocol == right.flows_by_original_bytes[index].protocol);
+        PFL_EXPECT(left.flows_by_original_bytes[index].protocol_hint == right.flows_by_original_bytes[index].protocol_hint);
+        PFL_EXPECT(left.flows_by_original_bytes[index].service_hint == right.flows_by_original_bytes[index].service_hint);
+        PFL_EXPECT(left.flows_by_original_bytes[index].protocol_path_id == right.flows_by_original_bytes[index].protocol_path_id);
+        PFL_EXPECT(left.flows_by_original_bytes[index].packet_count == right.flows_by_original_bytes[index].packet_count);
+        PFL_EXPECT(left.flows_by_original_bytes[index].captured_bytes == right.flows_by_original_bytes[index].captured_bytes);
+        PFL_EXPECT(left.flows_by_original_bytes[index].total_bytes == right.flows_by_original_bytes[index].total_bytes);
     }
 }
 
@@ -897,6 +914,106 @@ void expect_general_statistics_cache_survives_possible_tls_projection_changes() 
     expect_histogram_equal(baseline_histogram, session.flow_packet_count_histogram());
     expect_quic_tls_summary_equal(baseline_quic_tls, session.quic_tls_summary());
     expect_top_summary_equal(baseline_top, session.top_summary(5U));
+}
+
+void expect_frontend_top_flows_preserve_shared_projection_semantics() {
+    ProtocolPathRegistry registry {};
+    const auto tcp_path_id = registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::tcp()}
+    });
+    const auto ipv6_udp_path_id = registry.intern(ProtocolPath {
+        {LayerKey::ethernet_ii(), LayerKey::ipv6(), LayerKey::udp()}
+    });
+
+    const EndpointKeyV4 tcp_endpoint_a {.addr = ipv4(10, 80, 0, 1), .port = 47001};
+    const EndpointKeyV4 tcp_endpoint_b {.addr = ipv4(10, 80, 0, 2), .port = 443};
+    const EndpointKeyV6 udp_endpoint_a {
+        .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}),
+        .port = 54001,
+    };
+    const EndpointKeyV6 udp_endpoint_b {
+        .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}),
+        .port = 443,
+    };
+
+    const std::vector<TopFlowRow> rows {
+        TopFlowRow {
+            .flow_index = 0U,
+            .family = FlowAddressFamily::ipv4,
+            .endpoint_a_key = tcp_endpoint_a,
+            .endpoint_b_key = tcp_endpoint_b,
+            .protocol = ProtocolId::tcp,
+            .protocol_path_id = tcp_path_id,
+            .protocol_hint = FlowProtocolHint::unknown,
+            .service_hint = {},
+            .packet_count = 2U,
+            .captured_bytes = 84U,
+            .total_bytes = 200U,
+        },
+        TopFlowRow {
+            .flow_index = 1U,
+            .family = FlowAddressFamily::ipv6,
+            .endpoint_a_key = udp_endpoint_a,
+            .endpoint_b_key = udp_endpoint_b,
+            .protocol = ProtocolId::udp,
+            .protocol_path_id = ipv6_udp_path_id,
+            .protocol_hint = FlowProtocolHint::unknown,
+            .service_hint = "quic.example",
+            .packet_count = 3U,
+            .captured_bytes = 210U,
+            .total_bytes = 210U,
+        },
+    };
+
+    AnalysisSettings without_possible {};
+    AnalysisSettings with_possible {};
+    with_possible.use_possible_tls_quic = true;
+
+    const auto projected_without_possible = build_frontend_top_flows(
+        std::span<const TopFlowRow>(rows.data(), rows.size()),
+        registry,
+        without_possible
+    );
+    const auto projected_with_possible = build_frontend_top_flows(
+        std::span<const TopFlowRow>(rows.data(), rows.size()),
+        registry,
+        with_possible
+    );
+
+    PFL_REQUIRE(projected_without_possible.size() == 2U);
+    PFL_REQUIRE(projected_with_possible.size() == 2U);
+
+    PFL_EXPECT(projected_without_possible[0].flow_index == 0U);
+    PFL_EXPECT(projected_without_possible[0].flow_index_text == "1");
+    PFL_EXPECT(projected_without_possible[0].endpoint_a == session_detail::format_endpoint(tcp_endpoint_a));
+    PFL_EXPECT(projected_without_possible[0].endpoint_b == session_detail::format_endpoint(tcp_endpoint_b));
+    PFL_EXPECT(projected_without_possible[0].protocol_text == "TCP");
+    PFL_EXPECT(projected_without_possible[0].detected_protocol_text.empty());
+    PFL_EXPECT(projected_without_possible[0].service_text == "\xE2\x80\x94");
+    PFL_EXPECT(projected_without_possible[0].protocol_path_id == tcp_path_id);
+    PFL_EXPECT(projected_without_possible[0].protocol_path_compact_text
+        == session_detail::protocol_path_compact_text(registry, tcp_path_id));
+    PFL_EXPECT(projected_without_possible[0].packet_count_text == "2");
+    PFL_EXPECT(projected_without_possible[0].captured_bytes == 84U);
+    PFL_EXPECT(projected_without_possible[0].original_bytes == 200U);
+
+    PFL_EXPECT(projected_without_possible[1].flow_index_text == "2");
+    PFL_EXPECT(projected_without_possible[1].endpoint_a == session_detail::format_endpoint(udp_endpoint_a));
+    PFL_EXPECT(projected_without_possible[1].endpoint_b == session_detail::format_endpoint(udp_endpoint_b));
+    PFL_EXPECT(projected_without_possible[1].protocol_text == "UDP");
+    PFL_EXPECT(projected_without_possible[1].detected_protocol_text.empty());
+    PFL_EXPECT(projected_without_possible[1].service_text == "quic.example");
+    PFL_EXPECT(projected_without_possible[1].protocol_path_compact_text
+        == session_detail::protocol_path_compact_text(registry, ipv6_udp_path_id));
+
+    PFL_EXPECT(projected_with_possible[0].detected_protocol_text == "Possible TLS");
+    PFL_EXPECT(projected_with_possible[1].detected_protocol_text == "Possible QUIC");
+    PFL_EXPECT(projected_with_possible[0].protocol_text == projected_without_possible[0].protocol_text);
+    PFL_EXPECT(projected_with_possible[0].service_text == projected_without_possible[0].service_text);
+    PFL_EXPECT(projected_with_possible[0].protocol_path_compact_text
+        == projected_without_possible[0].protocol_path_compact_text);
+    PFL_EXPECT(projected_with_possible[1].protocol_path_compact_text
+        == projected_without_possible[1].protocol_path_compact_text);
 }
 
 void expect_capture_packet_size_statistics_boundaries() {
@@ -1581,6 +1698,11 @@ void expect_overview_excludes_optional_statistics_sections() {
     PFL_EXPECT(top_statistics.limit == 5U);
     PFL_EXPECT(!top_statistics.top_endpoints.empty());
     PFL_EXPECT(!top_statistics.top_ports.empty());
+    PFL_EXPECT(!top_statistics.top_flows.empty());
+    PFL_EXPECT(!top_statistics.top_endpoints.front().flow_count_text.empty());
+    PFL_EXPECT(!top_statistics.top_ports.front().packet_count_text.empty());
+    PFL_EXPECT(!top_statistics.top_flows.front().flow_index_text.empty());
+    PFL_EXPECT(!top_statistics.top_flows.front().protocol_path_compact_text.empty());
 
     PFL_EXPECT(packet_size_statistics.has_capture);
     PFL_EXPECT(packet_size_statistics.total_packet_count == 4U);
@@ -2212,6 +2334,7 @@ void expect_statistics_section_requests_handle_missing_capture() {
     PFL_EXPECT(!top.has_capture);
     PFL_EXPECT(top.top_endpoints.empty());
     PFL_EXPECT(top.top_ports.empty());
+    PFL_EXPECT(top.top_flows.empty());
 }
 
 void expect_statistics_section_bridge_json_shapes() {
@@ -2319,6 +2442,7 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(!contains_text(overview_json, "\"tls_recognition\""));
     PFL_EXPECT(!contains_text(overview_json, "\"top_endpoints\""));
     PFL_EXPECT(!contains_text(overview_json, "\"top_ports\""));
+    PFL_EXPECT(!contains_text(overview_json, "\"top_flows\""));
 
     const auto hints_json = take_bridge_string(pfl_frontend_session_adapter_get_protocol_hint_statistics_json(handle));
     PFL_EXPECT(contains_text(hints_json, "\"protocol_hints\""));
@@ -2336,7 +2460,11 @@ void expect_statistics_section_bridge_json_shapes() {
     const auto top_json = take_bridge_string(pfl_frontend_session_adapter_get_top_endpoint_port_statistics_json(handle, 5U));
     PFL_EXPECT(contains_text(top_json, "\"top_endpoints\""));
     PFL_EXPECT(contains_text(top_json, "\"top_ports\""));
+    PFL_EXPECT(contains_text(top_json, "\"top_flows\""));
     PFL_EXPECT(contains_text(top_json, "\"limit\":5"));
+    PFL_EXPECT(contains_text(top_json, "\"flow_count_text\""));
+    PFL_EXPECT(contains_text(top_json, "\"packet_count_text\""));
+    PFL_EXPECT(contains_text(top_json, "\"protocol_path_compact_text\""));
 
     pfl_frontend_session_adapter_free(handle);
 }
@@ -2481,6 +2609,7 @@ void run_statistics_section_tests() {
     expect_capture_general_statistics_support_empty_inputs();
     expect_capture_general_statistics_track_flow_characteristics_distributions_and_captured_bytes();
     expect_general_statistics_cache_survives_possible_tls_projection_changes();
+    expect_frontend_top_flows_preserve_shared_projection_semantics();
     expect_capture_packet_size_statistics_boundaries();
     expect_capture_packet_size_statistics_supports_empty_state();
     expect_capture_packet_statistics_supports_empty_state();

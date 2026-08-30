@@ -76,6 +76,14 @@ std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept;
 std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept;
 std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept;
 ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept;
+std::string format_flow_protocol_text(ProtocolId protocol);
+FlowProtocolHint effective_protocol_hint(
+    FlowProtocolHint confirmed_hint,
+    ProtocolId protocol,
+    std::uint16_t first_port,
+    std::uint16_t second_port,
+    const AnalysisSettings& settings
+) noexcept;
 FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept;
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept;
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);

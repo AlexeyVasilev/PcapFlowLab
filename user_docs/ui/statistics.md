@@ -579,8 +579,8 @@ section:
 
 ![QUIC, TLS, and Top Endpoints/Ports](images/statistics/statistics-quic-tls-top.png)
 
-*Recognition-quality statistics for QUIC and TLS, followed by top endpoints and
-ports.*
+*Recognition-quality statistics for QUIC and TLS, followed by the whole-capture
+top-flow, top-endpoint, and top-port summaries.*
 
 The upper half of this view summarizes recognition-quality and metadata-coverage
 statistics for QUIC and TLS flows.
@@ -620,17 +620,60 @@ Current semantics:
 - `With SNI` and `Without SNI` are percentages of total TLS flows;
 - version rows count TLS flows by recognized version classification.
 
+## Top Flows by Original Bytes
+
+`Top Flows by Original Bytes` is a separate collapsible whole-capture section
+shown near the bottom of `Statistics`, immediately before `Top Endpoints and
+Ports`.
+
+Current columns:
+
+- `Flow`
+- `Endpoint A`
+- `Endpoint B`
+- `Protocol`
+- `Detected Protocol`
+- `Service`
+- `Protocol Path`
+- `Packets`
+- `Captured`
+- `Original`
+
+Current ranking semantics:
+
+- rows are ranked by `Original` bytes descending;
+- packet count is the secondary tie-breaker;
+- canonical flow order is the final deterministic tie-breaker.
+
+Current row semantics:
+
+- `Flow` uses the same one-based visible numbering as the normal `Flows` list;
+- `Endpoint A` / `Endpoint B` preserve the canonical first-observed
+  orientation;
+- `Protocol` matches the flow-list transport/protocol column;
+- `Detected Protocol` reuses the current shared `Possible TLS` / `Possible
+  QUIC` presentation policy;
+- `Service` shows the canonical stored service hint and uses `—` when the flow
+  has no stored service hint;
+- `Protocol Path` shows the same compact path representation used by the normal
+  `Flows` list;
+- `Captured` and `Original` are metadata-backed flow totals, but ranking still
+  follows `Original`.
+
+This section keeps at most `10` rows.
+
 ## Top Endpoints and Ports
 
-The lower half of the same screenshot shows:
+The following section shows:
 
 - `Top Endpoints`
 - `Top Ports`
 
 Current columns:
 
+- `Flows`
 - `Packets`
-- `Bytes`
+- `Original Bytes`
 
 Current ranking semantics:
 
@@ -640,6 +683,7 @@ Current ranking semantics:
 
 Current endpoint semantics:
 
+- each row counts distinct canonical flows involving that endpoint;
 - each recognized canonical flow contributes its full packet count and original-
   byte total to both of its endpoints;
 - endpoint packet totals therefore count packets involving that endpoint across
@@ -647,8 +691,11 @@ Current endpoint semantics:
 
 Current port semantics:
 
+- each row counts distinct canonical flows involving that non-zero port number;
 - each recognized canonical flow contributes its full packet count and original-
   byte total to both non-zero endpoint ports;
+- one canonical flow contributes once per DISTINCT non-zero port number, so a
+  `4500 -> 4500` flow counts once for port `4500`, not twice;
 - protocols without ports do not add port rows.
 
 Current UI shape:

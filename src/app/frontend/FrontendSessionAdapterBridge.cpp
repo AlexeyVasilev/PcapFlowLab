@@ -1258,8 +1258,12 @@ std::string top_endpoint_json(const pfl::FrontendTopEndpointDto& row) {
     std::ostringstream out {};
     out << '{'
         << "\"endpoint_label\":" << json_string(row.endpoint_label) << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
         << "\"packet_count\":" << row.packet_count << ','
-        << "\"total_bytes\":" << row.total_bytes
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"total_bytes\":" << row.total_bytes << ','
+        << "\"total_bytes_text\":" << json_string(row.total_bytes_text)
         << '}';
     return out.str();
 }
@@ -1268,8 +1272,34 @@ std::string top_port_json(const pfl::FrontendTopPortDto& row) {
     std::ostringstream out {};
     out << '{'
         << "\"port\":" << row.port << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
         << "\"packet_count\":" << row.packet_count << ','
-        << "\"total_bytes\":" << row.total_bytes
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"total_bytes\":" << row.total_bytes << ','
+        << "\"total_bytes_text\":" << json_string(row.total_bytes_text)
+        << '}';
+    return out.str();
+}
+
+std::string top_flow_json(const pfl::FrontendTopFlowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"flow_index\":" << row.flow_index << ','
+        << "\"flow_index_text\":" << json_string(row.flow_index_text) << ','
+        << "\"endpoint_a\":" << json_string(row.endpoint_a) << ','
+        << "\"endpoint_b\":" << json_string(row.endpoint_b) << ','
+        << "\"protocol_text\":" << json_string(row.protocol_text) << ','
+        << "\"detected_protocol_text\":" << json_string(row.detected_protocol_text) << ','
+        << "\"service_text\":" << json_string(row.service_text) << ','
+        << "\"protocol_path_id\":" << row.protocol_path_id << ','
+        << "\"protocol_path_compact_text\":" << json_string(row.protocol_path_compact_text) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"captured_bytes\":" << row.captured_bytes << ','
+        << "\"captured_bytes_text\":" << json_string(row.captured_bytes_text) << ','
+        << "\"original_bytes\":" << row.original_bytes << ','
+        << "\"original_bytes_text\":" << json_string(row.original_bytes_text)
         << '}';
     return out.str();
 }
@@ -1477,6 +1507,16 @@ std::string top_endpoint_port_statistics_json(const pfl::FrontendTopEndpointPort
             out << ',';
         }
         out << top_port_json(statistics.top_ports[index]);
+    }
+
+    out << "],"
+        << "\"top_flows\":[";
+
+    for (std::size_t index = 0; index < statistics.top_flows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << top_flow_json(statistics.top_flows[index]);
     }
 
     out << "]}";
