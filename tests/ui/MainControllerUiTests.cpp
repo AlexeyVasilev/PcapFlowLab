@@ -1561,6 +1561,12 @@ int main(int argc, char* argv[]) {
         pane.object->setProperty("endpointSummaryText", QString::fromUtf8("10.0.0.1:40000 \xE2\x86\x92 10.0.0.2:80 TCP"));
         pane.object->setProperty("protocolHint", QStringLiteral("HTTP"));
         pane.object->setProperty("maxCapturedPacketSizeText", QStringLiteral("200 B"));
+        pane.object->setProperty("packetSizeHistogramMaximumOriginalText", QStringLiteral("1.5 KB (1 536 B)"));
+        pane.object->setProperty("packetSizeHistogramMaximumOriginalAToBText", QStringLiteral("1 KB (1 024 B)"));
+        pane.object->setProperty("packetSizeHistogramMaximumOriginalBToAText", QStringLiteral("512 B"));
+        pane.object->setProperty("packetSizeHistogramMaximumCapturedText", QStringLiteral("200 B"));
+        pane.object->setProperty("packetSizeHistogramMaximumCapturedAToBText", QStringLiteral("160 B"));
+        pane.object->setProperty("packetSizeHistogramMaximumCapturedBToAText", QStringLiteral("96 B"));
         pane.object->setProperty("rateGraphAvailable", true);
         pane.object->setProperty("rateGraphStatusText", QStringLiteral(""));
         pane.object->setProperty("rateGraphWindowText", QStringLiteral("Window: 10 ms (auto)"));
@@ -1603,10 +1609,15 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(pane.object.get(), "analysisProtocolSummaryLabel")->property("text").toString() == QStringLiteral("Protocol: TCP (HTTP)"));
         UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMaxLabel") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 3"));
-        UI_EXPECT(named_object(pane.object.get(), "analysisMaxCapturedPacketSizeLabel") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumCaption") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumValue") != nullptr);
         UI_EXPECT(
-            named_object(pane.object.get(), "analysisMaxCapturedPacketSizeLabel")->property("text").toString() ==
-            QStringLiteral("200 B")
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumCaption")->property("text").toString() ==
+            QStringLiteral("Maximum original packet size:")
+        );
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumValue")->property("text").toString() ==
+            QStringLiteral("1.5 KB (1 536 B)")
         );
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 4"));
@@ -1628,6 +1639,38 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionBToAButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionBothButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateGraphCanvas") != nullptr);
+        pane.object->setProperty("packetSizeHistogramMetricMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumCaption")->property("text").toString() ==
+            QStringLiteral("Maximum captured packet size:")
+        );
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumValue")->property("text").toString() ==
+            QStringLiteral("200 B")
+        );
+        pane.object->setProperty("packetSizeHistogramDirectionMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumValue")->property("text").toString() ==
+            QStringLiteral("160 B")
+        );
+        pane.object->setProperty("packetSizeHistogramMetricMode", 0);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumCaption")->property("text").toString() ==
+            QStringLiteral("Maximum original packet size:")
+        );
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumValue")->property("text").toString() ==
+            QStringLiteral("1 KB (1 024 B)")
+        );
+        pane.object->setProperty("packetSizeHistogramDirectionMode", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(
+            named_object(pane.object.get(), "analysisPacketSizeHistogramMaximumValue")->property("text").toString() ==
+            QStringLiteral("512 B")
+        );
         auto* analysisPaneItem = qobject_cast<QQuickItem*>(pane.object.get());
         auto* rateGraphSurface = qobject_cast<QQuickItem*>(named_object(pane.object.get(), "analysisRateGraphSurface"));
         auto* rateGraphCanvas = qobject_cast<QQuickItem*>(named_object(pane.object.get(), "analysisRateGraphCanvas"));
@@ -1652,7 +1695,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(std::fabs(canvasSizeAfterSwitches.height() - rateGraphCanvas->height()) <= 1.0);
         pane.object->setProperty("packetSizeHistogramMetricMode", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
-        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 5);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 1);
         pane.object->setProperty("packetSizeHistogramDirectionMode", 1);
         pane.object->setProperty("interArrivalHistogramDirectionMode", 2);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -1929,6 +1972,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMaxPacketSizeAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMaxPacketSizeBToAText().isEmpty());
+    UI_EXPECT(controller.analysisPacketSizeHistogramMaximumOriginalText() == QStringLiteral("%1 B").arg(http_flow.size()));
+    UI_EXPECT(controller.analysisPacketSizeHistogramMaximumOriginalAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
+    UI_EXPECT(controller.analysisPacketSizeHistogramMaximumOriginalBToAText().isEmpty());
+    UI_EXPECT(controller.analysisPacketSizeHistogramMaximumCapturedText() == QStringLiteral("%1 B").arg(http_flow.size()));
+    UI_EXPECT(controller.analysisPacketSizeHistogramMaximumCapturedAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
+    UI_EXPECT(controller.analysisPacketSizeHistogramMaximumCapturedBToAText().isEmpty());
     UI_EXPECT(controller.analysisPacketRatioText() == QStringLiteral("1 : 0"));
     UI_EXPECT(controller.analysisByteRatioText() == QStringLiteral("1 : 0"));
     UI_EXPECT(controller.analysisPacketDirectionText() == QStringLiteral("Mostly A->B"));
@@ -2196,6 +2245,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(formatting_controller.analysisMinPacketSizeText() == QStringLiteral("512 B"));
     UI_EXPECT(formatting_controller.analysisMaxPacketSizeText() == QStringLiteral("1 KB"));
     UI_EXPECT(formatting_controller.analysisMaxCapturedPacketSizeText() == QStringLiteral("1 KB (1 024 B)"));
+    UI_EXPECT(formatting_controller.analysisPacketSizeHistogramMaximumOriginalText() == QStringLiteral("1 KB (1 024 B)"));
+    UI_EXPECT(formatting_controller.analysisPacketSizeHistogramMaximumCapturedText() == QStringLiteral("1 KB (1 024 B)"));
     UI_EXPECT(formatting_controller.analysisBytesAToBText() == QStringLiteral("1.5 KB"));
     UI_EXPECT(formatting_controller.analysisBytesBToAText() == QStringLiteral("0 B"));
 

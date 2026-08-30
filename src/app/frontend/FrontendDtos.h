@@ -798,6 +798,18 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string max_captured_packet_size_text {};
     std::string max_packet_size_a_to_b_text {};
     std::string max_packet_size_b_to_a_text {};
+    std::optional<std::uint32_t> packet_size_histogram_original_maximum_all {};
+    std::string packet_size_histogram_original_maximum_all_text {};
+    std::optional<std::uint32_t> packet_size_histogram_original_maximum_a_to_b {};
+    std::string packet_size_histogram_original_maximum_a_to_b_text {};
+    std::optional<std::uint32_t> packet_size_histogram_original_maximum_b_to_a {};
+    std::string packet_size_histogram_original_maximum_b_to_a_text {};
+    std::optional<std::uint32_t> packet_size_histogram_captured_maximum_all {};
+    std::string packet_size_histogram_captured_maximum_all_text {};
+    std::optional<std::uint32_t> packet_size_histogram_captured_maximum_a_to_b {};
+    std::string packet_size_histogram_captured_maximum_a_to_b_text {};
+    std::optional<std::uint32_t> packet_size_histogram_captured_maximum_b_to_a {};
+    std::string packet_size_histogram_captured_maximum_b_to_a_text {};
     std::string tcp_syn_packets_text {};
     std::string tcp_fin_packets_text {};
     std::string tcp_rst_packets_text {};

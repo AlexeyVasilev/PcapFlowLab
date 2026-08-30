@@ -236,7 +236,11 @@ the visible desktop Analysis controls directly:
 - packet-size histogram data now uses the explicit
   `packet_size_histogram_dimension_rows` matrix as the shared selected-flow
   Analysis contract for `Original` and `Captured` across `All`, `A->B`, and
-  `B->A`.
+  `B->A`;
+- the selected-flow Analysis DTO also carries exact packet-size maximums and
+  shared formatted text for the same `Original` / `Captured` x `All` / `A->B`
+  / `B->A` matrix so frontends do not derive exact values from histogram
+  bucket labels.
 
 Qt still exposes the richer reference workspace. Tauri now consumes a meaningful
 shared selected-flow analysis slice rather than a fake placeholder.

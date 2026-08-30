@@ -48,6 +48,12 @@ Item {
     property string analysisMaxCapturedPacketSizeText: ""
     property string analysisMaxPacketSizeAToBText: ""
     property string analysisMaxPacketSizeBToAText: ""
+    property string analysisPacketSizeHistogramMaximumOriginalText: ""
+    property string analysisPacketSizeHistogramMaximumOriginalAToBText: ""
+    property string analysisPacketSizeHistogramMaximumOriginalBToAText: ""
+    property string analysisPacketSizeHistogramMaximumCapturedText: ""
+    property string analysisPacketSizeHistogramMaximumCapturedAToBText: ""
+    property string analysisPacketSizeHistogramMaximumCapturedBToAText: ""
     property string analysisPacketRatioText: ""
     property string analysisByteRatioText: ""
     property string analysisPacketDirectionText: ""
@@ -322,6 +328,12 @@ Item {
             maxCapturedPacketSizeText: root.analysisMaxCapturedPacketSizeText
             maxPacketSizeAToBText: root.analysisMaxPacketSizeAToBText
             maxPacketSizeBToAText: root.analysisMaxPacketSizeBToAText
+            packetSizeHistogramMaximumOriginalText: root.analysisPacketSizeHistogramMaximumOriginalText
+            packetSizeHistogramMaximumOriginalAToBText: root.analysisPacketSizeHistogramMaximumOriginalAToBText
+            packetSizeHistogramMaximumOriginalBToAText: root.analysisPacketSizeHistogramMaximumOriginalBToAText
+            packetSizeHistogramMaximumCapturedText: root.analysisPacketSizeHistogramMaximumCapturedText
+            packetSizeHistogramMaximumCapturedAToBText: root.analysisPacketSizeHistogramMaximumCapturedAToBText
+            packetSizeHistogramMaximumCapturedBToAText: root.analysisPacketSizeHistogramMaximumCapturedBToAText
             packetRatioText: root.analysisPacketRatioText
             byteRatioText: root.analysisByteRatioText
             packetDirectionText: root.analysisPacketDirectionText

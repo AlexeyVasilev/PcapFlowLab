@@ -179,6 +179,29 @@ struct PacketPreviewCandidate {
 
 using PacketSizeBucketCounts = std::array<std::uint64_t, kPacketSizeBuckets.size()>;
 
+void update_optional_maximum(
+    std::optional<std::uint32_t>& current_maximum,
+    const std::uint32_t candidate
+) {
+    if (!current_maximum.has_value() || candidate > *current_maximum) {
+        current_maximum = candidate;
+    }
+}
+
+std::optional<std::uint32_t> maximum_packet_length(
+    const std::optional<std::uint32_t>& left,
+    const std::optional<std::uint32_t>& right
+) {
+    if (!left.has_value()) {
+        return right;
+    }
+    if (!right.has_value()) {
+        return left;
+    }
+
+    return std::max(*left, *right);
+}
+
 const char* flow_direction_text(const FlowDirection direction) noexcept {
     return direction == FlowDirection::a_to_b ? "A->B" : "B->A";
 }
@@ -408,11 +431,15 @@ template <typename Flow>
 void accumulate_packet_size_histogram(
     const Flow& flow,
     PacketSizeBucketCounts& original_counts,
-    PacketSizeBucketCounts& captured_counts
+    PacketSizeBucketCounts& captured_counts,
+    std::optional<std::uint32_t>& original_maximum_packet_length,
+    std::optional<std::uint32_t>& captured_maximum_packet_length
 ) {
     for (const auto& packet : flow.packets) {
         original_counts[packet_size_bucket_index(packet.original_length)] += 1U;
         captured_counts[packet_size_bucket_index(packet.captured_length)] += 1U;
+        update_optional_maximum(original_maximum_packet_length, packet.original_length);
+        update_optional_maximum(captured_maximum_packet_length, packet.captured_length);
     }
 }
 
@@ -472,9 +499,25 @@ FlowAnalysisPacketSizeHistogramSet build_packet_size_histograms(const Connection
     PacketSizeBucketCounts captured_counts_all {};
     PacketSizeBucketCounts captured_counts_a_to_b {};
     PacketSizeBucketCounts captured_counts_b_to_a {};
+    std::optional<std::uint32_t> original_maximum_packet_length_a_to_b {};
+    std::optional<std::uint32_t> original_maximum_packet_length_b_to_a {};
+    std::optional<std::uint32_t> captured_maximum_packet_length_a_to_b {};
+    std::optional<std::uint32_t> captured_maximum_packet_length_b_to_a {};
 
-    accumulate_packet_size_histogram(connection.flow_a, original_counts_a_to_b, captured_counts_a_to_b);
-    accumulate_packet_size_histogram(connection.flow_b, original_counts_b_to_a, captured_counts_b_to_a);
+    accumulate_packet_size_histogram(
+        connection.flow_a,
+        original_counts_a_to_b,
+        captured_counts_a_to_b,
+        original_maximum_packet_length_a_to_b,
+        captured_maximum_packet_length_a_to_b
+    );
+    accumulate_packet_size_histogram(
+        connection.flow_b,
+        original_counts_b_to_a,
+        captured_counts_b_to_a,
+        original_maximum_packet_length_b_to_a,
+        captured_maximum_packet_length_b_to_a
+    );
 
     for (std::size_t index = 0; index < kPacketSizeBuckets.size(); ++index) {
         original_counts_all[index] = original_counts_a_to_b[index] + original_counts_b_to_a[index];
@@ -486,11 +529,19 @@ FlowAnalysisPacketSizeHistogramSet build_packet_size_histograms(const Connection
             .histogram_all = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, original_counts_all),
             .histogram_a_to_b = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, original_counts_a_to_b),
             .histogram_b_to_a = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, original_counts_b_to_a),
+            .maximum_packet_length_all =
+                maximum_packet_length(original_maximum_packet_length_a_to_b, original_maximum_packet_length_b_to_a),
+            .maximum_packet_length_a_to_b = original_maximum_packet_length_a_to_b,
+            .maximum_packet_length_b_to_a = original_maximum_packet_length_b_to_a,
         },
         .captured = FlowAnalysisPacketSizeHistogramDimension {
             .histogram_all = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, captured_counts_all),
             .histogram_a_to_b = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, captured_counts_a_to_b),
             .histogram_b_to_a = rows_from_counts<FlowAnalysisPacketSizeHistogramRow>(kPacketSizeBuckets, captured_counts_b_to_a),
+            .maximum_packet_length_all =
+                maximum_packet_length(captured_maximum_packet_length_a_to_b, captured_maximum_packet_length_b_to_a),
+            .maximum_packet_length_a_to_b = captured_maximum_packet_length_a_to_b,
+            .maximum_packet_length_b_to_a = captured_maximum_packet_length_b_to_a,
         },
     };
 }

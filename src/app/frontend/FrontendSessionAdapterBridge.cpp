@@ -2216,6 +2216,60 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"max_captured_packet_size_text\":" << json_string(analysis.max_captured_packet_size_text) << ','
         << "\"max_packet_size_a_to_b_text\":" << json_string(analysis.max_packet_size_a_to_b_text) << ','
         << "\"max_packet_size_b_to_a_text\":" << json_string(analysis.max_packet_size_b_to_a_text) << ','
+        << "\"packet_size_histogram_original_maximum_all\":";
+    if (analysis.packet_size_histogram_original_maximum_all.has_value()) {
+        out << *analysis.packet_size_histogram_original_maximum_all;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_original_maximum_all_text\":"
+        << json_string(analysis.packet_size_histogram_original_maximum_all_text) << ','
+        << "\"packet_size_histogram_original_maximum_a_to_b\":";
+    if (analysis.packet_size_histogram_original_maximum_a_to_b.has_value()) {
+        out << *analysis.packet_size_histogram_original_maximum_a_to_b;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_original_maximum_a_to_b_text\":"
+        << json_string(analysis.packet_size_histogram_original_maximum_a_to_b_text) << ','
+        << "\"packet_size_histogram_original_maximum_b_to_a\":";
+    if (analysis.packet_size_histogram_original_maximum_b_to_a.has_value()) {
+        out << *analysis.packet_size_histogram_original_maximum_b_to_a;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_original_maximum_b_to_a_text\":"
+        << json_string(analysis.packet_size_histogram_original_maximum_b_to_a_text) << ','
+        << "\"packet_size_histogram_captured_maximum_all\":";
+    if (analysis.packet_size_histogram_captured_maximum_all.has_value()) {
+        out << *analysis.packet_size_histogram_captured_maximum_all;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_captured_maximum_all_text\":"
+        << json_string(analysis.packet_size_histogram_captured_maximum_all_text) << ','
+        << "\"packet_size_histogram_captured_maximum_a_to_b\":";
+    if (analysis.packet_size_histogram_captured_maximum_a_to_b.has_value()) {
+        out << *analysis.packet_size_histogram_captured_maximum_a_to_b;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_captured_maximum_a_to_b_text\":"
+        << json_string(analysis.packet_size_histogram_captured_maximum_a_to_b_text) << ','
+        << "\"packet_size_histogram_captured_maximum_b_to_a\":";
+    if (analysis.packet_size_histogram_captured_maximum_b_to_a.has_value()) {
+        out << *analysis.packet_size_histogram_captured_maximum_b_to_a;
+    } else {
+        out << "null";
+    }
+    out << ','
+        << "\"packet_size_histogram_captured_maximum_b_to_a_text\":"
+        << json_string(analysis.packet_size_histogram_captured_maximum_b_to_a_text) << ','
         << "\"tcp_syn_packets_text\":" << json_string(analysis.tcp_syn_packets_text) << ','
         << "\"tcp_fin_packets_text\":" << json_string(analysis.tcp_fin_packets_text) << ','
         << "\"tcp_rst_packets_text\":" << json_string(analysis.tcp_rst_packets_text) << ','

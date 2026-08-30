@@ -517,6 +517,7 @@ QVariantList build_protocol_hint_distribution_rows(const CaptureProtocolSummary&
 }
 
 QString format_size_value(const std::uint64_t value);
+QString format_optional_statistics_size_value(const std::optional<std::uint32_t>& value);
 
 QVariantList build_packet_size_distribution_rows(const CapturePacketStatistics& statistics) {
     QVariantList rows {};
@@ -2110,6 +2111,12 @@ QString format_size_value(const std::uint64_t value) {
     return format_human_readable_bytes(static_cast<double>(value));
 }
 
+QString format_optional_statistics_size_value(const std::optional<std::uint32_t>& value) {
+    return value.has_value()
+        ? QString::fromStdString(session_detail::format_statistics_size_value(*value))
+        : QString {};
+}
+
 QString format_packet_rate_for_duration(const std::uint64_t packet_count, const std::uint64_t duration_us) {
     const auto packets_per_second = duration_us > 0U
         ? (static_cast<double>(packet_count) * 1000000.0) / static_cast<double>(duration_us)
@@ -3020,6 +3027,54 @@ QString MainController::analysisMaxPacketSizeAToBText() const {
 QString MainController::analysisMaxPacketSizeBToAText() const {
     return current_flow_analysis_.has_value() && current_flow_analysis_->packets_b_to_a > 0U
         ? format_size_value(current_flow_analysis_->max_packet_size_b_to_a_bytes)
+        : QString {};
+}
+
+QString MainController::analysisPacketSizeHistogramMaximumOriginalText() const {
+    return current_flow_analysis_.has_value()
+        ? format_optional_statistics_size_value(
+            current_flow_analysis_->packet_size_histograms.original.maximum_packet_length_all
+        )
+        : QString {};
+}
+
+QString MainController::analysisPacketSizeHistogramMaximumOriginalAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_optional_statistics_size_value(
+            current_flow_analysis_->packet_size_histograms.original.maximum_packet_length_a_to_b
+        )
+        : QString {};
+}
+
+QString MainController::analysisPacketSizeHistogramMaximumOriginalBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_optional_statistics_size_value(
+            current_flow_analysis_->packet_size_histograms.original.maximum_packet_length_b_to_a
+        )
+        : QString {};
+}
+
+QString MainController::analysisPacketSizeHistogramMaximumCapturedText() const {
+    return current_flow_analysis_.has_value()
+        ? format_optional_statistics_size_value(
+            current_flow_analysis_->packet_size_histograms.captured.maximum_packet_length_all
+        )
+        : QString {};
+}
+
+QString MainController::analysisPacketSizeHistogramMaximumCapturedAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_optional_statistics_size_value(
+            current_flow_analysis_->packet_size_histograms.captured.maximum_packet_length_a_to_b
+        )
+        : QString {};
+}
+
+QString MainController::analysisPacketSizeHistogramMaximumCapturedBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_optional_statistics_size_value(
+            current_flow_analysis_->packet_size_histograms.captured.maximum_packet_length_b_to_a
+        )
         : QString {};
 }
 

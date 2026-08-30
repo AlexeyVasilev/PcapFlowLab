@@ -577,6 +577,9 @@ Current visible Analysis contract also includes:
   `Original` / `Captured` and `All` / `A->B` / `B->A`;
 - `Original` packet size means the original packet length recorded by capture
   metadata, while `Captured` means the bytes retained in the capture;
+- the packet-size footer label and value follow the currently selected size
+  mode and direction, using the exact maximum packet length already computed
+  by selected-flow Analysis rather than inferring a value from bucket ranges;
 - `Flow Rate` exposes only `Original data/s` and `Packets/s`, with
   `A->B` / `B->A` / `Both` remaining local presentation controls;
 - switching Analysis metric or direction controls is frontend-local over the

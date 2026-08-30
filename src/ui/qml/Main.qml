@@ -1312,6 +1312,12 @@ ApplicationWindow {
                 analysisMaxCapturedPacketSizeText: mainController.analysisMaxCapturedPacketSizeText
                 analysisMaxPacketSizeAToBText: mainController.analysisMaxPacketSizeAToBText
                 analysisMaxPacketSizeBToAText: mainController.analysisMaxPacketSizeBToAText
+                analysisPacketSizeHistogramMaximumOriginalText: mainController.analysisPacketSizeHistogramMaximumOriginalText
+                analysisPacketSizeHistogramMaximumOriginalAToBText: mainController.analysisPacketSizeHistogramMaximumOriginalAToBText
+                analysisPacketSizeHistogramMaximumOriginalBToAText: mainController.analysisPacketSizeHistogramMaximumOriginalBToAText
+                analysisPacketSizeHistogramMaximumCapturedText: mainController.analysisPacketSizeHistogramMaximumCapturedText
+                analysisPacketSizeHistogramMaximumCapturedAToBText: mainController.analysisPacketSizeHistogramMaximumCapturedAToBText
+                analysisPacketSizeHistogramMaximumCapturedBToAText: mainController.analysisPacketSizeHistogramMaximumCapturedBToAText
                 analysisPacketRatioText: mainController.analysisPacketRatioText
                 analysisByteRatioText: mainController.analysisByteRatioText
                 analysisPacketDirectionText: mainController.analysisPacketDirectionText

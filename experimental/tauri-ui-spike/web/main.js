@@ -9529,6 +9529,32 @@
     }));
   }
 
+  function analysisPacketSizeHistogramMaximumSummary(analysis) {
+    const useCaptured = state.analysisPacketSizeHistogramMetricMode === "captured";
+    let value = "";
+
+    if (useCaptured) {
+      if (state.analysisPacketSizeHistogramDirectionMode === "a_to_b") {
+        value = analysis.packet_size_histogram_captured_maximum_a_to_b_text || "";
+      } else if (state.analysisPacketSizeHistogramDirectionMode === "b_to_a") {
+        value = analysis.packet_size_histogram_captured_maximum_b_to_a_text || "";
+      } else {
+        value = analysis.packet_size_histogram_captured_maximum_all_text || "";
+      }
+    } else if (state.analysisPacketSizeHistogramDirectionMode === "a_to_b") {
+      value = analysis.packet_size_histogram_original_maximum_a_to_b_text || "";
+    } else if (state.analysisPacketSizeHistogramDirectionMode === "b_to_a") {
+      value = analysis.packet_size_histogram_original_maximum_b_to_a_text || "";
+    } else {
+      value = analysis.packet_size_histogram_original_maximum_all_text || "";
+    }
+
+    return [
+      useCaptured ? "Maximum captured packet size" : "Maximum original packet size",
+      value || "-",
+    ];
+  }
+
   function renderAnalysisHistogram(section, rowsContainer, maxLabel, rows, mode, fillClassName = "") {
     if (!rows || rows.length === 0) {
       section.style.display = "";
@@ -9887,10 +9913,10 @@
       state.analysisPacketSizeHistogramDirectionMode,
       "is-packet-size"
     );
-    renderSummaryRows(elements.analysisPacketSizeCapturedSummary, [[
-      "Max captured packet size",
-      analysis.max_captured_packet_size_text || "-",
-    ]]);
+    renderSummaryRows(
+      elements.analysisPacketSizeCapturedSummary,
+      [analysisPacketSizeHistogramMaximumSummary(analysis)]
+    );
 
     renderAnalysisHistogramModeButtons("analysisInterArrivalHistogram", state.analysisInterArrivalHistogramMode);
     renderAnalysisHistogram(

@@ -33,6 +33,9 @@ struct FlowAnalysisPacketSizeHistogramDimension {
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_all {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_a_to_b {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_b_to_a {};
+    std::optional<std::uint32_t> maximum_packet_length_all {};
+    std::optional<std::uint32_t> maximum_packet_length_a_to_b {};
+    std::optional<std::uint32_t> maximum_packet_length_b_to_a {};
 };
 
 struct FlowAnalysisPacketSizeHistogramSet {

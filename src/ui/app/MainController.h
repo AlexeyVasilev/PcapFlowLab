@@ -167,6 +167,12 @@ private:
     Q_PROPERTY(QString analysisMaxCapturedPacketSizeText READ analysisMaxCapturedPacketSizeText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeAToBText READ analysisMaxPacketSizeAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeBToAText READ analysisMaxPacketSizeBToAText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumOriginalText READ analysisPacketSizeHistogramMaximumOriginalText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumOriginalAToBText READ analysisPacketSizeHistogramMaximumOriginalAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumOriginalBToAText READ analysisPacketSizeHistogramMaximumOriginalBToAText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumCapturedText READ analysisPacketSizeHistogramMaximumCapturedText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumCapturedAToBText READ analysisPacketSizeHistogramMaximumCapturedAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketSizeHistogramMaximumCapturedBToAText READ analysisPacketSizeHistogramMaximumCapturedBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketRatioText READ analysisPacketRatioText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisByteRatioText READ analysisByteRatioText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketDirectionText READ analysisPacketDirectionText NOTIFY analysisStateChanged)
@@ -456,6 +462,12 @@ public:
     [[nodiscard]] QString analysisMaxCapturedPacketSizeText() const;
     [[nodiscard]] QString analysisMaxPacketSizeAToBText() const;
     [[nodiscard]] QString analysisMaxPacketSizeBToAText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumOriginalText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumOriginalAToBText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumOriginalBToAText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumCapturedText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumCapturedAToBText() const;
+    [[nodiscard]] QString analysisPacketSizeHistogramMaximumCapturedBToAText() const;
     [[nodiscard]] QString analysisPacketRatioText() const;
     [[nodiscard]] QString analysisByteRatioText() const;
     [[nodiscard]] QString analysisPacketDirectionText() const;

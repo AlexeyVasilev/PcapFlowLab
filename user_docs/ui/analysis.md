@@ -307,13 +307,15 @@ Current bucket boundaries are the same for both size modes:
 9. `2500-5000`
 10. `5001+`
 
-The separate line:
+The footer below the histogram reports the exact maximum packet size for the
+currently selected size mode and direction:
 
-`Max captured packet size`
+- `Original` + `All` uses the exact maximum original packet length across the flow.
+- `Captured` + `All` uses the exact maximum captured packet length across the flow.
+- `A->B` and `B->A` use the exact maximum for the selected direction only.
 
-reports the maximum captured packet length seen in the selected flow. This
-value is still useful even when the histogram is currently showing `Original`
-bucket counts.
+This exact value is not inferred from the bucket label. The buckets stay
+coarse, while the footer shows the precise maximum for the current view.
 
 ## Inter-arrival timing
 

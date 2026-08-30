@@ -354,6 +354,12 @@ Frame {
     property string maxCapturedPacketSizeText: ""
     property string maxPacketSizeAToBText: ""
     property string maxPacketSizeBToAText: ""
+    property string packetSizeHistogramMaximumOriginalText: ""
+    property string packetSizeHistogramMaximumOriginalAToBText: ""
+    property string packetSizeHistogramMaximumOriginalBToAText: ""
+    property string packetSizeHistogramMaximumCapturedText: ""
+    property string packetSizeHistogramMaximumCapturedAToBText: ""
+    property string packetSizeHistogramMaximumCapturedBToAText: ""
     property string packetRatioText: ""
     property string byteRatioText: ""
     property string packetDirectionText: ""
@@ -439,6 +445,32 @@ Frame {
         if (typeof rateGraphCanvas !== "undefined" && rateGraphCanvas !== null) {
             rateGraphCanvas.requestPaint()
         }
+    }
+
+    function packetSizeHistogramMaximumLabelText() {
+        return packetSizeHistogramMetricMode === packetSizeMetricCaptured
+            ? "Maximum captured packet size:"
+            : "Maximum original packet size:"
+    }
+
+    function packetSizeHistogramMaximumValueText() {
+        if (packetSizeHistogramMetricMode === packetSizeMetricCaptured) {
+            if (packetSizeHistogramDirectionMode === histogramDirectionAToB) {
+                return packetSizeHistogramMaximumCapturedAToBText
+            }
+            if (packetSizeHistogramDirectionMode === histogramDirectionBToA) {
+                return packetSizeHistogramMaximumCapturedBToAText
+            }
+            return packetSizeHistogramMaximumCapturedText
+        }
+
+        if (packetSizeHistogramDirectionMode === histogramDirectionAToB) {
+            return packetSizeHistogramMaximumOriginalAToBText
+        }
+        if (packetSizeHistogramDirectionMode === histogramDirectionBToA) {
+            return packetSizeHistogramMaximumOriginalBToAText
+        }
+        return packetSizeHistogramMaximumOriginalText
     }
 
     onRenderedRateSeriesAToBChanged: requestRateGraphRepaint()
@@ -1395,13 +1427,16 @@ Frame {
                             spacing: 8
 
                             Label {
-                                text: "Max captured packet size:"
+                                objectName: "analysisPacketSizeHistogramMaximumCaption"
+                                text: root.packetSizeHistogramMaximumLabelText()
                                 color: "#475569"
                             }
 
                             Label {
-                                objectName: "analysisMaxCapturedPacketSizeLabel"
-                                text: root.maxCapturedPacketSizeText.length > 0 ? root.maxCapturedPacketSizeText : "-"
+                                objectName: "analysisPacketSizeHistogramMaximumValue"
+                                text: root.packetSizeHistogramMaximumValueText().length > 0
+                                    ? root.packetSizeHistogramMaximumValueText()
+                                    : "-"
                                 font.bold: true
                             }
 

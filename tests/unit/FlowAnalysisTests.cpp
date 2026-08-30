@@ -446,6 +446,37 @@ void run_flow_analysis_tests() {
         PFL_EXPECT(histogram_row->captured_count_a_to_b == 2U);
         PFL_EXPECT(histogram_row->captured_count_b_to_a == 1U);
     }
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_original_maximum_all ==
+        analysis->packet_size_histograms.original.maximum_packet_length_all
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_original_maximum_a_to_b ==
+        analysis->packet_size_histograms.original.maximum_packet_length_a_to_b
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_original_maximum_b_to_a ==
+        analysis->packet_size_histograms.original.maximum_packet_length_b_to_a
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_all ==
+        analysis->packet_size_histograms.captured.maximum_packet_length_all
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_a_to_b ==
+        analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b
+    );
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_b_to_a ==
+        analysis->packet_size_histograms.captured.maximum_packet_length_b_to_a
+    );
+    PFL_REQUIRE(frontend_analysis.packet_size_histogram_original_maximum_all.has_value());
+    PFL_REQUIRE(frontend_analysis.packet_size_histogram_captured_maximum_all.has_value());
+    PFL_EXPECT(!frontend_analysis.packet_size_histogram_original_maximum_all_text.empty());
+    PFL_EXPECT(
+        frontend_analysis.packet_size_histogram_captured_maximum_all_text ==
+        frontend_analysis.max_captured_packet_size_text
+    );
     PFL_EXPECT(frontend_analysis.rate_graph_available);
     PFL_EXPECT(frontend_analysis.rate_graph_points_a_to_b.size() == frontend_analysis.rate_graph_points_b_to_a.size());
     PFL_EXPECT(frontend_analysis.rate_graph_points_a_to_b.size() == analysis->rate_graph.points_a_to_b.size());
@@ -599,6 +630,16 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(packet_histogram_count(truncated_analysis.packet_size_histograms.captured.histogram_all, "64-127") == 2U);
     PFL_EXPECT(histogram_total_count(truncated_analysis.packet_size_histograms.original.histogram_all) == 2U);
     PFL_EXPECT(histogram_total_count(truncated_analysis.packet_size_histograms.captured.histogram_all) == 2U);
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.original.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.captured.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(truncated_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b.has_value());
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.original.maximum_packet_length_all == 400U);
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b == 400U);
+    PFL_EXPECT(!truncated_analysis.packet_size_histograms.original.maximum_packet_length_b_to_a.has_value());
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.captured.maximum_packet_length_all == 120U);
+    PFL_EXPECT(*truncated_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b == 120U);
+    PFL_EXPECT(!truncated_analysis.packet_size_histograms.captured.maximum_packet_length_b_to_a.has_value());
 
     const auto truncated_request_payload = std::vector<std::uint8_t>(40U, 0x41U);
     const auto truncated_response_payload = std::vector<std::uint8_t>(80U, 0x42U);
@@ -779,6 +820,26 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_b_to_a, "2500-5000") == 2U);
     PFL_EXPECT(histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_all) == 10U);
     PFL_EXPECT(histogram_total_count(directional_histogram_analysis.packet_size_histograms.captured.histogram_all) == 10U);
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_b_to_a.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_b_to_a.has_value());
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_all == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_a_to_b == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_b_to_a == 5000U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_all == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_a_to_b == 5001U);
+    PFL_EXPECT(*directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_b_to_a == 5000U);
+    PFL_EXPECT(
+        *directional_histogram_analysis.packet_size_histograms.original.maximum_packet_length_all ==
+        directional_histogram_connection.aggregate_stats.max_original_packet_length
+    );
+    PFL_EXPECT(
+        *directional_histogram_analysis.packet_size_histograms.captured.maximum_packet_length_all ==
+        directional_histogram_connection.aggregate_stats.max_captured_packet_length
+    );
     PFL_EXPECT(
         histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_all) ==
         histogram_total_count(directional_histogram_analysis.packet_size_histograms.original.histogram_a_to_b) +
@@ -840,6 +901,16 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(single_packet_analysis->max_packet_size_a_to_b_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->min_packet_size_b_to_a_bytes == 0U);
     PFL_EXPECT(single_packet_analysis->max_packet_size_b_to_a_bytes == 0U);
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.original.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.original.maximum_packet_length_a_to_b.has_value());
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_all.has_value());
+    PFL_REQUIRE(single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b.has_value());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.original.maximum_packet_length_all == request_packet.size());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.original.maximum_packet_length_a_to_b == request_packet.size());
+    PFL_EXPECT(!single_packet_analysis->packet_size_histograms.original.maximum_packet_length_b_to_a.has_value());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_all == request_packet.size());
+    PFL_EXPECT(*single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b == request_packet.size());
+    PFL_EXPECT(!single_packet_analysis->packet_size_histograms.captured.maximum_packet_length_b_to_a.has_value());
     PFL_EXPECT(single_packet_analysis->packet_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->byte_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->packet_direction_text == "Mostly A->B");

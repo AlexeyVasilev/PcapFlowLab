@@ -2021,6 +2021,10 @@ std::string format_size_value(const std::uint64_t value) {
     return format_human_readable_bytes(static_cast<double>(value));
 }
 
+std::string format_optional_exact_packet_size_text(const std::optional<std::uint32_t>& value) {
+    return value.has_value() ? session_detail::format_statistics_size_value(*value) : std::string {};
+}
+
 std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const std::size_t flow_index) {
     return session.flow_row(flow_index);
 }
@@ -3781,6 +3785,36 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     if (analysis->packets_b_to_a > 0U) {
         result.max_packet_size_b_to_a_text = format_size_value(analysis->max_packet_size_b_to_a_bytes);
     }
+    result.packet_size_histogram_original_maximum_all =
+        analysis->packet_size_histograms.original.maximum_packet_length_all;
+    result.packet_size_histogram_original_maximum_all_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_original_maximum_all
+    );
+    result.packet_size_histogram_original_maximum_a_to_b =
+        analysis->packet_size_histograms.original.maximum_packet_length_a_to_b;
+    result.packet_size_histogram_original_maximum_a_to_b_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_original_maximum_a_to_b
+    );
+    result.packet_size_histogram_original_maximum_b_to_a =
+        analysis->packet_size_histograms.original.maximum_packet_length_b_to_a;
+    result.packet_size_histogram_original_maximum_b_to_a_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_original_maximum_b_to_a
+    );
+    result.packet_size_histogram_captured_maximum_all =
+        analysis->packet_size_histograms.captured.maximum_packet_length_all;
+    result.packet_size_histogram_captured_maximum_all_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_captured_maximum_all
+    );
+    result.packet_size_histogram_captured_maximum_a_to_b =
+        analysis->packet_size_histograms.captured.maximum_packet_length_a_to_b;
+    result.packet_size_histogram_captured_maximum_a_to_b_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_captured_maximum_a_to_b
+    );
+    result.packet_size_histogram_captured_maximum_b_to_a =
+        analysis->packet_size_histograms.captured.maximum_packet_length_b_to_a;
+    result.packet_size_histogram_captured_maximum_b_to_a_text = format_optional_exact_packet_size_text(
+        result.packet_size_histogram_captured_maximum_b_to_a
+    );
     result.tcp_syn_packets_text = format_grouped_integer(analysis->tcp_syn_packets);
     result.tcp_fin_packets_text = format_grouped_integer(analysis->tcp_fin_packets);
     result.tcp_rst_packets_text = format_grouped_integer(analysis->tcp_rst_packets);
