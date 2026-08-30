@@ -32,6 +32,10 @@ namespace pfl {
     const CaptureTcpFlagStatistics& statistics,
     std::uint64_t total_tcp_packet_count
 );
+[[nodiscard]] std::string build_frontend_count_with_total_percent_text(
+    std::uint64_t count,
+    std::uint64_t total_count
+);
 [[nodiscard]] std::vector<FrontendTopEndpointDto> build_frontend_top_endpoints(
     const CaptureTopSummary& summary
 );

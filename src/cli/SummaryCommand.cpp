@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/frontend/FrontendSettingsJson.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -45,6 +46,9 @@ constexpr std::array<std::string_view, 2> kHelpOptions {
     "--help",
 };
 
+constexpr std::string_view kSharedUnavailableText {"—"};
+constexpr std::string_view kCliUnavailableText {"-"};
+
 struct TableColumn {
     std::string header {};
     bool right_align {false};
@@ -64,6 +68,12 @@ std::string render_command_list() {
     out << "  flow-info           Show detailed analysis for exactly one canonical flow.\n";
     out << "  packet-info         Inspect exactly one captured packet.\n";
     return out.str();
+}
+
+std::string cli_table_text(const std::string_view text) {
+    return text == kSharedUnavailableText
+        ? std::string {kCliUnavailableText}
+        : std::string {text};
 }
 
 std::string_view canonicalize_cli_command_name(const std::string_view command) noexcept {
@@ -180,6 +190,15 @@ void append_key_value_line(
     out << "  " << pad_right(std::string {key} + ":", label_width) << value << '\n';
 }
 
+template <std::size_t N>
+std::size_t longest_label_width(const std::array<std::string_view, N>& labels) {
+    std::size_t width = 0U;
+    for (const auto label : labels) {
+        width = std::max(width, label.size() + 3U);
+    }
+    return width;
+}
+
 std::optional<ProtocolPathStatisticsMode> parse_protocol_path_mode(const std::string_view value) noexcept {
     if (value == "kind-overview") {
         return ProtocolPathStatisticsMode::kind_overview;
@@ -207,17 +226,15 @@ std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
         "Original bytes",
         "Unrecognized packets",
     };
-
-    const auto longest_label_width = [](const auto& labels) {
-        std::size_t width = 0U;
-        for (const auto label : labels) {
-            width = std::max(width, label.size() + 3U);
-        }
-        return width;
+    constexpr std::array<std::string_view, 3> capture_time_labels {
+        "Start",
+        "End",
+        "Duration",
     };
 
     const auto input_label_width = longest_label_width(input_labels);
     const auto capture_label_width = longest_label_width(capture_labels);
+    const auto capture_time_label_width = longest_label_width(capture_time_labels);
 
     std::ostringstream out {};
     out << "PcapFlowLab Summary\n\n";
@@ -261,6 +278,16 @@ std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
         session_detail::format_statistics_count_value(overview.unrecognized_packet_count),
         capture_label_width
     );
+
+    out << "\nCapture Time\n";
+    append_key_value_line(out, "Start", overview.capture_time.capture_start_text, capture_time_label_width);
+    append_key_value_line(out, "End", overview.capture_time.capture_end_text, capture_time_label_width);
+    append_key_value_line(out, "Duration", overview.capture_time.duration_text, capture_time_label_width);
+
+    if (!overview.statistics_partial_open_warning_text.empty()) {
+        out << "\nWarning\n";
+        out << "  " << overview.statistics_partial_open_warning_text << '\n';
+    }
 
     out << "\nTransport Summary\n\n";
     out << render_table(
@@ -331,8 +358,183 @@ std::string render_basic_summary_text(const FrontendOverviewDto& overview) {
     return out.str();
 }
 
-std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) {
+std::string render_extended_summary_text(
+    const FrontendSessionAdapter& adapter,
+    const FrontendOverviewDto& overview
+) {
     std::ostringstream out {};
+
+    constexpr std::array<std::string_view, 8> capture_metrics_labels {
+        "Average captured packet size",
+        "Average original packet size",
+        "Average packet rate",
+        "Average captured data rate",
+        "Average original data rate",
+        "Truncated packets",
+        "Not captured bytes",
+        "Capture completeness",
+    };
+    constexpr std::array<std::string_view, 2> flow_characteristics_labels {
+        "Only A -> B flows",
+        "Service recognized",
+    };
+    constexpr std::array<std::string_view, 2> packet_size_labels {
+        "Maximum captured packet size",
+        "Maximum original packet size",
+    };
+    constexpr std::array<std::string_view, 1> quic_tls_labels {
+        "Flows",
+    };
+    constexpr std::array<std::string_view, 2> quic_recognition_labels {
+        "Recognized Initial",
+        "Unrecognized",
+    };
+    constexpr std::array<std::string_view, 4> quic_version_labels {
+        "v1",
+        "draft-29",
+        "v2",
+        "Version unavailable",
+    };
+    constexpr std::array<std::string_view, 2> tls_sni_labels {
+        "With SNI",
+        "Without SNI",
+    };
+    constexpr std::array<std::string_view, 3> tls_version_labels {
+        "TLS 1.2",
+        "TLS 1.3",
+        "Version unavailable",
+    };
+
+    const auto capture_metrics_label_width = longest_label_width(capture_metrics_labels);
+    const auto flow_characteristics_label_width = longest_label_width(flow_characteristics_labels);
+    const auto packet_size_label_width = longest_label_width(packet_size_labels);
+    const auto quic_tls_label_width = longest_label_width(quic_tls_labels);
+    const auto quic_recognition_label_width = longest_label_width(quic_recognition_labels);
+    const auto quic_version_label_width = longest_label_width(quic_version_labels);
+    const auto tls_sni_label_width = longest_label_width(tls_sni_labels);
+    const auto tls_version_label_width = longest_label_width(tls_version_labels);
+
+    out << "\nCapture Metrics\n";
+    append_key_value_line(
+        out,
+        "Average captured packet size",
+        overview.capture_metrics.average_captured_packet_size_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Average original packet size",
+        overview.capture_metrics.average_original_packet_size_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Average packet rate",
+        overview.capture_metrics.average_packet_rate_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Average captured data rate",
+        overview.capture_metrics.average_captured_data_rate_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Average original data rate",
+        overview.capture_metrics.average_original_data_rate_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Truncated packets",
+        overview.capture_metrics.truncated_packets_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Not captured bytes",
+        overview.capture_metrics.not_captured_bytes_text,
+        capture_metrics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Capture completeness",
+        overview.capture_metrics.capture_completeness_text,
+        capture_metrics_label_width
+    );
+
+    out << "\nFlow Characteristics\n";
+    append_key_value_line(
+        out,
+        "Only A -> B flows",
+        overview.flow_characteristics.only_a_to_b_flows_text,
+        flow_characteristics_label_width
+    );
+    append_key_value_line(
+        out,
+        "Service recognized",
+        overview.flow_characteristics.service_recognized_flows_text,
+        flow_characteristics_label_width
+    );
+
+    out << "\nDirection Distribution\n\n";
+    out << "Packet Direction\n\n";
+    std::vector<std::vector<std::string>> packet_direction_rows {};
+    packet_direction_rows.reserve(overview.packet_direction_distribution.rows.size());
+    for (const auto& row : overview.packet_direction_distribution.rows) {
+        packet_direction_rows.push_back({
+            row.label,
+            row.flow_count_text,
+            row.percent_text,
+        });
+    }
+    out << render_table(
+        {
+            {.header = "Group", .right_align = false},
+            {.header = "Flows", .right_align = true},
+            {.header = "Percent", .right_align = true},
+        },
+        packet_direction_rows);
+
+    out << "\nData Direction (Original Bytes)\n\n";
+    std::vector<std::vector<std::string>> original_byte_direction_rows {};
+    original_byte_direction_rows.reserve(overview.original_byte_direction_distribution.rows.size());
+    for (const auto& row : overview.original_byte_direction_distribution.rows) {
+        original_byte_direction_rows.push_back({
+            row.label,
+            row.flow_count_text,
+            row.percent_text,
+        });
+    }
+    out << render_table(
+        {
+            {.header = "Group", .right_align = false},
+            {.header = "Flows", .right_align = true},
+            {.header = "Percent", .right_align = true},
+        },
+        original_byte_direction_rows);
+
+    out << "\nTCP Flags\n\n";
+    std::vector<std::vector<std::string>> tcp_flag_rows {};
+    tcp_flag_rows.reserve(overview.tcp_flag_statistics.rows.size());
+    for (const auto& row : overview.tcp_flag_statistics.rows) {
+        tcp_flag_rows.push_back({
+            row.label,
+            row.packet_count_text,
+            row.percent_text,
+        });
+    }
+    out << render_table(
+        {
+            {.header = "Flag", .right_align = false},
+            {.header = "Packets", .right_align = true},
+            {.header = "Percent", .right_align = true},
+        },
+        tcp_flag_rows);
+    if (!overview.tcp_flag_statistics.help_text.empty()) {
+        out << '\n' << overview.tcp_flag_statistics.help_text << '\n';
+    }
 
     const auto packet_size_statistics = adapter.get_capture_packet_size_statistics();
     out << "\nPacket Size Distribution\n\n";
@@ -343,15 +545,32 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
             bucket.label,
             bucket.captured_packet_count_text,
             bucket.captured_total_percent_text,
+            bucket.original_packet_count_text,
+            bucket.original_total_percent_text,
         });
     }
     out << render_table(
         {
-            {.header = "Captured Size", .right_align = false},
-            {.header = "Packets", .right_align = true},
-            {.header = "Percent", .right_align = true},
+            {.header = "Packet Size", .right_align = false},
+            {.header = "Captured Packets", .right_align = true},
+            {.header = "Captured %", .right_align = true},
+            {.header = "Original Packets", .right_align = true},
+            {.header = "Original %", .right_align = true},
         },
         packet_size_rows);
+    out << '\n';
+    append_key_value_line(
+        out,
+        "Maximum captured packet size",
+        packet_size_statistics.maximum_captured_packet_length_text,
+        packet_size_label_width
+    );
+    append_key_value_line(
+        out,
+        "Maximum original packet size",
+        packet_size_statistics.maximum_original_packet_length_text,
+        packet_size_label_width
+    );
 
     const auto histogram = adapter.get_flow_packet_count_histogram();
     out << "\nFlows by Packet Count\n\n";
@@ -361,6 +580,7 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
         histogram_rows.push_back({
             bucket.label,
             bucket.flow_count_with_total_percent_text,
+            bucket.captured_byte_count_with_total_percent_text,
             bucket.original_byte_count_with_total_percent_text,
         });
     }
@@ -368,6 +588,7 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
         {
             {.header = "Packets / Flow", .right_align = false},
             {.header = "Flows", .right_align = true},
+            {.header = "Captured Bytes", .right_align = true},
             {.header = "Original Bytes", .right_align = true},
         },
         histogram_rows);
@@ -401,7 +622,139 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
             hint_rows);
     }
 
+    const auto quic_tls_statistics = adapter.get_quic_tls_statistics();
+    out << "\nQUIC and TLS\n\n";
+    out << "QUIC\n";
+    append_key_value_line(
+        out,
+        "Flows",
+        session_detail::format_statistics_count_value(quic_tls_statistics.quic_recognition.total_flows),
+        quic_tls_label_width
+    );
+    out << "  Initial recognition\n";
+    append_key_value_line(
+        out,
+        "Recognized Initial",
+        build_frontend_count_with_total_percent_text(
+            quic_tls_statistics.quic_recognition.with_sni,
+            quic_tls_statistics.quic_recognition.total_flows
+        ),
+        quic_recognition_label_width
+    );
+    append_key_value_line(
+        out,
+        "Unrecognized",
+        build_frontend_count_with_total_percent_text(
+            quic_tls_statistics.quic_recognition.without_sni,
+            quic_tls_statistics.quic_recognition.total_flows
+        ),
+        quic_recognition_label_width
+    );
+    out << "  Version\n";
+    append_key_value_line(
+        out,
+        "v1",
+        session_detail::format_statistics_count_value(quic_tls_statistics.quic_recognition.version_v1),
+        quic_version_label_width
+    );
+    append_key_value_line(
+        out,
+        "draft-29",
+        session_detail::format_statistics_count_value(quic_tls_statistics.quic_recognition.version_draft29),
+        quic_version_label_width
+    );
+    append_key_value_line(
+        out,
+        "v2",
+        session_detail::format_statistics_count_value(quic_tls_statistics.quic_recognition.version_v2),
+        quic_version_label_width
+    );
+    append_key_value_line(
+        out,
+        "Version unavailable",
+        session_detail::format_statistics_count_value(quic_tls_statistics.quic_recognition.version_unknown),
+        quic_version_label_width
+    );
+
+    out << "\nTLS\n";
+    append_key_value_line(
+        out,
+        "Flows",
+        session_detail::format_statistics_count_value(quic_tls_statistics.tls_recognition.total_flows),
+        quic_tls_label_width
+    );
+    out << "  SNI\n";
+    append_key_value_line(
+        out,
+        "With SNI",
+        build_frontend_count_with_total_percent_text(
+            quic_tls_statistics.tls_recognition.with_sni,
+            quic_tls_statistics.tls_recognition.total_flows
+        ),
+        tls_sni_label_width
+    );
+    append_key_value_line(
+        out,
+        "Without SNI",
+        build_frontend_count_with_total_percent_text(
+            quic_tls_statistics.tls_recognition.without_sni,
+            quic_tls_statistics.tls_recognition.total_flows
+        ),
+        tls_sni_label_width
+    );
+    out << "  Version\n";
+    append_key_value_line(
+        out,
+        "TLS 1.2",
+        session_detail::format_statistics_count_value(quic_tls_statistics.tls_recognition.version_tls12),
+        tls_version_label_width
+    );
+    append_key_value_line(
+        out,
+        "TLS 1.3",
+        session_detail::format_statistics_count_value(quic_tls_statistics.tls_recognition.version_tls13),
+        tls_version_label_width
+    );
+    append_key_value_line(
+        out,
+        "Version unavailable",
+        session_detail::format_statistics_count_value(quic_tls_statistics.tls_recognition.version_unknown),
+        tls_version_label_width
+    );
+
     const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
+    out << "\nTop Flows by Original Bytes\n\n";
+    std::vector<std::vector<std::string>> top_flow_rows {};
+    top_flow_rows.reserve(top_statistics.top_flows.size());
+    for (const auto& row : top_statistics.top_flows) {
+        top_flow_rows.push_back({
+            row.flow_index_text,
+            row.endpoint_a,
+            row.endpoint_b,
+            row.protocol_text,
+            row.detected_protocol_text,
+            cli_table_text(row.service_text),
+            row.protocol_path_compact_text,
+            row.packet_count_text,
+            row.captured_bytes_text,
+            row.original_bytes_text,
+        });
+    }
+    out << render_table(
+        {
+            {.header = "Flow", .right_align = false},
+            {.header = "Endpoint A", .right_align = false},
+            {.header = "Endpoint B", .right_align = false},
+            {.header = "Protocol", .right_align = false},
+            {.header = "Detected Protocol", .right_align = false},
+            {.header = "Service", .right_align = false},
+            {.header = "Protocol Path", .right_align = false},
+            {.header = "Packets", .right_align = true},
+            {.header = "Captured", .right_align = true},
+            {.header = "Original", .right_align = true},
+        },
+        top_flow_rows);
+
     out << "\nTop Endpoints and Ports\n\n";
     out << "Top Endpoints\n\n";
     std::vector<std::vector<std::string>> endpoint_rows {};
@@ -409,13 +762,15 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
     for (const auto& row : top_statistics.top_endpoints) {
         endpoint_rows.push_back({
             row.endpoint_label,
-            session_detail::format_statistics_count_value(row.packet_count),
-            session_detail::format_statistics_compact_size_value(row.total_bytes),
+            row.flow_count_text,
+            row.packet_count_text,
+            row.total_bytes_text,
         });
     }
     out << render_table(
         {
             {.header = "Endpoint", .right_align = false},
+            {.header = "Flows", .right_align = true},
             {.header = "Packets", .right_align = true},
             {.header = "Original Bytes", .right_align = true},
         },
@@ -427,13 +782,15 @@ std::string render_extended_summary_text(const FrontendSessionAdapter& adapter) 
     for (const auto& row : top_statistics.top_ports) {
         port_rows.push_back({
             std::to_string(row.port),
-            session_detail::format_statistics_count_value(row.packet_count),
-            session_detail::format_statistics_compact_size_value(row.total_bytes),
+            row.flow_count_text,
+            row.packet_count_text,
+            row.total_bytes_text,
         });
     }
     out << render_table(
         {
             {.header = "Port", .right_align = false},
+            {.header = "Flows", .right_align = true},
             {.header = "Packets", .right_align = true},
             {.header = "Original Bytes", .right_align = true},
         },
@@ -568,10 +925,11 @@ SummaryCommandExecutionResult execute_summary_command_with_environment(
     }
 
     std::ostringstream stdout_builder {};
-    stdout_builder << render_basic_summary_text(adapter.get_overview());
+    const auto overview = adapter.get_overview();
+    stdout_builder << render_basic_summary_text(overview);
 
     if (options.extended) {
-        stdout_builder << render_extended_summary_text(adapter);
+        stdout_builder << render_extended_summary_text(adapter, overview);
     }
 
     if (options.protocol_path_tree) {

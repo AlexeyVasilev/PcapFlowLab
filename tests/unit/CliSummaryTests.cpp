@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -8,6 +9,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
+#include "app/frontend/FrontendStatisticsOverview.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "cli/SummaryCommand.h"
@@ -22,6 +24,15 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 bool contains_text(const std::string_view haystack, const std::string_view needle) {
     return haystack.find(needle) != std::string_view::npos;
+}
+
+constexpr std::string_view kSharedUnavailableText {"—"};
+constexpr std::string_view kCliUnavailableText {"-"};
+
+std::string expected_cli_top_flow_service_text(const std::string_view service_text) {
+    return service_text == kSharedUnavailableText
+        ? std::string {kCliUnavailableText}
+        : std::string {service_text};
 }
 
 bool has_no_tabs_or_trailing_spaces(const std::string_view text) {
@@ -236,6 +247,66 @@ std::filesystem::path build_partial_open_capture_path() {
     });
     bytes.resize(bytes.size() - 8U);
     return write_temp_pcap("pfl_cli_progress_partial_open.pcap", bytes);
+}
+
+std::filesystem::path build_extended_summary_capture_path() {
+    const auto tcp_syn = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 72, 0, 1),
+        ipv4(10, 72, 0, 2),
+        7201,
+        443,
+        0,
+        0x02
+    );
+    const auto tcp_syn_ack = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 72, 0, 2),
+        ipv4(10, 72, 0, 1),
+        443,
+        7201,
+        0,
+        0x12
+    );
+    const auto tcp_fin = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 72, 0, 1),
+        ipv4(10, 72, 0, 2),
+        7201,
+        443,
+        0,
+        0x01
+    );
+    const auto tcp_rst_original = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 72, 0, 3),
+        ipv4(10, 72, 0, 4),
+        7202,
+        443,
+        200,
+        0x04
+    );
+    const auto udp_packet = make_ethernet_ipv4_udp_packet(
+        ipv4(10, 72, 0, 5),
+        ipv4(10, 72, 0, 6),
+        7203,
+        53
+    );
+    const std::vector<std::uint8_t> tcp_rst_captured(
+        tcp_rst_original.begin(),
+        tcp_rst_original.begin() + 60
+    );
+
+    return write_temp_pcap(
+        "pfl_cli_summary_extended_capture.pcap",
+        make_classic_pcap_with_captured_lengths({
+            ClassicPcapCapturedRecord {.ts_usec = 100U, .captured_bytes = tcp_syn},
+            ClassicPcapCapturedRecord {.ts_usec = 200U, .captured_bytes = tcp_syn_ack},
+            ClassicPcapCapturedRecord {.ts_usec = 300U, .captured_bytes = tcp_fin},
+            ClassicPcapCapturedRecord {
+                .ts_usec = 400U,
+                .captured_bytes = tcp_rst_captured,
+                .original_length = static_cast<std::uint32_t>(tcp_rst_original.size())
+            },
+            ClassicPcapCapturedRecord {.ts_usec = 500U, .captured_bytes = udp_packet},
+        })
+    );
 }
 
 std::string settings_json(
@@ -676,6 +747,10 @@ void expect_basic_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Captured bytes:"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Original bytes:"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Unrecognized packets:"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Capture Time"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Start:"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "End:"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Duration:"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Transport Summary"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "TCP"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "UDP"));
@@ -684,6 +759,10 @@ void expect_basic_summary_rendering() {
     PFL_EXPECT(contains_text(execution_result.stdout_text, "IP Family Summary"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "IPv4"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "IPv6"));
+    PFL_EXPECT(!contains_text(execution_result.stdout_text, "Capture Metrics"));
+    PFL_EXPECT(!contains_text(execution_result.stdout_text, "TCP Flags"));
+    PFL_EXPECT(!contains_text(execution_result.stdout_text, "Packet Size Distribution"));
+    PFL_EXPECT(!contains_text(execution_result.stdout_text, "Top Flows by Original Bytes"));
     PFL_EXPECT(has_no_tabs_or_trailing_spaces(execution_result.stdout_text));
     PFL_EXPECT(has_no_ansi_escape_sequences(execution_result.stdout_text));
 
@@ -704,6 +783,10 @@ void expect_basic_summary_rendering() {
     ));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.whole_capture_totals.captured_bytes_text));
     PFL_EXPECT(contains_text(execution_result.stdout_text, overview.whole_capture_totals.original_bytes_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_time.capture_start_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_time.capture_end_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_time.duration_text));
+    PFL_EXPECT(!contains_text(execution_result.stdout_text, "Statistics cover successfully imported packets only"));
 }
 
 void expect_index_summary_rendering_without_source_capture() {
@@ -744,38 +827,285 @@ void expect_index_summary_rendering_without_source_capture() {
 }
 
 void expect_extended_summary_rendering() {
-    const auto tcp_ab = make_ethernet_ipv4_tcp_packet(ipv4(10, 72, 0, 1), ipv4(10, 72, 0, 2), 7201, 80);
-    const auto tcp_ba = make_ethernet_ipv4_tcp_packet(ipv4(10, 72, 0, 2), ipv4(10, 72, 0, 1), 80, 7201);
-    const auto udp_ac = make_ethernet_ipv4_udp_packet(ipv4(10, 72, 0, 1), ipv4(10, 72, 0, 3), 7202, 53);
-    const auto udp_de = make_ethernet_ipv4_udp_packet(ipv4(10, 72, 0, 4), ipv4(10, 72, 0, 5), 7203, 22);
-    const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {
-        {100U, tcp_ab},
-        {200U, tcp_ba},
-        {300U, udp_ac},
-        {400U, udp_de},
-    };
-    const auto capture_path = write_temp_pcap(
-        "pfl_cli_summary_extended_capture.pcap",
-        make_classic_pcap(packets)
-    );
+    const auto capture_path = build_extended_summary_capture_path();
 
     cli::SummaryCommandOptions options {};
     options.input_path = capture_path;
     options.extended = true;
     const auto execution_result = cli::execute_summary_command(options);
     PFL_EXPECT(execution_result.exit_code == 0);
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "PcapFlowLab Summary"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Capture Time"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Capture Metrics"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Flow Characteristics"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Direction Distribution"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Packet Direction"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Data Direction (Original Bytes)"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "TCP Flags"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Packet Size Distribution"));
-    PFL_EXPECT(contains_text(execution_result.stdout_text, "Captured Size"));
-    PFL_EXPECT(contains_text(execution_result.stdout_text, "0-63"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Captured Packets"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Packets"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows by Packet Count"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Packets / Flow"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Captured Bytes"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Original Bytes"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Detected Protocol Hints"));
-    PFL_EXPECT(contains_text(execution_result.stdout_text, "Unknown"));
-    PFL_EXPECT(!contains_text(execution_result.stdout_text, "Possible TLS"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "QUIC and TLS"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Recognized Initial"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "With SNI"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Top Flows by Original Bytes"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Top Endpoints and Ports"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Top Endpoints"));
     PFL_EXPECT(contains_text(execution_result.stdout_text, "Top Ports"));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, "Flows"));
     PFL_EXPECT(has_no_tabs_or_trailing_spaces(execution_result.stdout_text));
+    PFL_EXPECT(has_no_ansi_escape_sequences(execution_result.stdout_text));
+
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+    const auto overview = adapter.get_overview();
+    const auto packet_size_statistics = adapter.get_capture_packet_size_statistics();
+    const auto flow_histogram = adapter.get_flow_packet_count_histogram();
+    const auto protocol_hints = adapter.get_protocol_hint_statistics();
+    const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
+
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_time.capture_start_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_time.duration_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.average_captured_packet_size_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.average_original_packet_size_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.truncated_packets_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.not_captured_bytes_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.capture_metrics.capture_completeness_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.flow_characteristics.only_a_to_b_flows_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.flow_characteristics.service_recognized_flows_text));
+    PFL_REQUIRE(overview.packet_direction_distribution.rows.size() == 3U);
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.packet_direction_distribution.rows[0].label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.packet_direction_distribution.rows[0].percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.original_byte_direction_distribution.rows[0].label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.original_byte_direction_distribution.rows[0].percent_text));
+    PFL_REQUIRE(overview.tcp_flag_statistics.rows.size() == 3U);
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.tcp_flag_statistics.rows[0].label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.tcp_flag_statistics.rows[0].packet_count_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.tcp_flag_statistics.rows[0].percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, overview.tcp_flag_statistics.help_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, packet_size_statistics.maximum_captured_packet_length_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, packet_size_statistics.maximum_original_packet_length_text));
+    const auto differing_packet_bucket = std::find_if(
+        packet_size_statistics.buckets.begin(),
+        packet_size_statistics.buckets.end(),
+        [](const FrontendCapturePacketSizeStatisticsBucketDto& bucket) {
+            return bucket.captured_packet_count != bucket.original_packet_count;
+        }
+    );
+    PFL_REQUIRE(differing_packet_bucket != packet_size_statistics.buckets.end());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, differing_packet_bucket->label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, differing_packet_bucket->captured_packet_count_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, differing_packet_bucket->original_packet_count_text));
+    const auto nonzero_histogram_bucket = std::find_if(
+        flow_histogram.buckets.begin(),
+        flow_histogram.buckets.end(),
+        [](const FrontendFlowPacketCountHistogramBucketDto& bucket) {
+            return bucket.flow_count > 0U;
+        }
+    );
+    PFL_REQUIRE(nonzero_histogram_bucket != flow_histogram.buckets.end());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->flow_count_with_total_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->captured_byte_count_with_total_percent_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, nonzero_histogram_bucket->original_byte_count_with_total_percent_text));
+    const auto first_nonzero_hint = std::find_if(
+        protocol_hints.protocol_hints.begin(),
+        protocol_hints.protocol_hints.end(),
+        [](const FrontendProtocolHintStatsDto& row) {
+            return row.flow_count > 0U || row.packet_count > 0U || row.captured_bytes > 0U || row.original_bytes > 0U;
+        }
+    );
+    PFL_REQUIRE(first_nonzero_hint != protocol_hints.protocol_hints.end());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_nonzero_hint->protocol_label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_nonzero_hint->flow_count_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_nonzero_hint->packet_count_text));
+    PFL_REQUIRE(!top_statistics.top_flows.empty());
+    PFL_EXPECT(top_statistics.top_flows.size() <= 10U);
+    const auto& first_top_flow = top_statistics.top_flows.front();
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.flow_index_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.endpoint_a));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.endpoint_b));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.protocol_text));
+    PFL_EXPECT(contains_text(
+        execution_result.stdout_text,
+        expected_cli_top_flow_service_text(first_top_flow.service_text)
+    ));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.protocol_path_compact_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.packet_count_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.captured_bytes_text));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, first_top_flow.original_bytes_text));
+    PFL_REQUIRE(!top_statistics.top_endpoints.empty());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, top_statistics.top_endpoints.front().endpoint_label));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, top_statistics.top_endpoints.front().flow_count_text));
+    PFL_REQUIRE(!top_statistics.top_ports.empty());
+    PFL_EXPECT(contains_text(execution_result.stdout_text, std::to_string(top_statistics.top_ports.front().port)));
+    PFL_EXPECT(contains_text(execution_result.stdout_text, top_statistics.top_ports.front().flow_count_text));
+}
+
+void expect_extended_summary_quic_tls_rendering() {
+    {
+        const auto capture_path = fixture_path("parsing/quic/quic_example_2.pcap");
+        cli::SummaryCommandOptions options {};
+        options.input_path = capture_path;
+        options.extended = true;
+        const auto execution_result = cli::execute_summary_command(options);
+        PFL_EXPECT(execution_result.exit_code == 0);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+        const auto statistics = adapter.get_quic_tls_statistics();
+        PFL_EXPECT(statistics.quic_recognition.total_flows > 0U);
+        PFL_EXPECT(contains_text(execution_result.stdout_text, "QUIC and TLS"));
+        PFL_EXPECT(contains_text(execution_result.stdout_text, "QUIC"));
+        PFL_EXPECT(contains_text(execution_result.stdout_text, "Recognized Initial"));
+        PFL_EXPECT(contains_text(
+            execution_result.stdout_text,
+            build_frontend_count_with_total_percent_text(
+                statistics.quic_recognition.with_sni,
+                statistics.quic_recognition.total_flows
+            )
+        ));
+        PFL_EXPECT(contains_text(
+            execution_result.stdout_text,
+            session_detail::format_statistics_count_value(statistics.quic_recognition.version_v1)
+        ));
+    }
+
+    {
+        const auto capture_path = fixture_path("parsing/tls/tls_client_hello_1.pcap");
+        cli::SummaryCommandOptions options {};
+        options.input_path = capture_path;
+        options.extended = true;
+        const auto execution_result = cli::execute_summary_command(options);
+        PFL_EXPECT(execution_result.exit_code == 0);
+
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+        const auto statistics = adapter.get_quic_tls_statistics();
+        PFL_EXPECT(statistics.tls_recognition.total_flows > 0U);
+        PFL_EXPECT(contains_text(execution_result.stdout_text, "TLS"));
+        PFL_EXPECT(contains_text(execution_result.stdout_text, "With SNI"));
+        PFL_EXPECT(contains_text(
+            execution_result.stdout_text,
+            build_frontend_count_with_total_percent_text(
+                statistics.tls_recognition.with_sni,
+                statistics.tls_recognition.total_flows
+            )
+        ));
+        PFL_EXPECT(contains_text(
+            execution_result.stdout_text,
+            session_detail::format_statistics_count_value(statistics.tls_recognition.version_unknown)
+        ));
+    }
+}
+
+void expect_extended_summary_raw_index_parity() {
+    const auto capture_path = build_extended_summary_capture_path();
+
+    FrontendSessionAdapter raw_adapter {};
+    PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+    const auto raw_overview = raw_adapter.get_overview();
+    const auto raw_packet_size_statistics = raw_adapter.get_capture_packet_size_statistics();
+    const auto raw_top_statistics = raw_adapter.get_top_endpoint_port_statistics(5U);
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_extended_parity.idx";
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+
+    cli::SummaryCommandOptions raw_options {};
+    raw_options.input_path = capture_path;
+    raw_options.extended = true;
+    const auto raw_result = cli::execute_summary_command(raw_options);
+    PFL_EXPECT(raw_result.exit_code == 0);
+
+    cli::SummaryCommandOptions index_options {};
+    index_options.input_path = index_path;
+    index_options.extended = true;
+    const auto index_result = cli::execute_summary_command(index_options);
+    PFL_EXPECT(index_result.exit_code == 0);
+
+    const auto differing_packet_bucket = std::find_if(
+        raw_packet_size_statistics.buckets.begin(),
+        raw_packet_size_statistics.buckets.end(),
+        [](const FrontendCapturePacketSizeStatisticsBucketDto& bucket) {
+            return bucket.captured_packet_count != bucket.original_packet_count;
+        }
+    );
+    PFL_REQUIRE(differing_packet_bucket != raw_packet_size_statistics.buckets.end());
+    PFL_REQUIRE(!raw_top_statistics.top_flows.empty());
+    PFL_REQUIRE(!raw_top_statistics.top_endpoints.empty());
+    PFL_REQUIRE(!raw_top_statistics.top_ports.empty());
+
+    PFL_EXPECT(contains_text(raw_result.stdout_text, raw_overview.capture_time.duration_text));
+    PFL_EXPECT(contains_text(index_result.stdout_text, raw_overview.capture_time.duration_text));
+    PFL_EXPECT(contains_text(raw_result.stdout_text, raw_overview.capture_metrics.truncated_packets_text));
+    PFL_EXPECT(contains_text(index_result.stdout_text, raw_overview.capture_metrics.truncated_packets_text));
+    PFL_EXPECT(contains_text(raw_result.stdout_text, raw_overview.capture_metrics.not_captured_bytes_text));
+    PFL_EXPECT(contains_text(index_result.stdout_text, raw_overview.capture_metrics.not_captured_bytes_text));
+    PFL_EXPECT(contains_text(raw_result.stdout_text, differing_packet_bucket->original_packet_count_text));
+    PFL_EXPECT(contains_text(index_result.stdout_text, differing_packet_bucket->original_packet_count_text));
+    PFL_EXPECT(contains_text(raw_result.stdout_text, raw_top_statistics.top_flows.front().original_bytes_text));
+    PFL_EXPECT(contains_text(index_result.stdout_text, raw_top_statistics.top_flows.front().original_bytes_text));
+    PFL_EXPECT(contains_text(raw_result.stdout_text, raw_top_statistics.top_endpoints.front().flow_count_text));
+    PFL_EXPECT(contains_text(index_result.stdout_text, raw_top_statistics.top_endpoints.front().flow_count_text));
+    PFL_EXPECT(contains_text(raw_result.stdout_text, std::to_string(raw_top_statistics.top_ports.front().port)));
+    PFL_EXPECT(contains_text(index_result.stdout_text, std::to_string(raw_top_statistics.top_ports.front().port)));
+    PFL_EXPECT(contains_text(index_result.stdout_text, "PcapFlowLab Index"));
+    PFL_EXPECT(contains_text(index_result.stdout_text, "Source capture:"));
+}
+
+void expect_top_flow_service_cli_rendering() {
+    {
+        const auto capture_path = fixture_path("parsing/tls/tls_client_hello_1.pcap");
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+        const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
+        const auto service_row = std::find_if(
+            top_statistics.top_flows.begin(),
+            top_statistics.top_flows.end(),
+            [](const FrontendTopFlowDto& row) {
+                return !row.service_text.empty() && row.service_text != kSharedUnavailableText;
+            }
+        );
+        PFL_REQUIRE(service_row != top_statistics.top_flows.end());
+
+        cli::SummaryCommandOptions options {};
+        options.input_path = capture_path;
+        options.extended = true;
+        const auto execution_result = cli::execute_summary_command(options);
+        PFL_EXPECT(execution_result.exit_code == 0);
+        PFL_EXPECT(contains_text(execution_result.stdout_text, service_row->service_text));
+    }
+
+    {
+        const auto capture_path = build_extended_summary_capture_path();
+        FrontendSessionAdapter adapter {};
+        PFL_REQUIRE(adapter.open_capture(capture_path).opened);
+        const auto top_statistics = adapter.get_top_endpoint_port_statistics(5U);
+        const auto unavailable_row = std::find_if(
+            top_statistics.top_flows.begin(),
+            top_statistics.top_flows.end(),
+            [](const FrontendTopFlowDto& row) {
+                return row.service_text == kSharedUnavailableText;
+            }
+        );
+        PFL_REQUIRE(unavailable_row != top_statistics.top_flows.end());
+
+        cli::SummaryCommandOptions options {};
+        options.input_path = capture_path;
+        options.extended = true;
+        const auto execution_result = cli::execute_summary_command(options);
+        PFL_EXPECT(execution_result.exit_code == 0);
+        PFL_EXPECT(contains_text(execution_result.stdout_text, unavailable_row->flow_index_text));
+        PFL_EXPECT(contains_text(execution_result.stdout_text, std::string {kCliUnavailableText}));
+        PFL_EXPECT(!contains_text(execution_result.stdout_text, std::string {kSharedUnavailableText}));
+        PFL_EXPECT(unavailable_row->service_text == kSharedUnavailableText);
+    }
 }
 
 void expect_protocol_path_preview_rendering() {
@@ -1503,6 +1833,10 @@ void expect_progress_failure_and_partial_open_contracts() {
     PFL_EXPECT(partial_invocation.result.exit_code == 0);
     PFL_EXPECT(!partial_invocation.progress_text.empty());
     PFL_EXPECT(!partial_invocation.result.stderr_text.empty());
+    PFL_EXPECT(contains_text(
+        partial_invocation.result.stdout_text,
+        "Statistics cover successfully imported packets only; the capture was opened partially."
+    ));
     PFL_EXPECT(!contains_text(last_progress_line(partial_invocation.progress_text), "100%"));
     PFL_EXPECT(!contains_text(partial_invocation.result.stderr_text, "Opening capture: "));
     PFL_EXPECT(partial_invocation.progress_text.back() == '\n');
@@ -1519,6 +1853,9 @@ void run_cli_summary_tests() {
     expect_basic_summary_rendering();
     expect_index_summary_rendering_without_source_capture();
     expect_extended_summary_rendering();
+    expect_extended_summary_quic_tls_rendering();
+    expect_extended_summary_raw_index_parity();
+    expect_top_flow_service_cli_rendering();
     expect_protocol_path_preview_rendering();
     expect_protocol_path_summary_execution();
     expect_settings_file_contracts();

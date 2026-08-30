@@ -24,6 +24,11 @@ names throughout.
 - [flow-info](commands/flow-info.md)
 - [packet-info](commands/packet-info.md)
 
+`summary` is the compact whole-capture or whole-index overview. Use
+`summary --extended` for the detailed whole-capture Statistics projection that
+matches the shared runtime Statistics semantics used by the desktop
+applications. Protocol Path tree output remains a separate explicit workflow.
+
 ## Input model
 
 All commands accept either:

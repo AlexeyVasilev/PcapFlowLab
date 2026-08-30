@@ -568,6 +568,16 @@ FrontendTcpFlagStatisticsDto build_frontend_tcp_flag_statistics(
     };
 }
 
+std::string build_frontend_count_with_total_percent_text(
+    const std::uint64_t count,
+    const std::uint64_t total_count
+) {
+    return session_detail::format_statistics_count_with_percent_text(
+        count,
+        percent_from_fraction(safe_fraction(count, total_count))
+    );
+}
+
 std::string build_frontend_statistics_partial_open_warning_text(const bool partial_open) {
     return partial_open
         ? "Statistics cover successfully imported packets only; the capture was opened partially."
