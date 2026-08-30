@@ -1347,11 +1347,12 @@ ApplicationWindow {
                 analysisInterArrivalHistogramAll: mainController.analysisInterArrivalHistogramAll
                 analysisInterArrivalHistogramAToB: mainController.analysisInterArrivalHistogramAToB
                 analysisInterArrivalHistogramBToA: mainController.analysisInterArrivalHistogramBToA
-                analysisInterArrivalHistogram: mainController.analysisInterArrivalHistogram
                 analysisPacketSizeHistogramAll: mainController.analysisPacketSizeHistogramAll
                 analysisPacketSizeHistogramAToB: mainController.analysisPacketSizeHistogramAToB
                 analysisPacketSizeHistogramBToA: mainController.analysisPacketSizeHistogramBToA
-                analysisPacketSizeHistogram: mainController.analysisPacketSizeHistogram
+                analysisCapturedPacketSizeHistogramAll: mainController.analysisCapturedPacketSizeHistogramAll
+                analysisCapturedPacketSizeHistogramAToB: mainController.analysisCapturedPacketSizeHistogramAToB
+                analysisCapturedPacketSizeHistogramBToA: mainController.analysisCapturedPacketSizeHistogramBToA
                 analysisSequencePreview: mainController.analysisSequencePreview
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex

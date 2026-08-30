@@ -2104,7 +2104,6 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
             out << '{'
                 << "\"relative_time_us\":" << point.relative_time_us << ','
                 << "\"original_data_per_second\":" << point.original_data_per_second << ','
-                << "\"data_per_second\":" << point.data_per_second << ','
                 << "\"packets_per_second\":" << point.packets_per_second
                 << '}';
         }
@@ -2187,9 +2186,6 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
     }
     out << ','
         << "\"duration_text_milliseconds\":" << json_string(analysis.duration_text_milliseconds) << ','
-        << "\"first_packet_time_text\":" << json_string(analysis.first_packet_time_text) << ','
-        << "\"last_packet_time_text\":" << json_string(analysis.last_packet_time_text) << ','
-        << "\"duration_text\":" << json_string(analysis.duration_text) << ','
         << "\"largest_gap_text\":" << json_string(analysis.largest_gap_text) << ','
         << "\"packets_considered_text\":" << json_string(analysis.packets_considered_text) << ','
         << "\"total_packets_text\":" << json_string(analysis.total_packets_text) << ','
@@ -2238,7 +2234,6 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"inter_arrival_histogram_rows\":" << histogram_rows_json(analysis.inter_arrival_histogram_rows) << ','
         << "\"packet_size_histogram_dimension_rows\":"
         << packet_size_dimension_rows_json(analysis.packet_size_histogram_dimension_rows) << ','
-        << "\"packet_size_histogram_rows\":" << histogram_rows_json(analysis.packet_size_histogram_rows) << ','
         << "\"sequence_preview_rows\":" << sequence_preview_rows_json()
         << '}';
     return out.str();

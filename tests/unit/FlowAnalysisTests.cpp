@@ -432,11 +432,7 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(frontend_analysis.start_time_full_utc_text == "1970-01-01 00:00:01.000 UTC");
     PFL_EXPECT(frontend_analysis.end_time_full_utc_text == "1970-01-01 00:00:03.000 UTC");
     PFL_EXPECT(frontend_analysis.duration_text_milliseconds == "00:00:02.000");
-    PFL_EXPECT(frontend_analysis.first_packet_time_text == "00:00:01.000100");
-    PFL_EXPECT(frontend_analysis.last_packet_time_text == "00:00:03.000450");
-    PFL_EXPECT(frontend_analysis.duration_text == "00:00:02.000350");
     PFL_REQUIRE(frontend_analysis.packet_size_histogram_dimension_rows.size() == 10U);
-    PFL_EXPECT(frontend_analysis.packet_size_histogram_rows.size() == 10U);
     {
         const auto* histogram_row = frontend_packet_size_row(
             frontend_analysis.packet_size_histogram_dimension_rows,
@@ -452,12 +448,22 @@ void run_flow_analysis_tests() {
     }
     PFL_EXPECT(frontend_analysis.rate_graph_available);
     PFL_EXPECT(frontend_analysis.rate_graph_points_a_to_b.size() == frontend_analysis.rate_graph_points_b_to_a.size());
+    PFL_EXPECT(frontend_analysis.rate_graph_points_a_to_b.size() == analysis->rate_graph.points_a_to_b.size());
+    PFL_EXPECT(frontend_analysis.rate_graph_points_b_to_a.size() == analysis->rate_graph.points_b_to_a.size());
     PFL_EXPECT(!frontend_analysis.rate_graph_points_a_to_b.empty());
-    for (const auto& point : frontend_analysis.rate_graph_points_a_to_b) {
-        PFL_EXPECT(nearly_equal(point.data_per_second, point.original_data_per_second));
+    for (std::size_t index = 0; index < frontend_analysis.rate_graph_points_a_to_b.size(); ++index) {
+        const auto& frontend_point = frontend_analysis.rate_graph_points_a_to_b[index];
+        const auto& backend_point = analysis->rate_graph.points_a_to_b[index];
+        PFL_EXPECT(frontend_point.relative_time_us == backend_point.relative_time_us);
+        PFL_EXPECT(nearly_equal(frontend_point.original_data_per_second, backend_point.original_data_per_second));
+        PFL_EXPECT(nearly_equal(frontend_point.packets_per_second, backend_point.packets_per_second));
     }
-    for (const auto& point : frontend_analysis.rate_graph_points_b_to_a) {
-        PFL_EXPECT(nearly_equal(point.data_per_second, point.original_data_per_second));
+    for (std::size_t index = 0; index < frontend_analysis.rate_graph_points_b_to_a.size(); ++index) {
+        const auto& frontend_point = frontend_analysis.rate_graph_points_b_to_a[index];
+        const auto& backend_point = analysis->rate_graph.points_b_to_a[index];
+        PFL_EXPECT(frontend_point.relative_time_us == backend_point.relative_time_us);
+        PFL_EXPECT(nearly_equal(frontend_point.original_data_per_second, backend_point.original_data_per_second));
+        PFL_EXPECT(nearly_equal(frontend_point.packets_per_second, backend_point.packets_per_second));
     }
 
     PFL_EXPECT(!session.get_flow_analysis(99U).has_value());

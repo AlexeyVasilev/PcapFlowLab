@@ -335,9 +335,10 @@
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
-    analysisRateMetricMode: "data",
+    analysisRateMetricMode: "original_data",
     analysisRateDirectionMode: "both",
-    analysisPacketSizeHistogramMode: "all",
+    analysisPacketSizeHistogramMetricMode: "original",
+    analysisPacketSizeHistogramDirectionMode: "all",
     analysisInterArrivalHistogramMode: "all",
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
@@ -3537,7 +3538,7 @@
     analysisRateGraphStatusText: document.getElementById("analysisRateGraphStatusText"),
     analysisRateGraphSurface: document.getElementById("analysisRateGraphSurface"),
     analysisRateGraphSvg: document.getElementById("analysisRateGraphSvg"),
-    analysisRateMetricModeData: document.getElementById("analysisRateMetricModeData"),
+    analysisRateMetricModeOriginalData: document.getElementById("analysisRateMetricModeOriginalData"),
     analysisRateMetricModePackets: document.getElementById("analysisRateMetricModePackets"),
     analysisRateDirectionModeAToB: document.getElementById("analysisRateDirectionModeAToB"),
     analysisRateDirectionModeBToA: document.getElementById("analysisRateDirectionModeBToA"),
@@ -3546,6 +3547,8 @@
     analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
     analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
     analysisPacketSizeCapturedSummary: document.getElementById("analysisPacketSizeCapturedSummary"),
+    analysisPacketSizeHistogramMetricOriginal: document.getElementById("analysisPacketSizeHistogramMetricOriginal"),
+    analysisPacketSizeHistogramMetricCaptured: document.getElementById("analysisPacketSizeHistogramMetricCaptured"),
     analysisPacketSizeHistogramModeAll: document.getElementById("analysisPacketSizeHistogramModeAll"),
     analysisPacketSizeHistogramModeAToB: document.getElementById("analysisPacketSizeHistogramModeAToB"),
     analysisPacketSizeHistogramModeBToA: document.getElementById("analysisPacketSizeHistogramModeBToA"),
@@ -3769,6 +3772,11 @@
     return `${protocol} (${hint})`;
   }
 
+  function analysisDisplayText(value, unavailableText = "-") {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : unavailableText;
+  }
+
   function trimTrailingZeros(text) {
     return String(text).replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
   }
@@ -3776,7 +3784,7 @@
   function ratePointValue(point, metricMode) {
     return metricMode === "packets"
       ? Number(point?.packets_per_second ?? 0)
-      : Number(point?.data_per_second ?? 0);
+      : Number(point?.original_data_per_second ?? 0);
   }
 
   function trimRateGraphSeries(seriesA, seriesB) {
@@ -3786,8 +3794,8 @@
     while (lastIndex >= 0) {
       const pointA = lastIndex < safeA.length ? safeA[lastIndex] : null;
       const pointB = lastIndex < safeB.length ? safeB[lastIndex] : null;
-      const zeroA = !pointA || (Number(pointA.data_per_second ?? 0) === 0 && Number(pointA.packets_per_second ?? 0) === 0);
-      const zeroB = !pointB || (Number(pointB.data_per_second ?? 0) === 0 && Number(pointB.packets_per_second ?? 0) === 0);
+      const zeroA = !pointA || (Number(pointA.original_data_per_second ?? 0) === 0 && Number(pointA.packets_per_second ?? 0) === 0);
+      const zeroB = !pointB || (Number(pointB.original_data_per_second ?? 0) === 0 && Number(pointB.packets_per_second ?? 0) === 0);
       if (!zeroA || !zeroB) {
         break;
       }
@@ -3910,10 +3918,10 @@
     );
     const unit = rateUnitForValue(state.analysisRateMetricMode, peakValue);
     const metricLabel = state.analysisRateMetricMode === "packets"
-      ? "Packets rate (pkt/s)"
-      : `Data rate (${unit})`;
+      ? "Packet rate (packets/s)"
+      : `Original data rate (${unit})`;
     header.textContent = `${metricLabel} • Peak: ${formatRatePeakValue(peakValue, unit)}`;
-    context.textContent = `Duration: ${analysis?.duration_text || "-"} • ${formatRateGraphWindowContext(analysis?.rate_graph_window_text)} • Samples: ${trimmed.sampleCount}`;
+    context.textContent = `Duration: ${analysis?.duration_text_milliseconds || analysis?.unavailable_text || "-"} • ${formatRateGraphWindowContext(analysis?.rate_graph_window_text)} • Samples: ${trimmed.sampleCount}`;
     legend.style.display = state.analysisRateDirectionMode === "both" ? "" : "none";
 
     const maxX = Math.max(
@@ -4499,8 +4507,8 @@
     const analysisSequenceRows = Array.isArray(state.analysis?.sequence_preview_rows)
       ? state.analysis.sequence_preview_rows.length
       : 0;
-    const packetSizeHistogramRows = Array.isArray(state.analysis?.packet_size_histogram_rows)
-      ? state.analysis.packet_size_histogram_rows.length
+    const packetSizeHistogramRows = Array.isArray(state.analysis?.packet_size_histogram_dimension_rows)
+      ? state.analysis.packet_size_histogram_dimension_rows.length
       : 0;
     const interArrivalHistogramRows = Array.isArray(state.analysis?.inter_arrival_histogram_rows)
       ? state.analysis.inter_arrival_histogram_rows.length
@@ -6458,9 +6466,10 @@
     state.analysisSequenceExportInProgress = false;
     state.analysisSequenceExportStatusText = "";
     state.analysisSequenceExportStatusKind = "neutral";
-    state.analysisRateMetricMode = "data";
+    state.analysisRateMetricMode = "original_data";
     state.analysisRateDirectionMode = "both";
-    state.analysisPacketSizeHistogramMode = "all";
+    state.analysisPacketSizeHistogramMetricMode = "original";
+    state.analysisPacketSizeHistogramDirectionMode = "all";
     state.analysisInterArrivalHistogramMode = "all";
   }
 
@@ -9355,6 +9364,7 @@
 
   function renderAnalysisOverview(container, analysis) {
     const serviceHint = analysisSelectedFlowServiceHint(analysis);
+    const unavailableText = analysisDisplayText(analysis?.unavailable_text, "-");
     const leftRows = [
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
@@ -9363,9 +9373,9 @@
       ["Service Hint", serviceHint || "-"],
     ];
     const rightRows = [
-      ["First Packet", analysis.first_packet_time_text || "-"],
-      ["Last Packet", analysis.last_packet_time_text || "-"],
-      ["Duration", analysis.duration_text || "-"],
+      ["First Packet", analysisDisplayText(analysis.start_time_full_utc_text, unavailableText)],
+      ["Last Packet", analysisDisplayText(analysis.end_time_full_utc_text, unavailableText)],
+      ["Duration", analysisDisplayText(analysis.duration_text_milliseconds, unavailableText)],
       ["Largest Gap", analysis.largest_gap_text || "-"],
       ["Packets Considered", analysis.packets_considered_text || "-"],
     ];
@@ -9506,6 +9516,19 @@
     return Number(row?.count_all ?? 0);
   }
 
+  function analysisPacketSizeHistogramRows(analysis, metricMode) {
+    const dimensionRows = Array.isArray(analysis?.packet_size_histogram_dimension_rows)
+      ? analysis.packet_size_histogram_dimension_rows
+      : [];
+    const useCaptured = metricMode === "captured";
+    return dimensionRows.map((row) => ({
+      bucket_label: row.bucket_label || "",
+      count_all: useCaptured ? Number(row.captured_count_all ?? 0) : Number(row.original_count_all ?? 0),
+      count_a_to_b: useCaptured ? Number(row.captured_count_a_to_b ?? 0) : Number(row.original_count_a_to_b ?? 0),
+      count_b_to_a: useCaptured ? Number(row.captured_count_b_to_a ?? 0) : Number(row.original_count_b_to_a ?? 0),
+    }));
+  }
+
   function renderAnalysisHistogram(section, rowsContainer, maxLabel, rows, mode, fillClassName = "") {
     if (!rows || rows.length === 0) {
       section.style.display = "";
@@ -9545,6 +9568,17 @@
     for (const [mode, button] of Object.entries(buttonMap)) {
       button.classList.toggle("is-active", mode === activeMode);
     }
+  }
+
+  function renderAnalysisPacketSizeMetricButtons() {
+    elements.analysisPacketSizeHistogramMetricOriginal.classList.toggle(
+      "is-active",
+      state.analysisPacketSizeHistogramMetricMode === "original"
+    );
+    elements.analysisPacketSizeHistogramMetricCaptured.classList.toggle(
+      "is-active",
+      state.analysisPacketSizeHistogramMetricMode === "captured"
+    );
   }
 
   function renderAnalysisFlowList() {
@@ -9796,7 +9830,7 @@
         analysis.packets_per_second_b_to_a_text || "-",
       ],
       [
-        "Data Rate",
+        "Original Data Rate",
         analysis.bytes_per_second_text || "-",
         analysis.bytes_per_second_a_to_b_text || "-",
         analysis.bytes_per_second_b_to_a_text || "-",
@@ -9843,13 +9877,14 @@
 
     renderAnalysisDirectional(elements.analysisDirectionSplit, analysis);
 
-    renderAnalysisHistogramModeButtons("analysisPacketSizeHistogram", state.analysisPacketSizeHistogramMode);
+    renderAnalysisPacketSizeMetricButtons();
+    renderAnalysisHistogramModeButtons("analysisPacketSizeHistogram", state.analysisPacketSizeHistogramDirectionMode);
     renderAnalysisHistogram(
       elements.analysisPacketSizeHistogramSection,
       elements.analysisPacketSizeHistogramRows,
       elements.analysisPacketSizeHistogramMax,
-      analysis.packet_size_histogram_rows || [],
-      state.analysisPacketSizeHistogramMode,
+      analysisPacketSizeHistogramRows(analysis, state.analysisPacketSizeHistogramMetricMode),
+      state.analysisPacketSizeHistogramDirectionMode,
       "is-packet-size"
     );
     renderSummaryRows(elements.analysisPacketSizeCapturedSummary, [[
@@ -10736,7 +10771,7 @@
   }
 
   function renderAnalysisRateGraphModeButtons() {
-    elements.analysisRateMetricModeData.classList.toggle("is-active", state.analysisRateMetricMode === "data");
+    elements.analysisRateMetricModeOriginalData.classList.toggle("is-active", state.analysisRateMetricMode === "original_data");
     elements.analysisRateMetricModePackets.classList.toggle("is-active", state.analysisRateMetricMode === "packets");
     elements.analysisRateDirectionModeAToB.classList.toggle("is-active", state.analysisRateDirectionMode === "a_to_b");
     elements.analysisRateDirectionModeBToA.classList.toggle("is-active", state.analysisRateDirectionMode === "b_to_a");
@@ -12816,8 +12851,8 @@
   });
   elements.analysisExportSequenceCsvButton.addEventListener("click", exportAnalysisSequenceCsv);
 
-  elements.analysisRateMetricModeData.addEventListener("click", () => {
-    state.analysisRateMetricMode = "data";
+  elements.analysisRateMetricModeOriginalData.addEventListener("click", () => {
+    state.analysisRateMetricMode = "original_data";
     render();
   });
   elements.analysisRateMetricModePackets.addEventListener("click", () => {
@@ -12837,16 +12872,24 @@
     render();
   });
 
+  elements.analysisPacketSizeHistogramMetricOriginal.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMetricMode = "original";
+    render();
+  });
+  elements.analysisPacketSizeHistogramMetricCaptured.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMetricMode = "captured";
+    render();
+  });
   elements.analysisPacketSizeHistogramModeAll.addEventListener("click", () => {
-    state.analysisPacketSizeHistogramMode = "all";
+    state.analysisPacketSizeHistogramDirectionMode = "all";
     render();
   });
   elements.analysisPacketSizeHistogramModeAToB.addEventListener("click", () => {
-    state.analysisPacketSizeHistogramMode = "a_to_b";
+    state.analysisPacketSizeHistogramDirectionMode = "a_to_b";
     render();
   });
   elements.analysisPacketSizeHistogramModeBToA.addEventListener("click", () => {
-    state.analysisPacketSizeHistogramMode = "b_to_a";
+    state.analysisPacketSizeHistogramDirectionMode = "b_to_a";
     render();
   });
   elements.analysisInterArrivalHistogramModeAll.addEventListener("click", () => {

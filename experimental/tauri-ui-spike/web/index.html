@@ -888,7 +888,7 @@
                     <p id="analysisRateGraphContextText" class="analysis-rate-context-text"></p>
                     <div class="analysis-rate-toolbar">
                       <div class="analysis-direction-tabs">
-                        <button id="analysisRateMetricModeData" type="button" class="secondary-button">Data/s</button>
+                        <button id="analysisRateMetricModeOriginalData" type="button" class="secondary-button">Original data/s</button>
                         <button id="analysisRateMetricModePackets" type="button" class="secondary-button">Packets/s</button>
                       </div>
                       <div class="analysis-direction-tabs">
@@ -919,6 +919,10 @@
                       <h3>Packet Size Histogram</h3>
                       <div class="analysis-histogram-toolbar">
                         <span id="analysisPacketSizeHistogramMax" class="analysis-histogram-max"></span>
+                        <div class="analysis-direction-tabs">
+                          <button id="analysisPacketSizeHistogramMetricOriginal" type="button" class="secondary-button">Original</button>
+                          <button id="analysisPacketSizeHistogramMetricCaptured" type="button" class="secondary-button">Captured</button>
+                        </div>
                         <div class="analysis-direction-tabs">
                           <button id="analysisPacketSizeHistogramModeAll" type="button" class="secondary-button">All</button>
                           <button id="analysisPacketSizeHistogramModeAToB" type="button" class="secondary-button">A-&gt;B</button>

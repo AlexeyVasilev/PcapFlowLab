@@ -1540,6 +1540,15 @@ int main(int argc, char* argv[]) {
         pane.object->setProperty("packetSizeHistogramBToAModel", QVariantList {
             QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("b")}, {QStringLiteral("packetCount"), 1U}, {QStringLiteral("packetCountText"), QStringLiteral("1")}},
         });
+        pane.object->setProperty("capturedPacketSizeHistogramAllModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("all-captured")}, {QStringLiteral("packetCount"), 5U}, {QStringLiteral("packetCountText"), QStringLiteral("5")}},
+        });
+        pane.object->setProperty("capturedPacketSizeHistogramAToBModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("a-captured")}, {QStringLiteral("packetCount"), 4U}, {QStringLiteral("packetCountText"), QStringLiteral("4")}},
+        });
+        pane.object->setProperty("capturedPacketSizeHistogramBToAModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("b-captured")}, {QStringLiteral("packetCount"), 1U}, {QStringLiteral("packetCountText"), QStringLiteral("1")}},
+        });
         pane.object->setProperty("interArrivalHistogramAllModel", QVariantList {
             QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("all")}, {QStringLiteral("packetCount"), 4U}, {QStringLiteral("packetCountText"), QStringLiteral("4")}},
         });
@@ -1555,13 +1564,14 @@ int main(int argc, char* argv[]) {
         pane.object->setProperty("rateGraphAvailable", true);
         pane.object->setProperty("rateGraphStatusText", QStringLiteral(""));
         pane.object->setProperty("rateGraphWindowText", QStringLiteral("Window: 10 ms (auto)"));
+        pane.object->setProperty("durationText", QStringLiteral("00:00:00.010"));
         pane.object->setProperty("rateSeriesAToBModel", QVariantList {
-            QVariantMap {{QStringLiteral("xUs"), 0ULL}, {QStringLiteral("xSeconds"), 0.0}, {QStringLiteral("dataPerSecond"), 30000.0}, {QStringLiteral("packetsPerSecond"), 200.0}},
-            QVariantMap {{QStringLiteral("xUs"), 10000ULL}, {QStringLiteral("xSeconds"), 0.01}, {QStringLiteral("dataPerSecond"), 10000.0}, {QStringLiteral("packetsPerSecond"), 100.0}},
+            QVariantMap {{QStringLiteral("xUs"), 0ULL}, {QStringLiteral("xSeconds"), 0.0}, {QStringLiteral("originalDataPerSecond"), 30000.0}, {QStringLiteral("packetsPerSecond"), 200.0}},
+            QVariantMap {{QStringLiteral("xUs"), 10000ULL}, {QStringLiteral("xSeconds"), 0.01}, {QStringLiteral("originalDataPerSecond"), 10000.0}, {QStringLiteral("packetsPerSecond"), 100.0}},
         });
         pane.object->setProperty("rateSeriesBToAModel", QVariantList {
-            QVariantMap {{QStringLiteral("xUs"), 0ULL}, {QStringLiteral("xSeconds"), 0.0}, {QStringLiteral("dataPerSecond"), 5000.0}, {QStringLiteral("packetsPerSecond"), 50.0}},
-            QVariantMap {{QStringLiteral("xUs"), 10000ULL}, {QStringLiteral("xSeconds"), 0.01}, {QStringLiteral("dataPerSecond"), 7500.0}, {QStringLiteral("packetsPerSecond"), 75.0}},
+            QVariantMap {{QStringLiteral("xUs"), 0ULL}, {QStringLiteral("xSeconds"), 0.0}, {QStringLiteral("originalDataPerSecond"), 5000.0}, {QStringLiteral("packetsPerSecond"), 50.0}},
+            QVariantMap {{QStringLiteral("xUs"), 10000ULL}, {QStringLiteral("xSeconds"), 0.01}, {QStringLiteral("originalDataPerSecond"), 7500.0}, {QStringLiteral("packetsPerSecond"), 75.0}},
         });
         pane.object->setProperty("sequencePreviewModel", QVariantList {
             QVariantMap {
@@ -1600,16 +1610,20 @@ int main(int argc, char* argv[]) {
         );
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 4"));
-        UI_EXPECT(pane.object->property("packetSizeHistogramMode").toInt() == 0);
-        UI_EXPECT(pane.object->property("interArrivalHistogramMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("packetSizeHistogramMetricMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("packetSizeHistogramDirectionMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("interArrivalHistogramDirectionMode").toInt() == 0);
+        UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMetricOriginalButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMetricCapturedButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramModeAllButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramModeAllButton") != nullptr);
         UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 3);
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 4);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateWindowLabel") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateWindowLabel")->property("text").toString() == QStringLiteral("Window: 10 ms (auto)"));
-        UI_EXPECT(named_object(pane.object.get(), "analysisRateMetricDataButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateMetricOriginalDataButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateMetricPacketsButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateMetricCapturedDataButton") == nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionAToBButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionBToAButton") != nullptr);
         UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionBothButton") != nullptr);
@@ -1636,10 +1650,13 @@ int main(int argc, char* argv[]) {
         const auto canvasSizeAfterSwitches = rateGraphCanvas->property("canvasSize").toSizeF();
         UI_EXPECT(std::fabs(canvasSizeAfterSwitches.width() - rateGraphCanvas->width()) <= 1.0);
         UI_EXPECT(std::fabs(canvasSizeAfterSwitches.height() - rateGraphCanvas->height()) <= 1.0);
-        pane.object->setProperty("packetSizeHistogramMode", 1);
-        pane.object->setProperty("interArrivalHistogramMode", 2);
+        pane.object->setProperty("packetSizeHistogramMetricMode", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
-        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 2);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 5);
+        pane.object->setProperty("packetSizeHistogramDirectionMode", 1);
+        pane.object->setProperty("interArrivalHistogramDirectionMode", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 4);
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);
         pane.object->setProperty("rateDirectionMode", 0);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -1654,6 +1671,14 @@ int main(int argc, char* argv[]) {
         const auto canvasSizeAfterModeToggle = rateGraphCanvas->property("canvasSize").toSizeF();
         UI_EXPECT(std::fabs(canvasSizeAfterModeToggle.width() - rateGraphCanvas->width()) <= 1.0);
         UI_EXPECT(std::fabs(canvasSizeAfterModeToggle.height() - rateGraphCanvas->height()) <= 1.0);
+        pane.object->setProperty("analysisContextResetToken", 7);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("packetSizeHistogramMetricMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("packetSizeHistogramDirectionMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("interArrivalHistogramDirectionMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("rateMetricMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("rateDirectionMode").toInt() == 2);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 3);
         pane.object->setProperty("rateGraphAvailable", false);
         pane.object->setProperty("rateGraphStatusText", QStringLiteral("Flow too short for rate graph"));
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -1876,8 +1901,8 @@ int main(int argc, char* argv[]) {
         return !controller.analysisLoading() && controller.analysisAvailable();
     }));
     UI_EXPECT(saw_analysis_loading);
-    UI_EXPECT(controller.analysisTimelineFirstPacketTime() == QStringLiteral("00:00:01.000100"));
-    UI_EXPECT(controller.analysisTimelineLastPacketTime() == QStringLiteral("00:00:01.000100"));
+    UI_EXPECT(controller.analysisTimelineFirstPacketTime() == QStringLiteral("1970-01-01 00:00:01.000 UTC"));
+    UI_EXPECT(controller.analysisTimelineLastPacketTime() == QStringLiteral("1970-01-01 00:00:01.000 UTC"));
     UI_EXPECT(controller.analysisTimelineLargestGapText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 1U);
     UI_EXPECT(controller.analysisTimelinePacketCountConsideredText() == QStringLiteral("1"));
@@ -1886,7 +1911,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTotalBytes() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisTotalBytesText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisEndpointSummaryText() == expected_endpoint_summary_for_flow(*analysis_flow_model, analysis_http_flow_index));
-    UI_EXPECT(controller.analysisDurationText() == QStringLiteral("0 us"));
+    UI_EXPECT(controller.analysisDurationText() == QStringLiteral("00:00:00.000"));
     UI_EXPECT(controller.analysisPacketsPerSecondText() == QStringLiteral("0.000 pkt/s"));
     UI_EXPECT(controller.analysisPacketsPerSecondAToBText() == QStringLiteral("0.000 pkt/s"));
     UI_EXPECT(controller.analysisPacketsPerSecondBToAText() == QStringLiteral("0.000 pkt/s"));
@@ -2286,14 +2311,21 @@ int main(int argc, char* argv[]) {
         pane.object->setProperty("packetSizeHistogramAllModel", directional_histogram_controller.analysisPacketSizeHistogramAll());
         pane.object->setProperty("packetSizeHistogramAToBModel", directional_histogram_controller.analysisPacketSizeHistogramAToB());
         pane.object->setProperty("packetSizeHistogramBToAModel", directional_histogram_controller.analysisPacketSizeHistogramBToA());
+        pane.object->setProperty("capturedPacketSizeHistogramAllModel", directional_histogram_controller.analysisCapturedPacketSizeHistogramAll());
+        pane.object->setProperty("capturedPacketSizeHistogramAToBModel", directional_histogram_controller.analysisCapturedPacketSizeHistogramAToB());
+        pane.object->setProperty("capturedPacketSizeHistogramBToAModel", directional_histogram_controller.analysisCapturedPacketSizeHistogramBToA());
         pane.object->setProperty("interArrivalHistogramAllModel", directional_histogram_controller.analysisInterArrivalHistogramAll());
         pane.object->setProperty("interArrivalHistogramAToBModel", directional_histogram_controller.analysisInterArrivalHistogramAToB());
         pane.object->setProperty("interArrivalHistogramBToAModel", directional_histogram_controller.analysisInterArrivalHistogramBToA());
         app.processEvents(QEventLoop::AllEvents, 25);
-        UI_EXPECT(pane.object->property("packetSizeHistogramMode").toInt() == 0);
-        UI_EXPECT(pane.object->property("interArrivalHistogramMode").toInt() == 0);
-        pane.object->setProperty("packetSizeHistogramMode", 2);
-        pane.object->setProperty("interArrivalHistogramMode", 1);
+        UI_EXPECT(pane.object->property("packetSizeHistogramMetricMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("packetSizeHistogramDirectionMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("interArrivalHistogramDirectionMode").toInt() == 0);
+        pane.object->setProperty("packetSizeHistogramMetricMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 4);
+        pane.object->setProperty("packetSizeHistogramDirectionMode", 2);
+        pane.object->setProperty("interArrivalHistogramDirectionMode", 1);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 2);
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);

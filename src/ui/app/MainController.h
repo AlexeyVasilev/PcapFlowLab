@@ -206,6 +206,9 @@ private:
     Q_PROPERTY(QVariantList analysisPacketSizeHistogramAll READ analysisPacketSizeHistogramAll NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogramAToB READ analysisPacketSizeHistogramAToB NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogramBToA READ analysisPacketSizeHistogramBToA NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisCapturedPacketSizeHistogramAll READ analysisCapturedPacketSizeHistogramAll NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisCapturedPacketSizeHistogramAToB READ analysisCapturedPacketSizeHistogramAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisCapturedPacketSizeHistogramBToA READ analysisCapturedPacketSizeHistogramBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogram READ analysisPacketSizeHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisSequencePreview READ analysisSequencePreview NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
@@ -492,6 +495,9 @@ public:
     [[nodiscard]] QVariantList analysisPacketSizeHistogramAll() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogramAToB() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogramBToA() const;
+    [[nodiscard]] QVariantList analysisCapturedPacketSizeHistogramAll() const;
+    [[nodiscard]] QVariantList analysisCapturedPacketSizeHistogramAToB() const;
+    [[nodiscard]] QVariantList analysisCapturedPacketSizeHistogramBToA() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogram() const;
     [[nodiscard]] QVariantList analysisSequencePreview() const;
     [[nodiscard]] qulonglong packetCount() const noexcept;

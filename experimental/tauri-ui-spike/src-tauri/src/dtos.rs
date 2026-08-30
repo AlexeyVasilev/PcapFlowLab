@@ -1011,8 +1011,19 @@ pub struct AnalysisHistogramRowDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisRatePointDto {
     pub relative_time_us: u64,
-    pub data_per_second: f64,
+    pub original_data_per_second: f64,
     pub packets_per_second: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisPacketSizeHistogramDimensionRowDto {
+    pub bucket_label: String,
+    pub original_count_all: u64,
+    pub original_count_a_to_b: u64,
+    pub original_count_b_to_a: u64,
+    pub captured_count_all: u64,
+    pub captured_count_a_to_b: u64,
+    pub captured_count_b_to_a: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1046,9 +1057,12 @@ pub struct SelectedFlowAnalysisDto {
     pub protocol_version_text: String,
     pub protocol_service_text: String,
     pub protocol_fallback_text: String,
-    pub first_packet_time_text: String,
-    pub last_packet_time_text: String,
-    pub duration_text: String,
+    pub start_timestamp_us: Option<u64>,
+    pub start_time_full_utc_text: String,
+    pub end_timestamp_us: Option<u64>,
+    pub end_time_full_utc_text: String,
+    pub duration_us: Option<u64>,
+    pub duration_text_milliseconds: String,
     pub largest_gap_text: String,
     pub packets_considered_text: String,
     pub total_packets_text: String,
@@ -1095,6 +1109,6 @@ pub struct SelectedFlowAnalysisDto {
     pub unavailable_text: String,
     pub error_text: String,
     pub inter_arrival_histogram_rows: Vec<AnalysisHistogramRowDto>,
-    pub packet_size_histogram_rows: Vec<AnalysisHistogramRowDto>,
+    pub packet_size_histogram_dimension_rows: Vec<AnalysisPacketSizeHistogramDimensionRowDto>,
     pub sequence_preview_rows: Vec<AnalysisSequencePreviewRowDto>,
 }

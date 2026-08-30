@@ -3738,9 +3738,6 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     } else {
         result.duration_text_milliseconds = format_frontend_duration_milliseconds_or_unavailable(std::nullopt);
     }
-    result.first_packet_time_text = analysis->first_packet_timestamp_text;
-    result.last_packet_time_text = analysis->last_packet_timestamp_text;
-    result.duration_text = format_duration_us(analysis->duration_us);
     result.largest_gap_text = format_duration_us(analysis->largest_gap_us);
     result.packets_considered_text = format_grouped_integer(analysis->timeline_packet_count_considered);
     result.total_packets_text = format_grouped_integer(analysis->total_packets);
@@ -3800,7 +3797,6 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         result.rate_graph_points_a_to_b.push_back(FrontendAnalysisRatePointDto {
             .relative_time_us = point.relative_time_us,
             .original_data_per_second = point.original_data_per_second,
-            .data_per_second = point.original_data_per_second,
             .packets_per_second = point.packets_per_second,
         });
     }
@@ -3809,7 +3805,6 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         result.rate_graph_points_b_to_a.push_back(FrontendAnalysisRatePointDto {
             .relative_time_us = point.relative_time_us,
             .original_data_per_second = point.original_data_per_second,
-            .data_per_second = point.original_data_per_second,
             .packets_per_second = point.packets_per_second,
         });
     }
@@ -3820,11 +3815,6 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     );
     result.packet_size_histogram_dimension_rows =
         build_analysis_packet_size_histogram_dimension_rows(analysis->packet_size_histograms);
-    result.packet_size_histogram_rows = build_analysis_histogram_rows(
-        analysis->packet_size_histograms.original.histogram_all,
-        analysis->packet_size_histograms.original.histogram_a_to_b,
-        analysis->packet_size_histograms.original.histogram_b_to_a
-    );
     result.sequence_preview_rows.reserve(analysis->sequence_preview_rows.size());
     for (const auto& row_preview : analysis->sequence_preview_rows) {
         result.sequence_preview_rows.push_back(FrontendAnalysisSequencePreviewRowDto {

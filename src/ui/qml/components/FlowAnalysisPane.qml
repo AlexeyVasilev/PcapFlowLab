@@ -13,14 +13,16 @@ Frame {
     readonly property int histogramBarHeight: 18
     readonly property int groupBreakSpacing: 10
     readonly property int twoColumnMinWidth: 880
-    readonly property int histogramModeAll: 0
-    readonly property int histogramModeAToB: 1
-    readonly property int histogramModeBToA: 2
-    readonly property int rateMetricData: 0
+    readonly property int histogramDirectionAll: 0
+    readonly property int histogramDirectionAToB: 1
+    readonly property int histogramDirectionBToA: 2
+    readonly property int rateMetricOriginalData: 0
     readonly property int rateMetricPackets: 1
     readonly property int rateDirectionAToB: 0
     readonly property int rateDirectionBToA: 1
     readonly property int rateDirectionBoth: 2
+    readonly property int packetSizeMetricOriginal: 0
+    readonly property int packetSizeMetricCaptured: 1
     readonly property string forwardDirection: "A->B"
     readonly property string reverseDirection: "B->A"
 
@@ -79,10 +81,10 @@ Frame {
     }
 
     function selectHistogramModel(mode, allModel, aToBModel, bToAModel) {
-        if (mode === root.histogramModeAToB) {
+        if (mode === root.histogramDirectionAToB) {
             return aToBModel
         }
-        if (mode === root.histogramModeBToA) {
+        if (mode === root.histogramDirectionBToA) {
             return bToAModel
         }
         return allModel
@@ -94,6 +96,14 @@ Frame {
             total += model[index].packetCount
         }
         return total
+    }
+
+    function histogramMaximumBucketCount(model) {
+        var maxCount = 0
+        for (var index = 0; index < model.length; ++index) {
+            maxCount = Math.max(maxCount, model[index].packetCount)
+        }
+        return maxCount
     }
 
     function sequenceDirectionBackgroundColor(directionText) {
@@ -166,7 +176,7 @@ Frame {
     }
 
     function ratePointValue(point) {
-        return rateMetricMode === rateMetricPackets ? point.packetsPerSecond : point.dataPerSecond
+        return rateMetricMode === rateMetricPackets ? point.packetsPerSecond : point.originalDataPerSecond
     }
 
     function rateSeriesMaxValue(series) {
@@ -196,7 +206,7 @@ Frame {
     }
 
     function ratePointIsZero(point) {
-        return point.dataPerSecond === 0 && point.packetsPerSecond === 0
+        return point.originalDataPerSecond === 0 && point.packetsPerSecond === 0
     }
 
     function rateGraphTrimmedPointCount(seriesA, seriesB) {
@@ -234,7 +244,7 @@ Frame {
 
     function rateUnitForValue(maxValue) {
         if (rateMetricMode === rateMetricPackets) {
-            return "pkt/s"
+            return "packets/s"
         }
         if (maxValue >= 1024 * 1024) {
             return "MB/s"
@@ -291,7 +301,7 @@ Frame {
     property string rateGraphWindowText: ""
     property var rateSeriesAToBModel: []
     property var rateSeriesBToAModel: []
-    property int rateMetricMode: rateMetricData
+    property int rateMetricMode: rateMetricOriginalData
     property int rateDirectionMode: rateDirectionBoth
     readonly property var renderedRateSeriesAToB: (rateDirectionMode === rateDirectionAToB || rateDirectionMode === rateDirectionBoth) ? rateSeriesAToBModel : []
     readonly property var renderedRateSeriesBToA: (rateDirectionMode === rateDirectionBToA || rateDirectionMode === rateDirectionBoth) ? rateSeriesBToAModel : []
@@ -301,7 +311,9 @@ Frame {
     readonly property bool rateGraphHasVisibleSeries: graphSeriesAToB.length > 0 || graphSeriesBToA.length > 0
     readonly property real rateGraphPeakRawValue: rateGraphMaxYValue(graphSeriesAToB, graphSeriesBToA)
     readonly property string rateGraphUnit: rateUnitForValue(rateGraphPeakRawValue)
-    readonly property string rateGraphMetricLabel: rateMetricMode === rateMetricData ? "Data rate (" + rateGraphUnit + ")" : "Packets rate (pkt/s)"
+    readonly property string rateGraphMetricLabel: rateMetricMode === rateMetricPackets
+        ? "Packet rate (packets/s)"
+        : "Original data rate (" + rateGraphUnit + ")"
     readonly property string rateGraphPeakText: "Peak: " + formatPeakRateValue(rateGraphPeakRawValue, rateGraphUnit)
     readonly property string rateGraphHeaderLine1: rateGraphMetricLabel + " \u2022 " + rateGraphPeakText
     readonly property string rateGraphWindowDisplayText: formatWindowContextText(rateGraphWindowText)
@@ -377,30 +389,51 @@ Frame {
     property var interArrivalHistogramAllModel: []
     property var interArrivalHistogramAToBModel: []
     property var interArrivalHistogramBToAModel: []
-    property var interArrivalHistogramModel: []
     property var packetSizeHistogramAllModel: []
     property var packetSizeHistogramAToBModel: []
     property var packetSizeHistogramBToAModel: []
-    property var packetSizeHistogramModel: []
+    property var capturedPacketSizeHistogramAllModel: []
+    property var capturedPacketSizeHistogramAToBModel: []
+    property var capturedPacketSizeHistogramBToAModel: []
     property var sequencePreviewModel: []
-    property int packetSizeHistogramMode: histogramModeAll
-    property int interArrivalHistogramMode: histogramModeAll
+    property int analysisContextResetToken: -1
+    property int packetSizeHistogramMetricMode: packetSizeMetricOriginal
+    property int packetSizeHistogramDirectionMode: histogramDirectionAll
+    property int interArrivalHistogramDirectionMode: histogramDirectionAll
+    readonly property var selectedPacketSizeHistogramAllModel: packetSizeHistogramMetricMode === packetSizeMetricCaptured
+        ? capturedPacketSizeHistogramAllModel
+        : packetSizeHistogramAllModel
+    readonly property var selectedPacketSizeHistogramAToBModel: packetSizeHistogramMetricMode === packetSizeMetricCaptured
+        ? capturedPacketSizeHistogramAToBModel
+        : packetSizeHistogramAToBModel
+    readonly property var selectedPacketSizeHistogramBToAModel: packetSizeHistogramMetricMode === packetSizeMetricCaptured
+        ? capturedPacketSizeHistogramBToAModel
+        : packetSizeHistogramBToAModel
     readonly property var displayedPacketSizeHistogramModel: selectHistogramModel(
-        packetSizeHistogramMode,
-        packetSizeHistogramAllModel.length > 0 ? packetSizeHistogramAllModel : packetSizeHistogramModel,
-        packetSizeHistogramAToBModel,
-        packetSizeHistogramBToAModel
+        packetSizeHistogramDirectionMode,
+        selectedPacketSizeHistogramAllModel,
+        selectedPacketSizeHistogramAToBModel,
+        selectedPacketSizeHistogramBToAModel
     )
     readonly property var displayedInterArrivalHistogramModel: selectHistogramModel(
-        interArrivalHistogramMode,
-        interArrivalHistogramAllModel.length > 0 ? interArrivalHistogramAllModel : interArrivalHistogramModel,
+        interArrivalHistogramDirectionMode,
+        interArrivalHistogramAllModel,
         interArrivalHistogramAToBModel,
         interArrivalHistogramBToAModel
     )
     readonly property int displayedPacketSizeHistogramTotal: histogramTotalCount(displayedPacketSizeHistogramModel)
+    readonly property int displayedPacketSizeHistogramMaximumBucketCount: histogramMaximumBucketCount(displayedPacketSizeHistogramModel)
     readonly property int displayedInterArrivalHistogramTotal: histogramTotalCount(displayedInterArrivalHistogramModel)
     readonly property real derivedMetricsMetricColumnWidth: 150
     readonly property real derivedMetricsValueColumnWidth: 104
+
+    function resetAnalysisLocalModes() {
+        packetSizeHistogramMetricMode = packetSizeMetricOriginal
+        packetSizeHistogramDirectionMode = histogramDirectionAll
+        interArrivalHistogramDirectionMode = histogramDirectionAll
+        rateMetricMode = rateMetricOriginalData
+        rateDirectionMode = rateDirectionBoth
+    }
 
     function requestRateGraphRepaint() {
         if (typeof rateGraphCanvas !== "undefined" && rateGraphCanvas !== null) {
@@ -415,6 +448,17 @@ Frame {
     onRateMetricModeChanged: requestRateGraphRepaint()
     onRateDirectionModeChanged: requestRateGraphRepaint()
     onRateGraphAvailableChanged: requestRateGraphRepaint()
+    onAnalysisContextResetTokenChanged: resetAnalysisLocalModes()
+    onHasActiveFlowChanged: {
+        if (!hasActiveFlow) {
+            resetAnalysisLocalModes()
+        }
+    }
+    onAnalysisAvailableChanged: {
+        if (!analysisAvailable) {
+            resetAnalysisLocalModes()
+        }
+    }
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -778,7 +822,7 @@ Frame {
                                 Label { text: root.packetsPerSecondAToBText.length > 0 ? root.packetsPerSecondAToBText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
                                 Label { text: root.packetsPerSecondBToAText.length > 0 ? root.packetsPerSecondBToAText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Data rate"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: "Original data rate"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
                                 Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
                                 Label { text: root.bytesPerSecondAToBText.length > 0 ? root.bytesPerSecondAToBText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
                                 Label { text: root.bytesPerSecondBToAText.length > 0 ? root.bytesPerSecondBToAText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
@@ -927,11 +971,11 @@ Frame {
                                     }
 
                                     HistogramModeButton {
-                                        objectName: "analysisRateMetricDataButton"
-                                        text: "Data/s"
-                                        checked: root.rateMetricMode === root.rateMetricData
+                                        objectName: "analysisRateMetricOriginalDataButton"
+                                        text: "Original data/s"
+                                        checked: root.rateMetricMode === root.rateMetricOriginalData
                                         ButtonGroup.group: rateMetricModeGroup
-                                        onClicked: root.rateMetricMode = root.rateMetricData
+                                        onClicked: root.rateMetricMode = root.rateMetricOriginalData
                                     }
 
                                     HistogramModeButton {
@@ -1212,7 +1256,7 @@ Frame {
                             }
 
                             HistogramInfoHint {
-                                tooltipText: "Shows packet size distribution. Directional modes filter packets by flow direction."
+                                tooltipText: "Original uses packet lengths recorded by capture metadata. Captured uses the bytes retained in the capture. Directional modes filter packets by flow direction."
                             }
 
                             Item {
@@ -1229,41 +1273,76 @@ Frame {
                                 color: "#f8fafc"
                                 border.color: "#cbd5e1"
                                 radius: 6
-                                implicitHeight: packetSizeModeLayout.implicitHeight + 4
-                                implicitWidth: packetSizeModeLayout.implicitWidth + 8
+                                implicitHeight: packetSizeMetricLayout.implicitHeight + 4
+                                implicitWidth: packetSizeMetricLayout.implicitWidth + 8
 
                                 RowLayout {
-                                    id: packetSizeModeLayout
+                                    id: packetSizeMetricLayout
                                     anchors.fill: parent
                                     anchors.margins: 2
                                     spacing: 2
 
                                     ButtonGroup {
-                                        id: packetSizeHistogramModeGroup
+                                        id: packetSizeHistogramMetricModeGroup
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeHistogramMetricOriginalButton"
+                                        text: "Original"
+                                        checked: root.packetSizeHistogramMetricMode === root.packetSizeMetricOriginal
+                                        ButtonGroup.group: packetSizeHistogramMetricModeGroup
+                                        onClicked: root.packetSizeHistogramMetricMode = root.packetSizeMetricOriginal
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeHistogramMetricCapturedButton"
+                                        text: "Captured"
+                                        checked: root.packetSizeHistogramMetricMode === root.packetSizeMetricCaptured
+                                        ButtonGroup.group: packetSizeHistogramMetricModeGroup
+                                        onClicked: root.packetSizeHistogramMetricMode = root.packetSizeMetricCaptured
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: packetSizeDirectionLayout.implicitHeight + 4
+                                implicitWidth: packetSizeDirectionLayout.implicitWidth + 8
+
+                                RowLayout {
+                                    id: packetSizeDirectionLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
+
+                                    ButtonGroup {
+                                        id: packetSizeHistogramDirectionModeGroup
                                     }
 
                                     HistogramModeButton {
                                         objectName: "packetSizeHistogramModeAllButton"
                                         text: "All"
-                                        checked: root.packetSizeHistogramMode === root.histogramModeAll
-                                        ButtonGroup.group: packetSizeHistogramModeGroup
-                                        onClicked: root.packetSizeHistogramMode = root.histogramModeAll
+                                        checked: root.packetSizeHistogramDirectionMode === root.histogramDirectionAll
+                                        ButtonGroup.group: packetSizeHistogramDirectionModeGroup
+                                        onClicked: root.packetSizeHistogramDirectionMode = root.histogramDirectionAll
                                     }
 
                                     HistogramModeButton {
                                         objectName: "packetSizeHistogramModeAToBButton"
                                         text: "A→B"
-                                        checked: root.packetSizeHistogramMode === root.histogramModeAToB
-                                        ButtonGroup.group: packetSizeHistogramModeGroup
-                                        onClicked: root.packetSizeHistogramMode = root.histogramModeAToB
+                                        checked: root.packetSizeHistogramDirectionMode === root.histogramDirectionAToB
+                                        ButtonGroup.group: packetSizeHistogramDirectionModeGroup
+                                        onClicked: root.packetSizeHistogramDirectionMode = root.histogramDirectionAToB
                                     }
 
                                     HistogramModeButton {
                                         objectName: "packetSizeHistogramModeBToAButton"
                                         text: "B→A"
-                                        checked: root.packetSizeHistogramMode === root.histogramModeBToA
-                                        ButtonGroup.group: packetSizeHistogramModeGroup
-                                        onClicked: root.packetSizeHistogramMode = root.histogramModeBToA
+                                        checked: root.packetSizeHistogramDirectionMode === root.histogramDirectionBToA
+                                        ButtonGroup.group: packetSizeHistogramDirectionModeGroup
+                                        onClicked: root.packetSizeHistogramDirectionMode = root.histogramDirectionBToA
                                     }
                                 }
                             }
@@ -1296,7 +1375,7 @@ Frame {
                                         anchors.left: parent.left
                                         anchors.top: parent.top
                                         anchors.bottom: parent.bottom
-                                        width: parent.width * (root.displayedPacketSizeHistogramTotal > 0 ? modelData.packetCount / root.displayedPacketSizeHistogramTotal : 0)
+                                        width: parent.width * (root.displayedPacketSizeHistogramMaximumBucketCount > 0 ? modelData.packetCount / root.displayedPacketSizeHistogramMaximumBucketCount : 0)
                                         radius: 4
                                         color: modelData.packetCount > 0 ? "#60a5fa" : "transparent"
                                     }
@@ -1376,25 +1455,25 @@ Frame {
                                     HistogramModeButton {
                                         objectName: "interArrivalHistogramModeAllButton"
                                         text: "All"
-                                        checked: root.interArrivalHistogramMode === root.histogramModeAll
+                                        checked: root.interArrivalHistogramDirectionMode === root.histogramDirectionAll
                                         ButtonGroup.group: interArrivalHistogramModeGroup
-                                        onClicked: root.interArrivalHistogramMode = root.histogramModeAll
+                                        onClicked: root.interArrivalHistogramDirectionMode = root.histogramDirectionAll
                                     }
 
                                     HistogramModeButton {
                                         objectName: "interArrivalHistogramModeAToBButton"
                                         text: "A→B"
-                                        checked: root.interArrivalHistogramMode === root.histogramModeAToB
+                                        checked: root.interArrivalHistogramDirectionMode === root.histogramDirectionAToB
                                         ButtonGroup.group: interArrivalHistogramModeGroup
-                                        onClicked: root.interArrivalHistogramMode = root.histogramModeAToB
+                                        onClicked: root.interArrivalHistogramDirectionMode = root.histogramDirectionAToB
                                     }
 
                                     HistogramModeButton {
                                         objectName: "interArrivalHistogramModeBToAButton"
                                         text: "B→A"
-                                        checked: root.interArrivalHistogramMode === root.histogramModeBToA
+                                        checked: root.interArrivalHistogramDirectionMode === root.histogramDirectionBToA
                                         ButtonGroup.group: interArrivalHistogramModeGroup
-                                        onClicked: root.interArrivalHistogramMode = root.histogramModeBToA
+                                        onClicked: root.interArrivalHistogramDirectionMode = root.histogramDirectionBToA
                                     }
                                 }
                             }

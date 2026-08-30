@@ -566,6 +566,23 @@ Shared semantic expectations:
 - histograms;
 - sequence preview and export.
 
+Current visible Analysis contract also includes:
+
+- `First packet` and `Last packet` remain the existing Overview labels, but
+  their visible values use shared full UTC timestamp presentation;
+- `Duration` remains the existing Overview label, but its visible value uses
+  shared millisecond-precision duration presentation, including `00:00:00.000`
+  for a valid zero-duration flow;
+- `Packet Size Histogram` exposes two orthogonal local controls:
+  `Original` / `Captured` and `All` / `A->B` / `B->A`;
+- `Original` packet size means the original packet length recorded by capture
+  metadata, while `Captured` means the bytes retained in the capture;
+- `Flow Rate` exposes only `Original data/s` and `Packets/s`, with
+  `A->B` / `B->A` / `Both` remaining local presentation controls;
+- switching Analysis metric or direction controls is frontend-local over the
+  already loaded selected-flow Analysis DTO and must not trigger a backend
+  recomputation or additional selected-flow packet traversal.
+
 This contract records stable visible semantics, not a new analysis RFC and not a
 promise of identical Qt/Tauri layout.
 

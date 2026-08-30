@@ -720,8 +720,6 @@ struct FrontendAnalysisHistogramRowDto {
 struct FrontendAnalysisRatePointDto {
     std::uint64_t relative_time_us {0};
     double original_data_per_second {0.0};
-    // Compatibility alias for current visible Data/s mode: original bytes/sec.
-    double data_per_second {0.0};
     double packets_per_second {0.0};
 };
 
@@ -770,9 +768,6 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string end_time_full_utc_text {};
     std::optional<std::uint64_t> duration_us {};
     std::string duration_text_milliseconds {};
-    std::string first_packet_time_text {};
-    std::string last_packet_time_text {};
-    std::string duration_text {};
     std::string largest_gap_text {};
     std::string packets_considered_text {};
     std::string total_packets_text {};
@@ -820,8 +815,6 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string error_text {};
     std::vector<FrontendAnalysisHistogramRowDto> inter_arrival_histogram_rows {};
     std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto> packet_size_histogram_dimension_rows {};
-    // Compatibility projection for current visible packet-size histogram: original lengths.
-    std::vector<FrontendAnalysisHistogramRowDto> packet_size_histogram_rows {};
     std::vector<FrontendAnalysisSequencePreviewRowDto> sequence_preview_rows {};
 };
 
