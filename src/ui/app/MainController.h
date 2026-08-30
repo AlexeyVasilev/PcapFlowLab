@@ -219,6 +219,7 @@ private:
     Q_PROPERTY(QVariantMap flowCharacteristics READ flowCharacteristics NOTIFY stateChanged)
     Q_PROPERTY(QVariantMap packetDirectionDistribution READ packetDirectionDistribution NOTIFY stateChanged)
     Q_PROPERTY(QVariantMap dataDirectionDistribution READ dataDirectionDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QVariantMap tcpFlagStatistics READ tcpFlagStatistics NOTIFY stateChanged)
     Q_PROPERTY(QString statisticsPartialOpenWarningText READ statisticsPartialOpenWarningText NOTIFY stateChanged)
     Q_PROPERTY(int statisticsSectionsResetToken READ statisticsSectionsResetToken NOTIFY statisticsSectionsResetTokenChanged)
     Q_PROPERTY(int packetSizeDistributionState READ packetSizeDistributionState NOTIFY stateChanged)
@@ -501,6 +502,7 @@ public:
     [[nodiscard]] QVariantMap flowCharacteristics() const;
     [[nodiscard]] QVariantMap packetDirectionDistribution() const;
     [[nodiscard]] QVariantMap dataDirectionDistribution() const;
+    [[nodiscard]] QVariantMap tcpFlagStatistics() const;
     [[nodiscard]] QString statisticsPartialOpenWarningText() const;
     [[nodiscard]] int statisticsSectionsResetToken() const noexcept;
     [[nodiscard]] int packetSizeDistributionState() const noexcept;
@@ -926,6 +928,7 @@ private:
     QVariantMap flow_characteristics_ {};
     QVariantMap packet_direction_distribution_ {};
     QVariantMap data_direction_distribution_ {};
+    QVariantMap tcp_flag_statistics_ {};
     QString statistics_partial_open_warning_text_ {};
     UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
     std::uint64_t whole_capture_packet_count_ {0U};

@@ -1931,6 +1931,33 @@ QVariantMap direction_distribution_to_variant_map(const FrontendDirectionDistrib
     return map;
 }
 
+QVariantList tcp_flag_statistics_rows_to_variant_list(
+    const std::vector<FrontendTcpFlagStatisticsRowDto>& rows
+) {
+    QVariantList list {};
+    list.reserve(static_cast<qsizetype>(rows.size()));
+    for (const auto& row : rows) {
+        QVariantMap map {};
+        map.insert(QStringLiteral("stableId"), qstring_from_utf8(row.stable_id));
+        map.insert(QStringLiteral("label"), qstring_from_utf8(row.label));
+        map.insert(QStringLiteral("packetCount"), QVariant::fromValue<qulonglong>(row.packet_count));
+        map.insert(QStringLiteral("packetFraction"), row.packet_fraction);
+        map.insert(QStringLiteral("packetCountText"), qstring_from_utf8(row.packet_count_text));
+        map.insert(QStringLiteral("percentText"), qstring_from_utf8(row.percent_text));
+        list.push_back(map);
+    }
+    return list;
+}
+
+QVariantMap tcp_flag_statistics_to_variant_map(const FrontendTcpFlagStatisticsDto& statistics) {
+    QVariantMap map {};
+    map.insert(QStringLiteral("hasTcpPackets"), statistics.has_tcp_packets);
+    map.insert(QStringLiteral("totalTcpPacketCount"), QVariant::fromValue<qulonglong>(statistics.total_tcp_packet_count));
+    map.insert(QStringLiteral("helpText"), qstring_from_utf8(statistics.help_text));
+    map.insert(QStringLiteral("rows"), tcp_flag_statistics_rows_to_variant_list(statistics.rows));
+    return map;
+}
+
 QString format_duration_us(const std::uint64_t duration_us) {
     if (duration_us == 0U) {
         return QStringLiteral("0 us");
@@ -3331,6 +3358,10 @@ QVariantMap MainController::packetDirectionDistribution() const {
 
 QVariantMap MainController::dataDirectionDistribution() const {
     return data_direction_distribution_;
+}
+
+QVariantMap MainController::tcpFlagStatistics() const {
+    return tcp_flag_statistics_;
 }
 
 QString MainController::statisticsPartialOpenWarningText() const {
@@ -7072,6 +7103,7 @@ void MainController::resetLoadedState() {
     flow_characteristics_.clear();
     packet_direction_distribution_.clear();
     data_direction_distribution_.clear();
+    tcp_flag_statistics_.clear();
     statistics_partial_open_warning_text_.clear();
     resetStatisticsSectionState(true);
     clearProtocolPathFlowFilterState();
@@ -7163,6 +7195,7 @@ void MainController::refreshStatisticsOverviewPresentation() {
         flow_characteristics_.clear();
         packet_direction_distribution_.clear();
         data_direction_distribution_.clear();
+        tcp_flag_statistics_.clear();
         statistics_partial_open_warning_text_.clear();
         return;
     }
@@ -7172,6 +7205,8 @@ void MainController::refreshStatisticsOverviewPresentation() {
     const auto packet_direction_distribution_statistics = session_.packet_direction_distribution_statistics();
     const auto original_byte_direction_distribution_statistics =
         session_.original_byte_direction_distribution_statistics();
+    const auto tcp_flag_statistics = session_.tcp_flag_statistics();
+    const auto tcp_protocol_packet_count = session_.protocol_summary().tcp.packet_count;
     capture_time_statistics_ = capture_time_statistics_to_variant_map(
         build_frontend_capture_time_statistics(packet_statistics)
     );
@@ -7192,6 +7227,9 @@ void MainController::refreshStatisticsOverviewPresentation() {
             flow_characteristics_statistics,
             original_byte_direction_distribution_statistics
         )
+    );
+    tcp_flag_statistics_ = tcp_flag_statistics_to_variant_map(
+        build_frontend_tcp_flag_statistics(tcp_flag_statistics, tcp_protocol_packet_count)
     );
     statistics_partial_open_warning_text_ = QString::fromStdString(
         build_frontend_statistics_partial_open_warning_text(session_.is_partial_open())

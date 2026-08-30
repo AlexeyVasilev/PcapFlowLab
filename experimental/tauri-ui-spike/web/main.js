@@ -24,6 +24,7 @@
     captureMetrics: "captureMetrics",
     flowCharacteristics: "flowCharacteristics",
     directionDistribution: "directionDistribution",
+    tcpFlags: "tcpFlags",
     packetSizeDistribution: "packetSizeDistribution",
     flowPacketHistogram: "flowPacketHistogram",
     protocolPath: "protocolPath",
@@ -52,6 +53,7 @@
       [statisticsSectionKeys.captureMetrics]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.flowCharacteristics]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.directionDistribution]: createStatisticsSectionEntry(),
+      [statisticsSectionKeys.tcpFlags]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.packetSizeDistribution]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.flowPacketHistogram]: createStatisticsSectionEntry(),
       [statisticsSectionKeys.protocolPath]: createStatisticsSectionEntry(),
@@ -3615,6 +3617,9 @@
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
     protocolPathStatsViewport: document.getElementById("protocolPathStatsViewport"),
     protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
+    tcpFlagsDetails: document.getElementById("tcpFlagsDetails"),
+    tcpFlagsHelpText: document.getElementById("tcpFlagsHelpText"),
+    tcpFlagsBody: document.getElementById("tcpFlagsBody"),
     quicTlsDetails: document.getElementById("quicTlsDetails"),
     quicTlsSummaryValue: document.getElementById("quicTlsSummaryValue"),
     quicStatsBody: document.getElementById("quicStatsBody"),
@@ -3658,6 +3663,21 @@
       <tr>
         <td>${escapeHtml(String(row?.label ?? "—"))}</td>
         <td>${escapeHtml(statisticsDisplayText(row?.flow_count_text))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.percent_text))}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderTcpFlagRows(rows, emptyText) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (safeRows.length === 0) {
+      return renderStatsStateRow(3, emptyText);
+    }
+
+    return safeRows.map((row) => `
+      <tr>
+        <td>${escapeHtml(String(row?.label ?? "—"))}</td>
+        <td>${escapeHtml(statisticsDisplayText(row?.packet_count_text))}</td>
         <td>${escapeHtml(statisticsDisplayText(row?.percent_text))}</td>
       </tr>
     `).join("");
@@ -3711,6 +3731,7 @@
       [elements.captureMetricsDetails, statisticsSectionKeys.captureMetrics],
       [elements.flowCharacteristicsDetails, statisticsSectionKeys.flowCharacteristics],
       [elements.directionDistributionDetails, statisticsSectionKeys.directionDistribution],
+      [elements.tcpFlagsDetails, statisticsSectionKeys.tcpFlags],
       [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
       [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
       [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],
@@ -7217,6 +7238,8 @@
     }
     elements.protocolPathSummaryValue && (elements.protocolPathSummaryValue.textContent = "");
     elements.protocolHintsSummaryValue && (elements.protocolHintsSummaryValue.textContent = "");
+    elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
+    elements.tcpFlagsBody && (elements.tcpFlagsBody.innerHTML = "");
     elements.quicTlsSummaryValue && (elements.quicTlsSummaryValue.textContent = "");
     elements.topEndpointsPortsSummaryValue && (elements.topEndpointsPortsSummaryValue.textContent = "");
     elements.statisticsPartialOpenWarning && elements.statisticsPartialOpenWarning.classList.add("is-hidden");
@@ -7713,6 +7736,7 @@
     const flowCharacteristics = overview?.flow_characteristics || null;
     const packetDirectionDistribution = overview?.packet_direction_distribution || null;
     const dataDirectionDistribution = overview?.original_byte_direction_distribution || null;
+    const tcpFlagStatistics = overview?.tcp_flag_statistics || null;
 
     elements.metricPackets.textContent = overview ? formatNumber(overview.whole_capture_totals?.packet_count ?? overview.summary?.packet_count ?? 0) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
@@ -7744,6 +7768,10 @@
         elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Loading original-byte direction statistics...")
       );
       elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.tcpFlagsBody && (
+        elements.tcpFlagsBody.innerHTML = renderStatsStateRow(3, "Loading TCP flag statistics...")
+      );
+      elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
       elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
       elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "Loading overview...";
@@ -7777,6 +7805,10 @@
         elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open failed. No original-byte direction statistics were loaded.", "error")
       );
       elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.tcpFlagsBody && (
+        elements.tcpFlagsBody.innerHTML = renderStatsStateRow(3, "Open failed. No TCP flag statistics were loaded.", "error")
+      );
+      elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
       elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
       elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "No overview is available after open failure.";
@@ -7810,6 +7842,10 @@
         elements.dataDirectionDistributionBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load original-byte direction statistics.")
       );
       elements.dataDirectionDistributionHelpText && (elements.dataDirectionDistributionHelpText.textContent = "");
+      elements.tcpFlagsBody && (
+        elements.tcpFlagsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load TCP flag statistics.")
+      );
+      elements.tcpFlagsHelpText && (elements.tcpFlagsHelpText.textContent = "");
       elements.statisticsPartialOpenWarning?.classList.add("is-hidden");
       elements.statisticsPartialOpenWarning && (elements.statisticsPartialOpenWarning.textContent = "");
       elements.overviewMeta.textContent = "No capture loaded.";
@@ -7848,6 +7884,15 @@
       elements.dataDirectionDistributionBody.innerHTML = renderDirectionDistributionRows(
         dataDirectionDistribution?.rows,
         "No original-byte direction statistics are available."
+      );
+    }
+    if (elements.tcpFlagsHelpText) {
+      elements.tcpFlagsHelpText.textContent = String(tcpFlagStatistics?.help_text ?? "");
+    }
+    if (elements.tcpFlagsBody) {
+      elements.tcpFlagsBody.innerHTML = renderTcpFlagRows(
+        tcpFlagStatistics?.rows,
+        "No TCP flag statistics are available."
       );
     }
     if (elements.statisticsPartialOpenWarning) {
@@ -12558,6 +12603,7 @@
     [elements.captureMetricsDetails, statisticsSectionKeys.captureMetrics],
     [elements.flowCharacteristicsDetails, statisticsSectionKeys.flowCharacteristics],
     [elements.directionDistributionDetails, statisticsSectionKeys.directionDistribution],
+    [elements.tcpFlagsDetails, statisticsSectionKeys.tcpFlags],
     [elements.packetSizeDistributionDetails, statisticsSectionKeys.packetSizeDistribution],
     [elements.flowPacketHistogramDetails, statisticsSectionKeys.flowPacketHistogram],
     [elements.protocolPathDetails, statisticsSectionKeys.protocolPath],

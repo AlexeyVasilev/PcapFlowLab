@@ -191,6 +191,18 @@ const FrontendCapturePacketSizeStatisticsBucketDto* find_bucket(
     return nullptr;
 }
 
+const FrontendTcpFlagStatisticsRowDto* find_tcp_flag_row(
+    const FrontendTcpFlagStatisticsDto& statistics,
+    const std::string_view stable_id
+) {
+    for (const auto& row : statistics.rows) {
+        if (row.stable_id == stable_id) {
+            return &row;
+        }
+    }
+    return nullptr;
+}
+
 void expect_histogram_bucket(
     const FlowPacketCountHistogram& histogram,
     const std::string_view stable_id,
@@ -346,6 +358,25 @@ void expect_top_summary_equal(const CaptureTopSummary& left, const CaptureTopSum
         PFL_EXPECT(left.ports_by_bytes[index].port == right.ports_by_bytes[index].port);
         PFL_EXPECT(left.ports_by_bytes[index].packet_count == right.ports_by_bytes[index].packet_count);
         PFL_EXPECT(left.ports_by_bytes[index].total_bytes == right.ports_by_bytes[index].total_bytes);
+    }
+}
+
+void expect_tcp_flag_statistics_equal(
+    const FrontendTcpFlagStatisticsDto& left,
+    const FrontendTcpFlagStatisticsDto& right
+) {
+    PFL_EXPECT(left.has_tcp_packets == right.has_tcp_packets);
+    PFL_EXPECT(left.total_tcp_packet_count == right.total_tcp_packet_count);
+    PFL_EXPECT(left.help_text == right.help_text);
+    PFL_EXPECT(left.rows.size() == right.rows.size());
+
+    for (std::size_t index = 0U; index < left.rows.size(); ++index) {
+        PFL_EXPECT(left.rows[index].stable_id == right.rows[index].stable_id);
+        PFL_EXPECT(left.rows[index].label == right.rows[index].label);
+        PFL_EXPECT(left.rows[index].packet_count == right.rows[index].packet_count);
+        PFL_EXPECT(left.rows[index].packet_fraction == right.rows[index].packet_fraction);
+        PFL_EXPECT(left.rows[index].packet_count_text == right.rows[index].packet_count_text);
+        PFL_EXPECT(left.rows[index].percent_text == right.rows[index].percent_text);
     }
 }
 
@@ -694,6 +725,9 @@ void expect_capture_general_statistics_support_empty_inputs() {
     PFL_EXPECT(statistics.original_byte_direction_distribution.mostly_a_to_b_flow_count == 0U);
     PFL_EXPECT(statistics.original_byte_direction_distribution.balanced_flow_count == 0U);
     PFL_EXPECT(statistics.original_byte_direction_distribution.mostly_b_to_a_flow_count == 0U);
+    PFL_EXPECT(statistics.tcp_flags.syn_packet_count == 0U);
+    PFL_EXPECT(statistics.tcp_flags.fin_packet_count == 0U);
+    PFL_EXPECT(statistics.tcp_flags.rst_packet_count == 0U);
     PFL_EXPECT(statistics.top_summary.endpoints_by_bytes.empty());
     PFL_EXPECT(statistics.top_summary.ports_by_bytes.empty());
     PFL_EXPECT(statistics.flow_packet_count_histogram.total_flow_count == 0U);
@@ -710,6 +744,7 @@ void expect_capture_general_statistics_track_flow_characteristics_distributions_
     unknown_tcp.packet_count = 1U;
     unknown_tcp.total_bytes = 100U;
     unknown_tcp.aggregate_stats.captured_bytes = 90U;
+    unknown_tcp.aggregate_stats.tcp_syn_count = 1U;
     unknown_tcp.service_hint = "alpha.example";
     unknown_tcp.key.protocol = ProtocolId::tcp;
     unknown_tcp.key.first.addr = ipv4(10, 10, 0, 1);
@@ -746,6 +781,7 @@ void expect_capture_general_statistics_track_flow_characteristics_distributions_
     confirmed_tls.packet_count = 5U;
     confirmed_tls.total_bytes = 500U;
     confirmed_tls.aggregate_stats.captured_bytes = 450U;
+    confirmed_tls.aggregate_stats.tcp_fin_count = 1U;
     confirmed_tls.protocol_hint = FlowProtocolHint::tls;
     confirmed_tls.tls_version = TlsVersionHint::tls13;
     confirmed_tls.key.protocol = ProtocolId::tcp;
@@ -761,6 +797,8 @@ void expect_capture_general_statistics_track_flow_characteristics_distributions_
     possible_tls.packet_count = 3U;
     possible_tls.total_bytes = 600U;
     possible_tls.aggregate_stats.captured_bytes = 500U;
+    possible_tls.aggregate_stats.tcp_syn_count = 1U;
+    possible_tls.aggregate_stats.tcp_rst_count = 2U;
     possible_tls.key.protocol = ProtocolId::tcp;
     possible_tls.key.first.addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
     possible_tls.key.first.port = 4400U;
@@ -801,6 +839,9 @@ void expect_capture_general_statistics_track_flow_characteristics_distributions_
     PFL_EXPECT(statistics.original_byte_direction_distribution.mostly_a_to_b_flow_count == 2U);
     PFL_EXPECT(statistics.original_byte_direction_distribution.balanced_flow_count == 1U);
     PFL_EXPECT(statistics.original_byte_direction_distribution.mostly_b_to_a_flow_count == 1U);
+    PFL_EXPECT(statistics.tcp_flags.syn_packet_count == 2U);
+    PFL_EXPECT(statistics.tcp_flags.fin_packet_count == 1U);
+    PFL_EXPECT(statistics.tcp_flags.rst_packet_count == 2U);
 
     PFL_EXPECT(statistics.flow_packet_count_histogram.total_flow_count == 4U);
     PFL_EXPECT(statistics.flow_packet_count_histogram.total_captured_byte_count == 1290U);
@@ -1499,6 +1540,16 @@ void expect_overview_excludes_optional_statistics_sections() {
         == expected_original_byte_direction_distribution.rows[1].percent_text);
     PFL_EXPECT(overview.original_byte_direction_distribution.rows[2].percent_text
         == expected_original_byte_direction_distribution.rows[2].percent_text);
+    PFL_EXPECT(overview.tcp_flag_statistics.has_tcp_packets);
+    PFL_EXPECT(overview.tcp_flag_statistics.total_tcp_packet_count == 2U);
+    PFL_EXPECT(overview.tcp_flag_statistics.rows.size() == 3U);
+    PFL_REQUIRE(find_tcp_flag_row(overview.tcp_flag_statistics, "syn") != nullptr);
+    PFL_REQUIRE(find_tcp_flag_row(overview.tcp_flag_statistics, "fin") != nullptr);
+    PFL_REQUIRE(find_tcp_flag_row(overview.tcp_flag_statistics, "rst") != nullptr);
+    PFL_EXPECT(find_tcp_flag_row(overview.tcp_flag_statistics, "syn")->packet_count_text == "0");
+    PFL_EXPECT(find_tcp_flag_row(overview.tcp_flag_statistics, "syn")->percent_text == "0%");
+    PFL_EXPECT(find_tcp_flag_row(overview.tcp_flag_statistics, "fin")->packet_count_text == "0");
+    PFL_EXPECT(find_tcp_flag_row(overview.tcp_flag_statistics, "rst")->packet_count_text == "0");
     PFL_EXPECT(overview.statistics_partial_open_warning_text.empty());
 
     PFL_EXPECT(hint_statistics.has_capture);
@@ -1758,6 +1809,117 @@ void expect_frontend_statistics_overview_helpers_cover_availability_and_directio
     PFL_EXPECT(build_frontend_statistics_partial_open_warning_text(true)
         == "Statistics cover successfully imported packets only; the capture was opened partially.");
     PFL_EXPECT(build_frontend_statistics_partial_open_warning_text(false).empty());
+}
+
+void expect_frontend_tcp_flag_statistics_cover_zero_denominators_and_overlap() {
+    const auto empty_statistics = build_frontend_tcp_flag_statistics(CaptureTcpFlagStatistics {}, 0U);
+    PFL_EXPECT(!empty_statistics.has_tcp_packets);
+    PFL_EXPECT(empty_statistics.total_tcp_packet_count == 0U);
+    PFL_EXPECT(
+        empty_statistics.help_text ==
+        "Counts TCP packets with the corresponding flag set. A packet may contribute to more than one row. SYN includes SYN+ACK."
+    );
+    PFL_EXPECT(empty_statistics.rows.size() == 3U);
+    for (const auto& row : empty_statistics.rows) {
+        PFL_EXPECT(row.packet_count == 0U);
+        PFL_EXPECT(row.packet_fraction == 0.0);
+        PFL_EXPECT(row.packet_count_text == "0");
+        PFL_EXPECT(row.percent_text == "0%");
+        expect_not_nan_or_inf_text(row.percent_text);
+    }
+
+    const auto overlapping_statistics = build_frontend_tcp_flag_statistics(
+        CaptureTcpFlagStatistics {
+            .syn_packet_count = 2U,
+            .fin_packet_count = 1U,
+            .rst_packet_count = 1U,
+        },
+        4U
+    );
+    PFL_EXPECT(overlapping_statistics.has_tcp_packets);
+    PFL_EXPECT(overlapping_statistics.total_tcp_packet_count == 4U);
+    PFL_REQUIRE(find_tcp_flag_row(overlapping_statistics, "syn") != nullptr);
+    PFL_REQUIRE(find_tcp_flag_row(overlapping_statistics, "fin") != nullptr);
+    PFL_REQUIRE(find_tcp_flag_row(overlapping_statistics, "rst") != nullptr);
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "syn")->label == "SYN");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "syn")->packet_count_text == "2");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "syn")->percent_text == "50%");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "fin")->label == "FIN");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "fin")->packet_count_text == "1");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "fin")->percent_text == "25%");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "rst")->label == "RST");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "rst")->packet_count_text == "1");
+    PFL_EXPECT(find_tcp_flag_row(overlapping_statistics, "rst")->percent_text == "25%");
+}
+
+void expect_tcp_flag_statistics_survive_raw_and_index_overview_roundtrip() {
+    const auto tcp_syn = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 67, 0, 1),
+        ipv4(10, 67, 0, 2),
+        6701,
+        443,
+        0U,
+        0x02U
+    );
+    const auto tcp_syn_ack = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 67, 0, 2),
+        ipv4(10, 67, 0, 1),
+        443,
+        6701,
+        0U,
+        0x12U
+    );
+    const auto tcp_fin_rst = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 67, 0, 1),
+        ipv4(10, 67, 0, 2),
+        6701,
+        443,
+        0U,
+        0x05U
+    );
+    const auto tcp_ack = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 67, 0, 2),
+        ipv4(10, 67, 0, 1),
+        443,
+        6701,
+        0U,
+        0x10U
+    );
+    const auto capture_path = write_temp_pcap(
+        "pfl_statistics_tcp_flags_roundtrip.pcap",
+        make_classic_pcap({
+            {100U, tcp_syn},
+            {200U, tcp_syn_ack},
+            {300U, tcp_fin_rst},
+            {400U, tcp_ack},
+        })
+    );
+
+    FrontendSessionAdapter raw_adapter {};
+    PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+    const auto raw_overview = raw_adapter.get_overview();
+    PFL_EXPECT(raw_overview.protocol_summary.tcp.packet_count == 4U);
+    PFL_EXPECT(raw_overview.tcp_flag_statistics.has_tcp_packets);
+    PFL_EXPECT(raw_overview.tcp_flag_statistics.total_tcp_packet_count == 4U);
+    PFL_REQUIRE(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "syn") != nullptr);
+    PFL_REQUIRE(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "fin") != nullptr);
+    PFL_REQUIRE(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "rst") != nullptr);
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "syn")->packet_count == 2U);
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "syn")->packet_count_text == "2");
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "syn")->percent_text == "50%");
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "fin")->packet_count == 1U);
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "fin")->percent_text == "25%");
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "rst")->packet_count == 1U);
+    PFL_EXPECT(find_tcp_flag_row(raw_overview.tcp_flag_statistics, "rst")->percent_text == "25%");
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_statistics_tcp_flags_roundtrip.idx";
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+
+    FrontendSessionAdapter indexed_adapter {};
+    PFL_REQUIRE(indexed_adapter.open_capture(index_path).opened);
+    const auto indexed_overview = indexed_adapter.get_overview();
+    expect_tcp_flag_statistics_equal(raw_overview.tcp_flag_statistics, indexed_overview.tcp_flag_statistics);
 }
 
 void expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_and_index_inputs() {
@@ -2136,6 +2298,12 @@ void expect_statistics_section_bridge_json_shapes() {
     PFL_EXPECT(contains_text(overview_json, "\"service_recognized_flows_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"packet_direction_distribution\""));
     PFL_EXPECT(contains_text(overview_json, "\"original_byte_direction_distribution\""));
+    PFL_EXPECT(contains_text(overview_json, "\"tcp_flag_statistics\""));
+    PFL_EXPECT(contains_text(overview_json, "\"total_tcp_packet_count\""));
+    PFL_EXPECT(contains_text(overview_json, "\"help_text\""));
+    PFL_EXPECT(contains_text(overview_json, "\"stable_id\":\"syn\""));
+    PFL_EXPECT(contains_text(overview_json, "\"stable_id\":\"fin\""));
+    PFL_EXPECT(contains_text(overview_json, "\"stable_id\":\"rst\""));
     PFL_EXPECT(contains_text(overview_json, "\"stable_id\":\"mostly_a_to_b\""));
     PFL_EXPECT(contains_text(overview_json, "\"percent_text\""));
     PFL_EXPECT(contains_text(overview_json, "\"statistics_partial_open_warning_text\""));
@@ -2330,6 +2498,8 @@ void run_statistics_section_tests() {
     expect_capture_packet_size_statistics_count_surfaced_packet_before_trailing_reader_error();
     expect_overview_excludes_optional_statistics_sections();
     expect_frontend_statistics_overview_helpers_cover_availability_and_direction_distributions();
+    expect_frontend_tcp_flag_statistics_cover_zero_denominators_and_overlap();
+    expect_tcp_flag_statistics_survive_raw_and_index_overview_roundtrip();
     expect_overview_whole_capture_totals_and_input_metadata_cover_unrecognized_and_index_inputs();
     expect_statistics_overview_marks_partial_open_runtime_state();
     expect_statistics_adapter_exposes_total_based_percentage_fields();

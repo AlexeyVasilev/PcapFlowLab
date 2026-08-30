@@ -20,6 +20,9 @@ constexpr std::string_view kUnavailableText {"—"};
 constexpr std::string_view kOriginalByteDirectionHelpText {
     "Flows grouped by directional original-byte balance."
 };
+constexpr std::string_view kTcpFlagHelpText {
+    "Counts TCP packets with the corresponding flag set. A packet may contribute to more than one row. SYN includes SYN+ACK."
+};
 constexpr std::uint64_t kMicrosPerSecond = 1'000'000ULL;
 constexpr std::uint64_t kMicrosPerMinute = 60ULL * kMicrosPerSecond;
 constexpr std::uint64_t kMicrosPerHour = 60ULL * kMicrosPerMinute;
@@ -258,6 +261,23 @@ FrontendDirectionDistributionRowDto make_direction_distribution_row(
     };
 }
 
+FrontendTcpFlagStatisticsRowDto make_tcp_flag_statistics_row(
+    const std::string_view stable_id,
+    const std::string_view label,
+    const std::uint64_t packet_count,
+    const std::uint64_t total_tcp_packet_count
+) {
+    const auto packet_fraction = safe_fraction(packet_count, total_tcp_packet_count);
+    return FrontendTcpFlagStatisticsRowDto {
+        .stable_id = std::string(stable_id),
+        .label = std::string(label),
+        .packet_count = packet_count,
+        .packet_fraction = packet_fraction,
+        .packet_count_text = session_detail::format_statistics_count_value(packet_count),
+        .percent_text = session_detail::format_statistics_percent_text(percent_from_fraction(packet_fraction)),
+    };
+}
+
 }  // namespace
 
 FrontendCaptureTimeStatisticsDto build_frontend_capture_time_statistics(
@@ -427,6 +447,22 @@ FrontendDirectionDistributionDto build_frontend_original_byte_direction_distribu
                 distribution.mostly_b_to_a_flow_count,
                 total_flow_count
             ),
+        },
+    };
+}
+
+FrontendTcpFlagStatisticsDto build_frontend_tcp_flag_statistics(
+    const CaptureTcpFlagStatistics& statistics,
+    const std::uint64_t total_tcp_packet_count
+) {
+    return FrontendTcpFlagStatisticsDto {
+        .has_tcp_packets = total_tcp_packet_count > 0U,
+        .total_tcp_packet_count = total_tcp_packet_count,
+        .help_text = std::string {kTcpFlagHelpText},
+        .rows = {
+            make_tcp_flag_statistics_row("syn", "SYN", statistics.syn_packet_count, total_tcp_packet_count),
+            make_tcp_flag_statistics_row("fin", "FIN", statistics.fin_packet_count, total_tcp_packet_count),
+            make_tcp_flag_statistics_row("rst", "RST", statistics.rst_packet_count, total_tcp_packet_count),
         },
     };
 }

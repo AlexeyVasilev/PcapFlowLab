@@ -18,6 +18,7 @@ Item {
     property var flowCharacteristics: ({})
     property var packetDirectionDistribution: ({})
     property var dataDirectionDistribution: ({})
+    property var tcpFlagStatistics: ({})
     property string statisticsPartialOpenWarningText: ""
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
@@ -134,6 +135,10 @@ Item {
     readonly property int directionFlowColumnWidth: 96
     readonly property int directionPercentColumnWidth: 110
     readonly property int directionTableWidth: directionLabelColumnWidth + directionFlowColumnWidth + directionPercentColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
+    readonly property int tcpFlagLabelColumnWidth: 120
+    readonly property int tcpFlagPacketColumnWidth: 110
+    readonly property int tcpFlagPercentColumnWidth: 110
+    readonly property int tcpFlagTableWidth: tcpFlagLabelColumnWidth + tcpFlagPacketColumnWidth + tcpFlagPercentColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
     readonly property int pathTreeLabelColumnWidth: 420
     readonly property int pathTreeFlowsColumnWidth: 138
     readonly property int pathTreePacketsColumnWidth: 150
@@ -147,6 +152,7 @@ Item {
     property bool captureMetricsExpanded: false
     property bool flowCharacteristicsExpanded: false
     property bool directionDistributionExpanded: false
+    property bool tcpFlagsExpanded: false
     property bool packetSizeDistributionExpanded: false
     property bool flowPacketHistogramExpanded: false
     property bool protocolPathExpanded: false
@@ -167,6 +173,7 @@ Item {
         captureMetricsExpanded = false
         flowCharacteristicsExpanded = false
         directionDistributionExpanded = false
+        tcpFlagsExpanded = false
         packetSizeDistributionExpanded = false
         flowPacketHistogramExpanded = false
         protocolPathExpanded = false
@@ -1696,6 +1703,106 @@ Item {
                                             Item {
                                                 Layout.fillWidth: true
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CollapsibleStatisticsSection {
+                    id: tcpFlagsSection
+                    objectName: "tcpFlagsSection"
+                    title: "TCP Flags"
+                    toggleObjectName: "tcpFlagsToggleButton"
+                    expanded: root.tcpFlagsExpanded
+                    onExpandedChangedByUser: function(expanded) {
+                        root.tcpFlagsExpanded = expanded
+                    }
+
+                    SectionFrame {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+
+                        Label {
+                            objectName: "tcpFlagsHelpText"
+                            readonly property string helpTextValue: (
+                                root.tcpFlagStatistics &&
+                                root.tcpFlagStatistics.helpText !== undefined &&
+                                root.tcpFlagStatistics.helpText !== null
+                            ) ? String(root.tcpFlagStatistics.helpText) : ""
+                            visible: helpTextValue.length > 0
+                            text: helpTextValue
+                            color: "#64748b"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        ThreeColumnHeader {
+                            firstTitle: "Flag"
+                            secondTitle: "Packets"
+                            thirdTitle: "Percent"
+                            firstWidth: root.tcpFlagLabelColumnWidth
+                            secondWidth: root.tcpFlagPacketColumnWidth
+                            thirdWidth: root.tcpFlagPercentColumnWidth
+                            tableWidth: root.tcpFlagTableWidth
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Repeater {
+                                id: tcpFlagsRowsRepeater
+                                objectName: "tcpFlagsRowsRepeater"
+                                model: root.statisticsRows(root.tcpFlagStatistics)
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: tcpFlagRowLayout.implicitHeight + 8
+                                    radius: 4
+                                    color: "transparent"
+                                    objectName: "tcpFlagRow"
+
+                                    RowLayout {
+                                        id: tcpFlagRowLayout
+                                        anchors.fill: parent
+                                        anchors.leftMargin: root.tablePadding
+                                        anchors.rightMargin: root.tablePadding
+                                        spacing: root.tableColumnSpacing
+
+                                        Label {
+                                            Layout.preferredWidth: root.tcpFlagLabelColumnWidth
+                                            Layout.minimumWidth: root.tcpFlagLabelColumnWidth
+                                            text: modelData.label
+                                            color: "#0f172a"
+                                            elide: Text.ElideRight
+                                            objectName: "tcpFlagLabel"
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: root.tcpFlagPacketColumnWidth
+                                            Layout.minimumWidth: root.tcpFlagPacketColumnWidth
+                                            horizontalAlignment: Text.AlignRight
+                                            text: modelData.packetCountText
+                                            color: "#334155"
+                                            elide: Text.ElideLeft
+                                            objectName: "tcpFlagPacketValue"
+                                        }
+
+                                        Label {
+                                            Layout.preferredWidth: root.tcpFlagPercentColumnWidth
+                                            Layout.minimumWidth: root.tcpFlagPercentColumnWidth
+                                            horizontalAlignment: Text.AlignRight
+                                            text: modelData.percentText
+                                            color: "#334155"
+                                            elide: Text.ElideLeft
+                                            objectName: "tcpFlagPercentValue"
+                                        }
+
+                                        Item {
+                                            Layout.fillWidth: true
                                         }
                                     }
                                 }

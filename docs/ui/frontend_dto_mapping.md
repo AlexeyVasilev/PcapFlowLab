@@ -289,7 +289,8 @@ authoritative product contract.
 - attach source;
 - save index;
 - current flow export / selected-flow export / Smart Export backend APIs;
-- Statistics DTOs;
+- Statistics DTOs, including overview-backed TCP flag rows with shared percent
+  text;
 - selected-flow analysis DTOs.
 
 ### Shared semantics with frontend-local composition

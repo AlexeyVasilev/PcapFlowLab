@@ -433,6 +433,7 @@ The current optional independently collapsible/lazy statistics sections are:
 - `Capture Metrics`
 - `Flow Characteristics`
 - `Direction Distribution`
+- `TCP Flags`
 - `QUIC and TLS`
 - `Top Endpoints and Ports`
 
@@ -452,6 +453,26 @@ per expansion and supports frontend-local `Flows`, `Captured bytes`, and
 
 - `Packet Direction`
 - `Data Direction (Original Bytes)`
+
+`TCP Flags` is one collapsible whole-capture section containing:
+
+- `SYN`
+- `FIN`
+- `RST`
+
+Each row shows:
+
+- `Packets`
+- `Percent`
+
+Shared semantics include:
+
+- counts come from authoritative connection aggregate TCP flag counts rather
+  than rescanning packet refs;
+- percentages use the whole-capture TCP packet count as the denominator;
+- `SYN` includes `SYN+ACK`;
+- one packet may contribute to more than one row when multiple flags are set;
+- zero TCP packets must render stable zero percentages rather than `NaN`/`Inf`.
 
 Shared semantics include:
 

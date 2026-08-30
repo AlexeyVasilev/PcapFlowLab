@@ -480,6 +480,24 @@ pub struct DirectionDistributionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TcpFlagStatisticsRowDto {
+    pub stable_id: String,
+    pub label: String,
+    pub packet_count: u64,
+    pub packet_fraction: f64,
+    pub packet_count_text: String,
+    pub percent_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TcpFlagStatisticsDto {
+    pub has_tcp_packets: bool,
+    pub total_tcp_packet_count: u64,
+    pub help_text: String,
+    pub rows: Vec<TcpFlagStatisticsRowDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewProtocolSummaryDto {
     pub tcp: ProtocolStatsDto,
     pub udp: ProtocolStatsDto,
@@ -701,6 +719,7 @@ pub struct OverviewDto {
     pub flow_characteristics: FlowCharacteristicsDto,
     pub packet_direction_distribution: DirectionDistributionDto,
     pub original_byte_direction_distribution: DirectionDistributionDto,
+    pub tcp_flag_statistics: TcpFlagStatisticsDto,
     pub statistics_partial_open_warning_text: String,
     pub protocol_summary: OverviewProtocolSummaryDto,
     pub protocol_path_statistics_default_mode: u8,

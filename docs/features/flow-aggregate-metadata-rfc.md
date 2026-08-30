@@ -147,6 +147,9 @@ including:
 - captured/original byte totals
 - protocol/service/TLS/QUIC aggregate hints
 
+Those same aggregate TCP SYN/FIN/RST counts are also the intended authority for
+whole-capture TCP-flag Statistics, rather than any future packet-ref rescan.
+
 ## FlowAnalysis Ownership Boundary
 
 FlowAnalysis now uses authoritative `ConnectionAggregateStats` for the

@@ -215,6 +215,7 @@ public:
     [[nodiscard]] CaptureFlowCharacteristicsStatistics flow_characteristics_statistics() const;
     [[nodiscard]] FlowDirectionDistributionStatistics packet_direction_distribution_statistics() const;
     [[nodiscard]] FlowDirectionDistributionStatistics original_byte_direction_distribution_statistics() const;
+    [[nodiscard]] CaptureTcpFlagStatistics tcp_flag_statistics() const;
     [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(
         ProtocolPathStatisticsMode mode = ProtocolPathStatisticsMode::kind_overview
     ) const;

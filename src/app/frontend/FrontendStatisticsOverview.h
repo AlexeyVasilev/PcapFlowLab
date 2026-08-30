@@ -25,6 +25,10 @@ namespace pfl {
     const CaptureFlowCharacteristicsStatistics& flow_characteristics,
     const FlowDirectionDistributionStatistics& distribution
 );
+[[nodiscard]] FrontendTcpFlagStatisticsDto build_frontend_tcp_flag_statistics(
+    const CaptureTcpFlagStatistics& statistics,
+    std::uint64_t total_tcp_packet_count
+);
 [[nodiscard]] std::string build_frontend_statistics_partial_open_warning_text(bool partial_open);
 
 }  // namespace pfl

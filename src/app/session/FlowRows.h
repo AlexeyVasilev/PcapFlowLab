@@ -325,6 +325,12 @@ struct FlowDirectionDistributionStatistics {
     std::uint64_t mostly_b_to_a_flow_count {0};
 };
 
+struct CaptureTcpFlagStatistics {
+    std::uint64_t syn_packet_count {0};
+    std::uint64_t fin_packet_count {0};
+    std::uint64_t rst_packet_count {0};
+};
+
 struct CaptureGeneralProtocolStatistics {
     ProtocolStats tcp {};
     ProtocolStats udp {};
@@ -358,6 +364,7 @@ struct CaptureGeneralStatistics {
     CaptureFlowCharacteristicsStatistics flow_characteristics {};
     FlowDirectionDistributionStatistics packet_direction_distribution {};
     FlowDirectionDistributionStatistics original_byte_direction_distribution {};
+    CaptureTcpFlagStatistics tcp_flags {};
 };
 
 struct ProtocolPathStatisticsRow {

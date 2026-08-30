@@ -3010,6 +3010,10 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
             flow_characteristics_statistics,
             original_byte_direction_distribution_statistics
         );
+    const auto tcp_flag_statistics = build_frontend_tcp_flag_statistics(
+        session_.tcp_flag_statistics(),
+        protocol_summary.tcp.packet_count
+    );
     const auto captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
         protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes;
     const auto original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
@@ -3041,6 +3045,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .flow_characteristics = std::move(flow_characteristics),
         .packet_direction_distribution = std::move(packet_direction_distribution),
         .original_byte_direction_distribution = std::move(original_byte_direction_distribution),
+        .tcp_flag_statistics = std::move(tcp_flag_statistics),
         .statistics_partial_open_warning_text =
             build_frontend_statistics_partial_open_warning_text(session_.is_partial_open()),
         .captured_bytes = captured_bytes,

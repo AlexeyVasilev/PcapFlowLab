@@ -492,6 +492,7 @@ Design coverage must include:
 - flow characteristics: Only `A -> B`, Service recognized
 - packet direction distribution
 - original-byte direction distribution
+- whole-capture TCP SYN/FIN/RST packet counts
 - QUIC/TLS statistics
 - bounded top endpoints
 - bounded top ports
@@ -872,6 +873,7 @@ The following are already agreed and therefore not open here:
 - [ ] Service recognized statistic
 - [ ] packet direction distribution
 - [ ] original-byte direction distribution
+- [ ] TCP Flags statistics
 - [ ] captured/original Packet Size Distribution
 - [ ] Flows by Packet Count: flows/captured/original
 - [ ] confirmed/current protocol Statistics

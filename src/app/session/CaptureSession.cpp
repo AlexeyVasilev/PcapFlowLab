@@ -3020,6 +3020,14 @@ FlowDirectionDistributionStatistics CaptureSession::original_byte_direction_dist
     return general_statistics().original_byte_direction_distribution;
 }
 
+CaptureTcpFlagStatistics CaptureSession::tcp_flag_statistics() const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    return general_statistics().tcp_flags;
+}
+
 CaptureProtocolPathSummary CaptureSession::protocol_path_summary(const ProtocolPathStatisticsMode mode) const {
     const auto cache_index = static_cast<std::size_t>(mode);
     if (cache_index < protocol_path_summary_cache_.size() && protocol_path_summary_cache_[cache_index].has_value()) {

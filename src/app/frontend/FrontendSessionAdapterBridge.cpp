@@ -1620,6 +1620,38 @@ std::string direction_distribution_json(const pfl::FrontendDirectionDistribution
     return out.str();
 }
 
+std::string tcp_flag_statistics_row_json(const pfl::FrontendTcpFlagStatisticsRowDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stable_id\":" << json_string(row.stable_id) << ','
+        << "\"label\":" << json_string(row.label) << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"packet_fraction\":" << row.packet_fraction << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"percent_text\":" << json_string(row.percent_text)
+        << '}';
+    return out.str();
+}
+
+std::string tcp_flag_statistics_json(const pfl::FrontendTcpFlagStatisticsDto& statistics) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_tcp_packets\":" << bool_json(statistics.has_tcp_packets) << ','
+        << "\"total_tcp_packet_count\":" << statistics.total_tcp_packet_count << ','
+        << "\"help_text\":" << json_string(statistics.help_text) << ','
+        << "\"rows\":[";
+
+    for (std::size_t index = 0; index < statistics.rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << tcp_flag_statistics_row_json(statistics.rows[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
 std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     std::ostringstream out {};
     out << '{'
@@ -1672,6 +1704,7 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"flow_characteristics\":" << flow_characteristics_json(overview.flow_characteristics) << ','
         << "\"packet_direction_distribution\":" << direction_distribution_json(overview.packet_direction_distribution) << ','
         << "\"original_byte_direction_distribution\":" << direction_distribution_json(overview.original_byte_direction_distribution) << ','
+        << "\"tcp_flag_statistics\":" << tcp_flag_statistics_json(overview.tcp_flag_statistics) << ','
         << "\"statistics_partial_open_warning_text\":"
         << json_string(overview.statistics_partial_open_warning_text) << ','
         << "\"protocol_summary\":{"

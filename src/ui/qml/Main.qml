@@ -1378,6 +1378,7 @@ ApplicationWindow {
                 flowCharacteristics: mainController.flowCharacteristics
                 packetDirectionDistribution: mainController.packetDirectionDistribution
                 dataDirectionDistribution: mainController.dataDirectionDistribution
+                tcpFlagStatistics: mainController.tcpFlagStatistics
                 statisticsPartialOpenWarningText: mainController.statisticsPartialOpenWarningText
                 tcpFlowCount: mainController.tcpFlowCount
                 tcpPacketCount: mainController.tcpPacketCount

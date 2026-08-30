@@ -1240,6 +1240,10 @@ CaptureGeneralStatistics build_capture_general_statistics(
             )
         );
 
+        statistics.tcp_flags.syn_packet_count += aggregate_stats(connection).tcp_syn_count;
+        statistics.tcp_flags.fin_packet_count += aggregate_stats(connection).tcp_fin_count;
+        statistics.tcp_flags.rst_packet_count += aggregate_stats(connection).tcp_rst_count;
+
         switch (protocol_hint(connection)) {
         case FlowProtocolHint::quic:
             ++statistics.quic_tls_summary.quic.total_flows;

@@ -158,6 +158,35 @@ Percentages use the recognized canonical flow total as the denominator.
 bytes. Its helper text explains that flows are grouped by directional
 original-byte balance.
 
+### TCP Flags
+
+`TCP Flags` is a separate collapsible whole-capture section that summarizes
+TCP packets by control-flag presence.
+
+Current rows:
+
+- `SYN`
+- `FIN`
+- `RST`
+
+Each row shows:
+
+- `Packets`
+- `Percent`
+
+Current semantics:
+
+- counts come from the imported capture/index session's authoritative
+  connection aggregates rather than by rescanning packet details;
+- percentages use the whole-capture TCP packet total as the denominator, not
+  all packets in the file;
+- `SYN` includes `SYN+ACK`;
+- one packet can contribute to more than one row when multiple TCP flags are
+  set.
+
+This section is a compact control-flag summary only. It does not by itself
+interpret full handshake success/failure or connection state transitions.
+
 ### Transport summary
 
 `Transport Summary` groups recognized canonical flows by their stored canonical

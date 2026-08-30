@@ -389,6 +389,22 @@ struct FrontendDirectionDistributionDto {
     std::vector<FrontendDirectionDistributionRowDto> rows {};
 };
 
+struct FrontendTcpFlagStatisticsRowDto {
+    std::string stable_id {};
+    std::string label {};
+    std::uint64_t packet_count {0};
+    double packet_fraction {0.0};
+    std::string packet_count_text {};
+    std::string percent_text {};
+};
+
+struct FrontendTcpFlagStatisticsDto {
+    bool has_tcp_packets {false};
+    std::uint64_t total_tcp_packet_count {0};
+    std::string help_text {};
+    std::vector<FrontendTcpFlagStatisticsRowDto> rows {};
+};
+
 struct FrontendUnrecognizedPacketStatisticsDto {
     std::uint64_t packet_count {0};
     std::uint64_t captured_bytes {0};
@@ -407,6 +423,7 @@ struct FrontendOverviewDto {
     FrontendFlowCharacteristicsDto flow_characteristics {};
     FrontendDirectionDistributionDto packet_direction_distribution {};
     FrontendDirectionDistributionDto original_byte_direction_distribution {};
+    FrontendTcpFlagStatisticsDto tcp_flag_statistics {};
     std::string statistics_partial_open_warning_text {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};

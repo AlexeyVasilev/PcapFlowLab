@@ -3894,6 +3894,7 @@ int main(int argc, char* argv[]) {
         statistics_pane.object->setProperty("captureMetricsExpanded", true);
         statistics_pane.object->setProperty("flowCharacteristicsExpanded", true);
         statistics_pane.object->setProperty("directionDistributionExpanded", true);
+        statistics_pane.object->setProperty("tcpFlagsExpanded", true);
         statistics_pane.object->setProperty("packetSizeDistributionExpanded", true);
         statistics_pane.object->setProperty("packetSizeDistributionDisplayMode", 1);
         statistics_pane.object->setProperty("flowPacketHistogramExpanded", true);
@@ -3906,6 +3907,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!statistics_pane.object->property("captureMetricsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("flowCharacteristicsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("directionDistributionExpanded").toBool());
+        UI_EXPECT(!statistics_pane.object->property("tcpFlagsExpanded").toBool());
         UI_EXPECT(!statistics_pane.object->property("packetSizeDistributionExpanded").toBool());
         UI_EXPECT(statistics_pane.object->property("packetSizeDistributionDisplayMode").toInt() == 0);
         UI_EXPECT(!statistics_pane.object->property("flowPacketHistogramExpanded").toBool());
@@ -3977,6 +3979,31 @@ int main(int argc, char* argv[]) {
                 },
             }},
         });
+        statistics_pane.object->setProperty("tcpFlagStatistics", QVariantMap {
+            {QStringLiteral("helpText"), QStringLiteral(
+                "Counts TCP packets with the corresponding flag set. A packet may contribute to more than one row. SYN includes SYN+ACK."
+            )},
+            {QStringLiteral("rows"), QVariantList {
+                QVariantMap {
+                    {QStringLiteral("stableId"), QStringLiteral("syn")},
+                    {QStringLiteral("label"), QStringLiteral("SYN")},
+                    {QStringLiteral("packetCountText"), QStringLiteral("2")},
+                    {QStringLiteral("percentText"), QStringLiteral("50%")},
+                },
+                QVariantMap {
+                    {QStringLiteral("stableId"), QStringLiteral("fin")},
+                    {QStringLiteral("label"), QStringLiteral("FIN")},
+                    {QStringLiteral("packetCountText"), QStringLiteral("1")},
+                    {QStringLiteral("percentText"), QStringLiteral("25%")},
+                },
+                QVariantMap {
+                    {QStringLiteral("stableId"), QStringLiteral("rst")},
+                    {QStringLiteral("label"), QStringLiteral("RST")},
+                    {QStringLiteral("packetCountText"), QStringLiteral("1")},
+                    {QStringLiteral("percentText"), QStringLiteral("25%")},
+                },
+            }},
+        });
         statistics_pane.object->setProperty("protocolPathSectionState", section_ready);
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         statistics_pane.object->setProperty("unrecognizedStatsCapturedBytes", 2048);
@@ -4019,6 +4046,9 @@ int main(int argc, char* argv[]) {
             ->property("expanded").toBool());
         UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "directionDistributionSection"))
             ->property("expanded").toBool());
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "tcpFlagsSection") != nullptr);
+        UI_EXPECT(!qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "tcpFlagsSection"))
+            ->property("expanded").toBool());
 
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 250206);
         app.processEvents(QEventLoop::AllEvents, 25);
@@ -4047,14 +4077,17 @@ int main(int argc, char* argv[]) {
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("captureMetricsSection")));
         UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("directionDistributionSection"))
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("flowCharacteristicsSection")));
-        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("quicTlsSection"))
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("tcpFlagsSection"))
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("directionDistributionSection")));
+        UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("quicTlsSection"))
+            > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("tcpFlagsSection")));
         UI_EXPECT(direct_child_item_index_by_object_name(statistics_column, QStringLiteral("topEndpointsPortsSection"))
             > direct_child_item_index_by_object_name(statistics_column, QStringLiteral("quicTlsSection")));
 
         statistics_pane.object->setProperty("captureMetricsExpanded", true);
         statistics_pane.object->setProperty("flowCharacteristicsExpanded", true);
         statistics_pane.object->setProperty("directionDistributionExpanded", true);
+        statistics_pane.object->setProperty("tcpFlagsExpanded", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "captureMetricsSection"))
             ->property("expanded").toBool());
@@ -4062,8 +4095,21 @@ int main(int argc, char* argv[]) {
             ->property("expanded").toBool());
         UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "directionDistributionSection"))
             ->property("expanded").toBool());
+        UI_EXPECT(qobject_cast<QObject*>(named_object(statistics_pane.object.get(), "tcpFlagsSection"))
+            ->property("expanded").toBool());
         UI_REQUIRE(named_object(statistics_pane.object.get(), "packetDirectionDistributionSection") != nullptr);
         UI_REQUIRE(named_object(statistics_pane.object.get(), "dataDirectionDistributionSection") != nullptr);
+        UI_REQUIRE(named_object(statistics_pane.object.get(), "tcpFlagsToggleButton") != nullptr);
+        const auto tcp_flag_statistics = statistics_pane.object->property("tcpFlagStatistics").toMap();
+        const auto tcp_flag_rows = tcp_flag_statistics.value(QStringLiteral("rows")).toList();
+        UI_EXPECT(tcp_flag_rows.size() == 3);
+        auto* tcp_flags_help_text = named_object(statistics_pane.object.get(), "tcpFlagsHelpText");
+        auto* tcp_flags_rows_repeater = named_object(statistics_pane.object.get(), "tcpFlagsRowsRepeater");
+        UI_REQUIRE(tcp_flags_help_text != nullptr);
+        UI_REQUIRE(tcp_flags_rows_repeater != nullptr);
+        UI_EXPECT(tcp_flags_rows_repeater->property("count").toInt() == 3);
+        UI_EXPECT(tcp_flags_help_text->property("text").toString()
+            == QStringLiteral("Counts TCP packets with the corresponding flag set. A packet may contribute to more than one row. SYN includes SYN+ACK."));
 
         statistics_pane.object->setProperty("unrecognizedStatsPacketCount", 0);
         app.processEvents(QEventLoop::AllEvents, 25);
