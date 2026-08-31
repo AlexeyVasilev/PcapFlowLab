@@ -77,8 +77,8 @@ using session_detail::make_flow_row;
 using session_detail::packet_count;
 using session_detail::protocol_id;
 using session_detail::effective_protocol_hint;
-using session_detail::find_quic_client_initial_connection_id_for_connection;
 using session_detail::find_quic_client_initial_connection_id_for_packets;
+using session_detail::find_quic_client_initial_connection_id_for_packet_source;
 using session_detail::has_confirming_quic_long_header_for_packets;
 using session_detail::build_quic_presentation_for_selected_direction;
 using session_detail::build_quic_stream_packet_presentation;
@@ -992,27 +992,6 @@ std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connectio
     return std::nullopt;
 }
 
-std::optional<std::size_t> find_quic_flow_index_for_packet(
-    const std::vector<ListedConnectionRef>& connections,
-    const AnalysisSettings& analysis_settings,
-    const std::uint64_t packet_index
-) {
-    for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
-        if (effective_protocol_hint(connections[flow_index], analysis_settings) != FlowProtocolHint::quic) {
-            continue;
-        }
-
-        const bool found_packet = connections[flow_index].family == FlowAddressFamily::ipv4
-            ? find_packet_in_connection(*connections[flow_index].ipv4, packet_index).has_value()
-            : find_packet_in_connection(*connections[flow_index].ipv6, packet_index).has_value();
-        if (found_packet) {
-            return flow_index;
-        }
-    }
-
-    return std::nullopt;
-}
-
 template <typename Connection>
 std::size_t connection_packet_count(const Connection& connection) noexcept {
     return connection.flow_a.packets.size() + connection.flow_b.packets.size();
@@ -1024,6 +1003,33 @@ session_detail::ResidentSelectedFlowPacketAccessSource make_selected_flow_packet
     return connection.family == FlowAddressFamily::ipv4
         ? session_detail::ResidentSelectedFlowPacketAccessSource(*connection.ipv4)
         : session_detail::ResidentSelectedFlowPacketAccessSource(*connection.ipv6);
+}
+
+bool connection_contains_packet_index(
+    const ListedConnectionRef& connection,
+    const std::uint64_t packet_index
+) {
+    const auto source = make_selected_flow_packet_access_source(connection);
+    const auto lookup = session_detail::selected_flow_packet_context_for_packet_index(source, packet_index);
+    return lookup.packet.has_value();
+}
+
+std::optional<std::size_t> find_quic_flow_index_for_packet(
+    const std::vector<ListedConnectionRef>& connections,
+    const AnalysisSettings& analysis_settings,
+    const std::uint64_t packet_index
+) {
+    for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
+        if (effective_protocol_hint(connections[flow_index], analysis_settings) != FlowProtocolHint::quic) {
+            continue;
+        }
+
+        if (connection_contains_packet_index(connections[flow_index], packet_index)) {
+            return flow_index;
+        }
+    }
+
+    return std::nullopt;
 }
 
 std::size_t selected_flow_packet_count(const session_detail::SelectedFlowPacketAccessSource& source) noexcept {
@@ -4398,11 +4404,15 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
 
     constexpr std::size_t kOnDemandQuicHintPacketBudget = 4U;
     FlowHintService hint_service {analysis_settings_, true};
+    const auto packet_source = make_selected_flow_packet_access_source(connections[flow_index]);
 
-    const auto try_direction = [&](const auto& flow_key, const auto& packets) -> std::optional<std::string> {
-        const auto packet_limit = std::min(kOnDemandQuicHintPacketBudget, packets.size());
-        for (std::size_t index = 0U; index < packet_limit; ++index) {
-            const auto& packet = packets[index];
+    const auto try_direction = [&](const auto& flow_key, const Direction direction) -> std::optional<std::string> {
+        const auto direction_packets = packet_source.read_direction(direction, 0U, kOnDemandQuicHintPacketBudget);
+        if (!direction_packets) {
+            return std::nullopt;
+        }
+
+        for (const auto& packet : direction_packets.packet_refs) {
             const auto packet_bytes = read_packet_data(packet);
             if (packet_bytes.empty()) {
                 continue;
@@ -4436,18 +4446,20 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
             return std::nullopt;
         }
 
-        const auto try_flow = [&](const FlowV4& flow, const bool has_flow) -> std::optional<std::string> {
+        const auto try_flow =
+            [&](const FlowV4& flow, const bool has_flow, const Direction direction) -> std::optional<std::string> {
             if (!has_flow || flow.key.src_port == 443 || flow.key.dst_port != 443) {
                 return std::nullopt;
             }
-            return try_direction(flow.key, flow.packets);
+            return try_direction(flow.key, direction);
         };
 
-        if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a); from_flow_a.has_value()) {
+        if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a, Direction::a_to_b);
+            from_flow_a.has_value()) {
             return from_flow_a;
         }
 
-        return try_flow(connection.flow_b, connection.has_flow_b);
+        return try_flow(connection.flow_b, connection.has_flow_b, Direction::b_to_a);
     }
 
     const auto& connection = *connections[flow_index].ipv6;
@@ -4455,18 +4467,20 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
         return std::nullopt;
     }
 
-    const auto try_flow = [&](const FlowV6& flow, const bool has_flow) -> std::optional<std::string> {
+    const auto try_flow =
+        [&](const FlowV6& flow, const bool has_flow, const Direction direction) -> std::optional<std::string> {
         if (!has_flow || flow.key.src_port == 443 || flow.key.dst_port != 443) {
             return std::nullopt;
         }
-        return try_direction(flow.key, flow.packets);
+        return try_direction(flow.key, direction);
     };
 
-    if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a); from_flow_a.has_value()) {
+    if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a, Direction::a_to_b);
+        from_flow_a.has_value()) {
         return from_flow_a;
     }
 
-    return try_flow(connection.flow_b, connection.has_flow_b);
+    return try_flow(connection.flow_b, connection.has_flow_b, Direction::b_to_a);
 }
 
 std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet(
@@ -4505,6 +4519,30 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
         std::unique(selected_packet_indices.begin(), selected_packet_indices.end()),
         selected_packet_indices.end()
     );
+    const auto packet_source = make_selected_flow_packet_access_source(connections[flow_index]);
+
+    std::optional<Direction> selected_direction {};
+    for (const auto packet_index : selected_packet_indices) {
+        const auto packet_context = session_detail::selected_flow_packet_context_for_packet_index(
+            packet_source,
+            packet_index
+        );
+        if (!packet_context.packet.has_value()) {
+            return std::nullopt;
+        }
+
+        if (!selected_direction.has_value()) {
+            selected_direction = packet_context.packet->direction;
+            continue;
+        }
+
+        if (*selected_direction != packet_context.packet->direction) {
+            return std::nullopt;
+        }
+    }
+    if (!selected_direction.has_value()) {
+        return std::nullopt;
+    }
 
     const auto build_for_connection =
         [&](const auto& connection) -> std::optional<session_detail::QuicPresentationResult> {
@@ -4513,34 +4551,38 @@ std::optional<session_detail::QuicPresentationResult> CaptureSession::derive_qui
             }
 
             const auto initial_secret_connection_id =
-                find_quic_client_initial_connection_id_for_connection(*this, connection, flow_index);
+                find_quic_client_initial_connection_id_for_packet_source(*this, packet_source, flow_index);
             const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
                 ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
                 : std::span<const std::uint8_t> {};
 
-            std::optional<session_detail::QuicPresentationResult> result {};
-            if (connection.has_flow_a) {
-                result = build_quic_presentation_for_selected_direction(
+            if (*selected_direction == Direction::a_to_b) {
+                if (!connection.has_flow_a) {
+                    return std::nullopt;
+                }
+                return build_quic_presentation_for_selected_direction(
                     *this,
                     connection.flow_a.key,
-                    connection.flow_a.packets,
-                    selected_packet_indices,
-                    initial_secret_connection_id_span,
-                    flow_index
-                );
-            }
-            if (!result.has_value() && connection.has_flow_b) {
-                result = build_quic_presentation_for_selected_direction(
-                    *this,
-                    connection.flow_b.key,
-                    connection.flow_b.packets,
+                    packet_source,
+                    Direction::a_to_b,
                     selected_packet_indices,
                     initial_secret_connection_id_span,
                     flow_index
                 );
             }
 
-            return result;
+            if (!connection.has_flow_b) {
+                return std::nullopt;
+            }
+            return build_quic_presentation_for_selected_direction(
+                *this,
+                connection.flow_b.key,
+                packet_source,
+                Direction::b_to_a,
+                selected_packet_indices,
+                initial_secret_connection_id_span,
+                flow_index
+            );
         };
 
     if (connections[flow_index].family == FlowAddressFamily::ipv4) {

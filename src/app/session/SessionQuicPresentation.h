@@ -19,6 +19,8 @@ class CaptureSession;
 
 namespace session_detail {
 
+class SelectedFlowPacketAccessSource;
+
 enum class QuicPresentationShellType : std::uint8_t {
     none,
     initial,
@@ -162,6 +164,12 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     std::optional<std::size_t> flow_index = std::nullopt
 );
 
+std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_for_packet_source(
+    const CaptureSession& session,
+    const SelectedFlowPacketAccessSource& source,
+    std::optional<std::size_t> flow_index = std::nullopt
+);
+
 bool has_confirming_quic_long_header_for_packets(
     const CaptureSession& session,
     std::span<const PacketRef> packets,
@@ -181,6 +189,26 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     const CaptureSession& session,
     const FlowKeyV6& flow_key,
     std::span<const PacketRef> packets,
+    const std::vector<std::uint64_t>& selected_packet_indices,
+    std::span<const std::uint8_t> initial_secret_connection_id = {},
+    std::optional<std::size_t> flow_index = std::nullopt
+);
+
+std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(
+    const CaptureSession& session,
+    const FlowKeyV4& flow_key,
+    const SelectedFlowPacketAccessSource& source,
+    Direction direction,
+    const std::vector<std::uint64_t>& selected_packet_indices,
+    std::span<const std::uint8_t> initial_secret_connection_id = {},
+    std::optional<std::size_t> flow_index = std::nullopt
+);
+
+std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(
+    const CaptureSession& session,
+    const FlowKeyV6& flow_key,
+    const SelectedFlowPacketAccessSource& source,
+    Direction direction,
     const std::vector<std::uint64_t>& selected_packet_indices,
     std::span<const std::uint8_t> initial_secret_connection_id = {},
     std::optional<std::size_t> flow_index = std::nullopt
