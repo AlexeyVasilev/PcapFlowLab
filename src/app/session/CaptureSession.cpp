@@ -1,6 +1,7 @@
 ﻿#include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/ProtocolPathPresentation.h"
+#include "app/session/SelectedFlowPacketAccess.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
@@ -1017,39 +1018,96 @@ std::size_t connection_packet_count(const Connection& connection) noexcept {
     return connection.flow_a.packets.size() + connection.flow_b.packets.size();
 }
 
+session_detail::ResidentSelectedFlowPacketAccessSource make_selected_flow_packet_access_source(
+    const ListedConnectionRef& connection
+) {
+    return connection.family == FlowAddressFamily::ipv4
+        ? session_detail::ResidentSelectedFlowPacketAccessSource(*connection.ipv4)
+        : session_detail::ResidentSelectedFlowPacketAccessSource(*connection.ipv6);
+}
+
+std::size_t selected_flow_packet_count(const session_detail::SelectedFlowPacketAccessSource& source) noexcept {
+    const auto merged_read = session_detail::read_selected_flow_merged_range(source, 0U, 0U);
+    if (!merged_read) {
+        return 0U;
+    }
+
+    const auto max_size_t_u64 = static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)());
+    return merged_read.total_packet_count > max_size_t_u64
+        ? (std::numeric_limits<std::size_t>::max)()
+        : static_cast<std::size_t>(merged_read.total_packet_count);
+}
+
 struct SelectedFlowWindowPacket {
     PacketRef packet {};
     Direction direction {Direction::a_to_b};
     std::uint64_t flow_local_packet_number {0};
 };
 
-template <typename Connection>
+struct SelectedFlowPacketPrefixWindow {
+    std::vector<SelectedFlowWindowPacket> merged_packets {};
+    std::vector<PacketRef> packets_a {};
+    std::vector<PacketRef> packets_b {};
+};
+
 std::vector<SelectedFlowWindowPacket> collect_selected_flow_packet_prefix(
-    const Connection& connection,
+    const session_detail::SelectedFlowPacketAccessSource& source,
     const std::size_t max_packets_to_scan
 ) {
-    std::vector<SelectedFlowWindowPacket> packets {};
-    packets.reserve(std::min(max_packets_to_scan, connection_packet_count(connection)));
-
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-    std::uint64_t flow_local_packet_number = 0U;
-
-    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) &&
-           packets.size() < max_packets_to_scan) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        packets.push_back(SelectedFlowWindowPacket {
-            .packet = packet,
-            .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
-            .flow_local_packet_number = ++flow_local_packet_number,
-        });
+    if (max_packets_to_scan == 0U) {
+        return {};
     }
 
+    const auto merged_read = session_detail::read_selected_flow_merged_range(source, 0U, max_packets_to_scan);
+    if (!merged_read) {
+        return {};
+    }
+
+    std::vector<SelectedFlowWindowPacket> packets {};
+    packets.reserve(merged_read.packets.size());
+    for (const auto& merged_packet : merged_read.packets) {
+        packets.push_back(SelectedFlowWindowPacket {
+            .packet = merged_packet.packet,
+            .direction = merged_packet.direction,
+            .flow_local_packet_number = merged_packet.flow_local_packet_number,
+        });
+    }
     return packets;
+}
+
+SelectedFlowPacketPrefixWindow load_selected_flow_packet_prefix_window(
+    const session_detail::SelectedFlowPacketAccessSource& source,
+    const std::size_t max_packets_to_scan
+) {
+    SelectedFlowPacketPrefixWindow window {};
+    window.merged_packets = collect_selected_flow_packet_prefix(source, max_packets_to_scan);
+    window.packets_a.reserve(window.merged_packets.size());
+    window.packets_b.reserve(window.merged_packets.size());
+    for (const auto& packet : window.merged_packets) {
+        if (packet.direction == Direction::a_to_b) {
+            window.packets_a.push_back(packet.packet);
+        } else {
+            window.packets_b.push_back(packet.packet);
+        }
+    }
+    return window;
+}
+
+std::optional<std::vector<PacketRef>> read_all_direction_packets(
+    const session_detail::SelectedFlowPacketAccessSource& source,
+    const Direction direction
+) {
+    const auto count = source.directional_packet_count(direction);
+    if (!count) {
+        return std::nullopt;
+    }
+
+    const auto read_result = source.read_direction(direction, 0U, count.packet_count);
+    if (!read_result) {
+        return std::nullopt;
+    }
+
+    return read_result.packet_refs;
 }
 
 template <typename FlowKey, typename PacketList>
@@ -1323,12 +1381,6 @@ bool is_strong_http_stream_hint(const FlowProtocolHint hint) noexcept {
 template <typename Connection>
 std::size_t connection_packet_count(const Connection& connection) noexcept;
 
-template <typename Connection>
-std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
-    const Connection& connection,
-    const std::size_t max_packets_to_scan
-);
-
 std::optional<session_detail::TlsStreamScannerContribution> make_retained_tls_contribution(
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -1509,23 +1561,12 @@ std::optional<RetainedTlsBuildResult> build_retained_tls_stream_items_bounded(
         ? connection_packet_count(*connection.ipv4)
         : connection_packet_count(*connection.ipv6);
     const auto bounded_packet_budget = std::min(total_packets, max_packets_to_scan);
-    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
-        ? flow_packet_prefix_direction_counts(*connection.ipv4, bounded_packet_budget)
-        : flow_packet_prefix_direction_counts(*connection.ipv6, bounded_packet_budget);
-    const auto direction_packets_a = connection.family == FlowAddressFamily::ipv4
-        ? std::span<const PacketRef>(
-            connection.ipv4->flow_a.packets.data(),
-            std::min(prefix_count_a, connection.ipv4->flow_a.packets.size()))
-        : std::span<const PacketRef>(
-            connection.ipv6->flow_a.packets.data(),
-            std::min(prefix_count_a, connection.ipv6->flow_a.packets.size()));
-    const auto direction_packets_b = connection.family == FlowAddressFamily::ipv4
-        ? std::span<const PacketRef>(
-            connection.ipv4->flow_b.packets.data(),
-            std::min(prefix_count_b, connection.ipv4->flow_b.packets.size()))
-        : std::span<const PacketRef>(
-            connection.ipv6->flow_b.packets.data(),
-            std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
+    const auto packet_source = make_selected_flow_packet_access_source(connection);
+    const auto bounded_prefix = load_selected_flow_packet_prefix_window(packet_source, bounded_packet_budget);
+    const auto direction_packets_a =
+        std::span<const PacketRef>(bounded_prefix.packets_a.data(), bounded_prefix.packets_a.size());
+    const auto direction_packets_b =
+        std::span<const PacketRef>(bounded_prefix.packets_b.data(), bounded_prefix.packets_b.size());
     const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
 
     if (!retained_tls_cursor_eligible_for_direction(
@@ -1698,6 +1739,7 @@ void append_connection_stream_items_bounded(
     const CaptureSession& session,
     const std::size_t flow_index,
     const Connection& connection,
+    const std::span<const SelectedFlowWindowPacket> bounded_packets,
     const std::span<const PacketRef> bounded_direction_packets_a,
     const std::span<const PacketRef> bounded_direction_packets_b,
     const ProtocolId flow_protocol,
@@ -1724,23 +1766,18 @@ void append_connection_stream_items_bounded(
                 std::span<const PacketRef>(bounded_quic_packets.data(), bounded_quic_packets.size()),
                 flow_index)
             : std::optional<std::vector<std::uint8_t>> {};
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
     std::size_t scanned_packets = 0U;
     bool gap_item_emitted_a = direction_policy_a.explicit_gap_item_emitted;
     bool gap_item_emitted_b = direction_policy_b.explicit_gap_item_emitted;
     const auto connection_flow_hint = connection.protocol_hint;
-    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) &&
-           rows.size() < target_count &&
+    while (rows.size() < target_count &&
+           scanned_packets < bounded_packets.size() &&
            scanned_packets < max_packets_to_scan) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        ++scanned_packets;
+        const auto& bounded_packet = bounded_packets[scanned_packets++];
+        const auto& packet = bounded_packet.packet;
+        const bool use_a = bounded_packet.direction == Direction::a_to_b;
         const auto direction_text = use_a ? kDirectionAToB : kDirectionBToA;
-        const auto direction = use_a ? Direction::a_to_b : Direction::b_to_a;
+        const auto direction = bounded_packet.direction;
         const auto& direction_policy = use_a ? direction_policy_a : direction_policy_b;
         auto& gap_item_emitted = use_a ? gap_item_emitted_a : gap_item_emitted_b;
         const auto bounded_direction_packets = use_a ? bounded_direction_packets_a : bounded_direction_packets_b;
@@ -1845,13 +1882,13 @@ void append_connection_stream_items_bounded(
                     flow_index,
                     connection.flow_a.key,
                     bounded_direction_packets,
-                packet,
-                direction_text,
-                payload_span,
-                quic_stream_confirmed,
-                quic_initial_secret_connection_id.has_value()
-                    ? std::span<const std::uint8_t>(
-                        quic_initial_secret_connection_id->data(),
+                    packet,
+                    direction_text,
+                    payload_span,
+                    quic_stream_confirmed,
+                    quic_initial_secret_connection_id.has_value()
+                        ? std::span<const std::uint8_t>(
+                            quic_initial_secret_connection_id->data(),
                             quic_initial_secret_connection_id->size())
                         : std::span<const std::uint8_t> {}
                 )
@@ -1944,9 +1981,8 @@ void append_connection_stream_items_bounded(
     }
 }
 
-template <typename Connection>
 std::vector<PacketRow> slice_connection_packets(
-    const Connection& connection,
+    const session_detail::SelectedFlowPacketAccessSource& source,
     const std::size_t offset,
     const std::size_t limit
 ) {
@@ -1954,94 +1990,44 @@ std::vector<PacketRow> slice_connection_packets(
         return {};
     }
 
+    const auto merged_read = session_detail::read_selected_flow_merged_range(
+        source,
+        static_cast<std::uint64_t>(offset),
+        static_cast<std::uint64_t>(limit)
+    );
+    if (!merged_read) {
+        return {};
+    }
+
     std::vector<PacketRow> rows {};
-    const auto total = connection_packet_count(connection);
-    if (offset >= total) {
-        return rows;
+    rows.reserve(merged_read.packets.size());
+    for (const auto& merged_packet : merged_read.packets) {
+        auto row = make_packet_row(
+            merged_packet.packet,
+            merged_packet.direction == Direction::a_to_b ? kDirectionAToB : kDirectionBToA
+        );
+        row.row_number = merged_packet.flow_local_packet_number;
+        rows.push_back(std::move(row));
     }
-
-    const auto target = std::min(total, offset + limit);
-    rows.reserve(target - offset);
-
-    std::size_t emitted = 0U;
-    std::size_t row_number = 0U;
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-
-    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) && row_number < target) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        const auto direction = use_a ? kDirectionAToB : kDirectionBToA;
-
-        if (row_number >= offset) {
-            auto row = make_packet_row(packet, direction);
-            row.row_number = row_number + 1U;
-            rows.push_back(std::move(row));
-            ++emitted;
-            if (emitted >= limit) {
-                break;
-            }
-        }
-
-        ++row_number;
-    }
-
     return rows;
 }
 
-template <typename Connection>
 std::optional<PacketRef> connection_packet_at(
-    const Connection& connection,
+    const session_detail::SelectedFlowPacketAccessSource& source,
     const std::uint64_t flow_packet_index
 ) {
-    if (flow_packet_index == 0U) {
-        return std::nullopt;
-    }
-
-    std::uint64_t row_number = 0U;
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-
-    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        ++row_number;
-        if (row_number == flow_packet_index) {
-            return packet;
-        }
-    }
-
-    return std::nullopt;
+    const auto lookup = session_detail::selected_flow_packet_at(source, flow_packet_index);
+    return lookup.packet.has_value() ? std::optional<PacketRef> {lookup.packet->packet} : std::nullopt;
 }
 
-template <typename Connection>
 std::optional<std::uint64_t> connection_packet_number(
-    const Connection& connection,
+    const session_detail::SelectedFlowPacketAccessSource& source,
     const std::uint64_t packet_index
 ) {
-    std::uint64_t row_number = 0U;
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-
-    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        ++row_number;
-        if (packet.packet_index == packet_index) {
-            return row_number;
-        }
-    }
-
-    return std::nullopt;
+    const auto lookup = session_detail::selected_flow_packet_context_for_packet_index(source, packet_index);
+    return lookup.packet.has_value()
+        ? std::optional<std::uint64_t> {lookup.packet->flow_local_packet_number}
+        : std::nullopt;
 }
 
 std::optional<PacketRef> find_packet_in_state_metadata(const CaptureState& state, const std::uint64_t packet_index) {
@@ -2171,109 +2157,34 @@ SourcePacketLookupResult find_packet_in_source_capture(
     }
 }
 
-template <typename Connection>
 std::optional<SelectedFlowPacketContext> connection_packet_context_at(
-    const Connection& connection,
+    const session_detail::SelectedFlowPacketAccessSource& source,
     const std::uint64_t flow_packet_index
 ) {
-    if (flow_packet_index == 0U) {
+    const auto lookup = session_detail::selected_flow_packet_at(source, flow_packet_index);
+    if (!lookup.packet.has_value()) {
         return std::nullopt;
     }
-
-    std::uint64_t row_number = 0U;
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-
-    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        ++row_number;
-        if (row_number == flow_packet_index) {
-            return SelectedFlowPacketContext {
-                .packet = packet,
-                .flow_packet_index = row_number,
-                .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
-            };
-        }
-    }
-
-    return std::nullopt;
+    return SelectedFlowPacketContext {
+        .packet = lookup.packet->packet,
+        .flow_packet_index = lookup.packet->flow_local_packet_number,
+        .direction = lookup.packet->direction,
+    };
 }
 
-template <typename Connection>
 std::optional<SelectedFlowPacketContext> find_packet_context_in_connection(
-    const Connection& connection,
+    const session_detail::SelectedFlowPacketAccessSource& source,
     const std::uint64_t packet_index
 ) {
-    std::uint64_t row_number = 0U;
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-
-    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
-        ++row_number;
-        if (packet.packet_index == packet_index) {
-            return SelectedFlowPacketContext {
-                .packet = packet,
-                .flow_packet_index = row_number,
-                .direction = use_a ? Direction::a_to_b : Direction::b_to_a,
-            };
-        }
+    const auto lookup = session_detail::selected_flow_packet_context_for_packet_index(source, packet_index);
+    if (!lookup.packet.has_value()) {
+        return std::nullopt;
     }
-
-    return std::nullopt;
-}
-
-template <typename Connection>
-std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
-    const Connection& connection,
-    const std::size_t max_packets_to_scan
-) {
-    std::size_t count_a = 0U;
-    std::size_t count_b = 0U;
-    std::size_t index_a = 0U;
-    std::size_t index_b = 0U;
-    std::size_t processed_packets = 0U;
-
-    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size())
-           && processed_packets < max_packets_to_scan) {
-        const bool use_a = index_b >= connection.flow_b.packets.size() ||
-            (index_a < connection.flow_a.packets.size() &&
-             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
-
-        if (use_a) {
-            ++index_a;
-            ++count_a;
-        } else {
-            ++index_b;
-            ++count_b;
-        }
-
-        ++processed_packets;
-    }
-
-    return {count_a, count_b};
-}
-
-template <typename PacketContainer>
-std::vector<PacketRef> collect_packet_prefix_refs(
-    const PacketContainer& packets,
-    const std::size_t packet_count
-) {
-    const auto limit = std::min(packet_count, packets.size());
-    std::vector<PacketRef> prefix_packets {};
-    prefix_packets.reserve(limit);
-    for (std::size_t index = 0; index < limit; ++index) {
-        prefix_packets.push_back(packets[index]);
-    }
-    return prefix_packets;
+    return SelectedFlowPacketContext {
+        .packet = lookup.packet->packet,
+        .flow_packet_index = lookup.packet->flow_local_packet_number,
+        .direction = lookup.packet->direction,
+    };
 }
 
 std::vector<PacketRef> merge_packet_refs_by_index(
@@ -2311,23 +2222,12 @@ std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
 
     DirectionalStreamPolicy direction_policy_a {};
     DirectionalStreamPolicy direction_policy_b {};
-    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
-        ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
-        : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
-    const auto direction_packets_a = connection.family == FlowAddressFamily::ipv4
-        ? std::span<const PacketRef>(
-            connection.ipv4->flow_a.packets.data(),
-            std::min(prefix_count_a, connection.ipv4->flow_a.packets.size()))
-        : std::span<const PacketRef>(
-            connection.ipv6->flow_a.packets.data(),
-            std::min(prefix_count_a, connection.ipv6->flow_a.packets.size()));
-    const auto direction_packets_b = connection.family == FlowAddressFamily::ipv4
-        ? std::span<const PacketRef>(
-            connection.ipv4->flow_b.packets.data(),
-            std::min(prefix_count_b, connection.ipv4->flow_b.packets.size()))
-        : std::span<const PacketRef>(
-            connection.ipv6->flow_b.packets.data(),
-            std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
+    const auto packet_source = make_selected_flow_packet_access_source(connection);
+    const auto bounded_prefix = load_selected_flow_packet_prefix_window(packet_source, max_packets_to_scan);
+    const auto direction_packets_a =
+        std::span<const PacketRef>(bounded_prefix.packets_a.data(), bounded_prefix.packets_a.size());
+    const auto direction_packets_b =
+        std::span<const PacketRef>(bounded_prefix.packets_b.data(), bounded_prefix.packets_b.size());
     if (flow_protocol == ProtocolId::tcp) {
         const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
         const auto probe_a = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_a);
@@ -2489,6 +2389,9 @@ std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
                 session,
                 flow_index,
                 *connection.ipv4,
+                std::span<const SelectedFlowWindowPacket>(
+                    bounded_prefix.merged_packets.data(),
+                    bounded_prefix.merged_packets.size()),
                 direction_packets_a,
                 direction_packets_b,
                 flow_protocol,
@@ -2503,6 +2406,9 @@ std::vector<BuiltStreamRow> build_flow_stream_items_bounded(
                 session,
                 flow_index,
                 *connection.ipv6,
+                std::span<const SelectedFlowWindowPacket>(
+                    bounded_prefix.merged_packets.data(),
+                    bounded_prefix.merged_packets.size()),
                 direction_packets_a,
                 direction_packets_b,
                 flow_protocol,
@@ -3351,38 +3257,21 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
     context.ipv4 = connection.ipv4;
     context.ipv6 = connection.ipv6;
 
-    if (connection.family == FlowAddressFamily::ipv4) {
-        const auto [prefix_count_a, prefix_count_b] =
-            flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan);
-        context.prefix_count_a = prefix_count_a;
-        context.prefix_count_b = prefix_count_b;
-        context.prefix_packets_a = collect_packet_prefix_refs(connection.ipv4->flow_a.packets, context.prefix_count_a);
-        context.prefix_packets_b = collect_packet_prefix_refs(connection.ipv4->flow_b.packets, context.prefix_count_b);
-        const auto ordered_prefix = collect_selected_flow_packet_prefix(*connection.ipv4, max_packets_to_scan);
-        context.ordered_prefix_packets.reserve(ordered_prefix.size());
-        for (const auto& packet : ordered_prefix) {
-            context.ordered_prefix_packets.push_back(SelectedFlowTcpPrefixWindowPacket {
-                .packet = packet.packet,
-                .direction = packet.direction,
-                .flow_local_packet_number = packet.flow_local_packet_number,
-            });
-        }
-    } else {
-        const auto [prefix_count_a, prefix_count_b] =
-            flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
-        context.prefix_count_a = prefix_count_a;
-        context.prefix_count_b = prefix_count_b;
-        context.prefix_packets_a = collect_packet_prefix_refs(connection.ipv6->flow_a.packets, context.prefix_count_a);
-        context.prefix_packets_b = collect_packet_prefix_refs(connection.ipv6->flow_b.packets, context.prefix_count_b);
-        const auto ordered_prefix = collect_selected_flow_packet_prefix(*connection.ipv6, max_packets_to_scan);
-        context.ordered_prefix_packets.reserve(ordered_prefix.size());
-        for (const auto& packet : ordered_prefix) {
-            context.ordered_prefix_packets.push_back(SelectedFlowTcpPrefixWindowPacket {
-                .packet = packet.packet,
-                .direction = packet.direction,
-                .flow_local_packet_number = packet.flow_local_packet_number,
-            });
-        }
+    auto prefix_window = load_selected_flow_packet_prefix_window(
+        make_selected_flow_packet_access_source(connection),
+        max_packets_to_scan
+    );
+    context.prefix_count_a = prefix_window.packets_a.size();
+    context.prefix_count_b = prefix_window.packets_b.size();
+    context.prefix_packets_a = std::move(prefix_window.packets_a);
+    context.prefix_packets_b = std::move(prefix_window.packets_b);
+    context.ordered_prefix_packets.reserve(prefix_window.merged_packets.size());
+    for (const auto& packet : prefix_window.merged_packets) {
+        context.ordered_prefix_packets.push_back(SelectedFlowTcpPrefixWindowPacket {
+            .packet = packet.packet,
+            .direction = packet.direction,
+            .flow_local_packet_number = packet.flow_local_packet_number,
+        });
     }
 
     if (context.prefix_count_a + context.prefix_count_b == 0U || context.ordered_prefix_packets.empty()) {
@@ -3637,9 +3526,10 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         return;
     }
     const auto& connection_ref = connections[flow_index];
-    const auto prefix_packets = connection_ref.family == FlowAddressFamily::ipv4
-        ? collect_selected_flow_packet_prefix(*connection_ref.ipv4, max_packets_to_scan)
-        : collect_selected_flow_packet_prefix(*connection_ref.ipv6, max_packets_to_scan);
+    const auto prefix_packets = load_selected_flow_packet_prefix_window(
+        make_selected_flow_packet_access_source(connection_ref),
+        max_packets_to_scan
+    ).merged_packets;
     std::vector<PacketRef> prefix_packet_refs {};
     prefix_packet_refs.reserve(prefix_packets.size());
     for (const auto& window_packet : prefix_packets) {
@@ -4713,10 +4603,35 @@ std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::s
         return std::nullopt;
     }
 
+    const auto packet_source = make_selected_flow_packet_access_source(connections[flow_index]);
+    const auto packets_a = read_all_direction_packets(packet_source, Direction::a_to_b);
+    const auto packets_b = read_all_direction_packets(packet_source, Direction::b_to_a);
+    if (!packets_a.has_value() || !packets_b.has_value()) {
+        return std::nullopt;
+    }
+
     FlowAnalysisService service {};
+    const auto build_input = [&](const auto& connection) {
+        return FlowAnalysisInput {
+            .protocol = connection.key.protocol,
+            .protocol_hint = connection.protocol_hint,
+            .service_hint = connection.service_hint,
+            .quic_version = connection.quic_version,
+            .tls_version = connection.tls_version,
+            .aggregate_stats = connection.aggregate_stats,
+            .total_packets = connection.packet_count,
+            .total_bytes = connection.total_bytes,
+            .packets_a_to_b = connection.flow_a.packet_count,
+            .packets_b_to_a = connection.flow_b.packet_count,
+            .bytes_a_to_b = connection.flow_a.total_bytes,
+            .bytes_b_to_a = connection.flow_b.total_bytes,
+            .packets_for_a_to_b = std::span<const PacketRef>(packets_a->data(), packets_a->size()),
+            .packets_for_b_to_a = std::span<const PacketRef>(packets_b->data(), packets_b->size()),
+        };
+    };
     auto result = connections[flow_index].family == FlowAddressFamily::ipv4
-        ? service.analyze(*connections[flow_index].ipv4)
-        : service.analyze(*connections[flow_index].ipv6);
+        ? service.analyze(build_input(*connections[flow_index].ipv4))
+        : service.analyze(build_input(*connections[flow_index].ipv6));
     enrich_flow_analysis_sequence_preview(flow_index, result);
     const auto hint = effective_protocol_hint(connections[flow_index], analysis_settings_);
     result.protocol_hint = hint == FlowProtocolHint::unknown ? std::string {} : std::string(flow_protocol_hint_text(hint));
@@ -4737,9 +4652,11 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
         return {};
     }
 
-    return connections[flow_index].family == FlowAddressFamily::ipv4
-        ? slice_connection_packets(*connections[flow_index].ipv4, offset, limit)
-        : slice_connection_packets(*connections[flow_index].ipv6, offset, limit);
+    return slice_connection_packets(
+        make_selected_flow_packet_access_source(connections[flow_index]),
+        offset,
+        limit
+    );
 }
 
 std::vector<UnrecognizedPacketRow> CaptureSession::list_unrecognized_packets() const {
@@ -4941,11 +4858,7 @@ std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) cons
         return 0U;
     }
 
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        return connection_packet_count(*connections[flow_index].ipv4);
-    }
-
-    return connection_packet_count(*connections[flow_index].ipv6);
+    return selected_flow_packet_count(make_selected_flow_packet_access_source(connections[flow_index]));
 }
 
 std::size_t CaptureSession::unrecognized_packet_count() const noexcept {
@@ -4985,9 +4898,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
 
     const auto maxTarget = std::numeric_limits<std::size_t>::max();
     const auto target = (offset > maxTarget - limit) ? maxTarget : offset + limit;
-    const auto max_packets_to_scan = connections[flow_index].family == FlowAddressFamily::ipv4
-        ? connection_packet_count(*connections[flow_index].ipv4)
-        : connection_packet_count(*connections[flow_index].ipv6);
+    const auto max_packets_to_scan = flow_packet_count(flow_index);
     const auto built_rows = build_flow_stream_items_bounded(
         *this,
         connections[flow_index],
@@ -5148,9 +5059,21 @@ std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t f
         return std::nullopt;
     }
 
-    return connections[flow_index].family == FlowAddressFamily::ipv4
-        ? std::optional<std::vector<PacketRef>> {collect_packets(*connections[flow_index].ipv4)}
-        : std::optional<std::vector<PacketRef>> {collect_packets(*connections[flow_index].ipv6)};
+    const auto merged_read = session_detail::read_selected_flow_merged_range(
+        make_selected_flow_packet_access_source(connections[flow_index]),
+        0U,
+        (std::numeric_limits<std::uint64_t>::max)()
+    );
+    if (!merged_read) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketRef> packets {};
+    packets.reserve(merged_read.packets.size());
+    for (const auto& merged_packet : merged_read.packets) {
+        packets.push_back(merged_packet.packet);
+    }
+    return packets;
 }
 
 std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
@@ -5166,9 +5089,10 @@ std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
         return std::nullopt;
     }
 
-    return connections[flow_index].family == FlowAddressFamily::ipv4
-        ? connection_packet_at(*connections[flow_index].ipv4, flow_packet_index)
-        : connection_packet_at(*connections[flow_index].ipv6, flow_packet_index);
+    return connection_packet_at(
+        make_selected_flow_packet_access_source(connections[flow_index]),
+        flow_packet_index
+    );
 }
 
 std::optional<SelectedFlowPacketContext> CaptureSession::selected_flow_packet_context_at(
@@ -5180,9 +5104,10 @@ std::optional<SelectedFlowPacketContext> CaptureSession::selected_flow_packet_co
         return std::nullopt;
     }
 
-    return connections[flow_index].family == FlowAddressFamily::ipv4
-        ? connection_packet_context_at(*connections[flow_index].ipv4, flow_packet_index)
-        : connection_packet_context_at(*connections[flow_index].ipv6, flow_packet_index);
+    return connection_packet_context_at(
+        make_selected_flow_packet_access_source(connections[flow_index]),
+        flow_packet_index
+    );
 }
 
 std::optional<std::uint64_t> CaptureSession::selected_flow_packet_number(
@@ -5201,9 +5126,10 @@ std::optional<std::uint64_t> CaptureSession::selected_flow_exact_packet_number(
         return std::nullopt;
     }
 
-    return connections[flow_index].family == FlowAddressFamily::ipv4
-        ? connection_packet_number(*connections[flow_index].ipv4, packet_index)
-        : connection_packet_number(*connections[flow_index].ipv6, packet_index);
+    return connection_packet_number(
+        make_selected_flow_packet_access_source(connections[flow_index]),
+        packet_index
+    );
 }
 
 namespace {
@@ -6554,9 +6480,10 @@ std::optional<PacketOwnershipContext> CaptureSession::resolve_packet_ownership_c
 ) const {
     const auto& connections = listed_connections();
     for (std::size_t flow_index = 0U; flow_index < connections.size(); ++flow_index) {
-        const auto packet_context = connections[flow_index].family == FlowAddressFamily::ipv4
-            ? find_packet_context_in_connection(*connections[flow_index].ipv4, packet_index)
-            : find_packet_context_in_connection(*connections[flow_index].ipv6, packet_index);
+        const auto packet_context = find_packet_context_in_connection(
+            make_selected_flow_packet_access_source(connections[flow_index]),
+            packet_index
+        );
         if (packet_context.has_value()) {
             return PacketOwnershipContext {
                 .packet = packet_context->packet,

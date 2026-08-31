@@ -122,6 +122,7 @@ add_library(
     src/app/session/ProtocolPathTextExport.cpp
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
+    src/app/session/SelectedFlowPacketAccess.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SupportedProtocolCatalog.cpp
     src/app/session/DnsSummaryPresentation.cpp
@@ -429,6 +430,7 @@ if(BUILD_TESTING)
         tests/unit/ImportTests.cpp
         tests/unit/AnalysisSettingsTests.cpp
         tests/unit/FlowAnalysisTests.cpp
+        tests/unit/SelectedFlowPacketAccessTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/DnsInspectionParserTests.cpp

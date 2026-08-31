@@ -45,6 +45,7 @@ void run_ingestor_tests();
 void run_import_tests();
 void run_analysis_settings_tests();
 void run_flow_analysis_tests();
+void run_selected_flow_packet_access_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
 void run_dns_inspection_parser_tests();
@@ -203,6 +204,7 @@ int main() {
         {"import", pfl::tests::run_import_tests},
         {"analysis_settings", pfl::tests::run_analysis_settings_tests},
         {"flow_analysis", pfl::tests::run_flow_analysis_tests},
+        {"selected_flow_packet_access", pfl::tests::run_selected_flow_packet_access_tests},
         {"packet_access", pfl::tests::run_packet_access_tests},
         {"packet_details", pfl::tests::run_packet_details_tests},
         {"dns_inspection_parser", pfl::tests::run_dns_inspection_parser_tests},

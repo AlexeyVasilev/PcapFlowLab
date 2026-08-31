@@ -207,18 +207,37 @@ const char* flow_direction_text(const FlowDirection direction) noexcept {
 }
 
 template <typename Connection>
-std::vector<PacketPreviewCandidate> build_time_ordered_packet_refs(const Connection& connection) {
-    std::vector<PacketPreviewCandidate> ordered_packets {};
-    ordered_packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+FlowAnalysisInput make_flow_analysis_input(const Connection& connection) {
+    return FlowAnalysisInput {
+        .protocol = connection.key.protocol,
+        .protocol_hint = connection.protocol_hint,
+        .service_hint = connection.service_hint,
+        .quic_version = connection.quic_version,
+        .tls_version = connection.tls_version,
+        .aggregate_stats = connection.aggregate_stats,
+        .total_packets = connection.packet_count,
+        .total_bytes = connection.total_bytes,
+        .packets_a_to_b = connection.flow_a.packet_count,
+        .packets_b_to_a = connection.flow_b.packet_count,
+        .bytes_a_to_b = connection.flow_a.total_bytes,
+        .bytes_b_to_a = connection.flow_b.total_bytes,
+        .packets_for_a_to_b = std::span<const PacketRef>(connection.flow_a.packets.data(), connection.flow_a.packets.size()),
+        .packets_for_b_to_a = std::span<const PacketRef>(connection.flow_b.packets.data(), connection.flow_b.packets.size()),
+    };
+}
 
-    for (const auto& packet : connection.flow_a.packets) {
+std::vector<PacketPreviewCandidate> build_time_ordered_packet_refs(const FlowAnalysisInput& input) {
+    std::vector<PacketPreviewCandidate> ordered_packets {};
+    ordered_packets.reserve(input.packets_for_a_to_b.size() + input.packets_for_b_to_a.size());
+
+    for (const auto& packet : input.packets_for_a_to_b) {
         ordered_packets.push_back(PacketPreviewCandidate {
             .packet = &packet,
             .direction = FlowDirection::a_to_b,
         });
     }
 
-    for (const auto& packet : connection.flow_b.packets) {
+    for (const auto& packet : input.packets_for_b_to_a) {
         ordered_packets.push_back(PacketPreviewCandidate {
             .packet = &packet,
             .direction = FlowDirection::b_to_a,
@@ -427,15 +446,14 @@ std::size_t inter_arrival_bucket_index(const std::uint64_t delta_us) {
     return kInterArrivalBuckets.size() - 1U;
 }
 
-template <typename Flow>
 void accumulate_packet_size_histogram(
-    const Flow& flow,
+    const std::span<const PacketRef> packets,
     PacketSizeBucketCounts& original_counts,
     PacketSizeBucketCounts& captured_counts,
     std::optional<std::uint32_t>& original_maximum_packet_length,
     std::optional<std::uint32_t>& captured_maximum_packet_length
 ) {
-    for (const auto& packet : flow.packets) {
+    for (const auto& packet : packets) {
         original_counts[packet_size_bucket_index(packet.original_length)] += 1U;
         captured_counts[packet_size_bucket_index(packet.captured_length)] += 1U;
         update_optional_maximum(original_maximum_packet_length, packet.original_length);
@@ -443,30 +461,29 @@ void accumulate_packet_size_histogram(
     }
 }
 
-template <typename Connection>
-void populate_protocol_panel(const Connection& connection, FlowAnalysisResult& result) {
-    switch (connection.protocol_hint) {
+void populate_protocol_panel(const FlowAnalysisInput& input, FlowAnalysisResult& result) {
+    switch (input.protocol_hint) {
     case FlowProtocolHint::tls:
-        result.protocol_panel_version_text = tls_version_hint_text(connection.tls_version);
-        if (!connection.service_hint.empty()) {
-            result.protocol_panel_service_text = connection.service_hint;
+        result.protocol_panel_version_text = tls_version_hint_text(input.tls_version);
+        if (!input.service_hint.empty()) {
+            result.protocol_panel_service_text = input.service_hint;
         }
         break;
     case FlowProtocolHint::quic:
-        result.protocol_panel_version_text = quic_version_hint_text(connection.quic_version);
-        if (!connection.service_hint.empty()) {
-            result.protocol_panel_service_text = connection.service_hint;
+        result.protocol_panel_version_text = quic_version_hint_text(input.quic_version);
+        if (!input.service_hint.empty()) {
+            result.protocol_panel_service_text = input.service_hint;
         }
         break;
     default:
         break;
     }
 
-    if (connection.key.protocol == ProtocolId::tcp) {
+    if (input.protocol == ProtocolId::tcp) {
         result.has_tcp_control_counts = true;
-        result.tcp_syn_packets = connection.aggregate_stats.tcp_syn_count;
-        result.tcp_fin_packets = connection.aggregate_stats.tcp_fin_count;
-        result.tcp_rst_packets = connection.aggregate_stats.tcp_rst_count;
+        result.tcp_syn_packets = input.aggregate_stats.tcp_syn_count;
+        result.tcp_fin_packets = input.aggregate_stats.tcp_fin_count;
+        result.tcp_rst_packets = input.aggregate_stats.tcp_rst_count;
     }
 
     if (result.protocol_panel_version_text.empty()
@@ -491,8 +508,7 @@ void finalize_burst(
     result.largest_burst_bytes = std::max(result.largest_burst_bytes, burst_bytes);
 }
 
-template <typename Connection>
-FlowAnalysisPacketSizeHistogramSet build_packet_size_histograms(const Connection& connection) {
+FlowAnalysisPacketSizeHistogramSet build_packet_size_histograms(const FlowAnalysisInput& input) {
     PacketSizeBucketCounts original_counts_all {};
     PacketSizeBucketCounts original_counts_a_to_b {};
     PacketSizeBucketCounts original_counts_b_to_a {};
@@ -505,14 +521,14 @@ FlowAnalysisPacketSizeHistogramSet build_packet_size_histograms(const Connection
     std::optional<std::uint32_t> captured_maximum_packet_length_b_to_a {};
 
     accumulate_packet_size_histogram(
-        connection.flow_a,
+        input.packets_for_a_to_b,
         original_counts_a_to_b,
         captured_counts_a_to_b,
         original_maximum_packet_length_a_to_b,
         captured_maximum_packet_length_a_to_b
     );
     accumulate_packet_size_histogram(
-        connection.flow_b,
+        input.packets_for_b_to_a,
         original_counts_b_to_a,
         captured_counts_b_to_a,
         original_maximum_packet_length_b_to_a,
@@ -582,64 +598,63 @@ FlowAnalysisInterArrivalHistogramSet build_inter_arrival_histograms(const std::v
     };
 }
 
-template <typename Connection>
-FlowAnalysisResult analyze_connection(const Connection& connection) {
+FlowAnalysisResult analyze_input(const FlowAnalysisInput& input) {
     FlowAnalysisResult result {};
-    result.total_packets = connection.packet_count;
-    result.total_bytes = connection.total_bytes;
+    result.total_packets = input.total_packets;
+    result.total_bytes = input.total_bytes;
     result.average_packet_size_bytes = result.total_packets > 0U
         ? static_cast<double>(result.total_bytes) / static_cast<double>(result.total_packets)
         : 0.0;
-    result.packets_a_to_b = connection.flow_a.packet_count;
-    result.packets_b_to_a = connection.flow_b.packet_count;
-    result.bytes_a_to_b = connection.flow_a.total_bytes;
-    result.bytes_b_to_a = connection.flow_b.total_bytes;
+    result.packets_a_to_b = input.packets_a_to_b;
+    result.packets_b_to_a = input.packets_b_to_a;
+    result.bytes_a_to_b = input.bytes_a_to_b;
+    result.bytes_b_to_a = input.bytes_b_to_a;
     result.packet_ratio_text = format_direction_ratio_text(result.packets_a_to_b, result.packets_b_to_a);
     result.byte_ratio_text = format_direction_ratio_text(result.bytes_a_to_b, result.bytes_b_to_a);
     result.packet_direction_text = derive_direction_summary_text(result.packets_a_to_b, result.packets_b_to_a);
     result.data_direction_text = derive_direction_summary_text(result.bytes_a_to_b, result.bytes_b_to_a);
-    result.protocol_hint = connection.protocol_hint == FlowProtocolHint::unknown
+    result.protocol_hint = input.protocol_hint == FlowProtocolHint::unknown
         ? std::string {}
-        : std::string {flow_protocol_hint_text(connection.protocol_hint)};
-    result.service_hint = connection.service_hint;
-    populate_protocol_panel(connection, result);
-    result.captured_bytes = connection.aggregate_stats.captured_bytes;
-    if (connection.packet_count > 0U
-        && connection.aggregate_stats.last_timestamp_us >= connection.aggregate_stats.first_timestamp_us) {
-        result.first_packet_timestamp_us = connection.aggregate_stats.first_timestamp_us;
-        result.last_packet_timestamp_us = connection.aggregate_stats.last_timestamp_us;
+        : std::string {flow_protocol_hint_text(input.protocol_hint)};
+    result.service_hint = input.service_hint;
+    populate_protocol_panel(input, result);
+    result.captured_bytes = input.aggregate_stats.captured_bytes;
+    if (input.total_packets > 0U
+        && input.aggregate_stats.last_timestamp_us >= input.aggregate_stats.first_timestamp_us) {
+        result.first_packet_timestamp_us = input.aggregate_stats.first_timestamp_us;
+        result.last_packet_timestamp_us = input.aggregate_stats.last_timestamp_us;
         result.duration_us =
-            connection.aggregate_stats.last_timestamp_us - connection.aggregate_stats.first_timestamp_us;
+            input.aggregate_stats.last_timestamp_us - input.aggregate_stats.first_timestamp_us;
         result.first_packet_timestamp_text =
-            format_packet_timestamp_us(connection.aggregate_stats.first_timestamp_us);
+            format_packet_timestamp_us(input.aggregate_stats.first_timestamp_us);
         result.last_packet_timestamp_text =
-            format_packet_timestamp_us(connection.aggregate_stats.last_timestamp_us);
+            format_packet_timestamp_us(input.aggregate_stats.last_timestamp_us);
     }
 
-    if (!connection.flow_a.packets.empty()) {
-        result.min_packet_size_a_to_b_bytes = connection.flow_a.packets.front().original_length;
-        result.max_packet_size_a_to_b_bytes = connection.flow_a.packets.front().original_length;
-        for (const auto& packet : connection.flow_a.packets) {
+    if (!input.packets_for_a_to_b.empty()) {
+        result.min_packet_size_a_to_b_bytes = input.packets_for_a_to_b.front().original_length;
+        result.max_packet_size_a_to_b_bytes = input.packets_for_a_to_b.front().original_length;
+        for (const auto& packet : input.packets_for_a_to_b) {
             result.min_packet_size_a_to_b_bytes = std::min(result.min_packet_size_a_to_b_bytes, packet.original_length);
             result.max_packet_size_a_to_b_bytes = std::max(result.max_packet_size_a_to_b_bytes, packet.original_length);
         }
     }
 
-    if (!connection.flow_b.packets.empty()) {
-        result.min_packet_size_b_to_a_bytes = connection.flow_b.packets.front().original_length;
-        result.max_packet_size_b_to_a_bytes = connection.flow_b.packets.front().original_length;
-        for (const auto& packet : connection.flow_b.packets) {
+    if (!input.packets_for_b_to_a.empty()) {
+        result.min_packet_size_b_to_a_bytes = input.packets_for_b_to_a.front().original_length;
+        result.max_packet_size_b_to_a_bytes = input.packets_for_b_to_a.front().original_length;
+        for (const auto& packet : input.packets_for_b_to_a) {
             result.min_packet_size_b_to_a_bytes = std::min(result.min_packet_size_b_to_a_bytes, packet.original_length);
             result.max_packet_size_b_to_a_bytes = std::max(result.max_packet_size_b_to_a_bytes, packet.original_length);
         }
     }
 
-    const auto ordered_packets = build_time_ordered_packet_refs(connection);
+    const auto ordered_packets = build_time_ordered_packet_refs(input);
     result.timeline_packet_count_considered = static_cast<std::uint64_t>(ordered_packets.size());
     if (!ordered_packets.empty()) {
         result.min_packet_size_bytes = ordered_packets.front().packet->original_length;
-        result.max_packet_size_bytes = connection.aggregate_stats.max_original_packet_length;
-        result.max_captured_packet_size_bytes = connection.aggregate_stats.max_captured_packet_length;
+        result.max_packet_size_bytes = input.aggregate_stats.max_original_packet_length;
+        result.max_captured_packet_size_bytes = input.aggregate_stats.max_captured_packet_length;
     }
 
     std::optional<std::uint64_t> previous_timestamp_us {};
@@ -699,7 +714,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     }
 
     result.inter_arrival_histograms = build_inter_arrival_histograms(ordered_packets);
-    result.packet_size_histograms = build_packet_size_histograms(connection);
+    result.packet_size_histograms = build_packet_size_histograms(input);
     result.rate_graph = build_rate_graph(ordered_packets);
     result.inter_arrival_histogram_rows = result.inter_arrival_histograms.histogram_all;
     result.packet_size_histogram_rows = result.packet_size_histograms.original.histogram_all;
@@ -710,12 +725,16 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
 
 }  // namespace
 
+FlowAnalysisResult FlowAnalysisService::analyze(const FlowAnalysisInput& input) const {
+    return analyze_input(input);
+}
+
 FlowAnalysisResult FlowAnalysisService::analyze(const ConnectionV4& connection) const {
-    return analyze_connection(connection);
+    return analyze_input(make_flow_analysis_input(connection));
 }
 
 FlowAnalysisResult FlowAnalysisService::analyze(const ConnectionV6& connection) const {
-    return analyze_connection(connection);
+    return analyze_input(make_flow_analysis_input(connection));
 }
 
 }  // namespace pfl

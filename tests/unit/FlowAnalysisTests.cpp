@@ -107,6 +107,32 @@ double total_bytes_from_rate_series(const std::vector<FlowAnalysisRatePoint>& po
     return total_bytes;
 }
 
+void expect_matching_rate_graphs(const FlowAnalysisRateGraph& left, const FlowAnalysisRateGraph& right) {
+    PFL_EXPECT(left.available == right.available);
+    PFL_EXPECT(left.status_text == right.status_text);
+    PFL_EXPECT(left.window_us == right.window_us);
+    PFL_REQUIRE(left.points_a_to_b.size() == right.points_a_to_b.size());
+    PFL_REQUIRE(left.points_b_to_a.size() == right.points_b_to_a.size());
+    for (std::size_t index = 0; index < left.points_a_to_b.size(); ++index) {
+        PFL_EXPECT(left.points_a_to_b[index].relative_time_us == right.points_a_to_b[index].relative_time_us);
+        PFL_EXPECT(nearly_equal(
+            left.points_a_to_b[index].original_data_per_second,
+            right.points_a_to_b[index].original_data_per_second));
+        PFL_EXPECT(nearly_equal(
+            left.points_a_to_b[index].packets_per_second,
+            right.points_a_to_b[index].packets_per_second));
+    }
+    for (std::size_t index = 0; index < left.points_b_to_a.size(); ++index) {
+        PFL_EXPECT(left.points_b_to_a[index].relative_time_us == right.points_b_to_a[index].relative_time_us);
+        PFL_EXPECT(nearly_equal(
+            left.points_b_to_a[index].original_data_per_second,
+            right.points_b_to_a[index].original_data_per_second));
+        PFL_EXPECT(nearly_equal(
+            left.points_b_to_a[index].packets_per_second,
+            right.points_b_to_a[index].packets_per_second));
+    }
+}
+
 const FrontendAnalysisPacketSizeHistogramDimensionRowDto* frontend_packet_size_row(
     const std::vector<FrontendAnalysisPacketSizeHistogramDimensionRowDto>& rows,
     const std::string& bucket_label
@@ -1187,6 +1213,43 @@ void run_flow_analysis_tests() {
         + total_bytes_from_rate_series(rate_graph_analysis.rate_graph.points_b_to_a, rate_graph_analysis.rate_graph.window_us);
     PFL_EXPECT(nearly_equal(total_packets_from_series, 4.0));
     PFL_EXPECT(nearly_equal(total_bytes_from_series, 1000.0));
+
+    const auto rate_graph_input = FlowAnalysisInput {
+        .protocol = rate_graph_connection.key.protocol,
+        .protocol_hint = rate_graph_connection.protocol_hint,
+        .service_hint = rate_graph_connection.service_hint,
+        .quic_version = rate_graph_connection.quic_version,
+        .tls_version = rate_graph_connection.tls_version,
+        .aggregate_stats = rate_graph_connection.aggregate_stats,
+        .total_packets = rate_graph_connection.packet_count,
+        .total_bytes = rate_graph_connection.total_bytes,
+        .packets_a_to_b = rate_graph_connection.flow_a.packet_count,
+        .packets_b_to_a = rate_graph_connection.flow_b.packet_count,
+        .bytes_a_to_b = rate_graph_connection.flow_a.total_bytes,
+        .bytes_b_to_a = rate_graph_connection.flow_b.total_bytes,
+        .packets_for_a_to_b = std::span<const PacketRef>(
+            rate_graph_connection.flow_a.packets.data(),
+            rate_graph_connection.flow_a.packets.size()),
+        .packets_for_b_to_a = std::span<const PacketRef>(
+            rate_graph_connection.flow_b.packets.data(),
+            rate_graph_connection.flow_b.packets.size()),
+    };
+    const auto rate_graph_input_analysis = analysis_service.analyze(rate_graph_input);
+    PFL_EXPECT(rate_graph_input_analysis.timeline_packet_count_considered == rate_graph_analysis.timeline_packet_count_considered);
+    PFL_EXPECT(rate_graph_input_analysis.sequence_preview_packets == rate_graph_analysis.sequence_preview_packets);
+    PFL_REQUIRE(rate_graph_input_analysis.sequence_preview_rows.size() == rate_graph_analysis.sequence_preview_rows.size());
+    for (std::size_t index = 0; index < rate_graph_analysis.sequence_preview_rows.size(); ++index) {
+        PFL_EXPECT(
+            rate_graph_input_analysis.sequence_preview_rows[index].flow_packet_number ==
+            rate_graph_analysis.sequence_preview_rows[index].flow_packet_number);
+        PFL_EXPECT(
+            rate_graph_input_analysis.sequence_preview_rows[index].direction_text ==
+            rate_graph_analysis.sequence_preview_rows[index].direction_text);
+        PFL_EXPECT(
+            rate_graph_input_analysis.sequence_preview_rows[index].delta_time_us ==
+            rate_graph_analysis.sequence_preview_rows[index].delta_time_us);
+    }
+    expect_matching_rate_graphs(rate_graph_input_analysis.rate_graph, rate_graph_analysis.rate_graph);
 
     const auto zero_duration_connection = make_protocol_panel_connection(
         FlowProtocolHint::unknown,

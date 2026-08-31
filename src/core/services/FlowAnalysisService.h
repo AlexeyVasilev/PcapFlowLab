@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -117,8 +118,26 @@ struct FlowAnalysisResult {
     std::vector<PacketRef> sequence_preview_packets {};
 };
 
+struct FlowAnalysisInput {
+    ProtocolId protocol {ProtocolId::unknown};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
+    QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
+    ConnectionAggregateStats aggregate_stats {};
+    std::uint64_t total_packets {0};
+    std::uint64_t total_bytes {0};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t bytes_a_to_b {0};
+    std::uint64_t bytes_b_to_a {0};
+    std::span<const PacketRef> packets_for_a_to_b {};
+    std::span<const PacketRef> packets_for_b_to_a {};
+};
+
 class FlowAnalysisService {
 public:
+    [[nodiscard]] FlowAnalysisResult analyze(const FlowAnalysisInput& input) const;
     [[nodiscard]] FlowAnalysisResult analyze(const ConnectionV4& connection) const;
     [[nodiscard]] FlowAnalysisResult analyze(const ConnectionV6& connection) const;
 };
