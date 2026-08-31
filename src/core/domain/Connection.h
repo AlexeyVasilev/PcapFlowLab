@@ -28,6 +28,11 @@ struct ConnectionAggregateStats {
     std::uint64_t tcp_rst_count {0};
     std::uint32_t max_original_packet_length {0};
     std::uint32_t max_captured_packet_length {0};
+
+    [[nodiscard]] friend constexpr bool operator==(
+        const ConnectionAggregateStats&,
+        const ConnectionAggregateStats&
+    ) = default;
 };
 
 struct ConnectionV4 {

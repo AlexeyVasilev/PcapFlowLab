@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 namespace pfl::detail {
@@ -2704,6 +2707,1097 @@ CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
     result.header = stable_header;
 
     return result;
+}
+
+namespace {
+
+bool write_direction(std::ostream& stream, const Direction direction) {
+    switch (direction) {
+    case Direction::a_to_b:
+        return write_u8(stream, 0U);
+    case Direction::b_to_a:
+        return write_u8(stream, 1U);
+    }
+
+    return false;
+}
+
+bool read_direction(std::istream& stream, Direction& direction) {
+    std::uint8_t raw_direction {0};
+    if (!read_u8(stream, raw_direction)) {
+        return false;
+    }
+
+    switch (raw_direction) {
+    case 0U:
+        direction = Direction::a_to_b;
+        return true;
+    case 1U:
+        direction = Direction::b_to_a;
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::optional<std::uint64_t> encoded_packetref_extent_length(
+    const std::uint64_t packet_count
+) noexcept {
+    if (packet_count > (std::numeric_limits<std::uint64_t>::max)() / kCaptureIndexV16PacketRefEncodedStrideBytes) {
+        return std::nullopt;
+    }
+
+    return packet_count * kCaptureIndexV16PacketRefEncodedStrideBytes;
+}
+
+template <typename DirectionalMetadata>
+bool write_v16_directional_flow_metadata(std::ostream& stream, const DirectionalMetadata& row) {
+    return write_flow_key(stream, row.key) &&
+           write_u64(stream, row.packet_count) &&
+           write_u64(stream, row.original_byte_count);
+}
+
+template <typename DirectionalMetadata>
+bool read_v16_directional_flow_metadata(std::istream& stream, DirectionalMetadata& row) {
+    return read_flow_key(stream, row.key) &&
+           read_u64(stream, row.packet_count) &&
+           read_u64(stream, row.original_byte_count);
+}
+
+template <typename ConnectionMetadata>
+bool write_v16_connection_metadata_payload(
+    std::ostream& stream,
+    std::span<const ConnectionMetadata> rows
+) {
+    if (!write_u64(stream, static_cast<std::uint64_t>(rows.size()))) {
+        return false;
+    }
+
+    for (const auto& row : rows) {
+        if (!write_u32(stream, row.canonical_connection_ordinal) ||
+            !write_connection_key(stream, row.key) ||
+            !write_flow_protocol_hint(stream, row.protocol_hint) ||
+            !write_string(stream, row.service_hint) ||
+            !write_u8(stream, static_cast<std::uint8_t>(row.quic_version)) ||
+            !write_u8(stream, static_cast<std::uint8_t>(row.tls_version)) ||
+            !write_u8(stream, row.has_fragmented_packets ? 1U : 0U) ||
+            !write_u64(stream, row.fragmented_packet_count) ||
+            !write_connection_aggregate_stats(stream, row.aggregate_stats) ||
+            !write_u8(stream, row.has_flow_a ? 1U : 0U)) {
+            return false;
+        }
+
+        if (row.has_flow_a && !write_v16_directional_flow_metadata(stream, row.flow_a)) {
+            return false;
+        }
+
+        if (!write_u8(stream, row.has_flow_b ? 1U : 0U)) {
+            return false;
+        }
+
+        if (row.has_flow_b && !write_v16_directional_flow_metadata(stream, row.flow_b)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+template <typename ConnectionMetadata>
+bool read_v16_connection_metadata_payload(
+    std::istream& stream,
+    std::vector<ConnectionMetadata>& rows
+) {
+    std::uint64_t row_count {0};
+    if (!read_u64(stream, row_count) ||
+        row_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        return false;
+    }
+
+    rows.clear();
+    rows.reserve(static_cast<std::size_t>(row_count));
+    for (std::uint64_t index = 0U; index < row_count; ++index) {
+        ConnectionMetadata row {};
+        std::uint8_t raw_quic_version {0};
+        std::uint8_t raw_tls_version {0};
+        std::uint8_t has_fragmented_packets {0};
+        std::uint8_t has_flow_a {0};
+        std::uint8_t has_flow_b {0};
+
+        if (!read_u32(stream, row.canonical_connection_ordinal) ||
+            !read_connection_key(stream, row.key) ||
+            !read_flow_protocol_hint(stream, row.protocol_hint) ||
+            !read_string(stream, row.service_hint) ||
+            !read_u8(stream, raw_quic_version) ||
+            !read_u8(stream, raw_tls_version) ||
+            !read_u8(stream, has_fragmented_packets) ||
+            !read_u64(stream, row.fragmented_packet_count) ||
+            !read_connection_aggregate_stats(stream, row.aggregate_stats) ||
+            !read_u8(stream, has_flow_a)) {
+            return false;
+        }
+
+        row.quic_version = static_cast<QuicVersionHint>(raw_quic_version);
+        row.tls_version = static_cast<TlsVersionHint>(raw_tls_version);
+        row.has_fragmented_packets = has_fragmented_packets != 0U;
+        row.has_flow_a = has_flow_a != 0U;
+
+        if (row.has_flow_a && !read_v16_directional_flow_metadata(stream, row.flow_a)) {
+            return false;
+        }
+
+        if (!read_u8(stream, has_flow_b)) {
+            return false;
+        }
+        row.has_flow_b = has_flow_b != 0U;
+
+        if (row.has_flow_b && !read_v16_directional_flow_metadata(stream, row.flow_b)) {
+            return false;
+        }
+
+        rows.push_back(std::move(row));
+    }
+
+    return stream.peek() == std::char_traits<char>::eof();
+}
+
+bool read_v16_protocol_path_membership_payload(
+    std::istream& stream,
+    std::vector<CaptureIndexV16ProtocolPathMembershipRow>& rows
+) {
+    std::uint64_t row_count {0};
+    if (!read_u64(stream, row_count) ||
+        row_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        return false;
+    }
+
+    rows.clear();
+    rows.reserve(static_cast<std::size_t>(row_count));
+    for (std::uint64_t row_index = 0U; row_index < row_count; ++row_index) {
+        CaptureIndexV16ProtocolPathMembershipRow row {};
+        std::uint64_t ordinal_count {0};
+        if (!read_u32(stream, row.protocol_path_id) ||
+            !read_u64(stream, ordinal_count) ||
+            ordinal_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+            return false;
+        }
+
+        row.canonical_connection_ordinals.reserve(static_cast<std::size_t>(ordinal_count));
+        for (std::uint64_t ordinal_index = 0U; ordinal_index < ordinal_count; ++ordinal_index) {
+            std::uint32_t ordinal {0};
+            if (!read_u32(stream, ordinal)) {
+                return false;
+            }
+            row.canonical_connection_ordinals.push_back(ordinal);
+        }
+
+        rows.push_back(std::move(row));
+    }
+
+    return stream.peek() == std::char_traits<char>::eof();
+}
+
+bool read_v16_packetref_directory_payload(
+    std::istream& stream,
+    std::vector<CaptureIndexV16PacketRefDirectoryEntry>& rows
+) {
+    std::uint64_t row_count {0};
+    if (!read_u64(stream, row_count) ||
+        row_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        return false;
+    }
+
+    rows.clear();
+    rows.reserve(static_cast<std::size_t>(row_count));
+    for (std::uint64_t row_index = 0U; row_index < row_count; ++row_index) {
+        CaptureIndexV16PacketRefDirectoryEntry row {};
+        if (!read_u32(stream, row.canonical_connection_ordinal) ||
+            !read_direction(stream, row.direction) ||
+            !read_u64(stream, row.packet_count) ||
+            !read_u32(stream, row.detail_section_occurrence_index) ||
+            !read_u64(stream, row.payload_offset) ||
+            !read_u64(stream, row.encoded_byte_length)) {
+            return false;
+        }
+
+        rows.push_back(row);
+    }
+
+    return stream.peek() == std::char_traits<char>::eof();
+}
+
+std::uint64_t direction_identity_key(
+    const std::uint32_t canonical_connection_ordinal,
+    const Direction direction
+) noexcept {
+    return (static_cast<std::uint64_t>(canonical_connection_ordinal) << 1U) |
+        (direction == Direction::b_to_a ? 1ULL : 0ULL);
+}
+
+template <typename ConnectionMetadata>
+bool validate_v16_connection_metadata_row(
+    const ConnectionMetadata& row,
+    const ProtocolPathRegistry& registry,
+    std::string& error_detail
+) {
+    if (row.key.protocol_path_id == kInvalidProtocolPathId || registry.find(row.key.protocol_path_id) == nullptr) {
+        error_detail = "metadata row references an unknown protocol path id";
+        return false;
+    }
+
+    if (!row.has_flow_a) {
+        error_detail = "metadata row is missing required A->B flow metadata";
+        return false;
+    }
+
+    if (row.has_fragmented_packets != (row.fragmented_packet_count > 0U)) {
+        error_detail = "fragmentation presence bit does not match fragmented packet count";
+        return false;
+    }
+
+    if (row.flow_a.packet_count == 0U || make_connection_key(row.flow_a.key) != row.key) {
+        error_detail = "A->B flow metadata is inconsistent with the canonical connection key";
+        return false;
+    }
+
+    if (!row.has_flow_b) {
+        return true;
+    }
+
+    if (row.flow_b.packet_count == 0U ||
+        row.flow_b.key == row.flow_a.key ||
+        make_connection_key(row.flow_b.key) != row.key) {
+        error_detail = "B->A flow metadata is inconsistent with the canonical connection key";
+        return false;
+    }
+
+    return true;
+}
+
+bool load_exact_section_payload(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    std::vector<std::uint8_t>& payload
+) {
+    return read_bounded_section_payload(
+        stream,
+        section_header.payload_size,
+        section_header.payload_size,
+        payload
+    );
+}
+
+template <typename Row>
+bool decode_v16_connection_metadata_section(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    const CaptureIndexSectionId expected_id,
+    const std::uint16_t expected_schema_version,
+    std::vector<Row>& rows
+) {
+    if (section_header.section_id != static_cast<std::uint32_t>(expected_id) ||
+        section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+        section_header.section_schema_version != expected_schema_version) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> payload {};
+    if (!load_exact_section_payload(stream, section_header, payload)) {
+        return false;
+    }
+
+    std::istringstream payload_stream(
+        std::string(payload.begin(), payload.end()),
+        std::ios::binary | std::ios::in
+    );
+    return read_v16_connection_metadata_payload(payload_stream, rows);
+}
+
+bool decode_v16_protocol_path_membership_section(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    std::vector<CaptureIndexV16ProtocolPathMembershipRow>& rows
+) {
+    if (section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_membership) ||
+        section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+        section_header.section_schema_version != kCaptureIndexStableProtocolPathMembershipSectionSchemaVersion) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> payload {};
+    if (!load_exact_section_payload(stream, section_header, payload)) {
+        return false;
+    }
+
+    std::istringstream payload_stream(
+        std::string(payload.begin(), payload.end()),
+        std::ios::binary | std::ios::in
+    );
+    return read_v16_protocol_path_membership_payload(payload_stream, rows);
+}
+
+bool decode_v16_packetref_directory_section(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    std::vector<CaptureIndexV16PacketRefDirectoryEntry>& rows
+) {
+    if (section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_directory) ||
+        section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+        section_header.section_schema_version != kCaptureIndexStablePacketRefDirectorySectionSchemaVersion) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> payload {};
+    if (!load_exact_section_payload(stream, section_header, payload)) {
+        return false;
+    }
+
+    std::istringstream payload_stream(
+        std::string(payload.begin(), payload.end()),
+        std::ios::binary | std::ios::in
+    );
+    return read_v16_packetref_directory_payload(payload_stream, rows);
+}
+
+CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range_impl(
+    std::istream& stream,
+    std::span<const CaptureIndexV16PacketRefDetailSectionInfo> detail_sections,
+    const CaptureIndexV16PacketRefDirectoryEntry& descriptor,
+    const std::uint64_t local_offset,
+    const std::uint64_t limit
+) {
+    CaptureIndexV16PacketRefExtentReadResult result {};
+
+    const auto detail_section_it = std::find_if(
+        detail_sections.begin(),
+        detail_sections.end(),
+        [&](const auto& section) {
+            return section.section_occurrence_index == descriptor.detail_section_occurrence_index;
+        }
+    );
+    if (detail_section_it == detail_sections.end()) {
+        result.status = CaptureIndexV16PacketRefExtentReadStatus::invalid_detail_section_occurrence;
+        result.error_detail = "directory entry referenced a missing packetref detail section occurrence";
+        return result;
+    }
+
+    const auto expected_length = encoded_packetref_extent_length(descriptor.packet_count);
+    if (!expected_length.has_value() || descriptor.encoded_byte_length != *expected_length) {
+        result.status = CaptureIndexV16PacketRefExtentReadStatus::invalid_requested_length;
+        result.error_detail = "directory entry encoded length does not match packet_count * PacketRef stride";
+        return result;
+    }
+
+    if (descriptor.payload_offset > detail_section_it->payload_size ||
+        descriptor.encoded_byte_length > detail_section_it->payload_size ||
+        descriptor.payload_offset > detail_section_it->payload_size - descriptor.encoded_byte_length) {
+        result.status = CaptureIndexV16PacketRefExtentReadStatus::section_range_overflow;
+        result.error_detail = "directory entry extent lies outside the referenced packetref detail payload";
+        return result;
+    }
+
+    if (local_offset >= descriptor.packet_count || limit == 0U) {
+        return result;
+    }
+
+    const auto available_count = descriptor.packet_count - local_offset;
+    const auto count_to_read = std::min(limit, available_count);
+    const auto prior_count = local_offset > 0U ? 1U : 0U;
+    const auto first_record_index = local_offset - prior_count;
+    const auto record_count_to_decode = count_to_read + prior_count;
+
+    std::uint64_t byte_offset_from_extent_start {0};
+    std::uint64_t byte_length_to_read {0};
+    const auto extent_offset = encoded_packetref_extent_length(first_record_index);
+    const auto extent_length = encoded_packetref_extent_length(record_count_to_decode);
+    if (!extent_offset.has_value() || !extent_length.has_value()) {
+        result.status = CaptureIndexV16PacketRefExtentReadStatus::invalid_requested_length;
+        result.error_detail = "requested packetref range overflowed";
+        return result;
+    }
+    byte_offset_from_extent_start = *extent_offset;
+    byte_length_to_read = *extent_length;
+    static_cast<void>(byte_length_to_read);
+
+    const auto read_offset = detail_section_it->payload_file_offset +
+        descriptor.payload_offset +
+        byte_offset_from_extent_start;
+    const auto restore_offset = stream.tellg();
+    if (restore_offset == std::istream::pos_type(-1)) {
+        stream.clear();
+    }
+
+    stream.clear();
+    stream.seekg(static_cast<std::streamoff>(read_offset), std::ios::beg);
+    if (!stream) {
+        result.status = CaptureIndexV16PacketRefExtentReadStatus::section_seek_failed;
+        result.error_detail = "failed to seek to the requested packetref detail extent";
+        return result;
+    }
+
+    std::vector<PacketRef> decoded {};
+    decoded.reserve(static_cast<std::size_t>(record_count_to_decode));
+    for (std::uint64_t index = 0U; index < record_count_to_decode; ++index) {
+        PacketRef packet {};
+        if (!read_packet_ref(stream, packet)) {
+            result.status = CaptureIndexV16PacketRefExtentReadStatus::truncated_packetref_detail;
+            result.error_detail = "packetref detail extent ended before the requested range was fully decoded";
+            if (restore_offset != std::istream::pos_type(-1)) {
+                stream.clear();
+                stream.seekg(restore_offset);
+            }
+            return result;
+        }
+        decoded.push_back(packet);
+    }
+
+    if (restore_offset != std::istream::pos_type(-1)) {
+        stream.clear();
+        stream.seekg(restore_offset);
+    }
+
+    for (std::size_t index = 1U; index < decoded.size(); ++index) {
+        if (decoded[index].packet_index <= decoded[index - 1U].packet_index) {
+            result.status = CaptureIndexV16PacketRefExtentReadStatus::packet_index_not_strictly_increasing;
+            result.error_detail = "decoded packetref range is not strictly increasing by packet_index";
+            return result;
+        }
+    }
+
+    result.packet_refs.assign(decoded.begin() + static_cast<std::ptrdiff_t>(prior_count), decoded.end());
+    return result;
+}
+
+}  // namespace
+
+bool write_v16_ipv4_flow_metadata_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16ConnectionMetadataV4> rows
+) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_v16_connection_metadata_payload(payload_stream, rows)) {
+        return false;
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::ipv4_flow_metadata),
+        .section_schema_version = kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+bool write_v16_ipv6_flow_metadata_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16ConnectionMetadataV6> rows
+) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_v16_connection_metadata_payload(payload_stream, rows)) {
+        return false;
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::ipv6_flow_metadata),
+        .section_schema_version = kCaptureIndexStableIpv6FlowMetadataSectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+bool write_v16_protocol_path_membership_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16ProtocolPathMembershipRow> rows
+) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_u64(payload_stream, static_cast<std::uint64_t>(rows.size()))) {
+        return false;
+    }
+
+    for (const auto& row : rows) {
+        if (!write_u32(payload_stream, row.protocol_path_id) ||
+            !write_u64(payload_stream, static_cast<std::uint64_t>(row.canonical_connection_ordinals.size()))) {
+            return false;
+        }
+
+        for (const auto ordinal : row.canonical_connection_ordinals) {
+            if (!write_u32(payload_stream, ordinal)) {
+                return false;
+            }
+        }
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_membership),
+        .section_schema_version = kCaptureIndexStableProtocolPathMembershipSectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+bool write_v16_packetref_directory_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16PacketRefDirectoryEntry> rows
+) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_u64(payload_stream, static_cast<std::uint64_t>(rows.size()))) {
+        return false;
+    }
+
+    for (const auto& row : rows) {
+        if (!write_u32(payload_stream, row.canonical_connection_ordinal) ||
+            !write_direction(payload_stream, row.direction) ||
+            !write_u64(payload_stream, row.packet_count) ||
+            !write_u32(payload_stream, row.detail_section_occurrence_index) ||
+            !write_u64(payload_stream, row.payload_offset) ||
+            !write_u64(payload_stream, row.encoded_byte_length)) {
+            return false;
+        }
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_directory),
+        .section_schema_version = kCaptureIndexStablePacketRefDirectorySectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+bool write_v16_metadata_tier_sections(
+    std::ostream& stream,
+    const CaptureIndexV16MetadataTier& metadata
+) {
+    return write_v16_ipv4_flow_metadata_section(stream, metadata.ipv4_connections) &&
+           write_v16_ipv6_flow_metadata_section(stream, metadata.ipv6_connections) &&
+           write_v16_protocol_path_membership_section(stream, metadata.protocol_path_membership) &&
+           write_v16_packetref_directory_section(stream, metadata.packetref_directory);
+}
+
+bool write_v16_packetref_detail_sections(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16PacketRefDetailSectionWritePlan> sections
+) {
+    for (std::size_t section_index = 0U; section_index < sections.size(); ++section_index) {
+        const auto& section = sections[section_index];
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index)) {
+            return false;
+        }
+
+        std::uint64_t expected_payload_size {0};
+        for (const auto& extent : section.extents) {
+            const auto expected_length = encoded_packetref_extent_length(extent.packet_count);
+            if (!expected_length.has_value() ||
+                extent.encoded_byte_length != *expected_length ||
+                extent.detail_section_occurrence_index != section.section_occurrence_index ||
+                static_cast<std::uint64_t>(extent.packet_refs.size()) != extent.packet_count ||
+                extent.payload_offset != expected_payload_size) {
+                return false;
+            }
+
+            for (std::size_t packet_index = 1U; packet_index < extent.packet_refs.size(); ++packet_index) {
+                if (extent.packet_refs[packet_index].packet_index <= extent.packet_refs[packet_index - 1U].packet_index) {
+                    return false;
+                }
+            }
+
+            expected_payload_size += extent.encoded_byte_length;
+        }
+
+        if (expected_payload_size != section.payload_size ||
+            !write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks),
+                .section_schema_version = kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion,
+                .section_flags = kCaptureIndexStableSectionFlagRequired,
+                .payload_size = section.payload_size,
+            })) {
+            return false;
+        }
+
+        for (const auto& extent : section.extents) {
+            for (const auto& packet : extent.packet_refs) {
+                if (!write_packet_ref(stream, packet)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
+    std::istream& stream,
+    CaptureIndexV16MetadataTier& metadata
+) {
+    metadata = {};
+
+    CaptureIndexV16MetadataTierReadResult result {};
+    const auto fast_result = read_v16_fast_statistics_tier(stream, result.fast_statistics_tier);
+    if (!fast_result) {
+        result.status =
+            fast_result.status == CaptureIndexV16FastStatisticsTierReadStatus::invalid_header
+                ? CaptureIndexV16MetadataTierReadStatus::invalid_header
+                : fast_result.status == CaptureIndexV16FastStatisticsTierReadStatus::unsupported_revision
+                    ? CaptureIndexV16MetadataTierReadStatus::unsupported_revision
+                    : CaptureIndexV16MetadataTierReadStatus::invalid_fast_tier;
+        result.header = fast_result.header;
+        result.failed_section_header = fast_result.failed_section_header;
+        result.error_detail = fast_result.error_detail;
+        return result;
+    }
+    result.header = fast_result.header;
+
+    const auto total_flow_count = result.fast_statistics_tier.capture_statistics_snapshot.total_flow_count;
+    if (total_flow_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+        result.error_detail = "fast snapshot total flow count exceeds local container limits";
+        return result;
+    }
+
+    auto read_chunked_metadata_family =
+        [&](const CaptureIndexSectionId section_id,
+            const auto& decode_chunk,
+            auto& destination,
+            const CaptureIndexV16MetadataTierReadStatus missing_status,
+            const CaptureIndexV16MetadataTierReadStatus malformed_status) -> bool {
+            CaptureIndexStableSectionHeader next_header {};
+            if (!try_peek_capture_index_stable_section_header(stream, next_header)) {
+                result.status = missing_status;
+                return false;
+            }
+
+            if (next_header.section_id != static_cast<std::uint32_t>(section_id)) {
+                result.failed_section_header = next_header;
+                result.status =
+                    next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::ipv4_flow_metadata) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::ipv6_flow_metadata) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_membership) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_directory) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks)
+                    ? CaptureIndexV16MetadataTierReadStatus::wrong_metadata_section_order
+                    : missing_status;
+                return false;
+            }
+
+            while (true) {
+                CaptureIndexStableSectionHeader section_header {};
+                if (!try_peek_capture_index_stable_section_header(stream, section_header) ||
+                    section_header.section_id != static_cast<std::uint32_t>(section_id)) {
+                    break;
+                }
+
+                if (!read_capture_index_stable_section_header(stream, section_header)) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::invalid_metadata_section_framing;
+                    return false;
+                }
+
+                using RowType = typename std::remove_reference_t<decltype(destination)>::value_type;
+                std::vector<RowType> chunk_rows {};
+                if (!decode_chunk(stream, section_header, chunk_rows)) {
+                    result.failed_section_header = section_header;
+                    result.status =
+                        section_header.section_schema_version !=
+                                (section_id == CaptureIndexSectionId::ipv4_flow_metadata
+                                     ? kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion
+                                     : section_id == CaptureIndexSectionId::ipv6_flow_metadata
+                                         ? kCaptureIndexStableIpv6FlowMetadataSectionSchemaVersion
+                                         : section_id == CaptureIndexSectionId::protocol_path_membership
+                                             ? kCaptureIndexStableProtocolPathMembershipSectionSchemaVersion
+                                             : kCaptureIndexStablePacketRefDirectorySectionSchemaVersion)
+                            ? CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema
+                            : malformed_status;
+                    return false;
+                }
+
+                destination.insert(
+                    destination.end(),
+                    std::make_move_iterator(chunk_rows.begin()),
+                    std::make_move_iterator(chunk_rows.end())
+                );
+            }
+
+            return true;
+        };
+
+    if (!read_chunked_metadata_family(
+            CaptureIndexSectionId::ipv4_flow_metadata,
+            [](std::istream& payload_stream,
+               const CaptureIndexStableSectionHeader& section_header,
+               std::vector<CaptureIndexV16ConnectionMetadataV4>& rows) {
+                return decode_v16_connection_metadata_section(
+                    payload_stream,
+                    section_header,
+                    CaptureIndexSectionId::ipv4_flow_metadata,
+                    kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion,
+                    rows
+                );
+            },
+            metadata.ipv4_connections,
+            CaptureIndexV16MetadataTierReadStatus::missing_ipv4_flow_metadata_section,
+            CaptureIndexV16MetadataTierReadStatus::malformed_ipv4_flow_metadata_payload)) {
+        metadata = {};
+        return result;
+    }
+
+    if (!read_chunked_metadata_family(
+            CaptureIndexSectionId::ipv6_flow_metadata,
+            [](std::istream& payload_stream,
+               const CaptureIndexStableSectionHeader& section_header,
+               std::vector<CaptureIndexV16ConnectionMetadataV6>& rows) {
+                return decode_v16_connection_metadata_section(
+                    payload_stream,
+                    section_header,
+                    CaptureIndexSectionId::ipv6_flow_metadata,
+                    kCaptureIndexStableIpv6FlowMetadataSectionSchemaVersion,
+                    rows
+                );
+            },
+            metadata.ipv6_connections,
+            CaptureIndexV16MetadataTierReadStatus::missing_ipv6_flow_metadata_section,
+            CaptureIndexV16MetadataTierReadStatus::malformed_ipv6_flow_metadata_payload)) {
+        metadata = {};
+        return result;
+    }
+
+    if (!read_chunked_metadata_family(
+            CaptureIndexSectionId::protocol_path_membership,
+            [](std::istream& payload_stream,
+               const CaptureIndexStableSectionHeader& section_header,
+               std::vector<CaptureIndexV16ProtocolPathMembershipRow>& rows) {
+                return decode_v16_protocol_path_membership_section(payload_stream, section_header, rows);
+            },
+            metadata.protocol_path_membership,
+            CaptureIndexV16MetadataTierReadStatus::missing_protocol_path_membership_section,
+            CaptureIndexV16MetadataTierReadStatus::malformed_protocol_path_membership_payload)) {
+        metadata = {};
+        return result;
+    }
+
+    if (!read_chunked_metadata_family(
+            CaptureIndexSectionId::packetref_directory,
+            [](std::istream& payload_stream,
+               const CaptureIndexStableSectionHeader& section_header,
+               std::vector<CaptureIndexV16PacketRefDirectoryEntry>& rows) {
+                return decode_v16_packetref_directory_section(payload_stream, section_header, rows);
+            },
+            metadata.packetref_directory,
+            CaptureIndexV16MetadataTierReadStatus::missing_packetref_directory_section,
+            CaptureIndexV16MetadataTierReadStatus::malformed_packetref_directory_payload)) {
+        metadata = {};
+        return result;
+    }
+
+    CaptureIndexStableSectionHeader next_header {};
+    if (!try_peek_capture_index_stable_section_header(stream, next_header)) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::missing_packetref_detail_blocks_section;
+        metadata = {};
+        return result;
+    }
+    if (next_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks)) {
+        result.failed_section_header = next_header;
+        result.status = CaptureIndexV16MetadataTierReadStatus::wrong_metadata_section_order;
+        metadata = {};
+        return result;
+    }
+
+    while (true) {
+        CaptureIndexStableSectionHeader section_header {};
+        if (!try_peek_capture_index_stable_section_header(stream, section_header) ||
+            section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks)) {
+            break;
+        }
+
+        if (!read_capture_index_stable_section_header(stream, section_header)) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::detail_section_framing_error;
+            metadata = {};
+            return result;
+        }
+
+        if (section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+            section_header.section_schema_version != kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion) {
+            result.failed_section_header = section_header;
+            result.status =
+                section_header.section_schema_version != kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion
+                    ? CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema
+                    : CaptureIndexV16MetadataTierReadStatus::detail_section_framing_error;
+            metadata = {};
+            return result;
+        }
+
+        const auto payload_file_offset = stream.tellg();
+        if (payload_file_offset == std::istream::pos_type(-1) ||
+            !skip_section_payload(stream, section_header.payload_size)) {
+            result.failed_section_header = section_header;
+            result.status = CaptureIndexV16MetadataTierReadStatus::detail_section_framing_error;
+            metadata = {};
+            return result;
+        }
+
+        metadata.packetref_detail_sections.push_back(CaptureIndexV16PacketRefDetailSectionInfo {
+            .section_occurrence_index = static_cast<std::uint32_t>(metadata.packetref_detail_sections.size()),
+            .payload_file_offset = static_cast<std::uint64_t>(payload_file_offset),
+            .payload_size = section_header.payload_size,
+        });
+    }
+
+    if (metadata.connection_count() != total_flow_count) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+        result.error_detail = "metadata row count does not match the canonical flow count in the fast snapshot";
+        metadata = {};
+        return result;
+    }
+
+    std::vector<bool> seen_ordinals(total_flow_count, false);
+    std::unordered_map<ProtocolPathId, std::vector<std::uint32_t>> expected_membership {};
+    std::unordered_map<std::uint64_t, std::uint64_t> expected_directory_packet_counts {};
+    expected_membership.reserve(metadata.connection_count());
+    expected_directory_packet_counts.reserve(metadata.connection_count() * 2U);
+
+    auto validate_metadata_rows =
+        [&](const auto& rows) -> bool {
+            for (const auto& row : rows) {
+                if (row.canonical_connection_ordinal >= total_flow_count ||
+                    seen_ordinals[row.canonical_connection_ordinal]) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+                    result.error_detail = "canonical connection ordinals must be unique and dense";
+                    return false;
+                }
+
+                if (!validate_v16_connection_metadata_row(
+                        row,
+                        result.fast_statistics_tier.protocol_path_registry,
+                        result.error_detail)) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+                    return false;
+                }
+
+                seen_ordinals[row.canonical_connection_ordinal] = true;
+                expected_membership[row.key.protocol_path_id].push_back(row.canonical_connection_ordinal);
+                expected_directory_packet_counts.emplace(
+                    direction_identity_key(row.canonical_connection_ordinal, Direction::a_to_b),
+                    row.flow_a.packet_count
+                );
+                if (row.has_flow_b) {
+                    expected_directory_packet_counts.emplace(
+                        direction_identity_key(row.canonical_connection_ordinal, Direction::b_to_a),
+                        row.flow_b.packet_count
+                    );
+                }
+            }
+
+            return true;
+        };
+
+    if (!validate_metadata_rows(metadata.ipv4_connections) ||
+        !validate_metadata_rows(metadata.ipv6_connections)) {
+        metadata = {};
+        return result;
+    }
+
+    if (std::any_of(seen_ordinals.begin(), seen_ordinals.end(), [](const bool seen) { return !seen; })) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
+        result.error_detail = "canonical connection ordinals must cover the full [0, total_flow_count) range";
+        metadata = {};
+        return result;
+    }
+
+    std::unordered_map<ProtocolPathId, std::vector<std::uint32_t>> actual_membership {};
+    actual_membership.reserve(metadata.protocol_path_membership.size());
+    for (const auto& row : metadata.protocol_path_membership) {
+        if (row.protocol_path_id == kInvalidProtocolPathId ||
+            result.fast_statistics_tier.protocol_path_registry.find(row.protocol_path_id) == nullptr) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+            result.error_detail = "protocol path membership referenced an unknown protocol path id";
+            metadata = {};
+            return result;
+        }
+
+        auto& ordinals = actual_membership[row.protocol_path_id];
+        ordinals.insert(
+            ordinals.end(),
+            row.canonical_connection_ordinals.begin(),
+            row.canonical_connection_ordinals.end()
+        );
+    }
+
+    for (auto& [path_id, ordinals] : actual_membership) {
+        static_cast<void>(path_id);
+        if (!std::is_sorted(ordinals.begin(), ordinals.end()) ||
+            std::adjacent_find(ordinals.begin(), ordinals.end()) != ordinals.end()) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+            result.error_detail = "protocol path membership ordinals must be strictly increasing without duplicates";
+            metadata = {};
+            return result;
+        }
+
+        if (std::any_of(ordinals.begin(), ordinals.end(), [&](const std::uint32_t ordinal) {
+                return ordinal >= total_flow_count;
+            })) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+            result.error_detail = "protocol path membership ordinal is outside the canonical flow ordinal range";
+            metadata = {};
+            return result;
+        }
+    }
+
+    if (actual_membership != expected_membership) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::protocol_path_membership_semantic_inconsistency;
+        result.error_detail = "protocol path membership rows do not match canonical metadata protocol path ownership";
+        metadata = {};
+        return result;
+    }
+
+    std::unordered_map<std::uint64_t, CaptureIndexV16PacketRefDirectoryEntry> directory_by_identity {};
+    directory_by_identity.reserve(metadata.packetref_directory.size());
+    for (const auto& row : metadata.packetref_directory) {
+        const auto identity = direction_identity_key(row.canonical_connection_ordinal, row.direction);
+        if (!directory_by_identity.emplace(identity, row).second) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::packetref_directory_semantic_inconsistency;
+            result.error_detail = "duplicate packetref directory identity detected";
+            metadata = {};
+            return result;
+        }
+
+        const auto expected_length = encoded_packetref_extent_length(row.packet_count);
+        if (!expected_length.has_value() || row.encoded_byte_length != *expected_length) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::packetref_directory_semantic_inconsistency;
+            result.error_detail = "packetref directory entry encoded length is inconsistent with packet_count";
+            metadata = {};
+            return result;
+        }
+
+        const auto detail_section_it = std::find_if(
+            metadata.packetref_detail_sections.begin(),
+            metadata.packetref_detail_sections.end(),
+            [&](const auto& detail_section) {
+                return detail_section.section_occurrence_index == row.detail_section_occurrence_index;
+            }
+        );
+        if (detail_section_it == metadata.packetref_detail_sections.end() ||
+            row.payload_offset > detail_section_it->payload_size ||
+            row.encoded_byte_length > detail_section_it->payload_size ||
+            row.payload_offset > detail_section_it->payload_size - row.encoded_byte_length) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::detail_section_range_inconsistency;
+            result.error_detail = "packetref directory entry extent is out of bounds for the referenced detail section";
+            metadata = {};
+            return result;
+        }
+    }
+
+    if (directory_by_identity.size() != expected_directory_packet_counts.size()) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::metadata_directory_inconsistency;
+        result.error_detail = "packetref directory entries do not match metadata directional presence";
+        metadata = {};
+        return result;
+    }
+
+    for (const auto& [identity, packet_count] : expected_directory_packet_counts) {
+        const auto found = directory_by_identity.find(identity);
+        if (found == directory_by_identity.end() || found->second.packet_count != packet_count) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::metadata_directory_inconsistency;
+            result.error_detail = "packetref directory packet counts do not match metadata directional packet counts";
+            metadata = {};
+            return result;
+        }
+    }
+
+    auto validate_orientation =
+        [&](const auto& rows) -> bool {
+            for (const auto& row : rows) {
+                if (!row.has_flow_b) {
+                    continue;
+                }
+
+                const auto a_identity = direction_identity_key(row.canonical_connection_ordinal, Direction::a_to_b);
+                const auto b_identity = direction_identity_key(row.canonical_connection_ordinal, Direction::b_to_a);
+                const auto a_it = directory_by_identity.find(a_identity);
+                const auto b_it = directory_by_identity.find(b_identity);
+                if (a_it == directory_by_identity.end() || b_it == directory_by_identity.end()) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::metadata_directory_inconsistency;
+                    result.error_detail = "orientation validation could not resolve both directional packetref extents";
+                    return false;
+                }
+
+                const auto a_read = read_v16_packetref_extent_range_impl(
+                    stream,
+                    metadata.packetref_detail_sections,
+                    a_it->second,
+                    0U,
+                    1U
+                );
+                const auto b_read = read_v16_packetref_extent_range_impl(
+                    stream,
+                    metadata.packetref_detail_sections,
+                    b_it->second,
+                    0U,
+                    1U
+                );
+                if (!a_read || !b_read || a_read.packet_refs.empty() || b_read.packet_refs.empty()) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::detail_section_range_inconsistency;
+                    result.error_detail = !a_read ? a_read.error_detail : b_read.error_detail;
+                    return false;
+                }
+
+                if (a_read.packet_refs.front().packet_index >= b_read.packet_refs.front().packet_index) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::orientation_validation_failed;
+                    result.error_detail = "metadata orientation does not match the earliest PacketRef ordering";
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+    if (!validate_orientation(metadata.ipv4_connections) ||
+        !validate_orientation(metadata.ipv6_connections)) {
+        metadata = {};
+        return result;
+    }
+
+    return result;
+}
+
+CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(
+    std::istream& stream,
+    std::span<const CaptureIndexV16PacketRefDetailSectionInfo> detail_sections,
+    const CaptureIndexV16PacketRefDirectoryEntry& descriptor,
+    const std::uint64_t local_offset,
+    const std::uint64_t limit
+) {
+    return read_v16_packetref_extent_range_impl(
+        stream,
+        detail_sections,
+        descriptor,
+        local_offset,
+        limit
+    );
 }
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {

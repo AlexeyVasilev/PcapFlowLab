@@ -10,6 +10,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
@@ -84,6 +85,23 @@ std::vector<std::uint8_t> read_file_bytes(const std::filesystem::path& path) {
 std::vector<std::uint8_t> stream_bytes(const std::ostringstream& stream) {
     const auto serialized = stream.str();
     return std::vector<std::uint8_t>(serialized.begin(), serialized.end());
+}
+
+PacketRef packet_ref_for_v16_metadata_test(
+    const std::uint64_t packet_index,
+    const std::uint32_t original_length,
+    const std::uint32_t captured_length,
+    const std::uint64_t byte_offset
+) {
+    return PacketRef {
+        .packet_index = packet_index,
+        .ts_sec = static_cast<std::uint32_t>(packet_index / 10U),
+        .ts_usec = static_cast<std::uint32_t>((packet_index % 10U) * 1000U),
+        .byte_offset = byte_offset,
+        .data_link_type = kLinkTypeEthernet,
+        .captured_length = captured_length,
+        .original_length = original_length,
+    };
 }
 
 CaptureSourceInfo stable_header_source_info() {
@@ -166,6 +184,26 @@ std::size_t count_sections(const std::vector<std::uint8_t>& bytes, const std::ui
     return static_cast<std::size_t>(std::count_if(sections.begin(), sections.end(), [&](const SectionInfo& section) {
         return section.id == section_id;
     }));
+}
+
+const SectionInfo* find_section_occurrence(
+    const std::vector<SectionInfo>& sections,
+    const std::uint32_t section_id,
+    const std::size_t occurrence_index
+) {
+    std::size_t matched_index {0U};
+    for (const auto& section : sections) {
+        if (section.id != section_id) {
+            continue;
+        }
+
+        if (matched_index == occurrence_index) {
+            return &section;
+        }
+        ++matched_index;
+    }
+
+    return nullptr;
 }
 
 std::vector<std::uint8_t> remove_section(const std::vector<std::uint8_t>& bytes, const std::uint32_t section_id) {
@@ -301,6 +339,82 @@ void expect_matching_protocol_path_display_statistics(
     const ProtocolPathDisplayStatistics& right
 ) {
     PFL_EXPECT(left.terminal_path_aggregates == right.terminal_path_aggregates);
+}
+
+void expect_v16_top_flow_ordinals_match_canonical_connections(
+    const CaptureStatisticsSnapshot& snapshot,
+    const std::vector<session_detail::ListedConnectionRef>& connections
+) {
+    for (const auto& row : snapshot.top_flows) {
+        PFL_REQUIRE(row.canonical_flow_ordinal < connections.size());
+        const auto& connection = connections[row.canonical_flow_ordinal];
+        if (row.family == CaptureStatisticsAddressFamily::ipv4) {
+            PFL_REQUIRE(connection.family == FlowAddressFamily::ipv4);
+            PFL_REQUIRE(connection.ipv4 != nullptr);
+            PFL_REQUIRE(std::holds_alternative<ConnectionKeyV4>(row.connection_key));
+            PFL_EXPECT(std::get<ConnectionKeyV4>(row.connection_key) == connection.ipv4->key);
+            continue;
+        }
+
+        PFL_REQUIRE(connection.family == FlowAddressFamily::ipv6);
+        PFL_REQUIRE(connection.ipv6 != nullptr);
+        PFL_REQUIRE(std::holds_alternative<ConnectionKeyV6>(row.connection_key));
+        PFL_EXPECT(std::get<ConnectionKeyV6>(row.connection_key) == connection.ipv6->key);
+    }
+}
+
+void expect_v16_metadata_rows_match_canonical_connections(
+    const CaptureIndexV16MetadataTier& metadata,
+    const std::vector<session_detail::ListedConnectionRef>& connections
+) {
+    for (const auto& row : metadata.ipv4_connections) {
+        PFL_REQUIRE(row.canonical_connection_ordinal < connections.size());
+        const auto& connection = connections[row.canonical_connection_ordinal];
+        PFL_REQUIRE(connection.family == FlowAddressFamily::ipv4);
+        PFL_REQUIRE(connection.ipv4 != nullptr);
+        PFL_EXPECT(row.key == connection.ipv4->key);
+    }
+
+    for (const auto& row : metadata.ipv6_connections) {
+        PFL_REQUIRE(row.canonical_connection_ordinal < connections.size());
+        const auto& connection = connections[row.canonical_connection_ordinal];
+        PFL_REQUIRE(connection.family == FlowAddressFamily::ipv6);
+        PFL_REQUIRE(connection.ipv6 != nullptr);
+        PFL_EXPECT(row.key == connection.ipv6->key);
+    }
+}
+
+void expect_v16_metadata_matches_plan(
+    const CaptureIndexV16MetadataTier& actual,
+    const CaptureIndexV16WritePlan& expected_plan,
+    const std::vector<std::uint8_t>& container_bytes
+) {
+    PFL_EXPECT(actual.ipv4_connections == expected_plan.metadata.ipv4_connections);
+    PFL_EXPECT(actual.ipv6_connections == expected_plan.metadata.ipv6_connections);
+    PFL_EXPECT(actual.protocol_path_membership == expected_plan.metadata.protocol_path_membership);
+    PFL_EXPECT(actual.packetref_directory == expected_plan.metadata.packetref_directory);
+    PFL_EXPECT(actual.packetref_detail_sections.size() == expected_plan.packetref_detail_sections.size());
+
+    const auto sections = parse_sections(container_bytes);
+    for (std::size_t index = 0U; index < actual.packetref_detail_sections.size(); ++index) {
+        const auto* detail_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+            index
+        );
+        PFL_REQUIRE(detail_section != nullptr);
+        PFL_EXPECT(actual.packetref_detail_sections[index].section_occurrence_index == index);
+        PFL_EXPECT(
+            actual.packetref_detail_sections[index].section_occurrence_index ==
+            expected_plan.packetref_detail_sections[index].section_occurrence_index);
+        PFL_EXPECT(
+            actual.packetref_detail_sections[index].payload_size ==
+            expected_plan.packetref_detail_sections[index].payload_size);
+        PFL_EXPECT(
+            actual.packetref_detail_sections[index].payload_file_offset ==
+            static_cast<std::uint64_t>(
+                detail_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize));
+    }
 }
 
 void expect_matching_flows(const FlowV4& left, const FlowV4& right) {
@@ -727,6 +841,128 @@ std::vector<std::uint8_t> make_v16_fast_statistics_tier_container_bytes(
         PFL_REQUIRE(detail::write_bytes(stream, trailing_bytes));
     }
     return stream_bytes(stream);
+}
+
+CaptureState make_v16_metadata_capture_state_fixture() {
+    CaptureState state {};
+    const auto ipv4_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    });
+    const auto ipv6_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv6(),
+        LayerKey::udp(),
+    });
+    PFL_REQUIRE(ipv4_path_id == 1U);
+    PFL_REQUIRE(ipv6_path_id == 2U);
+
+    const FlowKeyV4 ipv4_flow_a {
+        .src_addr = ipv4(192, 0, 2, 10),
+        .dst_addr = ipv4(198, 51, 100, 10),
+        .src_port = 41000U,
+        .dst_port = 443U,
+        .protocol = ProtocolId::tcp,
+        .protocol_path_id = ipv4_path_id,
+    };
+    const FlowKeyV4 ipv4_flow_b {
+        .src_addr = ipv4_flow_a.dst_addr,
+        .dst_addr = ipv4_flow_a.src_addr,
+        .src_port = ipv4_flow_a.dst_port,
+        .dst_port = ipv4_flow_a.src_port,
+        .protocol = ipv4_flow_a.protocol,
+        .protocol_path_id = ipv4_path_id,
+    };
+
+    auto& ipv4_connection = state.ipv4_connections.get_or_create(make_connection_key(ipv4_flow_a));
+    const auto add_ipv4_packet = [&](const FlowKeyV4& flow_key,
+                                     const PacketRef& packet,
+                                     const PacketImportMetadata& metadata = {}) {
+        ipv4_connection.add_packet(flow_key, packet, metadata);
+        observe_capture_packet_statistics(state.packet_statistics, packet, true);
+    };
+
+    add_ipv4_packet(
+        ipv4_flow_a,
+        packet_ref_for_v16_metadata_test(10U, 100U, 100U, 1000U),
+        PacketImportMetadata {
+            .transport_payload_length = 60U,
+            .tcp_flags = static_cast<std::uint8_t>(0x02U),
+        }
+    );
+    add_ipv4_packet(
+        ipv4_flow_b,
+        packet_ref_for_v16_metadata_test(20U, 110U, 110U, 1100U),
+        PacketImportMetadata {
+            .transport_payload_length = 70U,
+            .tcp_flags = static_cast<std::uint8_t>(0x04U),
+        }
+    );
+    add_ipv4_packet(
+        ipv4_flow_a,
+        packet_ref_for_v16_metadata_test(40U, 120U, 112U, 1210U),
+        PacketImportMetadata {.transport_payload_length = 50U, .is_ip_fragmented = true}
+    );
+    add_ipv4_packet(
+        ipv4_flow_b,
+        packet_ref_for_v16_metadata_test(70U, 95U, 90U, 1322U),
+        PacketImportMetadata {.transport_payload_length = 40U}
+    );
+    add_ipv4_packet(
+        ipv4_flow_a,
+        packet_ref_for_v16_metadata_test(100U, 90U, 90U, 1412U),
+        PacketImportMetadata {
+            .transport_payload_length = 30U,
+            .tcp_flags = static_cast<std::uint8_t>(0x01U),
+        }
+    );
+    ipv4_connection.protocol_hint = FlowProtocolHint::tls;
+    ipv4_connection.service_hint = "bulk-download.example.test";
+    ipv4_connection.tls_version = TlsVersionHint::tls13;
+
+    const FlowKeyV6 ipv6_flow_a {
+        .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
+        .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),
+        .src_port = 53000U,
+        .dst_port = 53U,
+        .protocol = ProtocolId::udp,
+        .protocol_path_id = ipv6_path_id,
+    };
+    auto& ipv6_connection = state.ipv6_connections.get_or_create(make_connection_key(ipv6_flow_a));
+    const auto add_ipv6_packet = [&](const PacketRef& packet, const PacketImportMetadata& metadata = {}) {
+        ipv6_connection.add_packet(ipv6_flow_a, packet, metadata);
+        observe_capture_packet_statistics(state.packet_statistics, packet, true);
+    };
+    add_ipv6_packet(
+        packet_ref_for_v16_metadata_test(120U, 60U, 60U, 1502U),
+        PacketImportMetadata {.transport_payload_length = 20U}
+    );
+    add_ipv6_packet(
+        packet_ref_for_v16_metadata_test(140U, 80U, 75U, 1562U),
+        PacketImportMetadata {.transport_payload_length = 25U}
+    );
+    ipv6_connection.protocol_hint = FlowProtocolHint::dns;
+
+    return state;
+}
+
+detail::CaptureIndexV16FastStatisticsTier build_v16_metadata_fast_statistics_tier(
+    const CaptureState& state
+) {
+    const auto connections = session_detail::list_connections(state);
+    const auto general_statistics = session_detail::build_capture_general_statistics(connections);
+    const auto protocol_path_display_statistics =
+        session_detail::build_protocol_path_display_statistics(state, connections);
+    return detail::CaptureIndexV16FastStatisticsTier {
+        .capture_statistics_snapshot = session_detail::make_capture_statistics_snapshot(
+            state.packet_statistics,
+            general_statistics,
+            CaptureStatisticsScope::complete
+        ),
+        .protocol_path_registry = state.protocol_path_registry,
+        .protocol_path_display_statistics = protocol_path_display_statistics,
+    };
 }
 
 }  // namespace
@@ -1651,6 +1887,302 @@ void run_index_format_tests() {
                 detail::CaptureIndexV16FastStatisticsTierReadStatus::fast_tier_cross_section_inconsistency
             );
         }
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto canonical_connections = session_detail::list_connections(state);
+        expect_v16_top_flow_ordinals_match_canonical_connections(
+            fast_tier.capture_statistics_snapshot,
+            canonical_connections
+        );
+
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_EXPECT(plan_result.plan.metadata.connection_count() == canonical_connections.size());
+        expect_v16_metadata_rows_match_canonical_connections(
+            plan_result.plan.metadata,
+            canonical_connections
+        );
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
+        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
+        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
+            stream,
+            plan_result.plan.packetref_detail_sections
+        ));
+        const auto container_bytes = stream_bytes(stream);
+
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(
+            read_result.fast_statistics_tier.capture_statistics_snapshot ==
+            fast_tier.capture_statistics_snapshot);
+        expect_matching_protocol_path_registries(
+            read_result.fast_statistics_tier.protocol_path_registry,
+            fast_tier.protocol_path_registry
+        );
+        expect_matching_protocol_path_display_statistics(
+            read_result.fast_statistics_tier.protocol_path_display_statistics,
+            fast_tier.protocol_path_display_statistics
+        );
+        expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
+        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
+        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
+            stream,
+            plan_result.plan.packetref_detail_sections
+        ));
+        const auto container_bytes = stream_bytes(stream);
+
+        std::istringstream metadata_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(metadata_stream, decoded_metadata)));
+
+        const auto forward_extent_it = std::find_if(
+            decoded_metadata.packetref_directory.begin(),
+            decoded_metadata.packetref_directory.end(),
+            [](const auto& row) {
+                return row.canonical_connection_ordinal == 0U &&
+                       row.direction == Direction::a_to_b;
+            }
+        );
+        const auto reverse_extent_it = std::find_if(
+            decoded_metadata.packetref_directory.begin(),
+            decoded_metadata.packetref_directory.end(),
+            [](const auto& row) {
+                return row.canonical_connection_ordinal == 0U &&
+                       row.direction == Direction::b_to_a;
+            }
+        );
+        PFL_REQUIRE(forward_extent_it != decoded_metadata.packetref_directory.end());
+        PFL_REQUIRE(reverse_extent_it != decoded_metadata.packetref_directory.end());
+        const auto ipv4_connections = state.ipv4_connections.list();
+        PFL_REQUIRE(ipv4_connections.size() == 1U);
+        const auto* ipv4_connection = ipv4_connections.front();
+        PFL_REQUIRE(ipv4_connection != nullptr);
+
+        std::istringstream partial_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto partial_forward = detail::read_v16_packetref_extent_range(
+            partial_stream,
+            decoded_metadata.packetref_detail_sections,
+            *forward_extent_it,
+            1U,
+            2U
+        );
+        PFL_REQUIRE(static_cast<bool>(partial_forward));
+        PFL_EXPECT(partial_forward.packet_refs.size() == 2U);
+        expect_matching_packets(
+            partial_forward.packet_refs,
+            std::vector<PacketRef> {
+                ipv4_connection->flow_a.packets[1],
+                ipv4_connection->flow_a.packets[2],
+            }
+        );
+
+        std::istringstream reverse_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto partial_reverse = detail::read_v16_packetref_extent_range(
+            reverse_stream,
+            decoded_metadata.packetref_detail_sections,
+            *reverse_extent_it,
+            0U,
+            1U
+        );
+        PFL_REQUIRE(static_cast<bool>(partial_reverse));
+        PFL_EXPECT(partial_reverse.packet_refs.size() == 1U);
+        expect_matching_packets(
+            partial_reverse.packet_refs,
+            std::vector<PacketRef> {ipv4_connection->flow_b.packets[0]}
+        );
+
+        std::istringstream empty_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto empty_read = detail::read_v16_packetref_extent_range(
+            empty_stream,
+            decoded_metadata.packetref_detail_sections,
+            *forward_extent_it,
+            forward_extent_it->packet_count,
+            4U
+        );
+        PFL_REQUIRE(static_cast<bool>(empty_read));
+        PFL_EXPECT(empty_read.packet_refs.empty());
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
+        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
+        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
+            stream,
+            plan_result.plan.packetref_detail_sections
+        ));
+        auto mutated_bytes = stream_bytes(stream);
+        const auto sections = parse_sections(mutated_bytes);
+        const auto* directory_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_directory),
+            0U
+        );
+        PFL_REQUIRE(directory_section != nullptr);
+        const auto encoded_length_offset = static_cast<std::size_t>(
+            directory_section->offset +
+            detail::kCaptureIndexStableSectionHeaderEncodedSize +
+            8U +
+            25U);
+        write_le64_at(
+            mutated_bytes,
+            encoded_length_offset,
+            read_le64_at(mutated_bytes, encoded_length_offset) + 1U
+        );
+
+        std::istringstream read_stream(
+            std::string(mutated_bytes.begin(), mutated_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+        PFL_EXPECT(
+            read_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::packetref_directory_semantic_inconsistency);
+        PFL_EXPECT(decoded_metadata == CaptureIndexV16MetadataTier {});
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(!plan_result.plan.packetref_detail_sections.empty());
+        PFL_REQUIRE(!plan_result.plan.packetref_detail_sections.front().extents.empty());
+        PFL_REQUIRE(plan_result.plan.packetref_detail_sections.front().extents.front().packet_count >= 2U);
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
+        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
+        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
+            stream,
+            plan_result.plan.packetref_detail_sections
+        ));
+        auto mutated_bytes = stream_bytes(stream);
+        const auto sections = parse_sections(mutated_bytes);
+        const auto* detail_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks),
+            0U
+        );
+        PFL_REQUIRE(detail_section != nullptr);
+        const auto second_packet_index_offset = static_cast<std::size_t>(
+            detail_section->offset +
+            detail::kCaptureIndexStableSectionHeaderEncodedSize +
+            kCaptureIndexV16PacketRefEncodedStrideBytes);
+        write_le64_at(mutated_bytes, second_packet_index_offset, 10U);
+
+        std::istringstream read_stream(
+            std::string(mutated_bytes.begin(), mutated_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+
+        const auto* forward_extent = decoded_metadata.packetref_directory.empty()
+            ? nullptr
+            : &decoded_metadata.packetref_directory.front();
+        PFL_REQUIRE(forward_extent != nullptr);
+        std::istringstream extent_stream(
+            std::string(mutated_bytes.begin(), mutated_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto extent_read = detail::read_v16_packetref_extent_range(
+            extent_stream,
+            decoded_metadata.packetref_detail_sections,
+            *forward_extent,
+            0U,
+            forward_extent->packet_count
+        );
+        PFL_EXPECT(
+            extent_read.status ==
+            detail::CaptureIndexV16PacketRefExtentReadStatus::packet_index_not_strictly_increasing);
+    }
+
+    {
+        CaptureState oversized_state {};
+        const auto path_id = oversized_state.protocol_path_registry.intern(ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        });
+        PFL_REQUIRE(path_id == 1U);
+
+        const FlowKeyV4 flow_key {
+            .src_addr = ipv4(203, 0, 113, 10),
+            .dst_addr = ipv4(203, 0, 113, 20),
+            .src_port = 45000U,
+            .dst_port = 443U,
+            .protocol = ProtocolId::tcp,
+            .protocol_path_id = path_id,
+        };
+        auto& connection = oversized_state.ipv4_connections.get_or_create(make_connection_key(flow_key));
+        for (std::uint64_t packet_index = 0U; packet_index < 4U; ++packet_index) {
+            const auto packet = packet_ref_for_v16_metadata_test(
+                1000U + packet_index,
+                128U,
+                128U,
+                4096U + packet_index * 128U
+            );
+            connection.add_packet(flow_key, packet);
+            observe_capture_packet_statistics(oversized_state.packet_statistics, packet, true);
+        }
+
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(
+            oversized_state,
+            CaptureIndexV16PacketRefDetailLayoutOptions {
+                .target_section_payload_bytes =
+                    kCaptureIndexV16PacketRefEncodedStrideBytes * 2U,
+            }
+        );
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_EXPECT(plan_result.plan.packetref_detail_sections.size() == 1U);
+        PFL_REQUIRE(plan_result.plan.packetref_detail_sections.front().extents.size() == 1U);
+        PFL_EXPECT(
+            plan_result.plan.packetref_detail_sections.front().payload_size ==
+            4U * kCaptureIndexV16PacketRefEncodedStrideBytes);
+        PFL_EXPECT(plan_result.plan.metadata.packetref_directory.size() == 1U);
+        PFL_EXPECT(
+            plan_result.plan.metadata.packetref_directory.front().encoded_byte_length ==
+            4U * kCaptureIndexV16PacketRefEncodedStrideBytes);
     }
 
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 10, 1), ipv4(192, 168, 10, 2), 41000, 443);

@@ -13,6 +13,7 @@
 #include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/domain/CaptureState.h"
 #include "core/index/CaptureIndex.h"
+#include "core/index/CaptureIndexV16.h"
 
 namespace pfl::detail {
 
@@ -47,6 +48,11 @@ inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorSectionSchemaVers
 inline constexpr std::uint16_t kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableIpv6FlowMetadataSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableProtocolPathMembershipSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStablePacketRefDirectorySectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
@@ -265,6 +271,67 @@ struct CaptureIndexV16FastStatisticsTierReadResult {
     }
 };
 
+enum class CaptureIndexV16MetadataTierReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_header,
+    unsupported_revision,
+    invalid_fast_tier,
+    missing_ipv4_flow_metadata_section,
+    missing_ipv6_flow_metadata_section,
+    missing_protocol_path_membership_section,
+    missing_packetref_directory_section,
+    missing_packetref_detail_blocks_section,
+    wrong_metadata_section_order,
+    invalid_metadata_section_framing,
+    unsupported_metadata_section_schema,
+    truncated_metadata_section_payload,
+    malformed_ipv4_flow_metadata_payload,
+    malformed_ipv6_flow_metadata_payload,
+    malformed_protocol_path_membership_payload,
+    malformed_packetref_directory_payload,
+    metadata_semantic_inconsistency,
+    protocol_path_membership_semantic_inconsistency,
+    packetref_directory_semantic_inconsistency,
+    metadata_directory_inconsistency,
+    detail_section_framing_error,
+    detail_section_range_inconsistency,
+    orientation_validation_failed,
+};
+
+struct CaptureIndexV16MetadataTierReadResult {
+    CaptureIndexV16MetadataTierReadStatus status {CaptureIndexV16MetadataTierReadStatus::ok};
+    CaptureIndexStableHeader header {};
+    CaptureIndexStableSectionHeader failed_section_header {};
+    CaptureIndexV16FastStatisticsTier fast_statistics_tier {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16MetadataTierReadStatus::ok;
+    }
+};
+
+enum class CaptureIndexV16PacketRefExtentReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_detail_section_occurrence,
+    invalid_local_offset,
+    invalid_requested_length,
+    section_seek_failed,
+    section_range_overflow,
+    truncated_packetref_detail,
+    malformed_packetref_detail,
+    packet_index_not_strictly_increasing,
+};
+
+struct CaptureIndexV16PacketRefExtentReadResult {
+    CaptureIndexV16PacketRefExtentReadStatus status {CaptureIndexV16PacketRefExtentReadStatus::ok};
+    std::vector<PacketRef> packet_refs {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16PacketRefExtentReadStatus::ok;
+    }
+};
+
 bool write_section(std::ostream& stream, std::uint32_t section_id, std::span<const std::uint8_t> payload);
 bool read_section_header(std::istream& stream, std::uint32_t& section_id, std::uint64_t& payload_size);
 bool read_section_payload(std::istream& stream, std::uint64_t payload_size, std::vector<std::uint8_t>& payload);
@@ -403,6 +470,41 @@ bool write_v16_fast_statistics_tier(
 CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
     std::istream& stream,
     CaptureIndexV16FastStatisticsTier& tier
+);
+bool write_v16_ipv4_flow_metadata_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16ConnectionMetadataV4> rows
+);
+bool write_v16_ipv6_flow_metadata_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16ConnectionMetadataV6> rows
+);
+bool write_v16_protocol_path_membership_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16ProtocolPathMembershipRow> rows
+);
+bool write_v16_packetref_directory_section(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16PacketRefDirectoryEntry> rows
+);
+bool write_v16_metadata_tier_sections(
+    std::ostream& stream,
+    const CaptureIndexV16MetadataTier& metadata
+);
+bool write_v16_packetref_detail_sections(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16PacketRefDetailSectionWritePlan> sections
+);
+CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
+    std::istream& stream,
+    CaptureIndexV16MetadataTier& metadata
+);
+CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(
+    std::istream& stream,
+    std::span<const CaptureIndexV16PacketRefDetailSectionInfo> detail_sections,
+    const CaptureIndexV16PacketRefDirectoryEntry& descriptor,
+    std::uint64_t local_offset,
+    std::uint64_t limit
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

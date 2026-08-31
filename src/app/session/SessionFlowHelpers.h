@@ -9,6 +9,7 @@
 #include "app/session/FlowRows.h"
 #include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/domain/CaptureState.h"
+#include "core/index/CaptureIndexV16.h"
 #include "core/services/AnalysisSettings.h"
 
 namespace pfl::session_detail {
@@ -126,6 +127,10 @@ FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<Lis
 ProtocolPathDisplayStatistics build_protocol_path_display_statistics(
     const CaptureState& state,
     const std::vector<ListedConnectionRef>& connections
+);
+CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
+    const CaptureState& state,
+    const CaptureIndexV16PacketRefDetailLayoutOptions& options = {}
 );
 CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics(
     const ProtocolPathRegistry& registry,

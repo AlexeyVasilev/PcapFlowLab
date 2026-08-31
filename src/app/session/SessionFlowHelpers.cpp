@@ -585,6 +585,59 @@ ProtocolPathId protocol_path_id(const ListedConnectionRef& connection) noexcept 
         : connection.ipv6->key.protocol_path_id;
 }
 
+template <typename Flow>
+std::span<const PacketRef> packet_refs_for_direction(const Flow& flow) noexcept {
+    return std::span<const PacketRef>(flow.packets.data(), flow.packets.size());
+}
+
+template <typename Flow>
+bool directional_flow_is_structurally_valid(const Flow& flow) noexcept {
+    return flow.packet_count > 0U &&
+        static_cast<std::uint64_t>(flow.packets.size()) == flow.packet_count;
+}
+
+template <typename Flow>
+bool packet_refs_strictly_increasing(const Flow& flow) noexcept {
+    if (flow.packets.empty()) {
+        return true;
+    }
+
+    std::uint64_t previous_index = flow.packets.front().packet_index;
+    for (std::size_t index = 1U; index < flow.packets.size(); ++index) {
+        const auto current_index = flow.packets[index].packet_index;
+        if (current_index <= previous_index) {
+            return false;
+        }
+        previous_index = current_index;
+    }
+
+    return true;
+}
+
+bool checked_add_u64(
+    const std::uint64_t left,
+    const std::uint64_t right,
+    std::uint64_t& result
+) noexcept {
+    if (right > std::numeric_limits<std::uint64_t>::max() - left) {
+        return false;
+    }
+    result = left + right;
+    return true;
+}
+
+bool checked_multiply_u64(
+    const std::uint64_t left,
+    const std::uint64_t right,
+    std::uint64_t& result
+) noexcept {
+    if (left != 0U && right > std::numeric_limits<std::uint64_t>::max() / left) {
+        return false;
+    }
+    result = left * right;
+    return true;
+}
+
 struct ProtocolPathStatisticsAccumulatorNode {
     std::size_t depth {0};
     LayerKey layer {};
@@ -2123,6 +2176,246 @@ ProtocolPathDisplayStatistics build_protocol_path_display_statistics(
     const std::vector<ListedConnectionRef>& connections
 ) {
     return build_protocol_path_display_statistics_impl(state, connections).statistics;
+}
+
+CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
+    const CaptureState& state,
+    const CaptureIndexV16PacketRefDetailLayoutOptions& options
+) {
+    CaptureIndexV16WritePlanBuildResult result {};
+    const auto connections = list_connections(state);
+    if (connections.size() > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+        result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+        result.error_detail = "canonical connection ordinals exceed the supported v16 u32 range";
+        return result;
+    }
+
+    result.plan.metadata.ipv4_connections.reserve(state.ipv4_connections.size());
+    result.plan.metadata.ipv6_connections.reserve(state.ipv6_connections.size());
+    result.plan.metadata.packetref_directory.reserve(connections.size() * 2U);
+    result.plan.packetref_detail_sections.reserve(connections.size());
+
+    std::unordered_map<ProtocolPathId, std::size_t> membership_row_indices {};
+    membership_row_indices.reserve(connections.size());
+
+    auto ensure_detail_section =
+        [&](const bool require_empty_section) -> CaptureIndexV16PacketRefDetailSectionWritePlan& {
+            if (result.plan.packetref_detail_sections.empty() ||
+                (require_empty_section &&
+                 !result.plan.packetref_detail_sections.back().extents.empty())) {
+                result.plan.packetref_detail_sections.push_back(CaptureIndexV16PacketRefDetailSectionWritePlan {
+                    .section_occurrence_index = static_cast<std::uint32_t>(result.plan.packetref_detail_sections.size()),
+                });
+            }
+
+            return result.plan.packetref_detail_sections.back();
+        };
+
+    auto append_directory_extent =
+        [&](const std::uint32_t canonical_connection_ordinal,
+            const Direction direction,
+            const auto& flow) -> bool {
+            if (!directional_flow_is_structurally_valid(flow)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::invalid_directional_packet_count;
+                result.error_detail = "directional flow packet_count must match non-empty PacketRef storage";
+                return false;
+            }
+
+            if (!packet_refs_strictly_increasing(flow)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::invalid_directional_packet_order;
+                result.error_detail = "directional PacketRef sequence must be strictly increasing by packet_index";
+                return false;
+            }
+
+            std::uint64_t encoded_byte_length {0};
+            if (!checked_multiply_u64(flow.packet_count, kCaptureIndexV16PacketRefEncodedStrideBytes, encoded_byte_length)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "PacketRef extent encoded length overflowed";
+                return false;
+            }
+
+            auto& detail_section = ensure_detail_section(false);
+            std::uint64_t combined_payload_size {0};
+            if (!checked_add_u64(detail_section.payload_size, encoded_byte_length, combined_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "PacketRef detail section payload size overflowed";
+                return false;
+            }
+
+            if (detail_section.payload_size > 0U &&
+                encoded_byte_length > 0U &&
+                combined_payload_size > options.target_section_payload_bytes) {
+                result.plan.packetref_detail_sections.push_back(CaptureIndexV16PacketRefDetailSectionWritePlan {
+                    .section_occurrence_index = static_cast<std::uint32_t>(result.plan.packetref_detail_sections.size()),
+                });
+            }
+
+            auto& target_section = ensure_detail_section(false);
+            const auto payload_offset = target_section.payload_size;
+            std::uint64_t next_payload_size {0};
+            if (!checked_add_u64(payload_offset, encoded_byte_length, next_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "PacketRef detail section payload size overflowed";
+                return false;
+            }
+
+            target_section.extents.push_back(CaptureIndexV16PacketRefExtentWritePlan {
+                .canonical_connection_ordinal = canonical_connection_ordinal,
+                .direction = direction,
+                .packet_count = flow.packet_count,
+                .detail_section_occurrence_index = target_section.section_occurrence_index,
+                .payload_offset = payload_offset,
+                .encoded_byte_length = encoded_byte_length,
+                .packet_refs = packet_refs_for_direction(flow),
+            });
+            target_section.payload_size = next_payload_size;
+
+            result.plan.metadata.packetref_directory.push_back(CaptureIndexV16PacketRefDirectoryEntry {
+                .canonical_connection_ordinal = canonical_connection_ordinal,
+                .direction = direction,
+                .packet_count = flow.packet_count,
+                .detail_section_occurrence_index = target_section.section_occurrence_index,
+                .payload_offset = payload_offset,
+                .encoded_byte_length = encoded_byte_length,
+            });
+
+            std::uint64_t total_packetref_count {0};
+            if (!checked_add_u64(result.plan.total_packetref_count, flow.packet_count, total_packetref_count)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "total PacketRef count overflowed";
+                return false;
+            }
+            result.plan.total_packetref_count = total_packetref_count;
+
+            return true;
+        };
+
+    for (std::size_t index = 0U; index < connections.size(); ++index) {
+        const auto& connection = connections[index];
+        const auto canonical_connection_ordinal = static_cast<std::uint32_t>(index);
+        const auto path_id = protocol_path_id(connection);
+        if (path_id == kInvalidProtocolPathId || state.protocol_path_registry.find(path_id) == nullptr) {
+            result.status = CaptureIndexV16WritePlanBuildStatus::invalid_protocol_path_id;
+            result.error_detail = "canonical connection metadata referenced an invalid Protocol Path";
+            return result;
+        }
+
+        const auto [membership_it, inserted] = membership_row_indices.try_emplace(
+            path_id,
+            result.plan.metadata.protocol_path_membership.size()
+        );
+        if (inserted) {
+            result.plan.metadata.protocol_path_membership.push_back(CaptureIndexV16ProtocolPathMembershipRow {
+                .protocol_path_id = path_id,
+            });
+        }
+        result.plan.metadata.protocol_path_membership[membership_it->second]
+            .canonical_connection_ordinals.push_back(canonical_connection_ordinal);
+
+        if (connection.family == FlowAddressFamily::ipv4) {
+            if (!has_valid_first_observed_orientation(*connection.ipv4)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::invalid_first_observed_orientation;
+                result.error_detail = "IPv4 connection violated first-observed A/B orientation";
+                return result;
+            }
+
+            CaptureIndexV16ConnectionMetadataV4 row {
+                .canonical_connection_ordinal = canonical_connection_ordinal,
+                .key = connection.ipv4->key,
+                .protocol_hint = connection.ipv4->protocol_hint,
+                .service_hint = connection.ipv4->service_hint,
+                .quic_version = connection.ipv4->quic_version,
+                .tls_version = connection.ipv4->tls_version,
+                .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
+                .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
+                .aggregate_stats = connection.ipv4->aggregate_stats,
+                .has_flow_a = connection.ipv4->has_flow_a,
+                .has_flow_b = connection.ipv4->has_flow_b,
+            };
+
+            if (row.has_flow_a) {
+                row.flow_a = CaptureIndexV16DirectionalFlowMetadataV4 {
+                    .key = connection.ipv4->flow_a.key,
+                    .packet_count = connection.ipv4->flow_a.packet_count,
+                    .original_byte_count = connection.ipv4->flow_a.total_bytes,
+                };
+                if (!append_directory_extent(canonical_connection_ordinal, Direction::a_to_b, connection.ipv4->flow_a)) {
+                    return result;
+                }
+            }
+
+            if (row.has_flow_b) {
+                row.flow_b = CaptureIndexV16DirectionalFlowMetadataV4 {
+                    .key = connection.ipv4->flow_b.key,
+                    .packet_count = connection.ipv4->flow_b.packet_count,
+                    .original_byte_count = connection.ipv4->flow_b.total_bytes,
+                };
+                if (!append_directory_extent(canonical_connection_ordinal, Direction::b_to_a, connection.ipv4->flow_b)) {
+                    return result;
+                }
+            }
+
+            result.plan.metadata.ipv4_connections.push_back(std::move(row));
+            continue;
+        }
+
+        if (!has_valid_first_observed_orientation(*connection.ipv6)) {
+            result.status = CaptureIndexV16WritePlanBuildStatus::invalid_first_observed_orientation;
+            result.error_detail = "IPv6 connection violated first-observed A/B orientation";
+            return result;
+        }
+
+        CaptureIndexV16ConnectionMetadataV6 row {
+            .canonical_connection_ordinal = canonical_connection_ordinal,
+            .key = connection.ipv6->key,
+            .protocol_hint = connection.ipv6->protocol_hint,
+            .service_hint = connection.ipv6->service_hint,
+            .quic_version = connection.ipv6->quic_version,
+            .tls_version = connection.ipv6->tls_version,
+            .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
+            .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
+            .aggregate_stats = connection.ipv6->aggregate_stats,
+            .has_flow_a = connection.ipv6->has_flow_a,
+            .has_flow_b = connection.ipv6->has_flow_b,
+        };
+
+        if (row.has_flow_a) {
+            row.flow_a = CaptureIndexV16DirectionalFlowMetadataV6 {
+                .key = connection.ipv6->flow_a.key,
+                .packet_count = connection.ipv6->flow_a.packet_count,
+                .original_byte_count = connection.ipv6->flow_a.total_bytes,
+            };
+            if (!append_directory_extent(canonical_connection_ordinal, Direction::a_to_b, connection.ipv6->flow_a)) {
+                return result;
+            }
+        }
+
+        if (row.has_flow_b) {
+            row.flow_b = CaptureIndexV16DirectionalFlowMetadataV6 {
+                .key = connection.ipv6->flow_b.key,
+                .packet_count = connection.ipv6->flow_b.packet_count,
+                .original_byte_count = connection.ipv6->flow_b.total_bytes,
+            };
+            if (!append_directory_extent(canonical_connection_ordinal, Direction::b_to_a, connection.ipv6->flow_b)) {
+                return result;
+            }
+        }
+
+        result.plan.metadata.ipv6_connections.push_back(std::move(row));
+    }
+
+    ensure_detail_section(false);
+
+    result.plan.metadata.packetref_detail_sections.reserve(result.plan.packetref_detail_sections.size());
+    for (const auto& section : result.plan.packetref_detail_sections) {
+        result.plan.metadata.packetref_detail_sections.push_back(CaptureIndexV16PacketRefDetailSectionInfo {
+            .section_occurrence_index = section.section_occurrence_index,
+            .payload_file_offset = 0U,
+            .payload_size = section.payload_size,
+        });
+    }
+
+    return result;
 }
 
 CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics(
