@@ -56,6 +56,9 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(rows[0].captured_length > 0U);
         PFL_EXPECT(rows[0].original_length >= rows[0].captured_length);
         PFL_EXPECT(rows[0].reason_text == "TCP header truncated");
+        PFL_EXPECT(session.list_unrecognized_packets(0U, 0U).empty());
+        PFL_EXPECT(session.list_unrecognized_packets(1U, 30U).empty());
+        PFL_EXPECT(session.list_unrecognized_packets(2U, 30U).empty());
 
         const auto packet = session.find_packet(rows[0].packet_index);
         PFL_REQUIRE(packet.has_value());

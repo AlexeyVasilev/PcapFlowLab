@@ -2,6 +2,7 @@
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SelectedFlowPacketAccess.h"
+#include "app/session/UnrecognizedPacketAccess.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
@@ -180,17 +181,60 @@ RawPcapPacket make_raw_pcap_packet(const PacketRef& packet, std::vector<std::uin
 }
 
 UnrecognizedPacketRow make_unrecognized_packet_row(
-    const UnrecognizedPacketRecord& record,
-    const std::uint64_t row_number
+    const session_detail::UnrecognizedPacketAccessRow& row
 ) {
-    return UnrecognizedPacketRow {
-        .row_number = row_number,
-        .packet_index = record.packet.packet_index,
-        .timestamp_text = format_packet_timestamp(record.packet),
-        .captured_length = record.packet.captured_length,
-        .original_length = record.packet.original_length,
-        .reason_text = record.reason_text,
+    const PacketRef packet {
+        .packet_index = row.packet_index,
+        .ts_sec = row.ts_sec,
+        .ts_usec = row.ts_usec,
+        .captured_length = row.captured_length,
+        .original_length = row.original_length,
     };
+    return UnrecognizedPacketRow {
+        .row_number = row.row_number,
+        .packet_index = row.packet_index,
+        .timestamp_text = format_packet_timestamp(packet),
+        .captured_length = row.captured_length,
+        .original_length = row.original_length,
+        .reason_text = row.reason_text,
+    };
+}
+
+session_detail::ResidentUnrecognizedPacketAccessSource make_unrecognized_packet_access_source(
+    const CaptureState& state
+) {
+    return session_detail::ResidentUnrecognizedPacketAccessSource(
+        std::span<const UnrecognizedPacketRecord>(
+            state.unrecognized_packets.data(),
+            state.unrecognized_packets.size()
+        )
+    );
+}
+
+std::vector<UnrecognizedPacketRow> list_unrecognized_packets_from_source(
+    const session_detail::UnrecognizedPacketAccessSource& source,
+    const std::uint64_t offset,
+    const std::uint64_t limit
+) {
+    const auto count_result = source.row_count();
+    if (!count_result ||
+        offset >= count_result.row_count ||
+        limit == 0U) {
+        return {};
+    }
+
+    const auto read_result = source.read_range(offset, limit);
+    if (!read_result) {
+        return {};
+    }
+
+    std::vector<UnrecognizedPacketRow> rows {};
+    rows.reserve(read_result.rows.size());
+    for (const auto& row : read_result.rows) {
+        rows.push_back(make_unrecognized_packet_row(row));
+    }
+
+    return rows;
 }
 
 template <typename Connection>
@@ -4702,29 +4746,25 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
 }
 
 std::vector<UnrecognizedPacketRow> CaptureSession::list_unrecognized_packets() const {
-    return list_unrecognized_packets(0U, unrecognized_packet_count());
+    auto source = make_unrecognized_packet_access_source(state_);
+    const auto count_result = source.row_count();
+    if (!count_result) {
+        return {};
+    }
+
+    return list_unrecognized_packets_from_source(source, 0U, count_result.row_count);
 }
 
 std::vector<UnrecognizedPacketRow> CaptureSession::list_unrecognized_packets(
     const std::size_t offset,
     const std::size_t limit
 ) const {
-    if (offset >= state_.unrecognized_packets.size() || limit == 0U) {
-        return {};
-    }
-
-    const auto slice_end = std::min(state_.unrecognized_packets.size(), offset + limit);
-    std::vector<UnrecognizedPacketRow> rows {};
-    rows.reserve(slice_end - offset);
-
-    for (std::size_t index = offset; index < slice_end; ++index) {
-        rows.push_back(make_unrecognized_packet_row(
-            state_.unrecognized_packets[index],
-            static_cast<std::uint64_t>(index + 1U)
-        ));
-    }
-
-    return rows;
+    auto source = make_unrecognized_packet_access_source(state_);
+    return list_unrecognized_packets_from_source(
+        source,
+        static_cast<std::uint64_t>(offset),
+        static_cast<std::uint64_t>(limit)
+    );
 }
 
 std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_indices(const std::size_t flow_index) const {

@@ -257,8 +257,9 @@ CaptureIndexV16MetadataTier write_and_read_v16_metadata(
     std::ofstream stream(index_path, std::ios::binary | std::ios::trunc);
     PFL_REQUIRE(stream.is_open());
     PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_test_header(), fast_tier));
-    PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
+    PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan));
     PFL_REQUIRE(detail::write_v16_packetref_detail_sections(stream, plan_result.plan.packetref_detail_sections));
+    PFL_REQUIRE(detail::write_v16_unrecognized_reason_sections(stream, plan_result.plan.unrecognized_reason_sections));
     stream.close();
 
     std::ifstream read_stream(index_path, std::ios::binary);

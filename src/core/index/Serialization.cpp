@@ -2740,6 +2740,34 @@ bool read_direction(std::istream& stream, Direction& direction) {
     }
 }
 
+bool checked_add_u64(
+    const std::uint64_t left,
+    const std::uint64_t right,
+    std::uint64_t& result
+) noexcept {
+    if (left > (std::numeric_limits<std::uint64_t>::max)() - right) {
+        return false;
+    }
+    result = left + right;
+    return true;
+}
+
+bool checked_multiply_u64(
+    const std::uint64_t left,
+    const std::uint64_t right,
+    std::uint64_t& result
+) noexcept {
+    if (left == 0U || right == 0U) {
+        result = 0U;
+        return true;
+    }
+    if (left > (std::numeric_limits<std::uint64_t>::max)() / right) {
+        return false;
+    }
+    result = left * right;
+    return true;
+}
+
 std::optional<std::uint64_t> encoded_packetref_extent_length(
     const std::uint64_t packet_count
 ) noexcept {
@@ -2748,6 +2776,17 @@ std::optional<std::uint64_t> encoded_packetref_extent_length(
     }
 
     return packet_count * kCaptureIndexV16PacketRefEncodedStrideBytes;
+}
+
+std::optional<std::uint64_t> encoded_unrecognized_directory_payload_length(
+    const std::uint64_t row_count
+) noexcept {
+    if (row_count > (((std::numeric_limits<std::uint64_t>::max)() - 8U) /
+                     kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes)) {
+        return std::nullopt;
+    }
+
+    return 8U + (row_count * kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes);
 }
 
 template <typename DirectionalMetadata>
@@ -2924,6 +2963,48 @@ bool read_v16_packetref_directory_payload(
     }
 
     return stream.peek() == std::char_traits<char>::eof();
+}
+
+bool read_v16_unrecognized_directory_section_catalog_entry(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    const std::uint32_t expected_occurrence_index,
+    const std::uint64_t expected_logical_row_start,
+    CaptureIndexV16UnrecognizedDirectorySectionInfo& info
+) {
+    if (section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_directory) ||
+        section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+        section_header.section_schema_version != kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion) {
+        return false;
+    }
+
+    const auto payload_file_offset = stream.tellg();
+    if (payload_file_offset == std::istream::pos_type(-1)) {
+        return false;
+    }
+
+    std::uint64_t row_count {0};
+    if (!read_u64(stream, row_count)) {
+        return false;
+    }
+
+    const auto expected_payload_size = encoded_unrecognized_directory_payload_length(row_count);
+    if (!expected_payload_size.has_value() || section_header.payload_size != *expected_payload_size) {
+        return false;
+    }
+
+    if (!skip_section_payload(stream, section_header.payload_size - 8U)) {
+        return false;
+    }
+
+    info = CaptureIndexV16UnrecognizedDirectorySectionInfo {
+        .section_occurrence_index = expected_occurrence_index,
+        .payload_file_offset = static_cast<std::uint64_t>(payload_file_offset),
+        .payload_size = section_header.payload_size,
+        .logical_row_start = expected_logical_row_start,
+        .row_count = row_count,
+    };
+    return true;
 }
 
 std::uint64_t direction_identity_key(
@@ -3168,6 +3249,152 @@ CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range_impl(
     return result;
 }
 
+CaptureIndexV16UnrecognizedDirectoryRangeReadResult read_v16_unrecognized_directory_range_impl(
+    std::istream& stream,
+    std::span<const CaptureIndexV16UnrecognizedDirectorySectionInfo> directory_sections,
+    const std::uint64_t offset,
+    const std::uint64_t limit
+) {
+    CaptureIndexV16UnrecognizedDirectoryRangeReadResult result {};
+    for (const auto& section : directory_sections) {
+        std::uint64_t section_end {0};
+        if (!checked_add_u64(section.logical_row_start, section.row_count, section_end)) {
+            result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::malformed_directory_payload;
+            result.error_detail = "unrecognized directory section logical range overflowed";
+            return result;
+        }
+        result.total_row_count = std::max(result.total_row_count, section_end);
+    }
+
+    if (offset > result.total_row_count) {
+        result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::invalid_offset;
+        result.error_detail = "requested unrecognized row offset is past the end of the logical row space";
+        return result;
+    }
+    if (limit == 0U || offset == result.total_row_count) {
+        return result;
+    }
+
+    std::uint64_t requested_end {0};
+    if (!checked_add_u64(offset, limit, requested_end)) {
+        result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::invalid_requested_length;
+        result.error_detail = "requested unrecognized row range overflowed";
+        return result;
+    }
+    const auto effective_end = std::min(requested_end, result.total_row_count);
+    result.rows.reserve(static_cast<std::size_t>(effective_end - offset));
+
+    std::optional<std::uint64_t> prior_packet_index {};
+    for (const auto& section : directory_sections) {
+        std::uint64_t section_end {0};
+        if (!checked_add_u64(section.logical_row_start, section.row_count, section_end)) {
+            result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::malformed_directory_payload;
+            result.error_detail = "unrecognized directory section logical range overflowed";
+            result.rows.clear();
+            return result;
+        }
+        if (section.logical_row_start >= effective_end || section_end <= offset) {
+            continue;
+        }
+
+        const auto local_begin = offset > section.logical_row_start ? offset - section.logical_row_start : 0U;
+        const auto local_end = std::min(section.row_count, effective_end - section.logical_row_start);
+        const auto local_count = local_end - local_begin;
+
+        std::uint64_t row_byte_offset {0};
+        std::uint64_t row_byte_length {0};
+        std::uint64_t local_begin_byte_offset {0};
+        if (!checked_multiply_u64(
+                local_begin,
+                kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes,
+                local_begin_byte_offset) ||
+            !checked_add_u64(8U, local_begin_byte_offset, row_byte_offset) ||
+            !checked_multiply_u64(
+                local_count,
+                kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes,
+                row_byte_length) ||
+            row_byte_offset > section.payload_size ||
+            row_byte_length > section.payload_size ||
+            row_byte_offset > section.payload_size - row_byte_length) {
+            result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::section_range_overflow;
+            result.error_detail = "requested unrecognized directory range lies outside the referenced section payload";
+            result.rows.clear();
+            return result;
+        }
+
+        const auto read_offset = section.payload_file_offset + row_byte_offset;
+        const auto restore_offset = stream.tellg();
+        if (restore_offset == std::istream::pos_type(-1)) {
+            stream.clear();
+        }
+        stream.clear();
+        stream.seekg(static_cast<std::streamoff>(read_offset), std::ios::beg);
+        if (!stream) {
+            result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::section_seek_failed;
+            result.error_detail = "failed to seek to the requested unrecognized directory range";
+            result.rows.clear();
+            return result;
+        }
+
+        for (std::uint64_t local_index = 0U; local_index < local_count; ++local_index) {
+            CaptureIndexV16UnrecognizedDirectoryEntry row {};
+            if (!read_u64(stream, row.row_number) ||
+                !read_u64(stream, row.packet_index) ||
+                !read_u32(stream, row.ts_sec) ||
+                !read_u32(stream, row.ts_usec) ||
+                !read_u32(stream, row.captured_length) ||
+                !read_u32(stream, row.original_length) ||
+                !read_u32(stream, row.reason_section_occurrence_index) ||
+                !read_u64(stream, row.reason_payload_offset) ||
+                !read_u64(stream, row.reason_byte_length)) {
+                if (restore_offset != std::istream::pos_type(-1)) {
+                    stream.clear();
+                    stream.seekg(restore_offset);
+                }
+                result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::truncated_directory_payload;
+                result.error_detail = "unrecognized directory payload ended before the requested page was fully decoded";
+                result.rows.clear();
+                return result;
+            }
+
+            const auto expected_row_number = section.logical_row_start + local_begin + local_index + 1U;
+            if (row.row_number != expected_row_number) {
+                if (restore_offset != std::istream::pos_type(-1)) {
+                    stream.clear();
+                    stream.seekg(restore_offset);
+                }
+                result.status = CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::row_number_inconsistency;
+                result.error_detail = "unrecognized directory row_number does not match the stable logical row sequence";
+                result.rows.clear();
+                return result;
+            }
+
+            if (prior_packet_index.has_value() && row.packet_index <= *prior_packet_index) {
+                if (restore_offset != std::istream::pos_type(-1)) {
+                    stream.clear();
+                    stream.seekg(restore_offset);
+                }
+                result.status =
+                    CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::packet_index_not_strictly_increasing;
+                result.error_detail =
+                    "unrecognized directory packet_index sequence is not strictly increasing across the requested page";
+                result.rows.clear();
+                return result;
+            }
+
+            prior_packet_index = row.packet_index;
+            result.rows.push_back(row);
+        }
+
+        if (restore_offset != std::istream::pos_type(-1)) {
+            stream.clear();
+            stream.seekg(restore_offset);
+        }
+    }
+
+    return result;
+}
+
 }  // namespace
 
 bool write_v16_ipv4_flow_metadata_section(
@@ -3290,14 +3517,68 @@ bool write_v16_packetref_directory_section(
     );
 }
 
+bool write_v16_unrecognized_directory_section(
+    std::ostream& stream,
+    const CaptureIndexV16UnrecognizedDirectorySectionWritePlan& section
+) {
+    const auto expected_payload_size = encoded_unrecognized_directory_payload_length(
+        static_cast<std::uint64_t>(section.rows.size())
+    );
+    if (!expected_payload_size.has_value() ||
+        section.payload_size != *expected_payload_size) {
+        return false;
+    }
+
+    if (!write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+            .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_directory),
+            .section_schema_version = kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion,
+            .section_flags = kCaptureIndexStableSectionFlagRequired,
+            .payload_size = section.payload_size,
+        }) ||
+        !write_u64(stream, static_cast<std::uint64_t>(section.rows.size()))) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < section.rows.size(); ++index) {
+        const auto& row = section.rows[index];
+        const auto expected_row_number = section.logical_row_start + static_cast<std::uint64_t>(index) + 1U;
+        if (row.row_number != expected_row_number ||
+            !write_u64(stream, row.row_number) ||
+            !write_u64(stream, row.packet_index) ||
+            !write_u32(stream, row.ts_sec) ||
+            !write_u32(stream, row.ts_usec) ||
+            !write_u32(stream, row.captured_length) ||
+            !write_u32(stream, row.original_length) ||
+            !write_u32(stream, row.reason_section_occurrence_index) ||
+            !write_u64(stream, row.reason_payload_offset) ||
+            !write_u64(stream, row.reason_byte_length)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool write_v16_metadata_tier_sections(
     std::ostream& stream,
-    const CaptureIndexV16MetadataTier& metadata
+    const CaptureIndexV16WritePlan& plan
 ) {
-    return write_v16_ipv4_flow_metadata_section(stream, metadata.ipv4_connections) &&
-           write_v16_ipv6_flow_metadata_section(stream, metadata.ipv6_connections) &&
-           write_v16_protocol_path_membership_section(stream, metadata.protocol_path_membership) &&
-           write_v16_packetref_directory_section(stream, metadata.packetref_directory);
+    if (!write_v16_ipv4_flow_metadata_section(stream, plan.metadata.ipv4_connections) ||
+        !write_v16_ipv6_flow_metadata_section(stream, plan.metadata.ipv6_connections) ||
+        !write_v16_protocol_path_membership_section(stream, plan.metadata.protocol_path_membership) ||
+        !write_v16_packetref_directory_section(stream, plan.metadata.packetref_directory)) {
+        return false;
+    }
+
+    for (std::size_t section_index = 0U; section_index < plan.unrecognized_directory_sections.size(); ++section_index) {
+        const auto& section = plan.unrecognized_directory_sections[section_index];
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index) ||
+            !write_v16_unrecognized_directory_section(stream, section)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool write_v16_packetref_detail_sections(
@@ -3352,6 +3633,55 @@ bool write_v16_packetref_detail_sections(
     return true;
 }
 
+bool write_v16_unrecognized_reason_sections(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16UnrecognizedReasonSectionWritePlan> sections
+) {
+    for (std::size_t section_index = 0U; section_index < sections.size(); ++section_index) {
+        const auto& section = sections[section_index];
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index)) {
+            return false;
+        }
+
+        std::uint64_t expected_payload_size {0};
+        for (const auto& extent : section.extents) {
+            std::uint64_t next_payload_size {0};
+            if (extent.payload_offset != expected_payload_size ||
+                !checked_add_u64(
+                    expected_payload_size,
+                    static_cast<std::uint64_t>(extent.reason_text.size()),
+                    next_payload_size)) {
+                return false;
+            }
+            expected_payload_size = next_payload_size;
+        }
+
+        if (expected_payload_size != section.payload_size ||
+            !write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_reason_blobs),
+                .section_schema_version = kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion,
+                .section_flags = kCaptureIndexStableSectionFlagRequired,
+                .payload_size = section.payload_size,
+            })) {
+            return false;
+        }
+
+        for (const auto& extent : section.extents) {
+            if (!extent.reason_text.empty() &&
+                !write_bytes(
+                    stream,
+                    std::span<const std::uint8_t>(
+                        reinterpret_cast<const std::uint8_t*>(extent.reason_text.data()),
+                        extent.reason_text.size()
+                    ))) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     std::istream& stream,
     CaptureIndexV16MetadataTier& metadata
@@ -3396,10 +3726,11 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
             if (next_header.section_id != static_cast<std::uint32_t>(section_id)) {
                 result.failed_section_header = next_header;
                 result.status =
-                    next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::ipv4_flow_metadata) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::ipv4_flow_metadata) ||
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::ipv6_flow_metadata) ||
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_membership) ||
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_directory) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_directory) ||
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks)
                     ? CaptureIndexV16MetadataTierReadStatus::wrong_metadata_section_order
                     : missing_status;
@@ -3514,6 +3845,48 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
         return result;
     }
 
+    {
+        std::uint64_t logical_row_start {0};
+        while (true) {
+            CaptureIndexStableSectionHeader section_header {};
+            if (!try_peek_capture_index_stable_section_header(stream, section_header) ||
+                section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_directory)) {
+                break;
+            }
+
+            if (!read_capture_index_stable_section_header(stream, section_header)) {
+                result.status = CaptureIndexV16MetadataTierReadStatus::invalid_metadata_section_framing;
+                metadata = {};
+                return result;
+            }
+
+            CaptureIndexV16UnrecognizedDirectorySectionInfo section_info {};
+            if (!read_v16_unrecognized_directory_section_catalog_entry(
+                    stream,
+                    section_header,
+                    static_cast<std::uint32_t>(metadata.unrecognized_directory_sections.size()),
+                    logical_row_start,
+                    section_info)) {
+                result.failed_section_header = section_header;
+                result.status =
+                    section_header.section_schema_version != kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion
+                        ? CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema
+                        : CaptureIndexV16MetadataTierReadStatus::malformed_unrecognized_directory_payload;
+                metadata = {};
+                return result;
+            }
+
+            if (!checked_add_u64(logical_row_start, section_info.row_count, logical_row_start)) {
+                result.failed_section_header = section_header;
+                result.status = CaptureIndexV16MetadataTierReadStatus::unrecognized_directory_semantic_inconsistency;
+                result.error_detail = "unrecognized directory logical row range overflowed";
+                metadata = {};
+                return result;
+            }
+            metadata.unrecognized_directory_sections.push_back(section_info);
+        }
+    }
+
     CaptureIndexStableSectionHeader next_header {};
     if (!try_peek_capture_index_stable_section_header(stream, next_header)) {
         result.status = CaptureIndexV16MetadataTierReadStatus::missing_packetref_detail_blocks_section;
@@ -3565,6 +3938,58 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
             .payload_file_offset = static_cast<std::uint64_t>(payload_file_offset),
             .payload_size = section_header.payload_size,
         });
+    }
+
+    if (metadata.unrecognized_directory_sections.empty()) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::missing_unrecognized_directory_section;
+        metadata = {};
+        return result;
+    }
+
+    while (true) {
+        CaptureIndexStableSectionHeader section_header {};
+        if (!try_peek_capture_index_stable_section_header(stream, section_header) ||
+            section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_reason_blobs)) {
+            break;
+        }
+
+        if (!read_capture_index_stable_section_header(stream, section_header)) {
+            result.status = CaptureIndexV16MetadataTierReadStatus::unrecognized_reason_framing_error;
+            metadata = {};
+            return result;
+        }
+
+        if (section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+            section_header.section_schema_version != kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion) {
+            result.failed_section_header = section_header;
+            result.status =
+                section_header.section_schema_version != kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion
+                    ? CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema
+                    : CaptureIndexV16MetadataTierReadStatus::unrecognized_reason_framing_error;
+            metadata = {};
+            return result;
+        }
+
+        const auto payload_file_offset = stream.tellg();
+        if (payload_file_offset == std::istream::pos_type(-1) ||
+            !skip_section_payload(stream, section_header.payload_size)) {
+            result.failed_section_header = section_header;
+            result.status = CaptureIndexV16MetadataTierReadStatus::unrecognized_reason_framing_error;
+            metadata = {};
+            return result;
+        }
+
+        metadata.unrecognized_reason_sections.push_back(CaptureIndexV16UnrecognizedReasonSectionInfo {
+            .section_occurrence_index = static_cast<std::uint32_t>(metadata.unrecognized_reason_sections.size()),
+            .payload_file_offset = static_cast<std::uint64_t>(payload_file_offset),
+            .payload_size = section_header.payload_size,
+        });
+    }
+
+    if (metadata.unrecognized_reason_sections.empty()) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::missing_unrecognized_reason_blobs_section;
+        metadata = {};
+        return result;
     }
 
     if (metadata.connection_count() != total_flow_count) {
@@ -3728,6 +4153,20 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
         }
     }
 
+    const auto expected_unrecognized_count =
+        result.fast_statistics_tier.capture_statistics_snapshot.unrecognized_packet_count;
+    const auto actual_unrecognized_count =
+        metadata.unrecognized_directory_sections.empty()
+            ? 0U
+            : metadata.unrecognized_directory_sections.back().logical_row_start +
+                metadata.unrecognized_directory_sections.back().row_count;
+    if (actual_unrecognized_count != expected_unrecognized_count) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::unrecognized_directory_semantic_inconsistency;
+        result.error_detail = "unrecognized directory row count does not match the fast snapshot unrecognized packet count";
+        metadata = {};
+        return result;
+    }
+
     auto validate_orientation =
         [&](const auto& rows) -> bool {
             for (const auto& row : rows) {
@@ -3798,6 +4237,91 @@ CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(
         local_offset,
         limit
     );
+}
+
+CaptureIndexV16UnrecognizedDirectoryRangeReadResult read_v16_unrecognized_directory_range(
+    std::istream& stream,
+    std::span<const CaptureIndexV16UnrecognizedDirectorySectionInfo> directory_sections,
+    const std::uint64_t offset,
+    const std::uint64_t limit
+) {
+    return read_v16_unrecognized_directory_range_impl(stream, directory_sections, offset, limit);
+}
+
+CaptureIndexV16UnrecognizedReasonReadResult read_v16_unrecognized_reason(
+    std::istream& stream,
+    std::span<const CaptureIndexV16UnrecognizedReasonSectionInfo> reason_sections,
+    const std::uint32_t section_occurrence_index,
+    const std::uint64_t payload_offset,
+    const std::uint64_t byte_length
+) {
+    CaptureIndexV16UnrecognizedReasonReadResult result {};
+
+    const auto section_it = std::find_if(
+        reason_sections.begin(),
+        reason_sections.end(),
+        [&](const auto& section) {
+            return section.section_occurrence_index == section_occurrence_index;
+        }
+    );
+    if (section_it == reason_sections.end()) {
+        result.status = CaptureIndexV16UnrecognizedReasonReadStatus::invalid_reason_section_occurrence;
+        result.error_detail = "directory entry referenced a missing unrecognized reason section occurrence";
+        return result;
+    }
+
+    if (byte_length > kMaxCaptureIndexStableHeaderStringBytes) {
+        result.status = CaptureIndexV16UnrecognizedReasonReadStatus::reason_length_too_large;
+        result.error_detail = "unrecognized reason length exceeds the stable bounded string read limit";
+        return result;
+    }
+
+    if (payload_offset > section_it->payload_size ||
+        byte_length > section_it->payload_size ||
+        payload_offset > section_it->payload_size - byte_length) {
+        result.status = CaptureIndexV16UnrecognizedReasonReadStatus::invalid_reason_range;
+        result.error_detail = "directory entry reason extent lies outside the referenced reason section payload";
+        return result;
+    }
+
+    const auto read_offset = section_it->payload_file_offset + payload_offset;
+    const auto restore_offset = stream.tellg();
+    if (restore_offset == std::istream::pos_type(-1)) {
+        stream.clear();
+    }
+
+    stream.clear();
+    stream.seekg(static_cast<std::streamoff>(read_offset), std::ios::beg);
+    if (!stream) {
+        result.status = CaptureIndexV16UnrecognizedReasonReadStatus::section_seek_failed;
+        result.error_detail = "failed to seek to the requested unrecognized reason payload";
+        return result;
+    }
+
+    result.reason_text.assign(static_cast<std::size_t>(byte_length), '\0');
+    if (byte_length > 0U) {
+        auto bytes = std::span<std::uint8_t>(
+            reinterpret_cast<std::uint8_t*>(result.reason_text.data()),
+            result.reason_text.size()
+        );
+        if (!read_bytes(stream, bytes)) {
+            if (restore_offset != std::istream::pos_type(-1)) {
+                stream.clear();
+                stream.seekg(restore_offset);
+            }
+            result.status = CaptureIndexV16UnrecognizedReasonReadStatus::truncated_reason_payload;
+            result.error_detail = "reason payload ended before the referenced byte range was fully read";
+            result.reason_text.clear();
+            return result;
+        }
+    }
+
+    if (restore_offset != std::istream::pos_type(-1)) {
+        stream.clear();
+        stream.seekg(restore_offset);
+    }
+
+    return result;
 }
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {

@@ -2182,6 +2182,12 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
     const CaptureState& state,
     const CaptureIndexV16PacketRefDetailLayoutOptions& options
 ) {
+    struct UnrecognizedReasonLocation {
+        std::uint32_t section_occurrence_index {0};
+        std::uint64_t payload_offset {0};
+        std::uint64_t byte_length {0};
+    };
+
     CaptureIndexV16WritePlanBuildResult result {};
     const auto connections = list_connections(state);
     if (connections.size() > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
@@ -2194,9 +2200,13 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
     result.plan.metadata.ipv6_connections.reserve(state.ipv6_connections.size());
     result.plan.metadata.packetref_directory.reserve(connections.size() * 2U);
     result.plan.packetref_detail_sections.reserve(connections.size());
+    result.plan.unrecognized_directory_sections.reserve(1U);
+    result.plan.unrecognized_reason_sections.reserve(1U);
 
     std::unordered_map<ProtocolPathId, std::size_t> membership_row_indices {};
     membership_row_indices.reserve(connections.size());
+    std::vector<UnrecognizedReasonLocation> unrecognized_reason_locations {};
+    unrecognized_reason_locations.reserve(state.unrecognized_packets.size());
 
     auto ensure_detail_section =
         [&](const bool require_empty_section) -> CaptureIndexV16PacketRefDetailSectionWritePlan& {
@@ -2209,6 +2219,44 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
             }
 
             return result.plan.packetref_detail_sections.back();
+        };
+
+    auto ensure_unrecognized_directory_section =
+        [&](const bool require_empty_section) -> CaptureIndexV16UnrecognizedDirectorySectionWritePlan& {
+            if (result.plan.unrecognized_directory_sections.empty() ||
+                (require_empty_section &&
+                 !result.plan.unrecognized_directory_sections.back().rows.empty())) {
+                std::uint64_t logical_row_start {0};
+                if (!result.plan.unrecognized_directory_sections.empty()) {
+                    const auto& prior = result.plan.unrecognized_directory_sections.back();
+                    logical_row_start = prior.logical_row_start +
+                        static_cast<std::uint64_t>(prior.rows.size());
+                }
+
+                result.plan.unrecognized_directory_sections.push_back(
+                    CaptureIndexV16UnrecognizedDirectorySectionWritePlan {
+                        .section_occurrence_index = static_cast<std::uint32_t>(
+                            result.plan.unrecognized_directory_sections.size()),
+                        .payload_size = 8U,
+                        .logical_row_start = logical_row_start,
+                    });
+            }
+
+            return result.plan.unrecognized_directory_sections.back();
+        };
+
+    auto ensure_unrecognized_reason_section =
+        [&](const bool require_empty_section) -> CaptureIndexV16UnrecognizedReasonSectionWritePlan& {
+            if (result.plan.unrecognized_reason_sections.empty() ||
+                (require_empty_section &&
+                 !result.plan.unrecognized_reason_sections.back().extents.empty())) {
+                result.plan.unrecognized_reason_sections.push_back(CaptureIndexV16UnrecognizedReasonSectionWritePlan {
+                    .section_occurrence_index = static_cast<std::uint32_t>(
+                        result.plan.unrecognized_reason_sections.size()),
+                });
+            }
+
+            return result.plan.unrecognized_reason_sections.back();
         };
 
     auto append_directory_extent =
@@ -2289,6 +2337,60 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
 
             return true;
         };
+
+    {
+        std::optional<std::uint64_t> prior_packet_index {};
+        for (std::size_t index = 0U; index < state.unrecognized_packets.size(); ++index) {
+            const auto& record = state.unrecognized_packets[index];
+            if (prior_packet_index.has_value() &&
+                record.packet.packet_index <= *prior_packet_index) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::invalid_unrecognized_packet_order;
+                result.error_detail =
+                    "unrecognized packet sequence must be strictly increasing by packet_index";
+                return result;
+            }
+            prior_packet_index = record.packet.packet_index;
+
+            const auto reason_length = static_cast<std::uint64_t>(record.reason_text.size());
+            auto& reason_section = ensure_unrecognized_reason_section(false);
+            std::uint64_t combined_reason_payload_size {0};
+            if (!checked_add_u64(reason_section.payload_size, reason_length, combined_reason_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "unrecognized reason payload size overflowed";
+                return result;
+            }
+
+            if (reason_section.payload_size > 0U &&
+                reason_length > 0U &&
+                combined_reason_payload_size > options.target_unrecognized_reason_blob_section_payload_bytes) {
+                result.plan.unrecognized_reason_sections.push_back(CaptureIndexV16UnrecognizedReasonSectionWritePlan {
+                    .section_occurrence_index = static_cast<std::uint32_t>(
+                        result.plan.unrecognized_reason_sections.size()),
+                });
+            }
+
+            auto& target_reason_section = ensure_unrecognized_reason_section(false);
+            const auto reason_payload_offset = target_reason_section.payload_size;
+            std::uint64_t next_reason_payload_size {0};
+            if (!checked_add_u64(reason_payload_offset, reason_length, next_reason_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "unrecognized reason payload size overflowed";
+                return result;
+            }
+
+            target_reason_section.extents.push_back(CaptureIndexV16UnrecognizedReasonExtentWritePlan {
+                .source_row_index = static_cast<std::uint64_t>(index),
+                .payload_offset = reason_payload_offset,
+                .reason_text = record.reason_text,
+            });
+            target_reason_section.payload_size = next_reason_payload_size;
+            unrecognized_reason_locations.push_back(UnrecognizedReasonLocation {
+                .section_occurrence_index = target_reason_section.section_occurrence_index,
+                .payload_offset = reason_payload_offset,
+                .byte_length = reason_length,
+            });
+        }
+    }
 
     for (std::size_t index = 0U; index < connections.size(); ++index) {
         const auto& connection = connections[index];
@@ -2405,10 +2507,84 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
     }
 
     ensure_detail_section(false);
+    ensure_unrecognized_directory_section(false);
+    ensure_unrecognized_reason_section(false);
+
+    {
+        for (std::size_t index = 0U; index < state.unrecognized_packets.size(); ++index) {
+            auto& directory_section = ensure_unrecognized_directory_section(false);
+            std::uint64_t prospective_row_payload_size {0};
+            if (!checked_add_u64(
+                    directory_section.payload_size,
+                    kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes,
+                    prospective_row_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "unrecognized directory payload size overflowed";
+                return result;
+            }
+            if (!directory_section.rows.empty() &&
+                prospective_row_payload_size > options.target_unrecognized_directory_section_payload_bytes) {
+                result.plan.unrecognized_directory_sections.push_back(
+                    CaptureIndexV16UnrecognizedDirectorySectionWritePlan {
+                        .section_occurrence_index = static_cast<std::uint32_t>(
+                            result.plan.unrecognized_directory_sections.size()),
+                        .payload_size = 8U,
+                        .logical_row_start = directory_section.logical_row_start +
+                            static_cast<std::uint64_t>(directory_section.rows.size()),
+                    });
+            }
+
+            auto& target_directory_section = ensure_unrecognized_directory_section(false);
+            std::uint64_t next_row_payload_size {0};
+            if (!checked_add_u64(
+                    target_directory_section.payload_size,
+                    kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes,
+                    next_row_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "unrecognized directory payload size overflowed";
+                return result;
+            }
+            const auto& record = state.unrecognized_packets[index];
+            const auto& reason_location = unrecognized_reason_locations[index];
+            target_directory_section.rows.push_back(CaptureIndexV16UnrecognizedDirectoryEntry {
+                .row_number = static_cast<std::uint64_t>(index) + 1U,
+                .packet_index = record.packet.packet_index,
+                .ts_sec = record.packet.ts_sec,
+                .ts_usec = record.packet.ts_usec,
+                .captured_length = record.packet.captured_length,
+                .original_length = record.packet.original_length,
+                .reason_section_occurrence_index = reason_location.section_occurrence_index,
+                .reason_payload_offset = reason_location.payload_offset,
+                .reason_byte_length = reason_location.byte_length,
+            });
+            target_directory_section.payload_size = next_row_payload_size;
+        }
+    }
 
     result.plan.metadata.packetref_detail_sections.reserve(result.plan.packetref_detail_sections.size());
     for (const auto& section : result.plan.packetref_detail_sections) {
         result.plan.metadata.packetref_detail_sections.push_back(CaptureIndexV16PacketRefDetailSectionInfo {
+            .section_occurrence_index = section.section_occurrence_index,
+            .payload_file_offset = 0U,
+            .payload_size = section.payload_size,
+        });
+    }
+
+    result.plan.metadata.unrecognized_directory_sections.reserve(result.plan.unrecognized_directory_sections.size());
+    for (const auto& section : result.plan.unrecognized_directory_sections) {
+        result.plan.metadata.unrecognized_directory_sections.push_back(
+            CaptureIndexV16UnrecognizedDirectorySectionInfo {
+                .section_occurrence_index = section.section_occurrence_index,
+                .payload_file_offset = 0U,
+                .payload_size = section.payload_size,
+                .logical_row_start = section.logical_row_start,
+                .row_count = static_cast<std::uint64_t>(section.rows.size()),
+            });
+    }
+
+    result.plan.metadata.unrecognized_reason_sections.reserve(result.plan.unrecognized_reason_sections.size());
+    for (const auto& section : result.plan.unrecognized_reason_sections) {
+        result.plan.metadata.unrecognized_reason_sections.push_back(CaptureIndexV16UnrecognizedReasonSectionInfo {
             .section_occurrence_index = section.section_occurrence_index,
             .payload_file_offset = 0U,
             .payload_size = section.payload_size,

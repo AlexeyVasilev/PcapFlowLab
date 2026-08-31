@@ -53,6 +53,8 @@ inline constexpr std::uint16_t kCaptureIndexStableIpv6FlowMetadataSectionSchemaV
 inline constexpr std::uint16_t kCaptureIndexStableProtocolPathMembershipSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketRefDirectorySectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
@@ -280,7 +282,9 @@ enum class CaptureIndexV16MetadataTierReadStatus : std::uint8_t {
     missing_ipv6_flow_metadata_section,
     missing_protocol_path_membership_section,
     missing_packetref_directory_section,
+    missing_unrecognized_directory_section,
     missing_packetref_detail_blocks_section,
+    missing_unrecognized_reason_blobs_section,
     wrong_metadata_section_order,
     invalid_metadata_section_framing,
     unsupported_metadata_section_schema,
@@ -289,12 +293,15 @@ enum class CaptureIndexV16MetadataTierReadStatus : std::uint8_t {
     malformed_ipv6_flow_metadata_payload,
     malformed_protocol_path_membership_payload,
     malformed_packetref_directory_payload,
+    malformed_unrecognized_directory_payload,
     metadata_semantic_inconsistency,
     protocol_path_membership_semantic_inconsistency,
     packetref_directory_semantic_inconsistency,
+    unrecognized_directory_semantic_inconsistency,
     metadata_directory_inconsistency,
     detail_section_framing_error,
     detail_section_range_inconsistency,
+    unrecognized_reason_framing_error,
     orientation_validation_failed,
 };
 
@@ -329,6 +336,53 @@ struct CaptureIndexV16PacketRefExtentReadResult {
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == CaptureIndexV16PacketRefExtentReadStatus::ok;
+    }
+};
+
+enum class CaptureIndexV16UnrecognizedDirectoryRangeReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_offset,
+    invalid_requested_length,
+    invalid_directory_section_occurrence,
+    section_seek_failed,
+    section_range_overflow,
+    truncated_directory_payload,
+    malformed_directory_payload,
+    row_number_inconsistency,
+    packet_index_not_strictly_increasing,
+};
+
+struct CaptureIndexV16UnrecognizedDirectoryRangeReadResult {
+    CaptureIndexV16UnrecognizedDirectoryRangeReadStatus status {
+        CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::ok
+    };
+    std::vector<CaptureIndexV16UnrecognizedDirectoryEntry> rows {};
+    std::uint64_t total_row_count {0};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16UnrecognizedDirectoryRangeReadStatus::ok;
+    }
+};
+
+enum class CaptureIndexV16UnrecognizedReasonReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_reason_section_occurrence,
+    invalid_reason_range,
+    reason_length_too_large,
+    section_seek_failed,
+    truncated_reason_payload,
+};
+
+struct CaptureIndexV16UnrecognizedReasonReadResult {
+    CaptureIndexV16UnrecognizedReasonReadStatus status {
+        CaptureIndexV16UnrecognizedReasonReadStatus::ok
+    };
+    std::string reason_text {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16UnrecognizedReasonReadStatus::ok;
     }
 };
 
@@ -487,13 +541,21 @@ bool write_v16_packetref_directory_section(
     std::ostream& stream,
     std::span<const CaptureIndexV16PacketRefDirectoryEntry> rows
 );
+bool write_v16_unrecognized_directory_section(
+    std::ostream& stream,
+    const CaptureIndexV16UnrecognizedDirectorySectionWritePlan& section
+);
 bool write_v16_metadata_tier_sections(
     std::ostream& stream,
-    const CaptureIndexV16MetadataTier& metadata
+    const CaptureIndexV16WritePlan& plan
 );
 bool write_v16_packetref_detail_sections(
     std::ostream& stream,
     std::span<const CaptureIndexV16PacketRefDetailSectionWritePlan> sections
+);
+bool write_v16_unrecognized_reason_sections(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16UnrecognizedReasonSectionWritePlan> sections
 );
 CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     std::istream& stream,
@@ -505,6 +567,19 @@ CaptureIndexV16PacketRefExtentReadResult read_v16_packetref_extent_range(
     const CaptureIndexV16PacketRefDirectoryEntry& descriptor,
     std::uint64_t local_offset,
     std::uint64_t limit
+);
+CaptureIndexV16UnrecognizedDirectoryRangeReadResult read_v16_unrecognized_directory_range(
+    std::istream& stream,
+    std::span<const CaptureIndexV16UnrecognizedDirectorySectionInfo> directory_sections,
+    std::uint64_t offset,
+    std::uint64_t limit
+);
+CaptureIndexV16UnrecognizedReasonReadResult read_v16_unrecognized_reason(
+    std::istream& stream,
+    std::span<const CaptureIndexV16UnrecognizedReasonSectionInfo> reason_sections,
+    std::uint32_t section_occurrence_index,
+    std::uint64_t payload_offset,
+    std::uint64_t byte_length
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

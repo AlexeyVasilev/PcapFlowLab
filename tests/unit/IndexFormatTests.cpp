@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -11,6 +12,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "app/session/UnrecognizedPacketAccess.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
@@ -304,6 +306,20 @@ std::uint16_t expected_section_schema_version(const std::uint32_t section_id) {
         return detail::kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion;
     case detail::CaptureIndexSectionId::protocol_path_terminal_aggregates:
         return detail::kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::ipv4_flow_metadata:
+        return detail::kCaptureIndexStableIpv4FlowMetadataSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::ipv6_flow_metadata:
+        return detail::kCaptureIndexStableIpv6FlowMetadataSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::protocol_path_membership:
+        return detail::kCaptureIndexStableProtocolPathMembershipSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::packetref_directory:
+        return detail::kCaptureIndexStablePacketRefDirectorySectionSchemaVersion;
+    case detail::CaptureIndexSectionId::unrecognized_directory:
+        return detail::kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion;
+    case detail::CaptureIndexSectionId::packetref_detail_blocks:
+        return detail::kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::unrecognized_reason_blobs:
+        return detail::kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion;
     default:
         return 0U;
     }
@@ -394,6 +410,12 @@ void expect_v16_metadata_matches_plan(
     PFL_EXPECT(actual.protocol_path_membership == expected_plan.metadata.protocol_path_membership);
     PFL_EXPECT(actual.packetref_directory == expected_plan.metadata.packetref_directory);
     PFL_EXPECT(actual.packetref_detail_sections.size() == expected_plan.packetref_detail_sections.size());
+    PFL_EXPECT(
+        actual.unrecognized_directory_sections.size() ==
+        expected_plan.metadata.unrecognized_directory_sections.size());
+    PFL_EXPECT(
+        actual.unrecognized_reason_sections.size() ==
+        expected_plan.metadata.unrecognized_reason_sections.size());
 
     const auto sections = parse_sections(container_bytes);
     for (std::size_t index = 0U; index < actual.packetref_detail_sections.size(); ++index) {
@@ -414,6 +436,52 @@ void expect_v16_metadata_matches_plan(
             actual.packetref_detail_sections[index].payload_file_offset ==
             static_cast<std::uint64_t>(
                 detail_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize));
+    }
+
+    for (std::size_t index = 0U; index < actual.unrecognized_directory_sections.size(); ++index) {
+        const auto* directory_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_directory),
+            index
+        );
+        PFL_REQUIRE(directory_section != nullptr);
+        PFL_EXPECT(actual.unrecognized_directory_sections[index].section_occurrence_index == index);
+        PFL_EXPECT(
+            actual.unrecognized_directory_sections[index].section_occurrence_index ==
+            expected_plan.metadata.unrecognized_directory_sections[index].section_occurrence_index);
+        PFL_EXPECT(
+            actual.unrecognized_directory_sections[index].payload_size ==
+            expected_plan.metadata.unrecognized_directory_sections[index].payload_size);
+        PFL_EXPECT(
+            actual.unrecognized_directory_sections[index].logical_row_start ==
+            expected_plan.metadata.unrecognized_directory_sections[index].logical_row_start);
+        PFL_EXPECT(
+            actual.unrecognized_directory_sections[index].row_count ==
+            expected_plan.metadata.unrecognized_directory_sections[index].row_count);
+        PFL_EXPECT(
+            actual.unrecognized_directory_sections[index].payload_file_offset ==
+            static_cast<std::uint64_t>(
+                directory_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize));
+    }
+
+    for (std::size_t index = 0U; index < actual.unrecognized_reason_sections.size(); ++index) {
+        const auto* reason_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_reason_blobs),
+            index
+        );
+        PFL_REQUIRE(reason_section != nullptr);
+        PFL_EXPECT(actual.unrecognized_reason_sections[index].section_occurrence_index == index);
+        PFL_EXPECT(
+            actual.unrecognized_reason_sections[index].section_occurrence_index ==
+            expected_plan.metadata.unrecognized_reason_sections[index].section_occurrence_index);
+        PFL_EXPECT(
+            actual.unrecognized_reason_sections[index].payload_size ==
+            expected_plan.metadata.unrecognized_reason_sections[index].payload_size);
+        PFL_EXPECT(
+            actual.unrecognized_reason_sections[index].payload_file_offset ==
+            static_cast<std::uint64_t>(
+                reason_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize));
     }
 }
 
@@ -947,6 +1015,68 @@ CaptureState make_v16_metadata_capture_state_fixture() {
     return state;
 }
 
+void append_unrecognized_packet_record(
+    CaptureState& state,
+    const PacketRef& packet,
+    std::string reason_text
+) {
+    state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
+        .packet = packet,
+        .reason_text = std::move(reason_text),
+    });
+    observe_capture_packet_statistics(state.packet_statistics, packet, false);
+}
+
+CaptureState make_v16_unrecognized_capture_state_fixture() {
+    auto state = make_v16_metadata_capture_state_fixture();
+    append_unrecognized_packet_record(
+        state,
+        packet_ref_for_v16_metadata_test(5U, 72U, 72U, 900U),
+        "LLC header truncated"
+    );
+    append_unrecognized_packet_record(
+        state,
+        packet_ref_for_v16_metadata_test(30U, 48U, 64U, 1115U),
+        ""
+    );
+    append_unrecognized_packet_record(
+        state,
+        packet_ref_for_v16_metadata_test(160U, 96U, 128U, 1700U),
+        "Unsupported or malformed packet"
+    );
+    return state;
+}
+
+std::vector<session_detail::UnrecognizedPacketAccessRow> expected_unrecognized_rows(
+    const CaptureState& state
+) {
+    std::vector<session_detail::UnrecognizedPacketAccessRow> rows {};
+    rows.reserve(state.unrecognized_packets.size());
+    for (std::size_t index = 0U; index < state.unrecognized_packets.size(); ++index) {
+        const auto& record = state.unrecognized_packets[index];
+        rows.push_back(session_detail::UnrecognizedPacketAccessRow {
+            .row_number = static_cast<std::uint64_t>(index) + 1U,
+            .packet_index = record.packet.packet_index,
+            .ts_sec = record.packet.ts_sec,
+            .ts_usec = record.packet.ts_usec,
+            .captured_length = record.packet.captured_length,
+            .original_length = record.packet.original_length,
+            .reason_text = record.reason_text,
+        });
+    }
+    return rows;
+}
+
+void expect_unrecognized_access_rows_match(
+    const std::vector<session_detail::UnrecognizedPacketAccessRow>& actual,
+    const std::vector<session_detail::UnrecognizedPacketAccessRow>& expected
+) {
+    PFL_REQUIRE(actual.size() == expected.size());
+    for (std::size_t index = 0U; index < expected.size(); ++index) {
+        PFL_EXPECT(actual[index] == expected[index]);
+    }
+}
+
 detail::CaptureIndexV16FastStatisticsTier build_v16_metadata_fast_statistics_tier(
     const CaptureState& state
 ) {
@@ -963,6 +1093,18 @@ detail::CaptureIndexV16FastStatisticsTier build_v16_metadata_fast_statistics_tie
         .protocol_path_registry = state.protocol_path_registry,
         .protocol_path_display_statistics = protocol_path_display_statistics,
     };
+}
+
+std::vector<std::uint8_t> make_v16_metadata_container_bytes(
+    const detail::CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16WritePlan& plan
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
+    PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan));
+    PFL_REQUIRE(detail::write_v16_packetref_detail_sections(stream, plan.packetref_detail_sections));
+    PFL_REQUIRE(detail::write_v16_unrecognized_reason_sections(stream, plan.unrecognized_reason_sections));
+    return stream_bytes(stream);
 }
 
 }  // namespace
@@ -1906,14 +2048,7 @@ void run_index_format_tests() {
             canonical_connections
         );
 
-        std::ostringstream stream(std::ios::binary | std::ios::out);
-        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
-        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
-        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
-            stream,
-            plan_result.plan.packetref_detail_sections
-        ));
-        const auto container_bytes = stream_bytes(stream);
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
 
         std::istringstream read_stream(
             std::string(container_bytes.begin(), container_bytes.end()),
@@ -1942,14 +2077,7 @@ void run_index_format_tests() {
         const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
         PFL_REQUIRE(static_cast<bool>(plan_result));
 
-        std::ostringstream stream(std::ios::binary | std::ios::out);
-        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
-        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
-        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
-            stream,
-            plan_result.plan.packetref_detail_sections
-        ));
-        const auto container_bytes = stream_bytes(stream);
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
 
         std::istringstream metadata_stream(
             std::string(container_bytes.begin(), container_bytes.end()),
@@ -2041,14 +2169,7 @@ void run_index_format_tests() {
         const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
         PFL_REQUIRE(static_cast<bool>(plan_result));
 
-        std::ostringstream stream(std::ios::binary | std::ios::out);
-        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
-        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
-        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
-            stream,
-            plan_result.plan.packetref_detail_sections
-        ));
-        auto mutated_bytes = stream_bytes(stream);
+        auto mutated_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
         const auto sections = parse_sections(mutated_bytes);
         const auto* directory_section = find_section_occurrence(
             sections,
@@ -2088,14 +2209,7 @@ void run_index_format_tests() {
         PFL_REQUIRE(!plan_result.plan.packetref_detail_sections.front().extents.empty());
         PFL_REQUIRE(plan_result.plan.packetref_detail_sections.front().extents.front().packet_count >= 2U);
 
-        std::ostringstream stream(std::ios::binary | std::ios::out);
-        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
-        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan.metadata));
-        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(
-            stream,
-            plan_result.plan.packetref_detail_sections
-        ));
-        auto mutated_bytes = stream_bytes(stream);
+        auto mutated_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
         const auto sections = parse_sections(mutated_bytes);
         const auto* detail_section = find_section_occurrence(
             sections,
@@ -2183,6 +2297,315 @@ void run_index_format_tests() {
         PFL_EXPECT(
             plan_result.plan.metadata.packetref_directory.front().encoded_byte_length ==
             4U * kCaptureIndexV16PacketRefEncodedStrideBytes);
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(plan_result.plan.unrecognized_directory_sections.size() == 1U);
+        PFL_EXPECT(plan_result.plan.unrecognized_directory_sections.front().rows.empty());
+        PFL_EXPECT(plan_result.plan.unrecognized_directory_sections.front().payload_size == 8U);
+        PFL_REQUIRE(plan_result.plan.unrecognized_reason_sections.size() == 1U);
+        PFL_EXPECT(plan_result.plan.unrecognized_reason_sections.front().extents.empty());
+        PFL_EXPECT(plan_result.plan.unrecognized_reason_sections.front().payload_size == 0U);
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+
+        const auto index_path = write_temp_binary_file("pfl_v16_unrecognized_empty.idx", container_bytes);
+        session_detail::CaptureIndexV16UnrecognizedPacketAccessSource source(index_path, decoded_metadata);
+        const auto count_result = source.row_count();
+        PFL_REQUIRE(static_cast<bool>(count_result));
+        PFL_EXPECT(count_result.row_count == 0U);
+        const auto empty_read = source.read_range(0U, 32U);
+        PFL_REQUIRE(static_cast<bool>(empty_read));
+        PFL_EXPECT(empty_read.total_row_count == 0U);
+        PFL_EXPECT(empty_read.rows.empty());
+    }
+
+    {
+        const auto state = make_v16_unrecognized_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(
+            state,
+            CaptureIndexV16PacketRefDetailLayoutOptions {
+                .target_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_unrecognized_directory_section_payload_bytes =
+                    8U + (2U * kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes),
+                .target_unrecognized_reason_blob_section_payload_bytes = 24U,
+            }
+        );
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(plan_result.plan.unrecognized_directory_sections.size() == 2U);
+        PFL_EXPECT(plan_result.plan.metadata.unrecognized_directory_sections.front().row_count == 2U);
+        PFL_EXPECT(plan_result.plan.metadata.unrecognized_directory_sections.back().row_count == 1U);
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto expected_rows = expected_unrecognized_rows(state);
+        const auto index_path = write_temp_binary_file("pfl_v16_unrecognized_chunked.idx", container_bytes);
+
+        std::ifstream metadata_stream(index_path, std::ios::binary);
+        PFL_REQUIRE(metadata_stream.is_open());
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(metadata_stream, decoded_metadata)));
+        expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+
+        session_detail::ResidentUnrecognizedPacketAccessSource resident_source(
+            std::span<const UnrecognizedPacketRecord>(
+                state.unrecognized_packets.data(),
+                state.unrecognized_packets.size()
+            )
+        );
+        session_detail::CaptureIndexV16UnrecognizedPacketAccessSource v16_source(index_path, decoded_metadata);
+        const auto resident_rows = resident_source.read_range(0U, 16U);
+        const auto v16_rows = v16_source.read_range(0U, 16U);
+        PFL_REQUIRE(static_cast<bool>(resident_rows));
+        PFL_REQUIRE(static_cast<bool>(v16_rows));
+        expect_unrecognized_access_rows_match(resident_rows.rows, expected_rows);
+        expect_unrecognized_access_rows_match(v16_rows.rows, expected_rows);
+
+        const auto cross_chunk_rows = v16_source.read_range(1U, 2U);
+        PFL_REQUIRE(static_cast<bool>(cross_chunk_rows));
+        expect_unrecognized_access_rows_match(
+            cross_chunk_rows.rows,
+            std::vector<session_detail::UnrecognizedPacketAccessRow> {
+                expected_rows[1],
+                expected_rows[2],
+            }
+        );
+
+        std::ifstream directory_stream(index_path, std::ios::binary);
+        PFL_REQUIRE(directory_stream.is_open());
+        const auto raw_directory_rows = detail::read_v16_unrecognized_directory_range(
+            directory_stream,
+            decoded_metadata.unrecognized_directory_sections,
+            1U,
+            2U
+        );
+        PFL_REQUIRE(static_cast<bool>(raw_directory_rows));
+        PFL_EXPECT(raw_directory_rows.total_row_count == expected_rows.size());
+        PFL_EXPECT(raw_directory_rows.rows.size() == 2U);
+        PFL_EXPECT(raw_directory_rows.rows.front().row_number == 2U);
+        PFL_EXPECT(raw_directory_rows.rows.back().row_number == 3U);
+
+        auto prior_row_corrupted_bytes = container_bytes;
+        const auto prior_row_corrupted_sections = parse_sections(prior_row_corrupted_bytes);
+        const auto* first_directory_section = find_section_occurrence(
+            prior_row_corrupted_sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_directory),
+            0U
+        );
+        PFL_REQUIRE(first_directory_section != nullptr);
+        write_le64_at(
+            prior_row_corrupted_bytes,
+            first_directory_section->offset +
+                detail::kCaptureIndexStableSectionHeaderEncodedSize +
+                8U,
+            99U
+        );
+        std::istringstream prior_row_corrupted_stream(
+            std::string(prior_row_corrupted_bytes.begin(), prior_row_corrupted_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto later_page_without_prior_decode = detail::read_v16_unrecognized_directory_range(
+            prior_row_corrupted_stream,
+            decoded_metadata.unrecognized_directory_sections,
+            1U,
+            1U
+        );
+        PFL_REQUIRE(static_cast<bool>(later_page_without_prior_decode));
+        PFL_REQUIRE(later_page_without_prior_decode.rows.size() == 1U);
+        PFL_EXPECT(later_page_without_prior_decode.rows.front().row_number == 2U);
+
+        const auto empty_tail = v16_source.read_range(expected_rows.size(), 8U);
+        PFL_REQUIRE(static_cast<bool>(empty_tail));
+        PFL_EXPECT(empty_tail.rows.empty());
+
+        const auto invalid_offset = v16_source.read_range(expected_rows.size() + 1U, 1U);
+        PFL_EXPECT(invalid_offset.status == session_detail::UnrecognizedPacketAccessStatus::invalid_offset);
+
+        const auto zero_limit = v16_source.read_range(0U, 0U);
+        PFL_REQUIRE(static_cast<bool>(zero_limit));
+        PFL_EXPECT(zero_limit.rows.empty());
+
+        const auto overflow_limit = v16_source.read_range(
+            1U,
+            (std::numeric_limits<std::uint64_t>::max)()
+        );
+        PFL_EXPECT(
+            overflow_limit.status ==
+            session_detail::UnrecognizedPacketAccessStatus::invalid_requested_length);
+    }
+
+    {
+        auto state = make_v16_unrecognized_capture_state_fixture();
+        state.unrecognized_packets[1].reason_text = std::string(64U, 'x');
+
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(
+            state,
+            CaptureIndexV16PacketRefDetailLayoutOptions {
+                .target_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_unrecognized_directory_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_unrecognized_reason_blob_section_payload_bytes = 16U,
+            }
+        );
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(plan_result.plan.unrecognized_reason_sections.size() >= 2U);
+        PFL_EXPECT(plan_result.plan.unrecognized_reason_sections[1].extents.size() == 1U);
+        PFL_EXPECT(plan_result.plan.unrecognized_reason_sections[1].payload_size == 64U);
+        PFL_EXPECT(plan_result.plan.unrecognized_reason_sections[1].extents.front().payload_offset == 0U);
+        PFL_EXPECT(plan_result.plan.unrecognized_reason_sections[1].extents.front().reason_text.size() == 64U);
+    }
+
+    {
+        const auto state = make_v16_unrecognized_capture_state_fixture();
+        auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        ++fast_tier.capture_statistics_snapshot.unrecognized_packet_count;
+        PFL_REQUIRE(validate_capture_statistics_snapshot(fast_tier.capture_statistics_snapshot).ok);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+        PFL_EXPECT(
+            read_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::unrecognized_directory_semantic_inconsistency);
+    }
+
+    {
+        const auto state = make_v16_unrecognized_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto sections = parse_sections(container_bytes);
+        const auto* directory_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_directory),
+            0U
+        );
+        PFL_REQUIRE(directory_section != nullptr);
+
+        auto wrong_schema_bytes = container_bytes;
+        write_le16_at(wrong_schema_bytes, directory_section->offset + 4U, 99U);
+        std::istringstream wrong_schema_stream(
+            std::string(wrong_schema_bytes.begin(), wrong_schema_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier wrong_schema_metadata {};
+        const auto wrong_schema_result = detail::read_v16_metadata_tier(wrong_schema_stream, wrong_schema_metadata);
+        PFL_EXPECT(
+            wrong_schema_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema);
+
+        auto malformed_payload_bytes = container_bytes;
+        write_le64_at(
+            malformed_payload_bytes,
+            directory_section->offset + 8U,
+            read_le64_at(malformed_payload_bytes, directory_section->offset + 8U) + 1U
+        );
+        std::istringstream malformed_payload_stream(
+            std::string(malformed_payload_bytes.begin(), malformed_payload_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier malformed_payload_metadata {};
+        const auto malformed_payload_result =
+            detail::read_v16_metadata_tier(malformed_payload_stream, malformed_payload_metadata);
+        PFL_EXPECT(
+            malformed_payload_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::malformed_unrecognized_directory_payload);
+    }
+
+    {
+        const std::vector<CaptureIndexV16UnrecognizedReasonSectionInfo> reason_sections {
+            CaptureIndexV16UnrecognizedReasonSectionInfo {
+                .section_occurrence_index = 0U,
+                .payload_file_offset = 0U,
+                .payload_size = 5U,
+            },
+        };
+
+        std::istringstream truncated_reason_stream(std::string("abc"), std::ios::binary | std::ios::in);
+        const auto truncated_reason = detail::read_v16_unrecognized_reason(
+            truncated_reason_stream,
+            reason_sections,
+            0U,
+            0U,
+            5U
+        );
+        PFL_EXPECT(
+            truncated_reason.status ==
+            detail::CaptureIndexV16UnrecognizedReasonReadStatus::truncated_reason_payload);
+
+        std::istringstream invalid_reason_stream(std::string("abcde"), std::ios::binary | std::ios::in);
+        const auto invalid_reason = detail::read_v16_unrecognized_reason(
+            invalid_reason_stream,
+            reason_sections,
+            0U,
+            6U,
+            1U
+        );
+        PFL_EXPECT(
+            invalid_reason.status ==
+            detail::CaptureIndexV16UnrecognizedReasonReadStatus::invalid_reason_range);
+    }
+
+    {
+        const auto state = make_v16_unrecognized_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        auto plan_result = session_detail::build_capture_index_v16_write_plan(
+            state,
+            CaptureIndexV16PacketRefDetailLayoutOptions {
+                .target_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_unrecognized_directory_section_payload_bytes =
+                    8U + (2U * kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes),
+                .target_unrecognized_reason_blob_section_payload_bytes = 24U,
+            }
+        );
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(!plan_result.plan.unrecognized_directory_sections.empty());
+        PFL_REQUIRE(plan_result.plan.unrecognized_directory_sections.size() == 2U);
+        PFL_REQUIRE(!plan_result.plan.unrecognized_directory_sections.back().rows.empty());
+        plan_result.plan.unrecognized_directory_sections.back().rows.front().reason_section_occurrence_index = 99U;
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto index_path = write_temp_binary_file("pfl_v16_unrecognized_bad_reason_ref.idx", container_bytes);
+
+        std::ifstream metadata_stream(index_path, std::ios::binary);
+        PFL_REQUIRE(metadata_stream.is_open());
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(metadata_stream, decoded_metadata)));
+
+        session_detail::CaptureIndexV16UnrecognizedPacketAccessSource v16_source(index_path, decoded_metadata);
+        const auto first_page = v16_source.read_range(0U, 2U);
+        PFL_REQUIRE(static_cast<bool>(first_page));
+        PFL_EXPECT(first_page.rows.size() == 2U);
+
+        const auto broken_page = v16_source.read_range(2U, 1U);
+        PFL_EXPECT(
+            broken_page.status ==
+            session_detail::UnrecognizedPacketAccessStatus::malformed_reason_reference);
+
+        auto broken_topology = decoded_metadata;
+        ++broken_topology.unrecognized_directory_sections[1].logical_row_start;
+        session_detail::CaptureIndexV16UnrecognizedPacketAccessSource broken_source(index_path, broken_topology);
+        const auto broken_count = broken_source.row_count();
+        PFL_EXPECT(broken_count.status == session_detail::UnrecognizedPacketAccessStatus::malformed_directory);
     }
 
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 10, 1), ipv4(192, 168, 10, 2), 41000, 443);

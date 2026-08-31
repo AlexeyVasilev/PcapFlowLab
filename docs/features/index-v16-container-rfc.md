@@ -539,7 +539,7 @@ Detailed unrecognized rows remain a later-tier concern.
 `unrecognized_directory` stores fixed-size per-row metadata sufficient for
 list pagination and later reason lookup:
 
-- row number
+- row number (preserves the current public one-based unrecognized list semantics)
 - `packet_index`
 - timestamp metadata sufficient for current shared presentation formatting
 - `captured_length`
