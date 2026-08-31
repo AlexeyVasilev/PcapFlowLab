@@ -123,6 +123,18 @@ CaptureGeneralStatistics build_capture_general_statistics(
     std::size_t top_summary_capacity = 20U
 );
 FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<ListedConnectionRef>& connections);
+ProtocolPathDisplayStatistics build_protocol_path_display_statistics(
+    const CaptureState& state,
+    const std::vector<ListedConnectionRef>& connections
+);
+CaptureProtocolPathSummary build_protocol_path_summary_from_display_statistics(
+    const ProtocolPathRegistry& registry,
+    const ProtocolPathDisplayStatistics& statistics,
+    std::uint64_t total_flow_count,
+    std::uint64_t total_packet_count,
+    std::uint64_t total_original_byte_count,
+    ProtocolPathStatisticsMode mode
+);
 CaptureProtocolPathSummary build_protocol_path_summary(
     const CaptureState& state,
     const std::vector<ListedConnectionRef>& connections,

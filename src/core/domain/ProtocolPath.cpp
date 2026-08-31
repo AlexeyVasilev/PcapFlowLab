@@ -1,6 +1,7 @@
 #include "core/domain/ProtocolPath.h"
 
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -108,6 +109,31 @@ namespace {
         seed = detail::hash_combine(seed, LayerKeyHash {}(layer));
     }
     return seed;
+}
+
+template <typename Value>
+bool checked_add(Value& target, const Value addend) noexcept {
+    if (addend > (std::numeric_limits<Value>::max)() - target) {
+        return false;
+    }
+
+    target += addend;
+    return true;
+}
+
+ProtocolPathDisplayStatisticsValidationResult make_protocol_path_display_statistics_error(
+    const ProtocolPathDisplayStatisticsValidationErrorCode code,
+    std::string field_path,
+    std::string message
+) {
+    return ProtocolPathDisplayStatisticsValidationResult {
+        .ok = false,
+        .error = ProtocolPathDisplayStatisticsValidationError {
+            .code = code,
+            .field_path = std::move(field_path),
+            .message = std::move(message),
+        },
+    };
 }
 
 }  // namespace
@@ -327,6 +353,82 @@ std::string format_protocol_path(const ProtocolPath& path) {
         builder << format_protocol_layer_key(path[index]);
     }
     return builder.str();
+}
+
+ProtocolPathDisplayStatisticsValidationResult validate_protocol_path_display_statistics(
+    const ProtocolPathRegistry& registry,
+    const ProtocolPathDisplayStatistics& statistics
+) {
+    std::unordered_map<ProtocolPathId, bool> seen_path_ids {};
+    seen_path_ids.reserve(statistics.terminal_path_aggregates.size());
+
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_packet_count {0};
+    std::uint64_t total_original_byte_count {0};
+
+    for (std::size_t index = 0; index < statistics.terminal_path_aggregates.size(); ++index) {
+        const auto& row = statistics.terminal_path_aggregates[index];
+        const auto row_prefix = "terminal_path_aggregates[" + std::to_string(index) + ']';
+
+        if (row.protocol_path_id == kInvalidProtocolPathId) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::invalid_protocol_path_id,
+                row_prefix + ".protocol_path_id",
+                "terminal aggregate references an invalid protocol path id"
+            );
+        }
+
+        const auto* path = registry.find(row.protocol_path_id);
+        if (path == nullptr) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::unknown_protocol_path_id,
+                row_prefix + ".protocol_path_id",
+                "terminal aggregate references an unknown protocol path id"
+            );
+        }
+
+        if (path->empty()) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::empty_protocol_path,
+                row_prefix + ".protocol_path_id",
+                "terminal aggregate references an empty protocol path"
+            );
+        }
+
+        if (!seen_path_ids.emplace(row.protocol_path_id, true).second) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::duplicate_protocol_path_id,
+                row_prefix + ".protocol_path_id",
+                "terminal aggregate duplicates a protocol path id"
+            );
+        }
+
+        if (!checked_add(total_flow_count, row.flow_count)) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::total_flow_count_overflow,
+                row_prefix + ".flow_count",
+                "terminal aggregate flow counts overflow the total"
+            );
+        }
+
+        if (!checked_add(total_packet_count, row.packet_count)) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::total_packet_count_overflow,
+                row_prefix + ".packet_count",
+                "terminal aggregate packet counts overflow the total"
+            );
+        }
+
+        if (!checked_add(total_original_byte_count, row.original_byte_count)) {
+            return make_protocol_path_display_statistics_error(
+                ProtocolPathDisplayStatisticsValidationErrorCode::total_original_byte_count_overflow,
+                row_prefix + ".original_byte_count",
+                "terminal aggregate original byte counts overflow the total"
+            );
+        }
+    }
+
+    return {};
 }
 
 }  // namespace pfl

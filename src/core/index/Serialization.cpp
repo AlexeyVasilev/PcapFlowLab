@@ -1279,6 +1279,53 @@ bool read_capture_packet_locator(
     return true;
 }
 
+bool write_protocol_path_display_statistics(
+    std::ostream& stream,
+    const ProtocolPathDisplayStatistics& statistics
+) {
+    if (!write_u64(stream, static_cast<std::uint64_t>(statistics.terminal_path_aggregates.size()))) {
+        return false;
+    }
+
+    for (const auto& row : statistics.terminal_path_aggregates) {
+        if (!write_u32(stream, row.protocol_path_id) ||
+            !write_u64(stream, row.flow_count) ||
+            !write_u64(stream, row.packet_count) ||
+            !write_u64(stream, row.original_byte_count)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_protocol_path_display_statistics(
+    std::istream& stream,
+    ProtocolPathDisplayStatistics& statistics
+) {
+    std::uint64_t row_count {0};
+    if (!read_u64(stream, row_count) ||
+        row_count > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
+        return false;
+    }
+
+    statistics = {};
+    statistics.terminal_path_aggregates.reserve(static_cast<std::size_t>(row_count));
+    for (std::uint64_t index = 0U; index < row_count; ++index) {
+        ProtocolPathDisplayAggregateRow row {};
+        if (!read_u32(stream, row.protocol_path_id) ||
+            !read_u64(stream, row.flow_count) ||
+            !read_u64(stream, row.packet_count) ||
+            !read_u64(stream, row.original_byte_count)) {
+            statistics = {};
+            return false;
+        }
+        statistics.terminal_path_aggregates.push_back(row);
+    }
+
+    return true;
+}
+
 namespace {
 
 enum class CaptureStatisticsSnapshotPayloadReadStatus : std::uint8_t {
@@ -2032,6 +2079,630 @@ CaptureStatisticsSnapshotSectionReadResult read_v16_capture_statistics_snapshot_
     }
 
     result.status = CaptureStatisticsSnapshotSectionReadStatus::malformed_snapshot_payload;
+    return result;
+}
+
+namespace {
+
+constexpr std::uint64_t kProtocolPathDisplayAggregateRowEncodedSize =
+    4U + (3U * 8U);
+
+std::optional<std::uint64_t> max_protocol_path_display_statistics_payload_size_bytes(
+    const ProtocolPathRegistry& registry
+) {
+    const auto max_row_count = static_cast<std::uint64_t>(registry.size());
+    if (max_row_count > (((std::numeric_limits<std::uint64_t>::max)() - 8U) /
+                         kProtocolPathDisplayAggregateRowEncodedSize)) {
+        return std::nullopt;
+    }
+
+    return 8U + (max_row_count * kProtocolPathDisplayAggregateRowEncodedSize);
+}
+
+bool read_exact_section_payload_bytes(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    std::vector<std::uint8_t>& payload
+) {
+    return read_bounded_section_payload(
+        stream,
+        section_header.payload_size,
+        section_header.payload_size,
+        payload
+    );
+}
+
+ProtocolPathRegistrySectionReadResult read_v16_protocol_path_registry_early_section_payload(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    ProtocolPathRegistry& registry
+) {
+    registry = {};
+
+    ProtocolPathRegistrySectionReadResult result {};
+    result.section_header = section_header;
+
+    if (section_header.section_id !=
+        static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)) {
+        result.status = ProtocolPathRegistrySectionReadStatus::wrong_section_id;
+        return result;
+    }
+
+    if (section_header.section_flags != kCaptureIndexStableSectionFlagRequired) {
+        result.status = ProtocolPathRegistrySectionReadStatus::invalid_section_framing;
+        return result;
+    }
+
+    if (section_header.section_schema_version !=
+        kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion) {
+        result.status = ProtocolPathRegistrySectionReadStatus::unsupported_schema_version;
+        return result;
+    }
+
+    std::vector<std::uint8_t> payload {};
+    if (!read_exact_section_payload_bytes(stream, section_header, payload)) {
+        result.status = ProtocolPathRegistrySectionReadStatus::truncated_payload;
+        return result;
+    }
+
+    std::istringstream payload_stream(
+        std::string(payload.begin(), payload.end()),
+        std::ios::binary | std::ios::in
+    );
+    if (!read_protocol_path_registry(payload_stream, registry) ||
+        payload_stream.peek() != std::char_traits<char>::eof()) {
+        registry = {};
+        result.status = ProtocolPathRegistrySectionReadStatus::malformed_protocol_path_registry_payload;
+        return result;
+    }
+
+    return result;
+}
+
+ProtocolPathDisplayStatisticsSectionReadResult
+read_v16_protocol_path_terminal_aggregates_section_payload(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    const ProtocolPathRegistry& registry,
+    ProtocolPathDisplayStatistics& statistics
+) {
+    statistics = {};
+
+    ProtocolPathDisplayStatisticsSectionReadResult result {};
+    result.section_header = section_header;
+
+    if (section_header.section_id !=
+        static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)) {
+        result.status = ProtocolPathDisplayStatisticsSectionReadStatus::wrong_section_id;
+        return result;
+    }
+
+    if (section_header.section_flags != kCaptureIndexStableSectionFlagRequired) {
+        result.status = ProtocolPathDisplayStatisticsSectionReadStatus::invalid_section_framing;
+        return result;
+    }
+
+    if (section_header.section_schema_version !=
+        kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion) {
+        result.status = ProtocolPathDisplayStatisticsSectionReadStatus::unsupported_schema_version;
+        return result;
+    }
+
+    const auto max_payload_size = max_protocol_path_display_statistics_payload_size_bytes(registry);
+    if (!max_payload_size.has_value() || section_header.payload_size > *max_payload_size) {
+        result.status =
+            ProtocolPathDisplayStatisticsSectionReadStatus::malformed_protocol_path_display_statistics_payload;
+        return result;
+    }
+
+    std::vector<std::uint8_t> payload {};
+    if (!read_exact_section_payload_bytes(stream, section_header, payload)) {
+        result.status = ProtocolPathDisplayStatisticsSectionReadStatus::truncated_payload;
+        return result;
+    }
+
+    std::istringstream payload_stream(
+        std::string(payload.begin(), payload.end()),
+        std::ios::binary | std::ios::in
+    );
+    if (!read_protocol_path_display_statistics(payload_stream, statistics) ||
+        payload_stream.peek() != std::char_traits<char>::eof()) {
+        statistics = {};
+        result.status =
+            ProtocolPathDisplayStatisticsSectionReadStatus::malformed_protocol_path_display_statistics_payload;
+        return result;
+    }
+
+    const auto validation = validate_protocol_path_display_statistics(registry, statistics);
+    if (!validation.ok) {
+        statistics = {};
+        result.status =
+            ProtocolPathDisplayStatisticsSectionReadStatus::protocol_path_display_statistics_semantic_inconsistency;
+        result.validation_error = validation.error;
+        return result;
+    }
+
+    return result;
+}
+
+bool validate_fast_statistics_tier_cross_section_consistency(
+    const CaptureIndexV16FastStatisticsTier& tier,
+    std::string& error_detail
+) {
+    const auto display_validation = validate_protocol_path_display_statistics(
+        tier.protocol_path_registry,
+        tier.protocol_path_display_statistics
+    );
+    if (!display_validation.ok) {
+        error_detail = display_validation.error.has_value()
+            ? display_validation.error->message
+            : "protocol path display statistics are invalid";
+        return false;
+    }
+
+    std::uint64_t aggregate_flow_count {0};
+    std::uint64_t aggregate_packet_count {0};
+    std::uint64_t aggregate_original_byte_count {0};
+    for (const auto& row : tier.protocol_path_display_statistics.terminal_path_aggregates) {
+        aggregate_flow_count += row.flow_count;
+        aggregate_packet_count += row.packet_count;
+        aggregate_original_byte_count += row.original_byte_count;
+    }
+
+    if (aggregate_flow_count != tier.capture_statistics_snapshot.total_flow_count) {
+        error_detail =
+            "protocol path terminal aggregate flow counts do not match the snapshot total flow count";
+        return false;
+    }
+
+    if (aggregate_packet_count > tier.capture_statistics_snapshot.total_packet_count) {
+        error_detail =
+            "protocol path terminal aggregate packet counts exceed the snapshot total packet count";
+        return false;
+    }
+
+    if (aggregate_original_byte_count > tier.capture_statistics_snapshot.total_original_bytes) {
+        error_detail =
+            "protocol path terminal aggregate original-byte counts exceed the snapshot total original-byte count";
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < tier.capture_statistics_snapshot.top_flows.size(); ++index) {
+        const auto& row = tier.capture_statistics_snapshot.top_flows[index];
+        if (row.protocol_path_id == kInvalidProtocolPathId) {
+            error_detail =
+                "top flow row " + std::to_string(index) + " references an invalid protocol path id";
+            return false;
+        }
+
+        const auto* path = tier.protocol_path_registry.find(row.protocol_path_id);
+        if (path == nullptr || path->empty()) {
+            error_detail =
+                "top flow row " + std::to_string(index) +
+                " references a protocol path that is unavailable in the early registry";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool try_peek_capture_index_stable_section_header(
+    std::istream& stream,
+    CaptureIndexStableSectionHeader& section_header
+) {
+    const auto restore_offset = stream.tellg();
+    if (restore_offset == std::istream::pos_type(-1)) {
+        return false;
+    }
+
+    if (!read_capture_index_stable_section_header(stream, section_header)) {
+        stream.clear();
+        stream.seekg(restore_offset);
+        return false;
+    }
+
+    stream.clear();
+    stream.seekg(restore_offset);
+    return static_cast<bool>(stream);
+}
+
+CaptureIndexV16FastStatisticsTierReadResult map_snapshot_section_failure(
+    const CaptureStatisticsSnapshotSectionReadResult& section_result
+) {
+    CaptureIndexV16FastStatisticsTierReadResult result {};
+    result.failed_section_header = section_result.section_header;
+
+    switch (section_result.status) {
+    case CaptureStatisticsSnapshotSectionReadStatus::invalid_section_header:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::wrong_section_id:
+        result.status =
+            section_result.section_header.section_id ==
+                    static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)
+                || section_result.section_header.section_id ==
+                    static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)
+                ? CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order
+                : CaptureIndexV16FastStatisticsTierReadStatus::missing_capture_statistics_snapshot_section;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::invalid_section_framing:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::unsupported_schema_version:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::payload_too_large:
+    case CaptureStatisticsSnapshotSectionReadStatus::truncated_payload:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::malformed_snapshot_payload:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_statistics_snapshot_payload;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::snapshot_semantic_inconsistency:
+        result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::capture_statistics_snapshot_semantic_inconsistency;
+        result.capture_statistics_validation_error = section_result.validation_error;
+        break;
+    case CaptureStatisticsSnapshotSectionReadStatus::ok:
+        break;
+    }
+
+    return result;
+}
+
+CaptureIndexV16FastStatisticsTierReadResult map_registry_section_failure(
+    const ProtocolPathRegistrySectionReadResult& section_result
+) {
+    CaptureIndexV16FastStatisticsTierReadResult result {};
+    result.failed_section_header = section_result.section_header;
+
+    switch (section_result.status) {
+    case ProtocolPathRegistrySectionReadStatus::invalid_section_header:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case ProtocolPathRegistrySectionReadStatus::wrong_section_id:
+        result.status =
+            section_result.section_header.section_id ==
+                    static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)
+                ? CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section
+                : section_result.section_header.section_id ==
+                        static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)
+                    ? CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order
+                    : CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section;
+        break;
+    case ProtocolPathRegistrySectionReadStatus::invalid_section_framing:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case ProtocolPathRegistrySectionReadStatus::unsupported_schema_version:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema;
+        break;
+    case ProtocolPathRegistrySectionReadStatus::truncated_payload:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload;
+        break;
+    case ProtocolPathRegistrySectionReadStatus::malformed_protocol_path_registry_payload:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload;
+        break;
+    case ProtocolPathRegistrySectionReadStatus::ok:
+        break;
+    }
+
+    return result;
+}
+
+CaptureIndexV16FastStatisticsTierReadResult map_display_section_failure(
+    const ProtocolPathDisplayStatisticsSectionReadResult& section_result
+) {
+    CaptureIndexV16FastStatisticsTierReadResult result {};
+    result.failed_section_header = section_result.section_header;
+
+    switch (section_result.status) {
+    case ProtocolPathDisplayStatisticsSectionReadStatus::invalid_section_header:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::wrong_section_id:
+        result.status =
+            section_result.section_header.section_id ==
+                    static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)
+                ? CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section
+                : section_result.section_header.section_id ==
+                        static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)
+                    ? CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section
+                    : CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::invalid_section_framing:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_fast_section_framing;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::unsupported_schema_version:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::truncated_payload:
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::truncated_fast_section_payload;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::malformed_protocol_path_display_statistics_payload:
+        result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_terminal_aggregates_payload;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::protocol_path_display_statistics_semantic_inconsistency:
+        result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::protocol_path_terminal_aggregates_semantic_inconsistency;
+        result.protocol_path_validation_error = section_result.validation_error;
+        break;
+    case ProtocolPathDisplayStatisticsSectionReadStatus::ok:
+        break;
+    }
+
+    return result;
+}
+
+}  // namespace
+
+bool write_v16_protocol_path_registry_early_section(
+    std::ostream& stream,
+    const ProtocolPathRegistry& registry
+) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_protocol_path_registry(payload_stream, registry)) {
+        return false;
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early),
+        .section_schema_version = kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+ProtocolPathRegistrySectionReadResult read_v16_protocol_path_registry_early_section(
+    std::istream& stream,
+    ProtocolPathRegistry& registry
+) {
+    registry = {};
+
+    ProtocolPathRegistrySectionReadResult result {};
+    if (!read_capture_index_stable_section_header(stream, result.section_header)) {
+        result.status = ProtocolPathRegistrySectionReadStatus::invalid_section_header;
+        return result;
+    }
+
+    return read_v16_protocol_path_registry_early_section_payload(
+        stream,
+        result.section_header,
+        registry
+    );
+}
+
+bool write_v16_protocol_path_terminal_aggregates_section(
+    std::ostream& stream,
+    const ProtocolPathDisplayStatistics& statistics
+) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_protocol_path_display_statistics(payload_stream, statistics)) {
+        return false;
+    }
+
+    const auto payload_bytes = payload_stream.str();
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates),
+        .section_schema_version = kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+ProtocolPathDisplayStatisticsSectionReadResult read_v16_protocol_path_terminal_aggregates_section(
+    std::istream& stream,
+    const ProtocolPathRegistry& registry,
+    ProtocolPathDisplayStatistics& statistics
+) {
+    statistics = {};
+
+    ProtocolPathDisplayStatisticsSectionReadResult result {};
+    if (!read_capture_index_stable_section_header(stream, result.section_header)) {
+        result.status = ProtocolPathDisplayStatisticsSectionReadStatus::invalid_section_header;
+        return result;
+    }
+
+    return read_v16_protocol_path_terminal_aggregates_section_payload(
+        stream,
+        result.section_header,
+        registry,
+        statistics
+    );
+}
+
+bool write_v16_fast_statistics_tier(
+    std::ostream& stream,
+    const CaptureIndexStableHeader& header,
+    const CaptureIndexV16FastStatisticsTier& tier
+) {
+    if (header.magic != kStableCaptureIndexMagic ||
+        header.container_format_version != kCaptureIndexStableContainerFormatVersion ||
+        header.index_revision != kCaptureIndexStableV16Revision ||
+        !validate_capture_statistics_snapshot(tier.capture_statistics_snapshot).ok ||
+        !validate_protocol_path_display_statistics(
+            tier.protocol_path_registry,
+            tier.protocol_path_display_statistics
+        ).ok) {
+        return false;
+    }
+
+    std::string consistency_error {};
+    if (!validate_fast_statistics_tier_cross_section_consistency(tier, consistency_error)) {
+        return false;
+    }
+
+    return write_capture_index_stable_header(stream, header) &&
+           write_v16_capture_statistics_snapshot_section(stream, tier.capture_statistics_snapshot) &&
+           write_v16_protocol_path_registry_early_section(stream, tier.protocol_path_registry) &&
+           write_v16_protocol_path_terminal_aggregates_section(
+               stream,
+               tier.protocol_path_display_statistics
+           );
+}
+
+CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
+    std::istream& stream,
+    CaptureIndexV16FastStatisticsTier& tier
+) {
+    tier = {};
+
+    CaptureIndexV16FastStatisticsTierReadResult result {};
+    if (!read_capture_index_stable_header(stream, result.header)) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_header;
+        return result;
+    }
+
+    if (result.header.magic != kStableCaptureIndexMagic ||
+        result.header.container_format_version != kCaptureIndexStableContainerFormatVersion) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::invalid_header;
+        return result;
+    }
+
+    if (result.header.index_revision != kCaptureIndexStableV16Revision) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::unsupported_revision;
+        return result;
+    }
+
+    const auto stable_header = result.header;
+
+    const auto snapshot_result = read_v16_capture_statistics_snapshot_section(
+        stream,
+        tier.capture_statistics_snapshot
+    );
+    if (!snapshot_result) {
+        result = map_snapshot_section_failure(snapshot_result);
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    if (stream.peek() == std::char_traits<char>::eof()) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    const auto registry_result = read_v16_protocol_path_registry_early_section(
+        stream,
+        tier.protocol_path_registry
+    );
+    if (!registry_result) {
+        result = map_registry_section_failure(registry_result);
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    if (stream.peek() == std::char_traits<char>::eof()) {
+        result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    const auto display_result = read_v16_protocol_path_terminal_aggregates_section(
+        stream,
+        tier.protocol_path_registry,
+        tier.protocol_path_display_statistics
+    );
+    if (!display_result) {
+        result = map_display_section_failure(display_result);
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    while (true) {
+        CaptureIndexStableSectionHeader next_section_header {};
+        if (!try_peek_capture_index_stable_section_header(stream, next_section_header)) {
+            break;
+        }
+
+        if (next_section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_terminal_aggregates)) {
+            ProtocolPathDisplayStatistics display_chunk {};
+            const auto repeated_section_result = read_v16_protocol_path_terminal_aggregates_section(
+                stream,
+                tier.protocol_path_registry,
+                display_chunk
+            );
+            if (!repeated_section_result) {
+                result = map_display_section_failure(repeated_section_result);
+                result.header = stable_header;
+                tier = {};
+                return result;
+            }
+
+            tier.protocol_path_display_statistics.terminal_path_aggregates.insert(
+                tier.protocol_path_display_statistics.terminal_path_aggregates.end(),
+                display_chunk.terminal_path_aggregates.begin(),
+                display_chunk.terminal_path_aggregates.end()
+            );
+            continue;
+        }
+
+        if (next_section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section;
+            result.failed_section_header = next_section_header;
+            result.header = stable_header;
+            tier = {};
+            return result;
+        }
+
+        if (next_section_header.section_id ==
+            static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_registry_early)) {
+            result.status =
+                CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section;
+            result.failed_section_header = next_section_header;
+            result.header = stable_header;
+            tier = {};
+            return result;
+        }
+
+        break;
+    }
+
+    const auto merged_display_validation = validate_protocol_path_display_statistics(
+        tier.protocol_path_registry,
+        tier.protocol_path_display_statistics
+    );
+    if (!merged_display_validation.ok) {
+        result.status =
+            CaptureIndexV16FastStatisticsTierReadStatus::protocol_path_terminal_aggregates_semantic_inconsistency;
+        result.protocol_path_validation_error = merged_display_validation.error;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    if (!validate_fast_statistics_tier_cross_section_consistency(tier, result.error_detail)) {
+        result.status = CaptureIndexV16FastStatisticsTierReadStatus::fast_tier_cross_section_inconsistency;
+        result.header = stable_header;
+        tier = {};
+        return result;
+    }
+
+    result.header = stable_header;
+
     return result;
 }
 

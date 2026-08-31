@@ -45,6 +45,8 @@ inline constexpr std::uint16_t kCaptureIndexStableIpv6ConnectionsSectionSchemaVe
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion = 2U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
@@ -174,6 +176,95 @@ struct CaptureStatisticsSnapshotSectionReadResult {
     }
 };
 
+enum class ProtocolPathRegistrySectionReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_section_header,
+    wrong_section_id,
+    invalid_section_framing,
+    unsupported_schema_version,
+    truncated_payload,
+    malformed_protocol_path_registry_payload,
+};
+
+struct ProtocolPathRegistrySectionReadResult {
+    ProtocolPathRegistrySectionReadStatus status {ProtocolPathRegistrySectionReadStatus::ok};
+    CaptureIndexStableSectionHeader section_header {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == ProtocolPathRegistrySectionReadStatus::ok;
+    }
+};
+
+enum class ProtocolPathDisplayStatisticsSectionReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_section_header,
+    wrong_section_id,
+    invalid_section_framing,
+    unsupported_schema_version,
+    truncated_payload,
+    malformed_protocol_path_display_statistics_payload,
+    protocol_path_display_statistics_semantic_inconsistency,
+};
+
+struct ProtocolPathDisplayStatisticsSectionReadResult {
+    ProtocolPathDisplayStatisticsSectionReadStatus status {
+        ProtocolPathDisplayStatisticsSectionReadStatus::ok
+    };
+    CaptureIndexStableSectionHeader section_header {};
+    std::optional<ProtocolPathDisplayStatisticsValidationError> validation_error {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == ProtocolPathDisplayStatisticsSectionReadStatus::ok;
+    }
+};
+
+struct CaptureIndexV16FastStatisticsTier {
+    CaptureStatisticsSnapshot capture_statistics_snapshot {};
+    ProtocolPathRegistry protocol_path_registry {};
+    ProtocolPathDisplayStatistics protocol_path_display_statistics {};
+
+    [[nodiscard]] friend bool operator==(
+        const CaptureIndexV16FastStatisticsTier&,
+        const CaptureIndexV16FastStatisticsTier&
+    ) = default;
+};
+
+enum class CaptureIndexV16FastStatisticsTierReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_header,
+    unsupported_revision,
+    missing_capture_statistics_snapshot_section,
+    duplicate_capture_statistics_snapshot_section,
+    missing_protocol_path_registry_early_section,
+    duplicate_protocol_path_registry_early_section,
+    missing_protocol_path_terminal_aggregates_section,
+    wrong_fast_section_order,
+    invalid_fast_section_framing,
+    unsupported_fast_section_schema,
+    truncated_fast_section_payload,
+    malformed_capture_statistics_snapshot_payload,
+    capture_statistics_snapshot_semantic_inconsistency,
+    malformed_protocol_path_registry_payload,
+    malformed_protocol_path_terminal_aggregates_payload,
+    protocol_path_terminal_aggregates_semantic_inconsistency,
+    fast_tier_cross_section_inconsistency,
+};
+
+struct CaptureIndexV16FastStatisticsTierReadResult {
+    CaptureIndexV16FastStatisticsTierReadStatus status {
+        CaptureIndexV16FastStatisticsTierReadStatus::ok
+    };
+    CaptureIndexStableHeader header {};
+    CaptureIndexStableSectionHeader failed_section_header {};
+    std::optional<CaptureStatisticsSnapshotValidationError> capture_statistics_validation_error {};
+    std::optional<ProtocolPathDisplayStatisticsValidationError> protocol_path_validation_error {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16FastStatisticsTierReadStatus::ok;
+    }
+};
+
 bool write_section(std::ostream& stream, std::uint32_t section_id, std::span<const std::uint8_t> payload);
 bool read_section_header(std::istream& stream, std::uint32_t& section_id, std::uint64_t& payload_size);
 bool read_section_payload(std::istream& stream, std::uint64_t payload_size, std::vector<std::uint8_t>& payload);
@@ -193,6 +284,14 @@ bool write_protocol_path_registry(
     const SerializationProgressCallback& progress_callback
 );
 bool read_protocol_path_registry(std::istream& stream, ProtocolPathRegistry& registry);
+bool write_protocol_path_display_statistics(
+    std::ostream& stream,
+    const ProtocolPathDisplayStatistics& statistics
+);
+bool read_protocol_path_display_statistics(
+    std::istream& stream,
+    ProtocolPathDisplayStatistics& statistics
+);
 
 bool write_packet_ref(std::ostream& stream, const PacketRef& packet);
 bool read_packet_ref(std::istream& stream, PacketRef& packet);
@@ -278,6 +377,32 @@ bool write_v16_capture_statistics_snapshot_section(
 CaptureStatisticsSnapshotSectionReadResult read_v16_capture_statistics_snapshot_section(
     std::istream& stream,
     CaptureStatisticsSnapshot& snapshot
+);
+bool write_v16_protocol_path_registry_early_section(
+    std::ostream& stream,
+    const ProtocolPathRegistry& registry
+);
+ProtocolPathRegistrySectionReadResult read_v16_protocol_path_registry_early_section(
+    std::istream& stream,
+    ProtocolPathRegistry& registry
+);
+bool write_v16_protocol_path_terminal_aggregates_section(
+    std::ostream& stream,
+    const ProtocolPathDisplayStatistics& statistics
+);
+ProtocolPathDisplayStatisticsSectionReadResult read_v16_protocol_path_terminal_aggregates_section(
+    std::istream& stream,
+    const ProtocolPathRegistry& registry,
+    ProtocolPathDisplayStatistics& statistics
+);
+bool write_v16_fast_statistics_tier(
+    std::ostream& stream,
+    const CaptureIndexStableHeader& header,
+    const CaptureIndexV16FastStatisticsTier& tier
+);
+CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
+    std::istream& stream,
+    CaptureIndexV16FastStatisticsTier& tier
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

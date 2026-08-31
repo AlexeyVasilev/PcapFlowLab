@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "TestSupport.h"
@@ -259,6 +260,12 @@ std::uint16_t expected_section_schema_version(const std::uint32_t section_id) {
         return detail::kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion;
     case detail::CaptureIndexSectionId::packet_locator:
         return detail::kCaptureIndexStablePacketLocatorSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::capture_statistics_snapshot:
+        return detail::kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::protocol_path_registry_early:
+        return detail::kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion;
+    case detail::CaptureIndexSectionId::protocol_path_terminal_aggregates:
+        return detail::kCaptureIndexStableProtocolPathTerminalAggregatesSectionSchemaVersion;
     default:
         return 0U;
     }
@@ -287,6 +294,13 @@ void expect_matching_protocol_path_registries(const ProtocolPathRegistry& left, 
         PFL_REQUIRE(right_path != nullptr);
         PFL_EXPECT(*left_path == *right_path);
     }
+}
+
+void expect_matching_protocol_path_display_statistics(
+    const ProtocolPathDisplayStatistics& left,
+    const ProtocolPathDisplayStatistics& right
+) {
+    PFL_EXPECT(left.terminal_path_aggregates == right.terminal_path_aggregates);
 }
 
 void expect_matching_flows(const FlowV4& left, const FlowV4& right) {
@@ -610,6 +624,105 @@ std::vector<std::uint8_t> make_inactive_v16_snapshot_container_bytes(
     std::ostringstream stream(std::ios::binary | std::ios::out);
     PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
     PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(stream, snapshot));
+    if (!trailing_bytes.empty()) {
+        PFL_REQUIRE(detail::write_bytes(stream, trailing_bytes));
+    }
+    return stream_bytes(stream);
+}
+
+ProtocolPathRegistry make_v16_protocol_path_registry_fixture() {
+    ProtocolPathRegistry registry {};
+    PFL_REQUIRE(registry.intern(ProtocolPath {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    }) == 1U);
+    PFL_REQUIRE(registry.intern(ProtocolPath {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv6(),
+        LayerKey::udp(),
+    }) == 2U);
+    PFL_REQUIRE(registry.intern(ProtocolPath {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::vxlan(7U),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    }) == 3U);
+
+    for (std::uint32_t index = 4U; index <= 17U; ++index) {
+        PFL_REQUIRE(registry.intern(ProtocolPath {
+            LayerKey::ethernet_ii(),
+            LayerKey::vlan(static_cast<std::uint16_t>(100U + index)),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        }) == index);
+    }
+
+    return registry;
+}
+
+ProtocolPathDisplayStatistics make_valid_protocol_path_display_statistics() {
+    return ProtocolPathDisplayStatistics {
+        .terminal_path_aggregates = {
+            ProtocolPathDisplayAggregateRow {
+                .protocol_path_id = 3U,
+                .flow_count = 1U,
+                .packet_count = 0U,
+                .original_byte_count = 700U,
+            },
+            ProtocolPathDisplayAggregateRow {
+                .protocol_path_id = 11U,
+                .flow_count = 2U,
+                .packet_count = 2U,
+                .original_byte_count = 1'200U,
+            },
+            ProtocolPathDisplayAggregateRow {
+                .protocol_path_id = 17U,
+                .flow_count = 1U,
+                .packet_count = 1U,
+                .original_byte_count = 800U,
+            },
+        },
+    };
+}
+
+std::vector<std::uint8_t> serialize_protocol_path_display_statistics_payload(
+    const ProtocolPathDisplayStatistics& statistics
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_protocol_path_display_statistics(stream, statistics));
+    return stream_bytes(stream);
+}
+
+detail::CaptureIndexV16FastStatisticsTier make_valid_v16_fast_statistics_tier() {
+    const auto registry = make_v16_protocol_path_registry_fixture();
+    const auto statistics = make_valid_protocol_path_display_statistics();
+    PFL_REQUIRE(validate_protocol_path_display_statistics(registry, statistics).ok);
+
+    auto snapshot = make_valid_capture_statistics_snapshot();
+    PFL_REQUIRE(snapshot.top_flows.size() == 2U);
+    snapshot.top_flows[0].protocol_path_id = 11U;
+    std::get<ConnectionKeyV4>(snapshot.top_flows[0].connection_key).protocol_path_id = 11U;
+    snapshot.top_flows[1].protocol_path_id = 17U;
+    std::get<ConnectionKeyV6>(snapshot.top_flows[1].connection_key).protocol_path_id = 17U;
+    PFL_REQUIRE(validate_capture_statistics_snapshot(snapshot).ok);
+
+    return detail::CaptureIndexV16FastStatisticsTier {
+        .capture_statistics_snapshot = std::move(snapshot),
+        .protocol_path_registry = registry,
+        .protocol_path_display_statistics = statistics,
+    };
+}
+
+std::vector<std::uint8_t> make_v16_fast_statistics_tier_container_bytes(
+    const detail::CaptureIndexV16FastStatisticsTier& tier,
+    std::span<const std::uint8_t> trailing_bytes = {}
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), tier));
     if (!trailing_bytes.empty()) {
         PFL_REQUIRE(detail::write_bytes(stream, trailing_bytes));
     }
@@ -1046,6 +1159,498 @@ void run_index_format_tests() {
         PFL_EXPECT(decoded_snapshot == snapshot);
         PFL_EXPECT(static_cast<std::size_t>(stream.tellg()) == snapshot_section_end);
         PFL_EXPECT(stream.peek() == static_cast<int>(malformed_late_bytes.front()));
+    }
+
+    {
+        const auto registry = make_v16_protocol_path_registry_fixture();
+
+        std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_protocol_path_registry(payload_stream, registry));
+        const auto payload = stream_bytes(payload_stream);
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
+        PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(stream, registry));
+        const auto container_bytes = stream_bytes(stream);
+        const auto sections = parse_sections(container_bytes);
+        PFL_REQUIRE(sections.size() == 1U);
+
+        const auto& section = sections.front();
+        PFL_EXPECT(section.id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early));
+        PFL_EXPECT(section.schema_version == detail::kCaptureIndexStableProtocolPathRegistryEarlySectionSchemaVersion);
+        PFL_EXPECT(section.flags == detail::kCaptureIndexStableSectionFlagRequired);
+
+        const auto payload_offset = section.offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        std::vector<std::uint8_t> section_payload(
+            container_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset),
+            container_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset + payload.size())
+        );
+        PFL_EXPECT(section_payload == payload);
+
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexStableHeader decoded_header {};
+        PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
+        ProtocolPathRegistry decoded_registry {};
+        const auto read_result = detail::read_v16_protocol_path_registry_early_section(
+            read_stream,
+            decoded_registry
+        );
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        expect_matching_protocol_path_registries(decoded_registry, registry);
+        PFL_EXPECT(read_stream.peek() == std::char_traits<char>::eof());
+    }
+
+    {
+        const auto registry = make_v16_protocol_path_registry_fixture();
+        const auto statistics = make_valid_protocol_path_display_statistics();
+        const auto payload = serialize_protocol_path_display_statistics_payload(statistics);
+        PFL_EXPECT(payload.size() == 8U + (statistics.terminal_path_aggregates.size() * 28U));
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
+        PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(stream, statistics));
+        const auto base_bytes = stream_bytes(stream);
+        const auto sections = parse_sections(base_bytes);
+        PFL_REQUIRE(sections.size() == 1U);
+        const auto payload_offset = sections.front().offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+
+        std::istringstream read_stream(
+            std::string(base_bytes.begin(), base_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexStableHeader decoded_header {};
+        PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
+        ProtocolPathDisplayStatistics decoded_statistics {};
+        const auto read_result = detail::read_v16_protocol_path_terminal_aggregates_section(
+            read_stream,
+            registry,
+            decoded_statistics
+        );
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        expect_matching_protocol_path_display_statistics(decoded_statistics, statistics);
+
+        auto expect_display_status =
+            [&](std::vector<std::uint8_t> bytes,
+                const detail::ProtocolPathDisplayStatisticsSectionReadStatus status,
+                const std::optional<ProtocolPathDisplayStatisticsValidationErrorCode> validation_code = std::nullopt) {
+                std::istringstream mutated_stream(
+                    std::string(bytes.begin(), bytes.end()),
+                    std::ios::binary | std::ios::in
+                );
+                detail::CaptureIndexStableHeader mutated_header {};
+                PFL_REQUIRE(detail::read_capture_index_stable_header(mutated_stream, mutated_header));
+                ProtocolPathDisplayStatistics mutated_statistics {};
+                const auto mutated_result = detail::read_v16_protocol_path_terminal_aggregates_section(
+                    mutated_stream,
+                    registry,
+                    mutated_statistics
+                );
+                PFL_EXPECT(mutated_result.status == status);
+                PFL_EXPECT(mutated_statistics.terminal_path_aggregates.empty());
+                if (validation_code.has_value()) {
+                    PFL_REQUIRE(mutated_result.validation_error.has_value());
+                    PFL_EXPECT(mutated_result.validation_error->code == *validation_code);
+                }
+            };
+
+        {
+            auto invalid_path_id_bytes = base_bytes;
+            write_le32_at(invalid_path_id_bytes, payload_offset + 8U, 0U);
+            expect_display_status(
+                std::move(invalid_path_id_bytes),
+                detail::ProtocolPathDisplayStatisticsSectionReadStatus::protocol_path_display_statistics_semantic_inconsistency,
+                ProtocolPathDisplayStatisticsValidationErrorCode::invalid_protocol_path_id
+            );
+        }
+
+        {
+            auto unknown_path_id_bytes = base_bytes;
+            write_le32_at(unknown_path_id_bytes, payload_offset + 8U, 99U);
+            expect_display_status(
+                std::move(unknown_path_id_bytes),
+                detail::ProtocolPathDisplayStatisticsSectionReadStatus::protocol_path_display_statistics_semantic_inconsistency,
+                ProtocolPathDisplayStatisticsValidationErrorCode::unknown_protocol_path_id
+            );
+        }
+
+        {
+            auto duplicate_path_id_bytes = base_bytes;
+            write_le32_at(duplicate_path_id_bytes, payload_offset + 36U, 3U);
+            expect_display_status(
+                std::move(duplicate_path_id_bytes),
+                detail::ProtocolPathDisplayStatisticsSectionReadStatus::protocol_path_display_statistics_semantic_inconsistency,
+                ProtocolPathDisplayStatisticsValidationErrorCode::duplicate_protocol_path_id
+            );
+        }
+
+        {
+            auto overflow_bytes = base_bytes;
+            write_le64_at(overflow_bytes, payload_offset + 12U, (std::numeric_limits<std::uint64_t>::max)());
+            expect_display_status(
+                std::move(overflow_bytes),
+                detail::ProtocolPathDisplayStatisticsSectionReadStatus::protocol_path_display_statistics_semantic_inconsistency,
+                ProtocolPathDisplayStatisticsValidationErrorCode::total_flow_count_overflow
+            );
+        }
+
+        {
+            auto wrong_schema_bytes = base_bytes;
+            write_le16_at(wrong_schema_bytes, sections.front().offset + 4U, 99U);
+            expect_display_status(
+                std::move(wrong_schema_bytes),
+                detail::ProtocolPathDisplayStatisticsSectionReadStatus::unsupported_schema_version
+            );
+        }
+
+        {
+            auto truncated_payload_bytes = base_bytes;
+            truncated_payload_bytes.pop_back();
+            expect_display_status(
+                std::move(truncated_payload_bytes),
+                detail::ProtocolPathDisplayStatisticsSectionReadStatus::truncated_payload
+            );
+        }
+    }
+
+    {
+        const auto tier = make_valid_v16_fast_statistics_tier();
+        const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
+        const auto sections = parse_sections(base_bytes);
+        PFL_REQUIRE(sections.size() == 3U);
+        PFL_EXPECT(sections[0].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot));
+        PFL_EXPECT(sections[1].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early));
+        PFL_EXPECT(sections[2].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+
+        std::istringstream read_stream(
+            std::string(base_bytes.begin(), base_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+        const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(read_result.header.index_revision == kCaptureIndexStableV16Revision);
+        PFL_EXPECT(decoded_tier.capture_statistics_snapshot == tier.capture_statistics_snapshot);
+        expect_matching_protocol_path_registries(decoded_tier.protocol_path_registry, tier.protocol_path_registry);
+        expect_matching_protocol_path_display_statistics(
+            decoded_tier.protocol_path_display_statistics,
+            tier.protocol_path_display_statistics
+        );
+        PFL_EXPECT(static_cast<std::size_t>(read_stream.tellg()) == base_bytes.size());
+    }
+
+    {
+        const auto tier = make_valid_v16_fast_statistics_tier();
+        const auto first_chunk = ProtocolPathDisplayStatistics {
+            .terminal_path_aggregates = {
+                tier.protocol_path_display_statistics.terminal_path_aggregates[0],
+                tier.protocol_path_display_statistics.terminal_path_aggregates[1],
+            },
+        };
+        const auto second_chunk = ProtocolPathDisplayStatistics {
+            .terminal_path_aggregates = {
+                tier.protocol_path_display_statistics.terminal_path_aggregates[2],
+            },
+        };
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
+        PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+            stream,
+            tier.capture_statistics_snapshot
+        ));
+        PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+            stream,
+            tier.protocol_path_registry
+        ));
+        PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(stream, first_chunk));
+        PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(stream, second_chunk));
+        const auto chunked_bytes = stream_bytes(stream);
+        const auto sections = parse_sections(chunked_bytes);
+        PFL_REQUIRE(sections.size() == 4U);
+        PFL_EXPECT(sections[2].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+        PFL_EXPECT(sections[3].id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates));
+
+        std::istringstream read_stream(
+            std::string(chunked_bytes.begin(), chunked_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+        const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        expect_matching_protocol_path_display_statistics(
+            decoded_tier.protocol_path_display_statistics,
+            tier.protocol_path_display_statistics
+        );
+        PFL_EXPECT(static_cast<std::size_t>(read_stream.tellg()) == chunked_bytes.size());
+    }
+
+    {
+        const auto tier = make_valid_v16_fast_statistics_tier();
+        const detail::CaptureIndexStableSectionHeader following_section {
+            .section_id = static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_flow_metadata),
+            .section_schema_version = 1U,
+            .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+            .payload_size = 4U,
+        };
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), tier));
+        const auto fast_prefix_size = stream_bytes(stream).size();
+        PFL_REQUIRE(detail::write_capture_index_stable_section_header(stream, following_section));
+        PFL_REQUIRE(detail::write_bytes(stream, std::array<std::uint8_t, 4> {0xDEU, 0xADU, 0xBEU, 0xEFU}));
+        const auto container_bytes = stream_bytes(stream);
+
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+        const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(static_cast<std::size_t>(read_stream.tellg()) == fast_prefix_size);
+
+        detail::CaptureIndexStableSectionHeader decoded_following_section {};
+        PFL_REQUIRE(detail::read_capture_index_stable_section_header(read_stream, decoded_following_section));
+        PFL_EXPECT(decoded_following_section.section_id == following_section.section_id);
+        PFL_EXPECT(decoded_following_section.payload_size == following_section.payload_size);
+
+        std::vector<std::uint8_t> following_payload {};
+        PFL_REQUIRE(detail::read_bounded_section_payload(
+            read_stream,
+            decoded_following_section.payload_size,
+            decoded_following_section.payload_size,
+            following_payload
+        ));
+        PFL_EXPECT((following_payload == std::vector<std::uint8_t> {0xDEU, 0xADU, 0xBEU, 0xEFU}));
+    }
+
+    {
+        const auto tier = make_valid_v16_fast_statistics_tier();
+        const std::vector<std::uint8_t> malformed_late_bytes {0xAAU, 0x55U, 0x10U};
+        const auto container_bytes = make_v16_fast_statistics_tier_container_bytes(
+            tier,
+            std::span<const std::uint8_t>(malformed_late_bytes.data(), malformed_late_bytes.size())
+        );
+        const auto fast_prefix_size = container_bytes.size() - malformed_late_bytes.size();
+
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+        const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(static_cast<std::size_t>(read_stream.tellg()) == fast_prefix_size);
+        PFL_EXPECT(read_stream.peek() == static_cast<int>(malformed_late_bytes.front()));
+    }
+
+    {
+        const auto tier = make_valid_v16_fast_statistics_tier();
+        const auto base_bytes = make_v16_fast_statistics_tier_container_bytes(tier);
+        const auto sections = parse_sections(base_bytes);
+        PFL_REQUIRE(sections.size() == 3U);
+        const auto snapshot_payload_offset = sections[0].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto registry_payload_offset = sections[1].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        const auto display_payload_offset = sections[2].offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+
+        auto expect_fast_tier_status =
+            [&](std::vector<std::uint8_t> bytes,
+                const detail::CaptureIndexV16FastStatisticsTierReadStatus status,
+                const std::optional<ProtocolPathDisplayStatisticsValidationErrorCode> protocol_path_error = std::nullopt) {
+                std::istringstream stream(
+                    std::string(bytes.begin(), bytes.end()),
+                    std::ios::binary | std::ios::in
+                );
+                detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
+                const auto read_result = detail::read_v16_fast_statistics_tier(stream, decoded_tier);
+                PFL_EXPECT(read_result.status == status);
+                PFL_EXPECT(decoded_tier.capture_statistics_snapshot == CaptureStatisticsSnapshot {});
+                PFL_EXPECT(decoded_tier.protocol_path_registry.size() == 0U);
+                PFL_EXPECT(decoded_tier.protocol_path_display_statistics.terminal_path_aggregates.empty());
+                if (protocol_path_error.has_value()) {
+                    PFL_REQUIRE(read_result.protocol_path_validation_error.has_value());
+                    PFL_EXPECT(read_result.protocol_path_validation_error->code == *protocol_path_error);
+                }
+            };
+
+        {
+            auto malformed_snapshot_bytes = base_bytes;
+            malformed_snapshot_bytes[snapshot_payload_offset] = 99U;
+            expect_fast_tier_status(
+                std::move(malformed_snapshot_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_capture_statistics_snapshot_payload
+            );
+        }
+
+        {
+            auto missing_registry_bytes = remove_section(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early)
+            );
+            missing_registry_bytes = remove_section(
+                missing_registry_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates)
+            );
+            expect_fast_tier_status(
+                std::move(missing_registry_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_registry_early_section
+            );
+        }
+
+        {
+            auto missing_display_bytes = remove_section(
+                base_bytes,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_terminal_aggregates)
+            );
+            expect_fast_tier_status(
+                std::move(missing_display_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::missing_protocol_path_terminal_aggregates_section
+            );
+        }
+
+        {
+            std::ostringstream wrong_order_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(wrong_order_stream, make_v16_stable_header()));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                wrong_order_stream,
+                tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                wrong_order_stream,
+                tier.protocol_path_display_statistics
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                wrong_order_stream,
+                tier.protocol_path_registry
+            ));
+            expect_fast_tier_status(
+                stream_bytes(wrong_order_stream),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::wrong_fast_section_order
+            );
+        }
+
+        {
+            std::ostringstream duplicate_snapshot_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(duplicate_snapshot_stream, make_v16_stable_header()));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                duplicate_snapshot_stream,
+                tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                duplicate_snapshot_stream,
+                tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                duplicate_snapshot_stream,
+                tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                duplicate_snapshot_stream,
+                tier.protocol_path_display_statistics
+            ));
+            expect_fast_tier_status(
+                stream_bytes(duplicate_snapshot_stream),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_capture_statistics_snapshot_section
+            );
+        }
+
+        {
+            std::ostringstream duplicate_registry_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(duplicate_registry_stream, make_v16_stable_header()));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                duplicate_registry_stream,
+                tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                duplicate_registry_stream,
+                tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                duplicate_registry_stream,
+                tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                duplicate_registry_stream,
+                tier.protocol_path_display_statistics
+            ));
+            expect_fast_tier_status(
+                stream_bytes(duplicate_registry_stream),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::duplicate_protocol_path_registry_early_section
+            );
+        }
+
+        {
+            auto malformed_registry_bytes = base_bytes;
+            write_le64_at(malformed_registry_bytes, registry_payload_offset, 99U);
+            expect_fast_tier_status(
+                std::move(malformed_registry_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_registry_payload
+            );
+        }
+
+        {
+            auto malformed_display_bytes = base_bytes;
+            write_le64_at(malformed_display_bytes, display_payload_offset, 99U);
+            expect_fast_tier_status(
+                std::move(malformed_display_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::malformed_protocol_path_terminal_aggregates_payload
+            );
+        }
+
+        {
+            auto unknown_path_bytes = base_bytes;
+            write_le32_at(unknown_path_bytes, display_payload_offset + 8U, 99U);
+            expect_fast_tier_status(
+                std::move(unknown_path_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::protocol_path_terminal_aggregates_semantic_inconsistency,
+                ProtocolPathDisplayStatisticsValidationErrorCode::unknown_protocol_path_id
+            );
+        }
+
+        {
+            auto wrong_schema_bytes = base_bytes;
+            write_le16_at(wrong_schema_bytes, sections[1].offset + 4U, 99U);
+            expect_fast_tier_status(
+                std::move(wrong_schema_bytes),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::unsupported_fast_section_schema
+            );
+        }
+
+        {
+            auto inconsistent_tier = tier;
+            inconsistent_tier.capture_statistics_snapshot.top_flows[0].protocol_path_id = 99U;
+            std::get<ConnectionKeyV4>(
+                inconsistent_tier.capture_statistics_snapshot.top_flows[0].connection_key
+            ).protocol_path_id = 99U;
+            PFL_REQUIRE(validate_capture_statistics_snapshot(
+                inconsistent_tier.capture_statistics_snapshot
+            ).ok);
+
+            std::ostringstream inconsistent_stream(std::ios::binary | std::ios::out);
+            PFL_REQUIRE(detail::write_capture_index_stable_header(
+                inconsistent_stream,
+                make_v16_stable_header()
+            ));
+            PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(
+                inconsistent_stream,
+                inconsistent_tier.capture_statistics_snapshot
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_registry_early_section(
+                inconsistent_stream,
+                inconsistent_tier.protocol_path_registry
+            ));
+            PFL_REQUIRE(detail::write_v16_protocol_path_terminal_aggregates_section(
+                inconsistent_stream,
+                inconsistent_tier.protocol_path_display_statistics
+            ));
+            expect_fast_tier_status(
+                stream_bytes(inconsistent_stream),
+                detail::CaptureIndexV16FastStatisticsTierReadStatus::fast_tier_cross_section_inconsistency
+            );
+        }
     }
 
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 10, 1), ipv4(192, 168, 10, 2), 41000, 443);
