@@ -393,6 +393,229 @@ void expect_matching_states(const CaptureState& left, const CaptureState& right)
     expect_matching_tables(left.ipv6_connections, right.ipv6_connections);
 }
 
+void fill_distribution_counts(
+    CapturePacketSizeDistribution& distribution,
+    const std::vector<std::uint64_t>& counts
+) {
+    PFL_REQUIRE(counts.size() == distribution.buckets.size());
+    distribution.maximum_bucket_packet_count = 0U;
+    for (std::size_t index = 0U; index < counts.size(); ++index) {
+        distribution.buckets[index].packet_count = counts[index];
+        distribution.maximum_bucket_packet_count = std::max(
+            distribution.maximum_bucket_packet_count,
+            counts[index]
+        );
+    }
+}
+
+CaptureStatisticsProtocolCounters capture_statistics_counters(
+    const std::uint64_t flow_count,
+    const std::uint64_t packet_count,
+    const std::uint64_t captured_bytes,
+    const std::uint64_t original_bytes
+) {
+    return CaptureStatisticsProtocolCounters {
+        .flow_count = flow_count,
+        .packet_count = packet_count,
+        .captured_bytes = captured_bytes,
+        .original_bytes = original_bytes,
+    };
+}
+
+CaptureStatisticsFlowPacketCountHistogram make_capture_statistics_flow_histogram() {
+    auto histogram = make_default_capture_statistics_flow_packet_count_histogram();
+    histogram.buckets[0].flow_count = 1U;
+    histogram.buckets[0].captured_byte_count = 100U;
+    histogram.buckets[0].original_byte_count = 120U;
+    histogram.buckets[1].flow_count = 1U;
+    histogram.buckets[1].captured_byte_count = 200U;
+    histogram.buckets[1].original_byte_count = 240U;
+    histogram.buckets[2].flow_count = 1U;
+    histogram.buckets[2].captured_byte_count = 300U;
+    histogram.buckets[2].original_byte_count = 340U;
+    histogram.total_flow_count = 3U;
+    histogram.total_captured_byte_count = 600U;
+    histogram.total_original_byte_count = 700U;
+    histogram.maximum_bucket_flow_count = 1U;
+    histogram.maximum_bucket_captured_byte_count = 300U;
+    histogram.maximum_bucket_original_byte_count = 340U;
+    histogram.excluded_zero_packet_flow_count = 1U;
+    histogram.excluded_zero_packet_captured_byte_count = 10U;
+    histogram.excluded_zero_packet_original_byte_count = 20U;
+    return histogram;
+}
+
+CaptureStatisticsSnapshot make_valid_capture_statistics_snapshot() {
+    CaptureStatisticsSnapshot snapshot {};
+    snapshot.scope = CaptureStatisticsScope::complete;
+    snapshot.total_packet_count = 3U;
+    snapshot.total_flow_count = 4U;
+    snapshot.total_captured_bytes = 2'500U;
+    snapshot.total_original_bytes = 3'000U;
+    snapshot.timestamp_range = CapturePacketTimestampRange {
+        .available = true,
+        .earliest_timestamp_us = 100U,
+        .latest_timestamp_us = 300U,
+    };
+    snapshot.truncated_packet_count = 1U;
+    snapshot.maximum_captured_packet_length = 1'500U;
+    snapshot.maximum_original_packet_length = 2'000U;
+    fill_distribution_counts(snapshot.captured_packet_size_distribution, {1U, 2U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U});
+    fill_distribution_counts(snapshot.original_packet_size_distribution, {1U, 1U, 1U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U});
+    snapshot.unrecognized_packet_count = 1U;
+    snapshot.unrecognized_captured_bytes = 100U;
+    snapshot.unrecognized_original_bytes = 120U;
+    snapshot.only_a_to_b_flow_count = 1U;
+    snapshot.service_recognized_flow_count = 2U;
+    snapshot.packet_direction_distribution = CaptureStatisticsDirectionDistribution {
+        .mostly_a_to_b_flow_count = 1U,
+        .balanced_flow_count = 2U,
+        .mostly_b_to_a_flow_count = 1U,
+    };
+    snapshot.original_byte_direction_distribution = CaptureStatisticsDirectionDistribution {
+        .mostly_a_to_b_flow_count = 2U,
+        .balanced_flow_count = 1U,
+        .mostly_b_to_a_flow_count = 1U,
+    };
+    snapshot.tcp_flags = CaptureStatisticsTcpFlags {
+        .syn_packet_count = 5U,
+        .fin_packet_count = 2U,
+        .rst_packet_count = 1U,
+    };
+    snapshot.flow_packet_count_histogram = make_capture_statistics_flow_histogram();
+    snapshot.transport_protocols = make_default_capture_statistics_transport_protocol_rows();
+    snapshot.transport_protocols[0].counters = capture_statistics_counters(2U, 6U, 900U, 1'100U);
+    snapshot.transport_protocols[1].counters = capture_statistics_counters(1U, 3U, 250U, 300U);
+    snapshot.transport_protocols[3].counters = capture_statistics_counters(1U, 1U, 40U, 50U);
+    snapshot.ip_families = make_default_capture_statistics_ip_family_rows();
+    snapshot.ip_families[0].counters = capture_statistics_counters(2U, 7U, 940U, 1'150U);
+    snapshot.ip_families[1].counters = capture_statistics_counters(2U, 3U, 250U, 300U);
+    snapshot.detected_protocols = make_default_capture_statistics_detected_protocol_rows();
+    snapshot.detected_protocols[0].counters = capture_statistics_counters(1U, 2U, 200U, 250U);
+    snapshot.detected_protocols[1].counters = capture_statistics_counters(1U, 3U, 300U, 360U);
+    snapshot.detected_protocols[2].counters = capture_statistics_counters(1U, 1U, 80U, 90U);
+    snapshot.detected_protocols[3].counters = capture_statistics_counters(1U, 2U, 250U, 300U);
+    snapshot.detected_protocols[12].counters = capture_statistics_counters(1U, 3U, 300U, 360U);
+    snapshot.detected_protocols[13].counters = capture_statistics_counters(1U, 1U, 40U, 50U);
+    snapshot.detected_protocols[15].counters = capture_statistics_counters(1U, 2U, 120U, 150U);
+    snapshot.quic_recognition = CaptureStatisticsQuicRecognition {
+        .flow_count = 1U,
+        .with_sni_count = 1U,
+        .v1_count = 1U,
+    };
+    snapshot.tls_recognition = CaptureStatisticsTlsRecognition {
+        .flow_count = 2U,
+        .with_sni_count = 1U,
+        .without_sni_count = 1U,
+        .tls12_count = 1U,
+        .version_unavailable_count = 1U,
+    };
+    snapshot.top_endpoints = {
+        CaptureStatisticsTopEndpointRow {
+            .endpoint = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 1), .port = 443U},
+            .flow_count = 2U,
+            .packet_count = 4U,
+            .captured_bytes = 500U,
+            .original_bytes = 600U,
+        },
+        CaptureStatisticsTopEndpointRow {
+            .endpoint = EndpointKeyV6 {
+                .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10}),
+                .port = 53U,
+            },
+            .flow_count = 1U,
+            .packet_count = 2U,
+            .captured_bytes = 250U,
+            .original_bytes = 300U,
+        },
+    };
+    snapshot.top_ports = {
+        CaptureStatisticsTopPortRow {.port = 443U, .flow_count = 2U, .packet_count = 4U, .captured_bytes = 500U, .original_bytes = 600U},
+        CaptureStatisticsTopPortRow {.port = 53U, .flow_count = 1U, .packet_count = 2U, .captured_bytes = 250U, .original_bytes = 300U},
+    };
+    snapshot.top_flows = {
+        CaptureStatisticsTopFlowRow {
+            .canonical_flow_ordinal = 3U,
+            .family = CaptureStatisticsAddressFamily::ipv4,
+            .connection_key = ConnectionKeyV4 {
+                .first = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 1), .port = 40'001U},
+                .second = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 2), .port = 443U},
+                .protocol = ProtocolId::tcp,
+                .protocol_path_id = 11U,
+            },
+            .endpoint_a = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 1), .port = 40'001U},
+            .endpoint_b = EndpointKeyV4 {.addr = ipv4(10, 0, 0, 2), .port = 443U},
+            .flow_protocol = ProtocolId::tcp,
+            .protocol_hint = FlowProtocolHint::tls,
+            .service_hint = "alpha.example",
+            .protocol_path_id = 11U,
+            .packet_count = 4U,
+            .captured_bytes = 500U,
+            .original_bytes = 600U,
+        },
+        CaptureStatisticsTopFlowRow {
+            .canonical_flow_ordinal = 7U,
+            .family = CaptureStatisticsAddressFamily::ipv6,
+            .connection_key = ConnectionKeyV6 {
+                .first = EndpointKeyV6 {
+                    .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
+                    .port = 53U,
+                },
+                .second = EndpointKeyV6 {
+                    .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
+                    .port = 53'000U,
+                },
+                .protocol = ProtocolId::udp,
+                .protocol_path_id = 17U,
+            },
+            .endpoint_a = EndpointKeyV6 {
+                .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x21}),
+                .port = 53U,
+            },
+            .endpoint_b = EndpointKeyV6 {
+                .addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x22}),
+                .port = 53'000U,
+            },
+            .flow_protocol = ProtocolId::udp,
+            .protocol_hint = FlowProtocolHint::dns,
+            .service_hint = "",
+            .protocol_path_id = 17U,
+            .packet_count = 2U,
+            .captured_bytes = 250U,
+            .original_bytes = 300U,
+        },
+    };
+    PFL_REQUIRE(validate_capture_statistics_snapshot(snapshot).ok);
+    return snapshot;
+}
+
+std::vector<std::uint8_t> serialize_capture_statistics_snapshot_payload(
+    const CaptureStatisticsSnapshot& snapshot
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_capture_statistics_snapshot(stream, snapshot));
+    return stream_bytes(stream);
+}
+
+detail::CaptureIndexStableHeader make_v16_stable_header() {
+    auto header = make_stable_header();
+    header.index_revision = kCaptureIndexStableV16Revision;
+    return header;
+}
+
+std::vector<std::uint8_t> make_inactive_v16_snapshot_container_bytes(
+    const CaptureStatisticsSnapshot& snapshot,
+    std::span<const std::uint8_t> trailing_bytes = {}
+) {
+    std::ostringstream stream(std::ios::binary | std::ios::out);
+    PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
+    PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(stream, snapshot));
+    if (!trailing_bytes.empty()) {
+        PFL_REQUIRE(detail::write_bytes(stream, trailing_bytes));
+    }
+    return stream_bytes(stream);
+}
+
 }  // namespace
 
 void run_index_format_tests() {
@@ -577,6 +800,252 @@ void run_index_format_tests() {
             std::ios::binary | std::ios::in
         );
         PFL_EXPECT(!detail::read_capture_index_stable_section_header(truncated_stream, decoded_header));
+    }
+
+    {
+        auto header = make_v16_stable_header();
+        const auto encoded_header = encode_stable_header(header);
+        PFL_EXPECT(read_le64_at(encoded_header, 0U) == kStableCaptureIndexMagic);
+        PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
+        PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableV16Revision);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 15U);
+        PFL_EXPECT(kCaptureIndexVersion == 15U);
+
+        detail::CaptureIndexStableHeader decoded_header {};
+        std::istringstream read_stream(
+            std::string(encoded_header.begin(), encoded_header.end()),
+            std::ios::binary | std::ios::in
+        );
+        PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
+        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableV16Revision);
+        PFL_EXPECT(decoded_header.source_capture_path_utf8 == header.source_capture_path_utf8);
+    }
+
+    {
+        const auto snapshot = make_valid_capture_statistics_snapshot();
+        const auto payload = serialize_capture_statistics_snapshot_payload(snapshot);
+        const auto container_bytes = make_inactive_v16_snapshot_container_bytes(snapshot);
+        const auto sections = parse_sections(container_bytes);
+        PFL_REQUIRE(sections.size() == 1U);
+
+        const auto& snapshot_section = sections.front();
+        PFL_EXPECT(snapshot_section.id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot));
+        PFL_EXPECT(snapshot_section.schema_version == detail::kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion);
+        PFL_EXPECT(snapshot_section.flags == detail::kCaptureIndexStableSectionFlagRequired);
+        PFL_EXPECT(snapshot_section.total_size ==
+            static_cast<std::size_t>(detail::kCaptureIndexStableSectionHeaderEncodedSize + payload.size()));
+        PFL_EXPECT(read_le64_at(container_bytes, snapshot_section.offset + 8U) == payload.size());
+
+        const auto payload_offset = snapshot_section.offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+        std::vector<std::uint8_t> section_payload(
+            container_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset),
+            container_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset + payload.size())
+        );
+        PFL_EXPECT(section_payload == payload);
+
+        std::istringstream stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexStableHeader decoded_header {};
+        PFL_REQUIRE(detail::read_capture_index_stable_header(stream, decoded_header));
+        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableV16Revision);
+
+        CaptureStatisticsSnapshot decoded_snapshot {};
+        const auto read_result = detail::read_v16_capture_statistics_snapshot_section(stream, decoded_snapshot);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(decoded_snapshot == snapshot);
+        PFL_EXPECT(stream.peek() == std::char_traits<char>::eof());
+    }
+
+    {
+        const auto snapshot = make_valid_capture_statistics_snapshot();
+        const auto base_bytes = make_inactive_v16_snapshot_container_bytes(snapshot);
+        const auto sections = parse_sections(base_bytes);
+        PFL_REQUIRE(sections.size() == 1U);
+        const auto payload_offset = sections.front().offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
+
+        auto expect_status = [&](std::vector<std::uint8_t> bytes,
+                                 const detail::CaptureStatisticsSnapshotSectionReadStatus status) {
+            std::istringstream stream(
+                std::string(bytes.begin(), bytes.end()),
+                std::ios::binary | std::ios::in
+            );
+            detail::CaptureIndexStableHeader decoded_header {};
+            PFL_REQUIRE(detail::read_capture_index_stable_header(stream, decoded_header));
+            CaptureStatisticsSnapshot decoded_snapshot {};
+            const auto read_result = detail::read_v16_capture_statistics_snapshot_section(stream, decoded_snapshot);
+            PFL_EXPECT(read_result.status == status);
+            PFL_EXPECT(decoded_snapshot == CaptureStatisticsSnapshot {});
+        };
+
+        {
+            auto wrong_section_bytes = base_bytes;
+            write_le32_at(
+                wrong_section_bytes,
+                sections.front().offset,
+                static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early)
+            );
+            expect_status(
+                std::move(wrong_section_bytes),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::wrong_section_id
+            );
+        }
+
+        {
+            auto invalid_framing_bytes = base_bytes;
+            write_le16_at(invalid_framing_bytes, sections.front().offset + 6U, 0U);
+            expect_status(
+                std::move(invalid_framing_bytes),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::invalid_section_framing
+            );
+        }
+
+        {
+            auto wrong_schema_bytes = base_bytes;
+            write_le16_at(wrong_schema_bytes, sections.front().offset + 4U, 99U);
+            expect_status(
+                std::move(wrong_schema_bytes),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::unsupported_schema_version
+            );
+        }
+
+        {
+            std::vector<std::uint8_t> truncated_section_header(
+                base_bytes.begin(),
+                base_bytes.begin() + static_cast<std::ptrdiff_t>(stable_header_size(base_bytes) + 15U)
+            );
+            expect_status(
+                std::move(truncated_section_header),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::invalid_section_header
+            );
+        }
+
+        {
+            auto truncated_payload_bytes = base_bytes;
+            truncated_payload_bytes.pop_back();
+            expect_status(
+                std::move(truncated_payload_bytes),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::truncated_payload
+            );
+        }
+
+        {
+            auto oversized_payload_bytes = base_bytes;
+            write_le64_at(
+                oversized_payload_bytes,
+                sections.front().offset + 8U,
+                detail::max_capture_statistics_snapshot_payload_size_bytes() + 1U
+            );
+            expect_status(
+                std::move(oversized_payload_bytes),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::payload_too_large
+            );
+        }
+
+        {
+            auto malformed_payload_bytes = base_bytes;
+            malformed_payload_bytes[payload_offset] = 99U;
+            expect_status(
+                std::move(malformed_payload_bytes),
+                detail::CaptureStatisticsSnapshotSectionReadStatus::malformed_snapshot_payload
+            );
+        }
+
+        {
+            auto semantically_invalid_payload_bytes = base_bytes;
+            write_le64_at(semantically_invalid_payload_bytes, payload_offset + 1U, 4U);
+            std::istringstream stream(
+                std::string(
+                    semantically_invalid_payload_bytes.begin(),
+                    semantically_invalid_payload_bytes.end()
+                ),
+                std::ios::binary | std::ios::in
+            );
+            detail::CaptureIndexStableHeader decoded_header {};
+            PFL_REQUIRE(detail::read_capture_index_stable_header(stream, decoded_header));
+            CaptureStatisticsSnapshot decoded_snapshot {};
+            const auto read_result = detail::read_v16_capture_statistics_snapshot_section(stream, decoded_snapshot);
+            PFL_EXPECT(read_result.status == detail::CaptureStatisticsSnapshotSectionReadStatus::snapshot_semantic_inconsistency);
+            PFL_REQUIRE(read_result.validation_error.has_value());
+            PFL_EXPECT(
+                read_result.validation_error->code ==
+                CaptureStatisticsSnapshotValidationErrorCode::captured_packet_histogram_sum_mismatch
+            );
+        }
+    }
+
+    {
+        const auto snapshot = make_valid_capture_statistics_snapshot();
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_capture_index_stable_header(stream, make_v16_stable_header()));
+        PFL_REQUIRE(detail::write_v16_capture_statistics_snapshot_section(stream, snapshot));
+        const detail::CaptureIndexStableSectionHeader following_section {
+            .section_id = static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_flow_metadata),
+            .section_schema_version = 1U,
+            .section_flags = detail::kCaptureIndexStableSectionFlagRequired,
+            .payload_size = 4U,
+        };
+        PFL_REQUIRE(detail::write_capture_index_stable_section_header(stream, following_section));
+        PFL_REQUIRE(detail::write_bytes(stream, std::array<std::uint8_t, 4> {0xDEU, 0xADU, 0xBEU, 0xEFU}));
+        const auto container_bytes = stream_bytes(stream);
+        const auto sections = parse_sections(container_bytes);
+        PFL_REQUIRE(sections.size() == 2U);
+
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexStableHeader decoded_header {};
+        PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
+        CaptureStatisticsSnapshot decoded_snapshot {};
+        const auto read_result = detail::read_v16_capture_statistics_snapshot_section(read_stream, decoded_snapshot);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(decoded_snapshot == snapshot);
+        PFL_EXPECT(
+            static_cast<std::size_t>(read_stream.tellg()) ==
+            sections.front().offset + sections.front().total_size
+        );
+
+        detail::CaptureIndexStableSectionHeader decoded_following_section {};
+        PFL_REQUIRE(detail::read_capture_index_stable_section_header(read_stream, decoded_following_section));
+        PFL_EXPECT(decoded_following_section.section_id == following_section.section_id);
+        PFL_EXPECT(decoded_following_section.payload_size == following_section.payload_size);
+
+        std::vector<std::uint8_t> following_payload {};
+        PFL_REQUIRE(detail::read_bounded_section_payload(
+            read_stream,
+            decoded_following_section.payload_size,
+            decoded_following_section.payload_size,
+            following_payload
+        ));
+        PFL_EXPECT((following_payload == std::vector<std::uint8_t> {0xDEU, 0xADU, 0xBEU, 0xEFU}));
+    }
+
+    {
+        const auto snapshot = make_valid_capture_statistics_snapshot();
+        const std::vector<std::uint8_t> malformed_late_bytes {0xAAU, 0x55U, 0x10U};
+        const auto container_bytes = make_inactive_v16_snapshot_container_bytes(
+            snapshot,
+            std::span<const std::uint8_t>(malformed_late_bytes.data(), malformed_late_bytes.size())
+        );
+        const auto snapshot_section_end =
+            stable_header_size(container_bytes) +
+            detail::kCaptureIndexStableSectionHeaderEncodedSize +
+            serialize_capture_statistics_snapshot_payload(snapshot).size();
+
+        std::istringstream stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        detail::CaptureIndexStableHeader decoded_header {};
+        PFL_REQUIRE(detail::read_capture_index_stable_header(stream, decoded_header));
+        CaptureStatisticsSnapshot decoded_snapshot {};
+        const auto read_result = detail::read_v16_capture_statistics_snapshot_section(stream, decoded_snapshot);
+        PFL_REQUIRE(static_cast<bool>(read_result));
+        PFL_EXPECT(decoded_snapshot == snapshot);
+        PFL_EXPECT(static_cast<std::size_t>(stream.tellg()) == snapshot_section_end);
+        PFL_EXPECT(stream.peek() == static_cast<int>(malformed_late_bytes.front()));
     }
 
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 168, 10, 1), ipv4(192, 168, 10, 2), 41000, 443);

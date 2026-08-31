@@ -217,6 +217,7 @@ struct CaptureStatisticsTopFlowRow {
 inline constexpr std::size_t kCaptureStatisticsSnapshotTopEndpointCapacity = 20U;
 inline constexpr std::size_t kCaptureStatisticsSnapshotTopPortCapacity = 20U;
 inline constexpr std::size_t kCaptureStatisticsSnapshotTopFlowCapacity = 10U;
+inline constexpr std::size_t kCaptureStatisticsFlowPacketCountHistogramBucketCount = 12U;
 
 [[nodiscard]] std::vector<CaptureStatisticsTransportProtocolRow>
 make_default_capture_statistics_transport_protocol_rows();

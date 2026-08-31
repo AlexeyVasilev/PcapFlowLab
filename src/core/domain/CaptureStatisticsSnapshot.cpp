@@ -45,7 +45,8 @@ constexpr std::array<CaptureStatisticsDetectedProtocolCategory, 16> kDetectedPro
     CaptureStatisticsDetectedProtocolCategory::unknown_without_possible,
 }};
 
-constexpr std::array<FlowPacketCountBucketDefinition, 12> kFlowPacketCountBucketDefinitions {{
+constexpr std::array<FlowPacketCountBucketDefinition, kCaptureStatisticsFlowPacketCountHistogramBucketCount>
+    kFlowPacketCountBucketDefinitions {{
     {"packets_1", 1U, 1U},
     {"packets_2", 2U, 2U},
     {"packets_3_5", 3U, 5U},

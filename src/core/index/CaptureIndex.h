@@ -27,6 +27,7 @@ inline constexpr std::uint64_t kCaptureIndexMagic = kStableCaptureIndexMagic;
 inline constexpr std::uint16_t kLegacyCaptureIndexVersion = 14U;
 inline constexpr std::uint16_t kCaptureIndexStableContainerFormatVersion = 1U;
 inline constexpr std::uint32_t kCaptureIndexStableIndexRevision = 15U;
+inline constexpr std::uint32_t kCaptureIndexStableV16Revision = 16U;
 inline constexpr std::uint32_t kCaptureIndexVersion = kCaptureIndexStableIndexRevision;
 
 enum class CaptureIndexFormatFamily : std::uint8_t {

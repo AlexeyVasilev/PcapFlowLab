@@ -51,6 +51,39 @@ inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
     8U + 2U + 2U + 4U + 4U + 4U + 1U + 8U + 8U + 8U + 4U;
 inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U;
 
+[[nodiscard]] constexpr std::uint64_t max_capture_statistics_snapshot_payload_size_bytes() noexcept {
+    constexpr std::uint64_t kWorstCaseEndpointIdentityBytes = 1U + 18U;
+    constexpr std::uint64_t kWorstCaseEndpointIdentityForFamilyBytes = 18U;
+    constexpr std::uint64_t kWorstCaseConnectionKeyBytes = 41U;
+    constexpr std::uint64_t kProtocolCountersRowBytes = 1U + (4U * 8U);
+    constexpr std::uint64_t kPacketSizeDistributionBytes =
+        8U + 4U + (static_cast<std::uint64_t>(kCapturePacketSizeStatisticsBucketCount) * 8U);
+    constexpr std::uint64_t kFlowPacketHistogramBucketBytes = 3U * 8U;
+    constexpr std::uint64_t kTopEndpointRowBytes = kWorstCaseEndpointIdentityBytes + (4U * 8U);
+    constexpr std::uint64_t kTopPortRowBytes = 2U + (4U * 8U);
+    constexpr std::uint64_t kTopFlowRowBytes =
+        4U + 1U + kWorstCaseConnectionKeyBytes +
+        kWorstCaseEndpointIdentityForFamilyBytes + kWorstCaseEndpointIdentityForFamilyBytes +
+        1U + 1U + 4U + static_cast<std::uint64_t>(kMaxCaptureStatisticsSnapshotServiceHintBytes) +
+        4U + (3U * 8U);
+
+    return
+        1U + (4U * 8U) +
+        1U + (2U * 8U) + 8U + 4U + 4U +
+        kPacketSizeDistributionBytes + kPacketSizeDistributionBytes +
+        (3U * 8U) + (2U * 8U) + (3U * 8U) + (3U * 8U) + (3U * 8U) +
+        (9U * 8U) + 4U +
+        (static_cast<std::uint64_t>(kCaptureStatisticsFlowPacketCountHistogramBucketCount) *
+         kFlowPacketHistogramBucketBytes) +
+        4U + (4U * kProtocolCountersRowBytes) +
+        4U + (2U * kProtocolCountersRowBytes) +
+        4U + (16U * kProtocolCountersRowBytes) +
+        (13U * 8U) +
+        4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopEndpointCapacity) * kTopEndpointRowBytes) +
+        4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopPortCapacity) * kTopPortRowBytes) +
+        4U + (static_cast<std::uint64_t>(kCaptureStatisticsSnapshotTopFlowCapacity) * kTopFlowRowBytes);
+}
+
 // v15+ stable-container wire contract:
 // little-endian integrals, UTF-8 length-prefixed strings, and explicit field
 // encoding independent of host ABI/padding.
@@ -111,6 +144,35 @@ bool read_capture_index_stable_section_header(
     std::istream& stream,
     CaptureIndexStableSectionHeader& header
 );
+bool skip_section_payload(std::istream& stream, std::uint64_t payload_size);
+bool read_bounded_section_payload(
+    std::istream& stream,
+    std::uint64_t payload_size,
+    std::uint64_t max_payload_size,
+    std::vector<std::uint8_t>& payload
+);
+
+enum class CaptureStatisticsSnapshotSectionReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_section_header,
+    wrong_section_id,
+    invalid_section_framing,
+    unsupported_schema_version,
+    payload_too_large,
+    truncated_payload,
+    malformed_snapshot_payload,
+    snapshot_semantic_inconsistency,
+};
+
+struct CaptureStatisticsSnapshotSectionReadResult {
+    CaptureStatisticsSnapshotSectionReadStatus status {CaptureStatisticsSnapshotSectionReadStatus::ok};
+    CaptureIndexStableSectionHeader section_header {};
+    std::optional<CaptureStatisticsSnapshotValidationError> validation_error {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureStatisticsSnapshotSectionReadStatus::ok;
+    }
+};
 
 bool write_section(std::ostream& stream, std::uint32_t section_id, std::span<const std::uint8_t> payload);
 bool read_section_header(std::istream& stream, std::uint32_t& section_id, std::uint64_t& payload_size);
@@ -206,6 +268,14 @@ bool write_capture_statistics_snapshot(
     const CaptureStatisticsSnapshot& snapshot
 );
 bool read_capture_statistics_snapshot(
+    std::istream& stream,
+    CaptureStatisticsSnapshot& snapshot
+);
+bool write_v16_capture_statistics_snapshot_section(
+    std::ostream& stream,
+    const CaptureStatisticsSnapshot& snapshot
+);
+CaptureStatisticsSnapshotSectionReadResult read_v16_capture_statistics_snapshot_section(
     std::istream& stream,
     CaptureStatisticsSnapshot& snapshot
 );

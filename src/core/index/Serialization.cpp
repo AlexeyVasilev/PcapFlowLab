@@ -4,6 +4,7 @@
 #include <array>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <utility>
 
 namespace pfl::detail {
@@ -232,15 +233,15 @@ bool read_packet_refs(std::istream& stream, std::vector<PacketRef>& packets) {
     return true;
 }
 
-bool skip_exact_bytes(std::istream& stream, std::uint32_t byte_count) {
+bool skip_exact_bytes(std::istream& stream, std::uint64_t byte_count) {
     if (byte_count == 0U) {
         return true;
     }
 
     auto discard = std::array<char, 512> {};
-    std::uint32_t remaining = byte_count;
+    std::uint64_t remaining = byte_count;
     while (remaining > 0U) {
-        const auto chunk_size = std::min<std::uint32_t>(remaining, static_cast<std::uint32_t>(discard.size()));
+        const auto chunk_size = std::min<std::uint64_t>(remaining, static_cast<std::uint64_t>(discard.size()));
         stream.read(discard.data(), static_cast<std::streamsize>(chunk_size));
         if (stream.gcount() != static_cast<std::streamsize>(chunk_size)) {
             return false;
@@ -557,6 +558,28 @@ bool read_capture_index_stable_section_header(std::istream& stream,
            read_u64(stream, header.payload_size);
 }
 
+bool skip_section_payload(std::istream& stream, const std::uint64_t payload_size) {
+    return skip_exact_bytes(stream, payload_size);
+}
+
+bool read_bounded_section_payload(std::istream& stream,
+                                  const std::uint64_t payload_size,
+                                  const std::uint64_t max_payload_size,
+                                  std::vector<std::uint8_t>& payload) {
+    if (payload_size > max_payload_size ||
+        payload_size > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)()) ||
+        payload_size > static_cast<std::uint64_t>((std::numeric_limits<std::streamsize>::max)())) {
+        return false;
+    }
+
+    payload.assign(static_cast<std::size_t>(payload_size), 0U);
+    if (payload.empty()) {
+        return true;
+    }
+
+    return read_bytes(stream, std::span<std::uint8_t>(payload.data(), payload.size()));
+}
+
 bool write_section(std::ostream& stream, const std::uint32_t section_id, std::span<const std::uint8_t> payload) {
     return write_u32(stream, section_id) &&
            write_u64(stream, static_cast<std::uint64_t>(payload.size())) &&
@@ -568,17 +591,12 @@ bool read_section_header(std::istream& stream, std::uint32_t& section_id, std::u
 }
 
 bool read_section_payload(std::istream& stream, const std::uint64_t payload_size, std::vector<std::uint8_t>& payload) {
-    if (payload_size > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
-        payload_size > static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max())) {
-        return false;
-    }
-
-    payload.assign(static_cast<std::size_t>(payload_size), 0U);
-    if (payload.empty()) {
-        return true;
-    }
-
-    return read_bytes(stream, std::span<std::uint8_t>(payload.data(), payload.size()));
+    return read_bounded_section_payload(
+        stream,
+        payload_size,
+        static_cast<std::uint64_t>((std::numeric_limits<std::streamsize>::max)()),
+        payload
+    );
 }
 
 bool write_capture_source_info(std::ostream& stream, const CaptureSourceInfo& source_info) {
@@ -1263,6 +1281,21 @@ bool read_capture_packet_locator(
 
 namespace {
 
+enum class CaptureStatisticsSnapshotPayloadReadStatus : std::uint8_t {
+    ok = 0,
+    malformed_payload,
+    snapshot_semantic_inconsistency,
+};
+
+struct CaptureStatisticsSnapshotPayloadReadResult {
+    CaptureStatisticsSnapshotPayloadReadStatus status {CaptureStatisticsSnapshotPayloadReadStatus::ok};
+    std::optional<CaptureStatisticsSnapshotValidationError> validation_error {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureStatisticsSnapshotPayloadReadStatus::ok;
+    }
+};
+
 template <typename Enum>
 bool write_enum_u8(std::ostream& stream, const Enum value) {
     return write_u8(stream, static_cast<std::uint8_t>(value));
@@ -1462,6 +1495,29 @@ bool read_capture_statistics_protocol_counters(
            read_u64(stream, counters.original_bytes);
 }
 
+CaptureStatisticsSnapshotPayloadReadResult finalize_capture_statistics_snapshot_decode(
+    std::istream& stream,
+    CaptureStatisticsSnapshot& snapshot,
+    CaptureStatisticsSnapshot&& decoded
+) {
+    if (stream.peek() != std::char_traits<char>::eof()) {
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
+    }
+
+    const auto validation = validate_capture_statistics_snapshot(decoded);
+    if (!validation.ok) {
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::snapshot_semantic_inconsistency,
+            .validation_error = validation.error,
+        };
+    }
+
+    snapshot = std::move(decoded);
+    return {};
+}
+
 }  // namespace
 
 bool write_capture_statistics_snapshot(
@@ -1628,7 +1684,9 @@ bool write_capture_statistics_snapshot(
     return true;
 }
 
-bool read_capture_statistics_snapshot(
+namespace {
+
+CaptureStatisticsSnapshotPayloadReadResult read_capture_statistics_snapshot_payload(
     std::istream& stream,
     CaptureStatisticsSnapshot& snapshot
 ) {
@@ -1638,7 +1696,9 @@ bool read_capture_statistics_snapshot(
         !read_u64(stream, decoded.total_flow_count) ||
         !read_u64(stream, decoded.total_captured_bytes) ||
         !read_u64(stream, decoded.total_original_bytes)) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
 
     std::uint8_t timestamp_available {0};
@@ -1653,24 +1713,32 @@ bool read_capture_statistics_snapshot(
         !read_u64(stream, decoded.captured_packet_size_distribution.maximum_bucket_packet_count) ||
         !read_u32(stream, bucket_count) ||
         bucket_count != decoded.captured_packet_size_distribution.buckets.size()) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     decoded.timestamp_range.available = timestamp_available != 0U;
 
     for (auto& bucket : decoded.captured_packet_size_distribution.buckets) {
         if (!read_u64(stream, bucket.packet_count)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
     }
 
     if (!read_u64(stream, decoded.original_packet_size_distribution.maximum_bucket_packet_count) ||
         !read_u32(stream, bucket_count) ||
         bucket_count != decoded.original_packet_size_distribution.buckets.size()) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     for (auto& bucket : decoded.original_packet_size_distribution.buckets) {
         if (!read_u64(stream, bucket.packet_count)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
     }
 
@@ -1699,21 +1767,27 @@ bool read_capture_statistics_snapshot(
         !read_u64(stream, decoded.flow_packet_count_histogram.excluded_zero_packet_original_byte_count) ||
         !read_u32(stream, bucket_count) ||
         bucket_count != decoded.flow_packet_count_histogram.buckets.size()) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
 
     for (auto& bucket : decoded.flow_packet_count_histogram.buckets) {
         if (!read_u64(stream, bucket.flow_count) ||
             !read_u64(stream, bucket.captured_byte_count) ||
             !read_u64(stream, bucket.original_byte_count)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
     }
 
     std::uint32_t row_count {0};
     if (!read_u32(stream, row_count) ||
         row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     decoded.transport_protocols.clear();
     decoded.transport_protocols.reserve(row_count);
@@ -1723,14 +1797,18 @@ bool read_capture_statistics_snapshot(
                 return value <= static_cast<std::uint8_t>(CaptureStatisticsTransportProtocolCategory::other);
             }) ||
             !read_capture_statistics_protocol_counters(stream, row.counters)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
         decoded.transport_protocols.push_back(row);
     }
 
     if (!read_u32(stream, row_count) ||
         row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     decoded.ip_families.clear();
     decoded.ip_families.reserve(row_count);
@@ -1740,14 +1818,18 @@ bool read_capture_statistics_snapshot(
                 return value <= static_cast<std::uint8_t>(CaptureStatisticsIpFamilyCategory::ipv6);
             }) ||
             !read_capture_statistics_protocol_counters(stream, row.counters)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
         decoded.ip_families.push_back(row);
     }
 
     if (!read_u32(stream, row_count) ||
         row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     decoded.detected_protocols.clear();
     decoded.detected_protocols.reserve(row_count);
@@ -1757,7 +1839,9 @@ bool read_capture_statistics_snapshot(
                 return value <= static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::unknown_without_possible);
             }) ||
             !read_capture_statistics_protocol_counters(stream, row.counters)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
         decoded.detected_protocols.push_back(row);
     }
@@ -1777,7 +1861,9 @@ bool read_capture_statistics_snapshot(
         !read_u64(stream, decoded.tls_recognition.version_unavailable_count) ||
         !read_u32(stream, row_count) ||
         row_count > kCaptureStatisticsSnapshotTopEndpointCapacity) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
 
     decoded.top_endpoints.clear();
@@ -1789,13 +1875,17 @@ bool read_capture_statistics_snapshot(
             !read_u64(stream, row.packet_count) ||
             !read_u64(stream, row.captured_bytes) ||
             !read_u64(stream, row.original_bytes)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
         decoded.top_endpoints.push_back(std::move(row));
     }
 
     if (!read_u32(stream, row_count) || row_count > kCaptureStatisticsSnapshotTopPortCapacity) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     decoded.top_ports.clear();
     decoded.top_ports.reserve(row_count);
@@ -1806,13 +1896,17 @@ bool read_capture_statistics_snapshot(
             !read_u64(stream, row.packet_count) ||
             !read_u64(stream, row.captured_bytes) ||
             !read_u64(stream, row.original_bytes)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
         decoded.top_ports.push_back(row);
     }
 
     if (!read_u32(stream, row_count) || row_count > kCaptureStatisticsSnapshotTopFlowCapacity) {
-        return false;
+        return CaptureStatisticsSnapshotPayloadReadResult {
+            .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+        };
     }
     decoded.top_flows.clear();
     decoded.top_flows.reserve(row_count);
@@ -1830,21 +1924,115 @@ bool read_capture_statistics_snapshot(
             !read_u64(stream, row.packet_count) ||
             !read_u64(stream, row.captured_bytes) ||
             !read_u64(stream, row.original_bytes)) {
-            return false;
+            return CaptureStatisticsSnapshotPayloadReadResult {
+                .status = CaptureStatisticsSnapshotPayloadReadStatus::malformed_payload,
+            };
         }
         decoded.top_flows.push_back(std::move(row));
     }
 
-    if (stream.peek() != std::char_traits<char>::eof()) {
+    return finalize_capture_statistics_snapshot_decode(stream, snapshot, std::move(decoded));
+}
+
+}  // namespace
+
+bool read_capture_statistics_snapshot(
+    std::istream& stream,
+    CaptureStatisticsSnapshot& snapshot
+) {
+    return static_cast<bool>(read_capture_statistics_snapshot_payload(stream, snapshot));
+}
+
+bool write_v16_capture_statistics_snapshot_section(
+    std::ostream& stream,
+    const CaptureStatisticsSnapshot& snapshot
+) {
+    if (!validate_capture_statistics_snapshot(snapshot).ok) {
         return false;
     }
 
-    if (!validate_capture_statistics_snapshot(decoded)) {
+    std::ostringstream payload_stream(std::ios::binary | std::ios::out);
+    if (!write_capture_statistics_snapshot(payload_stream, snapshot)) {
         return false;
     }
 
-    snapshot = std::move(decoded);
-    return true;
+    const auto payload_bytes = payload_stream.str();
+    if (payload_bytes.size() > max_capture_statistics_snapshot_payload_size_bytes()) {
+        return false;
+    }
+
+    return write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+        .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot),
+        .section_schema_version = kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion,
+        .section_flags = kCaptureIndexStableSectionFlagRequired,
+        .payload_size = static_cast<std::uint64_t>(payload_bytes.size()),
+    }) && write_bytes(
+        stream,
+        std::span<const std::uint8_t>(
+            reinterpret_cast<const std::uint8_t*>(payload_bytes.data()),
+            payload_bytes.size()
+        )
+    );
+}
+
+CaptureStatisticsSnapshotSectionReadResult read_v16_capture_statistics_snapshot_section(
+    std::istream& stream,
+    CaptureStatisticsSnapshot& snapshot
+) {
+    snapshot = {};
+
+    CaptureStatisticsSnapshotSectionReadResult result {};
+    if (!read_capture_index_stable_section_header(stream, result.section_header)) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::invalid_section_header;
+        return result;
+    }
+
+    if (result.section_header.section_id !=
+        static_cast<std::uint32_t>(CaptureIndexSectionId::capture_statistics_snapshot)) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::wrong_section_id;
+        return result;
+    }
+
+    if (result.section_header.section_flags != kCaptureIndexStableSectionFlagRequired) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::invalid_section_framing;
+        return result;
+    }
+
+    if (result.section_header.section_schema_version !=
+        kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::unsupported_schema_version;
+        return result;
+    }
+
+    const auto max_payload_size = max_capture_statistics_snapshot_payload_size_bytes();
+    if (result.section_header.payload_size > max_payload_size) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::payload_too_large;
+        return result;
+    }
+
+    std::vector<std::uint8_t> payload {};
+    if (!read_bounded_section_payload(stream, result.section_header.payload_size, max_payload_size, payload)) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::truncated_payload;
+        return result;
+    }
+
+    std::string payload_text {};
+    payload_text.assign(payload.begin(), payload.end());
+    std::istringstream payload_stream(payload_text, std::ios::binary | std::ios::in);
+    const auto payload_result = read_capture_statistics_snapshot_payload(payload_stream, snapshot);
+    if (payload_result.status == CaptureStatisticsSnapshotPayloadReadStatus::ok) {
+        return result;
+    }
+
+    snapshot = {};
+    if (payload_result.status == CaptureStatisticsSnapshotPayloadReadStatus::snapshot_semantic_inconsistency) {
+        result.status = CaptureStatisticsSnapshotSectionReadStatus::snapshot_semantic_inconsistency;
+        result.validation_error = payload_result.validation_error;
+        return result;
+    }
+
+    result.status = CaptureStatisticsSnapshotSectionReadStatus::malformed_snapshot_payload;
+    return result;
 }
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {
