@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "app/session/FlowRows.h"
+#include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/domain/CaptureState.h"
 #include "core/services/AnalysisSettings.h"
 
@@ -112,6 +113,11 @@ std::string format_statistics_count_with_percent_text(std::uint64_t count, doubl
 std::string format_statistics_size_with_percent_text(std::uint64_t size, double percent);
 std::string format_statistics_size_value(std::uint64_t value);
 std::vector<ProtocolHintStatisticsRow> build_protocol_hint_statistics_rows(const CaptureProtocolSummary& summary);
+CaptureStatisticsSnapshot make_capture_statistics_snapshot(
+    const CapturePacketStatistics& packet_statistics,
+    const CaptureGeneralStatistics& general_statistics,
+    CaptureStatisticsScope scope
+);
 CaptureGeneralStatistics build_capture_general_statistics(
     std::span<const ListedConnectionRef> connections,
     std::size_t top_summary_capacity = 20U

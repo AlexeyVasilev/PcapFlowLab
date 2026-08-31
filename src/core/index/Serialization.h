@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/domain/CaptureStatisticsSnapshot.h"
 #include "core/domain/CaptureState.h"
 #include "core/index/CaptureIndex.h"
 
@@ -23,6 +24,17 @@ enum class CaptureIndexSectionId : std::uint32_t {
     ipv6_connections = 5,
     unrecognized_packets = 6,
     packet_locator = 7,
+    capture_statistics_snapshot = 8,
+    protocol_path_registry_early = 9,
+    protocol_path_terminal_aggregates = 10,
+    ipv4_flow_metadata = 11,
+    ipv6_flow_metadata = 12,
+    protocol_path_membership = 13,
+    packetref_directory = 14,
+    unrecognized_directory = 15,
+    packetref_detail_blocks = 16,
+    unrecognized_reason_blobs = 17,
+    packet_locator_v16 = 18,
 };
 
 inline constexpr std::uint16_t kCaptureIndexStableSectionFlagRequired = 0x0001U;
@@ -32,7 +44,9 @@ inline constexpr std::uint16_t kCaptureIndexStableIpv4ConnectionsSectionSchemaVe
 inline constexpr std::uint16_t kCaptureIndexStableIpv6ConnectionsSectionSchemaVersion = 2U;
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedPacketsSectionSchemaVersion = 2U;
 inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStableCaptureStatisticsSnapshotSectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
+inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
     8U + 2U + 2U + 4U + 4U + 4U + 1U + 8U + 8U + 8U + 4U;
 inline constexpr std::uint32_t kCaptureIndexStableSectionHeaderEncodedSize = 16U;
@@ -186,6 +200,14 @@ bool write_capture_packet_locator(
 bool read_capture_packet_locator(
     std::istream& stream,
     std::vector<CapturePacketLocatorEntry>& entries
+);
+bool write_capture_statistics_snapshot(
+    std::ostream& stream,
+    const CaptureStatisticsSnapshot& snapshot
+);
+bool read_capture_statistics_snapshot(
+    std::istream& stream,
+    CaptureStatisticsSnapshot& snapshot
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

@@ -49,6 +49,7 @@ add_library(
     src/core/domain/ConnectionTable.cpp
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
+    src/core/domain/CaptureStatisticsSnapshot.cpp
     src/core/domain/PacketDetails.cpp
     src/core/dissection/PacketSlice.cpp
     src/core/dissection/DissectionRegistry.cpp
@@ -476,6 +477,7 @@ if(BUILD_TESTING)
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
         tests/unit/IndexFormatTests.cpp
+        tests/unit/CaptureStatisticsSnapshotTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/SupportedProtocolCatalogTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp

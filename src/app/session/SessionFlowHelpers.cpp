@@ -232,12 +232,14 @@ constexpr std::size_t kTopFlowSummaryCapacity = 10U;
 struct EndpointAccumulator {
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 
 struct PortAccumulator {
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 
@@ -355,21 +357,58 @@ bool top_flow_row_better(const TopFlowRow& left, const TopFlowRow& right) noexce
 void observe_endpoint_accumulator(
     EndpointAccumulator& accumulator,
     const std::uint64_t packet_count_value,
+    const std::uint64_t captured_bytes_value,
     const std::uint64_t total_bytes_value
 ) noexcept {
     ++accumulator.flow_count;
     accumulator.packet_count += packet_count_value;
+    accumulator.captured_bytes += captured_bytes_value;
     accumulator.total_bytes += total_bytes_value;
 }
 
 void observe_port_accumulator(
     PortAccumulator& accumulator,
     const std::uint64_t packet_count_value,
+    const std::uint64_t captured_bytes_value,
     const std::uint64_t total_bytes_value
 ) noexcept {
     ++accumulator.flow_count;
     accumulator.packet_count += packet_count_value;
+    accumulator.captured_bytes += captured_bytes_value;
     accumulator.total_bytes += total_bytes_value;
+}
+
+CaptureStatisticsProtocolCounters make_protocol_counters(const ProtocolStats& stats) {
+    return CaptureStatisticsProtocolCounters {
+        .flow_count = stats.flow_count,
+        .packet_count = stats.packet_count,
+        .captured_bytes = stats.captured_bytes,
+        .original_bytes = stats.original_bytes,
+    };
+}
+
+CaptureStatisticsDirectionDistribution make_direction_distribution(
+    const FlowDirectionDistributionStatistics& distribution
+) {
+    return CaptureStatisticsDirectionDistribution {
+        .mostly_a_to_b_flow_count = distribution.mostly_a_to_b_flow_count,
+        .balanced_flow_count = distribution.balanced_flow_count,
+        .mostly_b_to_a_flow_count = distribution.mostly_b_to_a_flow_count,
+    };
+}
+
+CaptureStatisticsTcpFlags make_tcp_flags(const CaptureTcpFlagStatistics& flags) {
+    return CaptureStatisticsTcpFlags {
+        .syn_packet_count = flags.syn_packet_count,
+        .fin_packet_count = flags.fin_packet_count,
+        .rst_packet_count = flags.rst_packet_count,
+    };
+}
+
+CaptureStatisticsAddressFamily make_capture_statistics_address_family(const FlowAddressFamily family) {
+    return family == FlowAddressFamily::ipv4
+        ? CaptureStatisticsAddressFamily::ipv4
+        : CaptureStatisticsAddressFamily::ipv6;
 }
 
 std::optional<TopFlowRow> make_top_flow_row(
@@ -477,9 +516,11 @@ CaptureTopSummary build_top_summary_from_aggregates(
     summary.endpoints_by_bytes.reserve(top_endpoints.size());
     for (const auto& candidate : top_endpoints) {
         summary.endpoints_by_bytes.push_back(TopEndpointRow {
+            .identity = candidate.key,
             .endpoint = format_endpoint_identity(candidate.key),
             .flow_count = candidate.accumulator.flow_count,
             .packet_count = candidate.accumulator.packet_count,
+            .captured_bytes = candidate.accumulator.captured_bytes,
             .total_bytes = candidate.accumulator.total_bytes,
         });
     }
@@ -491,6 +532,7 @@ CaptureTopSummary build_top_summary_from_aggregates(
             .port = candidate.port,
             .flow_count = candidate.accumulator.flow_count,
             .packet_count = candidate.accumulator.packet_count,
+            .captured_bytes = candidate.accumulator.captured_bytes,
             .total_bytes = candidate.accumulator.total_bytes,
         });
     }
@@ -1382,6 +1424,224 @@ FlowPacketCountHistogram build_flow_packet_count_histogram(const std::vector<Lis
     ).flow_packet_count_histogram;
 }
 
+CaptureStatisticsSnapshot make_capture_statistics_snapshot(
+    const CapturePacketStatistics& packet_statistics,
+    const CaptureGeneralStatistics& general_statistics,
+    const CaptureStatisticsScope scope
+) {
+    CaptureStatisticsSnapshot snapshot {};
+    snapshot.scope = scope;
+    snapshot.total_packet_count = packet_statistics.total_packet_count;
+    snapshot.total_flow_count = general_statistics.flow_characteristics.total_flow_count;
+    snapshot.total_captured_bytes = packet_statistics.total_captured_bytes;
+    snapshot.total_original_bytes = packet_statistics.total_original_bytes;
+    snapshot.timestamp_range = packet_statistics.timestamp_range;
+    snapshot.truncated_packet_count = packet_statistics.truncated_packet_count;
+    snapshot.maximum_captured_packet_length = packet_statistics.maximum_captured_packet_length;
+    snapshot.maximum_original_packet_length = packet_statistics.maximum_original_packet_length;
+    snapshot.captured_packet_size_distribution = packet_statistics.captured_size_distribution;
+    snapshot.original_packet_size_distribution = packet_statistics.original_size_distribution;
+    snapshot.unrecognized_packet_count = packet_statistics.unrecognized_packet_count;
+    snapshot.unrecognized_captured_bytes = packet_statistics.unrecognized_captured_bytes;
+    snapshot.unrecognized_original_bytes = packet_statistics.unrecognized_original_bytes;
+    snapshot.only_a_to_b_flow_count = general_statistics.flow_characteristics.only_a_to_b_flow_count;
+    snapshot.service_recognized_flow_count = general_statistics.flow_characteristics.service_recognized_flow_count;
+    snapshot.packet_direction_distribution = make_direction_distribution(
+        general_statistics.packet_direction_distribution
+    );
+    snapshot.original_byte_direction_distribution = make_direction_distribution(
+        general_statistics.original_byte_direction_distribution
+    );
+    snapshot.tcp_flags = make_tcp_flags(general_statistics.tcp_flags);
+    snapshot.flow_packet_count_histogram = make_default_capture_statistics_flow_packet_count_histogram();
+    snapshot.flow_packet_count_histogram.total_flow_count =
+        general_statistics.flow_packet_count_histogram.total_flow_count;
+    snapshot.flow_packet_count_histogram.total_captured_byte_count =
+        general_statistics.flow_packet_count_histogram.total_captured_byte_count;
+    snapshot.flow_packet_count_histogram.total_original_byte_count =
+        general_statistics.flow_packet_count_histogram.total_original_byte_count;
+    snapshot.flow_packet_count_histogram.maximum_bucket_flow_count =
+        general_statistics.flow_packet_count_histogram.maximum_bucket_flow_count;
+    snapshot.flow_packet_count_histogram.maximum_bucket_captured_byte_count =
+        general_statistics.flow_packet_count_histogram.maximum_bucket_captured_byte_count;
+    snapshot.flow_packet_count_histogram.maximum_bucket_original_byte_count =
+        general_statistics.flow_packet_count_histogram.maximum_bucket_original_byte_count;
+    snapshot.flow_packet_count_histogram.excluded_zero_packet_flow_count =
+        general_statistics.flow_packet_count_histogram.excluded_zero_packet_flow_count;
+    snapshot.flow_packet_count_histogram.excluded_zero_packet_captured_byte_count =
+        general_statistics.flow_packet_count_histogram.excluded_zero_packet_captured_byte_count;
+    snapshot.flow_packet_count_histogram.excluded_zero_packet_original_byte_count =
+        general_statistics.flow_packet_count_histogram.excluded_zero_packet_original_byte_count;
+    for (std::size_t index = 0U;
+         index < general_statistics.flow_packet_count_histogram.buckets.size() &&
+         index < snapshot.flow_packet_count_histogram.buckets.size();
+         ++index) {
+        snapshot.flow_packet_count_histogram.buckets[index].flow_count =
+            general_statistics.flow_packet_count_histogram.buckets[index].flow_count;
+        snapshot.flow_packet_count_histogram.buckets[index].captured_byte_count =
+            general_statistics.flow_packet_count_histogram.buckets[index].captured_byte_count;
+        snapshot.flow_packet_count_histogram.buckets[index].original_byte_count =
+            general_statistics.flow_packet_count_histogram.buckets[index].original_byte_count;
+    }
+
+    snapshot.transport_protocols = {
+        CaptureStatisticsTransportProtocolRow {
+            .category = CaptureStatisticsTransportProtocolCategory::tcp,
+            .counters = make_protocol_counters(general_statistics.protocol.tcp),
+        },
+        CaptureStatisticsTransportProtocolRow {
+            .category = CaptureStatisticsTransportProtocolCategory::udp,
+            .counters = make_protocol_counters(general_statistics.protocol.udp),
+        },
+        CaptureStatisticsTransportProtocolRow {
+            .category = CaptureStatisticsTransportProtocolCategory::sctp,
+            .counters = make_protocol_counters(general_statistics.protocol.sctp),
+        },
+        CaptureStatisticsTransportProtocolRow {
+            .category = CaptureStatisticsTransportProtocolCategory::other,
+            .counters = make_protocol_counters(general_statistics.protocol.other),
+        },
+    };
+
+    snapshot.ip_families = {
+        CaptureStatisticsIpFamilyRow {
+            .category = CaptureStatisticsIpFamilyCategory::ipv4,
+            .counters = make_protocol_counters(general_statistics.protocol.ipv4),
+        },
+        CaptureStatisticsIpFamilyRow {
+            .category = CaptureStatisticsIpFamilyCategory::ipv6,
+            .counters = make_protocol_counters(general_statistics.protocol.ipv6),
+        },
+    };
+
+    snapshot.detected_protocols = {
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::http,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_http),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::tls,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_tls),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::dns,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_dns),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::quic,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_quic),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::ssh,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_ssh),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::stun,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_stun),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::bittorrent,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_bittorrent),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::dhcp,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_dhcp),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::mdns,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_mdns),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::smtp,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_smtp),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::pop3,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_pop3),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::imap,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_imap),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::mail_protocols,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_mail_protocols),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::possible_tls_candidate,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_possible_tls_candidate),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::possible_quic_candidate,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_possible_quic_candidate),
+        },
+        CaptureStatisticsDetectedProtocolRow {
+            .category = CaptureStatisticsDetectedProtocolCategory::unknown_without_possible,
+            .counters = make_protocol_counters(general_statistics.protocol.hint_unknown_without_possible),
+        },
+    };
+
+    snapshot.quic_recognition = CaptureStatisticsQuicRecognition {
+        .flow_count = general_statistics.quic_tls_summary.quic.total_flows,
+        .with_sni_count = general_statistics.quic_tls_summary.quic.with_sni,
+        .without_sni_count = general_statistics.quic_tls_summary.quic.without_sni,
+        .v1_count = general_statistics.quic_tls_summary.quic.version_v1,
+        .draft29_count = general_statistics.quic_tls_summary.quic.version_draft29,
+        .v2_count = general_statistics.quic_tls_summary.quic.version_v2,
+        .version_unavailable_count = general_statistics.quic_tls_summary.quic.version_unknown,
+    };
+    snapshot.tls_recognition = CaptureStatisticsTlsRecognition {
+        .flow_count = general_statistics.quic_tls_summary.tls.total_flows,
+        .with_sni_count = general_statistics.quic_tls_summary.tls.with_sni,
+        .without_sni_count = general_statistics.quic_tls_summary.tls.without_sni,
+        .tls12_count = general_statistics.quic_tls_summary.tls.version_tls12,
+        .tls13_count = general_statistics.quic_tls_summary.tls.version_tls13,
+        .version_unavailable_count = general_statistics.quic_tls_summary.tls.version_unknown,
+    };
+
+    snapshot.top_endpoints.reserve(general_statistics.top_summary.endpoints_by_bytes.size());
+    for (const auto& row : general_statistics.top_summary.endpoints_by_bytes) {
+        snapshot.top_endpoints.push_back(CaptureStatisticsTopEndpointRow {
+            .endpoint = row.identity,
+            .flow_count = row.flow_count,
+            .packet_count = row.packet_count,
+            .captured_bytes = row.captured_bytes,
+            .original_bytes = row.total_bytes,
+        });
+    }
+
+    snapshot.top_ports.reserve(general_statistics.top_summary.ports_by_bytes.size());
+    for (const auto& row : general_statistics.top_summary.ports_by_bytes) {
+        snapshot.top_ports.push_back(CaptureStatisticsTopPortRow {
+            .port = row.port,
+            .flow_count = row.flow_count,
+            .packet_count = row.packet_count,
+            .captured_bytes = row.captured_bytes,
+            .original_bytes = row.total_bytes,
+        });
+    }
+
+    snapshot.top_flows.reserve(general_statistics.top_summary.flows_by_original_bytes.size());
+    for (const auto& row : general_statistics.top_summary.flows_by_original_bytes) {
+        snapshot.top_flows.push_back(CaptureStatisticsTopFlowRow {
+            .canonical_flow_ordinal = static_cast<std::uint32_t>(row.flow_index),
+            .family = make_capture_statistics_address_family(row.family),
+            .connection_key = row.key,
+            .endpoint_a = row.endpoint_a_key,
+            .endpoint_b = row.endpoint_b_key,
+            .flow_protocol = row.protocol,
+            .protocol_hint = row.protocol_hint,
+            .service_hint = row.service_hint,
+            .protocol_path_id = row.protocol_path_id,
+            .packet_count = row.packet_count,
+            .captured_bytes = row.captured_bytes,
+            .original_bytes = row.total_bytes,
+        });
+    }
+
+    return snapshot;
+}
+
 CaptureGeneralStatistics build_capture_general_statistics(
     const std::span<const ListedConnectionRef> connections,
     const std::size_t top_summary_capacity
@@ -1510,6 +1770,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
 
         if (top_summary_capacity > 0U) {
             const auto packets_for_flow = packet_count(connection);
+            const auto captured_bytes_for_flow = captured_bytes(connection);
             const auto original_bytes_for_flow = total_bytes(connection);
 
             if (connection.family == FlowAddressFamily::ipv4) {
@@ -1519,6 +1780,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
                     observe_endpoint_accumulator(
                         top_endpoint_rows_v4[*endpoint_a],
                         packets_for_flow,
+                        captured_bytes_for_flow,
                         original_bytes_for_flow
                     );
                 }
@@ -1526,6 +1788,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
                     observe_endpoint_accumulator(
                         top_endpoint_rows_v4[*endpoint_b],
                         packets_for_flow,
+                        captured_bytes_for_flow,
                         original_bytes_for_flow
                     );
                 }
@@ -1536,6 +1799,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
                     observe_endpoint_accumulator(
                         top_endpoint_rows_v6[*endpoint_a],
                         packets_for_flow,
+                        captured_bytes_for_flow,
                         original_bytes_for_flow
                     );
                 }
@@ -1543,6 +1807,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
                     observe_endpoint_accumulator(
                         top_endpoint_rows_v6[*endpoint_b],
                         packets_for_flow,
+                        captured_bytes_for_flow,
                         original_bytes_for_flow
                     );
                 }
@@ -1562,6 +1827,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
                 observe_port_accumulator(
                     top_port_rows[first_port],
                     packets_for_flow,
+                    captured_bytes_for_flow,
                     original_bytes_for_flow
                 );
             }
@@ -1572,6 +1838,7 @@ CaptureGeneralStatistics build_capture_general_statistics(
                 observe_port_accumulator(
                     top_port_rows[second_port],
                     packets_for_flow,
+                    captured_bytes_for_flow,
                     original_bytes_for_flow
                 );
             }

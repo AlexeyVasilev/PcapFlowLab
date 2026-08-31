@@ -15,6 +15,11 @@ struct CapturePacketSizeStatisticsBucket {
     std::uint32_t lower_bound_inclusive {0};
     std::optional<std::uint32_t> upper_bound_inclusive {};
     std::uint64_t packet_count {0};
+
+    [[nodiscard]] friend constexpr bool operator==(
+        const CapturePacketSizeStatisticsBucket&,
+        const CapturePacketSizeStatisticsBucket&
+    ) = default;
 };
 
 inline constexpr std::size_t kCapturePacketSizeStatisticsBucketCount = 13U;
@@ -62,12 +67,22 @@ struct CapturePacketSizeDistribution {
     std::array<CapturePacketSizeStatisticsBucket, kCapturePacketSizeStatisticsBucketCount> buckets {
         make_captured_packet_size_statistics_buckets()
     };
+
+    [[nodiscard]] friend constexpr bool operator==(
+        const CapturePacketSizeDistribution&,
+        const CapturePacketSizeDistribution&
+    ) = default;
 };
 
 struct CapturePacketTimestampRange {
     bool available {false};
     std::uint64_t earliest_timestamp_us {0};
     std::uint64_t latest_timestamp_us {0};
+
+    [[nodiscard]] friend constexpr bool operator==(
+        const CapturePacketTimestampRange&,
+        const CapturePacketTimestampRange&
+    ) = default;
 };
 
 struct CapturePacketStatistics {

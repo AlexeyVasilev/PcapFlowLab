@@ -243,9 +243,11 @@ struct CaptureProtocolSummary {
 };
 
 struct TopEndpointRow {
+    FlowEndpointIdentity identity {EndpointKeyV4 {}};
     std::string endpoint {};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 
@@ -253,6 +255,7 @@ struct TopPortRow {
     std::uint16_t port {0};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
     std::uint64_t total_bytes {0};
 };
 

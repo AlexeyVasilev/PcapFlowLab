@@ -1261,6 +1261,592 @@ bool read_capture_packet_locator(
     return true;
 }
 
+namespace {
+
+template <typename Enum>
+bool write_enum_u8(std::ostream& stream, const Enum value) {
+    return write_u8(stream, static_cast<std::uint8_t>(value));
+}
+
+template <typename Enum, typename Validator>
+bool read_validated_enum_u8(
+    std::istream& stream,
+    Enum& value,
+    Validator is_valid
+) {
+    std::uint8_t raw_value {0};
+    if (!read_u8(stream, raw_value) || !is_valid(raw_value)) {
+        return false;
+    }
+
+    value = static_cast<Enum>(raw_value);
+    return true;
+}
+
+bool is_valid_protocol_id(const std::uint8_t value) noexcept {
+    switch (static_cast<ProtocolId>(value)) {
+    case ProtocolId::unknown:
+    case ProtocolId::icmp:
+    case ProtocolId::igmp:
+    case ProtocolId::tcp:
+    case ProtocolId::udp:
+    case ProtocolId::esp:
+    case ProtocolId::icmpv6:
+    case ProtocolId::sctp:
+    case ProtocolId::arp:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool is_valid_flow_protocol_hint(const std::uint8_t value) noexcept {
+    return value <= static_cast<std::uint8_t>(FlowProtocolHint::igmpv3);
+}
+
+bool is_valid_capture_statistics_scope(const std::uint8_t value) noexcept {
+    return value <= static_cast<std::uint8_t>(CaptureStatisticsScope::reserved_unknown);
+}
+
+bool is_valid_capture_statistics_address_family(const std::uint8_t value) noexcept {
+    return value <= static_cast<std::uint8_t>(CaptureStatisticsAddressFamily::ipv6);
+}
+
+bool write_capture_statistics_endpoint_identity(
+    std::ostream& stream,
+    const CaptureStatisticsEndpointIdentity& endpoint
+) {
+    if (std::holds_alternative<EndpointKeyV4>(endpoint)) {
+        return write_enum_u8(stream, CaptureStatisticsAddressFamily::ipv4) &&
+               write_endpoint_key(stream, std::get<EndpointKeyV4>(endpoint));
+    }
+
+    return write_enum_u8(stream, CaptureStatisticsAddressFamily::ipv6) &&
+           write_endpoint_key(stream, std::get<EndpointKeyV6>(endpoint));
+}
+
+bool read_capture_statistics_endpoint_identity(
+    std::istream& stream,
+    CaptureStatisticsEndpointIdentity& endpoint
+) {
+    CaptureStatisticsAddressFamily family {CaptureStatisticsAddressFamily::ipv4};
+    if (!read_validated_enum_u8(stream, family, is_valid_capture_statistics_address_family)) {
+        return false;
+    }
+
+    if (family == CaptureStatisticsAddressFamily::ipv4) {
+        EndpointKeyV4 endpoint_v4 {};
+        if (!read_endpoint_key(stream, endpoint_v4)) {
+            return false;
+        }
+        endpoint = endpoint_v4;
+        return true;
+    }
+
+    EndpointKeyV6 endpoint_v6 {};
+    if (!read_endpoint_key(stream, endpoint_v6)) {
+        return false;
+    }
+    endpoint = endpoint_v6;
+    return true;
+}
+
+bool write_capture_statistics_endpoint_identity_for_family(
+    std::ostream& stream,
+    const CaptureStatisticsEndpointIdentity& endpoint,
+    const CaptureStatisticsAddressFamily family
+) {
+    if (family == CaptureStatisticsAddressFamily::ipv4) {
+        return std::holds_alternative<EndpointKeyV4>(endpoint) &&
+               write_endpoint_key(stream, std::get<EndpointKeyV4>(endpoint));
+    }
+
+    return std::holds_alternative<EndpointKeyV6>(endpoint) &&
+           write_endpoint_key(stream, std::get<EndpointKeyV6>(endpoint));
+}
+
+bool read_capture_statistics_endpoint_identity_for_family(
+    std::istream& stream,
+    CaptureStatisticsEndpointIdentity& endpoint,
+    const CaptureStatisticsAddressFamily family
+) {
+    if (family == CaptureStatisticsAddressFamily::ipv4) {
+        EndpointKeyV4 endpoint_v4 {};
+        if (!read_endpoint_key(stream, endpoint_v4)) {
+            return false;
+        }
+        endpoint = endpoint_v4;
+        return true;
+    }
+
+    EndpointKeyV6 endpoint_v6 {};
+    if (!read_endpoint_key(stream, endpoint_v6)) {
+        return false;
+    }
+    endpoint = endpoint_v6;
+    return true;
+}
+
+bool write_connection_key_for_capture_statistics_family(
+    std::ostream& stream,
+    const CaptureStatisticsConnectionKey& connection_key,
+    const CaptureStatisticsAddressFamily family
+) {
+    if (family == CaptureStatisticsAddressFamily::ipv4) {
+        return std::holds_alternative<ConnectionKeyV4>(connection_key) &&
+               write_connection_key(stream, std::get<ConnectionKeyV4>(connection_key));
+    }
+
+    return std::holds_alternative<ConnectionKeyV6>(connection_key) &&
+           write_connection_key(stream, std::get<ConnectionKeyV6>(connection_key));
+}
+
+bool read_connection_key_for_capture_statistics_family(
+    std::istream& stream,
+    CaptureStatisticsConnectionKey& connection_key,
+    const CaptureStatisticsAddressFamily family
+) {
+    if (family == CaptureStatisticsAddressFamily::ipv4) {
+        ConnectionKeyV4 key {};
+        if (!read_connection_key(stream, key) || !is_valid_protocol_id(static_cast<std::uint8_t>(key.protocol))) {
+            return false;
+        }
+        connection_key = key;
+        return true;
+    }
+
+    ConnectionKeyV6 key {};
+    if (!read_connection_key(stream, key) || !is_valid_protocol_id(static_cast<std::uint8_t>(key.protocol))) {
+        return false;
+    }
+    connection_key = key;
+    return true;
+}
+
+bool write_bounded_string(std::ostream& stream, const std::string& value, const std::uint32_t max_bytes) {
+    return value.size() <= max_bytes && write_string(stream, value);
+}
+
+bool read_bounded_string(std::istream& stream, std::string& value, const std::uint32_t max_bytes) {
+    std::uint32_t length {0};
+    if (!read_u32(stream, length) || length > max_bytes) {
+        return false;
+    }
+
+    value.assign(length, '\0');
+    if (length == 0U) {
+        return true;
+    }
+
+    auto bytes = std::span<std::uint8_t>(reinterpret_cast<std::uint8_t*>(value.data()), value.size());
+    return read_bytes(stream, bytes);
+}
+
+bool write_capture_statistics_protocol_counters(
+    std::ostream& stream,
+    const CaptureStatisticsProtocolCounters& counters
+) {
+    return write_u64(stream, counters.flow_count) &&
+           write_u64(stream, counters.packet_count) &&
+           write_u64(stream, counters.captured_bytes) &&
+           write_u64(stream, counters.original_bytes);
+}
+
+bool read_capture_statistics_protocol_counters(
+    std::istream& stream,
+    CaptureStatisticsProtocolCounters& counters
+) {
+    return read_u64(stream, counters.flow_count) &&
+           read_u64(stream, counters.packet_count) &&
+           read_u64(stream, counters.captured_bytes) &&
+           read_u64(stream, counters.original_bytes);
+}
+
+}  // namespace
+
+bool write_capture_statistics_snapshot(
+    std::ostream& stream,
+    const CaptureStatisticsSnapshot& snapshot
+) {
+    if (!write_enum_u8(stream, snapshot.scope) ||
+        !write_u64(stream, snapshot.total_packet_count) ||
+        !write_u64(stream, snapshot.total_flow_count) ||
+        !write_u64(stream, snapshot.total_captured_bytes) ||
+        !write_u64(stream, snapshot.total_original_bytes) ||
+        !write_u8(stream, snapshot.timestamp_range.available ? 1U : 0U) ||
+        !write_u64(stream, snapshot.timestamp_range.earliest_timestamp_us) ||
+        !write_u64(stream, snapshot.timestamp_range.latest_timestamp_us) ||
+        !write_u64(stream, snapshot.truncated_packet_count) ||
+        !write_u32(stream, snapshot.maximum_captured_packet_length) ||
+        !write_u32(stream, snapshot.maximum_original_packet_length) ||
+        !write_u64(stream, snapshot.captured_packet_size_distribution.maximum_bucket_packet_count) ||
+        !write_u32(stream, static_cast<std::uint32_t>(snapshot.captured_packet_size_distribution.buckets.size()))) {
+        return false;
+    }
+
+    for (const auto& bucket : snapshot.captured_packet_size_distribution.buckets) {
+        if (!write_u64(stream, bucket.packet_count)) {
+            return false;
+        }
+    }
+
+    if (!write_u64(stream, snapshot.original_packet_size_distribution.maximum_bucket_packet_count) ||
+        !write_u32(stream, static_cast<std::uint32_t>(snapshot.original_packet_size_distribution.buckets.size()))) {
+        return false;
+    }
+    for (const auto& bucket : snapshot.original_packet_size_distribution.buckets) {
+        if (!write_u64(stream, bucket.packet_count)) {
+            return false;
+        }
+    }
+
+    if (!write_u64(stream, snapshot.unrecognized_packet_count) ||
+        !write_u64(stream, snapshot.unrecognized_captured_bytes) ||
+        !write_u64(stream, snapshot.unrecognized_original_bytes) ||
+        !write_u64(stream, snapshot.only_a_to_b_flow_count) ||
+        !write_u64(stream, snapshot.service_recognized_flow_count) ||
+        !write_u64(stream, snapshot.packet_direction_distribution.mostly_a_to_b_flow_count) ||
+        !write_u64(stream, snapshot.packet_direction_distribution.balanced_flow_count) ||
+        !write_u64(stream, snapshot.packet_direction_distribution.mostly_b_to_a_flow_count) ||
+        !write_u64(stream, snapshot.original_byte_direction_distribution.mostly_a_to_b_flow_count) ||
+        !write_u64(stream, snapshot.original_byte_direction_distribution.balanced_flow_count) ||
+        !write_u64(stream, snapshot.original_byte_direction_distribution.mostly_b_to_a_flow_count) ||
+        !write_u64(stream, snapshot.tcp_flags.syn_packet_count) ||
+        !write_u64(stream, snapshot.tcp_flags.fin_packet_count) ||
+        !write_u64(stream, snapshot.tcp_flags.rst_packet_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.total_flow_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.total_captured_byte_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.total_original_byte_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.maximum_bucket_flow_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.maximum_bucket_captured_byte_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.maximum_bucket_original_byte_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.excluded_zero_packet_flow_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.excluded_zero_packet_captured_byte_count) ||
+        !write_u64(stream, snapshot.flow_packet_count_histogram.excluded_zero_packet_original_byte_count) ||
+        !write_u32(stream, static_cast<std::uint32_t>(snapshot.flow_packet_count_histogram.buckets.size()))) {
+        return false;
+    }
+
+    for (const auto& bucket : snapshot.flow_packet_count_histogram.buckets) {
+        if (!write_u64(stream, bucket.flow_count) ||
+            !write_u64(stream, bucket.captured_byte_count) ||
+            !write_u64(stream, bucket.original_byte_count)) {
+            return false;
+        }
+    }
+
+    if (!write_u32(stream, static_cast<std::uint32_t>(snapshot.transport_protocols.size()))) {
+        return false;
+    }
+    for (const auto& row : snapshot.transport_protocols) {
+        if (!write_enum_u8(stream, row.category) ||
+            !write_capture_statistics_protocol_counters(stream, row.counters)) {
+            return false;
+        }
+    }
+
+    if (!write_u32(stream, static_cast<std::uint32_t>(snapshot.ip_families.size()))) {
+        return false;
+    }
+    for (const auto& row : snapshot.ip_families) {
+        if (!write_enum_u8(stream, row.category) ||
+            !write_capture_statistics_protocol_counters(stream, row.counters)) {
+            return false;
+        }
+    }
+
+    if (!write_u32(stream, static_cast<std::uint32_t>(snapshot.detected_protocols.size()))) {
+        return false;
+    }
+    for (const auto& row : snapshot.detected_protocols) {
+        if (!write_enum_u8(stream, row.category) ||
+            !write_capture_statistics_protocol_counters(stream, row.counters)) {
+            return false;
+        }
+    }
+
+    if (!write_u64(stream, snapshot.quic_recognition.flow_count) ||
+        !write_u64(stream, snapshot.quic_recognition.with_sni_count) ||
+        !write_u64(stream, snapshot.quic_recognition.without_sni_count) ||
+        !write_u64(stream, snapshot.quic_recognition.v1_count) ||
+        !write_u64(stream, snapshot.quic_recognition.draft29_count) ||
+        !write_u64(stream, snapshot.quic_recognition.v2_count) ||
+        !write_u64(stream, snapshot.quic_recognition.version_unavailable_count) ||
+        !write_u64(stream, snapshot.tls_recognition.flow_count) ||
+        !write_u64(stream, snapshot.tls_recognition.with_sni_count) ||
+        !write_u64(stream, snapshot.tls_recognition.without_sni_count) ||
+        !write_u64(stream, snapshot.tls_recognition.tls12_count) ||
+        !write_u64(stream, snapshot.tls_recognition.tls13_count) ||
+        !write_u64(stream, snapshot.tls_recognition.version_unavailable_count) ||
+        !write_u32(stream, static_cast<std::uint32_t>(snapshot.top_endpoints.size()))) {
+        return false;
+    }
+
+    for (const auto& row : snapshot.top_endpoints) {
+        if (!write_capture_statistics_endpoint_identity(stream, row.endpoint) ||
+            !write_u64(stream, row.flow_count) ||
+            !write_u64(stream, row.packet_count) ||
+            !write_u64(stream, row.captured_bytes) ||
+            !write_u64(stream, row.original_bytes)) {
+            return false;
+        }
+    }
+
+    if (!write_u32(stream, static_cast<std::uint32_t>(snapshot.top_ports.size()))) {
+        return false;
+    }
+    for (const auto& row : snapshot.top_ports) {
+        if (!write_u16(stream, row.port) ||
+            !write_u64(stream, row.flow_count) ||
+            !write_u64(stream, row.packet_count) ||
+            !write_u64(stream, row.captured_bytes) ||
+            !write_u64(stream, row.original_bytes)) {
+            return false;
+        }
+    }
+
+    if (!write_u32(stream, static_cast<std::uint32_t>(snapshot.top_flows.size()))) {
+        return false;
+    }
+    for (const auto& row : snapshot.top_flows) {
+        if (!write_u32(stream, row.canonical_flow_ordinal) ||
+            !write_enum_u8(stream, row.family) ||
+            !write_connection_key_for_capture_statistics_family(stream, row.connection_key, row.family) ||
+            !write_capture_statistics_endpoint_identity_for_family(stream, row.endpoint_a, row.family) ||
+            !write_capture_statistics_endpoint_identity_for_family(stream, row.endpoint_b, row.family) ||
+            !write_u8(stream, static_cast<std::uint8_t>(row.flow_protocol)) ||
+            !write_u8(stream, static_cast<std::uint8_t>(row.protocol_hint)) ||
+            !write_bounded_string(stream, row.service_hint, kMaxCaptureStatisticsSnapshotServiceHintBytes) ||
+            !write_u32(stream, row.protocol_path_id) ||
+            !write_u64(stream, row.packet_count) ||
+            !write_u64(stream, row.captured_bytes) ||
+            !write_u64(stream, row.original_bytes)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_capture_statistics_snapshot(
+    std::istream& stream,
+    CaptureStatisticsSnapshot& snapshot
+) {
+    CaptureStatisticsSnapshot decoded {};
+    if (!read_validated_enum_u8(stream, decoded.scope, is_valid_capture_statistics_scope) ||
+        !read_u64(stream, decoded.total_packet_count) ||
+        !read_u64(stream, decoded.total_flow_count) ||
+        !read_u64(stream, decoded.total_captured_bytes) ||
+        !read_u64(stream, decoded.total_original_bytes)) {
+        return false;
+    }
+
+    std::uint8_t timestamp_available {0};
+    std::uint32_t bucket_count {0};
+    if (!read_u8(stream, timestamp_available) ||
+        (timestamp_available != 0U && timestamp_available != 1U) ||
+        !read_u64(stream, decoded.timestamp_range.earliest_timestamp_us) ||
+        !read_u64(stream, decoded.timestamp_range.latest_timestamp_us) ||
+        !read_u64(stream, decoded.truncated_packet_count) ||
+        !read_u32(stream, decoded.maximum_captured_packet_length) ||
+        !read_u32(stream, decoded.maximum_original_packet_length) ||
+        !read_u64(stream, decoded.captured_packet_size_distribution.maximum_bucket_packet_count) ||
+        !read_u32(stream, bucket_count) ||
+        bucket_count != decoded.captured_packet_size_distribution.buckets.size()) {
+        return false;
+    }
+    decoded.timestamp_range.available = timestamp_available != 0U;
+
+    for (auto& bucket : decoded.captured_packet_size_distribution.buckets) {
+        if (!read_u64(stream, bucket.packet_count)) {
+            return false;
+        }
+    }
+
+    if (!read_u64(stream, decoded.original_packet_size_distribution.maximum_bucket_packet_count) ||
+        !read_u32(stream, bucket_count) ||
+        bucket_count != decoded.original_packet_size_distribution.buckets.size()) {
+        return false;
+    }
+    for (auto& bucket : decoded.original_packet_size_distribution.buckets) {
+        if (!read_u64(stream, bucket.packet_count)) {
+            return false;
+        }
+    }
+
+    if (!read_u64(stream, decoded.unrecognized_packet_count) ||
+        !read_u64(stream, decoded.unrecognized_captured_bytes) ||
+        !read_u64(stream, decoded.unrecognized_original_bytes) ||
+        !read_u64(stream, decoded.only_a_to_b_flow_count) ||
+        !read_u64(stream, decoded.service_recognized_flow_count) ||
+        !read_u64(stream, decoded.packet_direction_distribution.mostly_a_to_b_flow_count) ||
+        !read_u64(stream, decoded.packet_direction_distribution.balanced_flow_count) ||
+        !read_u64(stream, decoded.packet_direction_distribution.mostly_b_to_a_flow_count) ||
+        !read_u64(stream, decoded.original_byte_direction_distribution.mostly_a_to_b_flow_count) ||
+        !read_u64(stream, decoded.original_byte_direction_distribution.balanced_flow_count) ||
+        !read_u64(stream, decoded.original_byte_direction_distribution.mostly_b_to_a_flow_count) ||
+        !read_u64(stream, decoded.tcp_flags.syn_packet_count) ||
+        !read_u64(stream, decoded.tcp_flags.fin_packet_count) ||
+        !read_u64(stream, decoded.tcp_flags.rst_packet_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.total_flow_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.total_captured_byte_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.total_original_byte_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.maximum_bucket_flow_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.maximum_bucket_captured_byte_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.maximum_bucket_original_byte_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.excluded_zero_packet_flow_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.excluded_zero_packet_captured_byte_count) ||
+        !read_u64(stream, decoded.flow_packet_count_histogram.excluded_zero_packet_original_byte_count) ||
+        !read_u32(stream, bucket_count) ||
+        bucket_count != decoded.flow_packet_count_histogram.buckets.size()) {
+        return false;
+    }
+
+    for (auto& bucket : decoded.flow_packet_count_histogram.buckets) {
+        if (!read_u64(stream, bucket.flow_count) ||
+            !read_u64(stream, bucket.captured_byte_count) ||
+            !read_u64(stream, bucket.original_byte_count)) {
+            return false;
+        }
+    }
+
+    std::uint32_t row_count {0};
+    if (!read_u32(stream, row_count) ||
+        row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+    decoded.transport_protocols.clear();
+    decoded.transport_protocols.reserve(row_count);
+    for (std::uint32_t index = 0U; index < row_count; ++index) {
+        CaptureStatisticsTransportProtocolRow row {};
+        if (!read_validated_enum_u8(stream, row.category, [](const std::uint8_t value) {
+                return value <= static_cast<std::uint8_t>(CaptureStatisticsTransportProtocolCategory::other);
+            }) ||
+            !read_capture_statistics_protocol_counters(stream, row.counters)) {
+            return false;
+        }
+        decoded.transport_protocols.push_back(row);
+    }
+
+    if (!read_u32(stream, row_count) ||
+        row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+    decoded.ip_families.clear();
+    decoded.ip_families.reserve(row_count);
+    for (std::uint32_t index = 0U; index < row_count; ++index) {
+        CaptureStatisticsIpFamilyRow row {};
+        if (!read_validated_enum_u8(stream, row.category, [](const std::uint8_t value) {
+                return value <= static_cast<std::uint8_t>(CaptureStatisticsIpFamilyCategory::ipv6);
+            }) ||
+            !read_capture_statistics_protocol_counters(stream, row.counters)) {
+            return false;
+        }
+        decoded.ip_families.push_back(row);
+    }
+
+    if (!read_u32(stream, row_count) ||
+        row_count > static_cast<std::uint32_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+    decoded.detected_protocols.clear();
+    decoded.detected_protocols.reserve(row_count);
+    for (std::uint32_t index = 0U; index < row_count; ++index) {
+        CaptureStatisticsDetectedProtocolRow row {};
+        if (!read_validated_enum_u8(stream, row.category, [](const std::uint8_t value) {
+                return value <= static_cast<std::uint8_t>(CaptureStatisticsDetectedProtocolCategory::unknown_without_possible);
+            }) ||
+            !read_capture_statistics_protocol_counters(stream, row.counters)) {
+            return false;
+        }
+        decoded.detected_protocols.push_back(row);
+    }
+
+    if (!read_u64(stream, decoded.quic_recognition.flow_count) ||
+        !read_u64(stream, decoded.quic_recognition.with_sni_count) ||
+        !read_u64(stream, decoded.quic_recognition.without_sni_count) ||
+        !read_u64(stream, decoded.quic_recognition.v1_count) ||
+        !read_u64(stream, decoded.quic_recognition.draft29_count) ||
+        !read_u64(stream, decoded.quic_recognition.v2_count) ||
+        !read_u64(stream, decoded.quic_recognition.version_unavailable_count) ||
+        !read_u64(stream, decoded.tls_recognition.flow_count) ||
+        !read_u64(stream, decoded.tls_recognition.with_sni_count) ||
+        !read_u64(stream, decoded.tls_recognition.without_sni_count) ||
+        !read_u64(stream, decoded.tls_recognition.tls12_count) ||
+        !read_u64(stream, decoded.tls_recognition.tls13_count) ||
+        !read_u64(stream, decoded.tls_recognition.version_unavailable_count) ||
+        !read_u32(stream, row_count) ||
+        row_count > kCaptureStatisticsSnapshotTopEndpointCapacity) {
+        return false;
+    }
+
+    decoded.top_endpoints.clear();
+    decoded.top_endpoints.reserve(row_count);
+    for (std::uint32_t index = 0U; index < row_count; ++index) {
+        CaptureStatisticsTopEndpointRow row {};
+        if (!read_capture_statistics_endpoint_identity(stream, row.endpoint) ||
+            !read_u64(stream, row.flow_count) ||
+            !read_u64(stream, row.packet_count) ||
+            !read_u64(stream, row.captured_bytes) ||
+            !read_u64(stream, row.original_bytes)) {
+            return false;
+        }
+        decoded.top_endpoints.push_back(std::move(row));
+    }
+
+    if (!read_u32(stream, row_count) || row_count > kCaptureStatisticsSnapshotTopPortCapacity) {
+        return false;
+    }
+    decoded.top_ports.clear();
+    decoded.top_ports.reserve(row_count);
+    for (std::uint32_t index = 0U; index < row_count; ++index) {
+        CaptureStatisticsTopPortRow row {};
+        if (!read_u16(stream, row.port) ||
+            !read_u64(stream, row.flow_count) ||
+            !read_u64(stream, row.packet_count) ||
+            !read_u64(stream, row.captured_bytes) ||
+            !read_u64(stream, row.original_bytes)) {
+            return false;
+        }
+        decoded.top_ports.push_back(row);
+    }
+
+    if (!read_u32(stream, row_count) || row_count > kCaptureStatisticsSnapshotTopFlowCapacity) {
+        return false;
+    }
+    decoded.top_flows.clear();
+    decoded.top_flows.reserve(row_count);
+    for (std::uint32_t index = 0U; index < row_count; ++index) {
+        CaptureStatisticsTopFlowRow row {};
+        if (!read_u32(stream, row.canonical_flow_ordinal) ||
+            !read_validated_enum_u8(stream, row.family, is_valid_capture_statistics_address_family) ||
+            !read_connection_key_for_capture_statistics_family(stream, row.connection_key, row.family) ||
+            !read_capture_statistics_endpoint_identity_for_family(stream, row.endpoint_a, row.family) ||
+            !read_capture_statistics_endpoint_identity_for_family(stream, row.endpoint_b, row.family) ||
+            !read_validated_enum_u8(stream, row.flow_protocol, is_valid_protocol_id) ||
+            !read_validated_enum_u8(stream, row.protocol_hint, is_valid_flow_protocol_hint) ||
+            !read_bounded_string(stream, row.service_hint, kMaxCaptureStatisticsSnapshotServiceHintBytes) ||
+            !read_u32(stream, row.protocol_path_id) ||
+            !read_u64(stream, row.packet_count) ||
+            !read_u64(stream, row.captured_bytes) ||
+            !read_u64(stream, row.original_bytes)) {
+            return false;
+        }
+        decoded.top_flows.push_back(std::move(row));
+    }
+
+    if (stream.peek() != std::char_traits<char>::eof()) {
+        return false;
+    }
+
+    if (!validate_capture_statistics_snapshot(decoded)) {
+        return false;
+    }
+
+    snapshot = std::move(decoded);
+    return true;
+}
+
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {
     return write_capture_summary(stream, state.summary) &&
            write_protocol_path_registry(stream, state.protocol_path_registry) &&
