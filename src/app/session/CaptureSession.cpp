@@ -3045,8 +3045,70 @@ bool CaptureSession::save_index(
         return false;
     }
 
+    if (uses_v16_storage()) {
+        CaptureSourceInfo source_info {};
+        if (!read_capture_source_info(capture_path_, source_info)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to read source capture information.";
+            }
+            return false;
+        }
+
+        CaptureIndexWriter writer {};
+        return writer.rewrite_v16_with_source_header(
+            index_path,
+            v16_storage_->index_path,
+            source_info,
+            options,
+            out_error_text
+        );
+    }
+
+    const auto connections = session_detail::list_connections(state_);
+    const auto general_statistics = session_detail::build_capture_general_statistics(
+        connections,
+        kCaptureGeneralStatisticsTopSummaryCapacity
+    );
+    const auto protocol_path_display_statistics =
+        session_detail::build_protocol_path_display_statistics(state_, connections);
+    const auto scope = partial_open_ ? CaptureStatisticsScope::partial : CaptureStatisticsScope::complete;
+    const detail::CaptureIndexV16FastStatisticsTier fast_tier {
+        .capture_statistics_snapshot = session_detail::make_capture_statistics_snapshot(
+            state_.packet_statistics,
+            general_statistics,
+            scope
+        ),
+        .protocol_path_registry = state_.protocol_path_registry,
+        .protocol_path_display_statistics = protocol_path_display_statistics,
+    };
+
+    const auto target_payload_bytes = std::max<std::uint64_t>(8U, options.max_connection_section_payload_bytes);
+    const CaptureIndexV16PacketRefDetailLayoutOptions layout_options {
+        .target_section_payload_bytes = target_payload_bytes,
+        .target_unrecognized_directory_section_payload_bytes = target_payload_bytes,
+        .target_unrecognized_reason_blob_section_payload_bytes = target_payload_bytes,
+        .target_packet_locator_section_payload_bytes = target_payload_bytes,
+    };
+    auto plan_result = session_detail::build_capture_index_v16_write_plan(state_, layout_options);
+    if (!plan_result) {
+        if (out_error_text != nullptr) {
+            *out_error_text = plan_result.error_detail.empty()
+                ? "Failed to prepare v16 index."
+                : plan_result.error_detail;
+        }
+        return false;
+    }
+
+    CaptureSourceInfo source_info {};
+    if (!read_capture_source_info(capture_path_, source_info)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to read source capture information.";
+        }
+        return false;
+    }
+
     CaptureIndexWriter writer {};
-    return writer.write(index_path, state_, capture_path_, options, out_error_text);
+    return writer.write_v16(index_path, source_info, fast_tier, plan_result.plan, options, out_error_text);
 }
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path) {
@@ -3065,11 +3127,8 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     PerfOpenLogger perf_logger {};
 
     CaptureIndexReader reader {};
-    CaptureState loaded_state {};
-    std::filesystem::path loaded_capture_path {};
-    CaptureSourceInfo loaded_source_info {};
-
-    if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info, effective_ctx)) {
+    detail::CaptureIndexV16CompleteReadResult read_result {};
+    if (!reader.read_v16_complete(index_path, read_result, effective_ctx)) {
         debug::log_if<debug::kDebugIndexLoad>([&]() {
             std::clog << "load_index failed: " << index_path.string() << '\n';
         });
@@ -3092,38 +3151,18 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
         return false;
     }
 
-    capture_path_.clear();
-    source_capture_path_ = std::move(loaded_capture_path);
-    input_path_ = index_path;
-    source_info_ = std::move(loaded_source_info);
-    state_ = std::move(loaded_state);
-    v16_storage_.reset();
-    analysis_settings_ = {};
-    opened_from_index_ = true;
-    flow_grouping_ignores_vlan_and_mpls_layers_ = false;
-    flow_grouping_ignores_gtpu_teids_ = false;
-    has_loaded_state_ = true;
-    partial_open_ = false;
-    partial_open_failure_ = {};
-    {
-        std::error_code error {};
-        input_file_size_ = std::filesystem::is_regular_file(index_path, error) && !error
-            ? std::filesystem::file_size(index_path, error)
-            : 0U;
-        if (error) {
-            input_file_size_ = 0U;
-        }
-    }
-    selected_flow_full_packet_cache_.reset();
-    selected_flow_packet_cache_.reset();
-    selected_flow_tcp_prefix_context_.reset();
-    listed_connections_cache_.reset();
-    general_statistics_cache_.reset();
-    protocol_path_summary_cache_.fill(std::nullopt);
-    selected_flow_tcp_payload_suppression_.reset();
-
-    if (validate_capture_source(source_info_)) {
-        capture_path_ = source_info_.capture_path;
+    if (!load_v16_index_result(index_path, std::move(read_result))) {
+        log_open_result(
+            perf_logger,
+            PerfOpenOperationType::index_load,
+            index_path,
+            false,
+            started_at,
+            summary(),
+            opened_from_index(),
+            has_source_capture()
+        );
+        return false;
     }
 
     debug::log_if<debug::kDebugIndexLoad>([&]() {
@@ -3146,7 +3185,7 @@ bool CaptureSession::uses_v16_storage() const noexcept {
     return v16_storage_.has_value();
 }
 
-bool CaptureSession::load_inactive_v16_index_for_testing(const std::filesystem::path& index_path) {
+bool CaptureSession::load_v16_index_for_testing(const std::filesystem::path& index_path) {
     std::ifstream stream {index_path, std::ios::binary};
     if (!stream.is_open()) {
         reset_runtime_state();
@@ -3155,10 +3194,10 @@ bool CaptureSession::load_inactive_v16_index_for_testing(const std::filesystem::
     }
 
     auto result = detail::read_capture_index_v16(stream);
-    return load_inactive_v16_index_result_for_testing(index_path, std::move(result));
+    return load_v16_index_result(index_path, std::move(result));
 }
 
-bool CaptureSession::load_inactive_v16_index_result_for_testing(
+bool CaptureSession::load_v16_index_result(
     const std::filesystem::path& index_path,
     detail::CaptureIndexV16CompleteReadResult result
 ) {
@@ -3199,6 +3238,10 @@ bool CaptureSession::load_inactive_v16_index_result_for_testing(
     state_.protocol_path_registry = result.fast_statistics_tier.protocol_path_registry;
     opened_from_index_ = true;
     has_loaded_state_ = true;
+    partial_open_ = result.fast_statistics_tier.capture_statistics_snapshot.scope == CaptureStatisticsScope::partial;
+    partial_open_failure_ = partial_open_
+        ? OpenFailureInfo {.reason = "Statistics cover successfully imported packets only; the capture was opened partially."}
+        : OpenFailureInfo {};
     {
         std::error_code error {};
         input_file_size_ = std::filesystem::is_regular_file(index_path, error) && !error

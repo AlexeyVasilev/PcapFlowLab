@@ -2,9 +2,9 @@
 
 Status: design freeze for `feature/statistics-reporting-improvements`.
 
-Current production behavior remains the stable v15 architecture until the
-planned migration is implemented. The frozen v16 layout is defined in the
-companion [Index v16 Container RFC](index-v16-container-rfc.md).
+Current production behavior uses the stable v16 architecture defined in the
+companion [Index v16 Container RFC](index-v16-container-rfc.md). Stable v15
+full payload load is now a rebuild-required compatibility boundary.
 
 Related current references:
 
@@ -25,8 +25,8 @@ Related current references:
 
 ## Purpose
 
-This RFC records the agreed target direction for Statistics, reporting, and
-the next deliberate large-index architecture migration.
+This RFC records the agreed direction for Statistics, reporting, and the
+deliberate large-index architecture migration.
 
 The sequence remains intentional:
 
@@ -41,7 +41,8 @@ The sequence remains intentional:
 - Stage 5: add shared HTML and Markdown reporting on top of the common
   Statistics model for Qt, Tauri, and CLI.
 
-This RFC is therefore a design freeze point, not an implementation record.
+This RFC remains the design record for the implemented v16 cutover and the
+remaining reporting work.
 
 ## Current Architectural Baseline
 
@@ -51,7 +52,7 @@ Authoritative current index details remain in:
 - [Index v15 Container RFC](index-v15-container-rfc.md)
 - [Flow Aggregate Metadata RFC](flow-aggregate-metadata-rfc.md)
 
-Current production behavior:
+Previous stable v15 behavior, retained here as migration context:
 
 - stable v15 stores `PacketRef` records inside directional `FlowV4` /
   `FlowV6` records
@@ -376,14 +377,12 @@ This project decision remains explicit:
 - Stage 4 performs one deliberate format/layout migration after the
   Statistics and Analysis data requirements have been validated
 
-The frozen stable target is now v16, with exact payload topology defined in
-the companion [Index v16 Container RFC](index-v16-container-rfc.md).
+The stable production target is now v16, with exact payload topology defined
+in the companion [Index v16 Container RFC](index-v16-container-rfc.md).
 
 ## Index Version And Compatibility Policy
 
-Current production remains stable v15.
-
-The frozen Stage 4 target is:
+Current production is stable v16:
 
 - stable magic remains `PFLIDXV1`
 - `container_format_version` remains `1`
@@ -392,8 +391,7 @@ The frozen Stage 4 target is:
   acceptable
 - stable-header inspection remains independent of full payload compatibility
 
-`kCaptureIndexStableIndexRevision` still does not change in production until
-the migration is actually implemented.
+`kCaptureIndexStableIndexRevision` and `kCaptureIndexVersion` are now `16`.
 
 ## Frozen Stage 4 Decisions
 
@@ -418,7 +416,7 @@ The following design points are now frozen:
 
 ## Frozen Stage 4 Implementation Sequence
 
-The planned reviewable implementation sequence is:
+The reviewable implementation sequence was:
 
 1. Stage 4B: snapshot model, serialization helpers, and focused tests
 2. Stage 4C: v16 section constants/topology plus writer and fast Statistics
@@ -432,7 +430,7 @@ The planned reviewable implementation sequence is:
 7. Stage 4H: move packet locator fully late/lazy and finish the full-session
    v16 reader
 8. Stage 4I: CLI stats-only fast path plus session/frontend staged-loading
-   plumbing
+   plumbing remains future work
 
 ## Required Test Matrix Categories
 
@@ -455,9 +453,9 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC freezes the intended stable v16 layout while preserving the key
-current/target distinction:
+This RFC records the implemented stable v16 layout while preserving the key
+migration boundary:
 
-- current production is still stable v15
-- current code does not yet implement the v16 layout
-- this document is the frozen design target for the later migration
+- current production is stable v16
+- stable v15 full payload load is rebuild-required
+- Stage 4I fast Statistics-only CLI loading remains future work

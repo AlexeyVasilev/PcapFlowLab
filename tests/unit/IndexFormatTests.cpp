@@ -538,110 +538,6 @@ void expect_matching_locator_entry(
     PFL_EXPECT(actual.file_offset == expected.file_offset);
 }
 
-void expect_matching_flows(const FlowV4& left, const FlowV4& right) {
-    PFL_EXPECT(left.key == right.key);
-    PFL_EXPECT(left.packet_count == right.packet_count);
-    PFL_EXPECT(left.total_bytes == right.total_bytes);
-    expect_matching_packets(left.packets, right.packets);
-}
-
-void expect_matching_flows(const FlowV6& left, const FlowV6& right) {
-    PFL_EXPECT(left.key == right.key);
-    PFL_EXPECT(left.packet_count == right.packet_count);
-    PFL_EXPECT(left.total_bytes == right.total_bytes);
-    expect_matching_packets(left.packets, right.packets);
-}
-
-void expect_matching_connections(const ConnectionV4& left, const ConnectionV4& right) {
-    PFL_EXPECT(left.key == right.key);
-    PFL_EXPECT(left.has_flow_a == right.has_flow_a);
-    PFL_EXPECT(left.has_flow_b == right.has_flow_b);
-    PFL_EXPECT(left.packet_count == right.packet_count);
-    PFL_EXPECT(left.total_bytes == right.total_bytes);
-    PFL_EXPECT(left.has_fragmented_packets == right.has_fragmented_packets);
-    PFL_EXPECT(left.fragmented_packet_count == right.fragmented_packet_count);
-    PFL_EXPECT(left.protocol_hint == right.protocol_hint);
-    PFL_EXPECT(left.service_hint == right.service_hint);
-    PFL_EXPECT(left.quic_version == right.quic_version);
-    PFL_EXPECT(left.tls_version == right.tls_version);
-    PFL_EXPECT(left.aggregate_stats.first_timestamp_us == right.aggregate_stats.first_timestamp_us);
-    PFL_EXPECT(left.aggregate_stats.last_timestamp_us == right.aggregate_stats.last_timestamp_us);
-    PFL_EXPECT(left.aggregate_stats.captured_bytes == right.aggregate_stats.captured_bytes);
-    PFL_EXPECT(left.aggregate_stats.truncated_packet_count == right.aggregate_stats.truncated_packet_count);
-    PFL_EXPECT(left.aggregate_stats.tcp_syn_count == right.aggregate_stats.tcp_syn_count);
-    PFL_EXPECT(left.aggregate_stats.tcp_fin_count == right.aggregate_stats.tcp_fin_count);
-    PFL_EXPECT(left.aggregate_stats.tcp_rst_count == right.aggregate_stats.tcp_rst_count);
-    PFL_EXPECT(left.aggregate_stats.max_original_packet_length == right.aggregate_stats.max_original_packet_length);
-    PFL_EXPECT(left.aggregate_stats.max_captured_packet_length == right.aggregate_stats.max_captured_packet_length);
-    if (left.has_flow_a || right.has_flow_a) {
-        expect_matching_flows(left.flow_a, right.flow_a);
-    }
-    if (left.has_flow_b || right.has_flow_b) {
-        expect_matching_flows(left.flow_b, right.flow_b);
-    }
-}
-
-void expect_matching_connections(const ConnectionV6& left, const ConnectionV6& right) {
-    PFL_EXPECT(left.key == right.key);
-    PFL_EXPECT(left.has_flow_a == right.has_flow_a);
-    PFL_EXPECT(left.has_flow_b == right.has_flow_b);
-    PFL_EXPECT(left.packet_count == right.packet_count);
-    PFL_EXPECT(left.total_bytes == right.total_bytes);
-    PFL_EXPECT(left.has_fragmented_packets == right.has_fragmented_packets);
-    PFL_EXPECT(left.fragmented_packet_count == right.fragmented_packet_count);
-    PFL_EXPECT(left.protocol_hint == right.protocol_hint);
-    PFL_EXPECT(left.service_hint == right.service_hint);
-    PFL_EXPECT(left.quic_version == right.quic_version);
-    PFL_EXPECT(left.tls_version == right.tls_version);
-    PFL_EXPECT(left.aggregate_stats.first_timestamp_us == right.aggregate_stats.first_timestamp_us);
-    PFL_EXPECT(left.aggregate_stats.last_timestamp_us == right.aggregate_stats.last_timestamp_us);
-    PFL_EXPECT(left.aggregate_stats.captured_bytes == right.aggregate_stats.captured_bytes);
-    PFL_EXPECT(left.aggregate_stats.truncated_packet_count == right.aggregate_stats.truncated_packet_count);
-    PFL_EXPECT(left.aggregate_stats.tcp_syn_count == right.aggregate_stats.tcp_syn_count);
-    PFL_EXPECT(left.aggregate_stats.tcp_fin_count == right.aggregate_stats.tcp_fin_count);
-    PFL_EXPECT(left.aggregate_stats.tcp_rst_count == right.aggregate_stats.tcp_rst_count);
-    PFL_EXPECT(left.aggregate_stats.max_original_packet_length == right.aggregate_stats.max_original_packet_length);
-    PFL_EXPECT(left.aggregate_stats.max_captured_packet_length == right.aggregate_stats.max_captured_packet_length);
-    if (left.has_flow_a || right.has_flow_a) {
-        expect_matching_flows(left.flow_a, right.flow_a);
-    }
-    if (left.has_flow_b || right.has_flow_b) {
-        expect_matching_flows(left.flow_b, right.flow_b);
-    }
-}
-
-void expect_matching_tables(const ConnectionTableV4& left, const ConnectionTableV4& right) {
-    const auto left_connections = detail::sorted_connections(left);
-    const auto right_connections = detail::sorted_connections(right);
-    PFL_EXPECT(left_connections.size() == right_connections.size());
-    for (std::size_t index = 0; index < left_connections.size(); ++index) {
-        expect_matching_connections(*left_connections[index], *right_connections[index]);
-    }
-}
-
-void expect_matching_tables(const ConnectionTableV6& left, const ConnectionTableV6& right) {
-    const auto left_connections = detail::sorted_connections(left);
-    const auto right_connections = detail::sorted_connections(right);
-    PFL_EXPECT(left_connections.size() == right_connections.size());
-    for (std::size_t index = 0; index < left_connections.size(); ++index) {
-        expect_matching_connections(*left_connections[index], *right_connections[index]);
-    }
-}
-
-void expect_matching_states(const CaptureState& left, const CaptureState& right) {
-    PFL_EXPECT(left.summary.packet_count == right.summary.packet_count);
-    PFL_EXPECT(left.summary.flow_count == right.summary.flow_count);
-    PFL_EXPECT(left.summary.total_bytes == right.summary.total_bytes);
-    PFL_EXPECT(left.packet_locator.size() == right.packet_locator.size());
-    for (std::size_t index = 0U; index < left.packet_locator.size(); ++index) {
-        PFL_EXPECT(left.packet_locator[index].packet_index == right.packet_locator[index].packet_index);
-        PFL_EXPECT(left.packet_locator[index].file_offset == right.packet_locator[index].file_offset);
-    }
-    expect_matching_protocol_path_registries(left.protocol_path_registry, right.protocol_path_registry);
-    expect_matching_tables(left.ipv4_connections, right.ipv4_connections);
-    expect_matching_tables(left.ipv6_connections, right.ipv6_connections);
-}
-
 void fill_distribution_counts(
     CapturePacketSizeDistribution& distribution,
     const std::vector<std::uint64_t>& counts
@@ -848,11 +744,11 @@ std::vector<std::uint8_t> serialize_capture_statistics_snapshot_payload(
 
 detail::CaptureIndexStableHeader make_v16_stable_header() {
     auto header = make_stable_header();
-    header.index_revision = kCaptureIndexStableV16Revision;
+    header.index_revision = kCaptureIndexStableIndexRevision;
     return header;
 }
 
-std::vector<std::uint8_t> make_inactive_v16_snapshot_container_bytes(
+std::vector<std::uint8_t> make_v16_snapshot_container_bytes(
     const CaptureStatisticsSnapshot& snapshot,
     std::span<const std::uint8_t> trailing_bytes = {}
 ) {
@@ -1354,9 +1250,10 @@ void run_index_format_tests() {
         const auto encoded_header = encode_stable_header(header);
         PFL_EXPECT(read_le64_at(encoded_header, 0U) == kStableCaptureIndexMagic);
         PFL_EXPECT(read_le16_at(encoded_header, 8U) == kCaptureIndexStableContainerFormatVersion);
-        PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableV16Revision);
-        PFL_EXPECT(kCaptureIndexStableIndexRevision == 15U);
-        PFL_EXPECT(kCaptureIndexVersion == 15U);
+        PFL_EXPECT(read_le32_at(encoded_header, 16U) == kCaptureIndexStableIndexRevision);
+        PFL_EXPECT(kCaptureIndexPreviousStableV15Revision == 15U);
+        PFL_EXPECT(kCaptureIndexStableIndexRevision == 16U);
+        PFL_EXPECT(kCaptureIndexVersion == 16U);
 
         detail::CaptureIndexStableHeader decoded_header {};
         std::istringstream read_stream(
@@ -1364,14 +1261,14 @@ void run_index_format_tests() {
             std::ios::binary | std::ios::in
         );
         PFL_REQUIRE(detail::read_capture_index_stable_header(read_stream, decoded_header));
-        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableV16Revision);
+        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(decoded_header.source_capture_path_utf8 == header.source_capture_path_utf8);
     }
 
     {
         const auto snapshot = make_valid_capture_statistics_snapshot();
         const auto payload = serialize_capture_statistics_snapshot_payload(snapshot);
-        const auto container_bytes = make_inactive_v16_snapshot_container_bytes(snapshot);
+        const auto container_bytes = make_v16_snapshot_container_bytes(snapshot);
         const auto sections = parse_sections(container_bytes);
         PFL_REQUIRE(sections.size() == 1U);
 
@@ -1396,7 +1293,7 @@ void run_index_format_tests() {
         );
         detail::CaptureIndexStableHeader decoded_header {};
         PFL_REQUIRE(detail::read_capture_index_stable_header(stream, decoded_header));
-        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableV16Revision);
+        PFL_EXPECT(decoded_header.index_revision == kCaptureIndexStableIndexRevision);
 
         CaptureStatisticsSnapshot decoded_snapshot {};
         const auto read_result = detail::read_v16_capture_statistics_snapshot_section(stream, decoded_snapshot);
@@ -1407,7 +1304,7 @@ void run_index_format_tests() {
 
     {
         const auto snapshot = make_valid_capture_statistics_snapshot();
-        const auto base_bytes = make_inactive_v16_snapshot_container_bytes(snapshot);
+        const auto base_bytes = make_v16_snapshot_container_bytes(snapshot);
         const auto sections = parse_sections(base_bytes);
         PFL_REQUIRE(sections.size() == 1U);
         const auto payload_offset = sections.front().offset + detail::kCaptureIndexStableSectionHeaderEncodedSize;
@@ -1572,7 +1469,7 @@ void run_index_format_tests() {
     {
         const auto snapshot = make_valid_capture_statistics_snapshot();
         const std::vector<std::uint8_t> malformed_late_bytes {0xAAU, 0x55U, 0x10U};
-        const auto container_bytes = make_inactive_v16_snapshot_container_bytes(
+        const auto container_bytes = make_v16_snapshot_container_bytes(
             snapshot,
             std::span<const std::uint8_t>(malformed_late_bytes.data(), malformed_late_bytes.size())
         );
@@ -1765,7 +1662,7 @@ void run_index_format_tests() {
         detail::CaptureIndexV16FastStatisticsTier decoded_tier {};
         const auto read_result = detail::read_v16_fast_statistics_tier(read_stream, decoded_tier);
         PFL_REQUIRE(static_cast<bool>(read_result));
-        PFL_EXPECT(read_result.header.index_revision == kCaptureIndexStableV16Revision);
+        PFL_EXPECT(read_result.header.index_revision == kCaptureIndexStableIndexRevision);
         PFL_EXPECT(decoded_tier.capture_statistics_snapshot == tier.capture_statistics_snapshot);
         expect_matching_protocol_path_registries(decoded_tier.protocol_path_registry, tier.protocol_path_registry);
         expect_matching_protocol_path_display_statistics(
@@ -2139,7 +2036,7 @@ void run_index_format_tests() {
             container_bytes
         );
         CaptureSession session {};
-        PFL_REQUIRE(session.load_inactive_v16_index_for_testing(session_index_path));
+        PFL_REQUIRE(session.load_v16_index_for_testing(session_index_path));
         PFL_EXPECT(session.opened_from_index());
         PFL_EXPECT(session.summary().packet_count == state.summary.packet_count);
         PFL_EXPECT(session.summary().flow_count == state.summary.flow_count);
@@ -3000,22 +2897,35 @@ void run_index_format_tests() {
     PFL_EXPECT(index_writer.write(index_path, state, source_path));
 
     CaptureIndexReader index_reader {};
-    CaptureState loaded_state {};
-    std::filesystem::path loaded_capture_path {};
-    CaptureSourceInfo loaded_source_info {};
-    PFL_EXPECT(index_reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info));
-    PFL_EXPECT(loaded_capture_path == source_path);
-    PFL_EXPECT(loaded_source_info.capture_path == source_path);
-    expect_matching_states(state, loaded_state);
-    const auto* loaded_gre_key_path = loaded_state.protocol_path_registry.find(gre_key_path_id);
-    const auto* loaded_esp_path = loaded_state.protocol_path_registry.find(esp_path_id);
-    const auto* loaded_ah_path = loaded_state.protocol_path_registry.find(ah_path_id);
+    detail::CaptureIndexV16CompleteReadResult complete_read {};
+    PFL_REQUIRE(index_reader.read_v16_complete(index_path, complete_read));
+    PFL_EXPECT(complete_read.header.index_revision == kCaptureIndexVersion);
+    PFL_EXPECT(detail::filesystem_path_from_generic_utf8(complete_read.header.source_capture_path_utf8) == source_path);
+    PFL_EXPECT(
+        complete_read.fast_statistics_tier.capture_statistics_snapshot.total_packet_count ==
+        state.summary.packet_count);
+    PFL_EXPECT(
+        complete_read.fast_statistics_tier.capture_statistics_snapshot.total_flow_count ==
+        state.summary.flow_count);
+    PFL_EXPECT(complete_read.metadata.connection_count() == session_detail::list_connections(state).size());
+    const auto* loaded_gre_key_path = complete_read.fast_statistics_tier.protocol_path_registry.find(gre_key_path_id);
+    const auto* loaded_esp_path = complete_read.fast_statistics_tier.protocol_path_registry.find(esp_path_id);
+    const auto* loaded_ah_path = complete_read.fast_statistics_tier.protocol_path_registry.find(ah_path_id);
     PFL_REQUIRE(loaded_gre_key_path != nullptr);
     PFL_REQUIRE(loaded_esp_path != nullptr);
     PFL_REQUIRE(loaded_ah_path != nullptr);
     PFL_EXPECT(format_protocol_path(*loaded_gre_key_path) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
     PFL_EXPECT(format_protocol_path(*loaded_esp_path) == "EthernetII -> IPv4 -> ESP(spi=0x01020304)");
     PFL_EXPECT(format_protocol_path(*loaded_ah_path) == "EthernetII -> IPv4 -> AH(spi=0x01020304) -> TCP");
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    PFL_EXPECT(loaded_session.opened_from_index());
+    PFL_EXPECT(loaded_session.capture_path() == source_path);
+    PFL_EXPECT(loaded_session.summary().packet_count == state.summary.packet_count);
+    PFL_EXPECT(loaded_session.summary().flow_count == state.summary.flow_count);
+    PFL_EXPECT(loaded_session.packet_statistics().total_packet_count == state.packet_statistics.total_packet_count);
+    PFL_EXPECT(loaded_session.list_flows().size() == session_detail::list_connections(state).size());
 
     CaptureIndexInspection inspection {};
     PFL_EXPECT(index_reader.inspect(index_path, inspection));
@@ -3030,15 +2940,42 @@ void run_index_format_tests() {
         PFL_EXPECT((section.section_flags & detail::kCaptureIndexStableSectionFlagRequired) != 0U);
     }
 
+    const auto production_index_bytes = read_file_bytes(index_path);
+    for (const auto legacy_section_id : {
+             detail::CaptureIndexSectionId::summary,
+             detail::CaptureIndexSectionId::protocol_paths,
+             detail::CaptureIndexSectionId::ipv4_connections,
+             detail::CaptureIndexSectionId::ipv6_connections,
+             detail::CaptureIndexSectionId::unrecognized_packets,
+             detail::CaptureIndexSectionId::packet_locator,
+         }) {
+        PFL_EXPECT(count_sections(production_index_bytes, static_cast<std::uint32_t>(legacy_section_id)) == 0U);
+    }
+    for (const auto v16_section_id : {
+             detail::CaptureIndexSectionId::capture_statistics_snapshot,
+             detail::CaptureIndexSectionId::protocol_path_registry_early,
+             detail::CaptureIndexSectionId::protocol_path_terminal_aggregates,
+             detail::CaptureIndexSectionId::ipv4_flow_metadata,
+             detail::CaptureIndexSectionId::ipv6_flow_metadata,
+             detail::CaptureIndexSectionId::protocol_path_membership,
+             detail::CaptureIndexSectionId::packetref_directory,
+             detail::CaptureIndexSectionId::unrecognized_directory,
+             detail::CaptureIndexSectionId::packetref_detail_blocks,
+             detail::CaptureIndexSectionId::unrecognized_reason_blobs,
+             detail::CaptureIndexSectionId::packet_locator_v16,
+         }) {
+        PFL_EXPECT(count_sections(production_index_bytes, static_cast<std::uint32_t>(v16_section_id)) > 0U);
+    }
+
     auto future_revision_bytes = read_file_bytes(index_path);
     write_le32_at(future_revision_bytes, 16U, kCaptureIndexVersion + 1U);
     const auto future_revision_index_path = write_temp_binary_file(
         "pfl_index_future_stable_revision.idx",
         future_revision_bytes
     );
-    PFL_EXPECT(index_reader.read(future_revision_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
-    PFL_EXPECT(loaded_capture_path == source_path);
-    expect_matching_states(state, loaded_state);
+    detail::CaptureIndexV16CompleteReadResult future_revision_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(future_revision_index_path, future_revision_read));
+    PFL_EXPECT(index_reader.last_error().reason == "stable index revision is newer than this application supports");
 
     const auto unicode_source_path =
         std::filesystem::temp_directory_path() /
@@ -3064,21 +3001,10 @@ void run_index_format_tests() {
         detail::filesystem_path_to_generic_utf8(unicode_source_path)
     );
 
-    CaptureState unicode_loaded_state {};
-    std::filesystem::path unicode_loaded_capture_path {};
-    CaptureSourceInfo unicode_loaded_source_info {};
-    PFL_EXPECT(index_reader.read(
-        unicode_index_path,
-        unicode_loaded_state,
-        unicode_loaded_capture_path,
-        &unicode_loaded_source_info
-    ));
+    detail::CaptureIndexV16CompleteReadResult unicode_read {};
+    PFL_REQUIRE(index_reader.read_v16_complete(unicode_index_path, unicode_read));
     PFL_EXPECT(
-        detail::filesystem_path_to_generic_utf8(unicode_loaded_capture_path) ==
-        detail::filesystem_path_to_generic_utf8(unicode_source_path)
-    );
-    PFL_EXPECT(
-        detail::filesystem_path_to_generic_utf8(unicode_loaded_source_info.capture_path) ==
+        unicode_read.header.source_capture_path_utf8 ==
         detail::filesystem_path_to_generic_utf8(unicode_source_path)
     );
 
@@ -3090,28 +3016,24 @@ void run_index_format_tests() {
     );
 
     {
-        auto legacy_packet_ref_schema_bytes = read_file_bytes(index_path);
-        const auto sections = parse_sections(legacy_packet_ref_schema_bytes);
-        const auto ipv4_section = std::find_if(sections.begin(), sections.end(), [](const SectionInfo& section) {
-            return section.id == static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections);
-        });
-        PFL_REQUIRE(ipv4_section != sections.end());
-        write_le16_at(legacy_packet_ref_schema_bytes, ipv4_section->offset + 4U, 1U);
-
-        const auto legacy_packet_ref_schema_path = write_temp_binary_file(
-            "pfl_index_legacy_packet_ref_schema.idx",
-            legacy_packet_ref_schema_bytes
+        auto previous_stable_revision_bytes = read_file_bytes(index_path);
+        write_le32_at(previous_stable_revision_bytes, 16U, kCaptureIndexPreviousStableV15Revision);
+        const auto previous_stable_revision_path = write_temp_binary_file(
+            "pfl_index_previous_stable_revision.idx",
+            previous_stable_revision_bytes
         );
-        PFL_EXPECT(!index_reader.read(
-            legacy_packet_ref_schema_path,
-            loaded_state,
-            loaded_capture_path,
-            &loaded_source_info
-        ));
+        detail::CaptureIndexV16CompleteReadResult previous_stable_read {};
+        PFL_EXPECT(!index_reader.read_v16_complete(previous_stable_revision_path, previous_stable_read));
         PFL_EXPECT(
             index_reader.last_error().reason ==
-            "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture"
+            "This index uses revision 15 and must be rebuilt with the current version."
         );
+        CaptureSession previous_stable_session {};
+        PFL_EXPECT(!previous_stable_session.load_index(previous_stable_revision_path));
+        PFL_EXPECT(
+            previous_stable_session.last_open_error_text().find(
+                "This index uses revision 15 and must be rebuilt with the current version."
+            ) != std::string::npos);
     }
 
     {
@@ -3136,28 +3058,21 @@ void run_index_format_tests() {
             chunked_ipv4_index_path,
             chunked_ipv4_state,
             chunked_ipv4_source_path,
-            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 256U},
+            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 64U},
             nullptr
         ));
 
         const auto chunked_ipv4_index_bytes = read_file_bytes(chunked_ipv4_index_path);
         PFL_EXPECT(count_sections(
             chunked_ipv4_index_bytes,
-            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections)
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks)
         ) > 1U);
 
-        CaptureState loaded_chunked_ipv4_state {};
-        std::filesystem::path loaded_chunked_ipv4_capture_path {};
-        CaptureSourceInfo loaded_chunked_ipv4_source_info {};
-        PFL_EXPECT(index_reader.read(
-            chunked_ipv4_index_path,
-            loaded_chunked_ipv4_state,
-            loaded_chunked_ipv4_capture_path,
-            &loaded_chunked_ipv4_source_info
-        ));
-        PFL_EXPECT(loaded_chunked_ipv4_capture_path == chunked_ipv4_source_path);
-        PFL_EXPECT(loaded_chunked_ipv4_source_info.capture_path == chunked_ipv4_source_path);
-        expect_matching_states(chunked_ipv4_state, loaded_chunked_ipv4_state);
+        CaptureSession loaded_chunked_ipv4_session {};
+        PFL_REQUIRE(loaded_chunked_ipv4_session.load_index(chunked_ipv4_index_path));
+        PFL_EXPECT(loaded_chunked_ipv4_session.capture_path() == chunked_ipv4_source_path);
+        PFL_EXPECT(loaded_chunked_ipv4_session.summary().packet_count == chunked_ipv4_state.summary.packet_count);
+        PFL_EXPECT(loaded_chunked_ipv4_session.summary().flow_count == chunked_ipv4_state.summary.flow_count);
 
         auto truncated_chunked_ipv4_bytes = chunked_ipv4_index_bytes;
         PFL_REQUIRE(!truncated_chunked_ipv4_bytes.empty());
@@ -3166,12 +3081,8 @@ void run_index_format_tests() {
             "pfl_chunked_ipv4_sections_truncated.idx",
             truncated_chunked_ipv4_bytes
         );
-        PFL_EXPECT(!index_reader.read(
-            truncated_chunked_ipv4_index_path,
-            loaded_chunked_ipv4_state,
-            loaded_chunked_ipv4_capture_path,
-            &loaded_chunked_ipv4_source_info
-        ));
+        detail::CaptureIndexV16CompleteReadResult truncated_chunked_ipv4_read {};
+        PFL_EXPECT(!index_reader.read_v16_complete(truncated_chunked_ipv4_index_path, truncated_chunked_ipv4_read));
         PFL_EXPECT(index_reader.last_error().reason == "index file is incomplete or was not finalized");
     }
 
@@ -3217,28 +3128,21 @@ void run_index_format_tests() {
             chunked_ipv6_index_path,
             chunked_ipv6_state,
             chunked_ipv6_source_path,
-            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 256U},
+            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 64U},
             nullptr
         ));
 
         const auto chunked_ipv6_index_bytes = read_file_bytes(chunked_ipv6_index_path);
         PFL_EXPECT(count_sections(
             chunked_ipv6_index_bytes,
-            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv6_connections)
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packetref_detail_blocks)
         ) > 1U);
 
-        CaptureState loaded_chunked_ipv6_state {};
-        std::filesystem::path loaded_chunked_ipv6_capture_path {};
-        CaptureSourceInfo loaded_chunked_ipv6_source_info {};
-        PFL_EXPECT(index_reader.read(
-            chunked_ipv6_index_path,
-            loaded_chunked_ipv6_state,
-            loaded_chunked_ipv6_capture_path,
-            &loaded_chunked_ipv6_source_info
-        ));
-        PFL_EXPECT(loaded_chunked_ipv6_capture_path == chunked_ipv6_source_path);
-        PFL_EXPECT(loaded_chunked_ipv6_source_info.capture_path == chunked_ipv6_source_path);
-        expect_matching_states(chunked_ipv6_state, loaded_chunked_ipv6_state);
+        CaptureSession loaded_chunked_ipv6_session {};
+        PFL_REQUIRE(loaded_chunked_ipv6_session.load_index(chunked_ipv6_index_path));
+        PFL_EXPECT(loaded_chunked_ipv6_session.capture_path() == chunked_ipv6_source_path);
+        PFL_EXPECT(loaded_chunked_ipv6_session.summary().packet_count == chunked_ipv6_state.summary.packet_count);
+        PFL_EXPECT(loaded_chunked_ipv6_session.summary().flow_count == chunked_ipv6_state.summary.flow_count);
     }
 
     {
@@ -3268,23 +3172,32 @@ void run_index_format_tests() {
         ));
 
         const auto oversized_single_connection_index_bytes = read_file_bytes(oversized_single_connection_index_path);
-        PFL_EXPECT(count_sections(
-            oversized_single_connection_index_bytes,
-            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections)
-        ) == 1U);
-
-        CaptureState loaded_oversized_single_connection_state {};
-        std::filesystem::path loaded_oversized_single_connection_capture_path {};
-        CaptureSourceInfo loaded_oversized_single_connection_source_info {};
-        PFL_EXPECT(index_reader.read(
+        detail::CaptureIndexV16CompleteReadResult oversized_single_connection_read {};
+        PFL_REQUIRE(index_reader.read_v16_complete(
             oversized_single_connection_index_path,
-            loaded_oversized_single_connection_state,
-            loaded_oversized_single_connection_capture_path,
-            &loaded_oversized_single_connection_source_info
+            oversized_single_connection_read
         ));
-        PFL_EXPECT(loaded_oversized_single_connection_capture_path == oversized_single_connection_source_path);
-        PFL_EXPECT(loaded_oversized_single_connection_source_info.capture_path == oversized_single_connection_source_path);
-        expect_matching_states(oversized_single_connection_state, loaded_oversized_single_connection_state);
+        const auto oversized_extent = std::find_if(
+            oversized_single_connection_read.metadata.packetref_directory.begin(),
+            oversized_single_connection_read.metadata.packetref_directory.end(),
+            [](const CaptureIndexV16PacketRefDirectoryEntry& entry) {
+                return entry.packet_count == 2U;
+            }
+        );
+        PFL_REQUIRE(oversized_extent != oversized_single_connection_read.metadata.packetref_directory.end());
+        PFL_EXPECT(
+            oversized_extent->encoded_byte_length ==
+            2U * kCaptureIndexV16PacketRefEncodedStrideBytes);
+
+        CaptureSession loaded_oversized_single_connection_session {};
+        PFL_REQUIRE(loaded_oversized_single_connection_session.load_index(oversized_single_connection_index_path));
+        PFL_EXPECT(loaded_oversized_single_connection_session.capture_path() == oversized_single_connection_source_path);
+        PFL_EXPECT(
+            loaded_oversized_single_connection_session.summary().packet_count ==
+            oversized_single_connection_state.summary.packet_count);
+        PFL_EXPECT(
+            loaded_oversized_single_connection_session.summary().flow_count ==
+            oversized_single_connection_state.summary.flow_count);
     }
 
     const auto index_bytes = read_file_bytes(index_path);
@@ -3296,7 +3209,8 @@ void run_index_format_tests() {
         "pfl_index_legacy_version.idx",
         legacy_version_bytes
     );
-    PFL_EXPECT(!index_reader.read(legacy_version_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult legacy_version_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(legacy_version_index_path, legacy_version_read));
     PFL_EXPECT(index_reader.last_error().reason == "legacy index version 14 is no longer loadable; rebuild the index from the source capture");
     CaptureIndexInspection legacy_inspection {};
     PFL_EXPECT(index_reader.inspect(legacy_version_index_path, legacy_inspection));
@@ -3316,14 +3230,11 @@ void run_index_format_tests() {
         std::filesystem::remove(invalid_locator_index_path);
 
         CaptureIndexWriter invalid_locator_writer {};
-        PFL_REQUIRE(invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path));
-        PFL_EXPECT(!index_reader.read(
-            invalid_locator_index_path,
-            loaded_state,
-            loaded_capture_path,
-            &loaded_source_info
-        ));
-        PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
+        std::string error_text {};
+        PFL_EXPECT(!invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path, {}, &error_text));
+        PFL_EXPECT(
+            error_text ==
+            "packet locator entries must be strictly increasing by packet_index and file_offset");
     }
 
     {
@@ -3338,21 +3249,19 @@ void run_index_format_tests() {
         std::filesystem::remove(invalid_locator_index_path);
 
         CaptureIndexWriter invalid_locator_writer {};
-        PFL_REQUIRE(invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path));
-        PFL_EXPECT(!index_reader.read(
-            invalid_locator_index_path,
-            loaded_state,
-            loaded_capture_path,
-            &loaded_source_info
-        ));
-        PFL_EXPECT(index_reader.last_error().reason == "invalid packet-locator section");
+        std::string error_text {};
+        PFL_EXPECT(!invalid_locator_writer.write(invalid_locator_index_path, invalid_locator_state, source_path, {}, &error_text));
+        PFL_EXPECT(
+            error_text ==
+            "packet locator entries must be strictly increasing by packet_index and file_offset");
     }
 
     const auto malformed_index_path = write_temp_binary_file(
         "pfl_index_section_size_invalid.idx",
         corrupt_first_section_size(index_bytes)
     );
-    PFL_EXPECT(!index_reader.read(malformed_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult malformed_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(malformed_index_path, malformed_read));
 
     auto truncated_tail_bytes = index_bytes;
     PFL_REQUIRE(!truncated_tail_bytes.empty());
@@ -3361,47 +3270,55 @@ void run_index_format_tests() {
         "pfl_index_truncated_tail.idx",
         truncated_tail_bytes
     );
-    PFL_EXPECT(!index_reader.read(truncated_tail_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult truncated_tail_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(truncated_tail_index_path, truncated_tail_read));
     PFL_EXPECT(index_reader.last_error().reason == "index file is incomplete or was not finalized");
 
     const auto missing_index_path = write_temp_binary_file(
-        "pfl_index_missing_summary.idx",
-        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::summary))
+        "pfl_index_missing_capture_statistics_snapshot.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot))
     );
-    PFL_EXPECT(!index_reader.read(missing_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult missing_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(missing_index_path, missing_read));
 
     const auto missing_protocol_paths_index_path = write_temp_binary_file(
-        "pfl_index_missing_protocol_paths.idx",
-        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_paths))
+        "pfl_index_missing_protocol_path_registry_early.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early))
     );
-    PFL_EXPECT(!index_reader.read(
-        missing_protocol_paths_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult missing_protocol_paths_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(missing_protocol_paths_index_path, missing_protocol_paths_read));
 
     const auto missing_unrecognized_packets_index_path = write_temp_binary_file(
-        "pfl_index_missing_unrecognized_packets.idx",
-        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::unrecognized_packets))
+        "pfl_index_missing_packet_locator_v16.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packet_locator_v16))
     );
-    PFL_EXPECT(!index_reader.read(
-        missing_unrecognized_packets_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult missing_unrecognized_packets_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(
+        missing_unrecognized_packets_index_path,
+        missing_unrecognized_packets_read));
 
     const auto duplicate_index_path = write_temp_binary_file(
-        "pfl_index_duplicate_summary.idx",
-        duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::summary))
+        "pfl_index_duplicate_capture_statistics_snapshot.idx",
+        duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::capture_statistics_snapshot))
     );
-    PFL_EXPECT(!index_reader.read(duplicate_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult duplicate_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(duplicate_index_path, duplicate_read));
 
     const auto duplicate_protocol_paths_index_path = write_temp_binary_file(
-        "pfl_index_duplicate_protocol_paths.idx",
-        duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_paths))
+        "pfl_index_duplicate_protocol_path_registry_early.idx",
+        duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_path_registry_early))
     );
-    PFL_EXPECT(!index_reader.read(
-        duplicate_protocol_paths_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult duplicate_protocol_paths_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(
+        duplicate_protocol_paths_index_path,
+        duplicate_protocol_paths_read));
 
     const auto trailing_index_path = write_temp_binary_file(
         "pfl_index_trailing_garbage.idx",
         append_trailing_garbage(index_bytes)
     );
-    PFL_EXPECT(!index_reader.read(trailing_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    detail::CaptureIndexV16CompleteReadResult trailing_read {};
+    PFL_EXPECT(!index_reader.read_v16_complete(trailing_index_path, trailing_read));
 
 }
 

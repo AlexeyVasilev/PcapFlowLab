@@ -111,6 +111,35 @@ constexpr char kLegacyIndexRebuildMessage[] =
     "legacy index version 14 is no longer loadable; rebuild the index from the source capture";
 constexpr char kCompactPacketRefRebuildMessage[] =
     "stable index uses legacy packet-ref storage for packet metadata; rebuild the index from the source capture";
+constexpr char kPreviousStableV15RebuildMessage[] =
+    "This index uses revision 15 and must be rebuilt with the current version.";
+constexpr char kOutdatedStableIndexRebuildMessage[] =
+    "stable index revision is outdated; rebuild the index from the source capture";
+constexpr char kFutureStableIndexRevisionMessage[] =
+    "stable index revision is newer than this application supports";
+
+[[nodiscard]] const char* outdated_stable_revision_message(const std::uint32_t revision) noexcept {
+    return revision == kCaptureIndexPreviousStableV15Revision
+        ? kPreviousStableV15RebuildMessage
+        : kOutdatedStableIndexRebuildMessage;
+}
+
+[[nodiscard]] const char* v16_complete_read_error_text(const detail::CaptureIndexV16CompleteReadResult& result) noexcept {
+    if (!result.error_detail.empty()) {
+        return result.error_detail.c_str();
+    }
+
+    switch (result.status) {
+    case detail::CaptureIndexV16CompleteReadStatus::ok:
+        return "";
+    case detail::CaptureIndexV16CompleteReadStatus::invalid_metadata_tier:
+        return "invalid v16 index metadata tier";
+    case detail::CaptureIndexV16CompleteReadStatus::trailing_data:
+        return "invalid v16 index trailing data";
+    }
+
+    return "invalid v16 index";
+}
 
 }  // namespace
 
@@ -279,6 +308,142 @@ bool CaptureIndexReader::inspect(const std::filesystem::path& index_path,
     }
 }
 
+bool CaptureIndexReader::read_v16_complete(
+    const std::filesystem::path& index_path,
+    detail::CaptureIndexV16CompleteReadResult& out_result,
+    OpenContext* ctx
+) const {
+    out_result = {};
+    clear_error();
+
+    if (ctx != nullptr) {
+        ctx->progress = {};
+        ctx->clear_failure();
+        std::error_code error {};
+        const auto file_size = std::filesystem::file_size(index_path, error);
+        if (!error) {
+            ctx->progress.total_bytes = static_cast<std::uint64_t>(file_size);
+        }
+    }
+
+    if (should_cancel(ctx)) {
+        if (ctx != nullptr && ctx->on_progress) {
+            ctx->on_progress(ctx->progress);
+        }
+        return false;
+    }
+
+    std::ifstream stream(index_path, std::ios::binary);
+    if (!stream.is_open()) {
+        set_error_context("file access failed");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+
+    try {
+        report_index_progress(ctx, stream);
+        if (should_cancel(ctx)) {
+            report_index_progress(ctx, stream);
+            return false;
+        }
+
+        std::uint64_t magic {0};
+        if (!detail::read_u64(stream, magic)) {
+            set_error_context(0, "index file is incomplete or was not finalized");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (magic == kLegacyCaptureIndexMagic) {
+            std::uint16_t legacy_version {0};
+            std::uint16_t legacy_reserved {0};
+            if (!detail::read_u16(stream, legacy_version) ||
+                !detail::read_u16(stream, legacy_reserved)) {
+                set_error_context(current_offset(stream), "index file is incomplete or was not finalized");
+            } else {
+                set_error_context(0, kLegacyIndexRebuildMessage);
+            }
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (magic != kStableCaptureIndexMagic) {
+            set_error_context(0, "invalid index magic");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        stream.seekg(0, std::ios::beg);
+        detail::CaptureIndexStableHeader stable_header {};
+        if (!detail::read_capture_index_stable_header(stream, stable_header)) {
+            set_error_context(0, "invalid stable index header");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.container_format_version != kCaptureIndexStableContainerFormatVersion) {
+            set_error_context(0, "unsupported stable index container version");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
+            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision > kCaptureIndexStableIndexRevision) {
+            set_error_context(0, kFutureStableIndexRevisionMessage);
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        stream.seekg(0, std::ios::beg);
+        out_result = detail::read_capture_index_v16(stream);
+        if (!out_result) {
+            set_error_context(0, v16_complete_read_error_text(out_result));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        report_index_progress(ctx, stream);
+        return true;
+    } catch (const std::bad_alloc&) {
+        last_error_ = {};
+        last_error_.reason = "index load exhausted memory while reading v16 metadata";
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    } catch (const std::exception& error) {
+        last_error_ = {};
+        last_error_.reason = std::string("unexpected exception while reading v16 index: ") + error.what();
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+}
+
 bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                               CaptureState& out_state,
                               std::filesystem::path& out_source_capture_path,
@@ -389,7 +554,23 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         }
 
         if (stable_header.index_revision < kCaptureIndexStableIndexRevision) {
-            set_error_context(0, "unsupported stable index revision");
+            set_error_context(0, outdated_stable_revision_message(stable_header.index_revision));
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision > kCaptureIndexStableIndexRevision) {
+            set_error_context(0, kFutureStableIndexRevisionMessage);
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
+            return false;
+        }
+
+        if (stable_header.index_revision == kCaptureIndexStableIndexRevision) {
+            set_error_context(0, "legacy eager index reader does not support v16 metadata-backed indexes");
             if (ctx != nullptr) {
                 ctx->set_failure(last_error_);
             }

@@ -2535,7 +2535,7 @@ bool write_v16_fast_statistics_tier(
 ) {
     if (header.magic != kStableCaptureIndexMagic ||
         header.container_format_version != kCaptureIndexStableContainerFormatVersion ||
-        header.index_revision != kCaptureIndexStableV16Revision ||
+        header.index_revision != kCaptureIndexStableIndexRevision ||
         !validate_capture_statistics_snapshot(tier.capture_statistics_snapshot).ok ||
         !validate_protocol_path_display_statistics(
             tier.protocol_path_registry,
@@ -2576,7 +2576,7 @@ CaptureIndexV16FastStatisticsTierReadResult read_v16_fast_statistics_tier(
         return result;
     }
 
-    if (result.header.index_revision != kCaptureIndexStableV16Revision) {
+    if (result.header.index_revision != kCaptureIndexStableIndexRevision) {
         result.status = CaptureIndexV16FastStatisticsTierReadStatus::unsupported_revision;
         return result;
     }
@@ -3882,7 +3882,7 @@ bool write_capture_index_v16(
     const CaptureIndexV16WritePlan& plan
 ) {
     CaptureIndexStableHeader v16_header = header;
-    v16_header.index_revision = kCaptureIndexStableV16Revision;
+    v16_header.index_revision = kCaptureIndexStableIndexRevision;
 
     return write_v16_fast_statistics_tier(stream, v16_header, fast_tier) &&
            write_v16_metadata_tier_sections(stream, plan) &&

@@ -7428,7 +7428,6 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         }, Qt::QueuedConnection);
     });
 
-    QObject::connect(open_thread_, &QThread::finished, open_thread_, &QObject::deleteLater);
     open_thread_->start();
     return true;
 }
@@ -7773,11 +7772,14 @@ void MainController::cleanupOpenThread() {
         return;
     }
 
-    if (open_thread_->isRunning()) {
-        open_thread_->wait();
+    auto* thread = open_thread_;
+    open_thread_ = nullptr;
+
+    if (thread->isRunning()) {
+        thread->wait();
     }
 
-    open_thread_ = nullptr;
+    delete thread;
 }
 
 void MainController::releaseOpenContext() {

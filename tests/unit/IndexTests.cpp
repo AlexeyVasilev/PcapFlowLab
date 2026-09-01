@@ -57,17 +57,6 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
     }
 }
 
-void expect_matching_packet_locator_entries(
-    const std::vector<CapturePacketLocatorEntry>& left,
-    const std::vector<CapturePacketLocatorEntry>& right
-) {
-    PFL_EXPECT(left.size() == right.size());
-    for (std::size_t index = 0U; index < left.size(); ++index) {
-        PFL_EXPECT(left[index].packet_index == right[index].packet_index);
-        PFL_EXPECT(left[index].file_offset == right[index].file_offset);
-    }
-}
-
 void expect_matching_stream_rows(const std::vector<StreamItemRow>& left, const std::vector<StreamItemRow>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
@@ -266,17 +255,23 @@ void run_index_tests() {
 
     {
         CaptureIndexReader reader {};
-        CaptureState loaded_state {};
-        std::filesystem::path loaded_capture_path {};
         CaptureSourceInfo source_info {};
-        PFL_EXPECT(reader.read(index_path, loaded_state, loaded_capture_path, &source_info));
-        PFL_EXPECT(loaded_capture_path == source_path);
+        detail::CaptureIndexV16CompleteReadResult read_result {};
+        PFL_REQUIRE(reader.read_v16_complete(index_path, read_result));
+        source_info = CaptureSourceInfo {
+            .capture_path = detail::filesystem_path_from_generic_utf8(read_result.header.source_capture_path_utf8),
+            .format = read_result.header.source_format,
+            .file_size = read_result.header.source_file_size,
+            .last_write_time = read_result.header.source_last_write_time,
+            .content_fingerprint = read_result.header.source_content_fingerprint,
+        };
         PFL_EXPECT(source_info.capture_path == source_path);
-        PFL_EXPECT(loaded_state.summary.packet_count == 2);
-        PFL_EXPECT(loaded_state.summary.flow_count == 1);
-        PFL_EXPECT(loaded_state.ipv4_connections.size() == 1);
-        PFL_EXPECT(loaded_state.ipv6_connections.size() == 0);
-        expect_matching_packet_locator_entries(loaded_state.packet_locator, original_session.state().packet_locator);
+        PFL_EXPECT(read_result.fast_statistics_tier.capture_statistics_snapshot.total_packet_count == 2);
+        PFL_EXPECT(read_result.fast_statistics_tier.capture_statistics_snapshot.total_flow_count == 1);
+        PFL_EXPECT(read_result.metadata.ipv4_connections.size() == 1);
+        PFL_EXPECT(read_result.metadata.ipv6_connections.empty());
+        PFL_EXPECT(read_result.metadata.packet_locator_sections.size() == 1U);
+        PFL_EXPECT(read_result.metadata.packet_locator_sections.front().entry_count == original_session.state().packet_locator.size());
         PFL_EXPECT(source_info.content_fingerprint != 0U);
         PFL_EXPECT(validate_capture_source(source_info));
 
@@ -357,7 +352,7 @@ void run_index_tests() {
         PFL_EXPECT(decoded_bidirectional.has_flow_b);
         PFL_EXPECT(first_observed_endpoint_a(decoded_bidirectional)->addr == one_direction_flow.src_addr);
         PFL_EXPECT(first_observed_endpoint_b(decoded_bidirectional)->addr == one_direction_flow.dst_addr);
-        PFL_EXPECT(kCaptureIndexVersion == 15U);
+        PFL_EXPECT(kCaptureIndexVersion == 16U);
     }
     {
         OpenContext ctx {};
@@ -374,11 +369,9 @@ void run_index_tests() {
         PFL_EXPECT(callback_count >= 1U);
 
         CaptureIndexReader cancelled_reader {};
-        CaptureState cancelled_state {};
-        std::filesystem::path cancelled_capture_path {};
-        PFL_EXPECT(!cancelled_reader.read(index_path, cancelled_state, cancelled_capture_path, nullptr, &ctx));
-        PFL_EXPECT(cancelled_state.summary.packet_count == 0U);
-        PFL_EXPECT(cancelled_capture_path.empty());
+        detail::CaptureIndexV16CompleteReadResult cancelled_read_result {};
+        PFL_EXPECT(!cancelled_reader.read_v16_complete(index_path, cancelled_read_result, &ctx));
+        PFL_EXPECT(cancelled_read_result.fast_statistics_tier.capture_statistics_snapshot.total_packet_count == 0U);
     }
 
     {
@@ -388,9 +381,8 @@ void run_index_tests() {
         PFL_EXPECT(session.last_open_error_text().find("incomplete or was not finalized") != std::string::npos);
 
         CaptureIndexReader reader {};
-        CaptureState state {};
-        std::filesystem::path capture_path {};
-        PFL_EXPECT(!reader.read(truncated_index_path, state, capture_path));
+        detail::CaptureIndexV16CompleteReadResult read_result {};
+        PFL_EXPECT(!reader.read_v16_complete(truncated_index_path, read_result));
     }
 
     {

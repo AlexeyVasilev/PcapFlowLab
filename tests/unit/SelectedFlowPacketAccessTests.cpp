@@ -222,7 +222,7 @@ detail::CaptureIndexStableHeader make_v16_test_header() {
         .container_format_version = kCaptureIndexStableContainerFormatVersion,
         .header_flags = 0U,
         .header_size = 0U,
-        .index_revision = kCaptureIndexStableV16Revision,
+        .index_revision = kCaptureIndexStableIndexRevision,
         .writer_application_version = "0.3.0-test",
         .source_format = CaptureSourceFormat::classic_pcap,
         .source_file_size = 4096U,

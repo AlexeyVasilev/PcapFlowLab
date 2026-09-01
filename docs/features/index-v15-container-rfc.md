@@ -1,10 +1,11 @@
 # Index v15 Container RFC
 
-Status: stable v15 container is active in the production reader/writer.
+Status: previous stable v15 container. Current production writes and loads the
+stable v16 container; v15 full payload load is rebuild-required.
 
-This document defines the frozen outer-container baseline for the active stable
-index v15 format and records the current per-section schema families used by
-the compact persistent `PacketRef` migration.
+This document defines the frozen outer-container baseline for the previous
+stable index v15 format and records the per-section schema families used by
+the compact persistent `PacketRef` migration before the v16 cutover.
 
 Related RFCs:
 
@@ -31,7 +32,9 @@ The compatibility model is:
 
 ## Stable Header
 
-The stable v15 header remains the authoritative introspection surface.
+The stable v15 header remains an authoritative introspection surface for
+recognizing previous stable indexes even though full v15 payload loading is no
+longer supported by the current production reader.
 
 It still provides:
 
@@ -147,16 +150,16 @@ introspection is independent of payload compatibility.
 
 This compact-PacketRef change does not change the existing legacy-v14 policy.
 
-Current behavior remains:
+Current behavior for legacy v14 remains:
 
 - legacy v14 header/version recognition is inspectable
 - legacy v14 full load is rejected with a rebuild-required diagnostic
 
 The PacketRef compaction pass does not add any new v14 compatibility path.
 
-## Current Compatibility Summary
+## Previous Compatibility Summary
 
-The current stable v15 compatibility contract is:
+The previous stable v15 compatibility contract was:
 
 - outer container format stays at version 1
 - index revision stays at 15

@@ -2784,7 +2784,7 @@ void expect_gtpu_teid_agnostic_index_roundtrip_keeps_stored_grouping_without_rea
         .ignore_gtpu_teids_when_grouping_inner_flows = false,
     });
     PFL_REQUIRE(loaded_gtpu_teid_agnostic.load_index(merged_index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 15U);
+    PFL_EXPECT(kCaptureIndexVersion == 16U);
     PFL_EXPECT(loaded_gtpu_teid_agnostic.list_flows().size() == 1U);
     PFL_EXPECT(!loaded_gtpu_teid_agnostic.flow_grouping_ignores_gtpu_teids());
     PFL_EXPECT(protocol_path_text_or_invalid(
@@ -3066,7 +3066,7 @@ void expect_vlan_and_mpls_agnostic_index_roundtrip_keeps_stored_grouping_without
 
     CaptureSession loaded_vlan_and_mpls_agnostic {};
     PFL_REQUIRE(loaded_vlan_and_mpls_agnostic.load_index(merged_index_path));
-    PFL_EXPECT(kCaptureIndexVersion == 15U);
+    PFL_EXPECT(kCaptureIndexVersion == 16U);
     PFL_EXPECT(loaded_vlan_and_mpls_agnostic.list_flows().size() == 1U);
     PFL_EXPECT(!loaded_vlan_and_mpls_agnostic.flow_grouping_ignores_vlan_and_mpls_layers());
     PFL_EXPECT(protocol_path_text_or_invalid(

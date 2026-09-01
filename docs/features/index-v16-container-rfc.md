@@ -1,10 +1,10 @@
 # Index v16 Container RFC
 
-Status: planned and frozen target architecture for the next stable-index
-migration.
+Status: current stable production index architecture.
 
-Current production behavior remains the active stable v15 reader/writer until
-the v16 migration is implemented.
+Current production writes stable v16 indexes and loads stable v16 indexes
+through the metadata/detail architecture described here. Stable v15 full
+payload load is rebuild-required after the cutover.
 
 Related RFCs:
 
@@ -16,8 +16,8 @@ Related RFCs:
 
 ## Purpose
 
-This document freezes the intended stable v16 index architecture before Stage
-4 implementation begins.
+This document records the stable v16 index architecture implemented by the
+Stage 4 migration.
 
 It records:
 
@@ -27,7 +27,7 @@ It records:
 - the selected-flow lazy `PacketRef` architecture boundary
 - the late unrecognized-detail and packet-locator boundaries
 
-This is a target wire-format contract, not an implementation claim.
+This is the current wire-format contract.
 
 ## Frozen Outer Container Identity
 
@@ -53,17 +53,15 @@ legacy section-family fallback.
 
 ### Compatibility policy
 
-The frozen compatibility policy is:
+The current compatibility policy is:
 
 - stable-header inspection remains independent of payload compatibility
 - v16 full payload loading requires the v16 section families defined here
-- v15 full payload loading remains the responsibility of the current v15
-  reader path until the migration cutover is intentionally replaced
-- a future v16-only production reader is allowed to reject v15 payload loading
-  with a rebuild-required diagnostic
+- v15 full payload loading is rejected with a rebuild-required diagnostic
+- future stable revisions are rejected by the current reader
 
-This freeze does not require a legacy fallback loader for v15 payloads once
-the v16 migration becomes active.
+The v16 production reader does not include a legacy fallback loader for v15
+payloads.
 
 ## Stable Header
 
@@ -93,7 +91,7 @@ Every stable payload section continues to use the same 16-byte section header:
 
 Section flag bit 0 remains the required-section bit.
 
-## Frozen v16 Physical Order
+## Current v16 Physical Order
 
 The exact v16 physical order is:
 
@@ -112,18 +110,18 @@ The exact v16 physical order is:
 5. Detail tier
    - `packetref_detail_blocks`
    - `unrecognized_reason_blobs`
-   - `packet_locator`
+   - `packet_locator_v16`
 
 The fast reader is allowed to stop after the fast Statistics tier. Successful
 fast-tier validation does not imply that later metadata or detail sections are
 valid.
 
-## Frozen v16 Section Families
+## Current v16 Section Families
 
 v15 section IDs `2` through `7` are not reused in v16 because their old names
 and payload meanings would be misleading under the new architecture.
 
-The frozen v16 section-family table is:
+The v16 section-family table is:
 
 | ID | Symbolic name | Required | Tier | Schema | Repeatable / chunked | Ordering dependency |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -137,7 +135,7 @@ The frozen v16 section-family table is:
 | 15 | `unrecognized_directory` | yes | flow metadata | 1 | yes | after fast Statistics tier |
 | 16 | `packetref_detail_blocks` | yes | detail | 1 | yes | after `packetref_directory` |
 | 17 | `unrecognized_reason_blobs` | yes | detail | 1 | yes | after `unrecognized_directory` |
-| 18 | `packet_locator` | yes | detail | 1 | yes | after metadata and unrecognized detail sections |
+| 18 | `packet_locator_v16` | yes | detail | 1 | yes | after metadata and unrecognized detail sections |
 
 All v16 section families are required, even when their logical row count is
 zero.
@@ -346,7 +344,7 @@ concrete Protocol Path Statistics or reporting requirement that needs them.
 
 ### Reproducibility rule
 
-The frozen v16 design requires that the current shared presentation modes be
+The v16 design requires that the current shared presentation modes be
 derivable without scanning canonical flows:
 
 - `Terminal paths`
@@ -560,16 +558,16 @@ seekable, and independent from fast Statistics reads.
 
 ## Packet Locator
 
-`packet_locator` remains the late/detail-tier authority for source-backed
+`packet_locator_v16` remains the late/detail-tier authority for source-backed
 packet byte lookup.
 
-The frozen v16 section stores the same sparse locator anchors currently built
+The v16 section stores the same sparse locator anchors currently built
 during import: each row is a fixed-size pair of `packet_index` and source
 `file_offset`. The payload begins with a `u64` row count followed by 16-byte
 rows (`u64 packet_index`, `u64 file_offset`). Rows are strictly increasing by
 both packet index and file offset.
 
-The metadata reader catalogs `packet_locator` section occurrences by logical
+The metadata reader catalogs `packet_locator_v16` section occurrences by logical
 row range and first/last anchors. It does not eagerly materialize the full
 locator table. Lazy selected-packet byte lookup can then binary-search the
 cataloged section and read only the fixed-size rows needed for the requested
@@ -613,7 +611,7 @@ authoritative data at the narrowest relevant validation scope.
 
 ## Conceptual Reader API Layers
 
-The frozen conceptual v16 reader layers are:
+The conceptual v16 reader layers are:
 
 - `inspect_index_header(...)`
 - `read_statistics(...)`
@@ -645,9 +643,9 @@ The following Analysis capabilities remain selected-flow `PacketRef` derived:
 Existing connection aggregate metadata remains sufficient for whole-connection
 facts used by Statistics/reporting.
 
-## Frozen Stage 4 Implementation Sequence
+## Stage 4 Implementation Sequence
 
-The planned reviewable implementation sequence is:
+The reviewable implementation sequence was:
 
 1. Stage 4B: snapshot model, serialization helpers, and focused tests
 2. Stage 4C: v16 section constants/topology plus writer and fast Statistics
@@ -661,7 +659,7 @@ The planned reviewable implementation sequence is:
 7. Stage 4H: move packet locator fully late/lazy and finish the full-session
    v16 reader
 8. Stage 4I: CLI stats-only fast path plus session/frontend staged-loading
-   plumbing
+   plumbing remains future work
 
 Dependencies may be refined during implementation review, but the frozen
 target architecture should not change without a deliberate RFC update.
@@ -687,9 +685,8 @@ Stage 4 implementation must cover at least:
 
 ## Review Notes
 
-This RFC freezes the intended stable v16 layout while preserving the key
-current/target distinction:
+This RFC records the current stable v16 layout and the migration boundary:
 
-- current production is still stable v15
-- current code does not yet implement the v16 layout
-- this document is the frozen design target for the later migration
+- current production writes and loads stable v16
+- stable v15 full payload load is rebuild-required
+- header inspection remains independent of full payload compatibility

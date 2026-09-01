@@ -13,19 +13,20 @@ The current desktop and CLI product can open:
 - saved Pcap Flow Lab analysis indexes (`.idx`).
 
 Raw capture open/import builds the current canonical flow inventory from packet
-metadata and bounded decode facts. Saved indexes reopen previously materialized
-analysis state without reimporting the original capture.
+metadata and bounded decode facts. Saved indexes reopen metadata-backed session
+state without reimporting the original capture.
 
 Indexes are exact-version artifacts. The current stable index baseline is
-revision `15`, with header inspection kept independent from full payload
-compatibility. When the saved index revision or required section schemas are
-not supported, the product requires rebuilding the index from the source
-capture.
+revision `16`, with header inspection kept independent from full payload
+compatibility. Stable v15 and legacy v14 indexes are recognized but require
+rebuilding from the source capture for full load. When the saved index revision
+or required section schemas are not supported, the product requires rebuilding
+the index from the source capture.
 
 An index can open without the original source capture. In that index-only mode,
-metadata-backed workflows remain available, but byte-backed inspection,
-selected-flow reconstruction, and packet-writing export still depend on a valid
-attached source capture.
+metadata-backed workflows remain available, including lazy selected-flow
+packet metadata. Byte-backed inspection, packet payload/stream reconstruction,
+and packet-writing export still depend on a valid attached source capture.
 
 ## Flow model and grouping
 

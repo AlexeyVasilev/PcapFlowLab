@@ -194,7 +194,7 @@ public:
     ) const;
     bool load_index(const std::filesystem::path& index_path);
     bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
-    bool load_inactive_v16_index_for_testing(const std::filesystem::path& index_path);
+    bool load_v16_index_for_testing(const std::filesystem::path& index_path);
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] bool has_source_capture() const noexcept;
     [[nodiscard]] bool source_capture_accessible() const noexcept;
@@ -552,7 +552,7 @@ private:
     };
 
     [[nodiscard]] bool uses_v16_storage() const noexcept;
-    [[nodiscard]] bool load_inactive_v16_index_result_for_testing(
+    [[nodiscard]] bool load_v16_index_result(
         const std::filesystem::path& index_path,
         detail::CaptureIndexV16CompleteReadResult result
     );

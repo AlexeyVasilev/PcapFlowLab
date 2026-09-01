@@ -960,16 +960,18 @@ void append_protocol_path_statistics_rows(
     for (const auto node_index : sorted_indices) {
         const auto& node = nodes[node_index];
         const auto node_id = static_cast<std::uint64_t>(node_index + 1U);
-        const auto membership_offset = summary.flow_index_pool.size();
-        summary.flow_index_pool.insert(
-            summary.flow_index_pool.end(),
-            node.flow_indices.begin(),
-            node.flow_indices.end()
-        );
-        summary.node_membership_ranges[static_cast<std::size_t>(node_id)] = ProtocolPathStatisticsNodeMembershipRange {
-            .offset = membership_offset,
-            .count = node.flow_indices.size(),
-        };
+        if (!summary.node_membership_ranges.empty()) {
+            const auto membership_offset = summary.flow_index_pool.size();
+            summary.flow_index_pool.insert(
+                summary.flow_index_pool.end(),
+                node.flow_indices.begin(),
+                node.flow_indices.end()
+            );
+            summary.node_membership_ranges[static_cast<std::size_t>(node_id)] = ProtocolPathStatisticsNodeMembershipRange {
+                .offset = membership_offset,
+                .count = node.flow_indices.size(),
+            };
+        }
 
         summary.rows.push_back(ProtocolPathStatisticsRow {
             .node_id = static_cast<std::uint64_t>(node_index + 1U),
