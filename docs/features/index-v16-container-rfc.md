@@ -563,11 +563,24 @@ seekable, and independent from fast Statistics reads.
 `packet_locator` remains the late/detail-tier authority for source-backed
 packet byte lookup.
 
+The frozen v16 section stores the same sparse locator anchors currently built
+during import: each row is a fixed-size pair of `packet_index` and source
+`file_offset`. The payload begins with a `u64` row count followed by 16-byte
+rows (`u64 packet_index`, `u64 file_offset`). Rows are strictly increasing by
+both packet index and file offset.
+
+The metadata reader catalogs `packet_locator` section occurrences by logical
+row range and first/last anchors. It does not eagerly materialize the full
+locator table. Lazy selected-packet byte lookup can then binary-search the
+cataloged section and read only the fixed-size rows needed for the requested
+anchor.
+
 Frozen policy:
 
 - it is not needed for fast Statistics-only reads
 - it is not needed for ordinary metadata-only flow loading
 - it is not eagerly loaded during fast-tier reads
+- it may be split across repeated section `18` chunks
 - deeper redundancy review beyond this role is deferred
 
 ## Fast-Reader Validation Scopes

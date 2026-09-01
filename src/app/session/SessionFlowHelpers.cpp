@@ -2202,6 +2202,11 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
     result.plan.packetref_detail_sections.reserve(connections.size());
     result.plan.unrecognized_directory_sections.reserve(1U);
     result.plan.unrecognized_reason_sections.reserve(1U);
+    result.plan.packet_locator_sections.reserve(1U);
+    result.plan.packet_locator_entries = std::span<const CapturePacketLocatorEntry>(
+        state.packet_locator.data(),
+        state.packet_locator.size()
+    );
 
     std::unordered_map<ProtocolPathId, std::size_t> membership_row_indices {};
     membership_row_indices.reserve(connections.size());
@@ -2257,6 +2262,28 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
             }
 
             return result.plan.unrecognized_reason_sections.back();
+        };
+
+    auto ensure_packet_locator_section =
+        [&](const bool require_empty_section) -> CaptureIndexV16PacketLocatorSectionWritePlan& {
+            if (result.plan.packet_locator_sections.empty() ||
+                (require_empty_section &&
+                 result.plan.packet_locator_sections.back().entry_count > 0U)) {
+                std::uint64_t logical_entry_start {0};
+                if (!result.plan.packet_locator_sections.empty()) {
+                    const auto& prior = result.plan.packet_locator_sections.back();
+                    logical_entry_start = prior.logical_entry_start + prior.entry_count;
+                }
+
+                result.plan.packet_locator_sections.push_back(CaptureIndexV16PacketLocatorSectionWritePlan {
+                    .section_occurrence_index = static_cast<std::uint32_t>(
+                        result.plan.packet_locator_sections.size()),
+                    .payload_size = 8U,
+                    .logical_entry_start = logical_entry_start,
+                });
+            }
+
+            return result.plan.packet_locator_sections.back();
         };
 
     auto append_directory_extent =
@@ -2392,6 +2419,57 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
         }
     }
 
+    {
+        std::optional<std::uint64_t> prior_packet_index {};
+        std::optional<std::uint64_t> prior_file_offset {};
+        for (std::size_t index = 0U; index < state.packet_locator.size(); ++index) {
+            const auto& entry = state.packet_locator[index];
+            if ((prior_packet_index.has_value() && entry.packet_index <= *prior_packet_index) ||
+                (prior_file_offset.has_value() && entry.file_offset <= *prior_file_offset)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::invalid_packet_locator_order;
+                result.error_detail =
+                    "packet locator entries must be strictly increasing by packet_index and file_offset";
+                return result;
+            }
+            prior_packet_index = entry.packet_index;
+            prior_file_offset = entry.file_offset;
+
+            auto& locator_section = ensure_packet_locator_section(false);
+            std::uint64_t prospective_payload_size {0};
+            if (!checked_add_u64(
+                    locator_section.payload_size,
+                    kCaptureIndexV16PacketLocatorEncodedStrideBytes,
+                    prospective_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "packet locator section payload size overflowed";
+                return result;
+            }
+
+            if (locator_section.entry_count > 0U &&
+                prospective_payload_size > options.target_packet_locator_section_payload_bytes) {
+                result.plan.packet_locator_sections.push_back(CaptureIndexV16PacketLocatorSectionWritePlan {
+                    .section_occurrence_index = static_cast<std::uint32_t>(
+                        result.plan.packet_locator_sections.size()),
+                    .payload_size = 8U,
+                    .logical_entry_start = locator_section.logical_entry_start + locator_section.entry_count,
+                });
+            }
+
+            auto& target_locator_section = ensure_packet_locator_section(false);
+            std::uint64_t next_payload_size {0};
+            if (!checked_add_u64(
+                    target_locator_section.payload_size,
+                    kCaptureIndexV16PacketLocatorEncodedStrideBytes,
+                    next_payload_size)) {
+                result.status = CaptureIndexV16WritePlanBuildStatus::numeric_overflow;
+                result.error_detail = "packet locator section payload size overflowed";
+                return result;
+            }
+            target_locator_section.payload_size = next_payload_size;
+            ++target_locator_section.entry_count;
+        }
+    }
+
     for (std::size_t index = 0U; index < connections.size(); ++index) {
         const auto& connection = connections[index];
         const auto canonical_connection_ordinal = static_cast<std::uint32_t>(index);
@@ -2509,6 +2587,7 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
     ensure_detail_section(false);
     ensure_unrecognized_directory_section(false);
     ensure_unrecognized_reason_section(false);
+    ensure_packet_locator_section(false);
 
     {
         for (std::size_t index = 0U; index < state.unrecognized_packets.size(); ++index) {
@@ -2589,6 +2668,26 @@ CaptureIndexV16WritePlanBuildResult build_capture_index_v16_write_plan(
             .payload_file_offset = 0U,
             .payload_size = section.payload_size,
         });
+    }
+
+    result.plan.metadata.packet_locator_sections.reserve(result.plan.packet_locator_sections.size());
+    for (const auto& section : result.plan.packet_locator_sections) {
+        CaptureIndexV16PacketLocatorSectionInfo info {
+            .section_occurrence_index = section.section_occurrence_index,
+            .payload_file_offset = 0U,
+            .payload_size = section.payload_size,
+            .logical_entry_start = section.logical_entry_start,
+            .entry_count = section.entry_count,
+        };
+        if (section.entry_count > 0U) {
+            const auto first_index = static_cast<std::size_t>(section.logical_entry_start);
+            const auto last_index = static_cast<std::size_t>(section.logical_entry_start + section.entry_count - 1U);
+            info.first_packet_index = state.packet_locator[first_index].packet_index;
+            info.last_packet_index = state.packet_locator[last_index].packet_index;
+            info.first_file_offset = state.packet_locator[first_index].file_offset;
+            info.last_file_offset = state.packet_locator[last_index].file_offset;
+        }
+        result.plan.metadata.packet_locator_sections.push_back(info);
     }
 
     return result;

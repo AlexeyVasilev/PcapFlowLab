@@ -55,6 +55,7 @@ inline constexpr std::uint16_t kCaptureIndexStablePacketRefDirectorySectionSchem
 inline constexpr std::uint16_t kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedDirectorySectionSchemaVersion = 1U;
 inline constexpr std::uint16_t kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion = 1U;
+inline constexpr std::uint16_t kCaptureIndexStablePacketLocatorV16SectionSchemaVersion = 1U;
 inline constexpr std::uint32_t kMaxCaptureIndexStableHeaderStringBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kMaxCaptureStatisticsSnapshotServiceHintBytes = 1024U * 1024U;
 inline constexpr std::uint32_t kCaptureIndexStableHeaderKnownPrefixSize =
@@ -285,6 +286,7 @@ enum class CaptureIndexV16MetadataTierReadStatus : std::uint8_t {
     missing_unrecognized_directory_section,
     missing_packetref_detail_blocks_section,
     missing_unrecognized_reason_blobs_section,
+    missing_packet_locator_section,
     wrong_metadata_section_order,
     invalid_metadata_section_framing,
     unsupported_metadata_section_schema,
@@ -302,6 +304,8 @@ enum class CaptureIndexV16MetadataTierReadStatus : std::uint8_t {
     detail_section_framing_error,
     detail_section_range_inconsistency,
     unrecognized_reason_framing_error,
+    packet_locator_framing_error,
+    packet_locator_semantic_inconsistency,
     orientation_validation_failed,
 };
 
@@ -383,6 +387,48 @@ struct CaptureIndexV16UnrecognizedReasonReadResult {
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == CaptureIndexV16UnrecognizedReasonReadStatus::ok;
+    }
+};
+
+enum class CaptureIndexV16PacketLocatorLookupReadStatus : std::uint8_t {
+    ok = 0,
+    not_found,
+    invalid_locator_section_occurrence,
+    section_seek_failed,
+    section_range_overflow,
+    truncated_packet_locator_payload,
+    malformed_packet_locator_payload,
+};
+
+struct CaptureIndexV16PacketLocatorLookupReadResult {
+    CaptureIndexV16PacketLocatorLookupReadStatus status {
+        CaptureIndexV16PacketLocatorLookupReadStatus::ok
+    };
+    std::optional<CapturePacketLocatorEntry> entry {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16PacketLocatorLookupReadStatus::ok;
+    }
+};
+
+enum class CaptureIndexV16CompleteReadStatus : std::uint8_t {
+    ok = 0,
+    invalid_metadata_tier,
+    trailing_data,
+};
+
+struct CaptureIndexV16CompleteReadResult {
+    CaptureIndexV16CompleteReadStatus status {CaptureIndexV16CompleteReadStatus::ok};
+    CaptureIndexV16MetadataTierReadStatus metadata_status {CaptureIndexV16MetadataTierReadStatus::ok};
+    CaptureIndexStableHeader header {};
+    CaptureIndexStableSectionHeader failed_section_header {};
+    CaptureIndexV16FastStatisticsTier fast_statistics_tier {};
+    CaptureIndexV16MetadataTier metadata {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == CaptureIndexV16CompleteReadStatus::ok;
     }
 };
 
@@ -557,6 +603,17 @@ bool write_v16_unrecognized_reason_sections(
     std::ostream& stream,
     std::span<const CaptureIndexV16UnrecognizedReasonSectionWritePlan> sections
 );
+bool write_v16_packet_locator_sections(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16PacketLocatorSectionWritePlan> sections,
+    std::span<const CapturePacketLocatorEntry> entries
+);
+bool write_capture_index_v16(
+    std::ostream& stream,
+    const CaptureIndexStableHeader& header,
+    const CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16WritePlan& plan
+);
 CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     std::istream& stream,
     CaptureIndexV16MetadataTier& metadata
@@ -580,6 +637,14 @@ CaptureIndexV16UnrecognizedReasonReadResult read_v16_unrecognized_reason(
     std::uint32_t section_occurrence_index,
     std::uint64_t payload_offset,
     std::uint64_t byte_length
+);
+CaptureIndexV16PacketLocatorLookupReadResult lookup_v16_packet_locator(
+    std::istream& stream,
+    std::span<const CaptureIndexV16PacketLocatorSectionInfo> locator_sections,
+    std::uint64_t packet_index
+);
+CaptureIndexV16CompleteReadResult read_capture_index_v16(
+    std::istream& stream
 );
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);

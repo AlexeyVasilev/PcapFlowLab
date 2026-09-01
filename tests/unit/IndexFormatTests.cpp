@@ -11,6 +11,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/session/PacketLocatorAccess.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/UnrecognizedPacketAccess.h"
 #include "core/domain/ProtocolPath.h"
@@ -320,6 +321,8 @@ std::uint16_t expected_section_schema_version(const std::uint32_t section_id) {
         return detail::kCaptureIndexStablePacketRefDetailBlocksSectionSchemaVersion;
     case detail::CaptureIndexSectionId::unrecognized_reason_blobs:
         return detail::kCaptureIndexStableUnrecognizedReasonBlobsSectionSchemaVersion;
+    case detail::CaptureIndexSectionId::packet_locator_v16:
+        return detail::kCaptureIndexStablePacketLocatorV16SectionSchemaVersion;
     default:
         return 0U;
     }
@@ -416,6 +419,9 @@ void expect_v16_metadata_matches_plan(
     PFL_EXPECT(
         actual.unrecognized_reason_sections.size() ==
         expected_plan.metadata.unrecognized_reason_sections.size());
+    PFL_EXPECT(
+        actual.packet_locator_sections.size() ==
+        expected_plan.metadata.packet_locator_sections.size());
 
     const auto sections = parse_sections(container_bytes);
     for (std::size_t index = 0U; index < actual.packetref_detail_sections.size(); ++index) {
@@ -483,6 +489,52 @@ void expect_v16_metadata_matches_plan(
             static_cast<std::uint64_t>(
                 reason_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize));
     }
+
+    for (std::size_t index = 0U; index < actual.packet_locator_sections.size(); ++index) {
+        const auto* locator_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packet_locator_v16),
+            index
+        );
+        PFL_REQUIRE(locator_section != nullptr);
+        PFL_EXPECT(actual.packet_locator_sections[index].section_occurrence_index == index);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].section_occurrence_index ==
+            expected_plan.metadata.packet_locator_sections[index].section_occurrence_index);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].payload_size ==
+            expected_plan.metadata.packet_locator_sections[index].payload_size);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].logical_entry_start ==
+            expected_plan.metadata.packet_locator_sections[index].logical_entry_start);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].entry_count ==
+            expected_plan.metadata.packet_locator_sections[index].entry_count);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].first_packet_index ==
+            expected_plan.metadata.packet_locator_sections[index].first_packet_index);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].last_packet_index ==
+            expected_plan.metadata.packet_locator_sections[index].last_packet_index);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].first_file_offset ==
+            expected_plan.metadata.packet_locator_sections[index].first_file_offset);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].last_file_offset ==
+            expected_plan.metadata.packet_locator_sections[index].last_file_offset);
+        PFL_EXPECT(
+            actual.packet_locator_sections[index].payload_file_offset ==
+            static_cast<std::uint64_t>(
+                locator_section->offset + detail::kCaptureIndexStableSectionHeaderEncodedSize));
+    }
+}
+
+void expect_matching_locator_entry(
+    const CapturePacketLocatorEntry& actual,
+    const CapturePacketLocatorEntry& expected
+) {
+    PFL_EXPECT(actual.packet_index == expected.packet_index);
+    PFL_EXPECT(actual.file_offset == expected.file_offset);
 }
 
 void expect_matching_flows(const FlowV4& left, const FlowV4& right) {
@@ -1012,6 +1064,12 @@ CaptureState make_v16_metadata_capture_state_fixture() {
     );
     ipv6_connection.protocol_hint = FlowProtocolHint::dns;
 
+    state.packet_locator = {
+        CapturePacketLocatorEntry {.packet_index = 10U, .file_offset = 1000U},
+        CapturePacketLocatorEntry {.packet_index = 70U, .file_offset = 1322U},
+        CapturePacketLocatorEntry {.packet_index = 120U, .file_offset = 1502U},
+    };
+
     return state;
 }
 
@@ -1100,10 +1158,7 @@ std::vector<std::uint8_t> make_v16_metadata_container_bytes(
     const CaptureIndexV16WritePlan& plan
 ) {
     std::ostringstream stream(std::ios::binary | std::ios::out);
-    PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
-    PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan));
-    PFL_REQUIRE(detail::write_v16_packetref_detail_sections(stream, plan.packetref_detail_sections));
-    PFL_REQUIRE(detail::write_v16_unrecognized_reason_sections(stream, plan.unrecognized_reason_sections));
+    PFL_REQUIRE(detail::write_capture_index_v16(stream, make_v16_stable_header(), fast_tier, plan));
     return stream_bytes(stream);
 }
 
@@ -2069,6 +2124,270 @@ void run_index_format_tests() {
             fast_tier.protocol_path_display_statistics
         );
         expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+
+        std::istringstream complete_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto complete_read = detail::read_capture_index_v16(complete_stream);
+        PFL_REQUIRE(static_cast<bool>(complete_read));
+        expect_v16_metadata_matches_plan(complete_read.metadata, plan_result.plan, container_bytes);
+
+        const auto trailing_bytes = append_trailing_garbage(container_bytes);
+        std::istringstream trailing_stream(
+            std::string(trailing_bytes.begin(), trailing_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        const auto trailing_read = detail::read_capture_index_v16(trailing_stream);
+        PFL_EXPECT(trailing_read.status == detail::CaptureIndexV16CompleteReadStatus::trailing_data);
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        std::ostringstream stream(std::ios::binary | std::ios::out);
+        PFL_REQUIRE(detail::write_v16_fast_statistics_tier(stream, make_v16_stable_header(), fast_tier));
+        PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan));
+        PFL_REQUIRE(detail::write_v16_packetref_detail_sections(stream, plan_result.plan.packetref_detail_sections));
+        PFL_REQUIRE(detail::write_v16_unrecognized_reason_sections(stream, plan_result.plan.unrecognized_reason_sections));
+        const auto missing_locator_bytes = stream_bytes(stream);
+
+        std::istringstream read_stream(
+            std::string(missing_locator_bytes.begin(), missing_locator_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        const auto read_result = detail::read_v16_metadata_tier(read_stream, decoded_metadata);
+        PFL_EXPECT(
+            read_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::missing_packet_locator_section);
+    }
+
+    {
+        auto state = make_v16_metadata_capture_state_fixture();
+        state.packet_locator.clear();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(plan_result.plan.packet_locator_sections.size() == 1U);
+        PFL_EXPECT(plan_result.plan.packet_locator_sections.front().entry_count == 0U);
+        PFL_EXPECT(plan_result.plan.packet_locator_sections.front().payload_size == 8U);
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        std::istringstream read_stream(
+            std::string(container_bytes.begin(), container_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(read_stream, decoded_metadata)));
+        expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+
+        const auto index_path = write_temp_binary_file("pfl_v16_packet_locator_empty.idx", container_bytes);
+        session_detail::CaptureIndexV16PacketLocatorAccessSource v16_source(index_path, decoded_metadata);
+        PFL_EXPECT(v16_source.lookup(0U).status == session_detail::PacketLocatorAccessStatus::not_found);
+    }
+
+    {
+        auto state = make_v16_metadata_capture_state_fixture();
+        state.packet_locator = {
+            CapturePacketLocatorEntry {.packet_index = 10U, .file_offset = 1000U},
+            CapturePacketLocatorEntry {.packet_index = 20U, .file_offset = 900U},
+        };
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_EXPECT(
+            plan_result.status ==
+            CaptureIndexV16WritePlanBuildStatus::invalid_packet_locator_order);
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(plan_result.plan.packet_locator_sections.size() == 1U);
+        PFL_EXPECT(plan_result.plan.packet_locator_sections.front().entry_count == state.packet_locator.size());
+        PFL_EXPECT(
+            plan_result.plan.packet_locator_sections.front().payload_size ==
+            8U + state.packet_locator.size() * kCaptureIndexV16PacketLocatorEncodedStrideBytes);
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto index_path = write_temp_binary_file("pfl_v16_packet_locator.idx", container_bytes);
+
+        std::ifstream metadata_stream(index_path, std::ios::binary);
+        PFL_REQUIRE(metadata_stream.is_open());
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(metadata_stream, decoded_metadata)));
+        expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+
+        session_detail::ResidentPacketLocatorAccessSource resident_source(
+            std::span<const CapturePacketLocatorEntry>(state.packet_locator.data(), state.packet_locator.size())
+        );
+        session_detail::CaptureIndexV16PacketLocatorAccessSource v16_source(index_path, decoded_metadata);
+
+        const auto first_resident = resident_source.lookup(10U);
+        const auto first_v16 = v16_source.lookup(10U);
+        PFL_REQUIRE(static_cast<bool>(first_resident));
+        PFL_REQUIRE(static_cast<bool>(first_v16));
+        PFL_REQUIRE(first_resident.entry.has_value());
+        PFL_REQUIRE(first_v16.entry.has_value());
+        expect_matching_locator_entry(*first_resident.entry, state.packet_locator[0]);
+        expect_matching_locator_entry(*first_v16.entry, state.packet_locator[0]);
+
+        const auto middle_resident = resident_source.lookup(119U);
+        const auto middle_v16 = v16_source.lookup(119U);
+        PFL_REQUIRE(static_cast<bool>(middle_resident));
+        PFL_REQUIRE(static_cast<bool>(middle_v16));
+        PFL_REQUIRE(middle_resident.entry.has_value());
+        PFL_REQUIRE(middle_v16.entry.has_value());
+        expect_matching_locator_entry(*middle_resident.entry, state.packet_locator[1]);
+        expect_matching_locator_entry(*middle_v16.entry, state.packet_locator[1]);
+
+        const auto last_resident = resident_source.lookup(140U);
+        const auto last_v16 = v16_source.lookup(140U);
+        PFL_REQUIRE(static_cast<bool>(last_resident));
+        PFL_REQUIRE(static_cast<bool>(last_v16));
+        PFL_REQUIRE(last_resident.entry.has_value());
+        PFL_REQUIRE(last_v16.entry.has_value());
+        expect_matching_locator_entry(*last_resident.entry, state.packet_locator[2]);
+        expect_matching_locator_entry(*last_v16.entry, state.packet_locator[2]);
+
+        PFL_EXPECT(resident_source.lookup(9U).status == session_detail::PacketLocatorAccessStatus::not_found);
+        PFL_EXPECT(v16_source.lookup(9U).status == session_detail::PacketLocatorAccessStatus::not_found);
+    }
+
+    {
+        auto state = make_v16_metadata_capture_state_fixture();
+        state.packet_locator = {
+            CapturePacketLocatorEntry {.packet_index = 10U, .file_offset = 1000U},
+            CapturePacketLocatorEntry {.packet_index = 20U, .file_offset = 1100U},
+            CapturePacketLocatorEntry {.packet_index = 30U, .file_offset = 1200U},
+            CapturePacketLocatorEntry {.packet_index = 40U, .file_offset = 1300U},
+            CapturePacketLocatorEntry {.packet_index = 50U, .file_offset = 1400U},
+            CapturePacketLocatorEntry {.packet_index = 60U, .file_offset = 1500U},
+        };
+
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(
+            state,
+            CaptureIndexV16PacketRefDetailLayoutOptions {
+                .target_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_unrecognized_directory_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_unrecognized_reason_blob_section_payload_bytes = 128U * 1024U * 1024U,
+                .target_packet_locator_section_payload_bytes =
+                    8U + (3U * kCaptureIndexV16PacketLocatorEncodedStrideBytes),
+            }
+        );
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+        PFL_REQUIRE(plan_result.plan.packet_locator_sections.size() == 2U);
+        PFL_EXPECT(plan_result.plan.metadata.packet_locator_sections.front().entry_count == 3U);
+        PFL_EXPECT(plan_result.plan.metadata.packet_locator_sections.back().entry_count == 3U);
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto index_path = write_temp_binary_file("pfl_v16_packet_locator_chunked.idx", container_bytes);
+
+        std::ifstream metadata_stream(index_path, std::ios::binary);
+        PFL_REQUIRE(metadata_stream.is_open());
+        CaptureIndexV16MetadataTier decoded_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(metadata_stream, decoded_metadata)));
+        expect_v16_metadata_matches_plan(decoded_metadata, plan_result.plan, container_bytes);
+
+        session_detail::CaptureIndexV16PacketLocatorAccessSource v16_source(index_path, decoded_metadata);
+        const auto cross_chunk_lookup = v16_source.lookup(45U);
+        PFL_REQUIRE(static_cast<bool>(cross_chunk_lookup));
+        PFL_REQUIRE(cross_chunk_lookup.entry.has_value());
+        expect_matching_locator_entry(*cross_chunk_lookup.entry, state.packet_locator[3]);
+
+        auto corrupted_bytes = container_bytes;
+        const auto sections = parse_sections(corrupted_bytes);
+        const auto* second_locator_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packet_locator_v16),
+            1U
+        );
+        PFL_REQUIRE(second_locator_section != nullptr);
+        write_le64_at(
+            corrupted_bytes,
+            second_locator_section->offset +
+                detail::kCaptureIndexStableSectionHeaderEncodedSize +
+                8U +
+                kCaptureIndexV16PacketLocatorEncodedStrideBytes,
+            5U
+        );
+        const auto corrupted_path = write_temp_binary_file(
+            "pfl_v16_packet_locator_lazy_corrupt.idx",
+            corrupted_bytes
+        );
+
+        std::ifstream corrupted_metadata_stream(corrupted_path, std::ios::binary);
+        PFL_REQUIRE(corrupted_metadata_stream.is_open());
+        CaptureIndexV16MetadataTier corrupted_metadata {};
+        PFL_REQUIRE(static_cast<bool>(detail::read_v16_metadata_tier(
+            corrupted_metadata_stream,
+            corrupted_metadata
+        )));
+
+        session_detail::CaptureIndexV16PacketLocatorAccessSource corrupted_source(
+            corrupted_path,
+            corrupted_metadata
+        );
+        const auto unaffected_lookup = corrupted_source.lookup(25U);
+        PFL_REQUIRE(static_cast<bool>(unaffected_lookup));
+        PFL_REQUIRE(unaffected_lookup.entry.has_value());
+        expect_matching_locator_entry(*unaffected_lookup.entry, state.packet_locator[1]);
+
+        const auto corrupted_lookup = corrupted_source.lookup(50U);
+        PFL_EXPECT(
+            corrupted_lookup.status ==
+            session_detail::PacketLocatorAccessStatus::malformed_locator);
+    }
+
+    {
+        const auto state = make_v16_metadata_capture_state_fixture();
+        const auto fast_tier = build_v16_metadata_fast_statistics_tier(state);
+        const auto plan_result = session_detail::build_capture_index_v16_write_plan(state);
+        PFL_REQUIRE(static_cast<bool>(plan_result));
+
+        const auto container_bytes = make_v16_metadata_container_bytes(fast_tier, plan_result.plan);
+        const auto sections = parse_sections(container_bytes);
+        const auto* locator_section = find_section_occurrence(
+            sections,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::packet_locator_v16),
+            0U
+        );
+        PFL_REQUIRE(locator_section != nullptr);
+
+        auto wrong_schema_bytes = container_bytes;
+        write_le16_at(wrong_schema_bytes, locator_section->offset + 4U, 99U);
+        std::istringstream wrong_schema_stream(
+            std::string(wrong_schema_bytes.begin(), wrong_schema_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier wrong_schema_metadata {};
+        const auto wrong_schema_result = detail::read_v16_metadata_tier(
+            wrong_schema_stream,
+            wrong_schema_metadata
+        );
+        PFL_EXPECT(
+            wrong_schema_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema);
+
+        auto wrong_flag_bytes = container_bytes;
+        write_le16_at(wrong_flag_bytes, locator_section->offset + 6U, 0U);
+        std::istringstream wrong_flag_stream(
+            std::string(wrong_flag_bytes.begin(), wrong_flag_bytes.end()),
+            std::ios::binary | std::ios::in
+        );
+        CaptureIndexV16MetadataTier wrong_flag_metadata {};
+        const auto wrong_flag_result = detail::read_v16_metadata_tier(
+            wrong_flag_stream,
+            wrong_flag_metadata
+        );
+        PFL_EXPECT(
+            wrong_flag_result.status ==
+            detail::CaptureIndexV16MetadataTierReadStatus::packet_locator_framing_error);
     }
 
     {

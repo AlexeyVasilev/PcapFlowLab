@@ -123,6 +123,7 @@ add_library(
     src/app/session/SelectedPacketBytePresentation.cpp
     src/app/session/SelectedStreamItemDataPresentation.cpp
     src/app/session/SelectedFlowPacketAccess.cpp
+    src/app/session/PacketLocatorAccess.cpp
     src/app/session/UnrecognizedPacketAccess.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SupportedProtocolCatalog.cpp

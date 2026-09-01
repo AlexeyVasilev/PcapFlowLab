@@ -2789,6 +2789,17 @@ std::optional<std::uint64_t> encoded_unrecognized_directory_payload_length(
     return 8U + (row_count * kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes);
 }
 
+std::optional<std::uint64_t> encoded_packet_locator_payload_length(
+    const std::uint64_t entry_count
+) noexcept {
+    if (entry_count > (((std::numeric_limits<std::uint64_t>::max)() - 8U) /
+                       kCaptureIndexV16PacketLocatorEncodedStrideBytes)) {
+        return std::nullopt;
+    }
+
+    return 8U + (entry_count * kCaptureIndexV16PacketLocatorEncodedStrideBytes);
+}
+
 template <typename DirectionalMetadata>
 bool write_v16_directional_flow_metadata(std::ostream& stream, const DirectionalMetadata& row) {
     return write_flow_key(stream, row.key) &&
@@ -3005,6 +3016,137 @@ bool read_v16_unrecognized_directory_section_catalog_entry(
         .row_count = row_count,
     };
     return true;
+}
+
+bool write_v16_packet_locator_entry(
+    std::ostream& stream,
+    const CapturePacketLocatorEntry& entry
+) {
+    return write_u64(stream, entry.packet_index) && write_u64(stream, entry.file_offset);
+}
+
+bool read_v16_packet_locator_entry(
+    std::istream& stream,
+    CapturePacketLocatorEntry& entry
+) {
+    return read_u64(stream, entry.packet_index) && read_u64(stream, entry.file_offset);
+}
+
+bool read_v16_packet_locator_entry_at(
+    std::istream& stream,
+    const CaptureIndexV16PacketLocatorSectionInfo& section,
+    const std::uint64_t local_index,
+    CapturePacketLocatorEntry& entry
+) {
+    if (local_index >= section.entry_count) {
+        return false;
+    }
+
+    std::uint64_t local_byte_offset {0};
+    std::uint64_t row_byte_offset {0};
+    if (!checked_multiply_u64(local_index, kCaptureIndexV16PacketLocatorEncodedStrideBytes, local_byte_offset) ||
+        !checked_add_u64(8U, local_byte_offset, row_byte_offset) ||
+        row_byte_offset > section.payload_size ||
+        kCaptureIndexV16PacketLocatorEncodedStrideBytes > section.payload_size ||
+        row_byte_offset > section.payload_size - kCaptureIndexV16PacketLocatorEncodedStrideBytes) {
+        return false;
+    }
+
+    std::uint64_t read_offset {0};
+    if (!checked_add_u64(section.payload_file_offset, row_byte_offset, read_offset)) {
+        return false;
+    }
+    stream.clear();
+    stream.seekg(static_cast<std::streamoff>(read_offset), std::ios::beg);
+    return static_cast<bool>(stream) && read_v16_packet_locator_entry(stream, entry);
+}
+
+bool read_v16_packet_locator_section_catalog_entry(
+    std::istream& stream,
+    const CaptureIndexStableSectionHeader& section_header,
+    const std::uint32_t expected_occurrence_index,
+    const std::uint64_t expected_logical_entry_start,
+    CaptureIndexV16PacketLocatorSectionInfo& info
+) {
+    if (section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::packet_locator_v16) ||
+        section_header.section_flags != kCaptureIndexStableSectionFlagRequired ||
+        section_header.section_schema_version != kCaptureIndexStablePacketLocatorV16SectionSchemaVersion) {
+        return false;
+    }
+
+    const auto payload_file_offset = stream.tellg();
+    if (payload_file_offset == std::istream::pos_type(-1)) {
+        return false;
+    }
+
+    std::uint64_t entry_count {0};
+    if (!read_u64(stream, entry_count)) {
+        return false;
+    }
+
+    const auto expected_payload_size = encoded_packet_locator_payload_length(entry_count);
+    if (!expected_payload_size.has_value() || section_header.payload_size != *expected_payload_size) {
+        return false;
+    }
+
+    info = CaptureIndexV16PacketLocatorSectionInfo {
+        .section_occurrence_index = expected_occurrence_index,
+        .payload_file_offset = static_cast<std::uint64_t>(payload_file_offset),
+        .payload_size = section_header.payload_size,
+        .logical_entry_start = expected_logical_entry_start,
+        .entry_count = entry_count,
+    };
+
+    if (entry_count > 0U) {
+        CapturePacketLocatorEntry first {};
+        if (!read_v16_packet_locator_entry(stream, first)) {
+            return false;
+        }
+
+        CapturePacketLocatorEntry last = first;
+        if (entry_count > 1U) {
+            std::uint64_t last_local_byte_offset {0};
+            std::uint64_t last_row_byte_offset {0};
+            if (!checked_multiply_u64(
+                    entry_count - 1U,
+                    kCaptureIndexV16PacketLocatorEncodedStrideBytes,
+                    last_local_byte_offset) ||
+                !checked_add_u64(8U, last_local_byte_offset, last_row_byte_offset)) {
+                return false;
+            }
+
+            std::uint64_t last_entry_file_offset {0};
+            if (!checked_add_u64(
+                    static_cast<std::uint64_t>(payload_file_offset),
+                    last_row_byte_offset,
+                    last_entry_file_offset)) {
+                return false;
+            }
+            stream.clear();
+            stream.seekg(static_cast<std::streamoff>(last_entry_file_offset), std::ios::beg);
+            if (!stream || !read_v16_packet_locator_entry(stream, last) ||
+                last.packet_index <= first.packet_index ||
+                last.file_offset <= first.file_offset) {
+                return false;
+            }
+        }
+
+        info.first_packet_index = first.packet_index;
+        info.last_packet_index = last.packet_index;
+        info.first_file_offset = first.file_offset;
+        info.last_file_offset = last.file_offset;
+    }
+
+    std::uint64_t payload_end_offset {0};
+    if (!checked_add_u64(
+            static_cast<std::uint64_t>(payload_file_offset),
+            section_header.payload_size,
+            payload_end_offset)) {
+        return false;
+    }
+    stream.clear();
+    stream.seekg(static_cast<std::streamoff>(payload_end_offset), std::ios::beg);
+    return static_cast<bool>(stream);
 }
 
 std::uint64_t direction_identity_key(
@@ -3682,6 +3824,77 @@ bool write_v16_unrecognized_reason_sections(
     return true;
 }
 
+bool write_v16_packet_locator_sections(
+    std::ostream& stream,
+    std::span<const CaptureIndexV16PacketLocatorSectionWritePlan> sections,
+    std::span<const CapturePacketLocatorEntry> entries
+) {
+    std::optional<std::uint64_t> prior_packet_index {};
+    std::optional<std::uint64_t> prior_file_offset {};
+
+    for (std::size_t section_index = 0U; section_index < sections.size(); ++section_index) {
+        const auto& section = sections[section_index];
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(section_index)) {
+            return false;
+        }
+
+        const auto expected_payload_size = encoded_packet_locator_payload_length(section.entry_count);
+        if (!expected_payload_size.has_value() || section.payload_size != *expected_payload_size) {
+            return false;
+        }
+        if (section.logical_entry_start > static_cast<std::uint64_t>(entries.size()) ||
+            section.entry_count > static_cast<std::uint64_t>(entries.size()) ||
+            section.logical_entry_start > static_cast<std::uint64_t>(entries.size()) - section.entry_count) {
+            return false;
+        }
+
+        if (!write_capture_index_stable_section_header(stream, CaptureIndexStableSectionHeader {
+                .section_id = static_cast<std::uint32_t>(CaptureIndexSectionId::packet_locator_v16),
+                .section_schema_version = kCaptureIndexStablePacketLocatorV16SectionSchemaVersion,
+                .section_flags = kCaptureIndexStableSectionFlagRequired,
+                .payload_size = section.payload_size,
+            }) ||
+            !write_u64(stream, section.entry_count)) {
+            return false;
+        }
+
+        const auto begin = static_cast<std::size_t>(section.logical_entry_start);
+        const auto end = begin + static_cast<std::size_t>(section.entry_count);
+        for (std::size_t index = begin; index < end; ++index) {
+            const auto& entry = entries[index];
+            if ((prior_packet_index.has_value() && entry.packet_index <= *prior_packet_index) ||
+                (prior_file_offset.has_value() && entry.file_offset <= *prior_file_offset) ||
+                !write_v16_packet_locator_entry(stream, entry)) {
+                return false;
+            }
+            prior_packet_index = entry.packet_index;
+            prior_file_offset = entry.file_offset;
+        }
+    }
+
+    return true;
+}
+
+bool write_capture_index_v16(
+    std::ostream& stream,
+    const CaptureIndexStableHeader& header,
+    const CaptureIndexV16FastStatisticsTier& fast_tier,
+    const CaptureIndexV16WritePlan& plan
+) {
+    CaptureIndexStableHeader v16_header = header;
+    v16_header.index_revision = kCaptureIndexStableV16Revision;
+
+    return write_v16_fast_statistics_tier(stream, v16_header, fast_tier) &&
+           write_v16_metadata_tier_sections(stream, plan) &&
+           write_v16_packetref_detail_sections(stream, plan.packetref_detail_sections) &&
+           write_v16_unrecognized_reason_sections(stream, plan.unrecognized_reason_sections) &&
+           write_v16_packet_locator_sections(
+               stream,
+               plan.packet_locator_sections,
+               plan.packet_locator_entries
+           );
+}
+
 CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
     std::istream& stream,
     CaptureIndexV16MetadataTier& metadata
@@ -3731,7 +3944,9 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::protocol_path_membership) ||
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_directory) ||
                         next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_directory) ||
-                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks)
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packetref_detail_blocks) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::unrecognized_reason_blobs) ||
+                        next_header.section_id == static_cast<std::uint32_t>(CaptureIndexSectionId::packet_locator_v16)
                     ? CaptureIndexV16MetadataTierReadStatus::wrong_metadata_section_order
                     : missing_status;
                 return false;
@@ -3992,6 +4207,75 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
         return result;
     }
 
+    {
+        std::uint64_t logical_entry_start {0};
+        while (true) {
+            CaptureIndexStableSectionHeader section_header {};
+            if (!try_peek_capture_index_stable_section_header(stream, section_header) ||
+                section_header.section_id != static_cast<std::uint32_t>(CaptureIndexSectionId::packet_locator_v16)) {
+                break;
+            }
+
+            if (!read_capture_index_stable_section_header(stream, section_header)) {
+                result.status = CaptureIndexV16MetadataTierReadStatus::packet_locator_framing_error;
+                metadata = {};
+                return result;
+            }
+
+            CaptureIndexV16PacketLocatorSectionInfo section_info {};
+            if (!read_v16_packet_locator_section_catalog_entry(
+                    stream,
+                    section_header,
+                    static_cast<std::uint32_t>(metadata.packet_locator_sections.size()),
+                    logical_entry_start,
+                    section_info)) {
+                result.failed_section_header = section_header;
+                result.status =
+                    section_header.section_schema_version != kCaptureIndexStablePacketLocatorV16SectionSchemaVersion
+                        ? CaptureIndexV16MetadataTierReadStatus::unsupported_metadata_section_schema
+                        : CaptureIndexV16MetadataTierReadStatus::packet_locator_framing_error;
+                metadata = {};
+                return result;
+            }
+
+            if (!metadata.packet_locator_sections.empty()) {
+                const auto& prior = metadata.packet_locator_sections.back();
+                if (prior.last_packet_index.has_value() &&
+                    section_info.first_packet_index.has_value() &&
+                    (*section_info.first_packet_index <= *prior.last_packet_index ||
+                     *section_info.first_file_offset <= *prior.last_file_offset)) {
+                    result.status = CaptureIndexV16MetadataTierReadStatus::packet_locator_semantic_inconsistency;
+                    result.error_detail =
+                        "packet locator section boundaries must be strictly increasing by packet_index and file_offset";
+                    metadata = {};
+                    return result;
+                }
+            }
+
+            if (!checked_add_u64(logical_entry_start, section_info.entry_count, logical_entry_start)) {
+                result.failed_section_header = section_header;
+                result.status = CaptureIndexV16MetadataTierReadStatus::packet_locator_semantic_inconsistency;
+                result.error_detail = "packet locator logical entry range overflowed";
+                metadata = {};
+                return result;
+            }
+            metadata.packet_locator_sections.push_back(section_info);
+        }
+    }
+
+    if (metadata.packet_locator_sections.empty()) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::missing_packet_locator_section;
+        metadata = {};
+        return result;
+    }
+
+    const auto metadata_end_offset = stream.tellg();
+    if (metadata_end_offset == std::istream::pos_type(-1)) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::invalid_metadata_section_framing;
+        metadata = {};
+        return result;
+    }
+
     if (metadata.connection_count() != total_flow_count) {
         result.status = CaptureIndexV16MetadataTierReadStatus::metadata_semantic_inconsistency;
         result.error_detail = "metadata row count does not match the canonical flow count in the fast snapshot";
@@ -4220,6 +4504,14 @@ CaptureIndexV16MetadataTierReadResult read_v16_metadata_tier(
         return result;
     }
 
+    stream.clear();
+    stream.seekg(metadata_end_offset);
+    if (!stream) {
+        result.status = CaptureIndexV16MetadataTierReadStatus::invalid_metadata_section_framing;
+        metadata = {};
+        return result;
+    }
+
     return result;
 }
 
@@ -4319,6 +4611,146 @@ CaptureIndexV16UnrecognizedReasonReadResult read_v16_unrecognized_reason(
     if (restore_offset != std::istream::pos_type(-1)) {
         stream.clear();
         stream.seekg(restore_offset);
+    }
+
+    return result;
+}
+
+CaptureIndexV16PacketLocatorLookupReadResult lookup_v16_packet_locator(
+    std::istream& stream,
+    std::span<const CaptureIndexV16PacketLocatorSectionInfo> locator_sections,
+    const std::uint64_t packet_index
+) {
+    CaptureIndexV16PacketLocatorLookupReadResult result {};
+
+    std::uint64_t expected_logical_entry_start {0};
+    for (std::size_t index = 0U; index < locator_sections.size(); ++index) {
+        const auto& section = locator_sections[index];
+        if (section.section_occurrence_index != static_cast<std::uint32_t>(index) ||
+            section.logical_entry_start != expected_logical_entry_start) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::invalid_locator_section_occurrence;
+            result.error_detail = "packet locator catalog does not preserve stable occurrence ordering";
+            return result;
+        }
+        if (!checked_add_u64(expected_logical_entry_start, section.entry_count, expected_logical_entry_start)) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::section_range_overflow;
+            result.error_detail = "packet locator catalog logical entry count overflowed";
+            return result;
+        }
+    }
+
+    const CaptureIndexV16PacketLocatorSectionInfo* candidate_section {nullptr};
+    for (const auto& section : locator_sections) {
+        if (section.entry_count == 0U) {
+            continue;
+        }
+        if (!section.first_packet_index.has_value() ||
+            !section.last_packet_index.has_value() ||
+            !section.first_file_offset.has_value() ||
+            !section.last_file_offset.has_value()) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::malformed_packet_locator_payload;
+            result.error_detail = "packet locator catalog is missing non-empty section boundary metadata";
+            return result;
+        }
+        if (*section.first_packet_index <= packet_index) {
+            candidate_section = &section;
+        } else {
+            break;
+        }
+    }
+
+    if (candidate_section == nullptr) {
+        result.status = CaptureIndexV16PacketLocatorLookupReadStatus::not_found;
+        result.error_detail = "packet index precedes the first available locator anchor";
+        return result;
+    }
+
+    std::uint64_t low {0};
+    std::uint64_t high {candidate_section->entry_count};
+    while (low < high) {
+        const auto mid = low + ((high - low) / 2U);
+        CapturePacketLocatorEntry entry {};
+        if (!read_v16_packet_locator_entry_at(stream, *candidate_section, mid, entry)) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::truncated_packet_locator_payload;
+            result.error_detail = "packet locator lookup could not read the requested fixed-size entry";
+            return result;
+        }
+
+        if (entry.packet_index <= packet_index) {
+            low = mid + 1U;
+        } else {
+            high = mid;
+        }
+    }
+
+    if (low == 0U) {
+        result.status = CaptureIndexV16PacketLocatorLookupReadStatus::not_found;
+        result.error_detail = "packet index precedes the selected locator section";
+        return result;
+    }
+
+    const auto found_index = low - 1U;
+    CapturePacketLocatorEntry found {};
+    if (!read_v16_packet_locator_entry_at(stream, *candidate_section, found_index, found)) {
+        result.status = CaptureIndexV16PacketLocatorLookupReadStatus::truncated_packet_locator_payload;
+        result.error_detail = "packet locator lookup could not read the resolved fixed-size entry";
+        return result;
+    }
+
+    if (found_index > 0U) {
+        CapturePacketLocatorEntry previous {};
+        if (!read_v16_packet_locator_entry_at(stream, *candidate_section, found_index - 1U, previous)) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::truncated_packet_locator_payload;
+            result.error_detail = "packet locator lookup could not read the preceding fixed-size entry";
+            return result;
+        }
+        if (found.packet_index <= previous.packet_index || found.file_offset <= previous.file_offset) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::malformed_packet_locator_payload;
+            result.error_detail = "packet locator entries touched by lookup are not strictly increasing";
+            return result;
+        }
+    }
+
+    if (found_index + 1U < candidate_section->entry_count) {
+        CapturePacketLocatorEntry next {};
+        if (!read_v16_packet_locator_entry_at(stream, *candidate_section, found_index + 1U, next)) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::truncated_packet_locator_payload;
+            result.error_detail = "packet locator lookup could not read the following fixed-size entry";
+            return result;
+        }
+        if (next.packet_index <= found.packet_index || next.file_offset <= found.file_offset) {
+            result.status = CaptureIndexV16PacketLocatorLookupReadStatus::malformed_packet_locator_payload;
+            result.error_detail = "packet locator entries touched by lookup are not strictly increasing";
+            return result;
+        }
+    }
+
+    result.entry = found;
+    return result;
+}
+
+CaptureIndexV16CompleteReadResult read_capture_index_v16(
+    std::istream& stream
+) {
+    CaptureIndexV16CompleteReadResult result {};
+    const auto metadata_result = read_v16_metadata_tier(stream, result.metadata);
+    result.metadata_status = metadata_result.status;
+    result.header = metadata_result.header;
+    result.failed_section_header = metadata_result.failed_section_header;
+    result.fast_statistics_tier = metadata_result.fast_statistics_tier;
+    result.error_detail = metadata_result.error_detail;
+    if (!metadata_result) {
+        result.status = CaptureIndexV16CompleteReadStatus::invalid_metadata_tier;
+        result.metadata = {};
+        return result;
+    }
+
+    stream.clear();
+    if (stream.peek() != std::char_traits<char>::eof()) {
+        result.status = CaptureIndexV16CompleteReadStatus::trailing_data;
+        result.error_detail = "v16 index contains trailing data after the frozen section topology";
+        result.metadata = {};
+        return result;
     }
 
     return result;

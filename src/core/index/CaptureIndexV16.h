@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/domain/CaptureState.h"
 #include "core/domain/Connection.h"
 #include "core/domain/Direction.h"
 #include "core/domain/PacketRef.h"
@@ -15,6 +16,7 @@ namespace pfl {
 
 inline constexpr std::uint64_t kCaptureIndexV16PacketRefEncodedStrideBytes = 36U;
 inline constexpr std::uint64_t kCaptureIndexV16UnrecognizedDirectoryEncodedStrideBytes = 52U;
+inline constexpr std::uint64_t kCaptureIndexV16PacketLocatorEncodedStrideBytes = 16U;
 
 struct CaptureIndexV16DirectionalFlowMetadataV4 {
     FlowKeyV4 key {};
@@ -156,6 +158,23 @@ struct CaptureIndexV16UnrecognizedReasonSectionInfo {
     ) = default;
 };
 
+struct CaptureIndexV16PacketLocatorSectionInfo {
+    std::uint32_t section_occurrence_index {0};
+    std::uint64_t payload_file_offset {0};
+    std::uint64_t payload_size {0};
+    std::uint64_t logical_entry_start {0};
+    std::uint64_t entry_count {0};
+    std::optional<std::uint64_t> first_packet_index {};
+    std::optional<std::uint64_t> last_packet_index {};
+    std::optional<std::uint64_t> first_file_offset {};
+    std::optional<std::uint64_t> last_file_offset {};
+
+    [[nodiscard]] friend bool operator==(
+        const CaptureIndexV16PacketLocatorSectionInfo&,
+        const CaptureIndexV16PacketLocatorSectionInfo&
+    ) = default;
+};
+
 struct CaptureIndexV16MetadataTier {
     std::vector<CaptureIndexV16ConnectionMetadataV4> ipv4_connections {};
     std::vector<CaptureIndexV16ConnectionMetadataV6> ipv6_connections {};
@@ -164,6 +183,7 @@ struct CaptureIndexV16MetadataTier {
     std::vector<CaptureIndexV16PacketRefDetailSectionInfo> packetref_detail_sections {};
     std::vector<CaptureIndexV16UnrecognizedDirectorySectionInfo> unrecognized_directory_sections {};
     std::vector<CaptureIndexV16UnrecognizedReasonSectionInfo> unrecognized_reason_sections {};
+    std::vector<CaptureIndexV16PacketLocatorSectionInfo> packet_locator_sections {};
 
     [[nodiscard]] std::size_t connection_count() const noexcept {
         return ipv4_connections.size() + ipv6_connections.size();
@@ -210,11 +230,20 @@ struct CaptureIndexV16UnrecognizedReasonSectionWritePlan {
     std::vector<CaptureIndexV16UnrecognizedReasonExtentWritePlan> extents {};
 };
 
+struct CaptureIndexV16PacketLocatorSectionWritePlan {
+    std::uint32_t section_occurrence_index {0};
+    std::uint64_t payload_size {0};
+    std::uint64_t logical_entry_start {0};
+    std::uint64_t entry_count {0};
+};
+
 struct CaptureIndexV16WritePlan {
     CaptureIndexV16MetadataTier metadata {};
     std::vector<CaptureIndexV16PacketRefDetailSectionWritePlan> packetref_detail_sections {};
     std::vector<CaptureIndexV16UnrecognizedDirectorySectionWritePlan> unrecognized_directory_sections {};
     std::vector<CaptureIndexV16UnrecognizedReasonSectionWritePlan> unrecognized_reason_sections {};
+    std::vector<CaptureIndexV16PacketLocatorSectionWritePlan> packet_locator_sections {};
+    std::span<const CapturePacketLocatorEntry> packet_locator_entries {};
     std::uint64_t total_packetref_count {0};
 };
 
@@ -222,6 +251,7 @@ struct CaptureIndexV16PacketRefDetailLayoutOptions {
     std::uint64_t target_section_payload_bytes {128U * 1024U * 1024U};
     std::uint64_t target_unrecognized_directory_section_payload_bytes {128U * 1024U * 1024U};
     std::uint64_t target_unrecognized_reason_blob_section_payload_bytes {128U * 1024U * 1024U};
+    std::uint64_t target_packet_locator_section_payload_bytes {128U * 1024U * 1024U};
 };
 
 enum class CaptureIndexV16WritePlanBuildStatus : std::uint8_t {
@@ -231,6 +261,7 @@ enum class CaptureIndexV16WritePlanBuildStatus : std::uint8_t {
     invalid_directional_packet_order,
     invalid_first_observed_orientation,
     invalid_unrecognized_packet_order,
+    invalid_packet_locator_order,
     numeric_overflow,
 };
 

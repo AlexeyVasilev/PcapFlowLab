@@ -260,6 +260,11 @@ CaptureIndexV16MetadataTier write_and_read_v16_metadata(
     PFL_REQUIRE(detail::write_v16_metadata_tier_sections(stream, plan_result.plan));
     PFL_REQUIRE(detail::write_v16_packetref_detail_sections(stream, plan_result.plan.packetref_detail_sections));
     PFL_REQUIRE(detail::write_v16_unrecognized_reason_sections(stream, plan_result.plan.unrecognized_reason_sections));
+    PFL_REQUIRE(detail::write_v16_packet_locator_sections(
+        stream,
+        plan_result.plan.packet_locator_sections,
+        plan_result.plan.packet_locator_entries
+    ));
     stream.close();
 
     std::ifstream read_stream(index_path, std::ios::binary);
