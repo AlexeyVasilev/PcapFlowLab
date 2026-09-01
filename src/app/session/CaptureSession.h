@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <span>
@@ -15,8 +16,10 @@
 #include "app/session/FlowRows.h"
 #include "app/session/ProtocolPathTextExport.h"
 #include "app/session/SelectedPacketBytePresentation.h"
+#include "app/session/SelectedFlowPacketAccess.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SelectedStreamItemDataPresentation.h"
+#include "app/session/UnrecognizedPacketAccess.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
@@ -26,6 +29,7 @@
 #include "core/io/PcapReader.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexWriter.h"
+#include "core/index/Serialization.h"
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
@@ -190,6 +194,7 @@ public:
     ) const;
     bool load_index(const std::filesystem::path& index_path);
     bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
+    bool load_inactive_v16_index_for_testing(const std::filesystem::path& index_path);
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] bool has_source_capture() const noexcept;
     [[nodiscard]] bool source_capture_accessible() const noexcept;
@@ -537,6 +542,25 @@ private:
         bool has_pagination_lookahead {false};
     };
 
+    struct V16BackedSessionStorage {
+        std::filesystem::path index_path {};
+        detail::CaptureIndexStableHeader header {};
+        detail::CaptureIndexV16FastStatisticsTier fast_statistics_tier {};
+        CaptureIndexV16MetadataTier metadata {};
+        std::vector<session_detail::CanonicalFlowMetadata> flows {};
+        CaptureGeneralStatistics general_statistics {};
+    };
+
+    [[nodiscard]] bool uses_v16_storage() const noexcept;
+    [[nodiscard]] bool load_inactive_v16_index_result_for_testing(
+        const std::filesystem::path& index_path,
+        detail::CaptureIndexV16CompleteReadResult result
+    );
+    [[nodiscard]] std::unique_ptr<session_detail::SelectedFlowPacketAccessSource>
+    make_selected_flow_packet_access_source_for_flow(std::size_t flow_index) const;
+    [[nodiscard]] std::unique_ptr<session_detail::UnrecognizedPacketAccessSource>
+    make_unrecognized_packet_access_source_for_capture() const;
+
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_terminal(const PacketRef& packet) const;
     void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
@@ -576,6 +600,7 @@ private:
     CaptureSourceInfo source_info_ {};
     std::uint64_t input_file_size_ {0};
     CaptureState state_ {};
+    std::optional<V16BackedSessionStorage> v16_storage_ {};
     AnalysisSettings analysis_settings_ {};
     bool opened_from_index_ {false};
     bool flow_grouping_ignores_vlan_and_mpls_layers_ {false};

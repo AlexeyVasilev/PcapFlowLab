@@ -11,6 +11,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "app/session/CaptureSession.h"
 #include "app/session/PacketLocatorAccess.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "app/session/UnrecognizedPacketAccess.h"
@@ -2132,6 +2133,39 @@ void run_index_format_tests() {
         const auto complete_read = detail::read_capture_index_v16(complete_stream);
         PFL_REQUIRE(static_cast<bool>(complete_read));
         expect_v16_metadata_matches_plan(complete_read.metadata, plan_result.plan, container_bytes);
+
+        const auto session_index_path = write_temp_binary_file(
+            "pfl_v16_session_metadata_backed.idx",
+            container_bytes
+        );
+        CaptureSession session {};
+        PFL_REQUIRE(session.load_inactive_v16_index_for_testing(session_index_path));
+        PFL_EXPECT(session.opened_from_index());
+        PFL_EXPECT(session.summary().packet_count == state.summary.packet_count);
+        PFL_EXPECT(session.summary().flow_count == state.summary.flow_count);
+        PFL_EXPECT(session.packet_statistics().total_packet_count == state.packet_statistics.total_packet_count);
+
+        const auto session_rows = session.list_flows();
+        const auto listed_connections = session_detail::list_connections(state);
+        PFL_REQUIRE(session_rows.size() == listed_connections.size());
+        PFL_EXPECT(session.flow_packet_count(0U) == session_detail::packet_count(listed_connections[0U]));
+        PFL_EXPECT(session.list_flow_packets(0U).size() == session.flow_packet_count(0U));
+        PFL_EXPECT(session.unrecognized_packet_count() == state.packet_statistics.unrecognized_packet_count);
+        PFL_EXPECT(session.list_unrecognized_packets().size() == state.unrecognized_packets.size());
+
+        session_detail::AdvancedFlowFilterSpec tcp_filter {};
+        tcp_filter.flow_protocol.include.push_back(ProtocolId::tcp);
+        const auto tcp_query = session.query_advanced_flows(tcp_filter);
+        PFL_EXPECT(tcp_query.status == session_detail::AdvancedFlowQueryStatus::ok);
+        PFL_EXPECT(!tcp_query.ordered_flow_indices.empty());
+
+        const auto terminal_summary = session.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
+        PFL_REQUIRE(!terminal_summary.rows.empty());
+        const auto member_flow_indices = session.protocol_path_summary_flow_indices(
+            ProtocolPathStatisticsMode::terminal_paths,
+            terminal_summary.rows.front().node_id
+        );
+        PFL_EXPECT(!member_flow_indices.empty());
 
         const auto trailing_bytes = append_trailing_garbage(container_bytes);
         std::istringstream trailing_stream(

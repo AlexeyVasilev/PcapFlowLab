@@ -9,6 +9,7 @@
 #include <limits>
 #include <sstream>
 #include <unordered_map>
+#include <variant>
 
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
@@ -1383,6 +1384,10 @@ ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->key.protocol : connection.ipv6->key.protocol;
 }
 
+ProtocolId protocol_id(const CanonicalFlowMetadata& flow) noexcept {
+    return flow.protocol;
+}
+
 FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept {
     if (connection.family == FlowAddressFamily::ipv4) {
         return effective_protocol_hint(
@@ -1399,6 +1404,16 @@ FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, 
         connection.ipv6->key.protocol,
         connection.ipv6->key.first.port,
         connection.ipv6->key.second.port,
+        settings
+    );
+}
+
+FlowProtocolHint effective_protocol_hint(const CanonicalFlowMetadata& flow, const AnalysisSettings& settings) noexcept {
+    return effective_protocol_hint(
+        flow.protocol_hint,
+        flow.protocol,
+        std::visit([](const auto& endpoint) { return endpoint.port; }, flow.endpoint_a),
+        std::visit([](const auto& endpoint) { return endpoint.port; }, flow.endpoint_b),
         settings
     );
 }
@@ -1459,11 +1474,173 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
     return connections;
 }
 
+std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const std::size_t canonical_index,
+    const ListedConnectionRef& connection
+) {
+    if (!is_listable_connection(connection)) {
+        return std::nullopt;
+    }
+
+    if (connection.family == FlowAddressFamily::ipv4) {
+        const auto endpoint_a = first_observed_endpoint_a(*connection.ipv4);
+        const auto endpoint_b = first_observed_endpoint_b(*connection.ipv4);
+        if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+            return std::nullopt;
+        }
+        return CanonicalFlowMetadata {
+            .canonical_index = canonical_index,
+            .family = FlowAddressFamily::ipv4,
+            .key = connection.ipv4->key,
+            .endpoint_a = *endpoint_a,
+            .endpoint_b = *endpoint_b,
+            .protocol_path_id = connection.ipv4->key.protocol_path_id,
+            .protocol = connection.ipv4->key.protocol,
+            .protocol_hint = connection.ipv4->protocol_hint,
+            .service_hint = connection.ipv4->service_hint,
+            .quic_version = connection.ipv4->quic_version,
+            .tls_version = connection.ipv4->tls_version,
+            .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
+            .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
+            .aggregate_stats = connection.ipv4->aggregate_stats,
+            .packet_count = connection.ipv4->packet_count,
+            .total_bytes = connection.ipv4->total_bytes,
+            .has_flow_a = connection.ipv4->has_flow_a,
+            .has_flow_b = connection.ipv4->has_flow_b,
+            .packets_a_to_b = connection.ipv4->has_flow_a ? connection.ipv4->flow_a.packet_count : 0U,
+            .packets_b_to_a = connection.ipv4->has_flow_b ? connection.ipv4->flow_b.packet_count : 0U,
+            .original_bytes_a_to_b = connection.ipv4->has_flow_a ? connection.ipv4->flow_a.total_bytes : 0U,
+            .original_bytes_b_to_a = connection.ipv4->has_flow_b ? connection.ipv4->flow_b.total_bytes : 0U,
+        };
+    }
+
+    const auto endpoint_a = first_observed_endpoint_a(*connection.ipv6);
+    const auto endpoint_b = first_observed_endpoint_b(*connection.ipv6);
+    if (!endpoint_a.has_value() || !endpoint_b.has_value()) {
+        return std::nullopt;
+    }
+    return CanonicalFlowMetadata {
+        .canonical_index = canonical_index,
+        .family = FlowAddressFamily::ipv6,
+        .key = connection.ipv6->key,
+        .endpoint_a = *endpoint_a,
+        .endpoint_b = *endpoint_b,
+        .protocol_path_id = connection.ipv6->key.protocol_path_id,
+        .protocol = connection.ipv6->key.protocol,
+        .protocol_hint = connection.ipv6->protocol_hint,
+        .service_hint = connection.ipv6->service_hint,
+        .quic_version = connection.ipv6->quic_version,
+        .tls_version = connection.ipv6->tls_version,
+        .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
+        .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
+        .aggregate_stats = connection.ipv6->aggregate_stats,
+        .packet_count = connection.ipv6->packet_count,
+        .total_bytes = connection.ipv6->total_bytes,
+        .has_flow_a = connection.ipv6->has_flow_a,
+        .has_flow_b = connection.ipv6->has_flow_b,
+        .packets_a_to_b = connection.ipv6->has_flow_a ? connection.ipv6->flow_a.packet_count : 0U,
+        .packets_b_to_a = connection.ipv6->has_flow_b ? connection.ipv6->flow_b.packet_count : 0U,
+        .original_bytes_a_to_b = connection.ipv6->has_flow_a ? connection.ipv6->flow_a.total_bytes : 0U,
+        .original_bytes_b_to_a = connection.ipv6->has_flow_b ? connection.ipv6->flow_b.total_bytes : 0U,
+    };
+}
+
+std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const CaptureIndexV16ConnectionMetadataV4& row
+) {
+    if (!row.has_flow_a || row.flow_a.packet_count == 0U) {
+        return std::nullopt;
+    }
+
+    const EndpointKeyV4 endpoint_a {
+        .addr = row.flow_a.key.src_addr,
+        .port = row.flow_a.key.src_port,
+    };
+    const EndpointKeyV4 endpoint_b {
+        .addr = row.flow_a.key.dst_addr,
+        .port = row.flow_a.key.dst_port,
+    };
+
+    return CanonicalFlowMetadata {
+        .canonical_index = row.canonical_connection_ordinal,
+        .family = FlowAddressFamily::ipv4,
+        .key = row.key,
+        .endpoint_a = endpoint_a,
+        .endpoint_b = endpoint_b,
+        .protocol_path_id = row.key.protocol_path_id,
+        .protocol = row.key.protocol,
+        .protocol_hint = row.protocol_hint,
+        .service_hint = row.service_hint,
+        .quic_version = row.quic_version,
+        .tls_version = row.tls_version,
+        .has_fragmented_packets = row.has_fragmented_packets,
+        .fragmented_packet_count = row.fragmented_packet_count,
+        .aggregate_stats = row.aggregate_stats,
+        .packet_count = row.flow_a.packet_count + (row.has_flow_b ? row.flow_b.packet_count : 0U),
+        .total_bytes = row.flow_a.original_byte_count + (row.has_flow_b ? row.flow_b.original_byte_count : 0U),
+        .has_flow_a = row.has_flow_a,
+        .has_flow_b = row.has_flow_b,
+        .packets_a_to_b = row.flow_a.packet_count,
+        .packets_b_to_a = row.has_flow_b ? row.flow_b.packet_count : 0U,
+        .original_bytes_a_to_b = row.flow_a.original_byte_count,
+        .original_bytes_b_to_a = row.has_flow_b ? row.flow_b.original_byte_count : 0U,
+    };
+}
+
+std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const CaptureIndexV16ConnectionMetadataV6& row
+) {
+    if (!row.has_flow_a || row.flow_a.packet_count == 0U) {
+        return std::nullopt;
+    }
+
+    const EndpointKeyV6 endpoint_a {
+        .addr = row.flow_a.key.src_addr,
+        .port = row.flow_a.key.src_port,
+    };
+    const EndpointKeyV6 endpoint_b {
+        .addr = row.flow_a.key.dst_addr,
+        .port = row.flow_a.key.dst_port,
+    };
+
+    return CanonicalFlowMetadata {
+        .canonical_index = row.canonical_connection_ordinal,
+        .family = FlowAddressFamily::ipv6,
+        .key = row.key,
+        .endpoint_a = endpoint_a,
+        .endpoint_b = endpoint_b,
+        .protocol_path_id = row.key.protocol_path_id,
+        .protocol = row.key.protocol,
+        .protocol_hint = row.protocol_hint,
+        .service_hint = row.service_hint,
+        .quic_version = row.quic_version,
+        .tls_version = row.tls_version,
+        .has_fragmented_packets = row.has_fragmented_packets,
+        .fragmented_packet_count = row.fragmented_packet_count,
+        .aggregate_stats = row.aggregate_stats,
+        .packet_count = row.flow_a.packet_count + (row.has_flow_b ? row.flow_b.packet_count : 0U),
+        .total_bytes = row.flow_a.original_byte_count + (row.has_flow_b ? row.flow_b.original_byte_count : 0U),
+        .has_flow_a = row.has_flow_a,
+        .has_flow_b = row.has_flow_b,
+        .packets_a_to_b = row.flow_a.packet_count,
+        .packets_b_to_a = row.has_flow_b ? row.flow_b.packet_count : 0U,
+        .original_bytes_a_to_b = row.flow_a.original_byte_count,
+        .original_bytes_b_to_a = row.has_flow_b ? row.flow_b.original_byte_count : 0U,
+    };
+}
+
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept {
     ++stats.flow_count;
     stats.packet_count += packet_count(connection);
     stats.captured_bytes += captured_bytes(connection);
     stats.original_bytes += total_bytes(connection);
+}
+
+void add_protocol_stats(ProtocolStats& stats, const CanonicalFlowMetadata& flow) noexcept {
+    ++stats.flow_count;
+    stats.packet_count += flow.packet_count;
+    stats.captured_bytes += flow.aggregate_stats.captured_bytes;
+    stats.original_bytes += flow.total_bytes;
 }
 
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection) {
@@ -1555,6 +1732,60 @@ std::optional<FlowRow> make_flow_row(
     };
 }
 
+std::optional<FlowRow> make_flow_row(
+    const CanonicalFlowMetadata& flow,
+    const AnalysisSettings& settings
+) {
+    const auto hint = effective_protocol_hint(flow, settings);
+    const auto hint_text = hint == FlowProtocolHint::unknown ? std::string {} : std::string(flow_protocol_hint_text(hint));
+
+    if (flow.family == FlowAddressFamily::ipv4) {
+        const auto& endpoint_a = std::get<EndpointKeyV4>(flow.endpoint_a);
+        const auto& endpoint_b = std::get<EndpointKeyV4>(flow.endpoint_b);
+        return FlowRow {
+            .index = flow.canonical_index,
+            .family = FlowAddressFamily::ipv4,
+            .key = flow.key,
+            .protocol_path_id = flow.protocol_path_id,
+            .protocol_text = format_flow_protocol_text(flow.protocol),
+            .protocol_hint = hint_text,
+            .service_hint = flow.service_hint,
+            .has_fragmented_packets = flow.has_fragmented_packets,
+            .fragmented_packet_count = flow.fragmented_packet_count,
+            .address_a = format_ipv4_address(endpoint_a.addr),
+            .port_a = endpoint_a.port,
+            .endpoint_a = format_endpoint(endpoint_a),
+            .address_b = format_ipv4_address(endpoint_b.addr),
+            .port_b = endpoint_b.port,
+            .endpoint_b = format_endpoint(endpoint_b),
+            .packet_count = flow.packet_count,
+            .total_bytes = flow.total_bytes,
+        };
+    }
+
+    const auto& endpoint_a = std::get<EndpointKeyV6>(flow.endpoint_a);
+    const auto& endpoint_b = std::get<EndpointKeyV6>(flow.endpoint_b);
+    return FlowRow {
+        .index = flow.canonical_index,
+        .family = FlowAddressFamily::ipv6,
+        .key = flow.key,
+        .protocol_path_id = flow.protocol_path_id,
+        .protocol_text = format_flow_protocol_text(flow.protocol),
+        .protocol_hint = hint_text,
+        .service_hint = flow.service_hint,
+        .has_fragmented_packets = flow.has_fragmented_packets,
+        .fragmented_packet_count = flow.fragmented_packet_count,
+        .address_a = format_ipv6_address(endpoint_a.addr),
+        .port_a = endpoint_a.port,
+        .endpoint_a = format_endpoint(endpoint_a),
+        .address_b = format_ipv6_address(endpoint_b.addr),
+        .port_b = endpoint_b.port,
+        .endpoint_b = format_endpoint(endpoint_b),
+        .packet_count = flow.packet_count,
+        .total_bytes = flow.total_bytes,
+    };
+}
+
 std::string format_flow_protocol_hint_display(const std::string_view value) {
     if (value == "possible_tls") {
         return "Possible TLS";
@@ -1643,6 +1874,94 @@ FlowQueryResult query_flow_indices(
     candidates.reserve(candidate_indices.size());
     for (const auto flow_index : candidate_indices) {
         const auto row = make_flow_row(flow_index, connections[flow_index], settings);
+        if (!row.has_value()) {
+            result.status = FlowQueryStatus::invalid_flow_index;
+            result.invalid_flow_index = flow_index;
+            return result;
+        }
+        candidates.push_back(FlowQueryCandidate {
+            .index = flow_index,
+            .row = *row,
+        });
+    }
+
+    if (!query.text_filter.empty()) {
+        std::erase_if(candidates, [&](const FlowQueryCandidate& candidate) {
+            return !flow_row_matches_text_filter(candidate.row, query.text_filter);
+        });
+    }
+
+    if (query.sort.has_value()) {
+        const auto sort_spec = *query.sort;
+        std::stable_sort(candidates.begin(), candidates.end(), [&](const FlowQueryCandidate& left, const FlowQueryCandidate& right) {
+            const auto comparison = compare_flow_rows_for_sort(left.row, right.row, sort_spec.key);
+            if (comparison == 0) {
+                return left.index < right.index;
+            }
+
+            return sort_spec.direction == FlowQuerySortDirection::ascending
+                ? comparison < 0
+                : comparison > 0;
+        });
+    }
+
+    result.result_count_before_limit = candidates.size();
+    if (query.limit.has_value() && candidates.size() > *query.limit) {
+        candidates.resize(*query.limit);
+    }
+
+    result.ordered_flow_indices.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        result.ordered_flow_indices.push_back(candidate.index);
+    }
+    return result;
+}
+
+FlowQueryResult query_flow_indices(
+    const std::span<const CanonicalFlowMetadata> flows,
+    const AnalysisSettings& settings,
+    const FlowQuery& query
+) {
+    FlowQueryResult result {};
+
+    if (query.limit.has_value() && *query.limit == 0U) {
+        result.status = FlowQueryStatus::invalid_limit;
+        return result;
+    }
+
+    std::vector<std::size_t> candidate_indices {};
+    if (query.selected_flow_indices.has_value()) {
+        candidate_indices = *query.selected_flow_indices;
+        for (const auto flow_index : candidate_indices) {
+            if (flow_index >= flows.size()) {
+                result.status = FlowQueryStatus::invalid_flow_index;
+                result.invalid_flow_index = flow_index;
+                return result;
+            }
+        }
+
+        std::sort(candidate_indices.begin(), candidate_indices.end());
+        candidate_indices.erase(std::unique(candidate_indices.begin(), candidate_indices.end()), candidate_indices.end());
+    } else {
+        candidate_indices.resize(flows.size());
+        for (std::size_t index = 0; index < flows.size(); ++index) {
+            candidate_indices[index] = index;
+        }
+    }
+
+    if (query.text_filter.empty() && !query.sort.has_value()) {
+        result.result_count_before_limit = candidate_indices.size();
+        if (query.limit.has_value() && candidate_indices.size() > *query.limit) {
+            candidate_indices.resize(*query.limit);
+        }
+        result.ordered_flow_indices = std::move(candidate_indices);
+        return result;
+    }
+
+    std::vector<FlowQueryCandidate> candidates {};
+    candidates.reserve(candidate_indices.size());
+    for (const auto flow_index : candidate_indices) {
+        const auto row = make_flow_row(flows[flow_index], settings);
         if (!row.has_value()) {
             result.status = FlowQueryStatus::invalid_flow_index;
             result.invalid_flow_index = flow_index;

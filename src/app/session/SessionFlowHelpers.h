@@ -20,6 +20,31 @@ struct ListedConnectionRef {
     const ConnectionV6* ipv6 {nullptr};
 };
 
+struct CanonicalFlowMetadata {
+    std::size_t canonical_index {0};
+    FlowAddressFamily family {FlowAddressFamily::ipv4};
+    FlowConnectionKey key {ConnectionKeyV4 {}};
+    FlowEndpointIdentity endpoint_a {EndpointKeyV4 {}};
+    FlowEndpointIdentity endpoint_b {EndpointKeyV4 {}};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    ProtocolId protocol {ProtocolId::unknown};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
+    QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
+    bool has_fragmented_packets {false};
+    std::uint64_t fragmented_packet_count {0};
+    ConnectionAggregateStats aggregate_stats {};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+    bool has_flow_a {false};
+    bool has_flow_b {false};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t original_bytes_a_to_b {0};
+    std::uint64_t original_bytes_b_to_a {0};
+};
+
 struct ProtocolHintStatisticsRow {
     std::string group {};
     std::string protocol_label {};
@@ -78,7 +103,18 @@ std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept;
 std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept;
 std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept;
 ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept;
+ProtocolId protocol_id(const CanonicalFlowMetadata& flow) noexcept;
 std::string format_flow_protocol_text(ProtocolId protocol);
+[[nodiscard]] std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    std::size_t canonical_index,
+    const ListedConnectionRef& connection
+);
+[[nodiscard]] std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const CaptureIndexV16ConnectionMetadataV4& row
+);
+[[nodiscard]] std::optional<CanonicalFlowMetadata> make_canonical_flow_metadata(
+    const CaptureIndexV16ConnectionMetadataV6& row
+);
 FlowProtocolHint effective_protocol_hint(
     FlowProtocolHint confirmed_hint,
     ProtocolId protocol,
@@ -87,7 +123,9 @@ FlowProtocolHint effective_protocol_hint(
     const AnalysisSettings& settings
 ) noexcept;
 FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept;
+FlowProtocolHint effective_protocol_hint(const CanonicalFlowMetadata& flow, const AnalysisSettings& settings) noexcept;
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept;
+void add_protocol_stats(ProtocolStats& stats, const CanonicalFlowMetadata& flow) noexcept;
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
 std::optional<FlowRow> make_flow_row(
@@ -95,10 +133,19 @@ std::optional<FlowRow> make_flow_row(
     const ListedConnectionRef& connection,
     const AnalysisSettings& settings
 );
+std::optional<FlowRow> make_flow_row(
+    const CanonicalFlowMetadata& flow,
+    const AnalysisSettings& settings
+);
 std::string format_flow_protocol_hint_display(std::string_view value);
 [[nodiscard]] bool flow_row_matches_text_filter(const FlowRow& row, std::string_view filter) noexcept;
 [[nodiscard]] FlowQueryResult query_flow_indices(
     std::span<const ListedConnectionRef> connections,
+    const AnalysisSettings& settings,
+    const FlowQuery& query
+);
+[[nodiscard]] FlowQueryResult query_flow_indices(
+    std::span<const CanonicalFlowMetadata> flows,
     const AnalysisSettings& settings,
     const FlowQuery& query
 );
