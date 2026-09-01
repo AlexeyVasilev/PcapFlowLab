@@ -1776,6 +1776,22 @@ void run_index_format_tests() {
         PFL_REQUIRE(static_cast<bool>(read_result));
         PFL_EXPECT(static_cast<std::size_t>(read_stream.tellg()) == fast_prefix_size);
         PFL_EXPECT(read_stream.peek() == static_cast<int>(malformed_late_bytes.front()));
+
+        const auto index_path = write_temp_binary_file(
+            "pfl_v16_fast_statistics_reader_ignores_late_corruption.idx",
+            container_bytes
+        );
+        CaptureIndexReader reader {};
+        detail::CaptureIndexV16FastStatisticsTier file_tier {};
+        detail::CaptureIndexV16FastStatisticsTierReadResult file_read {};
+        PFL_REQUIRE(reader.read_v16_fast_statistics(index_path, file_tier, file_read));
+        PFL_EXPECT(file_read.header.index_revision == kCaptureIndexStableIndexRevision);
+        PFL_EXPECT(file_tier.capture_statistics_snapshot == tier.capture_statistics_snapshot);
+        expect_matching_protocol_path_registries(file_tier.protocol_path_registry, tier.protocol_path_registry);
+        expect_matching_protocol_path_display_statistics(
+            file_tier.protocol_path_display_statistics,
+            tier.protocol_path_display_statistics
+        );
     }
 
     {
@@ -2976,6 +2992,14 @@ void run_index_format_tests() {
     detail::CaptureIndexV16CompleteReadResult future_revision_read {};
     PFL_EXPECT(!index_reader.read_v16_complete(future_revision_index_path, future_revision_read));
     PFL_EXPECT(index_reader.last_error().reason == "stable index revision is newer than this application supports");
+    detail::CaptureIndexV16FastStatisticsTier future_fast_tier {};
+    detail::CaptureIndexV16FastStatisticsTierReadResult future_fast_read {};
+    PFL_EXPECT(!index_reader.read_v16_fast_statistics(
+        future_revision_index_path,
+        future_fast_tier,
+        future_fast_read
+    ));
+    PFL_EXPECT(index_reader.last_error().reason == "stable index revision is newer than this application supports");
 
     const auto unicode_source_path =
         std::filesystem::temp_directory_path() /
@@ -3024,6 +3048,17 @@ void run_index_format_tests() {
         );
         detail::CaptureIndexV16CompleteReadResult previous_stable_read {};
         PFL_EXPECT(!index_reader.read_v16_complete(previous_stable_revision_path, previous_stable_read));
+        PFL_EXPECT(
+            index_reader.last_error().reason ==
+            "This index uses revision 15 and must be rebuilt with the current version."
+        );
+        detail::CaptureIndexV16FastStatisticsTier previous_stable_fast_tier {};
+        detail::CaptureIndexV16FastStatisticsTierReadResult previous_stable_fast_read {};
+        PFL_EXPECT(!index_reader.read_v16_fast_statistics(
+            previous_stable_revision_path,
+            previous_stable_fast_tier,
+            previous_stable_fast_read
+        ));
         PFL_EXPECT(
             index_reader.last_error().reason ==
             "This index uses revision 15 and must be rebuilt with the current version."

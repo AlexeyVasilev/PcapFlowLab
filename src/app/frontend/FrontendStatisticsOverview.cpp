@@ -8,8 +8,11 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <string>
 #include <string_view>
+#include <utility>
 
+#include "app/frontend/AdvancedFlowFilterStructuredDocument.h"
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -270,6 +273,10 @@ double safe_fraction(const std::uint64_t part, const std::uint64_t total) noexce
     }
 
     return clamp_unit_fraction(static_cast<double>(part) / static_cast<double>(total));
+}
+
+double safe_percent(const std::uint64_t numerator, const std::uint64_t denominator) noexcept {
+    return percent_from_fraction(safe_fraction(numerator, denominator));
 }
 
 }  // namespace
@@ -596,6 +603,205 @@ std::string build_frontend_count_with_total_percent_text(
         count,
         percent_from_fraction(safe_fraction(count, total_count))
     );
+}
+
+FrontendCapturePacketSizeStatisticsDto build_frontend_capture_packet_size_statistics(
+    const CapturePacketStatistics& statistics
+) {
+    FrontendCapturePacketSizeStatisticsDto dto {};
+    dto.has_capture = true;
+    dto.total_packet_count = statistics.total_packet_count;
+    dto.maximum_captured_bucket_packet_count = statistics.captured_size_distribution.maximum_bucket_packet_count;
+    dto.maximum_original_bucket_packet_count = statistics.original_size_distribution.maximum_bucket_packet_count;
+    dto.maximum_captured_packet_length = statistics.maximum_captured_packet_length;
+    dto.maximum_captured_packet_length_text = session_detail::format_statistics_size_value(
+        statistics.maximum_captured_packet_length
+    );
+    dto.maximum_original_packet_length = statistics.maximum_original_packet_length;
+    dto.maximum_original_packet_length_text = session_detail::format_statistics_size_value(
+        statistics.maximum_original_packet_length
+    );
+    dto.buckets.reserve(statistics.captured_size_distribution.buckets.size());
+
+    for (std::size_t index = 0U; index < statistics.captured_size_distribution.buckets.size(); ++index) {
+        const auto& captured_bucket = statistics.captured_size_distribution.buckets[index];
+        const auto& original_bucket = statistics.original_size_distribution.buckets[index];
+        dto.buckets.push_back(FrontendCapturePacketSizeStatisticsBucketDto {
+            .bucket_id = std::string(captured_bucket.stable_id),
+            .label = session_detail::capture_packet_size_bucket_label(captured_bucket),
+            .lower_bound_inclusive = captured_bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = captured_bucket.upper_bound_inclusive,
+            .captured_packet_count = captured_bucket.packet_count,
+            .captured_packet_count_text = session_detail::format_statistics_count_value(captured_bucket.packet_count),
+            .captured_total_fraction = safe_fraction(captured_bucket.packet_count, statistics.total_packet_count),
+            .captured_total_percent_text = session_detail::format_statistics_percent_text(
+                safe_percent(captured_bucket.packet_count, statistics.total_packet_count)
+            ),
+            .captured_normalized_fraction = safe_fraction(
+                captured_bucket.packet_count,
+                statistics.captured_size_distribution.maximum_bucket_packet_count
+            ),
+            .original_packet_count = original_bucket.packet_count,
+            .original_packet_count_text = session_detail::format_statistics_count_value(original_bucket.packet_count),
+            .original_total_fraction = safe_fraction(original_bucket.packet_count, statistics.total_packet_count),
+            .original_total_percent_text = session_detail::format_statistics_percent_text(
+                safe_percent(original_bucket.packet_count, statistics.total_packet_count)
+            ),
+            .original_normalized_fraction = safe_fraction(
+                original_bucket.packet_count,
+                statistics.original_size_distribution.maximum_bucket_packet_count
+            ),
+        });
+    }
+
+    return dto;
+}
+
+FrontendFlowPacketCountHistogramDto build_frontend_flow_packet_count_histogram(
+    const FlowPacketCountHistogram& histogram
+) {
+    FrontendFlowPacketCountHistogramDto dto {};
+    dto.has_capture = true;
+    dto.total_flow_count = histogram.total_flow_count;
+    dto.total_captured_byte_count = histogram.total_captured_byte_count;
+    dto.total_original_byte_count = histogram.total_original_byte_count;
+    dto.maximum_bucket_flow_count = histogram.maximum_bucket_flow_count;
+    dto.maximum_bucket_captured_byte_count = histogram.maximum_bucket_captured_byte_count;
+    dto.maximum_bucket_original_byte_count = histogram.maximum_bucket_original_byte_count;
+    dto.excluded_zero_packet_flow_count = histogram.excluded_zero_packet_flow_count;
+    dto.excluded_zero_packet_captured_byte_count = histogram.excluded_zero_packet_captured_byte_count;
+    dto.excluded_zero_packet_original_byte_count = histogram.excluded_zero_packet_original_byte_count;
+    dto.buckets.reserve(histogram.buckets.size());
+
+    for (const auto& bucket : histogram.buckets) {
+        dto.buckets.push_back(FrontendFlowPacketCountHistogramBucketDto {
+            .bucket_id = bucket.stable_id,
+            .label = session_detail::format_statistics_bucket_label(
+                bucket.lower_bound_inclusive,
+                bucket.upper_bound_inclusive
+            ),
+            .lower_bound_inclusive = bucket.lower_bound_inclusive,
+            .upper_bound_inclusive = bucket.upper_bound_inclusive,
+            .flow_count = bucket.flow_count,
+            .flow_count_with_total_percent_text = session_detail::format_statistics_count_with_percent_text(
+                bucket.flow_count,
+                safe_percent(bucket.flow_count, histogram.total_flow_count)
+            ),
+            .captured_byte_count = bucket.captured_byte_count,
+            .captured_byte_count_text = session_detail::format_statistics_size_value(bucket.captured_byte_count),
+            .captured_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
+                bucket.captured_byte_count,
+                safe_percent(bucket.captured_byte_count, histogram.total_captured_byte_count)
+            ),
+            .original_byte_count = bucket.original_byte_count,
+            .original_byte_count_text = session_detail::format_statistics_size_value(bucket.original_byte_count),
+            .original_byte_count_with_total_percent_text = session_detail::format_statistics_size_with_percent_text(
+                bucket.original_byte_count,
+                safe_percent(bucket.original_byte_count, histogram.total_original_byte_count)
+            ),
+            .total_flow_fraction = safe_fraction(bucket.flow_count, histogram.total_flow_count),
+            .total_captured_byte_fraction = safe_fraction(
+                bucket.captured_byte_count,
+                histogram.total_captured_byte_count
+            ),
+            .total_original_byte_fraction = safe_fraction(
+                bucket.original_byte_count,
+                histogram.total_original_byte_count
+            ),
+            .normalized_flow_fraction = safe_fraction(bucket.flow_count, histogram.maximum_bucket_flow_count),
+            .normalized_captured_byte_fraction = safe_fraction(
+                bucket.captured_byte_count,
+                histogram.maximum_bucket_captured_byte_count
+            ),
+            .normalized_original_byte_fraction = safe_fraction(
+                bucket.original_byte_count,
+                histogram.maximum_bucket_original_byte_count
+            ),
+        });
+    }
+
+    return dto;
+}
+
+FrontendProtocolHintStatisticsDto build_frontend_protocol_hint_statistics(
+    const CaptureProtocolSummary& summary
+) {
+    const auto shared_rows = session_detail::build_protocol_hint_statistics_rows(summary);
+    FrontendProtocolHintStatisticsDto dto {};
+    dto.has_capture = true;
+    dto.protocol_hints.reserve(shared_rows.size());
+
+    for (const auto& row : shared_rows) {
+        dto.protocol_hints.push_back(FrontendProtocolHintStatsDto {
+            .group = row.group,
+            .protocol_label = row.protocol_label,
+            .flow_count = row.flow_count,
+            .flow_count_text = row.flow_count_text,
+            .packet_count = row.packet_count,
+            .packet_count_text = row.packet_count_text,
+            .captured_bytes = row.captured_bytes,
+            .captured_bytes_text = row.captured_bytes_text,
+            .original_bytes = row.original_bytes,
+            .original_bytes_text = row.original_bytes_text,
+        });
+    }
+
+    return dto;
+}
+
+std::vector<FrontendProtocolPathStatsDto> build_frontend_protocol_path_statistics(
+    const CaptureProtocolPathSummary& summary
+) {
+    std::vector<FrontendProtocolPathStatsDto> rows {};
+    rows.reserve(summary.rows.size());
+
+    for (const auto& row : summary.rows) {
+        session_detail::AdvancedFlowFilterProtocolPathPredicate predicate {
+            .match_kind = ProtocolPathStatisticsMode::terminal_paths == summary.mode
+                ? session_detail::AdvancedFlowFilterProtocolPathMatchKind::exact_path
+                : session_detail::AdvancedFlowFilterProtocolPathMatchKind::path_prefix,
+        };
+        predicate.layers.reserve(row.path.layers().size());
+        for (const auto& layer : row.path.layers()) {
+            predicate.layers.push_back(session_detail::AdvancedFlowFilterProtocolLayerPredicate {
+                .kind = layer.kind,
+                .identifier = layer.identifier.kind != ProtocolLayerIdentifierKind::none
+                    ? std::optional {layer.identifier}
+                    : std::nullopt,
+            });
+        }
+        if (summary.mode == ProtocolPathStatisticsMode::kind_overview) {
+            for (auto& layer : predicate.layers) {
+                layer.identifier.reset();
+            }
+        }
+
+        const auto predicate_text =
+            format_advanced_flow_filter_protocol_path_predicate_text(predicate).value_or(std::string {});
+        rows.push_back(FrontendProtocolPathStatsDto {
+            .node_id = row.node_id,
+            .parent_node_id = row.parent_node_id,
+            .depth = row.depth,
+            .layer_text = row.layer_text,
+            .path_text = row.path_text,
+            .compact_text = row.compact_text,
+            .advanced_filter_predicate_text = std::move(predicate_text),
+            .badges = row.badges,
+            .has_children = row.has_children,
+            .is_terminal = row.is_terminal,
+            .flow_count = row.flow_count,
+            .packet_count = row.packet_count,
+            .original_byte_count = row.original_byte_count,
+            .flow_percent = row.flow_percent,
+            .packet_percent = row.packet_percent,
+            .original_byte_percent = row.original_byte_percent,
+            .flow_count_text = row.flow_count_text,
+            .packet_count_text = row.packet_count_text,
+            .original_byte_count_text = row.original_byte_count_text,
+        });
+    }
+
+    return rows;
 }
 
 std::string build_frontend_statistics_partial_open_warning_text(const bool partial_open) {

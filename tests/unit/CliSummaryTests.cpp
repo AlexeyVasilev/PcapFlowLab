@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -75,6 +76,13 @@ std::filesystem::path write_temp_text_file(const std::string& filename, const st
     std::ofstream stream {path, std::ios::binary | std::ios::trunc};
     stream << text;
     return path;
+}
+
+void append_binary_bytes(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes) {
+    std::ofstream stream {path, std::ios::binary | std::ios::app};
+    PFL_REQUIRE(stream.is_open());
+    stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    PFL_REQUIRE(stream.good());
 }
 
 std::vector<std::string> read_text_file_lines(const std::filesystem::path& path) {
@@ -824,6 +832,40 @@ void expect_index_summary_rendering_without_source_capture() {
         execution_result.stdout_text,
         "Packets:   " + session_detail::format_statistics_count_value(overview.whole_capture_totals.packet_count)
     ));
+}
+
+void expect_index_summary_fast_path_stops_before_late_corruption() {
+    const auto recognized_packet = make_ethernet_ipv4_udp_packet(ipv4(10, 72, 0, 1), ipv4(10, 72, 0, 2), 7201, 53);
+    const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {
+        {100U, recognized_packet},
+    };
+    const auto capture_path = write_temp_pcap(
+        "pfl_cli_summary_fast_index_source.pcap",
+        make_classic_pcap(packets)
+    );
+
+    FrontendSessionAdapter raw_adapter {};
+    PFL_REQUIRE(raw_adapter.open_capture(capture_path).opened);
+
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_fast_late_corruption.idx";
+    std::filesystem::remove(index_path);
+    PFL_REQUIRE(raw_adapter.save_index(index_path).saved);
+    append_binary_bytes(index_path, std::vector<std::uint8_t> {0xDEU, 0xADU, 0xBEU, 0xEFU});
+
+    cli::SummaryCommandOptions summary_options {};
+    summary_options.input_path = index_path;
+    const auto summary_result = cli::execute_summary_command(summary_options);
+    PFL_EXPECT(summary_result.exit_code == 0);
+    PFL_EXPECT(contains_text(summary_result.stdout_text, "PcapFlowLab Index"));
+
+    const auto flow_list_path = std::filesystem::temp_directory_path() / "pfl_cli_summary_fast_late_corruption.csv";
+    std::filesystem::remove(flow_list_path);
+    cli::SummaryCommandOptions flow_list_options {};
+    flow_list_options.input_path = index_path;
+    flow_list_options.out_flows_list_path = flow_list_path;
+    const auto flow_list_result = cli::execute_summary_command(flow_list_options);
+    PFL_EXPECT(flow_list_result.exit_code == 1);
+    PFL_EXPECT(contains_text(flow_list_result.stderr_text, "trailing"));
 }
 
 void expect_extended_summary_rendering() {
@@ -1852,6 +1894,7 @@ void run_cli_summary_tests() {
     expect_progress_policy_rules();
     expect_basic_summary_rendering();
     expect_index_summary_rendering_without_source_capture();
+    expect_index_summary_fast_path_stops_before_late_corruption();
     expect_extended_summary_rendering();
     expect_extended_summary_quic_tls_rendering();
     expect_extended_summary_raw_index_parity();

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/FlowRows.h"
@@ -43,6 +46,18 @@ namespace pfl {
 [[nodiscard]] std::string build_frontend_count_with_total_percent_text(
     std::uint64_t count,
     std::uint64_t total_count
+);
+[[nodiscard]] FrontendCapturePacketSizeStatisticsDto build_frontend_capture_packet_size_statistics(
+    const CapturePacketStatistics& statistics
+);
+[[nodiscard]] FrontendFlowPacketCountHistogramDto build_frontend_flow_packet_count_histogram(
+    const FlowPacketCountHistogram& histogram
+);
+[[nodiscard]] FrontendProtocolHintStatisticsDto build_frontend_protocol_hint_statistics(
+    const CaptureProtocolSummary& summary
+);
+[[nodiscard]] std::vector<FrontendProtocolPathStatsDto> build_frontend_protocol_path_statistics(
+    const CaptureProtocolPathSummary& summary
 );
 [[nodiscard]] std::vector<FrontendTopEndpointDto> build_frontend_top_endpoints(
     const CaptureTopSummary& summary

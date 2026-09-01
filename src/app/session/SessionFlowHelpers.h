@@ -126,6 +126,11 @@ FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, 
 FlowProtocolHint effective_protocol_hint(const CanonicalFlowMetadata& flow, const AnalysisSettings& settings) noexcept;
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept;
 void add_protocol_stats(ProtocolStats& stats, const CanonicalFlowMetadata& flow) noexcept;
+CaptureProtocolSummary project_protocol_summary(
+    const CaptureGeneralStatistics& statistics,
+    bool use_possible_tls_quic
+) noexcept;
+CaptureTopSummary slice_top_summary(const CaptureTopSummary& summary, std::size_t limit);
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
 std::optional<FlowRow> make_flow_row(
@@ -166,6 +171,12 @@ CaptureStatisticsSnapshot make_capture_statistics_snapshot(
     const CaptureGeneralStatistics& general_statistics,
     CaptureStatisticsScope scope
 );
+CaptureTopSummary project_top_summary_from_snapshot(const CaptureStatisticsSnapshot& snapshot);
+FlowPacketCountHistogram project_flow_packet_count_histogram(
+    const CaptureStatisticsFlowPacketCountHistogram& source
+);
+CaptureGeneralStatistics project_general_statistics_from_snapshot(const CaptureStatisticsSnapshot& snapshot);
+CapturePacketStatistics project_packet_statistics_from_snapshot(const CaptureStatisticsSnapshot& snapshot) noexcept;
 CaptureGeneralStatistics build_capture_general_statistics(
     std::span<const ListedConnectionRef> connections,
     std::size_t top_summary_capacity = 20U

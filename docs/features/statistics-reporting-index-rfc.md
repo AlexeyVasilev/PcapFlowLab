@@ -301,8 +301,8 @@ The frozen design distinguishes:
 - detail-block validity
 - full-session load validity
 
-A successful future fast Statistics-only read does not prove that later
-flow-metadata or detail sections are valid.
+A successful fast Statistics-only read does not prove that later flow-metadata
+or detail sections are valid.
 
 A Statistics-only CLI operation must be allowed to stop after the required
 early Statistics data rather than scan the rest of the index merely to prove
@@ -429,8 +429,9 @@ The reviewable implementation sequence was:
 6. Stage 4G: unrecognized directory/detail lazy access
 7. Stage 4H: move packet locator fully late/lazy and finish the full-session
    v16 reader
-8. Stage 4I: CLI stats-only fast path plus session/frontend staged-loading
-   plumbing remains future work
+8. Stage 4I: CLI stats-only fast path for compatible v16 index-backed
+   `summary` invocations; session/frontend staged-loading plumbing remains
+   future work
 
 ## Required Test Matrix Categories
 
@@ -458,4 +459,6 @@ migration boundary:
 
 - current production is stable v16
 - stable v15 full payload load is rebuild-required
-- Stage 4I fast Statistics-only CLI loading remains future work
+- Stage 4I fast Statistics-only CLI loading is implemented for compatible
+  v16 index-backed `summary` invocations
+- Qt/Tauri session/frontend staged loading remains future work

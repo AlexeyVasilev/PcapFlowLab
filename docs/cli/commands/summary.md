@@ -64,6 +64,19 @@ flags, including:
 - `--protocol-path-mode` is valid only together with `--protocol-path-tree` or
   `--out-protocol-path-tree`.
 
+For current stable v16 indexes, compatible summary invocations use the
+Statistics fast tier directly. The fast path is used for the basic summary,
+`--extended`, Protocol Path Tree preview, and Protocol Path Tree export because
+those outputs are backed by the stable header, capture Statistics snapshot,
+early Protocol Path registry, and terminal Protocol Path aggregates.
+
+The fast path intentionally stops before later flow-metadata and packet-detail
+sections. A successful fast summary read therefore proves only the header and
+Statistics-tier data needed by `summary`; it does not validate the complete
+index. Options that require full flow metadata, such as `--out-flows-list`, use
+the normal full-session index path instead. Raw capture input continues to use
+the normal import/session path.
+
 ## Basic output
 
 The default summary output renders:
