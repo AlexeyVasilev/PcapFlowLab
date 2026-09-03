@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <utility>
@@ -341,6 +342,111 @@ private:
     mutable std::uint64_t total_requested_packets_ {0};
 };
 
+struct SyntheticDirectionalSequence {
+    std::uint64_t packet_count {0};
+    std::uint64_t first_packet_index {0};
+    std::uint64_t packet_index_stride {1};
+};
+
+struct SyntheticDirectionalReadCall {
+    Direction direction {Direction::a_to_b};
+    std::uint64_t local_offset {0};
+    std::uint64_t limit {0};
+};
+
+class SyntheticCountingSelectedFlowPacketAccessSource final : public session_detail::SelectedFlowPacketAccessSource {
+public:
+    SyntheticCountingSelectedFlowPacketAccessSource(
+        SyntheticDirectionalSequence sequence_a,
+        SyntheticDirectionalSequence sequence_b
+    )
+        : sequence_a_(sequence_a),
+          sequence_b_(sequence_b) {}
+
+    [[nodiscard]] session_detail::SelectedFlowDirectionalPacketCountResult directional_packet_count(
+        const Direction direction
+    ) const override {
+        return session_detail::SelectedFlowDirectionalPacketCountResult {
+            .packet_count = sequence(direction).packet_count,
+        };
+    }
+
+    [[nodiscard]] session_detail::SelectedFlowDirectionalPacketReadResult read_direction(
+        const Direction direction,
+        const std::uint64_t local_offset,
+        const std::uint64_t limit
+    ) const override {
+        read_calls_.push_back(SyntheticDirectionalReadCall {
+            .direction = direction,
+            .local_offset = local_offset,
+            .limit = limit,
+        });
+        total_requested_packets_ += limit;
+
+        const auto& spec = sequence(direction);
+        if (local_offset > spec.packet_count) {
+            return session_detail::SelectedFlowDirectionalPacketReadResult {
+                .status = session_detail::SelectedFlowPacketAccessStatus::invalid_local_offset,
+            };
+        }
+
+        const auto available = spec.packet_count - local_offset;
+        const auto count_to_read = std::min(limit, available);
+        std::vector<PacketRef> packets {};
+        packets.reserve(static_cast<std::size_t>(count_to_read));
+        for (std::uint64_t index = 0U; index < count_to_read; ++index) {
+            const auto sequence_offset = local_offset + index;
+            const auto packet_index =
+                spec.first_packet_index + (sequence_offset * spec.packet_index_stride);
+            packets.push_back(make_packet_ref(
+                packet_index,
+                1'000'000U + packet_index,
+                64U,
+                packet_index * 128U
+            ));
+        }
+
+        return session_detail::SelectedFlowDirectionalPacketReadResult {
+            .packet_refs = std::move(packets),
+        };
+    }
+
+    [[nodiscard]] std::size_t read_call_count() const noexcept {
+        return read_calls_.size();
+    }
+
+    [[nodiscard]] std::uint64_t total_requested_packets() const noexcept {
+        return total_requested_packets_;
+    }
+
+    [[nodiscard]] const std::vector<SyntheticDirectionalReadCall>& read_calls() const noexcept {
+        return read_calls_;
+    }
+
+private:
+    [[nodiscard]] const SyntheticDirectionalSequence& sequence(const Direction direction) const noexcept {
+        return direction == Direction::a_to_b ? sequence_a_ : sequence_b_;
+    }
+
+    SyntheticDirectionalSequence sequence_a_ {};
+    SyntheticDirectionalSequence sequence_b_ {};
+    mutable std::vector<SyntheticDirectionalReadCall> read_calls_ {};
+    mutable std::uint64_t total_requested_packets_ {0};
+};
+
+[[nodiscard]] bool has_small_offset_prefix_walk(
+    const SyntheticCountingSelectedFlowPacketAccessSource& source,
+    const std::uint64_t offset_ceiling
+) {
+    return std::any_of(
+        source.read_calls().begin(),
+        source.read_calls().end(),
+        [offset_ceiling](const SyntheticDirectionalReadCall& call) {
+            return call.local_offset > 0U && call.local_offset < offset_ceiling;
+        }
+    );
+}
+
 std::filesystem::path write_quic_directional_context_capture() {
     const auto server_hello_bytes = make_tls_server_hello_handshake_bytes();
     const auto split_offset = server_hello_bytes.size() / 2U;
@@ -574,7 +680,270 @@ void run_selected_flow_packet_access_tests() {
         PFL_EXPECT(merged.packets[1].packet.packet_index == 11U);
         PFL_EXPECT(merged.packets[2].packet.packet_index == 12U);
         PFL_EXPECT(source.read_call_count() > 0U);
-        PFL_EXPECT(source.total_requested_packets() < merged.total_packet_count);
+        PFL_EXPECT(source.total_requested_packets() < 512U);
+    }
+
+    {
+        ScopedTestContext context {"late_selected_flow_packet_lookup_uses_bounded_directional_reads"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto lookup = session_detail::selected_flow_packet_at(source, 900'001U);
+        PFL_REQUIRE(static_cast<bool>(lookup));
+        PFL_REQUIRE(lookup.packet.has_value());
+        PFL_EXPECT(lookup.packet->packet.packet_index == 900'000U);
+        PFL_EXPECT(lookup.packet->direction == Direction::a_to_b);
+        PFL_EXPECT(lookup.packet->flow_local_packet_number == 900'001U);
+        PFL_EXPECT(source.read_call_count() <= 160U);
+        PFL_EXPECT(source.total_requested_packets() <= 1024U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source, 1000U));
+    }
+
+    {
+        ScopedTestContext context {"deep_merged_page_lookup_uses_bounded_directional_reads"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto merged = session_detail::read_selected_flow_merged_range(source, 900'000U, 30U);
+        PFL_REQUIRE(static_cast<bool>(merged));
+        PFL_EXPECT(merged.total_packet_count == 1'000'000U);
+        PFL_REQUIRE(merged.packets.size() == 30U);
+        for (std::size_t index = 0U; index < merged.packets.size(); ++index) {
+            const auto expected_packet_index = 900'000U + static_cast<std::uint64_t>(index);
+            PFL_EXPECT(merged.packets[index].packet.packet_index == expected_packet_index);
+            PFL_EXPECT(merged.packets[index].direction ==
+                (expected_packet_index % 2U == 0U ? Direction::a_to_b : Direction::b_to_a));
+            PFL_EXPECT(merged.packets[index].flow_local_packet_number == expected_packet_index + 1U);
+        }
+        PFL_EXPECT(source.read_call_count() <= 160U);
+        PFL_EXPECT(source.total_requested_packets() <= 1024U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source, 1000U));
+    }
+
+    {
+        ScopedTestContext context {"exact_packet_index_lookup_uses_directional_binary_search"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source_a(
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto lookup_a = session_detail::selected_flow_packet_context_for_packet_index(source_a, 900'000U);
+        PFL_REQUIRE(static_cast<bool>(lookup_a));
+        PFL_REQUIRE(lookup_a.packet.has_value());
+        PFL_EXPECT(lookup_a.packet->packet.packet_index == 900'000U);
+        PFL_EXPECT(lookup_a.packet->direction == Direction::a_to_b);
+        PFL_EXPECT(lookup_a.packet->flow_local_packet_number == 900'001U);
+        PFL_EXPECT(source_a.read_call_count() <= 160U);
+        PFL_EXPECT(source_a.total_requested_packets() <= 512U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source_a, 1000U));
+
+        SyntheticCountingSelectedFlowPacketAccessSource source_b(
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 500'000U,
+                .first_packet_index = 1U,
+                .packet_index_stride = 2U,
+            }
+        );
+
+        const auto lookup_b = session_detail::selected_flow_packet_context_for_packet_index(source_b, 900'001U);
+        PFL_REQUIRE(static_cast<bool>(lookup_b));
+        PFL_REQUIRE(lookup_b.packet.has_value());
+        PFL_EXPECT(lookup_b.packet->packet.packet_index == 900'001U);
+        PFL_EXPECT(lookup_b.packet->direction == Direction::b_to_a);
+        PFL_EXPECT(lookup_b.packet->flow_local_packet_number == 900'002U);
+        PFL_EXPECT(source_b.read_call_count() <= 160U);
+        PFL_EXPECT(source_b.total_requested_packets() <= 512U);
+        PFL_EXPECT(!has_small_offset_prefix_walk(source_b, 1000U));
+    }
+
+    {
+        ScopedTestContext context {"exact_packet_index_lookup_not_found_stays_bounded"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource source(
+            SyntheticDirectionalSequence {
+                .packet_count = 100'000U,
+                .first_packet_index = 10U,
+                .packet_index_stride = 10U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 100'000U,
+                .first_packet_index = 15U,
+                .packet_index_stride = 10U,
+            }
+        );
+
+        const auto between = session_detail::selected_flow_packet_context_for_packet_index(source, 12U);
+        PFL_REQUIRE(static_cast<bool>(between));
+        PFL_EXPECT(!between.packet.has_value());
+
+        const auto before_first = session_detail::selected_flow_packet_context_for_packet_index(source, 1U);
+        PFL_REQUIRE(static_cast<bool>(before_first));
+        PFL_EXPECT(!before_first.packet.has_value());
+
+        const auto after_last = session_detail::selected_flow_packet_context_for_packet_index(source, 2'000'000U);
+        PFL_REQUIRE(static_cast<bool>(after_last));
+        PFL_EXPECT(!after_last.packet.has_value());
+
+        PFL_EXPECT(source.read_call_count() <= 240U);
+        PFL_EXPECT(source.total_requested_packets() <= 768U);
+    }
+
+    {
+        ScopedTestContext context {"merged_reader_handles_directional_edge_cases"};
+
+        {
+            SyntheticCountingSelectedFlowPacketAccessSource source(
+                SyntheticDirectionalSequence {
+                    .packet_count = 1000U,
+                    .first_packet_index = 0U,
+                    .packet_index_stride = 1U,
+                },
+                SyntheticDirectionalSequence {}
+            );
+            const auto merged = session_detail::read_selected_flow_merged_range(source, 990U, 5U);
+            PFL_REQUIRE(static_cast<bool>(merged));
+            PFL_REQUIRE(merged.packets.size() == 5U);
+            PFL_EXPECT(merged.packets.front().packet.packet_index == 990U);
+            PFL_EXPECT(merged.packets.front().direction == Direction::a_to_b);
+            PFL_EXPECT(merged.packets.front().flow_local_packet_number == 991U);
+            PFL_EXPECT(source.read_call_count() <= 80U);
+        }
+
+        {
+            SyntheticCountingSelectedFlowPacketAccessSource source(
+                SyntheticDirectionalSequence {},
+                SyntheticDirectionalSequence {
+                    .packet_count = 1000U,
+                    .first_packet_index = 0U,
+                    .packet_index_stride = 1U,
+                }
+            );
+            const auto merged = session_detail::read_selected_flow_merged_range(source, 990U, 5U);
+            PFL_REQUIRE(static_cast<bool>(merged));
+            PFL_REQUIRE(merged.packets.size() == 5U);
+            PFL_EXPECT(merged.packets.front().packet.packet_index == 990U);
+            PFL_EXPECT(merged.packets.front().direction == Direction::b_to_a);
+            PFL_EXPECT(merged.packets.front().flow_local_packet_number == 991U);
+            PFL_EXPECT(source.read_call_count() <= 80U);
+        }
+
+        {
+            SyntheticCountingSelectedFlowPacketAccessSource source(
+                SyntheticDirectionalSequence {
+                    .packet_count = 3U,
+                    .first_packet_index = 0U,
+                    .packet_index_stride = 1U,
+                },
+                SyntheticDirectionalSequence {
+                    .packet_count = 10'000U,
+                    .first_packet_index = 1000U,
+                    .packet_index_stride = 1U,
+                }
+            );
+            const auto merged = session_detail::read_selected_flow_merged_range(source, 2U, 3U);
+            PFL_REQUIRE(static_cast<bool>(merged));
+            PFL_REQUIRE(merged.packets.size() == 3U);
+            PFL_EXPECT(merged.packets[0].packet.packet_index == 2U);
+            PFL_EXPECT(merged.packets[1].packet.packet_index == 1000U);
+            PFL_EXPECT(merged.packets[2].packet.packet_index == 1001U);
+            PFL_EXPECT(source.read_call_count() <= 80U);
+        }
+
+        {
+            SyntheticCountingSelectedFlowPacketAccessSource source(
+                SyntheticDirectionalSequence {
+                    .packet_count = 10'000U,
+                    .first_packet_index = 1000U,
+                    .packet_index_stride = 1U,
+                },
+                SyntheticDirectionalSequence {
+                    .packet_count = 3U,
+                    .first_packet_index = 0U,
+                    .packet_index_stride = 1U,
+                }
+            );
+            const auto merged = session_detail::read_selected_flow_merged_range(source, 2U, 3U);
+            PFL_REQUIRE(static_cast<bool>(merged));
+            PFL_REQUIRE(merged.packets.size() == 3U);
+            PFL_EXPECT(merged.packets[0].packet.packet_index == 2U);
+            PFL_EXPECT(merged.packets[0].direction == Direction::b_to_a);
+            PFL_EXPECT(merged.packets[1].packet.packet_index == 1000U);
+            PFL_EXPECT(merged.packets[2].packet.packet_index == 1001U);
+            PFL_EXPECT(source.read_call_count() <= 80U);
+        }
+    }
+
+    {
+        ScopedTestContext context {"duplicate_packet_index_across_directions_is_malformed"};
+
+        SyntheticCountingSelectedFlowPacketAccessSource exact_source(
+            SyntheticDirectionalSequence {
+                .packet_count = 10U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 10U,
+                .first_packet_index = 4U,
+                .packet_index_stride = 2U,
+            }
+        );
+        const auto exact_lookup =
+            session_detail::selected_flow_packet_context_for_packet_index(exact_source, 4U);
+        PFL_EXPECT(!static_cast<bool>(exact_lookup));
+        PFL_EXPECT(exact_lookup.status == session_detail::SelectedFlowPacketAccessStatus::malformed_packetref);
+
+        SyntheticCountingSelectedFlowPacketAccessSource merged_source(
+            SyntheticDirectionalSequence {
+                .packet_count = 10U,
+                .first_packet_index = 0U,
+                .packet_index_stride = 2U,
+            },
+            SyntheticDirectionalSequence {
+                .packet_count = 10U,
+                .first_packet_index = 4U,
+                .packet_index_stride = 2U,
+            }
+        );
+        const auto merged = session_detail::read_selected_flow_merged_range(merged_source, 2U, 2U);
+        PFL_EXPECT(!static_cast<bool>(merged));
+        PFL_EXPECT(merged.status == session_detail::SelectedFlowPacketAccessStatus::malformed_packetref);
     }
 
     {

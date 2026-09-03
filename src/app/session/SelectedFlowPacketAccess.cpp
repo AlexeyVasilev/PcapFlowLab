@@ -70,6 +70,230 @@ struct DirectionCursor {
     return SelectedFlowPacketAccessStatus::malformed_packetref;
 }
 
+struct DirectionalPacketProbeResult {
+    SelectedFlowPacketAccessStatus status {SelectedFlowPacketAccessStatus::ok};
+    std::optional<PacketRef> packet {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == SelectedFlowPacketAccessStatus::ok;
+    }
+};
+
+[[nodiscard]] DirectionalPacketProbeResult directional_packet_at(
+    const SelectedFlowPacketAccessSource& source,
+    const Direction direction,
+    const std::uint64_t directional_packet_count,
+    const std::uint64_t local_offset
+) {
+    if (local_offset >= directional_packet_count) {
+        return DirectionalPacketProbeResult {
+            .status = SelectedFlowPacketAccessStatus::invalid_local_offset,
+            .error_detail = direction_name(direction) + " directional packet probe offset is past the end",
+        };
+    }
+
+    const auto read_offset = local_offset == 0U ? 0U : local_offset - 1U;
+    const auto read_limit = local_offset == 0U ? 1U : 2U;
+    const auto read_result = source.read_direction(direction, read_offset, read_limit);
+    if (!read_result) {
+        return DirectionalPacketProbeResult {
+            .status = read_result.status,
+            .error_detail = read_result.error_detail,
+        };
+    }
+    if (read_result.packet_refs.size() != static_cast<std::size_t>(read_limit)) {
+        return DirectionalPacketProbeResult {
+            .status = SelectedFlowPacketAccessStatus::malformed_directory_or_extent,
+            .error_detail = direction_name(direction) + " selected-flow provider returned fewer packets than a bounded probe requested",
+        };
+    }
+    if (read_result.packet_refs.size() == 2U &&
+        read_result.packet_refs[1].packet_index <= read_result.packet_refs[0].packet_index) {
+        return DirectionalPacketProbeResult {
+            .status = SelectedFlowPacketAccessStatus::malformed_packetref,
+            .error_detail = direction_name(direction) + " packet sequence is not strictly increasing at the probed offset",
+        };
+    }
+
+    return DirectionalPacketProbeResult {
+        .packet = read_result.packet_refs.back(),
+    };
+}
+
+struct DirectionalLowerBoundResult {
+    SelectedFlowPacketAccessStatus status {SelectedFlowPacketAccessStatus::ok};
+    std::uint64_t local_offset {0};
+    std::optional<PacketRef> packet {};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == SelectedFlowPacketAccessStatus::ok;
+    }
+};
+
+[[nodiscard]] DirectionalLowerBoundResult directional_lower_bound(
+    const SelectedFlowPacketAccessSource& source,
+    const Direction direction,
+    const std::uint64_t directional_packet_count,
+    const std::uint64_t packet_index
+) {
+    std::uint64_t low = 0U;
+    std::uint64_t high = directional_packet_count;
+
+    while (low < high) {
+        const auto mid = low + ((high - low) / 2U);
+        const auto probe = directional_packet_at(source, direction, directional_packet_count, mid);
+        if (!probe) {
+            return DirectionalLowerBoundResult {
+                .status = probe.status,
+                .error_detail = probe.error_detail,
+            };
+        }
+        if (!probe.packet.has_value()) {
+            return DirectionalLowerBoundResult {
+                .status = SelectedFlowPacketAccessStatus::malformed_directory_or_extent,
+                .error_detail = direction_name(direction) + " bounded probe did not return a packet",
+            };
+        }
+
+        if (probe.packet->packet_index < packet_index) {
+            low = mid + 1U;
+        } else {
+            high = mid;
+        }
+    }
+
+    DirectionalLowerBoundResult result {
+        .local_offset = low,
+    };
+    if (low < directional_packet_count) {
+        const auto probe = directional_packet_at(source, direction, directional_packet_count, low);
+        if (!probe) {
+            return DirectionalLowerBoundResult {
+                .status = probe.status,
+                .error_detail = probe.error_detail,
+            };
+        }
+        result.packet = probe.packet;
+    }
+    return result;
+}
+
+struct MergedPartitionResult {
+    SelectedFlowPacketAccessStatus status {SelectedFlowPacketAccessStatus::ok};
+    std::uint64_t offset_a {0};
+    std::uint64_t offset_b {0};
+    std::string error_detail {};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == SelectedFlowPacketAccessStatus::ok;
+    }
+};
+
+[[nodiscard]] DirectionalPacketProbeResult probe_partition_packet(
+    const SelectedFlowPacketAccessSource& source,
+    const Direction direction,
+    const std::uint64_t directional_packet_count,
+    const std::uint64_t local_offset
+) {
+    if (local_offset >= directional_packet_count) {
+        return {};
+    }
+    return directional_packet_at(source, direction, directional_packet_count, local_offset);
+}
+
+[[nodiscard]] MergedPartitionResult find_merged_partition(
+    const SelectedFlowPacketAccessSource& source,
+    const std::uint64_t count_a,
+    const std::uint64_t count_b,
+    const std::uint64_t merged_offset
+) {
+    const auto lower_bound_a = merged_offset > count_b ? merged_offset - count_b : 0U;
+    const auto upper_bound_a = std::min(merged_offset, count_a);
+    std::uint64_t low = lower_bound_a;
+    std::uint64_t high = upper_bound_a;
+
+    while (low <= high) {
+        const auto offset_a = low + ((high - low) / 2U);
+        const auto offset_b = merged_offset - offset_a;
+
+        const auto left_a = offset_a == 0U
+            ? DirectionalPacketProbeResult {}
+            : directional_packet_at(source, Direction::a_to_b, count_a, offset_a - 1U);
+        if (!left_a) {
+            return MergedPartitionResult {
+                .status = left_a.status,
+                .error_detail = left_a.error_detail,
+            };
+        }
+        const auto right_a = probe_partition_packet(source, Direction::a_to_b, count_a, offset_a);
+        if (!right_a) {
+            return MergedPartitionResult {
+                .status = right_a.status,
+                .error_detail = right_a.error_detail,
+            };
+        }
+        const auto left_b = offset_b == 0U
+            ? DirectionalPacketProbeResult {}
+            : directional_packet_at(source, Direction::b_to_a, count_b, offset_b - 1U);
+        if (!left_b) {
+            return MergedPartitionResult {
+                .status = left_b.status,
+                .error_detail = left_b.error_detail,
+            };
+        }
+        const auto right_b = probe_partition_packet(source, Direction::b_to_a, count_b, offset_b);
+        if (!right_b) {
+            return MergedPartitionResult {
+                .status = right_b.status,
+                .error_detail = right_b.error_detail,
+            };
+        }
+
+        if (left_a.packet.has_value() && right_b.packet.has_value()) {
+            if (left_a.packet->packet_index == right_b.packet->packet_index) {
+                return MergedPartitionResult {
+                    .status = SelectedFlowPacketAccessStatus::malformed_packetref,
+                    .error_detail = "selected-flow provider exposed the same packet_index in both directions",
+                };
+            }
+            if (left_a.packet->packet_index > right_b.packet->packet_index) {
+                if (offset_a == 0U) {
+                    break;
+                }
+                high = offset_a - 1U;
+                continue;
+            }
+        }
+
+        if (left_b.packet.has_value() && right_a.packet.has_value()) {
+            if (left_b.packet->packet_index == right_a.packet->packet_index) {
+                return MergedPartitionResult {
+                    .status = SelectedFlowPacketAccessStatus::malformed_packetref,
+                    .error_detail = "selected-flow provider exposed the same packet_index in both directions",
+                };
+            }
+            if (left_b.packet->packet_index > right_a.packet->packet_index) {
+                low = offset_a + 1U;
+                continue;
+            }
+        }
+
+        return MergedPartitionResult {
+            .offset_a = offset_a,
+            .offset_b = offset_b,
+        };
+    }
+
+    return MergedPartitionResult {
+        .status = SelectedFlowPacketAccessStatus::malformed_packetref,
+        .error_detail = "selected-flow directional packet sequences could not be partitioned by packet_index",
+    };
+}
+
+inline constexpr std::uint64_t kDirectionalMergeChunkSize = 128U;
+
 [[nodiscard]] SelectedFlowDirectionalPacketReadResult fetch_direction_chunk(
     const SelectedFlowPacketAccessSource& source,
     DirectionCursor& cursor,
@@ -508,7 +732,6 @@ SelectedFlowMergedPacketReadResult read_selected_flow_merged_range(
         target = std::min(target, result.total_packet_count);
     }
 
-    const auto chunk_size = std::max<std::uint64_t>(limit, 1U);
     const auto packet_count_to_return = std::min<std::uint64_t>(limit, result.total_packet_count - merged_offset);
     if (packet_count_to_return > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
         result.status = SelectedFlowPacketAccessStatus::numeric_overflow;
@@ -517,27 +740,41 @@ SelectedFlowMergedPacketReadResult read_selected_flow_merged_range(
     }
     result.packets.reserve(static_cast<std::size_t>(packet_count_to_return));
 
+    const auto partition = find_merged_partition(
+        source,
+        count_a.packet_count,
+        count_b.packet_count,
+        merged_offset
+    );
+    if (!partition) {
+        result.status = partition.status;
+        result.error_detail = partition.error_detail;
+        return result;
+    }
+
     DirectionCursor cursor_a {
         .direction = Direction::a_to_b,
         .total_count = count_a.packet_count,
+        .next_offset = partition.offset_a,
     };
     DirectionCursor cursor_b {
         .direction = Direction::b_to_a,
         .total_count = count_b.packet_count,
+        .next_offset = partition.offset_b,
     };
 
     auto ensure_cursor = [&](DirectionCursor& cursor) -> std::optional<SelectedFlowDirectionalPacketReadResult> {
         if (cursor_current_packet(cursor) != nullptr || cursor.next_offset >= cursor.total_count) {
             return std::nullopt;
         }
-        const auto fetch_result = fetch_direction_chunk(source, cursor, chunk_size);
+        const auto fetch_result = fetch_direction_chunk(source, cursor, kDirectionalMergeChunkSize);
         if (!fetch_result) {
             return fetch_result;
         }
         return std::nullopt;
     };
 
-    std::uint64_t merged_index = 0U;
+    std::uint64_t merged_index = merged_offset;
     while (merged_index < target) {
         if (const auto failure = ensure_cursor(cursor_a); failure.has_value()) {
             result.status = failure->status;
@@ -572,13 +809,11 @@ SelectedFlowMergedPacketReadResult read_selected_flow_merged_range(
         const auto* packet = use_a ? packet_a : packet_b;
         ++merged_index;
 
-        if (merged_index > merged_offset) {
-            result.packets.push_back(SelectedFlowMergedPacket {
-                .packet = *packet,
-                .direction = cursor.direction,
-                .flow_local_packet_number = merged_index,
-            });
-        }
+        result.packets.push_back(SelectedFlowMergedPacket {
+            .packet = *packet,
+            .direction = cursor.direction,
+            .flow_local_packet_number = merged_index,
+        });
 
         ++cursor.buffer_index;
     }
@@ -637,29 +872,81 @@ SelectedFlowPacketLookupResult selected_flow_packet_context_for_packet_index(
         result.error_detail = "selected-flow merged packet count overflowed";
         return result;
     }
+    static_cast<void>(total_count);
 
-    constexpr std::uint64_t kSearchChunkSize = 128U;
-    for (std::uint64_t offset = 0U; offset < total_count; ) {
-        const auto read_result = read_selected_flow_merged_range(source, offset, kSearchChunkSize);
-        if (!read_result) {
-            result.status = read_result.status;
-            result.error_detail = read_result.error_detail;
-            return result;
-        }
-
-        for (const auto& entry : read_result.packets) {
-            if (entry.packet.packet_index == packet_index) {
-                result.packet = entry;
-                return result;
-            }
-        }
-
-        if (read_result.packets.empty()) {
-            break;
-        }
-        offset += static_cast<std::uint64_t>(read_result.packets.size());
+    const auto lower_a = directional_lower_bound(
+        source,
+        Direction::a_to_b,
+        count_a.packet_count,
+        packet_index
+    );
+    if (!lower_a) {
+        result.status = lower_a.status;
+        result.error_detail = lower_a.error_detail;
+        return result;
     }
 
+    const auto lower_b = directional_lower_bound(
+        source,
+        Direction::b_to_a,
+        count_b.packet_count,
+        packet_index
+    );
+    if (!lower_b) {
+        result.status = lower_b.status;
+        result.error_detail = lower_b.error_detail;
+        return result;
+    }
+
+    const auto found_a = lower_a.packet.has_value() && lower_a.packet->packet_index == packet_index;
+    const auto found_b = lower_b.packet.has_value() && lower_b.packet->packet_index == packet_index;
+    if (found_a && found_b) {
+        result.status = SelectedFlowPacketAccessStatus::malformed_packetref;
+        result.error_detail = "selected-flow provider exposed the same packet_index in both directions";
+        return result;
+    }
+    if (!found_a && !found_b) {
+        return result;
+    }
+
+    if (found_a) {
+        std::uint64_t packets_in_a_through_target = 0U;
+        if (!checked_add_u64(lower_a.local_offset, 1U, packets_in_a_through_target)) {
+            result.status = SelectedFlowPacketAccessStatus::numeric_overflow;
+            result.error_detail = "selected-flow packet ordinal overflowed";
+            return result;
+        }
+        std::uint64_t flow_local_packet_number = 0U;
+        if (!checked_add_u64(packets_in_a_through_target, lower_b.local_offset, flow_local_packet_number)) {
+            result.status = SelectedFlowPacketAccessStatus::numeric_overflow;
+            result.error_detail = "selected-flow packet ordinal overflowed";
+            return result;
+        }
+        result.packet = SelectedFlowMergedPacket {
+            .packet = *lower_a.packet,
+            .direction = Direction::a_to_b,
+            .flow_local_packet_number = flow_local_packet_number,
+        };
+        return result;
+    }
+
+    std::uint64_t packets_in_b_through_target = 0U;
+    if (!checked_add_u64(lower_b.local_offset, 1U, packets_in_b_through_target)) {
+        result.status = SelectedFlowPacketAccessStatus::numeric_overflow;
+        result.error_detail = "selected-flow packet ordinal overflowed";
+        return result;
+    }
+    std::uint64_t flow_local_packet_number = 0U;
+    if (!checked_add_u64(packets_in_b_through_target, lower_a.local_offset, flow_local_packet_number)) {
+        result.status = SelectedFlowPacketAccessStatus::numeric_overflow;
+        result.error_detail = "selected-flow packet ordinal overflowed";
+        return result;
+    }
+    result.packet = SelectedFlowMergedPacket {
+        .packet = *lower_b.packet,
+        .direction = Direction::b_to_a,
+        .flow_local_packet_number = flow_local_packet_number,
+    };
     return result;
 }
 
